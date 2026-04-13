@@ -193,6 +193,7 @@ export default function TeamTab({ currentUserId }: Props) {
   // Invite form
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
   const [inviteRole, setInviteRole] = useState<'staff' | 'admin'>('staff');
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -215,15 +216,15 @@ export default function TeamTab({ currentUserId }: Props) {
     const res = await fetch('/api/users/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail, role: inviteRole, full_name: inviteName }),
+      body: JSON.stringify({ email: inviteEmail, role: inviteRole, full_name: inviteName, password: invitePassword || undefined }),
     });
     const data = await res.json();
     setInviting(false);
     if (data.error) {
       setInviteMsg({ type: 'error', text: data.error });
     } else {
-      setInviteMsg({ type: 'success', text: `Invite sent to ${inviteEmail}` });
-      setInviteName(''); setInviteEmail(''); setInviteRole('staff');
+      setInviteMsg({ type: 'success', text: invitePassword ? `Account created for ${inviteEmail}` : `Invite sent to ${inviteEmail}` });
+      setInviteName(''); setInviteEmail(''); setInvitePassword(''); setInviteRole('staff');
       void loadMembers();
     }
   }
@@ -266,9 +267,9 @@ export default function TeamTab({ currentUserId }: Props) {
       <div className="glass-solid rounded-xl p-6 space-y-4">
         <div className="flex items-center gap-2">
           <UserPlus size={16} className="text-[var(--accent)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Invite a Team Member</h3>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Add a Team Member</h3>
         </div>
-        <form onSubmit={handleInvite} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <form onSubmit={handleInvite} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input
             type="text"
             placeholder="Full name"
@@ -284,6 +285,13 @@ export default function TeamTab({ currentUserId }: Props) {
             required
             className="input-base"
           />
+          <input
+            type="password"
+            placeholder="Temporary password (min 8 chars)"
+            value={invitePassword}
+            onChange={e => setInvitePassword(e.target.value)}
+            className="input-base"
+          />
           <div className="relative">
             <select
               value={inviteRole}
@@ -295,11 +303,12 @@ export default function TeamTab({ currentUserId }: Props) {
             </select>
             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
-          <button type="submit" disabled={inviting} className="btn-primary justify-center disabled:opacity-50">
+          <button type="submit" disabled={inviting} className="btn-primary justify-center disabled:opacity-50 sm:col-span-2">
             {inviting ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
-            {inviting ? 'Sending…' : 'Send Invite'}
+            {inviting ? 'Creating…' : 'Create Account'}
           </button>
         </form>
+        <p className="text-xs text-[var(--text-muted)]">Enter a temporary password and share it with the user directly. They can change it after signing in.</p>
         {inviteMsg && (
           <p className={`text-sm ${inviteMsg.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
             {inviteMsg.text}
