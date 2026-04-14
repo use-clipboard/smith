@@ -127,7 +127,7 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 
   return (
     <div
-      className={`fixed bottom-0 z-40 flex flex-col rounded-t-2xl shadow-2xl border border-[var(--border)] bg-[var(--bg-card-solid)] overflow-hidden transition-all duration-200 ${
+      className={`fixed bottom-0 z-[60] flex flex-col rounded-t-2xl shadow-2xl border border-[var(--border)] bg-[var(--bg-card-solid)] overflow-hidden transition-all duration-200 ${
         isShaking ? 'animate-nudge' : ''
       }`}
       style={{ right: rightOffset, width: 332, height: isMinimized ? 44 : 440 }}

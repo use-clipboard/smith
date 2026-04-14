@@ -23,7 +23,19 @@ export default function SummarisePage() {
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [results, setResults] = useState<OutOfRangeDocument[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+  const [clientName, setClientName] = useState('');
+  const [clientCode, setClientCode] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  const handleClientSelect = useCallback((c: SelectedClient | null) => {
+    setSelectedClient(c);
+    if (c) {
+      if (c.name) setClientName(c.name);
+      if (c.client_ref) setClientCode(c.client_ref);
+    }
+  }, []);
 
   // Per-document scan state
   const [scanResults, setScanResults] = useState<DocumentScanResult[]>([]);
@@ -201,10 +213,48 @@ export default function SummarisePage() {
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-[var(--text-secondary)]">Client</span>
-                <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
+            <div className="glass-solid rounded-xl p-5 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Name</label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      onChange={e => setClientName(e.target.value)}
+                      placeholder="e.g. John Smith"
+                      className="input-base w-full text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Code</label>
+                    <input
+                      type="text"
+                      value={clientCode}
+                      onChange={e => setClientCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. JS001"
+                      className="input-base w-full text-sm font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range (optional)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-2">Documents outside this range will be shown separately.</p>
               </div>
             </div>
             <FileUpload title="Documents to Summarise" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload invoices, receipts, or any financial documents." existingFiles={documentFiles} />

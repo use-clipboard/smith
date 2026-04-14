@@ -24,7 +24,17 @@ export default function BankToCsvPage() {
   const [results, setResults] = useState<BankCsvTransaction[]>([]);
   const [wasTruncated, setWasTruncated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+  const [clientName, setClientName] = useState('');
+  const [clientCode, setClientCode] = useState('');
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  const handleClientSelect = useCallback((c: SelectedClient | null) => {
+    setSelectedClient(c);
+    if (c) {
+      if (c.name) setClientName(c.name);
+      if (c.client_ref) setClientCode(c.client_ref);
+    }
+  }, []);
 
   // Per-document scan state
   const [scanResults, setScanResults] = useState<DocumentScanResult[]>([]);
@@ -214,10 +224,34 @@ export default function BankToCsvPage() {
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-[var(--text-secondary)]">Client</span>
-                <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
+            <div className="glass-solid rounded-xl p-5 space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Name</label>
+                    <input
+                      type="text"
+                      value={clientName}
+                      onChange={e => setClientName(e.target.value)}
+                      placeholder="e.g. John Smith"
+                      className="input-base w-full text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Code</label>
+                    <input
+                      type="text"
+                      value={clientCode}
+                      onChange={e => setClientCode(e.target.value.toUpperCase())}
+                      placeholder="e.g. JS001"
+                      className="input-base w-full text-sm font-mono"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <FileUpload title="Bank Statement(s)" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload PDF or image bank statements." existingFiles={documentFiles} />

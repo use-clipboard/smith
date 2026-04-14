@@ -22,6 +22,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/p32':             'P32 Summary',
   '/risk-assessment': 'Risk Assessment',
   '/summarise':       'Summarise Documents',
+  '/ch-secretarial':  'CH Secretarial',
   '/policies':        'Policies & Procedures',
   '/clients':         'Clients',
   '/help':            'Help',
@@ -45,6 +46,7 @@ const TOOLS = [
   { label: 'P32 Summary',          href: '/p32',             icon: Receipt },
   { label: 'Risk Assessment',      href: '/risk-assessment', icon: ShieldAlert },
   { label: 'Summarise',            href: '/summarise',       icon: FileText },
+  { label: 'CH Secretarial',       href: '/ch-secretarial',  icon: Building2 },
   { label: 'Clients',              href: '/clients',         icon: Users },
 ];
 
