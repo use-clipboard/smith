@@ -2,17 +2,17 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Palette, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound } from 'lucide-react';
-import { useTheme } from '@/components/ui/ThemeProvider';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
+import PreferencesTab from './tabs/PreferencesTab';
 import ModulesTab from './tabs/ModulesTab';
 import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'appearance' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing';
 
 interface Props {
   userId: string;
@@ -42,14 +42,14 @@ export default function SettingsClient({
   const isAdmin = userRole === 'admin';
   const searchParams = useSearchParams();
 
-  // Allow deep-linking to a specific tab via ?tab=modules
-  const initialTab = (searchParams.get('tab') as Tab | null) ?? 'appearance';
+  // Allow deep-linking to a specific tab via ?tab=modules (map legacy 'appearance' → 'preferences')
+  const rawTab = searchParams.get('tab');
+  const resolvedTab = (rawTab === 'appearance' ? 'preferences' : rawTab) as Tab | null;
+  const initialTab: Tab = resolvedTab ?? 'preferences';
   const [activeTab, setActiveTab] = useState<Tab>(
-    // Only allow admin tabs if user is admin
-    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'billing' ? 'appearance' : initialTab)
+    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'billing' ? 'preferences' : initialTab)
   );
 
-  const { theme, setTheme } = useTheme();
   const [displayName, setDisplayName] = useState(userName);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -63,13 +63,13 @@ export default function SettingsClient({
   const supabase = createClient();
 
   const ALL_TABS = [
-    { id: 'appearance' as Tab, label: 'Appearance', icon: Palette, adminOnly: false },
-    { id: 'profile' as Tab,    label: 'Profile',    icon: User,    adminOnly: false },
-    { id: 'account' as Tab,    label: 'Account',    icon: Building2,   adminOnly: false },
-    { id: 'team' as Tab,       label: 'Team',       icon: UsersRound,  adminOnly: true },
-    { id: 'api-key' as Tab,    label: 'AI & API Key', icon: Key,       adminOnly: true },
-    { id: 'modules' as Tab,    label: 'Tools',      icon: Puzzle,  adminOnly: true },
-    { id: 'billing' as Tab,    label: 'Billing',    icon: CreditCard, adminOnly: true },
+    { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false },
+    { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false },
+    { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false },
+    { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true },
+    { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true },
+    { id: 'modules' as Tab,     label: 'Tools',       icon: Puzzle,            adminOnly: true },
+    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock
@@ -183,29 +183,8 @@ export default function SettingsClient({
         })}
       </div>
 
-      {/* Appearance tab */}
-      {activeTab === 'appearance' && (
-        <div className="glass-solid rounded-xl p-6 max-w-lg">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Theme</h3>
-          <p className="text-xs text-[var(--text-muted)] mb-4">Choose how SMITH looks. &apos;System&apos; follows your device preference.</p>
-          <div className="flex gap-3">
-            {(['light', 'dark', 'system'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className={`flex flex-col items-center gap-2 px-5 py-4 rounded-xl border-2 transition-all duration-150 min-w-[80px]
-                  ${theme === t
-                    ? 'border-[var(--accent)] bg-[var(--accent-light)]'
-                    : 'border-[var(--border)] hover:border-[var(--accent)] bg-[var(--bg-card)]'
-                  }`}
-              >
-                <div className={`w-10 h-7 rounded-md border border-[var(--border-input)] overflow-hidden ${t === 'light' ? 'bg-white' : t === 'dark' ? 'bg-[#0D0D14]' : 'bg-gradient-to-r from-white to-[#0D0D14]'}`} />
-                <span className="text-xs font-medium capitalize text-[var(--text-primary)]">{t}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Preferences tab */}
+      {activeTab === 'preferences' && <PreferencesTab />}
 
       {/* Profile tab */}
       {activeTab === 'profile' && (

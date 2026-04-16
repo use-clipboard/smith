@@ -17,6 +17,13 @@ interface Client {
   address: string | null; utr_number: string | null; registration_number: string | null;
   national_insurance_number: string | null; companies_house_id: string | null;
   vat_number: string | null; companies_house_auth_code: string | null; date_of_birth: string | null;
+  contact_number: string | null;
+  paye_reference: string | null;
+  paye_accounts_office_reference: string | null;
+  vat_submit_type: string | null;
+  vat_scheme: string | null;
+  year_end: string | null;
+  mtd_it: boolean;
 }
 interface ClientLink {
   id: string; link_type: string; notes: string | null; direction: 'outgoing' | 'incoming';
@@ -91,6 +98,8 @@ const SUGGESTED_TITLES = [
   'AML Check', 'Bank Details Change', 'Compliance Update',
 ];
 
+const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'trust', 'charity', 'rental_landlord'];
+
 function showFor(field: string, type: string | null): boolean {
   if (!type) return true;
   const map: Record<string, string[]> = {
@@ -101,6 +110,12 @@ function showFor(field: string, type: string | null): boolean {
     vat_number: ['sole_trader', 'limited_company', 'partnership'],
     companies_house_auth_code: ['limited_company'],
     date_of_birth: ['individual', 'sole_trader'],
+    paye_reference: NON_INDIVIDUAL,
+    paye_accounts_office_reference: NON_INDIVIDUAL,
+    vat_submit_type: NON_INDIVIDUAL,
+    vat_scheme: NON_INDIVIDUAL,
+    year_end: NON_INDIVIDUAL,
+    mtd_it: ['individual'],
   };
   return map[field] ? map[field].includes(type) : true;
 }
@@ -513,6 +528,14 @@ export default function ClientDetailPage() {
   const [editVat, setEditVat] = useState('');
   const [editCHAuth, setEditCHAuth] = useState('');
   const [editDob, setEditDob] = useState('');
+  const [editContactNumber, setEditContactNumber] = useState('');
+  const [editPayeRef, setEditPayeRef] = useState('');
+  const [editPayeAOR, setEditPayeAOR] = useState('');
+  const [editVatSubmitType, setEditVatSubmitType] = useState('');
+  const [editVatScheme, setEditVatScheme] = useState('');
+  const [editYearEndDay, setEditYearEndDay] = useState('');
+  const [editYearEndMonth, setEditYearEndMonth] = useState('');
+  const [editMtdIt, setEditMtdIt] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -566,14 +589,20 @@ export default function ClientDetailPage() {
     } finally { setTimelineLoading(false); }
   }, [clientId, timelineFetched]);
 
-  const fetchLinks = useCallback(async () => {
-    if (linksFetched) return;
+  const fetchLinks = useCallback(async (force = false) => {
+    if (!force && linksFetched) return;
     setLinksLoading(true);
     try {
       const res = await fetch(`/api/clients/${clientId}/links`);
       if (res.ok) { const d = await res.json(); setLinks(d.links ?? []); setLinksFetched(true); }
     } finally { setLinksLoading(false); }
   }, [clientId, linksFetched]);
+
+  // Details is the default tab so fetch links on mount — can't rely on tab-click alone
+  useEffect(() => {
+    void fetchLinks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
 
   useEffect(() => {
     if (!showAddLink || linkSearch.length < 2) { setLinkSearchResults([]); return; }
@@ -641,7 +670,7 @@ export default function ClientDetailPage() {
       });
       const data = await res.json();
       if (!res.ok) { setLinkError(data.error || 'Failed to create link'); return; }
-      setLinksFetched(false); await fetchLinks();
+      await fetchLinks(true);
       setShowAddLink(false); setLinkSearch(''); setSelectedLinkClient(null); setNewLinkType('other'); setNewLinkNotes('');
     } catch { setLinkError('An unexpected error occurred'); } finally { setAddingLink(false); }
   }
@@ -661,7 +690,17 @@ export default function ClientDetailPage() {
     setEditAddress(client.address ?? ''); setEditUtr(client.utr_number ?? ''); setEditRegNo(client.registration_number ?? '');
     setEditNI(client.national_insurance_number ?? ''); setEditCHId(client.companies_house_id ?? '');
     setEditVat(client.vat_number ?? ''); setEditCHAuth(client.companies_house_auth_code ?? '');
-    setEditDob(client.date_of_birth ?? ''); setEditError(null); setEditing(true);
+    setEditDob(client.date_of_birth ?? '');
+    setEditContactNumber(client.contact_number ?? '');
+    setEditPayeRef(client.paye_reference ?? '');
+    setEditPayeAOR(client.paye_accounts_office_reference ?? '');
+    setEditVatSubmitType(client.vat_submit_type ?? '');
+    setEditVatScheme(client.vat_scheme ?? '');
+    // year_end stored as "31 MAR" — split into day and month for the editor
+    const [yeDay = '', yeMonth = ''] = (client.year_end ?? '').split(' ');
+    setEditYearEndDay(yeDay); setEditYearEndMonth(yeMonth);
+    setEditMtdIt(client.mtd_it ?? false);
+    setEditError(null); setEditing(true);
   }
 
   async function handleSave() {
@@ -676,6 +715,13 @@ export default function ClientDetailPage() {
           registration_number: editRegNo || undefined, national_insurance_number: editNI || undefined,
           companies_house_id: editCHId || undefined, vat_number: editVat || undefined,
           companies_house_auth_code: editCHAuth || undefined, date_of_birth: editDob || undefined,
+          contact_number: editContactNumber || undefined,
+          paye_reference: editPayeRef || undefined,
+          paye_accounts_office_reference: editPayeAOR || undefined,
+          vat_submit_type: editVatSubmitType || undefined,
+          vat_scheme: editVatScheme || undefined,
+          year_end: (editYearEndDay && editYearEndMonth) ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}` : undefined,
+          mtd_it: editMtdIt,
         }),
       });
       const data = await res.json();
@@ -964,6 +1010,7 @@ export default function ClientDetailPage() {
               <InfoRow label="Client Reference" value={client.client_ref} mono />
               <InfoRow label="Client Type" value={client.business_type ? CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type : null} />
               <InfoRow label="Contact Email" value={client.contact_email} />
+              <InfoRow label="Contact Number" value={client.contact_number} />
               <div>
                 <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Status</dt>
                 <dd className="mt-1">
@@ -995,6 +1042,21 @@ export default function ClientDetailPage() {
               {showFor('vat_number', type) && <InfoRow label="VAT Number" value={client.vat_number} mono />}
               {showFor('companies_house_auth_code', type) && <InfoRow label="Companies House Auth Code" value={client.companies_house_auth_code} mono />}
               {showFor('date_of_birth', type) && <InfoRow label="Date of Birth" value={client.date_of_birth ? new Date(client.date_of_birth).toLocaleDateString('en-GB') : null} />}
+              {showFor('mtd_it', type) && (
+                <div>
+                  <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">MTD IT</dt>
+                  <dd className="mt-1">
+                    {client.mtd_it
+                      ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Enrolled</span>
+                      : <span className="text-[var(--text-muted)]">—</span>}
+                  </dd>
+                </div>
+              )}
+              {showFor('paye_reference', type) && <InfoRow label="PAYE Reference" value={client.paye_reference} mono />}
+              {showFor('paye_accounts_office_reference', type) && <InfoRow label="PAYE Accounts Office Reference" value={client.paye_accounts_office_reference} mono />}
+              {showFor('vat_submit_type', type) && <InfoRow label="VAT Submit Type" value={client.vat_submit_type} />}
+              {showFor('vat_scheme', type) && <InfoRow label="VAT Scheme" value={client.vat_scheme} />}
+              {showFor('year_end', type) && <InfoRow label="Year End" value={client.year_end} />}
             </dl>
           </div>
 
@@ -1125,6 +1187,7 @@ export default function ClientDetailPage() {
                   </select>
                 </div>
                 <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Contact Email</label><input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} className="input-base w-full" /></div>
+                <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Contact Number</label><input type="tel" value={editContactNumber} onChange={e => setEditContactNumber(e.target.value)} className="input-base w-full" /></div>
                 <div>
                   <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Risk Rating</label>
                   <select value={editRisk} onChange={e => setEditRisk(e.target.value)} className="input-base w-full">
@@ -1151,6 +1214,65 @@ export default function ClientDetailPage() {
                 {showFor('vat_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Number</label><input value={editVat} onChange={e => setEditVat(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('companies_house_auth_code', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Companies House Authentication Code</label><input value={editCHAuth} onChange={e => setEditCHAuth(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('date_of_birth', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Date of Birth</label><input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="input-base w-full" /></div>}
+                {showFor('mtd_it', editType || null) && (
+                  <div className="flex items-center justify-between py-2 px-3 bg-[var(--bg-page)] rounded-lg border border-[var(--border)]">
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text-primary)]">MTD IT</p>
+                      <p className="text-xs text-[var(--text-muted)]">Making Tax Digital for Income Tax</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditMtdIt(v => !v)}
+                      className={`relative w-10 h-6 rounded-full transition-colors ${editMtdIt ? 'bg-blue-500' : 'bg-[var(--border)]'}`}
+                    >
+                      <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${editMtdIt ? 'translate-x-4' : ''}`} />
+                    </button>
+                  </div>
+                )}
+                {showFor('paye_reference', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">PAYE Reference</label><input value={editPayeRef} onChange={e => setEditPayeRef(e.target.value)} className="input-base w-full font-mono" /></div>}
+                {showFor('paye_accounts_office_reference', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">PAYE Accounts Office Reference</label><input value={editPayeAOR} onChange={e => setEditPayeAOR(e.target.value)} className="input-base w-full font-mono" /></div>}
+                {showFor('vat_submit_type', editType || null) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Submit Type</label>
+                    <select value={editVatSubmitType} onChange={e => setEditVatSubmitType(e.target.value)} className="input-base w-full">
+                      <option value="">— Not set —</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Accrual">Accrual</option>
+                    </select>
+                  </div>
+                )}
+                {showFor('vat_scheme', editType || null) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Scheme</label>
+                    <select value={editVatScheme} onChange={e => setEditVatScheme(e.target.value)} className="input-base w-full">
+                      <option value="">— Not set —</option>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Quarterly</option>
+                      <option value="Yearly">Yearly</option>
+                    </select>
+                  </div>
+                )}
+                {showFor('year_end', editType || null) && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Year End</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number" min="1" max="31" placeholder="Day"
+                        value={editYearEndDay} onChange={e => setEditYearEndDay(e.target.value)}
+                        className="input-base w-24 text-center"
+                      />
+                      <select value={editYearEndMonth} onChange={e => setEditYearEndMonth(e.target.value)} className="input-base flex-1">
+                        <option value="">— Month —</option>
+                        {['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'].map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {editYearEndDay && editYearEndMonth && (
+                      <p className="text-xs text-[var(--text-muted)] mt-1">Displays as: {editYearEndDay.padStart(2,'0')} {editYearEndMonth}</p>
+                    )}
+                  </div>
+                )}
               </div>
               {editError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg border border-red-200">{editError}</p>}
             </div>

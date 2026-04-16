@@ -17,7 +17,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login');
   }
 
-  // Fetch user profile — separate query, no join, so role always resolves correctly
+  // Fetch user profile — never include columns that may not exist yet.
+  // Each optional/new column gets its own safe query below.
   const { data: profile } = await supabase
     .from('users')
     .select('role, firm_id, full_name, avatar_url, onboarding_completed')
@@ -25,6 +26,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .single();
 
   const displayName = profile?.full_name || user.email?.split('@')[0] || 'User';
+
+  // Fetch favourites separately — gracefully handles pre-migration state
+  // (if the column doesn't exist the main profile query won't break)
+  let initialFavourites: string[] = [];
+  try {
+    const { data: favRow } = await supabase
+      .from('users')
+      .select('favourites')
+      .eq('id', user.id)
+      .single();
+    initialFavourites = (favRow?.favourites as string[] | null) ?? [];
+  } catch {
+    // Column doesn't exist yet — use empty array
+  }
 
   // Fetch firm data separately — gracefully handles pre-migration state
   let activeModules: string[] = OPTIONAL_MODULE_IDS;
@@ -60,6 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       userId={user.id}
       firmId={profile?.firm_id ?? ''}
       activeModules={activeModules}
+      initialFavourites={initialFavourites}
       showOnboarding={showOnboarding ?? false}
       hasApiKey={hasApiKey}
     >

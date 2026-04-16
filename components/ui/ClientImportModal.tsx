@@ -18,6 +18,13 @@ interface ParsedRow {
   vat_number: string;
   companies_house_auth_code: string;
   date_of_birth: string;
+  contact_number: string;
+  paye_reference: string;
+  paye_accounts_office_reference: string;
+  vat_submit_type: string;
+  vat_scheme: string;
+  year_end: string;
+  mtd_it: boolean;
   _error?: string;
 }
 
@@ -29,14 +36,16 @@ const TEMPLATE_HEADERS = [
   'linked_to_ref', 'link_type', 'address', 'utr_number', 'registration_number',
   'national_insurance_number', 'companies_house_id', 'vat_number',
   'companies_house_auth_code', 'date_of_birth',
+  'contact_number', 'paye_reference', 'paye_accounts_office_reference',
+  'vat_submit_type', 'vat_scheme', 'year_end', 'mtd_it',
 ];
 
 const TEMPLATE_EXAMPLE_ROWS = [
-  ['Acme Plumbing Ltd', 'AC001', 'limited_company', 'accounts@acmeplumbing.co.uk', 'yes', '', '', '10 High St, London, EC1A 1BB', '12345678901', '12345678', '', '', 'GB123456789', 'ABCDE1', ''],
-  ['John Smith', 'JS002', 'individual', 'john@johnsmith.co.uk', 'yes', 'AC001', 'director', '22 Oak Road, Manchester, M1 1AA', '98765432101', '', 'AB123456C', '', '', '', '01/01/1980'],
-  ['The Smith Partnership', 'SP003', 'partnership', '', 'yes', '', '', '', '56789012301', '', '', '', 'GB987654321', '', ''],
-  ['Jane Doe Consulting', 'JD004', 'sole_trader', 'jane@janedoe.com', 'yes', '', '', '', '11111111101', '', 'CD234567D', 'OC123456', 'GB111222333', '', '15/06/1975'],
-  ['City Food Bank', 'CF006', 'charity', 'finance@cityfoodbank.org', 'no', '', '', '', '', '', '', '', '', '', ''],
+  ['Acme Plumbing Ltd', 'AC001', 'limited_company', 'accounts@acmeplumbing.co.uk', 'yes', '', '', '10 High St, London, EC1A 1BB', '12345678901', '12345678', '', '', 'GB123456789', 'ABCDE1', '', '01234 567890', '123/AB45678', '123PA00012345', 'Accrual', 'Quarterly', '31 MAR', ''],
+  ['John Smith', 'JS002', 'individual', 'john@johnsmith.co.uk', 'yes', 'AC001', 'director', '22 Oak Road, Manchester, M1 1AA', '98765432101', '', 'AB123456C', '', '', '', '01/01/1980', '07700 900123', '', '', '', '', '', 'yes'],
+  ['The Smith Partnership', 'SP003', 'partnership', '', 'yes', '', '', '', '56789012301', '', '', '', 'GB987654321', '', '', '01234 111222', '456/CD78901', '456PA00056789', 'Cash', 'Monthly', '05 APR', ''],
+  ['Jane Doe Consulting', 'JD004', 'sole_trader', 'jane@janedoe.com', 'yes', '', '', '', '11111111101', '', 'CD234567D', 'OC123456', 'GB111222333', '', '15/06/1975', '', '789/EF23456', '789PA00078901', 'Accrual', 'Yearly', '31 JAN', ''],
+  ['City Food Bank', 'CF006', 'charity', 'finance@cityfoodbank.org', 'no', '', '', '', '', '', '', '', '', '', '', '01234 999888', '', '', '', '', '31 DEC', ''],
 ];
 
 const VALID_TYPES = new Set(['sole_trader','partnership','limited_company','individual','trust','charity','rental_landlord','']);
@@ -77,6 +86,13 @@ function parseCsv(text: string): ParsedRow[] {
   const vatIdx = idx('vat_number');
   const chAuthIdx = idx('companies_house_auth_code');
   const dobIdx = idx('date_of_birth');
+  const contactNumberIdx = idx('contact_number');
+  const payeRefIdx = idx('paye_reference');
+  const payeAORIdx = idx('paye_accounts_office_reference');
+  const vatSubmitTypeIdx = idx('vat_submit_type');
+  const vatSchemeIdx = idx('vat_scheme');
+  const yearEndIdx = idx('year_end');
+  const mtdItIdx = idx('mtd_it');
 
   if (nameIdx === -1) return [];
 
@@ -112,6 +128,13 @@ function parseCsv(text: string): ParsedRow[] {
     const vat_number = get(vatIdx);
     const companies_house_auth_code = get(chAuthIdx);
     const date_of_birth = get(dobIdx);
+    const contact_number = get(contactNumberIdx);
+    const paye_reference = get(payeRefIdx);
+    const paye_accounts_office_reference = get(payeAORIdx);
+    const vat_submit_type = get(vatSubmitTypeIdx);
+    const vat_scheme = get(vatSchemeIdx);
+    const year_end = get(yearEndIdx).toUpperCase();
+    const mtd_it = ['yes', 'true', '1'].includes(get(mtdItIdx).toLowerCase());
 
     const row: ParsedRow = {
       name, client_ref, business_type, contact_email,
@@ -119,6 +142,8 @@ function parseCsv(text: string): ParsedRow[] {
       linked_to_ref, link_type, address, utr_number, registration_number,
       national_insurance_number, companies_house_id, vat_number,
       companies_house_auth_code, date_of_birth,
+      contact_number, paye_reference, paye_accounts_office_reference,
+      vat_submit_type, vat_scheme, year_end, mtd_it,
     };
 
     if (!name) row._error = 'Name is required';
@@ -126,6 +151,8 @@ function parseCsv(text: string): ParsedRow[] {
     else if (business_type && !VALID_TYPES.has(business_type)) row._error = `Invalid business_type "${business_type}"`;
     else if (contact_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact_email)) row._error = `Invalid email "${contact_email}"`;
     else if (link_type && !VALID_LINK_TYPES.has(link_type)) row._error = `Invalid link_type "${link_type}"`;
+    else if (vat_submit_type && !['Cash', 'Accrual', ''].includes(vat_submit_type)) row._error = `Invalid vat_submit_type "${vat_submit_type}" — use Cash or Accrual`;
+    else if (vat_scheme && !['Monthly', 'Quarterly', 'Yearly', ''].includes(vat_scheme)) row._error = `Invalid vat_scheme "${vat_scheme}" — use Monthly, Quarterly or Yearly`;
 
     results.push(row);
   }
@@ -180,6 +207,13 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
         vat_number: r.vat_number || undefined,
         companies_house_auth_code: r.companies_house_auth_code || undefined,
         date_of_birth: r.date_of_birth || undefined,
+        contact_number: r.contact_number || undefined,
+        paye_reference: r.paye_reference || undefined,
+        paye_accounts_office_reference: r.paye_accounts_office_reference || undefined,
+        vat_submit_type: r.vat_submit_type || undefined,
+        vat_scheme: r.vat_scheme || undefined,
+        year_end: r.year_end || undefined,
+        mtd_it: r.mtd_it || undefined,
       }));
 
       const res = await fetch('/api/clients/import', {
@@ -223,10 +257,13 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                 </div>
                 <p className="text-xs text-[var(--accent)]/70 mt-2 leading-relaxed">
                   Required: <strong>name</strong>, <strong>client_ref</strong>. Optional: <strong>business_type</strong>, <strong>contact_email</strong>,{' '}
-                  <strong>is_active</strong> (yes/no), <strong>linked_to_ref</strong>, <strong>link_type</strong>,{' '}
+                  <strong>contact_number</strong>, <strong>is_active</strong> (yes/no), <strong>linked_to_ref</strong>, <strong>link_type</strong>,{' '}
                   <strong>address</strong>, <strong>utr_number</strong>, <strong>registration_number</strong>,{' '}
                   <strong>national_insurance_number</strong>, <strong>companies_house_id</strong>, <strong>vat_number</strong>,{' '}
-                  <strong>companies_house_auth_code</strong>, <strong>date_of_birth</strong>.
+                  <strong>companies_house_auth_code</strong>, <strong>date_of_birth</strong>,{' '}
+                  <strong>paye_reference</strong>, <strong>paye_accounts_office_reference</strong>,{' '}
+                  <strong>vat_submit_type</strong> (Cash/Accrual), <strong>vat_scheme</strong> (Monthly/Quarterly/Yearly),{' '}
+                  <strong>year_end</strong> (e.g. 31 MAR), <strong>mtd_it</strong> (yes/no — individuals only).
                 </p>
                 <p className="text-xs text-[var(--accent)]/60 mt-1.5">
                   Valid link types:{' '}
@@ -276,7 +313,7 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                     <table className="w-full text-sm whitespace-nowrap">
                       <thead className="border-b border-[var(--border)]">
                         <tr>
-                          {['Name', 'Ref', 'Type', 'Email', 'Status', 'Links', 'UTR', 'Reg No', 'NI', 'VAT', 'DOB'].map(h => (
+                          {['Name', 'Ref', 'Type', 'Email', 'Tel', 'Status', 'Links', 'UTR', 'Reg No', 'NI', 'VAT', 'PAYE Ref', 'VAT Type', 'VAT Scheme', 'Year End', 'MTD IT', 'DOB'].map(h => (
                             <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{h}</th>
                           ))}
                         </tr>
@@ -288,6 +325,7 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                             <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-xs">{r.client_ref || '—'}</td>
                             <td className="px-3 py-2 text-[var(--text-secondary)]">{CLIENT_TYPE_LABELS[r.business_type] ?? '—'}</td>
                             <td className="px-3 py-2 text-[var(--text-muted)]">{r.contact_email || '—'}</td>
+                            <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.contact_number || '—'}</td>
                             <td className="px-3 py-2">
                               <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${r.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                 {r.is_active ? 'Active' : 'Inactive'}
@@ -298,6 +336,15 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                             <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-xs">{r.registration_number || '—'}</td>
                             <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-xs">{r.national_insurance_number || '—'}</td>
                             <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-xs">{r.vat_number || '—'}</td>
+                            <td className="px-3 py-2 text-[var(--text-muted)] font-mono text-xs">{r.paye_reference || '—'}</td>
+                            <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.vat_submit_type || '—'}</td>
+                            <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.vat_scheme || '—'}</td>
+                            <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.year_end || '—'}</td>
+                            <td className="px-3 py-2 text-xs">
+                              {r.mtd_it
+                                ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">Yes</span>
+                                : <span className="text-[var(--text-muted)]">—</span>}
+                            </td>
                             <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.date_of_birth || '—'}</td>
                           </tr>
                         ))}

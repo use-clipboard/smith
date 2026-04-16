@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   FileSearch, ArrowLeftRight, House, ClipboardCheck,
@@ -9,6 +10,8 @@ import {
 import Avatar from '@/components/ui/Avatar';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
 import { useModules } from '@/components/ui/ModulesProvider';
+import Whiteboard from '@/components/features/whiteboard/Whiteboard';
+import { createClient } from '@/lib/supabase';
 
 const ALL_TOOLS = [
   { moduleId: 'full-analysis',   href: '/full-analysis',  label: 'Full Analysis',     desc: 'Analyse invoices for VT, Capium, or Xero', icon: FileSearch,     color: '#4F46E5' },
@@ -49,12 +52,44 @@ interface Props {
   recentClients: { id: string; name: string; client_ref?: string }[];
   recentOutputs: { id: string; feature: string; created_at: string; clients?: { name: string } | null }[];
   teamMembers: { id: string; full_name?: string; email: string }[];
+  whiteboardMessages: { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string }[];
+  currentUserId: string;
+  firmId: string;
+  currentUserName: string;
 }
 
-export default function DashboardClient({ displayName, recentClients, recentOutputs, teamMembers }: Props) {
+export default function DashboardClient({ displayName, recentClients, recentOutputs, teamMembers, whiteboardMessages, currentUserId, firmId, currentUserName }: Props) {
   const { openTab } = useTabContext();
   const { isModuleActive } = useModules();
   const hour = new Date().getHours();
+
+  // ── Real-time presence: track who's online in this firm ──────────────────
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set([currentUserId]));
+
+  useEffect(() => {
+    if (!firmId || !currentUserId) return;
+    const supabase = createClient();
+
+    // Each user joins the firm's presence channel and broadcasts their userId as the key
+    const channel = supabase.channel(`firm-presence:${firmId}`, {
+      config: { presence: { key: currentUserId } },
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        // presenceState() keys are the presence keys (= userIds)
+        const state = channel.presenceState();
+        setOnlineIds(new Set(Object.keys(state)));
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ userId: currentUserId });
+        }
+      });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [firmId, currentUserId]);
+
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   const today = new Date().toLocaleDateString('en-GB', {
@@ -75,6 +110,16 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
           <p className="text-sm text-[var(--text-muted)] mt-0.5">Here&apos;s your workspace overview.</p>
         </div>
         <p className="text-sm text-[var(--text-muted)] hidden sm:block">{today}</p>
+      </div>
+
+      {/* Team Whiteboard */}
+      <div className="relative">
+        <Whiteboard
+          initialMessages={whiteboardMessages}
+          currentUserId={currentUserId}
+          firmId={firmId}
+          currentUserName={currentUserName}
+        />
       </div>
 
       {/* Stats row */}
@@ -162,7 +207,10 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                       {m.full_name || m.email.split('@')[0]}
                     </p>
                   </div>
-                  <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" title="Online" />
+                  {onlineIds.has(m.id)
+                    ? <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" title="Online" />
+                    : <div className="w-2 h-2 rounded-full bg-[var(--text-muted)] opacity-30 shrink-0" title="Offline" />
+                  }
                 </li>
               ))}
             </ul>

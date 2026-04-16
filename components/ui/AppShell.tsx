@@ -11,6 +11,7 @@ import ApiKeyBanner from './ApiKeyBanner';
 import TabProvider, { useTabContext } from './TabContext';
 import { TabActivityProvider } from './TabActivityContext';
 import { ModulesProvider } from './ModulesProvider';
+import { FavouritesProvider } from './FavouritesProvider';
 import { ChatProvider, useChatContext } from '@/components/chat/ChatProvider';
 import ConversationWindow from '@/components/chat/ConversationWindow';
 
@@ -23,6 +24,7 @@ interface AppShellProps {
   userId: string;
   firmId: string;
   activeModules: string[];
+  initialFavourites: string[];
   showOnboarding?: boolean;
   hasApiKey?: boolean;
 }
@@ -39,10 +41,12 @@ function ConversationWindows() {
   );
 }
 
+type AppShellInnerProps = Omit<AppShellProps, 'userId' | 'firmId' | 'activeModules' | 'initialFavourites' | 'showOnboarding'>;
+
 // Inner layout — runs inside all providers so it can read TabContext and TabActivityContext
 function AppShellInner({
   children, userName, userEmail, userRole, avatarUrl, hasApiKey,
-}: Omit<AppShellProps, 'userId' | 'firmId' | 'activeModules' | 'showOnboarding'>) {
+}: AppShellInnerProps) {
   const { tabs, activeTabId } = useTabContext();
   const activeTab = tabs.find(t => t.id === activeTabId);
   // When a tool tab is active, TabPanels handles rendering — hide the Next.js children
@@ -81,7 +85,7 @@ function AppShellInner({
 }
 
 export default function AppShell({
-  children, userName, userEmail, userRole, avatarUrl, userId, firmId, activeModules, showOnboarding, hasApiKey,
+  children, userName, userEmail, userRole, avatarUrl, userId, firmId, activeModules, initialFavourites, showOnboarding, hasApiKey,
 }: AppShellProps) {
   const [onboardingVisible, setOnboardingVisible] = useState(showOnboarding ?? false);
 
@@ -96,6 +100,7 @@ export default function AppShell({
 
   return (
     <ModulesProvider activeModules={activeModules}>
+      <FavouritesProvider initialFavourites={initialFavourites}>
       <ChatProvider userId={userId} firmId={firmId}>
         <TabProvider>
           <TabActivityProvider>
@@ -117,6 +122,7 @@ export default function AppShell({
           </TabActivityProvider>
         </TabProvider>
       </ChatProvider>
+      </FavouritesProvider>
     </ModulesProvider>
   );
 }

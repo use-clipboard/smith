@@ -24,6 +24,14 @@ const UpdateClientSchema = z.object({
   vat_number: z.string().optional(),
   companies_house_auth_code: z.string().optional(),
   date_of_birth: z.string().optional(),
+  // new extended fields
+  contact_number: z.string().optional(),
+  paye_reference: z.string().optional(),
+  paye_accounts_office_reference: z.string().optional(),
+  vat_submit_type: z.enum(['Cash', 'Accrual']).optional().or(z.literal('')),
+  vat_scheme: z.enum(['Monthly', 'Quarterly', 'Yearly']).optional().or(z.literal('')),
+  year_end: z.string().optional(),
+  mtd_it: z.boolean().optional(),
 });
 
 // GET /api/clients/[id]
@@ -90,6 +98,13 @@ export async function PATCH(
   if (d.vat_number !== undefined) updates.vat_number = d.vat_number || null;
   if (d.companies_house_auth_code !== undefined) updates.companies_house_auth_code = d.companies_house_auth_code || null;
   if (d.date_of_birth !== undefined) updates.date_of_birth = d.date_of_birth || null;
+  if (d.contact_number !== undefined) updates.contact_number = d.contact_number || null;
+  if (d.paye_reference !== undefined) updates.paye_reference = d.paye_reference || null;
+  if (d.paye_accounts_office_reference !== undefined) updates.paye_accounts_office_reference = d.paye_accounts_office_reference || null;
+  if (d.vat_submit_type !== undefined) updates.vat_submit_type = d.vat_submit_type || null;
+  if (d.vat_scheme !== undefined) updates.vat_scheme = d.vat_scheme || null;
+  if (d.year_end !== undefined) updates.year_end = d.year_end || null;
+  if (d.mtd_it !== undefined) updates.mtd_it = d.mtd_it;
 
   const { data: client, error } = await supabase
     .from('clients').update(updates).eq('id', params.id).select().single();

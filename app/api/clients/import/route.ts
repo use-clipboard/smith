@@ -31,6 +31,13 @@ const ClientRowSchema = z.object({
   vat_number: z.string().optional(),
   companies_house_auth_code: z.string().optional(),
   date_of_birth: z.string().optional(),
+  contact_number: z.string().optional(),
+  paye_reference: z.string().optional(),
+  paye_accounts_office_reference: z.string().optional(),
+  vat_submit_type: z.enum(['Cash', 'Accrual', '']).optional().transform(v => v || null),
+  vat_scheme: z.enum(['Monthly', 'Quarterly', 'Yearly', '']).optional().transform(v => v || null),
+  year_end: z.string().optional(),
+  mtd_it: z.boolean().optional().default(false),
 });
 
 const ImportSchema = z.object({
@@ -84,6 +91,13 @@ export async function POST(req: NextRequest) {
         vat_number: row.vat_number || null,
         companies_house_auth_code: row.companies_house_auth_code || null,
         date_of_birth: row.date_of_birth || null,
+        contact_number: row.contact_number || null,
+        paye_reference: row.paye_reference || null,
+        paye_accounts_office_reference: row.paye_accounts_office_reference || null,
+        vat_submit_type: row.vat_submit_type ?? null,
+        vat_scheme: row.vat_scheme ?? null,
+        year_end: row.year_end || null,
+        mtd_it: row.mtd_it ?? false,
       })
       .select('id').single();
 

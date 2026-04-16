@@ -21,19 +21,33 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
     .limit(3);
 
-  // Fetch online team members (users in same firm)
+  // Fetch user profile (firm_id + full_name)
   const { data: profile } = await supabase
     .from('users')
-    .select('firm_id')
+    .select('firm_id, full_name')
     .eq('id', user?.id ?? '')
     .single();
 
-  const { data: teamMembers } = profile?.firm_id
+  const firmId = profile?.firm_id ?? '';
+  const currentUserName = profile?.full_name || displayName;
+
+  // Fetch team members
+  const { data: teamMembers } = firmId
     ? await supabase
         .from('users')
         .select('id, full_name, email')
-        .eq('firm_id', profile.firm_id)
+        .eq('firm_id', firmId)
         .limit(8)
+    : { data: [] };
+
+  // Fetch whiteboard messages for this firm
+  const { data: whiteboardMessages } = firmId
+    ? await supabase
+        .from('whiteboard_messages')
+        .select('id, content, color, author_name, created_at, user_id')
+        .eq('firm_id', firmId)
+        .order('created_at', { ascending: false })
+        .limit(40)
     : { data: [] };
 
   return (
@@ -42,6 +56,10 @@ export default async function DashboardPage() {
       recentClients={recentClients ?? []}
       recentOutputs={(recentOutputs ?? []) as unknown as { id: string; feature: string; created_at: string; clients?: { name: string } | null }[]}
       teamMembers={teamMembers ?? []}
+      whiteboardMessages={(whiteboardMessages ?? []) as unknown as { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string }[]}
+      currentUserId={user?.id ?? ''}
+      firmId={firmId}
+      currentUserName={currentUserName}
     />
   );
 }
