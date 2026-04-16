@@ -189,40 +189,67 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     );
   }
 
-  /** Workspace item (pathname-based active state, plain Link) */
+  /** Workspace item (pathname-based active state, with + new-tab affordance) */
   function renderWorkspaceItem(item: NavItem, isFavourite = false) {
     const Icon = item.icon;
     const isActive = pathname.startsWith(item.href);
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        onClick={() => handleNavClick(item)}
-        title={collapsed ? item.label : undefined}
-        className={`relative flex items-center gap-3 rounded-lg transition-all duration-150 group
-          ${collapsed ? 'justify-center px-0 h-11' : 'px-3 h-11'}
-          ${isActive
-            ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
-            : isFavourite
-              ? 'bg-[var(--accent-light)] text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-              : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-          }`}
-      >
-        <Icon
-          size={18}
-          className={`shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`}
-        />
-        {!collapsed && <span className="text-sm font-medium truncate">{item.label}</span>}
+    const colorClass = isActive
+      ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
+      : isFavourite
+        ? 'bg-[var(--accent-light)] text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+        : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
+    const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`;
 
-        {/* Favourite star — same absolute position as tool items for consistent alignment */}
-        {!collapsed && isFavourite && !isActive && (
+    if (collapsed) {
+      return (
+        <Link
+          key={item.href}
+          href={item.href}
+          onClick={() => handleNavClick(item)}
+          title={item.label}
+          className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+        >
+          <Icon size={18} className={iconClass} />
+        </Link>
+      );
+    }
+
+    return (
+      <div
+        key={item.href}
+        className={`relative flex items-center h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+      >
+        <Link
+          href={item.href}
+          onClick={() => handleNavClick(item)}
+          className="flex items-center gap-3 flex-1 min-w-0 h-full px-3"
+        >
+          <Icon size={18} className={iconClass} />
+          <span className="text-sm font-medium truncate">{item.label}</span>
+        </Link>
+
+        {/* Favourite star */}
+        {isFavourite && !isActive && (
           <Star
             size={9}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--accent)] opacity-50 pointer-events-none"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
             fill="currentColor"
           />
         )}
-      </Link>
+
+        {/* New-tab button — same affordance as tool items */}
+        {!isActive && (
+          <span className="flex items-center shrink-0 pr-2">
+            <button
+              onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
+              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+              title="Open in new tab"
+            >
+              <Plus size={10} />
+            </button>
+          </span>
+        )}
+      </div>
     );
   }
 

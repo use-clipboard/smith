@@ -11,6 +11,7 @@ import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { setPendingClient } from '@/lib/pendingClient';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -484,6 +485,7 @@ export default function ClientDetailPage() {
   const router = useRouter();
   const { openTab } = useTabContext();
   const { isModuleActive } = useModules();
+  const { favourites } = useFavourites();
   const clientId = params.id as string;
 
   const [client, setClient] = useState<Client | null>(null);
@@ -813,7 +815,8 @@ export default function ClientDetailPage() {
           { moduleId: 'p32',             label: 'P32 Summary',     icon: Receipt,        route: '/p32',             color: '#CA8A04', show: true },
           { moduleId: 'performance',     label: 'Performance',     icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
         ];
-        const active = tools.filter(t => t.show && isModuleActive(t.moduleId));
+        // Only show tools the user has pinned as favourites (and that are relevant for this client type)
+        const active = tools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
         if (active.length === 0) return null;
         return (
           <div className="flex flex-wrap gap-2 mb-5">
