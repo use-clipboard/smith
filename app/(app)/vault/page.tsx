@@ -1,6 +1,7 @@
 'use client';
 // vault page
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { consumePendingClient } from '@/lib/pendingClient';
 import {
   Archive,
   Search,
@@ -692,8 +693,41 @@ export default function VaultPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const searchDebounce = useRef<ReturnType<typeof setTimeout>>();
+  // Holds a pending client ID from Quick Launch until the clients list loads
+  const pendingClientIdRef = useRef<string | null>(null);
 
   const hasFilters = filterDocTypes.length > 0 || filterClient || filterTaxYear || filterDateFrom || filterDateTo || filterStatus;
+
+  // ── Quick Launch: pre-select client from client detail page ─────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/vault');
+    if (pending) { pendingClientIdRef.current = pending.id; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/vault') return;
+      const p = consumePendingClient('/vault');
+      if (!p) return;
+      // If clients are already loaded, select immediately; otherwise store for later
+      setClients(current => {
+        const match = current.find(c => c.id === p.id);
+        if (match) { setSelectedClient(match); setActiveTab('clients'); }
+        else { pendingClientIdRef.current = p.id; }
+        return current;
+      });
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
+
+  // Once clients list loads, apply any pending Quick Launch selection
+  useEffect(() => {
+    if (clients.length === 0 || !pendingClientIdRef.current) return;
+    const match = clients.find(c => c.id === pendingClientIdRef.current);
+    if (match) {
+      setSelectedClient(match);
+      setActiveTab('clients');
+      pendingClientIdRef.current = null;
+    }
+  }, [clients]);
 
   // ── Data fetching ────────────────────────────────────────────────────────
 

@@ -5,7 +5,8 @@ import {
   ArrowLeft, Pencil, Trash2, ExternalLink, FileText, Clock,
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
-  FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp,
+  FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
+  Archive,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
@@ -483,7 +484,7 @@ function AddNoteForm({ clientId, onAdd, onCancel }: {
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { openTab } = useTabContext();
+  const { openInNewTab } = useTabContext();
   const { isModuleActive } = useModules();
   const { favourites } = useFavourites();
   const clientId = params.id as string;
@@ -775,22 +776,19 @@ export default function ClientDetailPage() {
   return (
     <ToolLayout title={client.name} icon={Users} iconColor="#4F46E5">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between mb-6">
+        <div className="space-y-1.5">
           <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-            <ArrowLeft size={14} />Clients
+            <ArrowLeft size={14} />All Clients
           </button>
-          <div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-xl font-bold text-[var(--text-primary)]">{client.name}</h1>
-              {client.client_ref && <span className="px-2 py-0.5 bg-[var(--bg-nav-hover)] text-[var(--text-muted)] text-xs font-mono rounded border border-[var(--border)]">{client.client_ref}</span>}
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${client.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${client.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
-                {client.is_active ? 'Active' : 'Inactive'}
-              </span>
-              {client.risk_rating && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
-            </div>
-            {client.business_type && <p className="text-sm text-[var(--text-muted)] mt-0.5">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</p>}
+          <div className="flex items-center gap-2 flex-wrap">
+            {client.client_ref && <span className="px-2 py-0.5 bg-[var(--bg-nav-hover)] text-[var(--text-muted)] text-xs font-mono rounded border border-[var(--border)]">{client.client_ref}</span>}
+            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${client.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${client.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+              {client.is_active ? 'Active' : 'Inactive'}
+            </span>
+            {client.risk_rating && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
+            {client.business_type && <span className="text-xs text-[var(--text-muted)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -807,36 +805,45 @@ export default function ClientDetailPage() {
         const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number };
         type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; show: boolean };
         const tools: QuickTool[] = [
-          { moduleId: 'full-analysis',   label: 'Full Analysis',   icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', show: true },
-          { moduleId: 'bank-to-csv',     label: 'Bank to CSV',     icon: ArrowLeftRight, route: '/bank-to-csv',     color: '#0891B2', show: true },
-          { moduleId: 'landlord',        label: 'Landlord',        icon: House,          route: '/landlord',        color: '#D97706', show: btype === 'rental_landlord' },
-          { moduleId: 'final-accounts',  label: 'Accounts Review', icon: ClipboardCheck, route: '/final-accounts',  color: '#7C3AED', show: true },
-          { moduleId: 'risk-assessment', label: 'Risk Assessment', icon: ShieldAlert,    route: '/risk-assessment', color: '#DC2626', show: true },
-          { moduleId: 'p32',             label: 'P32 Summary',     icon: Receipt,        route: '/p32',             color: '#CA8A04', show: true },
-          { moduleId: 'performance',     label: 'Performance',     icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
+          { moduleId: 'full-analysis',   label: 'Full Analysis',    icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', show: true },
+          { moduleId: 'bank-to-csv',     label: 'Bank to CSV',      icon: ArrowLeftRight, route: '/bank-to-csv',     color: '#0891B2', show: true },
+          { moduleId: 'landlord',        label: 'Landlord',         icon: House,          route: '/landlord',        color: '#D97706', show: true },
+          { moduleId: 'final-accounts',  label: 'Accounts Review',  icon: ClipboardCheck, route: '/final-accounts',  color: '#7C3AED', show: true },
+          { moduleId: 'risk-assessment', label: 'Risk Assessment',  icon: ShieldAlert,    route: '/risk-assessment', color: '#DC2626', show: true },
+          { moduleId: 'p32',             label: 'P32 Summary',      icon: Receipt,        route: '/p32',             color: '#CA8A04', show: true },
+          { moduleId: 'performance',     label: 'Performance',      icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
+          { moduleId: 'summarise',       label: 'Summarise',        icon: FileText,       route: '/summarise',       color: '#6B7280', show: true },
+          { moduleId: 'document-vault',  label: 'Document Vault',   icon: Archive,        route: '/vault',           color: '#0F766E', show: true },
         ];
         // Only show tools the user has pinned as favourites (and that are relevant for this client type)
         const active = tools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
         if (active.length === 0) return null;
         return (
-          <div className="flex flex-wrap gap-2 mb-5">
-            {active.map(tool => {
-              const Icon = tool.icon;
-              return (
-                <button
-                  key={tool.route}
-                  onClick={() => {
-                    setPendingClient(tool.route, pendingClient);
-                    openTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
-                    window.history.replaceState(null, '', tool.route);
-                  }}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] glass-solid text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] hover:bg-[var(--accent-light)] transition-all group"
-                >
-                  <Icon size={14} style={{ color: tool.color }} className="shrink-0 group-hover:scale-110 transition-transform" />
-                  {tool.label}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-3 mb-5 px-4 py-3 rounded-xl bg-[var(--bg-nav-hover)] border border-[var(--border)]">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Zap size={12} className="text-[var(--accent)]" />
+              <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide whitespace-nowrap">Quick Launch</span>
+            </div>
+            <div className="w-px h-4 bg-[var(--border)] shrink-0" />
+            <div className="flex flex-wrap gap-2">
+              {active.map(tool => {
+                const Icon = tool.icon;
+                return (
+                  <button
+                    key={tool.route}
+                    onClick={() => {
+                      setPendingClient(tool.route, pendingClient);
+                      openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
+                      window.history.replaceState(null, '', tool.route);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all group"
+                  >
+                    <Icon size={13} style={{ color: tool.color }} className="shrink-0" />
+                    {tool.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         );
       })()}

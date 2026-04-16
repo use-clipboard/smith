@@ -3,6 +3,7 @@
 import {
   useState, useEffect, useRef, KeyboardEvent, useCallback,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Minus, Send, Smile, Zap } from 'lucide-react';
 import { useChatContext } from './ChatProvider';
 import EmojiPicker from './EmojiPicker';
@@ -24,7 +25,6 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 
   const [input, setInput] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
@@ -32,7 +32,6 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const conversation = conversations[conversationId];
   const convMessages = messages[conversationId] || [];
@@ -82,18 +81,6 @@ export default function ConversationWindow({ conversationId, index }: Props) {
     prevCountRef.current = convMessages.length;
   }, [convMessages.length, isMinimized]);
 
-  // Close emoji picker on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
-        setShowEmojiPicker(false);
-        setReactionPickerFor(null);
-      }
-    }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
@@ -112,12 +99,6 @@ export default function ConversationWindow({ conversationId, index }: Props) {
   const handleInputChange = (value: string) => {
     setInput(value);
     setTyping(conversationId, value.length > 0);
-  };
-
-  const handleEmojiInsert = (emoji: string) => {
-    setInput(prev => prev + emoji);
-    setShowEmojiPicker(false);
-    inputRef.current?.focus();
   };
 
   // Stack windows right-to-left: index 0 is rightmost
@@ -235,17 +216,10 @@ export default function ConversationWindow({ conversationId, index }: Props) {
           </div>
 
           {/* Input area */}
-          <div className="shrink-0 border-t border-[var(--border)] px-3 py-2.5 relative">
-            {/* Emoji picker popover */}
-            {showEmojiPicker && (
-              <div ref={emojiPickerRef} className="absolute bottom-full left-0 mb-2 z-50">
-                <EmojiPicker onSelect={handleEmojiInsert} />
-              </div>
-            )}
-
+          <div className="shrink-0 border-t border-[var(--border)] px-3 py-2.5">
             <div className="flex items-end gap-2">
               {/* Text input */}
-              <div className="flex-1 bg-[var(--bg-page)] rounded-xl px-3 py-2 flex items-end gap-1.5 border border-[var(--border-input)]">
+              <div className="flex-1 bg-[var(--bg-page)] rounded-xl px-3 py-2 border border-[var(--border-input)]">
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -253,16 +227,9 @@ export default function ConversationWindow({ conversationId, index }: Props) {
                   onKeyDown={handleKeyDown}
                   placeholder="Message…"
                   rows={1}
-                  className="flex-1 bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none resize-none leading-relaxed"
+                  className="w-full bg-transparent text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none resize-none leading-relaxed"
                   style={{ maxHeight: 72 }}
                 />
-                <button
-                  onMouseDown={e => { e.preventDefault(); setShowEmojiPicker(s => !s); }}
-                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all shrink-0 pb-0.5"
-                  title="Emoji"
-                >
-                  <Smile size={14} />
-                </button>
               </div>
 
               {/* Action buttons */}
@@ -290,6 +257,7 @@ export default function ConversationWindow({ conversationId, index }: Props) {
           </div>
         </>
       )}
+
     </div>
   );
 }
@@ -318,6 +286,8 @@ function MessageBubble({
   const showAvatar = !isMine && (!prevMsg || prevMsg.sender_id !== msg.sender_id);
   const isNudge = msg.type === 'nudge';
   const senderFirst = sender?.full_name?.split(' ')[0];
+  const reactionBtnRef = useRef<HTMLButtonElement>(null);
+  const [reactionPickerPos, setReactionPickerPos] = useState<{ top: number; right: number } | null>(null);
 
   // Group reactions by emoji
   const reactionGroups = (msg.reactions || []).reduce<
@@ -390,17 +360,25 @@ function MessageBubble({
       {isHovered && !isNudge && (
         <div className={`absolute top-0 ${isMine ? 'left-0 -translate-x-1' : 'right-0 translate-x-1'} z-10`}>
           <button
-            onClick={onToggleReactionPicker}
+            ref={reactionBtnRef}
+            onClick={() => {
+              if (!showReactionPicker && reactionBtnRef.current) {
+                const rect = reactionBtnRef.current.getBoundingClientRect();
+                setReactionPickerPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+              }
+              onToggleReactionPicker();
+            }}
             className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--bg-card-solid)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] shadow-sm transition-all"
             title="Add reaction"
           >
             <Smile size={11} />
           </button>
 
-          {showReactionPicker && (
-            <div className={`absolute top-7 ${isMine ? 'right-0' : 'left-0'} z-20`}>
+          {showReactionPicker && reactionPickerPos && createPortal(
+            <div style={{ position: 'fixed', top: reactionPickerPos.top, right: reactionPickerPos.right, zIndex: 9999 }}>
               <EmojiPicker onSelect={onAddReaction} compact />
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}

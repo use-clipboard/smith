@@ -1,5 +1,5 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
@@ -7,6 +7,7 @@ import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import ScanResultsView from '@/components/ui/ScanResultsView';
 import SaveSummariseModal from '@/components/features/summarise/SaveSummariseModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { FileText, Download } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
@@ -28,6 +29,19 @@ export default function SummarisePage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/summarise');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/summarise') return;
+      const p = consumePendingClient('/summarise');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
 
   const handleClientSelect = useCallback((c: SelectedClient | null) => {
     setSelectedClient(c);
