@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { consumePendingClient } from '@/lib/pendingClient';
 import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
@@ -104,6 +105,19 @@ export default function LandlordPage() {
   const [clientCode, setClientCode] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/landlord');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/landlord') return;
+      const p = consumePendingClient('/landlord');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
 
   // Pre-populate name/code when a client is selected from the selector
   const handleClientSelect = useCallback((c: SelectedClient | null) => {

@@ -5,6 +5,7 @@ import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { ShieldAlert, Download } from 'lucide-react';
 import type { RiskAssessmentReport } from '@/types';
@@ -103,6 +104,19 @@ export default function RiskAssessmentPage() {
   const [raUsersName, setRaUsersName] = useState('');
   const [raClientName, setRaClientName] = useState('');
   const [raClientCode, setRaClientCode] = useState('');
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/risk-assessment');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/risk-assessment') return;
+      const p = consumePendingClient('/risk-assessment');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
   const [raClientType, setRaClientType] = useState('');
   const [answers, setAnswers] = useState<Record<string, { answer: boolean; comment: string }>>({});
   const [report, setReport] = useState<RiskAssessmentReport | null>(null);

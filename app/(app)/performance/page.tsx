@@ -6,6 +6,7 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import PerformanceEditor, { getThemeColor } from '@/components/features/performance/PerformanceEditor';
 import { TrendingUp, Check } from 'lucide-react';
@@ -213,6 +214,20 @@ export default function PerformancePage() {
   const [paCustomEnd, setPaCustomEnd] = useState('');
 
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/performance');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/performance') return;
+      const p = consumePendingClient('/performance');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
+
   const [selectedSections, setSelectedSections] = useState<SectionId[]>(
     PERFORMANCE_SECTIONS.filter(s => s.defaultOn).map(s => s.id)
   );

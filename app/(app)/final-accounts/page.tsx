@@ -6,6 +6,7 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { ClipboardCheck, FileText, Download, Undo2, Redo2 } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
@@ -283,6 +284,19 @@ export default function FinalAccountsPage() {
 
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const clientCode = selectedClient?.client_ref ?? '';
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/final-accounts');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/final-accounts') return;
+      const p = consumePendingClient('/final-accounts');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
 
   // Pre-populate fields when a client is selected
   useEffect(() => {

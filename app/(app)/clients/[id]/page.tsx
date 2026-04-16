@@ -5,9 +5,13 @@ import {
   ArrowLeft, Pencil, Trash2, ExternalLink, FileText, Clock,
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
+  FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
+import { useTabContext, Tab } from '@/components/ui/TabContext';
+import { useModules } from '@/components/ui/ModulesProvider';
+import { setPendingClient } from '@/lib/pendingClient';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -478,6 +482,8 @@ function AddNoteForm({ clientId, onAdd, onCancel }: {
 export default function ClientDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { openTab } = useTabContext();
+  const { isModuleActive } = useModules();
   const clientId = params.id as string;
 
   const [client, setClient] = useState<Client | null>(null);
@@ -792,6 +798,45 @@ export default function ClientDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Quick Launch */}
+      {client && (() => {
+        const btype = client.business_type;
+        const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number };
+        type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; show: boolean };
+        const tools: QuickTool[] = [
+          { moduleId: 'full-analysis',   label: 'Full Analysis',   icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', show: true },
+          { moduleId: 'bank-to-csv',     label: 'Bank to CSV',     icon: ArrowLeftRight, route: '/bank-to-csv',     color: '#0891B2', show: true },
+          { moduleId: 'landlord',        label: 'Landlord',        icon: House,          route: '/landlord',        color: '#D97706', show: btype === 'rental_landlord' },
+          { moduleId: 'final-accounts',  label: 'Accounts Review', icon: ClipboardCheck, route: '/final-accounts',  color: '#7C3AED', show: true },
+          { moduleId: 'risk-assessment', label: 'Risk Assessment', icon: ShieldAlert,    route: '/risk-assessment', color: '#DC2626', show: true },
+          { moduleId: 'p32',             label: 'P32 Summary',     icon: Receipt,        route: '/p32',             color: '#CA8A04', show: true },
+          { moduleId: 'performance',     label: 'Performance',     icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
+        ];
+        const active = tools.filter(t => t.show && isModuleActive(t.moduleId));
+        if (active.length === 0) return null;
+        return (
+          <div className="flex flex-wrap gap-2 mb-5">
+            {active.map(tool => {
+              const Icon = tool.icon;
+              return (
+                <button
+                  key={tool.route}
+                  onClick={() => {
+                    setPendingClient(tool.route, pendingClient);
+                    openTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
+                    window.history.replaceState(null, '', tool.route);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] glass-solid text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] hover:bg-[var(--accent-light)] transition-all group"
+                >
+                  <Icon size={14} style={{ color: tool.color }} className="shrink-0 group-hover:scale-110 transition-transform" />
+                  {tool.label}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5 flex-wrap">

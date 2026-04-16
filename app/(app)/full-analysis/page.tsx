@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { consumePendingClient } from '@/lib/pendingClient';
 import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
@@ -52,6 +53,19 @@ export default function FullAnalysisPage() {
   const [clientAddress, setClientAddress] = useState('');
   const [isVatRegistered, setIsVatRegistered] = useState(false);
   const [targetSoftware, setTargetSoftware] = useState<TargetSoftware>('general');
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/full-analysis');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/full-analysis') return;
+      const p = consumePendingClient('/full-analysis');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
 
   // Pre-populate fields when a client is selected
   useEffect(() => {

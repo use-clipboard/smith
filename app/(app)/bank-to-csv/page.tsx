@@ -1,5 +1,6 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { consumePendingClient } from '@/lib/pendingClient';
 import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
@@ -26,6 +27,19 @@ export default function BankToCsvPage() {
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const [clientName, setClientName] = useState('');
   const [clientCode, setClientCode] = useState('');
+
+  // ── Quick Launch: pre-fill client from client detail page ──────────────────
+  useEffect(() => {
+    const pending = consumePendingClient('/bank-to-csv');
+    if (pending) { setSelectedClient(pending); return; }
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/bank-to-csv') return;
+      const p = consumePendingClient('/bank-to-csv');
+      if (p) setSelectedClient(p);
+    }
+    window.addEventListener('smith:pending-client', handle);
+    return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
   const handleClientSelect = useCallback((c: SelectedClient | null) => {
