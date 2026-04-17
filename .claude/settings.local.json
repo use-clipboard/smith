@@ -71,7 +71,22 @@
       "Bash(echo \"Exit code: $?\")",
       "Bash(echo \"Exit: $?\")",
       "Bash(grep -rn \"DocumentScanResult\\\\|AppState\" /c/Users/chris/Desktop/Claude/agent-smith/types* --include=\"*.ts\")",
-      "Bash(node -e \"require\\('xlsx'\\); console.log\\('xlsx ok'\\)\")"
+      "Bash(node -e \"require\\('xlsx'\\); console.log\\('xlsx ok'\\)\")",
+      "Bash(npx vercel:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(cat next.config.js)",
+      "Bash(cat next.config.ts)",
+      "Bash(cat next.config.mjs)",
+      "Bash(grep -l \"firm_settings\" /c/Users/chris/Desktop/Claude/agent-smith/supabase/migrations/*.sql)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|sql\\)$\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\app\\\\api\\\\clients\")",
+      "Bash(npm run:*)",
+      "Bash(Remove-Item -Recurse -Force \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.next\")",
+      "Bash(Write-Host \"Cleared .next cache\")",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(ls *.tsx *.ts)",
+      "Bash(ls components/chat/ components/ui/AskSmith*)",
+      "Bash(grep -l \"outputs\\\\|output_history\" app/api/*/route.ts app/api/**/*.ts)"
     ]
   }
 }

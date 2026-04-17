@@ -34,7 +34,7 @@ const STATUS_STYLES: Record<ClientStatus, { dot: string; label: string; pill: st
 };
 
 function StatusPill({ status }: { status: ClientStatus }) {
-  const s = STATUS_STYLES[status];
+  const s = STATUS_STYLES[status] ?? STATUS_STYLES.active;
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${s.pill}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />

@@ -812,7 +812,7 @@ export default function ClientDetailPage() {
       {/* Quick Launch */}
       {client && (() => {
         const btype = client.business_type;
-        const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number };
+        const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active' };
         type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; show: boolean };
         const tools: QuickTool[] = [
           { moduleId: 'full-analysis',   label: 'Full Analysis',    icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', show: true },

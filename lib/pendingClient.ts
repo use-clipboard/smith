@@ -4,7 +4,7 @@
  *
  * Usage:
  *   // On the client page:
- *   setPendingClient('/full-analysis', { id, name, client_ref, business_type, vat_number });
+ *   setPendingClient('/full-analysis', { id, name, client_ref, business_type, vat_number, status });
  *   openTab({ route: '/full-analysis', ... });
  *
  *   // In the tool page (useEffect on mount):
@@ -18,6 +18,7 @@ export interface PendingClientData {
   client_ref: string | null;
   business_type: string | null;
   vat_number: string | null;
+  status: string;
 }
 
 interface PendingEntry {
