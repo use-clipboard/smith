@@ -2,12 +2,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { User, X, ChevronDown, Search } from 'lucide-react';
 
+export type ClientStatus = 'active' | 'hold' | 'inactive';
+
 export interface SelectedClient {
   id: string;
   name: string;
   client_ref: string | null;
   business_type: string | null;
   vat_number: string | null;
+  status: ClientStatus;
 }
 
 interface ClientSelectorProps {
@@ -21,6 +24,23 @@ interface ClientRow {
   client_ref: string | null;
   business_type: string | null;
   vat_number: string | null;
+  status: ClientStatus;
+}
+
+const STATUS_STYLES: Record<ClientStatus, { dot: string; label: string; pill: string }> = {
+  active:   { dot: 'bg-green-500',  label: 'Active',   pill: 'bg-green-100 text-green-700' },
+  hold:     { dot: 'bg-amber-500',  label: 'On Hold',  pill: 'bg-amber-100 text-amber-700' },
+  inactive: { dot: 'bg-gray-400',   label: 'Inactive', pill: 'bg-gray-100 text-gray-500'   },
+};
+
+function StatusPill({ status }: { status: ClientStatus }) {
+  const s = STATUS_STYLES[status];
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${s.pill}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
 }
 
 export default function ClientSelector({ value, onSelect }: ClientSelectorProps) {
@@ -67,7 +87,7 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
   }
 
   function handleSelect(c: ClientRow) {
-    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number });
+    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number, status: c.status });
     setOpen(false);
   }
 
@@ -85,10 +105,11 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
           {value.client_ref && (
             <span className="text-[var(--accent)] opacity-70 font-mono text-xs">({value.client_ref})</span>
           )}
+          <StatusPill status={value.status} />
           <button
             type="button"
             onClick={handleClear}
-            className="ml-1 text-[var(--accent)] opacity-60 hover:opacity-100 transition-opacity"
+            className="ml-auto text-[var(--accent)] opacity-60 hover:opacity-100 transition-opacity"
             title="Clear client"
           >
             <X size={12} />
@@ -107,7 +128,7 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
       )}
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-72 glass-solid rounded-xl border border-[var(--border)] shadow-dropdown overflow-hidden animate-slide-up">
+        <div className="absolute top-full left-0 mt-1 z-50 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-dropdown overflow-hidden animate-slide-up">
           <div className="p-2 border-b border-[var(--border)]">
             <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-input)] rounded-lg border border-[var(--border-input)]">
               <Search size={13} className="text-[var(--text-muted)] shrink-0" />
@@ -134,10 +155,13 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
                   onClick={() => handleSelect(c)}
                   className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-nav-hover)] transition-colors flex items-center justify-between gap-2"
                 >
-                  <span className="text-sm text-[var(--text-primary)]">{c.name}</span>
-                  {c.client_ref && (
-                    <span className="text-xs text-[var(--text-muted)] font-mono shrink-0">{c.client_ref}</span>
-                  )}
+                  <span className="text-sm text-[var(--text-primary)] truncate">{c.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {c.client_ref && (
+                      <span className="text-xs text-[var(--text-muted)] font-mono">{c.client_ref}</span>
+                    )}
+                    <StatusPill status={c.status} />
+                  </div>
                 </button>
               ))
             )}

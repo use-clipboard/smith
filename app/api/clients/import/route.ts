@@ -19,7 +19,7 @@ const ClientRowSchema = z.object({
   client_ref: z.string().min(1, 'Client reference is required'),
   business_type: z.enum(CLIENT_TYPES).optional().transform(v => v || null),
   contact_email: z.string().email('Invalid email').optional().or(z.literal('')).transform(v => v || null),
-  is_active: z.boolean().optional().default(true),
+  status: z.enum(['active', 'hold', 'inactive']).optional().default('active'),
   linked_to_ref: z.string().optional(),
   link_type: z.enum(LINK_TYPES).optional().transform(v => v || 'other'),
   // extended fields
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
         client_ref: row.client_ref || null,
         business_type: row.business_type ?? null,
         contact_email: row.contact_email ?? null,
-        is_active: row.is_active ?? true,
+        status: row.status ?? 'active',
         address: row.address || null,
         utr_number: row.utr_number || null,
         registration_number: row.registration_number || null,

@@ -17,9 +17,17 @@ import { setPendingClient } from '@/lib/pendingClient';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type ClientStatus = 'active' | 'hold' | 'inactive';
+
+const STATUS_CONFIG: Record<ClientStatus, { dot: string; bg: string; text: string; label: string }> = {
+  active:   { dot: 'bg-green-500',  bg: 'bg-green-100',  text: 'text-green-700',  label: 'Active'    },
+  hold:     { dot: 'bg-amber-500',  bg: 'bg-amber-100',  text: 'text-amber-700',  label: 'On Hold'   },
+  inactive: { dot: 'bg-gray-400',   bg: 'bg-gray-100',   text: 'text-gray-500',   label: 'Inactive'  },
+};
+
 interface Client {
   id: string; name: string; client_ref: string | null; business_type: string | null;
-  contact_email: string | null; risk_rating: string | null; is_active: boolean; created_at: string;
+  contact_email: string | null; risk_rating: string | null; status: ClientStatus; created_at: string;
   address: string | null; utr_number: string | null; registration_number: string | null;
   national_insurance_number: string | null; companies_house_id: string | null;
   vat_number: string | null; companies_house_auth_code: string | null; date_of_birth: string | null;
@@ -33,7 +41,7 @@ interface Client {
 }
 interface ClientLink {
   id: string; link_type: string; notes: string | null; direction: 'outgoing' | 'incoming';
-  other_client: { id: string; name: string; client_ref: string | null; business_type: string | null; is_active: boolean; } | null;
+  other_client: { id: string; name: string; client_ref: string | null; business_type: string | null; status: ClientStatus; } | null;
 }
 interface Output { id: string; feature: string; target_software: string | null; created_at: string; }
 interface Document { id: string; file_name: string; document_type: string | null; created_at: string; drive_file_id: string | null; }
@@ -528,7 +536,7 @@ export default function ClientDetailPage() {
   const [editType, setEditType] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editRisk, setEditRisk] = useState('');
-  const [editActive, setEditActive] = useState(true);
+  const [editStatus, setEditStatus] = useState<ClientStatus>('active');
   const [editAddress, setEditAddress] = useState('');
   const [editUtr, setEditUtr] = useState('');
   const [editRegNo, setEditRegNo] = useState('');
@@ -695,7 +703,7 @@ export default function ClientDetailPage() {
   function startEdit() {
     if (!client) return;
     setEditName(client.name); setEditRef(client.client_ref ?? ''); setEditType(client.business_type ?? '');
-    setEditEmail(client.contact_email ?? ''); setEditRisk(client.risk_rating ?? ''); setEditActive(client.is_active);
+    setEditEmail(client.contact_email ?? ''); setEditRisk(client.risk_rating ?? ''); setEditStatus(client.status ?? 'active');
     setEditAddress(client.address ?? ''); setEditUtr(client.utr_number ?? ''); setEditRegNo(client.registration_number ?? '');
     setEditNI(client.national_insurance_number ?? ''); setEditCHId(client.companies_house_id ?? '');
     setEditVat(client.vat_number ?? ''); setEditCHAuth(client.companies_house_auth_code ?? '');
@@ -719,7 +727,7 @@ export default function ClientDetailPage() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editName, client_ref: editRef, business_type: editType || undefined,
-          contact_email: editEmail || undefined, risk_rating: editRisk || undefined, is_active: editActive,
+          contact_email: editEmail || undefined, risk_rating: editRisk || undefined, status: editStatus,
           address: editAddress || undefined, utr_number: editUtr || undefined,
           registration_number: editRegNo || undefined, national_insurance_number: editNI || undefined,
           companies_house_id: editCHId || undefined, vat_number: editVat || undefined,
@@ -783,10 +791,12 @@ export default function ClientDetailPage() {
           </button>
           <div className="flex items-center gap-2 flex-wrap">
             {client.client_ref && <span className="px-2 py-0.5 bg-[var(--bg-nav-hover)] text-[var(--text-muted)] text-xs font-mono rounded border border-[var(--border)]">{client.client_ref}</span>}
-            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${client.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${client.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
-              {client.is_active ? 'Active' : 'Inactive'}
-            </span>
+            {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
+              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                {s.label}
+              </span>
+            ); })()}
             {client.risk_rating && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
             {client.business_type && <span className="text-xs text-[var(--text-muted)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
           </div>
@@ -1069,10 +1079,12 @@ export default function ClientDetailPage() {
               <div>
                 <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Status</dt>
                 <dd className="mt-1">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${client.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${client.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
-                    {client.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                  {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                      {s.label}
+                    </span>
+                  ); })()}
                 </dd>
               </div>
               <div>
@@ -1201,7 +1213,11 @@ export default function ClientDetailPage() {
                             <div className="flex items-center gap-2">
                               {link.other_client.client_ref && <span className="text-xs text-[var(--text-muted)] font-mono">{link.other_client.client_ref}</span>}
                               {link.other_client.business_type && <span className="text-xs text-[var(--text-muted)]">· {CLIENT_TYPE_LABELS[link.other_client.business_type] ?? link.other_client.business_type}</span>}
-                              {!link.other_client.is_active && <span className="text-xs text-gray-400 italic">Inactive</span>}
+                              {link.other_client.status !== 'active' && (
+                                <span className={`text-xs italic ${link.other_client.status === 'hold' ? 'text-amber-500' : 'text-gray-400'}`}>
+                                  {STATUS_CONFIG[link.other_client.status]?.label ?? link.other_client.status}
+                                </span>
+                              )}
                             </div>
                             {link.notes && <p className="text-xs text-[var(--text-muted)] mt-0.5">{link.notes}</p>}
                           </div>
@@ -1249,11 +1265,16 @@ export default function ClientDetailPage() {
                     <option value="">— Not set —</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option>
                   </select>
                 </div>
-                <div className="flex items-center justify-between py-2 px-3 bg-[var(--bg-page)] rounded-lg border border-[var(--border)]">
-                  <div><p className="text-sm font-medium text-[var(--text-primary)]">Active</p><p className="text-xs text-[var(--text-muted)]">Inactive clients are dimmed in the list</p></div>
-                  <button type="button" onClick={() => setEditActive(v => !v)} className={`relative w-10 h-6 rounded-full transition-colors ${editActive ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
-                    <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${editActive ? 'translate-x-4' : ''}`} />
-                  </button>
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Status</label>
+                  <div className="flex items-center gap-1 bg-[var(--bg-page)] rounded-lg border border-[var(--border)] p-1">
+                    {([['active', 'Active'], ['hold', 'On Hold'], ['inactive', 'Inactive']] as [ClientStatus, string][]).map(([val, label]) => (
+                      <button key={val} type="button" onClick={() => setEditStatus(val)}
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${editStatus === val ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="space-y-3 pt-2 border-t border-[var(--border)]">

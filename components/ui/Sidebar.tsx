@@ -152,23 +152,21 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="text-sm font-medium truncate text-left">{item.label}</span>
         </button>
 
-        {/* Favourite star — absolutely positioned so it always aligns; hidden on hover to clear the + button */}
-        {isFavourite && !isActive && (
-          <Star
-            size={9}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
-            fill="currentColor"
-          />
-        )}
-
         {!isActive && (
-          <span className="flex items-center shrink-0 pr-2">
+          <span className="flex items-center shrink-0 pr-2 gap-1">
             {isInBackgroundTab && (
-              <span className="group-hover:hidden">
+              <span className="group-hover:hidden flex items-center">
                 {activity === 'processing' && <span title="Processing"><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span>}
                 {activity === 'done'       && <span title="Done"><Check size={11} className="text-emerald-500" /></span>}
                 {activity === 'idle'       && <span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" title="Open in tab" />}
               </span>
+            )}
+            {isFavourite && (
+              <Star
+                size={9}
+                className="text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
+                fill="currentColor"
+              />
             )}
             <button
               onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
@@ -228,18 +226,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="text-sm font-medium truncate">{item.label}</span>
         </Link>
 
-        {/* Favourite star */}
-        {isFavourite && !isActive && (
-          <Star
-            size={9}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
-            fill="currentColor"
-          />
-        )}
-
         {/* New-tab button — same affordance as tool items */}
         {!isActive && (
-          <span className="flex items-center shrink-0 pr-2">
+          <span className="flex items-center shrink-0 pr-2 gap-1">
+            {isFavourite && (
+              <Star
+                size={9}
+                className="text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
+                fill="currentColor"
+              />
+            )}
             <button
               onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
               className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"

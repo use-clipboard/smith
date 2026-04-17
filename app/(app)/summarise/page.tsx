@@ -9,11 +9,42 @@ import SaveSummariseModal from '@/components/features/summarise/SaveSummariseMod
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
-import { FileText, Download } from 'lucide-react';
+import { FileText, Download, Layers, ChevronDown, ChevronRight } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { OutOfRangeDocument, DocumentScanResult } from '@/types';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
+export type GroupBy = 'none' | 'entity' | 'category';
+
+// ── Grouping helpers ──────────────────────────────────────────────────────────
+
+function groupResults(results: OutOfRangeDocument[], by: GroupBy): [string, OutOfRangeDocument[]][] {
+  if (by === 'none') return [['', results]];
+  const map = new Map<string, OutOfRangeDocument[]>();
+  for (const r of results) {
+    const key = (by === 'entity' ? r.entityName : r.detailedCategory) || 'Unknown';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(r);
+  }
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function sumGroup(rows: OutOfRangeDocument[]) {
+  return rows.reduce(
+    (acc, r) => ({
+      net: acc.net + (r.totalNetAmount ?? 0),
+      vat: acc.vat + (r.totalVatAmount ?? 0),
+      gross: acc.gross + (r.totalGrossAmount ?? 0),
+    }),
+    { net: 0, vat: 0, gross: 0 },
+  );
+}
+
+function fmt(n: number) {
+  return `£${n.toFixed(2)}`;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SummarisePage() {
   const [appState, setAppState] = useState<AppState>('idle');
@@ -29,6 +60,19 @@ export default function SummarisePage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [groupByOpen, setGroupByOpen] = useState(false);
+  const groupByRef = useRef<HTMLDivElement>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // Close group-by dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (groupByRef.current && !groupByRef.current.contains(e.target as Node)) setGroupByOpen(false);
+    }
+    if (groupByOpen) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [groupByOpen]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -222,6 +266,17 @@ export default function SummarisePage() {
     </ToolLayout>
   );
 
+  // ── Grouped table render ──────────────────────────────────────────────────
+
+  const groups = groupResults(results, groupBy);
+  const grandTotals = sumGroup(results);
+
+  const GROUP_BY_LABELS: Record<GroupBy, string> = {
+    none: 'None',
+    entity: 'Entity',
+    category: 'Category',
+  };
+
   return (
     <ToolLayout title="Summarise Documents" description="Summarise out-of-date-range documents for file note purposes." icon={FileText} iconColor="#475569">
       {appState === 'idle' && (
@@ -284,28 +339,149 @@ export default function SummarisePage() {
 
       {appState === 'success' && (
         <div className="space-y-4">
+          {/* Toolbar */}
           <div className="flex justify-between items-center flex-wrap gap-3">
             <p className="text-sm text-[var(--text-muted)]">{results.length} documents summarised</p>
             <div className="flex items-center gap-2">
+
+              {/* Group By dropdown */}
+              <div ref={groupByRef} className="relative">
+                <button
+                  onClick={() => setGroupByOpen(v => !v)}
+                  className={`btn-secondary flex items-center gap-1.5 ${groupBy !== 'none' ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+                >
+                  <Layers size={14} />
+                  Group By{groupBy !== 'none' && <span className="font-semibold">: {GROUP_BY_LABELS[groupBy]}</span>}
+                  <ChevronDown size={12} className={`transition-transform ${groupByOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {groupByOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-20 glass-solid rounded-xl border border-[var(--border)] shadow-dropdown overflow-hidden animate-slide-up w-40">
+                    {(['none', 'entity', 'category'] as GroupBy[]).map(opt => (
+                      <button
+                        key={opt}
+                        onClick={() => { setGroupBy(opt); setGroupByOpen(false); setExpandedGroups(new Set()); }}
+                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                          groupBy === opt
+                            ? 'bg-[var(--accent-light)] text-[var(--accent)] font-medium'
+                            : 'text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
+                        }`}
+                      >
+                        {GROUP_BY_LABELS[opt]}
+                        {groupBy === opt && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
                 <Download size={14} />
-                Save & Export CSV
+                Save & Export
               </button>
               <button onClick={() => setAppState('idle')} className="btn-secondary">New Analysis</button>
             </div>
           </div>
+
           <SaveSummariseModal
             isOpen={saveModalOpen}
             results={results}
             documentFiles={documentFiles}
             initialClient={selectedClient}
+            groupBy={groupBy}
             onClose={() => setSaveModalOpen(false)}
           />
+
+          {/* Results table */}
           <div className="glass-solid rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="border-b border-[var(--border)]"><tr>{['File','Date','Entity','Category','Net','VAT','Gross'].map(h=><th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{h}</th>)}</tr></thead>
+              <thead className="border-b border-[var(--border)]">
+                <tr>
+                  {groupBy === 'none' && ['File', 'Date', 'Entity', 'Category', 'Net', 'VAT', 'Gross'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{h}</th>
+                  ))}
+                  {groupBy === 'entity' && ['File', 'Date', 'Category', 'Net', 'VAT', 'Gross'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{h}</th>
+                  ))}
+                  {groupBy === 'category' && ['File', 'Date', 'Entity', 'Net', 'VAT', 'Gross'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{h}</th>
+                  ))}
+                </tr>
+              </thead>
               <tbody className="divide-y divide-[var(--border)]">
-                {results.map((r, i) => <tr key={i} className="hover:bg-[var(--bg-nav-hover)] transition-colors"><td className="px-4 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{r.fileName}</td><td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.detectedDate}</td><td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.entityName}</td><td className="px-4 py-2.5 text-[var(--text-muted)]">{r.detailedCategory}</td><td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">£{(r.totalNetAmount||0).toFixed(2)}</td><td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">£{(r.totalVatAmount||0).toFixed(2)}</td><td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)]">£{r.totalGrossAmount?.toFixed(2)}</td></tr>)}
+                {groupBy === 'none' ? (
+                  results.map((r, i) => (
+                    <tr key={i} className="hover:bg-[var(--bg-nav-hover)] transition-colors">
+                      <td className="px-4 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{r.fileName}</td>
+                      <td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.detectedDate}</td>
+                      <td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.entityName}</td>
+                      <td className="px-4 py-2.5 text-[var(--text-muted)]">{r.detailedCategory}</td>
+                      <td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">{fmt(r.totalNetAmount ?? 0)}</td>
+                      <td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">{fmt(r.totalVatAmount ?? 0)}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)]">{fmt(r.totalGrossAmount ?? 0)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  groups.map(([groupKey, rows]) => {
+                    const sub = sumGroup(rows);
+                    const isExpanded = expandedGroups.has(groupKey);
+                    const toggle = () => setExpandedGroups(prev => {
+                      const next = new Set(prev);
+                      isExpanded ? next.delete(groupKey) : next.add(groupKey);
+                      return next;
+                    });
+                    return (
+                      <>
+                        {/* Collapsible group header — shows totals, click to expand/collapse */}
+                        <tr
+                          key={`hdr-${groupKey}`}
+                          onClick={toggle}
+                          className="bg-[var(--bg-nav-hover)] cursor-pointer hover:brightness-95 select-none transition-all"
+                        >
+                          <td className="px-4 py-2.5" colSpan={3}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[var(--text-muted)] shrink-0 transition-transform duration-150" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                                <ChevronRight size={14} />
+                              </span>
+                              <span className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wide">{groupKey}</span>
+                              <span className="text-[10px] font-medium text-[var(--text-muted)] bg-[var(--border)] px-1.5 py-0.5 rounded-full">
+                                {rows.length} doc{rows.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right text-sm font-semibold text-[var(--text-primary)]">{fmt(sub.net)}</td>
+                          <td className="px-4 py-2.5 text-right text-sm font-semibold text-[var(--text-primary)]">{fmt(sub.vat)}</td>
+                          <td className="px-4 py-2.5 text-right text-sm font-bold text-[var(--text-primary)]">{fmt(sub.gross)}</td>
+                        </tr>
+                        {/* Detail rows — only shown when expanded */}
+                        {isExpanded && rows.map((r, i) => (
+                          <tr key={`${groupKey}-${i}`} className="hover:bg-[var(--bg-nav-hover)] transition-colors border-t border-[var(--border)] border-opacity-50">
+                            <td className="px-4 py-2.5 pl-9 text-[var(--text-muted)] truncate max-w-[120px]">{r.fileName}</td>
+                            <td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.detectedDate}</td>
+                            {groupBy === 'entity'
+                              ? <td className="px-4 py-2.5 text-[var(--text-muted)]">{r.detailedCategory}</td>
+                              : <td className="px-4 py-2.5 text-[var(--text-secondary)]">{r.entityName}</td>
+                            }
+                            <td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">{fmt(r.totalNetAmount ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right text-[var(--text-secondary)]">{fmt(r.totalVatAmount ?? 0)}</td>
+                            <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)]">{fmt(r.totalGrossAmount ?? 0)}</td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  })
+                )}
+
+                {/* Grand total row — only when grouped */}
+                {groupBy !== 'none' && (
+                  <tr className="border-t-2 border-[var(--border)] bg-[var(--accent-light)]">
+                    <td className="px-4 py-2.5 text-xs font-bold text-[var(--accent)] uppercase tracking-wide" colSpan={3}>
+                      Grand Total ({results.length} documents)
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-bold text-[var(--accent)]">{fmt(grandTotals.net)}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-[var(--accent)]">{fmt(grandTotals.vat)}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-[var(--accent)]">{fmt(grandTotals.gross)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

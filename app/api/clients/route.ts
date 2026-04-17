@@ -8,12 +8,14 @@ const CLIENT_TYPES = [
   'individual', 'trust', 'charity', 'rental_landlord',
 ] as const;
 
+const CLIENT_STATUS = ['active', 'hold', 'inactive'] as const;
+
 const CreateClientSchema = z.object({
   name: z.string().min(1, 'Client name is required'),
   client_ref: z.string().min(1, 'Client reference is required'),
   business_type: z.enum(CLIENT_TYPES).optional(),
   contact_email: z.string().email().optional().or(z.literal('')),
-  is_active: z.boolean().optional(),
+  status: z.enum(CLIENT_STATUS).optional(),
   // extended fields
   address: z.string().optional(),
   utr_number: z.string().optional(),
@@ -39,13 +41,12 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('clients')
-    .select('id, name, client_ref, business_type, contact_email, risk_rating, is_active, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth')
+    .select('id, name, client_ref, business_type, contact_email, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth')
     .eq('firm_id', ctx.firmId)
     .order('name', { ascending: true });
 
   if (search) query = query.or(`name.ilike.%${search}%,client_ref.ilike.%${search}%`);
-  if (statusFilter === 'active') query = query.eq('is_active', true);
-  if (statusFilter === 'inactive') query = query.eq('is_active', false);
+  if (statusFilter === 'active' || statusFilter === 'hold' || statusFilter === 'inactive') query = query.eq('status', statusFilter);
   if (typeFilter) query = query.eq('business_type', typeFilter);
   if (riskFilter) query = query.eq('risk_rating', riskFilter);
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   const parsed = CreateClientSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 });
 
-  const { name, client_ref, business_type, contact_email, is_active,
+  const { name, client_ref, business_type, contact_email, status,
     address, utr_number, registration_number, national_insurance_number,
     companies_house_id, vat_number, companies_house_auth_code, date_of_birth } = parsed.data;
 
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
       firm_id: ctx.firmId, name, client_ref,
       business_type: business_type ?? null,
       contact_email: contact_email || null,
-      is_active: is_active ?? true,
+      status: status ?? 'active',
       address: address || null,
       utr_number: utr_number || null,
       registration_number: registration_number || null,

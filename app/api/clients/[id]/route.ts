@@ -14,7 +14,7 @@ const UpdateClientSchema = z.object({
   business_type: z.enum(CLIENT_TYPES).optional(),
   contact_email: z.string().email().optional().or(z.literal('')),
   risk_rating: z.enum(['Low', 'Medium', 'High']).optional().or(z.literal('')),
-  is_active: z.boolean().optional(),
+  status: z.enum(['active', 'hold', 'inactive']).optional(),
   // extended fields
   address: z.string().optional(),
   utr_number: z.string().optional(),
@@ -89,7 +89,7 @@ export async function PATCH(
   if (d.business_type !== undefined) updates.business_type = d.business_type;
   if (d.contact_email !== undefined) updates.contact_email = d.contact_email || null;
   if (d.risk_rating !== undefined) updates.risk_rating = d.risk_rating || null;
-  if (d.is_active !== undefined) updates.is_active = d.is_active;
+  if (d.status !== undefined) updates.status = d.status;
   if (d.address !== undefined) updates.address = d.address || null;
   if (d.utr_number !== undefined) updates.utr_number = d.utr_number || null;
   if (d.registration_number !== undefined) updates.registration_number = d.registration_number || null;

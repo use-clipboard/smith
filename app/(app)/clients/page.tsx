@@ -6,6 +6,8 @@ import ClientImportModal from '@/components/ui/ClientImportModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
 
+type ClientStatus = 'active' | 'hold' | 'inactive';
+
 interface Client {
   id: string;
   name: string;
@@ -13,7 +15,7 @@ interface Client {
   business_type: string | null;
   contact_email: string | null;
   risk_rating: string | null;
-  is_active: boolean;
+  status: ClientStatus;
   created_at: string;
   address: string | null;
   utr_number: string | null;
@@ -24,6 +26,12 @@ interface Client {
   companies_house_auth_code: string | null;
   date_of_birth: string | null;
 }
+
+const STATUS_CONFIG: Record<ClientStatus, { dot: string; label: string }> = {
+  active:   { dot: 'text-green-500 fill-green-500', label: 'Active' },
+  hold:     { dot: 'text-amber-500 fill-amber-500', label: 'On Hold' },
+  inactive: { dot: 'text-[var(--text-muted)] fill-[var(--text-muted)]', label: 'Inactive' },
+};
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
@@ -36,7 +44,7 @@ const RISK_STYLES: Record<string, string> = {
   High: 'bg-red-100 text-red-700',
 };
 
-type StatusFilter = 'all' | 'active' | 'inactive';
+type StatusFilter = 'all' | 'active' | 'hold' | 'inactive';
 type SortDir = 'asc' | 'desc';
 
 interface SortConfig { key: keyof Client; dir: SortDir; }
@@ -53,7 +61,7 @@ interface ColDef {
 const COLUMNS: ColDef[] = [
   {
     key: 'status', label: 'Status', always: true,
-    render: c => <Circle size={9} className={c.is_active ? 'text-green-500 fill-green-500' : 'text-[var(--text-muted)] fill-[var(--text-muted)]'} />,
+    render: c => <Circle size={9} className={(STATUS_CONFIG[c.status] ?? STATUS_CONFIG.inactive).dot} />,
   },
   {
     key: 'name', label: 'Client', sortKey: 'name', always: true,
@@ -110,7 +118,7 @@ function exportToCsv(clients: Client[]) {
   ];
   const rows = clients.map(c => [
     c.name, c.client_ref ?? '', c.business_type ? (CLIENT_TYPE_LABELS[c.business_type] ?? c.business_type) : '',
-    c.contact_email ?? '', c.is_active ? 'Active' : 'Inactive', c.risk_rating ?? '',
+    c.contact_email ?? '', (STATUS_CONFIG[c.status] ?? STATUS_CONFIG.inactive).label, c.risk_rating ?? '',
     c.address ?? '', c.utr_number ?? '', c.registration_number ?? '',
     c.national_insurance_number ?? '', c.companies_house_id ?? '',
     c.vat_number ?? '', c.companies_house_auth_code ?? '', c.date_of_birth ?? '',
@@ -149,7 +157,7 @@ export default function ClientsPage() {
   const [clientRef, setClientRef] = useState('');
   const [clientType, setClientType] = useState('');
   const [contactEmail, setContactEmail] = useState('');
-  const [isActive, setIsActive] = useState(true);
+  const [newClientStatus, setNewClientStatus] = useState<ClientStatus>('active');
 
   const fetchClients = useCallback(async (q: string, status: StatusFilter, type: string) => {
     setLoading(true);
@@ -200,16 +208,19 @@ export default function ClientsPage() {
   const sortedClients = sortClients(clients, sort);
   const hasActiveFilters = !!(search || statusFilter !== 'all' || typeFilter);
 
+  // Tooltip-style label for the status filter summary
+  const statusLabel = statusFilter === 'hold' ? 'on hold' : statusFilter;
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setFormError(null); setSaving(true);
     try {
       const res = await fetch('/api/clients', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, client_ref: clientRef, business_type: clientType || undefined, contact_email: contactEmail || undefined, is_active: isActive }),
+        body: JSON.stringify({ name, client_ref: clientRef, business_type: clientType || undefined, contact_email: contactEmail || undefined, status: newClientStatus }),
       });
       const data = await res.json();
       if (!res.ok) { setFormError(data.error || 'Failed to create client'); return; }
-      setShowModal(false); setName(''); setClientRef(''); setClientType(''); setContactEmail(''); setIsActive(true);
+      setShowModal(false); setName(''); setClientRef(''); setClientType(''); setContactEmail(''); setNewClientStatus('active');
       await fetchClients(search, statusFilter, typeFilter);
     } catch { setFormError('An unexpected error occurred'); } finally { setSaving(false); }
   }
@@ -268,10 +279,10 @@ export default function ClientsPage() {
         {/* Row 2: Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 glass-solid rounded-lg border border-[var(--border)] p-1">
-            {(['all', 'active', 'inactive'] as StatusFilter[]).map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors ${statusFilter === s ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
-                {s}
+            {([['all', 'All'], ['active', 'Active'], ['hold', 'On Hold'], ['inactive', 'Inactive']] as [StatusFilter, string][]).map(([val, label]) => (
+              <button key={val} onClick={() => setStatusFilter(val)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${statusFilter === val ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                {label}
               </button>
             ))}
           </div>
@@ -329,7 +340,7 @@ export default function ClientsPage() {
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
                   {sortedClients.map(c => (
-                    <tr key={c.id} className={`hover:bg-[var(--bg-nav-hover)] transition-colors group ${!c.is_active ? 'opacity-60' : ''}`}>
+                    <tr key={c.id} className={`hover:bg-[var(--bg-nav-hover)] transition-colors group ${c.status === 'inactive' ? 'opacity-60' : ''}`}>
                       {visibleColumns.map(col => (
                         <td key={col.key} className="px-4 py-3">{col.render(c)}</td>
                       ))}
@@ -389,15 +400,16 @@ export default function ClientsPage() {
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Contact Email</label>
                 <input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="client@example.com" className="input-base" />
               </div>
-              <div className="flex items-center justify-between py-2 px-3 glass-solid rounded-lg border border-[var(--border)]">
-                <div>
-                  <p className="text-sm font-medium text-[var(--text-primary)]">Active</p>
-                  <p className="text-xs text-[var(--text-muted)]">Inactive clients are dimmed in the list</p>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Status</label>
+                <div className="flex items-center gap-1 glass-solid rounded-lg border border-[var(--border)] p-1">
+                  {([['active', 'Active'], ['hold', 'On Hold'], ['inactive', 'Inactive']] as [ClientStatus, string][]).map(([val, label]) => (
+                    <button key={val} type="button" onClick={() => setNewClientStatus(val)}
+                      className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${newClientStatus === val ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <button type="button" onClick={() => setIsActive(v => !v)}
-                  className={`relative w-10 h-6 rounded-full transition-colors ${isActive ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'}`}>
-                  <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${isActive ? 'translate-x-4' : ''}`} />
-                </button>
               </div>
               {formError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{formError}</p>}
               <div className="flex justify-end gap-3 pt-2">

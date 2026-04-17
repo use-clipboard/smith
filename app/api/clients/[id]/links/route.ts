@@ -57,11 +57,11 @@ export async function GET(
   ];
 
   // Fetch those clients in one query
-  const clientMap: Record<string, { id: string; name: string; client_ref: string | null; business_type: string | null; is_active: boolean }> = {};
+  const clientMap: Record<string, { id: string; name: string; client_ref: string | null; business_type: string | null; status: string }> = {};
   if (referencedIds.length > 0) {
     const { data: linkedClients } = await supabase
       .from('clients')
-      .select('id, name, client_ref, business_type, is_active')
+      .select('id, name, client_ref, business_type, status')
       .in('id', referencedIds)
       .eq('firm_id', ctx.firmId);
     for (const c of linkedClients ?? []) {

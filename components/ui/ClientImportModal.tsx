@@ -2,12 +2,14 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, Download, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
+type ClientStatus = 'active' | 'hold' | 'inactive';
+
 interface ParsedRow {
   name: string;
   client_ref: string;
   business_type: string;
   contact_email: string;
-  is_active: boolean;
+  status: ClientStatus;
   linked_to_ref: string;
   link_type: string;
   address: string;
@@ -32,7 +34,7 @@ interface SkippedRow { name: string; reason: string; }
 interface ClientImportModalProps { onClose: () => void; onImported: () => void; }
 
 const TEMPLATE_HEADERS = [
-  'name', 'client_ref', 'business_type', 'contact_email', 'is_active',
+  'name', 'client_ref', 'business_type', 'contact_email', 'status',
   'linked_to_ref', 'link_type', 'address', 'utr_number', 'registration_number',
   'national_insurance_number', 'companies_house_id', 'vat_number',
   'companies_house_auth_code', 'date_of_birth',
@@ -41,11 +43,11 @@ const TEMPLATE_HEADERS = [
 ];
 
 const TEMPLATE_EXAMPLE_ROWS = [
-  ['Acme Plumbing Ltd', 'AC001', 'limited_company', 'accounts@acmeplumbing.co.uk', 'yes', '', '', '10 High St, London, EC1A 1BB', '12345678901', '12345678', '', '', 'GB123456789', 'ABCDE1', '', '01234 567890', '123/AB45678', '123PA00012345', 'Accrual', 'Quarterly', '31 MAR', ''],
-  ['John Smith', 'JS002', 'individual', 'john@johnsmith.co.uk', 'yes', 'AC001', 'director', '22 Oak Road, Manchester, M1 1AA', '98765432101', '', 'AB123456C', '', '', '', '01/01/1980', '07700 900123', '', '', '', '', '', 'yes'],
-  ['The Smith Partnership', 'SP003', 'partnership', '', 'yes', '', '', '', '56789012301', '', '', '', 'GB987654321', '', '', '01234 111222', '456/CD78901', '456PA00056789', 'Cash', 'Monthly', '05 APR', ''],
-  ['Jane Doe Consulting', 'JD004', 'sole_trader', 'jane@janedoe.com', 'yes', '', '', '', '11111111101', '', 'CD234567D', 'OC123456', 'GB111222333', '', '15/06/1975', '', '789/EF23456', '789PA00078901', 'Accrual', 'Yearly', '31 JAN', ''],
-  ['City Food Bank', 'CF006', 'charity', 'finance@cityfoodbank.org', 'no', '', '', '', '', '', '', '', '', '', '', '01234 999888', '', '', '', '', '31 DEC', ''],
+  ['Acme Plumbing Ltd', 'AC001', 'limited_company', 'accounts@acmeplumbing.co.uk', 'active', '', '', '10 High St, London, EC1A 1BB', '12345678901', '12345678', '', '', 'GB123456789', 'ABCDE1', '', '01234 567890', '123/AB45678', '123PA00012345', 'Accrual', 'Quarterly', '31 MAR', ''],
+  ['John Smith', 'JS002', 'individual', 'john@johnsmith.co.uk', 'active', 'AC001', 'director', '22 Oak Road, Manchester, M1 1AA', '98765432101', '', 'AB123456C', '', '', '', '01/01/1980', '07700 900123', '', '', '', '', '', 'yes'],
+  ['The Smith Partnership', 'SP003', 'partnership', '', 'active', '', '', '', '56789012301', '', '', '', 'GB987654321', '', '', '01234 111222', '456/CD78901', '456PA00056789', 'Cash', 'Monthly', '05 APR', ''],
+  ['Jane Doe Consulting', 'JD004', 'sole_trader', 'jane@janedoe.com', 'hold', '', '', '', '11111111101', '', 'CD234567D', 'OC123456', 'GB111222333', '', '15/06/1975', '', '789/EF23456', '789PA00078901', 'Accrual', 'Yearly', '31 JAN', ''],
+  ['City Food Bank', 'CF006', 'charity', 'finance@cityfoodbank.org', 'inactive', '', '', '', '', '', '', '', '', '', '', '01234 999888', '', '', '', '', '31 DEC', ''],
 ];
 
 const VALID_TYPES = new Set(['sole_trader','partnership','limited_company','individual','trust','charity','rental_landlord','']);
@@ -60,9 +62,20 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-function parseActiveValue(val: string): boolean {
-  return !['no', 'false', '0', 'inactive'].includes(val.trim().toLowerCase());
+// Accepts 'active'|'hold'|'inactive', and legacy yes/no
+function parseStatusValue(val: string): ClientStatus {
+  const v = val.trim().toLowerCase();
+  if (v === 'hold') return 'hold';
+  if (v === 'inactive' || v === 'no' || v === 'false' || v === '0') return 'inactive';
+  return 'active';
 }
+
+const STATUS_LABELS: Record<ClientStatus, string> = { active: 'Active', hold: 'On Hold', inactive: 'Inactive' };
+const STATUS_STYLES: Record<ClientStatus, string> = {
+  active:   'bg-green-100 text-green-700',
+  hold:     'bg-amber-100 text-amber-700',
+  inactive: 'bg-gray-100 text-gray-500',
+};
 
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
@@ -75,7 +88,8 @@ function parseCsv(text: string): ParsedRow[] {
   const refIdx = idx('client_ref');
   const typeIdx = idx('business_type');
   const emailIdx = idx('contact_email');
-  const activeIdx = idx('is_active');
+  // Accept 'status' column (new) or legacy 'is_active' column
+  const activeIdx = idx('status') >= 0 ? idx('status') : idx('is_active');
   const linkedRefIdx = idx('linked_to_ref');
   const linkTypeIdx = idx('link_type');
   const addressIdx = idx('address');
@@ -117,7 +131,7 @@ function parseCsv(text: string): ParsedRow[] {
     const client_ref = get(refIdx);
     const business_type = get(typeIdx).toLowerCase();
     const contact_email = get(emailIdx);
-    const is_active_raw = activeIdx >= 0 ? get(activeIdx) : 'yes';
+    const status_raw = activeIdx >= 0 ? get(activeIdx) : 'active';
     const linked_to_ref = get(linkedRefIdx);
     const link_type = get(linkTypeIdx).toLowerCase();
     const address = get(addressIdx);
@@ -138,7 +152,7 @@ function parseCsv(text: string): ParsedRow[] {
 
     const row: ParsedRow = {
       name, client_ref, business_type, contact_email,
-      is_active: parseActiveValue(is_active_raw),
+      status: parseStatusValue(status_raw),
       linked_to_ref, link_type, address, utr_number, registration_number,
       national_insurance_number, companies_house_id, vat_number,
       companies_house_auth_code, date_of_birth,
@@ -199,7 +213,7 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
       const payload = validRows.map(r => ({
         name: r.name, client_ref: r.client_ref || undefined,
         business_type: r.business_type || undefined, contact_email: r.contact_email || undefined,
-        is_active: r.is_active, linked_to_ref: r.linked_to_ref || undefined, link_type: r.link_type || undefined,
+        status: r.status, linked_to_ref: r.linked_to_ref || undefined, link_type: r.link_type || undefined,
         address: r.address || undefined, utr_number: r.utr_number || undefined,
         registration_number: r.registration_number || undefined,
         national_insurance_number: r.national_insurance_number || undefined,
@@ -257,7 +271,7 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                 </div>
                 <p className="text-xs text-[var(--accent)]/70 mt-2 leading-relaxed">
                   Required: <strong>name</strong>, <strong>client_ref</strong>. Optional: <strong>business_type</strong>, <strong>contact_email</strong>,{' '}
-                  <strong>contact_number</strong>, <strong>is_active</strong> (yes/no), <strong>linked_to_ref</strong>, <strong>link_type</strong>,{' '}
+                  <strong>contact_number</strong>, <strong>status</strong> (active/hold/inactive), <strong>linked_to_ref</strong>, <strong>link_type</strong>,{' '}
                   <strong>address</strong>, <strong>utr_number</strong>, <strong>registration_number</strong>,{' '}
                   <strong>national_insurance_number</strong>, <strong>companies_house_id</strong>, <strong>vat_number</strong>,{' '}
                   <strong>companies_house_auth_code</strong>, <strong>date_of_birth</strong>,{' '}
@@ -327,8 +341,8 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
                             <td className="px-3 py-2 text-[var(--text-muted)]">{r.contact_email || '—'}</td>
                             <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.contact_number || '—'}</td>
                             <td className="px-3 py-2">
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${r.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                {r.is_active ? 'Active' : 'Inactive'}
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[r.status]}`}>
+                                {STATUS_LABELS[r.status]}
                               </span>
                             </td>
                             <td className="px-3 py-2 text-[var(--text-muted)] text-xs">{r.linked_to_ref ? <span className="font-mono">{r.linked_to_ref}{r.link_type ? ` (${r.link_type})` : ''}</span> : '—'}</td>

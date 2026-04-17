@@ -1,10 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings, Table2 } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
-import { fileToBase64, exportToCsv } from '@/utils/fileUtils';
+import { fileToBase64 } from '@/utils/fileUtils';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { OutOfRangeDocument } from '@/types';
+import type { GroupBy } from '@/app/(app)/summarise/page';
 
 type Status = 'idle' | 'uploading' | 'exporting' | 'done' | 'error';
 
@@ -13,14 +15,85 @@ interface SaveSummariseModalProps {
   results: OutOfRangeDocument[];
   documentFiles: File[];
   initialClient?: SelectedClient | null;
+  groupBy: GroupBy;
   onClose: () => void;
 }
+
+// ── XLSX export ───────────────────────────────────────────────────────────────
+
+function buildSummarySheet(
+  results: OutOfRangeDocument[],
+  groupKey: 'entityName' | 'detailedCategory',
+  labelCol: string,
+) {
+  const map = new Map<string, { net: number; vat: number; gross: number; count: number }>();
+  for (const r of results) {
+    const key = (r[groupKey] as string) || 'Unknown';
+    const cur = map.get(key) ?? { net: 0, vat: 0, gross: 0, count: 0 };
+    map.set(key, {
+      net: cur.net + (r.totalNetAmount ?? 0),
+      vat: cur.vat + (r.totalVatAmount ?? 0),
+      gross: cur.gross + (r.totalGrossAmount ?? 0),
+      count: cur.count + 1,
+    });
+  }
+  const rows = Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, t]) => ({
+      [labelCol]: label,
+      'Documents': t.count,
+      'Net (£)': +t.net.toFixed(2),
+      'VAT (£)': +t.vat.toFixed(2),
+      'Gross (£)': +t.gross.toFixed(2),
+    }));
+
+  // Grand total row
+  const grandNet = results.reduce((s, r) => s + (r.totalNetAmount ?? 0), 0);
+  const grandVat = results.reduce((s, r) => s + (r.totalVatAmount ?? 0), 0);
+  const grandGross = results.reduce((s, r) => s + (r.totalGrossAmount ?? 0), 0);
+  rows.push({
+    [labelCol]: 'TOTAL',
+    'Documents': results.length,
+    'Net (£)': +grandNet.toFixed(2),
+    'VAT (£)': +grandVat.toFixed(2),
+    'Gross (£)': +grandGross.toFixed(2),
+  });
+
+  return XLSX.utils.json_to_sheet(rows);
+}
+
+function exportToXlsx(results: OutOfRangeDocument[], filename: string) {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1 — Detail (flat data, ideal for building your own pivot)
+  const detailRows = results.map(r => ({
+    'File': r.fileName,
+    'Date': r.detectedDate,
+    'Entity': r.entityName,
+    'Category': r.detailedCategory,
+    'Net (£)': +(r.totalNetAmount ?? 0).toFixed(2),
+    'VAT (£)': +(r.totalVatAmount ?? 0).toFixed(2),
+    'Gross (£)': +(r.totalGrossAmount ?? 0).toFixed(2),
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), 'Detail');
+
+  // Sheet 2 — By Entity
+  XLSX.utils.book_append_sheet(wb, buildSummarySheet(results, 'entityName', 'Entity'), 'By Entity');
+
+  // Sheet 3 — By Category
+  XLSX.utils.book_append_sheet(wb, buildSummarySheet(results, 'detailedCategory', 'Category'), 'By Category');
+
+  XLSX.writeFile(wb, filename);
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SaveSummariseModal({
   isOpen,
   results,
   documentFiles,
   initialClient,
+  groupBy,
   onClose,
 }: SaveSummariseModalProps) {
   const { isModuleActive } = useModules();
@@ -54,6 +127,14 @@ export default function SaveSummariseModal({
   const needsCode = useDrive && !clientCode.trim();
   const canSave = !useDrive || clientCode.trim().length > 0;
   const busy = status === 'uploading' || status === 'exporting';
+
+  const filename = `summarised_docs_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  const GROUP_BY_LABELS: Record<GroupBy, string> = {
+    none: 'None (flat list)',
+    entity: 'Entity',
+    category: 'Category',
+  };
 
   const handleSave = async () => {
     setStatus(useDrive ? 'uploading' : 'exporting');
@@ -114,7 +195,7 @@ export default function SaveSummariseModal({
     }
 
     setStatus('exporting');
-    exportToCsv(results as unknown as Record<string, unknown>[], `summarised_docs_${new Date().toISOString().slice(0, 10)}.csv`);
+    exportToXlsx(results, filename);
     setStatus('done');
   };
 
@@ -133,7 +214,7 @@ export default function SaveSummariseModal({
             <div>
               <h2 className="text-base font-semibold text-[var(--text-primary)]">Save Results</h2>
               <p className="text-sm text-[var(--text-muted)]">
-                {results.length} document{results.length !== 1 ? 's' : ''} summarised · {documentFiles.length} source file{documentFiles.length !== 1 ? 's' : ''}
+                {results.length} document{results.length !== 1 ? 's' : ''} · {documentFiles.length} source file{documentFiles.length !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
@@ -152,7 +233,7 @@ export default function SaveSummariseModal({
             </div>
             <p className="font-semibold text-[var(--text-primary)] mb-1">Saved successfully</p>
             <p className="text-sm text-[var(--text-muted)]">
-              CSV downloaded
+              Excel file downloaded
               {driveCount > 0 && <> · {driveCount} file{driveCount !== 1 ? 's' : ''} saved to Google Drive</>}
             </p>
             <button onClick={onClose} className="btn-primary mt-4 w-full">Done</button>
@@ -178,7 +259,7 @@ export default function SaveSummariseModal({
           <div className="text-center py-6">
             <Loader2 size={28} className="animate-spin text-[var(--accent)] mx-auto mb-3" />
             <p className="font-medium text-[var(--text-primary)]">
-              {status === 'uploading' ? 'Uploading files to Google Drive…' : 'Generating CSV…'}
+              {status === 'uploading' ? 'Uploading files to Google Drive…' : 'Generating Excel file…'}
             </p>
             <p className="text-sm text-[var(--text-muted)] mt-1">
               {status === 'uploading' ? 'This may take a moment' : 'Almost done'}
@@ -278,14 +359,23 @@ export default function SaveSummariseModal({
               </div>
             )}
 
-            <div className="p-3 bg-[var(--bg-nav-hover)] rounded-xl border border-[var(--border)]">
-              <div className="flex items-center gap-2 mb-1">
-                <Download size={13} className="text-[var(--text-secondary)]" />
-                <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">CSV Export</span>
+            {/* Excel export info */}
+            <div className="p-3 bg-[var(--bg-nav-hover)] rounded-xl border border-[var(--border)] space-y-2">
+              <div className="flex items-center gap-2">
+                <Table2 size={13} className="text-[var(--text-secondary)]" />
+                <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Excel Export (.xlsx)</span>
               </div>
-              <p className="text-sm text-[var(--text-primary)]">
-                {results.length} row{results.length !== 1 ? 's' : ''} · summarised_docs_{new Date().toISOString().slice(0, 10)}.csv
-              </p>
+              <p className="text-sm text-[var(--text-primary)]">{filename}</p>
+              <div className="text-xs text-[var(--text-muted)] space-y-0.5">
+                <p>· <span className="font-medium text-[var(--text-secondary)]">Detail</span> — {results.length} row{results.length !== 1 ? 's' : ''}, all documents (use for custom pivot tables)</p>
+                <p>· <span className="font-medium text-[var(--text-secondary)]">By Entity</span> — totals grouped by supplier/entity</p>
+                <p>· <span className="font-medium text-[var(--text-secondary)]">By Category</span> — totals grouped by category</p>
+              </div>
+              {groupBy !== 'none' && (
+                <p className="text-xs text-[var(--accent)]">
+                  Current view grouped by: <span className="font-semibold">{groupBy === 'entity' ? 'Entity' : 'Category'}</span>
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end pt-1">
@@ -298,7 +388,7 @@ export default function SaveSummariseModal({
                 {useDrive && driveModuleActive ? (
                   <><FolderOpen size={14} /> Save & Download</>
                 ) : (
-                  <><Download size={14} /> Download CSV</>
+                  <><Download size={14} /> Download Excel</>
                 )}
               </button>
             </div>
