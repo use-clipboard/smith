@@ -185,13 +185,15 @@ export default function ClientsPage() {
   // Clear selection whenever the displayed client list changes
   useEffect(() => { setSelectedIds(new Set()); }, [clients]);
 
-  // Fetch total active count once on mount
-  useEffect(() => {
-    fetch('/api/clients?status=active')
-      .then(r => r.json())
-      .then(d => setTotalActiveCount((d.clients ?? []).length))
-      .catch(() => {});
+  // Fetch total active count — re-runs after any import or create
+  const fetchActiveCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/clients/count?status=active');
+      if (res.ok) { const d = await res.json(); setTotalActiveCount(d.count ?? 0); }
+    } catch { /* non-critical */ }
   }, []);
+
+  useEffect(() => { void fetchActiveCount(); }, [fetchActiveCount]);
 
   useEffect(() => {
     const timer = setTimeout(() => void fetchClients(search, statusFilter, typeFilter), 300);
@@ -292,7 +294,7 @@ export default function ClientsPage() {
       const data = await res.json();
       if (!res.ok) { setFormError(data.error || 'Failed to create client'); return; }
       setShowModal(false); setName(''); setClientRef(''); setClientType(''); setContactEmail(''); setNewClientStatus('active');
-      await fetchClients(search, statusFilter, typeFilter);
+      await Promise.all([fetchClients(search, statusFilter, typeFilter), fetchActiveCount()]);
     } catch { setFormError('An unexpected error occurred'); } finally { setSaving(false); }
   }
 
@@ -522,7 +524,7 @@ export default function ClientsPage() {
       )}
 
       {showImport && (
-        <ClientImportModal onClose={() => setShowImport(false)} onImported={() => void fetchClients(search, statusFilter, typeFilter)} />
+        <ClientImportModal onClose={() => setShowImport(false)} onImported={() => { void fetchClients(search, statusFilter, typeFilter); void fetchActiveCount(); }} />
       )}
 
       {showModal && (
