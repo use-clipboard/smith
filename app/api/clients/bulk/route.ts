@@ -25,15 +25,18 @@ export async function PATCH(req: NextRequest) {
   const { ids, status } = parsed.data;
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from('clients')
-    .update({ status })
-    .in('id', ids)
-    .eq('firm_id', ctx.firmId);
-
-  if (error) {
-    console.error('[clients/bulk] Update error:', error);
-    return NextResponse.json({ error: 'Failed to update clients' }, { status: 500 });
+  // Chunk to avoid PostgREST URL length limits (~8KB cap hits around 200 UUIDs)
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabase
+      .from('clients')
+      .update({ status })
+      .in('id', ids.slice(i, i + CHUNK))
+      .eq('firm_id', ctx.firmId);
+    if (error) {
+      console.error('[clients/bulk] Update error:', error);
+      return NextResponse.json({ error: 'Failed to update clients' }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ updated: ids.length });
@@ -53,15 +56,18 @@ export async function DELETE(req: NextRequest) {
   const { ids } = parsed.data;
   const supabase = createClient();
 
-  const { error } = await supabase
-    .from('clients')
-    .delete()
-    .in('id', ids)
-    .eq('firm_id', ctx.firmId);
-
-  if (error) {
-    console.error('[clients/bulk] Delete error:', error);
-    return NextResponse.json({ error: 'Failed to delete clients' }, { status: 500 });
+  // Chunk to avoid PostgREST URL length limits
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabase
+      .from('clients')
+      .delete()
+      .in('id', ids.slice(i, i + CHUNK))
+      .eq('firm_id', ctx.firmId);
+    if (error) {
+      console.error('[clients/bulk] Delete error:', error);
+      return NextResponse.json({ error: 'Failed to delete clients' }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ deleted: ids.length });
