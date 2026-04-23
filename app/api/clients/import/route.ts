@@ -67,51 +67,87 @@ export async function POST(req: NextRequest) {
   const imported: string[] = [];
   const skipped: { name: string; reason: string }[] = [];
 
-  for (const row of rows) {
+  // Separate duplicates from rows to insert
+  const toInsert = rows.filter(row => {
     const refKey = row.client_ref?.toUpperCase();
     if (refKey && existingRefToId.has(refKey)) {
       skipped.push({ name: row.name, reason: `Client ref "${row.client_ref}" already exists` });
-      continue;
+      return false;
     }
+    return true;
+  });
 
+  function buildInsertRow(row: typeof rows[number]) {
+    return {
+      firm_id: ctx!.firmId,
+      name: row.name,
+      client_ref: row.client_ref || null,
+      business_type: row.business_type ?? null,
+      contact_email: row.contact_email ?? null,
+      status: row.status ?? 'active',
+      address: row.address || null,
+      utr_number: row.utr_number || null,
+      registration_number: row.registration_number || null,
+      national_insurance_number: row.national_insurance_number || null,
+      companies_house_id: row.companies_house_id || null,
+      vat_number: row.vat_number || null,
+      companies_house_auth_code: row.companies_house_auth_code || null,
+      date_of_birth: row.date_of_birth || null,
+      contact_number: row.contact_number || null,
+      paye_reference: row.paye_reference || null,
+      paye_accounts_office_reference: row.paye_accounts_office_reference || null,
+      vat_submit_type: row.vat_submit_type ?? null,
+      vat_scheme: row.vat_scheme ?? null,
+      year_end: row.year_end || null,
+      mtd_it: row.mtd_it ?? false,
+    };
+  }
+
+  // Batch insert in chunks to avoid request timeouts on large imports
+  const CHUNK_SIZE = 200;
+  for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+    const chunk = toInsert.slice(i, i + CHUNK_SIZE);
     const { data: created, error } = await supabase
       .from('clients')
-      .insert({
-        firm_id: ctx.firmId,
-        name: row.name,
-        client_ref: row.client_ref || null,
-        business_type: row.business_type ?? null,
-        contact_email: row.contact_email ?? null,
-        status: row.status ?? 'active',
-        address: row.address || null,
-        utr_number: row.utr_number || null,
-        registration_number: row.registration_number || null,
-        national_insurance_number: row.national_insurance_number || null,
-        companies_house_id: row.companies_house_id || null,
-        vat_number: row.vat_number || null,
-        companies_house_auth_code: row.companies_house_auth_code || null,
-        date_of_birth: row.date_of_birth || null,
-        contact_number: row.contact_number || null,
-        paye_reference: row.paye_reference || null,
-        paye_accounts_office_reference: row.paye_accounts_office_reference || null,
-        vat_submit_type: row.vat_submit_type ?? null,
-        vat_scheme: row.vat_scheme ?? null,
-        year_end: row.year_end || null,
-        mtd_it: row.mtd_it ?? false,
-      })
-      .select('id').single();
+      .insert(chunk.map(buildInsertRow))
+      .select('id, client_ref');
 
     if (error || !created) {
-      skipped.push({ name: row.name, reason: 'Database error — please try again' });
-      console.error('[clients/import] Insert error:', error);
+      // Chunk failed — fall back to per-row so we can report individual errors
+      for (const row of chunk) {
+        const { data: single, error: rowError } = await supabase
+          .from('clients')
+          .insert(buildInsertRow(row))
+          .select('id')
+          .single();
+        if (rowError || !single) {
+          skipped.push({ name: row.name, reason: 'Database error — please try again' });
+          console.error('[clients/import] Insert error:', rowError);
+        } else {
+          imported.push(row.name);
+          const refKey = row.client_ref?.toUpperCase();
+          if (refKey) existingRefToId.set(refKey, single.id);
+        }
+      }
     } else {
-      imported.push(row.name);
-      if (refKey) existingRefToId.set(refKey, created.id);
+      const idByRef = new Map(created.map(c => [c.client_ref?.toUpperCase() ?? '', c.id]));
+      for (const row of chunk) {
+        const refKey = row.client_ref?.toUpperCase() ?? '';
+        const id = idByRef.get(refKey);
+        if (id) {
+          imported.push(row.name);
+          if (refKey) existingRefToId.set(refKey, id);
+        } else {
+          skipped.push({ name: row.name, reason: 'Database error — please try again' });
+        }
+      }
     }
   }
 
-  // Process links
+  // Process links — collect all and bulk upsert to avoid per-row round trips
   const linkSkipped: string[] = [];
+  const linkInserts: { firm_id: string; client_id: string; linked_client_id: string; link_type: string }[] = [];
+
   for (const row of rows) {
     if (!row.linked_to_ref?.trim()) continue;
     const sourceRefKey = row.client_ref?.toUpperCase();
@@ -124,16 +160,17 @@ export async function POST(req: NextRequest) {
       const targetId = existingRefToId.get(targetRef);
       if (!targetId) { linkSkipped.push(`Could not link ${row.client_ref} → ${targetRef} (not found)`); continue; }
       if (targetId === sourceId) continue;
+      linkInserts.push({ firm_id: ctx.firmId, client_id: sourceId, linked_client_id: targetId, link_type: row.link_type ?? 'other' });
+    }
+  }
 
-      const { error: linkError } = await supabase
-        .from('client_links')
-        .insert({ firm_id: ctx.firmId, client_id: sourceId, linked_client_id: targetId, link_type: row.link_type ?? 'other' })
-        .select('id').single();
-
-      if (linkError && linkError.code !== '23505') {
-        linkSkipped.push(`Could not link ${row.client_ref} → ${targetRef}`);
-        console.error('[clients/import] Link error:', linkError);
-      }
+  if (linkInserts.length > 0) {
+    const { error: linkError } = await supabase
+      .from('client_links')
+      .upsert(linkInserts, { ignoreDuplicates: true });
+    if (linkError) {
+      console.error('[clients/import] Bulk link error:', linkError);
+      linkSkipped.push('Some links could not be created due to a database error');
     }
   }
 
