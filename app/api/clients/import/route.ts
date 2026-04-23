@@ -83,6 +83,15 @@ export async function POST(req: NextRequest) {
     return true;
   });
 
+  // Convert DD/MM/YYYY → YYYY-MM-DD for Postgres date fields.
+  // Passes through values that are already in ISO format or blank.
+  function toIsoDate(val: string | undefined): string | null {
+    if (!val) return null;
+    const ddmmyyyy = val.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`;
+    return val; // already ISO or some other format — pass through and let DB validate
+  }
+
   function buildInsertRow(row: typeof rows[number]) {
     return {
       firm_id: ctx!.firmId,
@@ -98,7 +107,7 @@ export async function POST(req: NextRequest) {
       companies_house_id: row.companies_house_id || null,
       vat_number: row.vat_number || null,
       companies_house_auth_code: row.companies_house_auth_code || null,
-      date_of_birth: row.date_of_birth || null,
+      date_of_birth: toIsoDate(row.date_of_birth),
       contact_number: row.contact_number || null,
       paye_reference: row.paye_reference || null,
       paye_accounts_office_reference: row.paye_accounts_office_reference || null,
