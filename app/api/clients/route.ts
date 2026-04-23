@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
     .from('clients')
     .select('id, name, client_ref, business_type, contact_email, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth')
     .eq('firm_id', ctx.firmId)
-    .order('name', { ascending: true });
+    .order('name', { ascending: true })
+    .limit(100000);
 
   if (search) query = query.or(`name.ilike.%${search}%,client_ref.ilike.%${search}%`);
   if (statusFilter === 'active' || statusFilter === 'hold' || statusFilter === 'inactive') query = query.eq('status', statusFilter);
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load clients' }, { status: 500 });
   }
 
-  return NextResponse.json({ clients });
+  return NextResponse.json({ clients, userRole: ctx.userRole });
 }
 
 // POST /api/clients

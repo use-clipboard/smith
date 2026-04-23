@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X } from 'lucide-react';
+import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
@@ -148,6 +148,13 @@ export default function ClientsPage() {
   const [showColPicker, setShowColPicker] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
 
+  // Selection state (admin only)
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
   const [showModal, setShowModal] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -166,11 +173,18 @@ export default function ClientsPage() {
       if (status !== 'all') params.set('status', status);
       if (type) params.set('type', type);
       const res = await fetch(`/api/clients?${params.toString()}`);
-      if (res.ok) { const data = await res.json(); setClients(data.clients ?? []); }
+      if (res.ok) {
+        const data = await res.json();
+        setClients(data.clients ?? []);
+        if (data.userRole) setIsAdmin(data.userRole === 'admin');
+      }
     } finally { setLoading(false); }
   }, []);
 
-  // Fetch total active count once on mount (independent of filters)
+  // Clear selection whenever the displayed client list changes
+  useEffect(() => { setSelectedIds(new Set()); }, [clients]);
+
+  // Fetch total active count once on mount
   useEffect(() => {
     fetch('/api/clients?status=active')
       .then(r => r.json())
@@ -192,6 +206,17 @@ export default function ClientsPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showColPicker]);
 
+  const sortedClients = sortClients(clients, sort);
+  const allSelected = sortedClients.length > 0 && sortedClients.every(c => selectedIds.has(c.id));
+  const someSelected = sortedClients.some(c => selectedIds.has(c.id));
+
+  // Drive indeterminate state on the select-all checkbox
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected && !allSelected;
+    }
+  }, [someSelected, allSelected]);
+
   function toggleSort(key: keyof Client) {
     setSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   }
@@ -204,12 +229,40 @@ export default function ClientsPage() {
     });
   }
 
-  const visibleColumns = COLUMNS.filter(c => c.always || visibleCols.has(c.key));
-  const sortedClients = sortClients(clients, sort);
-  const hasActiveFilters = !!(search || statusFilter !== 'all' || typeFilter);
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedClients.map(c => c.id)));
+    }
+  }
 
-  // Tooltip-style label for the status filter summary
-  const statusLabel = statusFilter === 'hold' ? 'on hold' : statusFilter;
+  function toggleSelectOne(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkStatusChange(status: ClientStatus) {
+    setBulkUpdating(true);
+    setBulkError(null);
+    try {
+      const res = await fetch('/api/clients/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds), status }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBulkError(data.error || 'Failed to update clients'); return; }
+      setSelectedIds(new Set());
+      await fetchClients(search, statusFilter, typeFilter);
+    } catch { setBulkError('An unexpected error occurred'); } finally { setBulkUpdating(false); }
+  }
+
+  const visibleColumns = COLUMNS.filter(c => c.always || visibleCols.has(c.key));
+  const hasActiveFilters = !!(search || statusFilter !== 'all' || typeFilter);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault(); setFormError(null); setSaving(true);
@@ -304,6 +357,33 @@ export default function ClientsPage() {
           )}
         </div>
 
+        {/* Bulk action bar — admin only, visible when rows are selected */}
+        {isAdmin && someSelected && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-[var(--accent-light)] border border-[var(--accent)]/30 rounded-xl flex-wrap">
+            <CheckSquare size={15} className="text-[var(--accent)] shrink-0" />
+            <span className="text-sm font-medium text-[var(--accent)]">
+              {selectedIds.size} client{selectedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            <span className="text-[var(--accent)]/40 text-sm">·</span>
+            <span className="text-xs text-[var(--text-muted)]">Set status to:</span>
+            <div className="flex items-center gap-2">
+              {([['active', 'Active', 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200'],
+                 ['hold',   'On Hold', 'bg-amber-100 text-amber-700 hover:bg-amber-200 border-amber-200'],
+                 ['inactive', 'Inactive', 'bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-200']] as [ClientStatus, string, string][]).map(([val, label, cls]) => (
+                <button key={val} onClick={() => void handleBulkStatusChange(val)} disabled={bulkUpdating}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${cls}`}>
+                  {bulkUpdating ? '…' : label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setSelectedIds(new Set())}
+              className="ml-auto flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+              <X size={12} />Clear selection
+            </button>
+            {bulkError && <p className="w-full text-xs text-red-600 mt-1">{bulkError}</p>}
+          </div>
+        )}
+
         {/* Table */}
         <div className="glass-solid rounded-xl overflow-hidden">
           {loading ? (
@@ -322,6 +402,19 @@ export default function ClientsPage() {
               <table className="w-full text-sm">
                 <thead className="border-b border-[var(--border)]">
                   <tr>
+                    {/* Checkbox column — admin only */}
+                    {isAdmin && (
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          ref={selectAllRef}
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
+                          title={allSelected ? 'Deselect all' : 'Select all'}
+                        />
+                      </th>
+                    )}
                     {visibleColumns.map(col => (
                       <th key={col.key} className="px-4 py-3 text-left text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
                         {col.sortKey ? (
@@ -339,18 +432,32 @@ export default function ClientsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
-                  {sortedClients.map(c => (
-                    <tr key={c.id} className={`hover:bg-[var(--bg-nav-hover)] transition-colors group ${c.status === 'inactive' ? 'opacity-60' : ''}`}>
-                      {visibleColumns.map(col => (
-                        <td key={col.key} className="px-4 py-3">{col.render(c)}</td>
-                      ))}
-                      <td className="px-4 py-3 text-right">
-                        <Link href={`/clients/${c.id}`} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                          View <ChevronRight size={12} />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {sortedClients.map(c => {
+                    const checked = selectedIds.has(c.id);
+                    return (
+                      <tr key={c.id} className={`hover:bg-[var(--bg-nav-hover)] transition-colors group ${c.status === 'inactive' ? 'opacity-60' : ''} ${checked ? 'bg-[var(--accent-light)]' : ''}`}>
+                        {/* Checkbox cell — admin only */}
+                        {isAdmin && (
+                          <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleSelectOne(c.id)}
+                              className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
+                            />
+                          </td>
+                        )}
+                        {visibleColumns.map(col => (
+                          <td key={col.key} className="px-4 py-3">{col.render(c)}</td>
+                        ))}
+                        <td className="px-4 py-3 text-right">
+                          <Link href={`/clients/${c.id}`} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                            View <ChevronRight size={12} />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -360,6 +467,7 @@ export default function ClientsPage() {
         <p className="text-xs text-[var(--text-muted)]">
           {sortedClients.length} client{sortedClients.length !== 1 ? 's' : ''}
           {hasActiveFilters ? ' matching filters' : ''}
+          {isAdmin && someSelected && ` · ${selectedIds.size} selected`}
         </p>
       </div>
 
