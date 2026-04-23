@@ -215,8 +215,9 @@ export default function CHSecretarialPage() {
         if (!profile?.firm_id) return;
         supabase
           .from('clients')
-          .select('client_ref, business_type, name')
+          .select('companies_house_id, business_type, name')
           .eq('firm_id', profile.firm_id)
+          .limit(100000)
           .then(({ data: clients }) => {
             if (!clients) return;
             const nums = clients
@@ -224,7 +225,7 @@ export default function CHSecretarialPage() {
                 const bt = (c.business_type ?? '').toLowerCase();
                 return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
               })
-              .map(c => c.client_ref)
+              .map(c => c.companies_house_id)
               .filter(Boolean) as string[];
             setClientNumbers(nums);
           });
