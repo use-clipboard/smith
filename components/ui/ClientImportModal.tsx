@@ -1,6 +1,6 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
-import { X, Download, Upload, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { X, Download, Upload, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 
 type ClientStatus = 'active' | 'hold' | 'inactive';
 
@@ -186,7 +186,26 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
   const [importedCount, setImportedCount] = useState(0);
   const [skipped, setSkipped] = useState<SkippedRow[]>([]);
   const [linkWarnings, setLinkWarnings] = useState<string[]>([]);
+  const [progressWidth, setProgressWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Animate an indeterminate-style progress bar while importing
+  useEffect(() => {
+    if (importing) {
+      setProgressWidth(5);
+      let current = 5;
+      progressRef.current = setInterval(() => {
+        // Ease toward 85% — never reaches 100% until done
+        current = current + (85 - current) * 0.04;
+        setProgressWidth(current);
+      }, 200);
+    } else {
+      if (progressRef.current) clearInterval(progressRef.current);
+      setProgressWidth(0);
+    }
+    return () => { if (progressRef.current) clearInterval(progressRef.current); };
+  }, [importing]);
 
   const validRows = rows.filter(r => !r._error);
   const errorRows = rows.filter(r => r._error);
@@ -261,6 +280,32 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-6 scrollbar-thin">
+
+          {/* Loading state — shown while import is in flight */}
+          {importing && (
+            <div className="flex flex-col items-center justify-center py-12 space-y-6">
+              <Loader2 size={40} className="text-[var(--accent)] animate-spin" />
+              <div className="text-center space-y-1">
+                <p className="font-semibold text-[var(--text-primary)] text-lg">
+                  Importing {validRows.length} client{validRows.length !== 1 ? 's' : ''}…
+                </p>
+                <p className="text-sm text-[var(--text-muted)]">Please wait and don't close this window.</p>
+              </div>
+              <div className="w-full max-w-sm">
+                <div className="h-2 bg-[var(--border)] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[var(--accent)] rounded-full transition-all duration-200 ease-out"
+                    style={{ width: `${progressWidth}%` }}
+                  />
+                </div>
+                <p className="text-xs text-[var(--text-muted)] text-center mt-2">
+                  Large imports are processed in batches — this may take up to a minute.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!importing && <>
 
           {step === 'upload' && (
             <div className="space-y-5">
@@ -392,16 +437,17 @@ export default function ClientImportModal({ onClose, onImported }: ClientImportM
               )}
             </div>
           )}
+          </>}
         </div>
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-[var(--border)] flex justify-between items-center flex-shrink-0">
-          <div>{step === 'preview' && <button onClick={() => { setStep('upload'); setRows([]); }} className="btn-ghost text-sm">Upload different file</button>}</div>
+          <div>{!importing && step === 'preview' && <button onClick={() => { setStep('upload'); setRows([]); }} className="btn-ghost text-sm">Upload different file</button>}</div>
           <div className="flex gap-3">
-            <button onClick={onClose} className="btn-ghost">{step === 'result' ? 'Close' : 'Cancel'}</button>
-            {step === 'preview' && validRows.length > 0 && (
-              <button onClick={() => void handleImport()} disabled={importing} className="btn-primary disabled:opacity-50">
-                {importing ? 'Importing…' : `Import ${validRows.length} client${validRows.length !== 1 ? 's' : ''}`}
+            {!importing && <button onClick={onClose} className="btn-ghost">{step === 'result' ? 'Close' : 'Cancel'}</button>}
+            {!importing && step === 'preview' && validRows.length > 0 && (
+              <button onClick={() => void handleImport()} className="btn-primary">
+                {`Import ${validRows.length} client${validRows.length !== 1 ? 's' : ''}`}
               </button>
             )}
           </div>
