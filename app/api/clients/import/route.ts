@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
   const { rows } = parsed.data;
 
   const { data: existingClients } = await supabase
-    .from('clients').select('id, client_ref').eq('firm_id', ctx.firmId);
+    .from('clients').select('id, client_ref').eq('firm_id', ctx.firmId).limit(100000);
 
   const existingRefToId = new Map<string, string>(
     (existingClients ?? []).map(c => [c.client_ref?.toUpperCase() ?? '', c.id])
@@ -67,13 +67,19 @@ export async function POST(req: NextRequest) {
   const imported: string[] = [];
   const skipped: { name: string; reason: string }[] = [];
 
-  // Separate duplicates from rows to insert
+  // Separate duplicates: check against DB AND against earlier rows in this CSV
+  const seenRefsInCsv = new Set<string>();
   const toInsert = rows.filter(row => {
     const refKey = row.client_ref?.toUpperCase();
     if (refKey && existingRefToId.has(refKey)) {
       skipped.push({ name: row.name, reason: `Client ref "${row.client_ref}" already exists` });
       return false;
     }
+    if (refKey && seenRefsInCsv.has(refKey)) {
+      skipped.push({ name: row.name, reason: `Duplicate client ref "${row.client_ref}" in this file` });
+      return false;
+    }
+    if (refKey) seenRefsInCsv.add(refKey);
     return true;
   });
 
@@ -121,7 +127,12 @@ export async function POST(req: NextRequest) {
           .select('id')
           .single();
         if (rowError || !single) {
-          skipped.push({ name: row.name, reason: 'Database error — please try again' });
+          const reason = rowError?.code === '23505'
+            ? `Client ref "${row.client_ref}" already exists`
+            : rowError?.message
+              ? `Database error: ${rowError.message}`
+              : 'Database error — please try again';
+          skipped.push({ name: row.name, reason });
           console.error('[clients/import] Insert error:', rowError);
         } else {
           imported.push(row.name);
