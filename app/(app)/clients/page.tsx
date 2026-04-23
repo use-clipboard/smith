@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare } from 'lucide-react';
+import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2 } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
@@ -153,6 +153,7 @@ export default function ClientsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const selectAllRef = useRef<HTMLInputElement>(null);
 
   const [showModal, setShowModal] = useState(false);
@@ -256,6 +257,23 @@ export default function ClientsPage() {
       });
       const data = await res.json();
       if (!res.ok) { setBulkError(data.error || 'Failed to update clients'); return; }
+      setSelectedIds(new Set());
+      await fetchClients(search, statusFilter, typeFilter);
+    } catch { setBulkError('An unexpected error occurred'); } finally { setBulkUpdating(false); }
+  }
+
+  async function handleBulkDelete() {
+    setBulkUpdating(true);
+    setBulkError(null);
+    try {
+      const res = await fetch('/api/clients/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBulkError(data.error || 'Failed to delete clients'); return; }
+      setShowDeleteConfirm(false);
       setSelectedIds(new Set());
       await fetchClients(search, statusFilter, typeFilter);
     } catch { setBulkError('An unexpected error occurred'); } finally { setBulkUpdating(false); }
@@ -376,10 +394,16 @@ export default function ClientsPage() {
                 </button>
               ))}
             </div>
-            <button onClick={() => setSelectedIds(new Set())}
-              className="ml-auto flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-              <X size={12} />Clear selection
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={() => setShowDeleteConfirm(true)} disabled={bulkUpdating}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50">
+                <Trash2 size={12} />Delete
+              </button>
+              <button onClick={() => setSelectedIds(new Set())}
+                className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                <X size={12} />Clear selection
+              </button>
+            </div>
             {bulkError && <p className="w-full text-xs text-red-600 mt-1">{bulkError}</p>}
           </div>
         )}
@@ -470,6 +494,32 @@ export default function ClientsPage() {
           {isAdmin && someSelected && ` · ${selectedIds.size} selected`}
         </p>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="glass-solid rounded-2xl shadow-dropdown w-full max-w-sm border border-[var(--border)] animate-slide-up">
+            <div className="px-6 py-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100 shrink-0">
+                  <Trash2 size={18} className="text-red-600" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-[var(--text-primary)]">Delete {selectedIds.size} client{selectedIds.size !== 1 ? 's' : ''}?</h2>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">This will permanently delete all selected client records, including their AI outputs, documents, and timeline notes. This cannot be undone.</p>
+                </div>
+              </div>
+              {bulkError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{bulkError}</p>}
+              <div className="flex justify-end gap-3 pt-1">
+                <button onClick={() => { setShowDeleteConfirm(false); setBulkError(null); }} disabled={bulkUpdating} className="btn-secondary">Cancel</button>
+                <button onClick={() => void handleBulkDelete()} disabled={bulkUpdating}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50">
+                  {bulkUpdating ? 'Deleting…' : `Delete ${selectedIds.size} client${selectedIds.size !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showImport && (
         <ClientImportModal onClose={() => setShowImport(false)} onImported={() => void fetchClients(search, statusFilter, typeFilter)} />
