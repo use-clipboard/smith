@@ -224,7 +224,7 @@ export async function GET(request: Request) {
   // Get all firms that have a CH API key and scheduled times
   const { data: firms } = await service
     .from('firms')
-    .select('id, ch_api_key, ch_refresh_times, ch_company_numbers')
+    .select('id, ch_api_key, ch_refresh_times, ch_company_numbers, ch_refresh_list_type')
     .not('ch_api_key', 'is', null)
     .not('ch_refresh_times', 'is', null);
 
@@ -240,28 +240,37 @@ export async function GET(request: Request) {
       ch_api_key: string;
       ch_refresh_times: string[];
       ch_company_numbers: string[] | null;
+      ch_refresh_list_type: string | null;
     };
 
     if (!isDueNow(f.ch_refresh_times)) continue;
 
-    console.log(`[CH Cron] Refreshing firm ${f.id} — scheduled at ${f.ch_refresh_times.join(', ')}`);
+    const listType = f.ch_refresh_list_type ?? 'client_list';
+    console.log(`[CH Cron] Refreshing firm ${f.id} — scheduled at ${f.ch_refresh_times.join(', ')} — list: ${listType}`);
 
-    // Get company numbers: saved custom list + limited company clients
-    let numbers: string[] = f.ch_company_numbers ?? [];
+    let numbers: string[] = [];
 
-    if (numbers.length === 0) {
-      // Fall back to client refs for limited company clients
+    if (listType === 'custom_list') {
+      // Use the firm's saved custom company number list
+      numbers = f.ch_company_numbers ?? [];
+      if (numbers.length === 0) {
+        console.log(`[CH Cron] Firm ${f.id} — custom list is empty, skipping`);
+        continue;
+      }
+    } else {
+      // Use companies_house_id from limited company clients
       const { data: clients } = await service
         .from('clients')
-        .select('client_ref, business_type')
-        .eq('firm_id', f.id);
+        .select('companies_house_id, business_type')
+        .eq('firm_id', f.id)
+        .not('companies_house_id', 'is', null);
 
       numbers = (clients ?? [])
         .filter(c => {
           const bt = (c.business_type ?? '').toLowerCase();
           return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
         })
-        .map(c => c.client_ref)
+        .map(c => c.companies_house_id)
         .filter(Boolean) as string[];
     }
 
@@ -286,6 +295,7 @@ export async function GET(request: Request) {
       companies,
       refreshed_at: new Date().toISOString(),
       refresh_status: status,
+      refresh_type: 'scheduled',
       refresh_error: errorCount > 0 ? `${errorCount} of ${numbers.length} companies failed` : null,
       companies_fetched: companies.length - errorCount,
       companies_total: numbers.length,

@@ -5,7 +5,7 @@ import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
-  ExternalLink,
+  ExternalLink, CalendarDays, MicVocal,
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
@@ -51,6 +51,22 @@ const FAQS = [
     q: 'How do I switch between dark and light mode?',
     a: 'Go to Settings → Appearance and choose Light, Dark, or System (which follows your device preference).',
   },
+  {
+    q: 'Meeting Notes says microphone access is blocked — how do I fix it?',
+    a: 'Your browser has blocked microphone access for SMITH. Click the padlock (or tune) icon in the address bar at the top of your browser, find the Microphone permission, and change it to "Allow". Then refresh the page and try again. You can also check your current permission status in Settings → Preferences → Device Permissions.',
+  },
+  {
+    q: 'How do I revoke microphone or camera access?',
+    a: 'Go to Settings → Preferences → Device Permissions. If a permission has been granted, you\'ll see a "Revoke" button next to it. Clicking it will show you step-by-step instructions for revoking access via your browser\'s address bar padlock — browser security means this must be done through the browser itself rather than within the app.',
+  },
+  {
+    q: 'Can I share a calendar event with a client?',
+    a: 'The Calendar is a shared internal team calendar — it is visible to all staff members in your firm. You can invite other team members as guests to receive in-app notifications. It is not currently designed to share events directly with clients outside the firm.',
+  },
+  {
+    q: 'Where are my meeting notes saved?',
+    a: 'Meeting notes are saved to the linked client\'s Timeline tab on the client record page. Open a client, go to the Timeline tab, and you\'ll see all saved meeting notes alongside other notes and documents for that client.',
+  },
 ];
 
 const TOOLS = [
@@ -63,6 +79,8 @@ const TOOLS = [
   { icon: ShieldAlert, name: 'Risk Assessment', desc: 'Conducts a structured AML/client risk assessment and produces a rated risk report (Low/Medium/High).' },
   { icon: FileText, name: 'Summarise', desc: 'Summarises documents that are out of date range or not relevant to the current job, for file note purposes.' },
   { icon: Archive, name: 'Document Vault', desc: 'A searchable archive of documents synced from Google Drive, tagged automatically by AI.' },
+  { icon: CalendarDays, name: 'Calendar', desc: 'A shared firm calendar for scheduling events, meetings, and deadlines. Invite team members as guests and receive in-app notifications for calendar invites.' },
+  { icon: MicVocal, name: 'Meeting Notes', desc: 'Records and transcribes client meetings using your device microphone, then uses AI to produce a structured summary with action items and decisions. Notes are saved to the client\'s Timeline.' },
   { icon: BookOpen, name: 'Policies & Procedures', desc: 'A static reference section for the firm\'s internal policies and procedures.' },
 ];
 

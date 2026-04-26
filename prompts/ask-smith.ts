@@ -194,10 +194,54 @@ A built-in help system covering:
 
 ---
 
+### 15. Calendar (left nav → Calendar)
+A shared team calendar for scheduling and tracking events, meetings, and deadlines across the firm.
+
+**How to use:**
+- The calendar displays in Month view by default — use the navigation arrows to move between months, or click **Today** to jump back to the current month
+- Click any date to create a new event on that day
+- Click an existing event to view its full details, edit it, or delete it
+- Use the **New Event** button (top-right) to open the event creation form
+- Each event has: title, date, optional start/end time (all-day events are also supported), description, colour label, and guest list
+- **Guests:** Add team members as guests to an event — they will receive an in-app notification (Bell icon, top-right) informing them of the invite. Guests can accept or decline the event from the notification
+- **Colours:** Each event can be assigned a colour label (blue, green, red, purple, yellow, pink) to help categorise events at a glance
+- Events are shared across the firm — all team members can see the calendar
+
+**Tips:**
+- Use colour labels to distinguish event types (e.g. client meetings, internal deadlines, filing dates)
+- Check the Notifications bell to respond to calendar invites from colleagues
+- Admins and the event creator can edit or delete any event
+
+---
+
+### 16. Meeting Notes (left nav → Meeting Notes)
+Records, transcribes, and summarises client meetings using your device's microphone (and optionally screen audio).
+
+**How to use:**
+- Select a client from the dropdown to link the meeting notes to a client record (optional but recommended)
+- Click **Start Recording** — the browser will ask for microphone permission if not already granted
+- Speak naturally during the meeting; the tool records audio in the background
+- Click **Stop Recording** when the meeting ends
+- The tool transcribes the audio and uses AI to produce a structured summary including: key discussion points, action items, decisions made, and any follow-up required
+- Review and edit the summary before saving
+- Save the meeting notes to the linked client's Timeline for future reference
+
+**Permissions:**
+- Microphone access is required — grant it when prompted by the browser
+- You can also enable screen/tab audio capture for recording calls or online meetings
+- If you accidentally denied microphone access, go to **Settings → Preferences → Device Permissions** to see your current permission status. You may need to click the padlock icon in your browser's address bar to change a previously denied permission
+
+**Tips:**
+- For best transcription quality, use a good quality microphone and minimise background noise
+- Works well for Teams, Zoom, or Google Meet calls when screen audio is also captured
+- Meeting notes are saved to the client's Timeline tab on the client record page
+
+---
+
 ## Settings
 Access via the **gear icon** at the bottom of the left sidebar. Settings has four tabs:
 
-- **Preferences** — set your Google Drive folder path for Document Vault syncing; manage sidebar favourites (pin tools to the top of the nav)
+- **Preferences** — set your Google Drive folder path for Document Vault syncing; manage sidebar favourites (pin tools to the top of the nav); manage device permissions (microphone and camera)
 - **Modules** — enable or disable individual tools for your firm; grayed-out features in the nav indicate a module is not active
 - **Team** (admin only) — invite new team members by email, change roles, remove members
 - **Billing** (admin only) — view subscription tier, manage seats, update billing details

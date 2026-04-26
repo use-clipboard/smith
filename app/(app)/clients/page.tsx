@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2 } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import ToolLayout from '@/components/ui/ToolLayout';
@@ -137,6 +137,7 @@ function SortIcon({ colKey, sort }: { colKey: keyof Client; sort: SortConfig }) 
 }
 
 export default function ClientsPage() {
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [totalActiveCount, setTotalActiveCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -461,8 +462,12 @@ export default function ClientsPage() {
                   {sortedClients.map(c => {
                     const checked = selectedIds.has(c.id);
                     return (
-                      <tr key={c.id} className={`hover:bg-[var(--bg-nav-hover)] transition-colors group ${c.status === 'inactive' ? 'opacity-60' : ''} ${checked ? 'bg-[var(--accent-light)]' : ''}`}>
-                        {/* Checkbox cell — admin only */}
+                      <tr
+                        key={c.id}
+                        onClick={() => router.push(`/clients/${c.id}`)}
+                        className={`cursor-pointer hover:bg-[var(--bg-nav-hover)] transition-colors group ${c.status === 'inactive' ? 'opacity-60' : ''} ${checked ? 'bg-[var(--accent-light)]' : ''}`}
+                      >
+                        {/* Checkbox cell — admin only; stops row-click propagation */}
                         {isAdmin && (
                           <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>
                             <input
@@ -477,9 +482,7 @@ export default function ClientsPage() {
                           <td key={col.key} className="px-4 py-3">{col.render(c)}</td>
                         ))}
                         <td className="px-4 py-3 text-right">
-                          <Link href={`/clients/${c.id}`} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                            View <ChevronRight size={12} />
-                          </Link>
+                          <ChevronRight size={14} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-60 transition-opacity inline-block" />
                         </td>
                       </tr>
                     );

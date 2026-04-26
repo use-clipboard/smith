@@ -13,24 +13,27 @@ async function getAdminFirmId() {
   return { error: null, firmId: profile.firm_id as string };
 }
 
-/** GET: return current scheduled times */
+/** GET: return current scheduled times and list type preference */
 export async function GET() {
   const { error, firmId } = await getAdminFirmId();
   if (error) return NextResponse.json({ error }, { status: error === 'Unauthorised' ? 401 : 403 });
 
   const service = createServiceClient();
   const { data: firm } = await service
-    .from('firms').select('ch_refresh_times').eq('id', firmId!).single();
+    .from('firms').select('ch_refresh_times, ch_refresh_list_type').eq('id', firmId!).single();
 
-  const times = (firm as { ch_refresh_times?: string[] | null } | null)?.ch_refresh_times ?? [];
-  return NextResponse.json({ times });
+  const f = firm as { ch_refresh_times?: string[] | null; ch_refresh_list_type?: string | null } | null;
+  const times    = f?.ch_refresh_times    ?? [];
+  const listType = f?.ch_refresh_list_type ?? 'client_list';
+  return NextResponse.json({ times, listType });
 }
 
 const patchSchema = z.object({
-  times: z.array(z.string().regex(/^\d{2}:\d{2}$/)).max(24),
+  times:    z.array(z.string().regex(/^\d{2}:\d{2}$/)).max(24),
+  listType: z.enum(['client_list', 'custom_list']).default('client_list'),
 });
 
-/** PATCH: replace the full list of scheduled times (admin only) */
+/** PATCH: replace the full list of scheduled times and list type preference (admin only) */
 export async function PATCH(request: NextRequest) {
   const { error, firmId } = await getAdminFirmId();
   if (error) return NextResponse.json({ error }, { status: error === 'Unauthorised' ? 401 : 403 });
@@ -42,7 +45,10 @@ export async function PATCH(request: NextRequest) {
   const service = createServiceClient();
   const { error: updateError } = await service
     .from('firms')
-    .update({ ch_refresh_times: parsed.data.times.length > 0 ? parsed.data.times : null })
+    .update({
+      ch_refresh_times:     parsed.data.times.length > 0 ? parsed.data.times : null,
+      ch_refresh_list_type: parsed.data.listType,
+    })
     .eq('id', firmId!);
 
   if (updateError) {

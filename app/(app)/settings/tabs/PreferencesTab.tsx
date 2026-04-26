@@ -1,15 +1,85 @@
 'use client';
 
-import { ChevronUp, ChevronDown, Star, Plus, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ChevronUp, ChevronDown, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
 import { useTheme } from '@/components/ui/ThemeProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { FAVOURITABLE_ITEMS } from '@/config/navItems';
 
+type PermState = PermissionState | 'unknown' | 'requesting';
+
+function PermissionBadge({ state }: { state: PermState }) {
+  if (state === 'granted')    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />Granted</span>;
+  if (state === 'denied')     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />Blocked</span>;
+  if (state === 'prompt')     return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />Not yet set</span>;
+  if (state === 'requesting') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />Requesting…</span>;
+  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"><span className="w-1.5 h-1.5 rounded-full bg-gray-400" />Unknown</span>;
+}
+
 export default function PreferencesTab() {
   const { theme, setTheme } = useTheme();
   const { favourites, updateFavourites } = useFavourites();
   const { isModuleActive } = useModules();
+
+  const [micPermission,    setMicPermission]    = useState<PermState>('unknown');
+  const [cameraPermission, setCameraPermission] = useState<PermState>('unknown');
+  // Which permission is showing its revoke instructions panel (null = none)
+  const [revokingPermission, setRevokingPermission] = useState<'microphone' | 'camera' | null>(null);
+
+  // Query current permission states on mount
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.permissions) return;
+    void Promise.all([
+      navigator.permissions.query({ name: 'microphone' as PermissionName }),
+      navigator.permissions.query({ name: 'camera' as PermissionName }),
+    ]).then(([mic, cam]) => {
+      setMicPermission(mic.state);
+      setCameraPermission(cam.state);
+      // React live to browser-level changes (e.g. user changes via address bar padlock)
+      mic.onchange = () => { setMicPermission(mic.state); if (mic.state !== 'granted') setRevokingPermission(null); };
+      cam.onchange = () => { setCameraPermission(cam.state); if (cam.state !== 'granted') setRevokingPermission(null); };
+    }).catch(() => { /* permissions API not available */ });
+  }, []);
+
+  async function requestMic() {
+    setMicPermission('requesting');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      setMicPermission('granted');
+    } catch {
+      setMicPermission('denied');
+    }
+  }
+
+  async function requestCamera() {
+    setCameraPermission('requesting');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(t => t.stop());
+      setCameraPermission('granted');
+    } catch {
+      setCameraPermission('denied');
+    }
+  }
+
+  async function revokePermission(type: 'microphone' | 'camera') {
+    // Try the browser's programmatic revoke API (non-standard, works in some browsers)
+    try {
+      if (navigator.permissions && 'revoke' in navigator.permissions) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (navigator.permissions as any).revoke({ name: type as PermissionName }) as PermissionStatus;
+        if (result.state !== 'granted') {
+          if (type === 'microphone') setMicPermission(result.state);
+          else setCameraPermission(result.state);
+          return; // Successfully revoked — no need to show instructions
+        }
+      }
+    } catch { /* revoke API not available in this browser */ }
+    // Programmatic revoke not available — show manual browser instructions
+    setRevokingPermission(prev => prev === type ? null : type);
+  }
 
   // Only show favouritable items whose module is active (or is always-active like clients)
   const availableItems = FAVOURITABLE_ITEMS.filter(item =>
@@ -72,6 +142,107 @@ export default function PreferencesTab() {
               <span className="text-xs font-medium capitalize text-[var(--text-primary)]">{t}</span>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ── Device Permissions ─────────────────────────────────────────── */}
+      <div className="glass-solid rounded-xl p-6">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Device Permissions</h3>
+        <p className="text-xs text-[var(--text-muted)] mb-5">
+          Required by the Meeting Notes tool for microphone recording and screen capture. Grant or revoke access here at any time.
+        </p>
+        <div className="space-y-3">
+
+          {/* ── Microphone row ── */}
+          {(['microphone', 'camera'] as const).map(type => {
+            const isMic    = type === 'microphone';
+            const state    = isMic ? micPermission : cameraPermission;
+            const label    = isMic ? 'Microphone' : 'Camera';
+            const subLabel = isMic ? 'Voice recording & live transcription' : 'Optional — reserved for future video features';
+            const iconBg   = isMic ? 'bg-red-100' : 'bg-indigo-100';
+            const iconCls  = isMic ? 'text-red-600' : 'text-indigo-600';
+            const Icon     = isMic ? Mic : Video;
+            const showRevoke = revokingPermission === type;
+
+            return (
+              <div key={type} className={`rounded-lg border bg-[var(--bg-card)] overflow-hidden transition-colors ${showRevoke ? 'border-amber-300' : 'border-[var(--border)]'}`}>
+                {/* Main row */}
+                <div className="flex items-center justify-between gap-3 p-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+                      <Icon size={15} className={iconCls} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-[var(--text-primary)]">{label}</p>
+                      <p className="text-xs text-[var(--text-muted)]">{subLabel}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <PermissionBadge state={state} />
+                    {state === 'granted' ? (
+                      <>
+                        <CheckCircle2 size={15} className="text-green-500" />
+                        <button
+                          onClick={() => void revokePermission(type)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                            showRevoke
+                              ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                              : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-red-600 hover:border-red-200'
+                          }`}
+                          title="Remove this permission"
+                        >
+                          Revoke
+                        </button>
+                      </>
+                    ) : state !== 'requesting' ? (
+                      <button
+                        onClick={() => void (isMic ? requestMic() : requestCamera())}
+                        className="px-3 py-1.5 text-xs font-medium bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-hover)] transition-colors"
+                      >
+                        Request Access
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Revoke instructions panel — slides open when user clicks Revoke */}
+                {showRevoke && (
+                  <div className="px-4 pb-4 pt-1 border-t border-amber-200 bg-amber-50">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <p className="text-xs font-semibold text-amber-800">How to revoke {label.toLowerCase()} access</p>
+                      <button onClick={() => setRevokingPermission(null)} className="text-amber-500 hover:text-amber-700 shrink-0">
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <ol className="text-xs text-amber-700 space-y-1.5 list-none">
+                      <li className="flex items-start gap-2">
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-amber-200 text-amber-800 font-bold shrink-0 mt-0.5 text-[10px]">1</span>
+                        <span>Click the <Lock size={10} className="inline mb-0.5" /> <strong>padlock icon</strong> in your browser&apos;s address bar (at the top of the page)</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-amber-200 text-amber-800 font-bold shrink-0 mt-0.5 text-[10px]">2</span>
+                        <span>Find <strong>{label}</strong> in the permissions list and change it to <strong>Block</strong> or <strong>Reset to default</strong></span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="flex items-center justify-center w-4 h-4 rounded-full bg-amber-200 text-amber-800 font-bold shrink-0 mt-0.5 text-[10px]">3</span>
+                        <span>The permission status above will update automatically — no page refresh needed</span>
+                      </li>
+                    </ol>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Blocked warning */}
+          {(micPermission === 'denied' || cameraPermission === 'denied') && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+              <AlertCircle size={13} className="mt-0.5 shrink-0" />
+              <span>
+                A permission is blocked by your browser. To re-enable it, click the <strong>padlock icon</strong> in your browser address bar, set the permission to <strong>Allow</strong>, then refresh the page.
+              </span>
+            </div>
+          )}
         </div>
       </div>
 

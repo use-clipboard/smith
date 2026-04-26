@@ -134,10 +134,12 @@ export default function CHSecretarialPage() {
     error: string | null;
     companiesFetched: number | null;
     companiesTotal: number | null;
+    refreshType: string | null;
   } | null>(null);
 
   // Scheduled refresh (admin only, Supabase-backed)
   const [scheduleTimes, setScheduleTimes] = useState<string[]>([]);
+  const [scheduleListType, setScheduleListType] = useState<'client_list' | 'custom_list'>('client_list');
   const [scheduleLoading, setScheduleLoading] = useState(false);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [showSchedulePanel, setShowSchedulePanel] = useState(false);
@@ -185,6 +187,7 @@ export default function CHSecretarialPage() {
           error: data.error ?? null,
           companiesFetched: data.companiesFetched ?? null,
           companiesTotal: data.companiesTotal ?? null,
+          refreshType: data.refreshType ?? null,
         });
         if (data.companies && data.companies.length > 0) {
           setCompanies(data.companies);
@@ -193,13 +196,16 @@ export default function CHSecretarialPage() {
       .catch(() => {});
   }, []);
 
-  // Load schedule times on mount (admin only)
+  // Load schedule times and list type on mount (admin only)
   useEffect(() => {
     if (userRole !== 'admin') return;
     setScheduleLoading(true);
     fetch('/api/firms/ch-refresh-schedule')
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.times) setScheduleTimes(data.times); })
+      .then(data => {
+        if (data?.times) setScheduleTimes(data.times);
+        if (data?.listType) setScheduleListType(data.listType as 'client_list' | 'custom_list');
+      })
       .catch(() => {})
       .finally(() => setScheduleLoading(false));
   }, [userRole]);
@@ -290,16 +296,17 @@ export default function CHSecretarialPage() {
     setCsvFileName('');
   }
 
-  // Save schedule times to Supabase (admin only)
-  async function handleSaveSchedule(times: string[]) {
+  // Save schedule times + list type to Supabase (admin only)
+  async function handleSaveSchedule(times: string[], listType?: 'client_list' | 'custom_list') {
     setScheduleSaving(true);
+    const lt = listType ?? scheduleListType;
     try {
       const res = await fetch('/api/firms/ch-refresh-schedule', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ times }),
+        body: JSON.stringify({ times, listType: lt }),
       });
-      if (res.ok) setScheduleTimes(times);
+      if (res.ok) { setScheduleTimes(times); setScheduleListType(lt); }
     } finally {
       setScheduleSaving(false);
     }
@@ -418,13 +425,14 @@ export default function CHSecretarialPage() {
     setLoadingProgress(null);
     setRateLimitCountdown(null);
 
-    // Save to Supabase cache
+    // Save to Supabase cache (tagged as manual)
     const fetchErrorCount = allCompanies.filter(c => c.status === 'error').length;
     const cachePayload = {
       companies: allCompanies,
       status: fetchErrorCount === 0 ? 'success' : fetchErrorCount === allCompanies.length ? 'failed' : 'partial',
       companiesFetched: allCompanies.length - fetchErrorCount,
       companiesTotal: allCompanies.length,
+      refreshType: 'manual' as const,
       ...(fetchErrorCount > 0 ? { error: `${fetchErrorCount} of ${allCompanies.length} companies failed` } : {}),
     };
     fetch('/api/ch-secretarial/cache', {
@@ -438,6 +446,7 @@ export default function CHSecretarialPage() {
         error: (cachePayload as { error?: string }).error ?? null,
         companiesFetched: cachePayload.companiesFetched,
         companiesTotal: cachePayload.companiesTotal,
+        refreshType: 'manual',
       });
     }).catch(() => {});
   }, [sourceMode, clientNumbers, customNumbers]);
@@ -525,9 +534,21 @@ export default function CHSecretarialPage() {
                 <> · All companies failed — check your API key</>
               )}
             </span>
-            {cacheStatus.status === 'success' && (
-              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Success</span>
-            )}
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              {/* Manual / Scheduled badge */}
+              {cacheStatus.refreshType === 'scheduled' ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                  <Clock size={10} />Scheduled
+                </span>
+              ) : cacheStatus.refreshType === 'manual' ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">
+                  <RefreshCw size={10} />Manual
+                </span>
+              ) : null}
+              {cacheStatus.status === 'success' && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Success</span>
+              )}
+            </div>
           </div>
         )}
 
@@ -595,6 +616,36 @@ export default function CHSecretarialPage() {
                       <p className="text-xs text-[var(--text-muted)]">
                         The server will automatically refresh Companies House data at these times each day (London time), even when no one is logged in.
                       </p>
+
+                      {/* List type selector */}
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Refresh which list</p>
+                        <div className="flex gap-2">
+                          {([
+                            ['client_list', 'Client List', Users],
+                            ['custom_list', 'Custom List', List],
+                          ] as const).map(([val, label, Icon]) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => void handleSaveSchedule(scheduleTimes, val)}
+                              disabled={scheduleSaving}
+                              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors disabled:opacity-50 ${
+                                scheduleListType === val
+                                  ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                                  : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                              }`}
+                            >
+                              <Icon size={12} />{label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {scheduleListType === 'client_list'
+                            ? 'Refreshes all limited company clients using their Companies House ID.'
+                            : 'Refreshes the saved custom company number list.'}
+                        </p>
+                      </div>
 
                       {/* Existing times */}
                       {scheduleTimes.length > 0 ? (

@@ -17,6 +17,7 @@ import {
   DASHBOARD_ITEM, TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS,
   NAV_ITEM_BY_ID, WORKSPACE_MODULE_IDS, type NavItem,
 } from '@/config/navItems';
+import { CALENDAR_CHANGED } from '@/lib/calendarBus';
 
 interface SidebarProps {
   userName?: string;
@@ -29,6 +30,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [collapsed, setCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [untaggedCount, setUntaggedCount] = useState(0);
+  const [todayEventCount, setTodayEventCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
@@ -46,6 +48,29 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       .then(data => { if (data?.untaggedCount > 0) setUntaggedCount(data.untaggedCount); })
       .catch(() => {});
   }, [vaultActive]);
+
+  // Fetch count of today's remaining events for the calendar badge
+  useEffect(() => {
+    const todayStr = new Date().toDateString();
+    function fetchCount() {
+      fetch('/api/calendar/reminders')
+        .then(r => r.ok ? r.json() : { events: [] })
+        .then(d => {
+          const count = (d.events ?? []).filter(
+            (e: { start: string }) => new Date(e.start).toDateString() === todayStr
+          ).length;
+          setTodayEventCount(count);
+        })
+        .catch(() => {});
+    }
+    fetchCount();
+    const id = setInterval(fetchCount, 15 * 60 * 1000);
+    window.addEventListener(CALENDAR_CHANGED, fetchCount);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener(CALENDAR_CHANGED, fetchCount);
+    };
+  }, []);
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -123,16 +148,28 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
     const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`;
 
+    const isCalendar = item.moduleId === 'google-calendar';
+    const calBadge   = isCalendar && todayEventCount > 0;
+    const badgeLabel = todayEventCount > 9 ? '9+' : String(todayEventCount);
+
     if (collapsed) {
       return (
-        <button
-          key={item.href}
-          onClick={() => handleNavClick(item)}
-          title={item.label}
-          className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
-        >
-          <Icon size={18} className={iconClass} />
-        </button>
+        <div key={item.href} className="relative">
+          <button
+            onClick={() => handleNavClick(item)}
+            title={calBadge ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today` : item.label}
+            className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+          >
+            <Icon size={18} className={iconClass} />
+          </button>
+          {calBadge && (
+            <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
+                             text-[9px] font-bold flex items-center justify-center pointer-events-none
+                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+              {badgeLabel}
+            </span>
+          )}
+        </div>
       );
     }
 
@@ -183,6 +220,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
             {untaggedCount > 99 ? '99+' : untaggedCount}
           </span>
         )}
+
+        {calBadge && (
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
+                           flex items-center justify-center mr-2
+                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+            {badgeLabel}
+          </span>
+        )}
       </div>
     );
   }
@@ -191,6 +236,8 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   function renderWorkspaceItem(item: NavItem, isFavourite = false) {
     const Icon = item.icon;
     const isActive = pathname.startsWith(item.href);
+    const isInBackgroundTab = !isActive && tabs.some(t => t.route === item.href);
+    const activity = isInBackgroundTab ? getActivity(item.href) : 'idle';
     const colorClass = isActive
       ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
       : isFavourite
@@ -226,9 +273,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="text-sm font-medium truncate">{item.label}</span>
         </Link>
 
-        {/* New-tab button — same affordance as tool items */}
+        {/* Background-tab dot + new-tab button — same affordance as tool items */}
         {!isActive && (
           <span className="flex items-center shrink-0 pr-2 gap-1">
+            {isInBackgroundTab && (
+              <span className="group-hover:hidden flex items-center">
+                {activity === 'processing' && <span title="Processing"><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span>}
+                {activity === 'done'       && <span title="Done"><Check size={11} className="text-emerald-500" /></span>}
+                {activity === 'idle'       && <span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" title="Open in tab" />}
+              </span>
+            )}
             {isFavourite && (
               <Star
                 size={9}

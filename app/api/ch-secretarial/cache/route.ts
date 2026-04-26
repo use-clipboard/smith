@@ -20,7 +20,7 @@ export async function GET() {
   const service = createServiceClient();
   const { data } = await service
     .from('ch_cache')
-    .select('companies, refreshed_at, refresh_status, refresh_error, companies_fetched, companies_total')
+    .select('companies, refreshed_at, refresh_status, refresh_error, companies_fetched, companies_total, refresh_type')
     .eq('firm_id', firmId!)
     .single();
 
@@ -33,6 +33,7 @@ export async function GET() {
     error: data.refresh_error,
     companiesFetched: data.companies_fetched,
     companiesTotal: data.companies_total,
+    refreshType: (data as { refresh_type?: string }).refresh_type ?? 'manual',
   });
 }
 
@@ -42,6 +43,7 @@ const postSchema = z.object({
   error: z.string().optional(),
   companiesFetched: z.number(),
   companiesTotal: z.number(),
+  refreshType: z.enum(['manual', 'scheduled']).default('manual'),
 });
 
 /** POST: save fresh CH data to the cache (called after a manual refresh completes) */
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
       refresh_error: parsed.data.error ?? null,
       companies_fetched: parsed.data.companiesFetched,
       companies_total: parsed.data.companiesTotal,
+      refresh_type: parsed.data.refreshType,
     }, { onConflict: 'firm_id' });
 
   if (upsertError) {
