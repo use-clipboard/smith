@@ -429,6 +429,137 @@ export interface ScanProgressState {
   fileName: string;
 }
 
+// ─── Staff Hire ───────────────────────────────────────────────────────────────
+
+export type EmploymentType = 'full_time' | 'part_time' | 'contract';
+export type LocationType = 'in_office' | 'remote' | 'hybrid';
+export type ApplicantStage =
+  | 'applied'
+  | 'shortlisted'
+  | 'interview_scheduled'
+  | 'interviewed'
+  | 'offered'
+  | 'hired'
+  | 'rejected';
+export type JobStatus = 'draft' | 'active' | 'closed';
+
+export interface JobRequirement {
+  label: string;
+  category: string; // e.g. 'Software', 'Qualification', 'Experience', 'Skill'
+  mandatory: boolean;
+  notes?: string;
+}
+
+export interface JobPosting {
+  id: string;
+  firm_id: string;
+  created_by: string | null;
+  title: string;
+  employment_type: EmploymentType;
+  location_type: LocationType;
+  location: string | null;
+  salary_from: number | null;
+  salary_to: number | null;
+  salary_display: string | null;
+  benefits: string | null;
+  experience_years_min: number | null;
+  requirements: JobRequirement[];
+  description: string | null;
+  generated_posting: string | null;
+  status: JobStatus;
+  applicant_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobApplicant {
+  id: string;
+  job_id: string;
+  firm_id: string;
+  added_by: string | null;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  stage: ApplicantStage;
+  cv_storage_path: string | null;
+  cv_filename: string | null;
+  cover_letter_storage_path: string | null;
+  cover_letter_filename: string | null;
+  ai_evaluation: ApplicantEvaluation | null;
+  ai_score: number | null;
+  ai_summary: string | null;
+  ranking_position: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicantEvaluation {
+  overallScore: number; // 0–100
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  mandatoryRequirementsMet: { requirement: string; met: boolean; notes: string }[];
+  preferredRequirementsMet: { requirement: string; met: boolean; notes: string }[];
+  experienceAssessment: string;
+  recommendation: 'strong_yes' | 'yes' | 'maybe' | 'no' | 'strong_no';
+  recommendationReason: string;
+}
+
+export interface InterviewQuestion {
+  question: string;
+  category: 'technical' | 'behavioural' | 'situational' | 'cultural_fit' | 'experience';
+  rationale: string;
+  followUp?: string;
+}
+
+export interface ApplicantQuestions {
+  id: string;
+  applicant_id: string;
+  job_id: string;
+  firm_id: string;
+  questions: InterviewQuestion[];
+  generated_at: string;
+}
+
+export interface ScorecardCriterion {
+  category: string;
+  criterion: string;
+  description: string;
+  weight: number;   // 1–5 importance weighting
+  score: number | null; // 1–5 score, null = not yet rated
+  notes: string;
+}
+
+export interface ApplicantScorecard {
+  id: string;
+  applicant_id: string;
+  firm_id: string;
+  criteria: ScorecardCriterion[];
+  overall_score: number | null;
+  recommendation: string | null;
+  interviewer_notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicantRankResult {
+  applicantId: string;
+  rank: number;
+  overallScore: number;
+  hiringRecommendation: 'hire' | 'consider' | 'reject';
+  comparativeSummary: string;
+}
+
+export interface StaffHireAccessUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  has_access: boolean;
+}
+
 // ─── Legacy AppState2 ─────────────────────────────────────────────────────────
 
 export interface AppState2 {

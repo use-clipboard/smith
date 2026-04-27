@@ -5,7 +5,7 @@ import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
-  ExternalLink, CalendarDays, MicVocal,
+  ExternalLink, CalendarDays, MicVocal, UserPlus,
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
@@ -67,6 +67,14 @@ const FAQS = [
     q: 'Where are my meeting notes saved?',
     a: 'Meeting notes are saved to the linked client\'s Timeline tab on the client record page. Open a client, go to the Timeline tab, and you\'ll see all saved meeting notes alongside other notes and documents for that client.',
   },
+  {
+    q: 'Who can access the Staff Hire tool?',
+    a: 'Admins always have access. Staff members must be explicitly granted access by an admin, because the tool contains sensitive information such as salary data and applicant records. Admins can manage access in Settings → Staff Hire.',
+  },
+  {
+    q: 'How does the Staff Hire AI ranking work?',
+    a: 'Once you have evaluated at least two applicants using their CV and/or cover letter, you can run the AI Ranking from the job\'s Ranking tab. The AI compares all evaluated applicants against the job requirements and each other, then produces a ranked list with a hire/consider/reject recommendation for each person, plus an overall hiring recommendation.',
+  },
 ];
 
 const TOOLS = [
@@ -82,6 +90,7 @@ const TOOLS = [
   { icon: CalendarDays, name: 'Calendar', desc: 'A shared firm calendar for scheduling events, meetings, and deadlines. Invite team members as guests and receive in-app notifications for calendar invites.' },
   { icon: MicVocal, name: 'Meeting Notes', desc: 'Records and transcribes client meetings using your device microphone, then uses AI to produce a structured summary with action items and decisions. Notes are saved to the client\'s Timeline.' },
   { icon: BookOpen, name: 'Policies & Procedures', desc: 'A static reference section for the firm\'s internal policies and procedures.' },
+  { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
 ];
 
 function FAQItem({ q, a }: { q: string; a: string }) {

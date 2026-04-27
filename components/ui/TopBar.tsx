@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
-  ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal,
+  ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { useChatContext } from '@/components/chat/ChatProvider';
@@ -41,6 +41,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/ch-secretarial':  'CH Secretarial',
   '/calendar':        'Calendar',
   '/meeting-notes':   'Meeting Notes',
+  '/staff-hire':      'Staff Hire',
   '/policies':        'Policies & Procedures',
   '/clients':         'Clients',
   '/help':            'Help',
@@ -67,6 +68,7 @@ const TOOLS = [
   { label: 'CH Secretarial',       href: '/ch-secretarial',  icon: Building2 },
   { label: 'Calendar',             href: '/calendar',        icon: CalendarDays },
   { label: 'Meeting Notes',        href: '/meeting-notes',   icon: MicVocal },
+  { label: 'Staff Hire',           href: '/staff-hire',      icon: UserPlus },
   { label: 'Clients',              href: '/clients',         icon: Users },
 ];
 

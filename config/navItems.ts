@@ -7,7 +7,7 @@ import type { ElementType } from 'react';
 import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
-  BookOpen, Users, Settings, HelpCircle, Archive,
+  BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -35,6 +35,9 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'ch-secretarial',  href: '/ch-secretarial', label: 'CH Secretarial',  icon: Building2 },
   { moduleId: 'document-vault',  href: '/vault',          label: 'Document Vault',  icon: Archive },
   { moduleId: 'policies',        href: '/policies',       label: 'Policies',        icon: BookOpen },
+  { moduleId: 'google-calendar', href: '/calendar',       label: 'Calendar',        icon: CalendarDays },
+  { moduleId: 'meeting-notes',  href: '/meeting-notes',  label: 'Meeting Notes',   icon: MicVocal },
+  { moduleId: 'staff-hire',    href: '/staff-hire',     label: 'Staff Hire',      icon: UserPlus },
 ];
 
 /** Workspace nav items (always visible, no module gate). */

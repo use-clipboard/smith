@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -10,9 +10,11 @@ import ModulesTab from './tabs/ModulesTab';
 import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
+import CalendarSettingsTab from './tabs/CalendarSettingsTab';
+import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire';
 
 interface Props {
   userId: string;
@@ -26,6 +28,8 @@ interface Props {
   subscriptionTier: string;
   activeModules: string[];
   seatCount: number;
+  calendarModuleActive?: boolean;
+  staffHireModuleActive?: boolean;
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -37,7 +41,7 @@ const TIER_LABELS: Record<string, string> = {
 
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
-  firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
+  firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount, calendarModuleActive, staffHireModuleActive,
 }: Props) {
   const isAdmin = userRole === 'admin';
   const searchParams = useSearchParams();
@@ -63,17 +67,19 @@ export default function SettingsClient({
   const supabase = createClient();
 
   const ALL_TABS = [
-    { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false },
-    { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false },
-    { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false },
-    { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true },
-    { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true },
-    { id: 'modules' as Tab,     label: 'Tools',       icon: Puzzle,            adminOnly: true },
-    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true },
+    { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false, hidden: false },
+    { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false, hidden: false },
+    { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false, hidden: false },
+    { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false },
+    { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true,  hidden: false },
+    { id: 'modules' as Tab,     label: 'Tools',       icon: Puzzle,            adminOnly: true,  hidden: false },
+    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false },
+    { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive },
+    { id: 'staff-hire' as Tab, label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive },
   ];
 
-  // Non-admins see all tabs but account/modules/billing show a lock
-  const TABS = ALL_TABS.filter(t => !t.adminOnly || isAdmin);
+  // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
+  const TABS = ALL_TABS.filter(t => !t.hidden && (!t.adminOnly || isAdmin));
 
   async function handleSaveProfile() {
     setSavingProfile(true);
@@ -337,6 +343,16 @@ export default function SettingsClient({
       {/* Billing tab — admin only */}
       {activeTab === 'billing' && isAdmin && (
         <BillingTab initialActiveModules={activeModules} initialSeatCount={seatCount} />
+      )}
+
+      {/* Calendar tab — available to all users when module is active */}
+      {activeTab === 'calendar' && calendarModuleActive && (
+        <CalendarSettingsTab isAdmin={isAdmin} currentUserId={userId} />
+      )}
+
+      {/* Staff Hire tab — admin only, shown when module is active */}
+      {activeTab === 'staff-hire' && isAdmin && staffHireModuleActive && (
+        <StaffHireSettingsTab />
       )}
     </div>
   );

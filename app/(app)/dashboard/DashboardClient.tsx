@@ -6,6 +6,7 @@ import {
   FileSearch, ArrowLeftRight, House, ClipboardCheck,
   TrendingUp, Receipt, ShieldAlert, FileText, BookOpen,
   Users, Activity, Wifi, ExternalLink, Archive, Building2,
+  CalendarDays, MicVocal, UserPlus,
 } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
@@ -25,6 +26,9 @@ const ALL_TOOLS = [
   { moduleId: 'document-vault',  href: '/vault',          label: 'Document Vault',     desc: 'Search and manage all client documents',      icon: Archive,        color: '#7C3AED' },
   { moduleId: 'policies',        href: '/policies',       label: 'Policies',           desc: 'Firm policies & procedures reference',       icon: BookOpen,       color: '#0F766E' },
   { moduleId: 'ch-secretarial',  href: '/ch-secretarial', label: 'CH Secretarial',     desc: 'Live Companies House data for your clients',  icon: Building2,      color: '#1D4ED8' },
+  { moduleId: 'google-calendar', href: '/calendar',        label: 'Calendar',           desc: 'Shared firm calendar for events & meetings',  icon: CalendarDays,   color: '#0891B2' },
+  { moduleId: 'meeting-notes',   href: '/meeting-notes',  label: 'Meeting Notes',      desc: 'Record, transcribe and summarise meetings',   icon: MicVocal,       color: '#7C3AED' },
+  { moduleId: 'staff-hire',      href: '/staff-hire',     label: 'Staff Hire',         desc: 'AI-powered recruitment and applicant review',  icon: UserPlus,       color: '#7C3AED' },
 ];
 
 const FEATURE_LABELS: Record<string, string> = {

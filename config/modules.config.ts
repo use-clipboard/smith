@@ -147,6 +147,29 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
+    id: 'meeting-notes',
+    name: 'Meeting Notes',
+    description: 'AI-powered meeting transcription and minutes. Record meetings via microphone or screen audio, get an instant AI summary, formal minutes, and action items — all saved to the client record and Google Drive.',
+    iconName: 'MicVocal',
+    route: '/meeting-notes',
+    alwaysOn: false,
+    enhancedBy: ['google-drive', 'google-calendar'],
+    monthlyPricePence: 1900,
+    category: 'tool',
+  },
+
+  {
+    id: 'staff-hire',
+    name: 'Staff Hire',
+    description: 'AI-powered recruitment tool. Write job postings, evaluate CVs and cover letters, generate interview questions, build scorecards, and rank applicants — all in one place.',
+    iconName: 'UserPlus',
+    route: '/staff-hire',
+    alwaysOn: false,
+    monthlyPricePence: 1900,
+    category: 'tool',
+  },
+
+  {
     id: 'ch-secretarial',
     name: 'CH Secretarial Link',
     description: 'Live Companies House data for all your limited company clients — accounts due dates, confirmation statements, officer and PSC IDV deadlines, all in one place.',
@@ -164,6 +187,16 @@ export const MODULES: ModuleConfig[] = [
     description: 'Connect Agent Smith to Google Drive to save source documents directly from tools, sync files to the Document Vault, and attach Drive links to exported spreadsheets.',
     iconName: 'HardDrive',
     route: null,
+    alwaysOn: false,
+    monthlyPricePence: 1900,
+    category: 'integration',
+  },
+  {
+    id: 'google-calendar',
+    name: 'Google Calendar',
+    description: 'Connect team members\' Google Calendars to view shared schedules, schedule client meetings, and send meeting invitations directly from the client record.',
+    iconName: 'CalendarDays',
+    route: '/calendar',
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'integration',

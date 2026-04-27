@@ -34,14 +34,11 @@ function noteRotation(id: string): number {
   return ((h % 90) - 45) / 10;
 }
 
-function timeAgo(dateStr: string): string {
-  const ms = Date.now() - new Date(dateStr).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+function formatPostedDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const ms = Date.now() - date.getTime();
+  if (ms < 60000) return 'just now';
+  return `Posted ${date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
 
 interface Props {
@@ -542,7 +539,7 @@ function StickyNoteCard({
               }}
             >
               <p style={{ fontWeight: 600 }} className="truncate">{message.author_name}</p>
-              <p>{timeAgo(message.created_at)}</p>
+              <p>{formatPostedDate(message.created_at)}</p>
             </div>
           </>
         )}

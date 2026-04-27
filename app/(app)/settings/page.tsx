@@ -68,6 +68,8 @@ export default async function SettingsPage() {
       subscriptionTier={subscriptionTier}
       activeModules={activeModules}
       seatCount={seatCount}
+      calendarModuleActive={activeModules.includes('google-calendar')}
+      staffHireModuleActive={activeModules.includes('staff-hire')}
     />
   );
 }

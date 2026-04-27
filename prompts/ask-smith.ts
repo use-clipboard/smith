@@ -238,8 +238,54 @@ Records, transcribes, and summarises client meetings using your device's microph
 
 ---
 
+### 17. Staff Hire (left nav → Staff Hire)
+An AI-powered recruitment tool for writing job postings, evaluating applicants, generating interview questions, scoring candidates, and making hiring recommendations.
+
+**Access control:** Admins always have access. Staff members must be explicitly granted access by an admin (Settings → Staff Hire), because the tool contains sensitive information such as salaries and applicant records.
+
+**Dashboard — Job Postings list:**
+- Shows all open, draft, and closed job postings for the firm: job title, date created, salary, number of applicants, and status
+- Status (Active / Draft / Closed) can be changed directly from the list via a hover dropdown
+- Click any row to open that job's detail view
+- Click **New Job** to start the creation wizard
+
+**Creating a Job — 5-step wizard:**
+1. **Job Basics** — job title (required), employment type (Full-Time / Part-Time / Contract), work location type (In Office / Remote / Hybrid), and office location
+2. **Compensation** — salary range (from/to in GBP per annum) and benefits (free text)
+3. **Requirements** — minimum years of experience, plus a dynamic list of skill/software/qualification requirements. Each requirement is marked as **Mandatory** or **Preferred** (click to toggle). Add as many as needed — e.g. "Xero – Software – Mandatory", "QuickBooks – Software – Preferred"
+4. **Description** — free-text description of the role. Optional but improves the AI posting quality
+5. **Review & Generate** — click **Generate Job Posting with AI** to produce a ready-to-publish job posting. Review and edit the text, then either **Publish** (Active) or **Save as Draft**. The posting is stored and can be copied to clipboard at any time from the job's Posting tab
+
+**Job Detail — three tabs:**
+- **Pipeline** — lists all applicants with their stage. Filter by stage using the pill buttons. Each applicant shows their AI score (if evaluated), AI summary, and current stage. Stage can be changed inline via a dropdown. Click **View** to open the applicant detail. Applicant pipeline stages: Applied → Shortlisted → Interview Scheduled → Interviewed → Offered → Hired / Rejected
+- **Job Posting** — shows the AI-generated posting text. Copy to clipboard button for pasting into Indeed, LinkedIn, or any job board
+- **AI Ranking** — once all active applicants have been evaluated, click **Generate AI Ranking** to rank all applicants. The AI produces a ranked list with a Recommend Hire / Consider / Do Not Hire recommendation and a comparative summary for each person, plus an overall hiring recommendation paragraph
+
+**Adding an Applicant:**
+- Click **Add Applicant** on a job's pipeline view
+- Enter their name (required), email, and phone number
+- The applicant is added at the "Applied" stage
+
+**Applicant Detail:**
+- Shows the applicant's name, contact details, and AI score badge (if evaluated)
+- **Documents & AI Actions panel:** Upload the CV and/or cover letter (PDF or image), then choose an action:
+  - **Evaluate Applicant** — AI reads the CV/cover letter against the job requirements and produces a structured evaluation: overall score (0–100), summary, strengths, weaknesses, mandatory/preferred requirements check, experience assessment, and a hire recommendation (Strong Yes / Yes / Maybe / No / Strong No). Results are saved and visible in the AI Evaluation tab
+  - **Generate Interview Questions** — AI produces 12–15 tailored interview questions across categories: Technical, Behavioural, Situational, Cultural Fit, and Experience. Each question includes a rationale and optional follow-up. Personalised to the job requirements and this specific candidate's CV
+  - **Generate Scorecard** — AI produces a structured scoring sheet with 8–12 criteria relevant to the role, each with a category, description, and importance weighting (1–5)
+- **AI Evaluation tab** — shows the full evaluation result
+- **Interview Questions tab** — shows the generated questions with category badges and rationale
+- **Scorecard tab** — an interactive scoring form. During or after the interview, score each criterion from 1–5 (click a score button, click again to clear). A weighted overall score is calculated live. Add notes per criterion. Add overall interviewer notes. Click **Save Progress** to save without completing, or **Mark Complete** to finalise the scorecard
+
+**Tips:**
+- Evaluate applicants before running the AI Ranking — all non-rejected applicants must be evaluated first
+- You can re-evaluate an applicant after uploading updated documents
+- Scorecards can be saved in progress and completed after the interview
+- The job posting is stored permanently — you can return to copy it at any time
+
+---
+
 ## Settings
-Access via the **gear icon** at the bottom of the left sidebar. Settings has four tabs:
+Access via the **gear icon** at the bottom of the left sidebar. Settings has the following tabs:
 
 - **Preferences** — set your Google Drive folder path for Document Vault syncing; manage sidebar favourites (pin tools to the top of the nav); manage device permissions (microphone and camera)
 - **Modules** — enable or disable individual tools for your firm; grayed-out features in the nav indicate a module is not active

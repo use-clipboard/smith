@@ -8,6 +8,7 @@ import TabPanels, { TOOL_ROUTES } from './TabPanels';
 import AskSmithBubble from './AskSmithBubble';
 import OnboardingModal from './OnboardingModal';
 import ApiKeyBanner from './ApiKeyBanner';
+import CalendarReminderBanner from './CalendarReminderBanner';
 import TabProvider, { useTabContext } from './TabContext';
 import { TabActivityProvider } from './TabActivityContext';
 import { ModulesProvider } from './ModulesProvider';
@@ -41,11 +42,11 @@ function ConversationWindows() {
   );
 }
 
-type AppShellInnerProps = Omit<AppShellProps, 'userId' | 'firmId' | 'activeModules' | 'initialFavourites' | 'showOnboarding'>;
+type AppShellInnerProps = Omit<AppShellProps, 'firmId' | 'activeModules' | 'initialFavourites' | 'showOnboarding'>;
 
 // Inner layout — runs inside all providers so it can read TabContext and TabActivityContext
 function AppShellInner({
-  children, userName, userEmail, userRole, avatarUrl, hasApiKey,
+  children, userName, userEmail, userRole, avatarUrl, hasApiKey, userId,
 }: AppShellInnerProps) {
   const { tabs, activeTabId } = useTabContext();
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -64,6 +65,9 @@ function AppShellInner({
       <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
         <TopBar userName={userName} avatarUrl={avatarUrl} />
         {!hasApiKey && <ApiKeyBanner userRole={userRole ?? 'staff'} />}
+        {/* Reminder banner — renders as a slim strip when a meeting is due.
+            Sits in the flex column so it doesn't reflow or block any tool/analysis. */}
+        <CalendarReminderBanner userId={userId} />
         <TabBar />
 
         {/* Content area — main and tool panels are absolutely stacked; only one is visible */}
@@ -110,6 +114,7 @@ export default function AppShell({
               userRole={userRole}
               avatarUrl={avatarUrl}
               hasApiKey={hasApiKey ?? true}
+              userId={userId}
             >
               {children}
             </AppShellInner>

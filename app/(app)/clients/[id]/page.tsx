@@ -6,8 +6,9 @@ import {
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
-  Archive,
+  Archive, CalendarDays, MicVocal,
 } from 'lucide-react';
+import ScheduleMeetingModal from '@/components/features/calendar/ScheduleMeetingModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
@@ -52,11 +53,29 @@ interface VaultDoc {
   tagging_status: string; indexed_at: string;
 }
 interface NoteAttachment { name: string; url: string; mimeType: string; }
+interface MeetingNotesMetadata {
+  summary: string;
+  keyPoints: string[];
+  actionItems: { action: string; owner: string; deadline: string }[];
+  decisions: string[];
+  formalMinutes: string;
+  nextMeeting: string;
+  attendees: string[];
+  location: string;
+  meetingTime: string;
+  meetingOrigin: string;
+}
 interface TimelineNote {
   id: string; title: string; content: string | null; note_type: string;
   note_date: string; is_pinned: boolean; created_at: string; updated_at: string;
   users: { full_name: string } | null;
   attachments?: NoteAttachment[];
+  /** Set when this note was created by the Meeting Notes tool */
+  meeting_note_id?: string | null;
+  /** Google Drive URL for the meeting notes PDF */
+  google_drive_url?: string | null;
+  /** Structured data for meeting_notes type cards */
+  metadata?: MeetingNotesMetadata | null;
 }
 interface SearchableClient { id: string; name: string; client_ref: string | null; business_type: string | null; }
 
@@ -92,11 +111,12 @@ const DOC_TYPE_COLOURS: Record<string, string> = {
   risk_assessment: 'bg-rose-100 text-rose-700', other: 'bg-gray-100 text-gray-600',
 };
 const NOTE_TYPE_META: Record<string, { label: string; icon: React.ReactNode; colour: string }> = {
-  phone_call: { label: 'Phone Call', icon: <Phone size={11} />, colour: 'bg-sky-100 text-sky-700' },
-  meeting: { label: 'Meeting', icon: <Users2 size={11} />, colour: 'bg-emerald-100 text-emerald-700' },
-  conversation: { label: 'Conversation', icon: <MessageCircle size={11} />, colour: 'bg-violet-100 text-violet-700' },
-  email: { label: 'Email', icon: <Mail size={11} />, colour: 'bg-amber-100 text-amber-700' },
-  other: { label: 'Note', icon: <StickyNote size={11} />, colour: 'bg-gray-100 text-gray-600' },
+  phone_call:    { label: 'Phone Call',    icon: <Phone size={11} />,    colour: 'bg-sky-100 text-sky-700' },
+  meeting:       { label: 'Meeting',       icon: <Users2 size={11} />,   colour: 'bg-emerald-100 text-emerald-700' },
+  meeting_notes: { label: 'Meeting Notes', icon: <MicVocal size={11} />, colour: 'bg-indigo-100 text-indigo-700' },
+  conversation:  { label: 'Conversation',  icon: <MessageCircle size={11} />, colour: 'bg-violet-100 text-violet-700' },
+  email:         { label: 'Email',         icon: <Mail size={11} />,     colour: 'bg-amber-100 text-amber-700' },
+  other:         { label: 'Note',          icon: <StickyNote size={11} />, colour: 'bg-gray-100 text-gray-600' },
 };
 const NOTE_TYPE_OPTIONS = [
   { key: 'phone_call', label: 'Phone Call', icon: <Phone size={14} /> },
@@ -160,6 +180,7 @@ function NoteCard({
   const [deleting, setDeleting] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [showTitleSuggestions, setShowTitleSuggestions] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const [editTitle, setEditTitle] = useState(note.title);
   const [editContent, setEditContent] = useState(note.content ?? '');
@@ -271,9 +292,22 @@ function NoteCard({
     );
   }
 
+  const parsedMd = (() => {
+    if (!note.content) return null;
+    if (note.metadata) return note.metadata;
+    try {
+      const parsed = JSON.parse(note.content) as Record<string, unknown>;
+      if (parsed.__smith_meeting_notes__) return parsed as unknown as MeetingNotesMetadata;
+    } catch { /* not JSON */ }
+    return null;
+  })();
+  const isMeetingNote = !!parsedMd;
+  const md = parsedMd;
+
   return (
-    <div className={`glass-solid rounded-xl border p-4 transition-all group ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className={`glass-solid rounded-xl border transition-all group ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
+      {/* ── Header row ── */}
+      <div className="flex items-start justify-between gap-3 p-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${meta.colour}`}>
@@ -287,10 +321,32 @@ function NoteCard({
               </span>
             )}
           </div>
-          <p className="font-semibold text-[var(--text-primary)] text-sm">{note.title}</p>
-          {note.content && (
+
+          {/* Title — clickable expand toggle for meeting notes */}
+          {isMeetingNote ? (
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="flex items-center gap-1.5 text-left group/title w-full"
+            >
+              <span className="font-semibold text-[var(--text-primary)] text-sm group-hover/title:text-[var(--accent)] transition-colors">
+                {note.title}
+              </span>
+              <ChevronDown size={14} className={`text-[var(--text-muted)] shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          ) : (
+            <p className="font-semibold text-[var(--text-primary)] text-sm">{note.title}</p>
+          )}
+
+          {/* Summary line for meeting notes (collapsed) */}
+          {isMeetingNote && !expanded && md && (
+            <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">{md.summary}</p>
+          )}
+
+          {/* Regular note content */}
+          {!isMeetingNote && note.content && (
             <p className="text-sm text-[var(--text-secondary)] mt-1.5 leading-relaxed whitespace-pre-wrap">{note.content}</p>
           )}
+
           {note.attachments && note.attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {note.attachments.map((a, i) => (
@@ -300,6 +356,14 @@ function NoteCard({
                   {a.name}
                 </a>
               ))}
+            </div>
+          )}
+          {note.google_drive_url && (
+            <div className="mt-2">
+              <a href={note.google_drive_url} target="_blank" rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-700 hover:bg-indigo-100 font-medium transition-colors">
+                <FileText size={11} />View meeting notes PDF<ExternalLink size={10} />
+              </a>
             </div>
           )}
         </div>
@@ -317,6 +381,90 @@ function NoteCard({
           </button>
         </div>
       </div>
+
+      {/* ── Expanded meeting notes body ── */}
+      {isMeetingNote && expanded && md && (
+        <div className="border-t border-[var(--border)] px-4 pb-4 pt-3 space-y-4">
+
+          {/* Meta row */}
+          {(md.meetingTime || md.location || md.attendees.length > 0) && (
+            <div className="flex flex-wrap gap-3 text-xs text-[var(--text-muted)]">
+              {md.meetingTime && <span>🕐 {md.meetingTime}</span>}
+              {md.location    && <span>📍 {md.location}</span>}
+              {md.attendees.length > 0 && <span>👥 {md.attendees.join(', ')}</span>}
+            </div>
+          )}
+
+          {/* Summary */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1">Summary</p>
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{md.summary}</p>
+          </div>
+
+          {/* Key Points */}
+          {md.keyPoints.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Key Discussion Points</p>
+              <ol className="space-y-1">
+                {md.keyPoints.map((pt, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-[var(--text-secondary)]">
+                    <span className="text-[var(--text-muted)] shrink-0 w-5 text-right">{i + 1}.</span>
+                    <span>{pt}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Decisions */}
+          {md.decisions.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Decisions Made</p>
+              <ul className="space-y-1">
+                {md.decisions.map((d, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-[var(--text-secondary)]">
+                    <span className="text-[var(--accent)] shrink-0">–</span>
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Action Items */}
+          {md.actionItems.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Action Items</p>
+              <div className="space-y-1.5">
+                {md.actionItems.map((item, i) => (
+                  <div key={i} className="rounded-lg bg-[var(--bg-nav-hover)] px-3 py-2">
+                    <p className="text-sm font-medium text-[var(--text-primary)]">{i + 1}. {item.action}</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                      {item.owner} · Deadline: {item.deadline}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Formal Minutes */}
+          {md.formalMinutes && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1">Minutes</p>
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{md.formalMinutes}</p>
+            </div>
+          )}
+
+          {/* Next Meeting */}
+          {md.nextMeeting && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1">Next Meeting</p>
+              <p className="text-sm text-[var(--text-secondary)]">{md.nextMeeting}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -557,6 +705,7 @@ export default function ClientDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showScheduleMeeting, setShowScheduleMeeting] = useState(false);
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
 
@@ -585,7 +734,6 @@ export default function ClientDetailPage() {
   }, [clientId]);
 
   const fetchTimeline = useCallback(async () => {
-    if (timelineFetched) return;
     setTimelineLoading(true);
     try {
       const [vaultRes, notesRes] = await Promise.all([
@@ -604,7 +752,7 @@ export default function ClientDetailPage() {
       }
       setTimelineFetched(true);
     } finally { setTimelineLoading(false); }
-  }, [clientId, timelineFetched]);
+  }, [clientId]);
 
   const fetchLinks = useCallback(async (force = false) => {
     if (!force && linksFetched) return;
@@ -802,6 +950,14 @@ export default function ClientDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isModuleActive('google-calendar') && (
+            <button
+              onClick={() => setShowScheduleMeeting(true)}
+              className="btn-secondary flex items-center gap-1.5"
+            >
+              <CalendarDays size={13} />Schedule Meeting
+            </button>
+          )}
           <button onClick={startEdit} className="btn-secondary"><Pencil size={13} />Edit</button>
           <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
             <Trash2 size={13} />Delete
@@ -824,6 +980,7 @@ export default function ClientDetailPage() {
           { moduleId: 'performance',     label: 'Performance',      icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
           { moduleId: 'summarise',       label: 'Summarise',        icon: FileText,       route: '/summarise',       color: '#6B7280', show: true },
           { moduleId: 'document-vault',  label: 'Document Vault',   icon: Archive,        route: '/vault',           color: '#0F766E', show: true },
+          { moduleId: 'meeting-notes',   label: 'Meeting Notes',    icon: MicVocal,       route: '/meeting-notes',   color: '#6D28D9', show: true },
         ];
         // Only show tools the user has pinned as favourites (and that are relevant for this client type)
         const active = tools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
@@ -1379,6 +1536,16 @@ export default function ClientDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Schedule Meeting modal */}
+      {showScheduleMeeting && client && (
+        <ScheduleMeetingModal
+          clientId={client.id}
+          clientName={client.name}
+          clientEmail={client.contact_email}
+          onClose={() => setShowScheduleMeeting(false)}
+        />
       )}
     </ToolLayout>
   );

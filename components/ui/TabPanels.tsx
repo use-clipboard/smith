@@ -16,6 +16,9 @@ import SummarisePage from '@/app/(app)/summarise/page';
 import VaultPage from '@/app/(app)/vault/page';
 import PoliciesPage from '@/app/(app)/policies/page';
 import CHSecretarialPage from '@/app/(app)/ch-secretarial/page';
+import CalendarPage from '@/app/(app)/calendar/page';
+import MeetingNotesPage from '@/app/(app)/meeting-notes/page';
+import StaffHirePage from '@/app/(app)/staff-hire/page';
 
 const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/full-analysis':   FullAnalysisPage,
@@ -29,6 +32,9 @@ const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/vault':           VaultPage,
   '/policies':        PoliciesPage,
   '/ch-secretarial':  CHSecretarialPage,
+  '/calendar':        CalendarPage,
+  '/meeting-notes':   MeetingNotesPage,
+  '/staff-hire':      StaffHirePage,
 };
 
 /** Routes managed by TabPanels (not Next.js routing). Import this wherever you need to distinguish tool tabs from regular pages. */

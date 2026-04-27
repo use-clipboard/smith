@@ -3,7 +3,7 @@
 import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  Puzzle, Plus,
+  CalendarDays, MicVocal, UserPlus, Puzzle, Plus,
 } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
@@ -13,6 +13,7 @@ import { MODULES, type ModuleConfig } from '@/config/modules.config';
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
+  CalendarDays, MicVocal, UserPlus,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -25,7 +26,13 @@ export default function NewTabPage() {
   const { tabs, openTab } = useTabContext();
   const { resetIfDone } = useTabActivityContext();
 
-  const tools = MODULES.filter(m => !m.alwaysOn && m.category === 'tool' && isModuleActive(m.id));
+  // Include tools + integrations that have their own page (e.g. Calendar)
+  const tools = MODULES.filter(m =>
+    !m.alwaysOn &&
+    m.route !== null &&
+    (m.category === 'tool' || m.category === 'integration') &&
+    isModuleActive(m.id)
+  );
 
   function handleSelect(module: ModuleConfig) {
     if (!module.route) return;
