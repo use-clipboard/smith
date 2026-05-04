@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
@@ -9,8 +9,35 @@ import {
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
+type FAQ = { q: string; a: React.ReactNode };
 
-const FAQS = [
+const FAQS: FAQ[] = [
+  {
+    q: 'Is SMITH GDPR compliant? Is our client data safe when it\'s sent to the AI?',
+    a: (
+      <span>
+        Yes — SMITH is designed with UK GDPR in mind, and the Anthropic API provides strong data protections:
+        <ul className="mt-2 space-y-1.5 list-none">
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span>Anthropic does <strong>not</strong> use API request data to train its models. This is a contractual commitment, not just a policy — it applies to all API users by default.</li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span>All data is encrypted in transit (HTTPS/TLS) and never stored by SMITH in plain text.</li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span>Your client data is scoped to your firm only — no other SMITH firm can access it.</li>
+        </ul>
+        <span className="block mt-3">
+          For formal compliance purposes — such as answering client due diligence questionnaires or satisfying an audit — you should sign Anthropic&apos;s <strong>Data Processing Agreement (DPA)</strong>. This is a legal contract that formalises how Anthropic handles data on your behalf as a data processor under UK/EU GDPR. You can request it by emailing <a href="mailto:privacy@anthropic.com" className="text-[var(--accent)] hover:underline">privacy@anthropic.com</a> or visiting their legal pages at <a href="https://www.anthropic.com/legal" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline inline-flex items-center gap-1">anthropic.com/legal <ExternalLink size={11} /></a>.
+        </span>
+      </span>
+    ),
+  },
+  {
+    q: 'What happens if multiple users run AI tools at the same time?',
+    a: (
+      <span>
+        Anthropic enforces <strong>rate limits</strong> per account — these cap how many tokens and requests can be processed per minute. If several users run heavy jobs simultaneously, you may briefly hit these limits.
+        <span className="block mt-2">SMITH handles this automatically: if a rate limit is hit, it retries the request up to four times using exponential backoff. Most users will not notice any delay.</span>
+        <span className="block mt-2">If your firm runs a high volume of concurrent jobs regularly, upgrading your Anthropic usage tier (by increasing spend on your Anthropic account) will raise these limits. See the <strong>AI & API Key → Rate Limits</strong> section of this Help centre for the full breakdown.</span>
+      </span>
+    ),
+  },
   {
     q: 'Why won\'t the AI tools work?',
     a: 'SMITH requires an Anthropic API key to be configured for your firm. Go to Settings → AI & API Key and add your key. If you\'re not an admin, ask your firm admin to do this.',
@@ -93,7 +120,7 @@ const TOOLS = [
   { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
 ];
 
-function FAQItem({ q, a }: { q: string; a: string }) {
+function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border-b border-[var(--border)] last:border-0">
@@ -265,6 +292,67 @@ export default function HelpPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+
+            <div className="glass-solid rounded-xl p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Rate Limits — how fast can you run AI jobs?</h3>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Anthropic enforces two types of limit per account. These are not errors in SMITH — they are guardrails applied by Anthropic to all API users:
+              </p>
+              <ul className="space-y-1.5 text-sm text-[var(--text-secondary)]">
+                <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>TPM (Tokens Per Minute)</strong> — the total volume of text (input + output) that can be processed per minute. A token is roughly ¾ of a word. A typical Full Analysis job uses 5,000–20,000 tokens.</span></li>
+                <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>RPM (Requests Per Minute)</strong> — the number of individual AI calls allowed per minute. SMITH batches documents into groups of three, so each job run may use multiple requests.</span></li>
+              </ul>
+              <p className="text-sm text-[var(--text-secondary)]">Limits increase automatically as your cumulative Anthropic spend grows:</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-[var(--text-secondary)] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[var(--border)]">
+                      <th className="text-left py-2 pr-4 font-semibold text-[var(--text-primary)]">Tier</th>
+                      <th className="text-left py-2 pr-4 font-semibold text-[var(--text-primary)]">Cumulative spend</th>
+                      <th className="text-left py-2 pr-4 font-semibold text-[var(--text-primary)]">TPM (Claude Sonnet)</th>
+                      <th className="text-left py-2 font-semibold text-[var(--text-primary)]">RPM</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border)]">
+                    {[
+                      ['1', '$100+', '40,000', '50'],
+                      ['2', '$500+', '80,000', '1,000'],
+                      ['3', '$5,000+', '160,000', '2,000'],
+                      ['4', '$15,000+', '400,000', '4,000'],
+                    ].map(([tier, spend, tpm, rpm]) => (
+                      <tr key={tier}>
+                        <td className="py-2 pr-4">Tier {tier}</td>
+                        <td className="py-2 pr-4">{spend}</td>
+                        <td className="py-2 pr-4">{tpm}</td>
+                        <td className="py-2">{rpm}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-sm text-[var(--text-secondary)]">
+                <strong>SMITH handles rate limit errors automatically</strong> — if a limit is hit, requests are retried up to four times with exponential backoff. For most firms, this is invisible. If your team runs many large jobs simultaneously and you notice delays, check your current tier at{' '}
+                <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline inline-flex items-center gap-1">console.anthropic.com <ExternalLink size={11} /></a>.
+              </p>
+            </div>
+
+            <div className="glass-solid rounded-xl p-5 space-y-3">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">GDPR & Data Privacy</h3>
+              <p className="text-sm text-[var(--text-secondary)]">
+                As a UK accountancy firm handling personal financial data, GDPR compliance is essential. Here is what you need to know:
+              </p>
+              <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+                <li className="flex gap-2"><span className="text-emerald-500 shrink-0">✓</span><span><strong>Anthropic does not train its models on API data.</strong> This is a contractual commitment that applies to all API users. Your client documents are processed and discarded — they are never used to improve Anthropic&apos;s models.</span></li>
+                <li className="flex gap-2"><span className="text-emerald-500 shrink-0">✓</span><span><strong>All data is encrypted in transit</strong> using TLS. No client data is ever transmitted unencrypted.</span></li>
+                <li className="flex gap-2"><span className="text-emerald-500 shrink-0">✓</span><span><strong>SMITH never stores document contents</strong> in its own database. Only metadata (file name, date, tags) is stored. Document files live in your connected Google Drive.</span></li>
+                <li className="flex gap-2"><span className="text-emerald-500 shrink-0">✓</span><span><strong>Your data is firm-scoped.</strong> Row Level Security (RLS) in the database ensures no other firm on SMITH can access your data.</span></li>
+              </ul>
+              <div className="mt-1 p-4 rounded-lg bg-[var(--accent-light)] border border-[var(--border)] text-sm text-[var(--text-secondary)] space-y-2">
+                <p className="font-semibold text-[var(--text-primary)]">Data Processing Agreement (DPA)</p>
+                <p>For formal compliance — such as client due diligence questionnaires or ICO audit requirements — your firm should sign Anthropic&apos;s <strong>Data Processing Agreement</strong>. This is a legal contract that designates Anthropic as a data processor acting on your behalf under UK/EU GDPR, with defined obligations around security, sub-processors, and breach notification.</p>
+                <p>To request the DPA, email <a href="mailto:privacy@anthropic.com" className="text-[var(--accent)] hover:underline">privacy@anthropic.com</a> or find it under the legal section at <a href="https://www.anthropic.com/legal" target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline inline-flex items-center gap-1">anthropic.com/legal <ExternalLink size={11} /></a>.</p>
+              </div>
             </div>
           </div>
         )}

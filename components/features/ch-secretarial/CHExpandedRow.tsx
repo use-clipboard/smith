@@ -83,13 +83,13 @@ function OfficerCard({ officer }: { officer: CHOfficer }) {
 function PSCCard({ psc }: { psc: CHPSC }) {
   const kindLabel = psc.kind.replace(/^individual-|^corporate-|^legal-|-with-significant-control$/g, '').replace(/-/g, ' ');
   return (
-    <div className={`rounded-xl border p-4 space-y-2 ${psc.idvVerified ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-800' : psc.idvOverdue ? 'border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800' : 'border-[var(--border)] bg-[var(--bg-nav-hover)]'}`}>
+    <div className={`rounded-xl border p-4 space-y-2 ${psc.idvExempt ? 'border-[var(--border)] bg-[var(--bg-nav-hover)]' : psc.idvVerified ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-800' : psc.idvOverdue ? 'border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800' : 'border-[var(--border)] bg-[var(--bg-nav-hover)]'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{psc.name}</p>
           <p className="text-xs text-purple-500 capitalize mt-0.5">{kindLabel}</p>
         </div>
-        <IdvStatusIcon overdue={psc.idvOverdue} verified={psc.idvVerified} />
+        {!psc.idvExempt && <IdvStatusIcon overdue={psc.idvOverdue} verified={psc.idvVerified} />}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
         <div className="flex items-center gap-1.5">
@@ -118,9 +118,11 @@ function PSCCard({ psc }: { psc: CHPSC }) {
       )}
       <div className="flex items-center gap-2 pt-1">
         <span className="text-xs text-[var(--text-muted)]">IDV:</span>
-        {psc.idvVerified
-          ? <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"><CheckCircle size={11} /> Verified</span>
-          : <DueBadge dateStr={psc.idvDueDate} overdue={psc.idvOverdue} />
+        {psc.idvExempt
+          ? <span className="text-xs text-[var(--text-muted)] italic">Not required</span>
+          : psc.idvVerified
+            ? <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"><CheckCircle size={11} /> Verified</span>
+            : <DueBadge dateStr={psc.idvDueDate} overdue={psc.idvOverdue} />
         }
       </div>
     </div>

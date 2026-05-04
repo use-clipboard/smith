@@ -1,27 +1,28 @@
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createServiceClient } from '@/lib/supabase-server';
 import DashboardClient from './DashboardClient';
 
 export default async function DashboardPage() {
   const supabase = createClient();
+  const service = createServiceClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   const displayName = user?.email?.split('@')[0] || 'there';
 
-  // Fetch recent clients
+  // Fetch recent clients (capped at 3 for panel display)
   const { data: recentClients } = await supabase
     .from('clients')
     .select('id, name, client_ref')
     .order('created_at', { ascending: false })
     .limit(3);
 
-  // Fetch recent AI outputs
+  // Fetch recent AI outputs — include client_ref for display
   const { data: recentOutputs } = await supabase
     .from('outputs')
-    .select('id, feature, created_at, clients(name)')
+    .select('id, feature, created_at, clients(name, client_ref)')
     .order('created_at', { ascending: false })
     .limit(3);
 
-  // Fetch user profile (firm_id + full_name)
+  // Fetch user profile
   const { data: profile } = await supabase
     .from('users')
     .select('firm_id, full_name')
@@ -31,14 +32,32 @@ export default async function DashboardPage() {
   const firmId = profile?.firm_id ?? '';
   const currentUserName = profile?.full_name || displayName;
 
-  // Fetch team members
-  const { data: teamMembers } = firmId
-    ? await supabase
+  // Fetch all team members — client sorts and slices for display
+  const { data: teamMembersRaw } = firmId
+    ? await service
         .from('users')
-        .select('id, full_name, email')
+        .select('id, full_name, email, role')
         .eq('firm_id', firmId)
-        .limit(8)
+        .order('full_name')
     : { data: [] };
+
+  // Merge last_sign_in_at from auth.users via service role
+  let lastLoginMap: Record<string, string | null> = {};
+  try {
+    const { data: authData } = await service.auth.admin.listUsers({ perPage: 1000 });
+    if (authData?.users) {
+      lastLoginMap = Object.fromEntries(
+        authData.users.map(u => [u.id, u.last_sign_in_at ?? null])
+      );
+    }
+  } catch {
+    // Non-critical — last login omitted if unavailable
+  }
+
+  const teamMembers = (teamMembersRaw ?? []).map(m => ({
+    ...m,
+    last_sign_in_at: lastLoginMap[m.id] ?? null,
+  }));
 
   // Fetch whiteboard messages for this firm
   const { data: whiteboardMessages } = firmId
@@ -54,8 +73,8 @@ export default async function DashboardPage() {
     <DashboardClient
       displayName={displayName}
       recentClients={recentClients ?? []}
-      recentOutputs={(recentOutputs ?? []) as unknown as { id: string; feature: string; created_at: string; clients?: { name: string } | null }[]}
-      teamMembers={teamMembers ?? []}
+      recentOutputs={(recentOutputs ?? []) as unknown as { id: string; feature: string; created_at: string; clients?: { name: string; client_ref?: string | null } | null }[]}
+      teamMembers={teamMembers}
       whiteboardMessages={(whiteboardMessages ?? []) as unknown as { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string }[]}
       currentUserId={user?.id ?? ''}
       firmId={firmId}

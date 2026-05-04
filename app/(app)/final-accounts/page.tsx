@@ -92,11 +92,12 @@ function generateReportHtml(
   // ── Title page ──
   const titlePageHtml = `
     <div class="title-page">
-      <div class="title-header"><span class="title-header-text">SMITH — Accountancy Working Papers</span></div>
+      <div class="title-header">
+        <div class="title-header-tag">${isWorkingPapersOnly ? 'Working Papers' : 'Final Accounts Review'}</div>
+        <div class="title-header-name">${businessName || 'Client Name'}</div>
+        ${clientCode ? `<div class="title-header-code">${clientCode}</div>` : ''}
+      </div>
       <div class="title-body">
-        <div class="title-doc-type">${isWorkingPapersOnly ? 'Working Papers' : 'Final Accounts Review'}</div>
-        <div class="title-client-name">${businessName || 'Client Name'}</div>
-        ${clientCode ? `<div class="title-client-code">${clientCode}</div>` : ''}
         <div class="title-meta">
           <div class="title-meta-item"><label>Business Type</label><span>${fmtBiz(businessType)}</span></div>
           <div class="title-meta-item"><label>Period</label><span>${fmtDate(periodStart)} to ${fmtDate(periodEnd)}</span></div>
@@ -184,70 +185,137 @@ function generateReportHtml(
   }).join('');
 
   const css = `
+    /* ── Base ── */
     body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 0; padding: 40px; font-size: 13px; line-height: 1.6; max-width: 860px; background: #fff; }
+
     /* ── Title page ── */
     .title-page { min-height: 960px; display: flex; flex-direction: column; }
-    .title-header { background: #1a3558; color: #fff; padding: 16px 56px; margin: -56px -56px 0; }
-    .title-header-text { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.7; }
-    .title-body { flex: 1; padding: 64px 0 40px; }
-    .title-doc-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 3px; color: #6b7280; margin-bottom: 14px; }
-    .title-client-name { font-size: 38px; font-weight: 900; color: #111827; line-height: 1.2; }
-    .title-client-code { font-size: 15px; color: #9ca3af; font-weight: 500; margin-top: 6px; }
-    .title-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 48px; margin-top: 52px; padding-top: 28px; border-top: 2px solid #e5e7eb; }
-    .title-meta-item label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; display: block; margin-bottom: 3px; }
+    .title-header {
+      background: #12458F;
+      padding: 24px 40px 22px;
+      margin: -40px -40px 0;
+      border-top: 4px solid #1C73D1;
+    }
+    .title-header-tag {
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 2.5px; color: #8CBAF2; margin-bottom: 10px;
+    }
+    .title-header-name {
+      font-size: 30px; font-weight: 900; color: #fff; line-height: 1.2;
+    }
+    .title-header-code {
+      font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 6px; font-weight: 500;
+    }
+    .title-body { flex: 1; padding: 44px 0 32px; }
+    .title-meta {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 18px 48px; padding-top: 24px; border-top: 2px solid #e5e7eb;
+    }
+    .title-meta-item label {
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #9ca3af; display: block; margin-bottom: 3px;
+    }
     .title-meta-item span { font-size: 14px; color: #374151; font-weight: 500; }
-    .title-context { margin-top: 32px; padding: 14px 18px; background: #f9fafb; border-left: 4px solid #3b82f6; font-size: 12px; color: #374151; }
-    .title-context-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; margin-bottom: 6px; }
-    .title-footer { text-align: center; font-size: 11px; color: #d1d5db; letter-spacing: 0.5px; padding-top: 20px; border-top: 1px solid #f3f4f6; margin-top: auto; }
+    .title-context {
+      margin-top: 28px; padding: 12px 16px;
+      background: #EDF5FF; border-left: 3px solid #1C73D1;
+      font-size: 12px; color: #374151;
+    }
+    .title-context-label {
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: #9ca3af; margin-bottom: 5px;
+    }
+    .title-footer {
+      text-align: center; font-size: 11px; color: #d1d5db;
+      letter-spacing: 0.5px; padding-top: 20px;
+      border-top: 1px solid #f3f4f6; margin-top: auto;
+    }
+
     /* ── TOC ── */
     .toc-section { padding-bottom: 40px; }
-    .toc-heading { font-size: 22px; font-weight: 900; color: #111827; border-bottom: 2px solid #1a3558; padding-bottom: 12px; margin-bottom: 24px; margin-top: 0; }
+    .toc-heading {
+      font-size: 20px; font-weight: 900; color: #111827;
+      border-bottom: 2px solid #12458F; padding-bottom: 10px;
+      margin-bottom: 22px; margin-top: 0;
+    }
     .toc-group { margin-bottom: 18px; }
-    .toc-group-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 6px; }
-    .toc-entry { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; border-bottom: 1px dotted #e5e7eb; }
-    .toc-code { font-size: 12px; font-weight: 700; color: #1a3558; width: 32px; flex-shrink: 0; }
+    .toc-group-header {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: #1C73D1;
+      background: #EDF5FF; border-left: 3px solid #1C73D1;
+      padding: 5px 10px; margin-bottom: 6px;
+    }
+    .toc-entry {
+      display: flex; align-items: baseline; gap: 10px;
+      padding: 3px 8px; border-bottom: 1px dotted #e5e7eb;
+    }
+    .toc-code { font-size: 11px; font-weight: 700; color: #1C73D1; width: 32px; flex-shrink: 0; }
     .toc-entry-name { font-size: 12px; color: #4b5563; }
+
     /* ── Section dividers ── */
-    .section-divider { padding-top: 32px; padding-bottom: 28px; }
-    .sd-letter { font-size: 96px; font-weight: 900; color: #f3f4f6; line-height: 1; margin-bottom: -8px; }
-    .sd-content { border-top: 3px solid #1a3558; padding-top: 14px; }
-    .sd-name { font-size: 26px; font-weight: 800; color: #111827; }
-    .sd-sub { font-size: 12px; color: #9ca3af; margin-top: 4px; font-weight: 500; }
-    /* ── Review ── */
+    .section-divider {
+      background: #EDF5FF; border-left: 3px solid #1C73D1;
+      padding: 12px 16px; margin: 36px 0 20px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .sd-letter {
+      font-size: 13px; font-weight: 900;
+      color: #fff; background: #1C73D1;
+      padding: 4px 10px; border-radius: 4px; flex-shrink: 0;
+    }
+    .sd-content { }
+    .sd-name { font-size: 15px; font-weight: 800; color: #12458F; }
+    .sd-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; font-weight: 500; }
+
+    /* ── Review points ── */
     .review-summary { display: flex; gap: 14px; margin-bottom: 20px; margin-top: 16px; }
     .rsbox { padding: 14px 22px; border-radius: 8px; text-align: center; border: 1px solid; min-width: 90px; }
     .rsnum { font-size: 28px; font-weight: 900; }
     .rslbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
     .serious-box { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
     .minor-box { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
-    .review-point { border-left: 4px solid #e5e7eb; padding: 14px 16px; margin-bottom: 12px; background: #fafafa; page-break-inside: avoid; break-inside: avoid; }
+    .review-point {
+      border-left: 4px solid #e5e7eb; padding: 14px 16px;
+      margin-bottom: 12px; background: #fafafa;
+      page-break-inside: avoid; break-inside: avoid;
+      border-radius: 0 6px 6px 0;
+    }
     .review-point.serious { border-left-color: #ef4444; background: #fef9f9; }
-    .review-point.minor { border-left-color: #f59e0b; background: #fffdf5; }
+    .review-point.minor   { border-left-color: #f59e0b; background: #fffdf5; }
     .rp-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
     .rp-area { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; display: block; margin-bottom: 2px; }
     .rp-issue { font-size: 14px; font-weight: 700; color: #111827; }
     .rp-expl { font-size: 12px; color: #4b5563; margin: 0; }
     .badge { font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px; white-space: nowrap; margin-left: 12px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; flex-shrink: 0; }
     .badge-serious { background: #fee2e2; color: #b91c1c; }
-    .badge-minor { background: #fef3c7; color: #92400e; }
+    .badge-minor   { background: #fef3c7; color: #92400e; }
     .journal-section { margin-top: 10px; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
-    .journal-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #6b7280; padding: 5px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
-    .journal-desc { font-size: 11px; color: #6b7280; padding: 5px 12px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
+    .journal-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #1C73D1; padding: 6px 12px; background: #EDF5FF; border-bottom: 1px solid #cde0f8; }
+    .journal-desc  { font-size: 11px; color: #6b7280; padding: 5px 12px; background: #f9fafb; border-top: 1px solid #e5e7eb; }
     .journal-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .journal-table th { text-align: left; padding: 5px 12px; background: #f3f4f6; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; }
+    .journal-table th { text-align: left; padding: 6px 12px; background: #1C73D1; color: #fff; font-weight: 700; border: 1px solid #1C73D1; }
     .journal-table td { padding: 5px 12px; border-bottom: 1px solid #f3f4f6; }
+
     /* ── Working papers ── */
-    .paper { margin-bottom: 24px; page-break-inside: avoid; break-inside: avoid; }
-    .paper-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-    .paper-code { font-size: 10px; font-weight: 700; color: #fff; background: #1a3558; padding: 3px 8px; border-radius: 3px; flex-shrink: 0; }
-    .paper-name { font-size: 13px; font-weight: 700; color: #374151; }
+    .paper { margin-bottom: 28px; page-break-inside: avoid; break-inside: avoid; }
+    .paper-title-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 12px; padding: 9px 14px;
+      background: #EDF5FF; border-left: 3px solid #1C73D1;
+    }
+    .paper-code {
+      font-size: 10px; font-weight: 700; color: #fff;
+      background: #1C73D1; padding: 3px 9px;
+      border-radius: 3px; flex-shrink: 0;
+    }
+    .paper-name { font-size: 13px; font-weight: 700; color: #12458F; }
     .wp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .wp-table th { text-align: left; padding: 6px 10px; background: #1a3558; color: #fff; font-weight: 600; border: 1px solid #1a3558; }
-    .wp-table td { padding: 5px 10px; border: 1px solid #e5e7eb; }
-    .wp-table tr:nth-child(even) td { background: #f9fafb; }
-    .wp-notes { margin-top: 10px; font-size: 12px; color: #4b5563; padding: 8px 12px; background: #f9fafb; border-left: 3px solid #d1d5db; }
-    pre { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 12px 14px; font-size: 11px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; }
-    .wp-para { font-size: 12px; color: #374151; margin: 0 0 10px; line-height: 1.75; page-break-inside: avoid; break-inside: avoid; }
+    .wp-table th { text-align: left; padding: 7px 10px; background: #1C73D1; color: #fff; font-weight: 700; border: 1px solid #1C73D1; }
+    .wp-table td { padding: 6px 10px; border: 1px solid #e5e7eb; }
+    .wp-table tr:nth-child(even) td { background: #F5F5F8; }
+    .wp-notes { margin-top: 10px; font-size: 12px; color: #4b5563; padding: 8px 12px; background: #EDF5FF; border-left: 3px solid #8CBAF2; }
+    pre { background: #F5F5F8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 12px 14px; font-size: 11px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; }
+    .wp-para { font-size: 12px; color: #374151; margin: 0 0 10px; line-height: 1.8; page-break-inside: avoid; break-inside: avoid; }
     .wp-para:last-child { margin-bottom: 0; }
   `;
 

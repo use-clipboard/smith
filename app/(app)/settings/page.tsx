@@ -22,12 +22,14 @@ export default async function SettingsPage() {
   let seatCount = 1;
 
   let firmLogoUrl: string | null = null;
+  let emailSenderName: string | null = null;
+  let emailSenderAddress: string | null = null;
 
   if (profile?.firm_id) {
     try {
       const { data: firm } = await supabase
         .from('firms')
-        .select('name, subscription_tier, active_modules, seat_count, logo_url')
+        .select('name, subscription_tier, active_modules, seat_count, logo_url, email_from_name, email_from_address')
         .eq('id', profile.firm_id)
         .single();
 
@@ -35,6 +37,8 @@ export default async function SettingsPage() {
       subscriptionTier = firm?.subscription_tier ?? 'internal';
       seatCount = (firm?.seat_count as number | null) ?? 1;
       firmLogoUrl = (firm as Record<string, unknown>)?.logo_url as string | null ?? null;
+      emailSenderName = (firm as Record<string, unknown>)?.email_from_name as string | null ?? null;
+      emailSenderAddress = (firm as Record<string, unknown>)?.email_from_address as string | null ?? null;
 
       const stored = (firm?.active_modules as string[] | null) ?? [];
       if (stored.length > 0) activeModules = stored;
@@ -70,6 +74,9 @@ export default async function SettingsPage() {
       seatCount={seatCount}
       calendarModuleActive={activeModules.includes('google-calendar')}
       staffHireModuleActive={activeModules.includes('staff-hire')}
+      tasksModuleActive={activeModules.includes('tasks')}
+      emailSenderName={emailSenderName}
+      emailSenderAddress={emailSenderAddress}
     />
   );
 }

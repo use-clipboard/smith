@@ -40,6 +40,15 @@ export default function JobDetail({ job, onBack, onOpenApplicant }: Props) {
   const [rankLoading, setRankLoading] = useState(false);
   const [rankError, setRankError] = useState<string | null>(null);
   const [postingCopied, setPostingCopied] = useState(false);
+  // Full job record (includes generated_posting which the list view omits for performance)
+  const [fullJob, setFullJob] = useState<JobPosting>(job);
+
+  useEffect(() => {
+    fetch(`/api/staff-hire/jobs/${job.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { job: JobPosting } | null) => { if (data?.job) setFullJob(data.job); })
+      .catch(() => {});
+  }, [job.id]);
 
   const loadApplicants = useCallback(async () => {
     setLoading(true);
@@ -89,7 +98,7 @@ export default function JobDetail({ job, onBack, onOpenApplicant }: Props) {
   }, [job.id, loadApplicants]);
 
   async function handleCopyPosting() {
-    await navigator.clipboard.writeText(job.generated_posting ?? '');
+    await navigator.clipboard.writeText(fullJob.generated_posting ?? '');
     setPostingCopied(true);
     setTimeout(() => setPostingCopied(false), 2000);
   }
@@ -245,7 +254,7 @@ export default function JobDetail({ job, onBack, onOpenApplicant }: Props) {
       {/* Posting tab */}
       {activeView === 'posting' && (
         <div className="space-y-4">
-          {job.generated_posting ? (
+          {fullJob.generated_posting ? (
             <>
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-[var(--text-muted)]">Copy this text and paste it directly into Indeed, LinkedIn, or your website.</p>
@@ -256,7 +265,7 @@ export default function JobDetail({ job, onBack, onOpenApplicant }: Props) {
               </div>
               <div className="glass-solid rounded-xl p-5">
                 <pre className="text-sm text-[var(--text-primary)] whitespace-pre-wrap font-sans leading-relaxed">
-                  {job.generated_posting}
+                  {fullJob.generated_posting}
                 </pre>
               </div>
             </>

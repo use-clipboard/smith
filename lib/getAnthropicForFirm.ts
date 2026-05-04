@@ -30,5 +30,6 @@ export async function getAnthropicForFirm(firmId: string): Promise<Anthropic> {
     throw new ApiKeyNotConfiguredError();
   }
 
-  return new Anthropic({ apiKey });
+  // maxRetries: 4 — SDK uses exponential backoff on 429 (rate limit) and 5xx errors
+  return new Anthropic({ apiKey, maxRetries: 4 });
 }

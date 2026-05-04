@@ -109,15 +109,96 @@ const SUPPORTED_TEXT_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
 
+export interface ClientListEntry {
+  id?: string;
+  client_ref: string;
+  name: string;
+}
+
+/**
+ * Resolve a client UUID from tagger output using a two-level strategy:
+ *  1. matched_client_ref returned by Claude (exact, then case-insensitive)
+ *  2. Fallback: fuzzy ilike search on client_name extracted from document
+ *
+ * Returns the client UUID, or null if no confident match found.
+ */
+export async function resolveClientId(
+  tags: VaultTaggerResult,
+  clientList: ClientListEntry[],
+  firmId: string
+): Promise<string | null> {
+  // Build ref→id map from the list (includes id since we pass it in)
+  const refToId = new Map(clientList.filter(c => c.id).map(c => [c.client_ref, c.id!]));
+
+  // Level 1a: exact match on matched_client_ref
+  if (tags.matched_client_ref) {
+    const exact = refToId.get(tags.matched_client_ref);
+    if (exact) {
+      console.log(`[vault/tag] Matched client via ref: ${tags.matched_client_ref} → ${exact}`);
+      return exact;
+    }
+    // Level 1b: case-insensitive fallback
+    const normalised = tags.matched_client_ref.trim().toLowerCase();
+    for (const [ref, id] of refToId) {
+      if (ref.trim().toLowerCase() === normalised) {
+        console.log(`[vault/tag] Matched client via ref (case-insensitive): ${ref} → ${id}`);
+        return id;
+      }
+    }
+    console.warn(`[vault/tag] Claude returned matched_client_ref="${tags.matched_client_ref}" but it wasn't in the client list`);
+  }
+
+  // Level 2: fallback on extracted client_name — search the DB
+  const searchName = tags.client_name?.trim();
+  if (searchName && searchName.length >= 3) {
+    const db = createServiceClient();
+    // Use the first 3 meaningful words (drops Ltd/LLP suffixes that may differ)
+    const words = searchName.replace(/\b(ltd|llp|limited|plc|inc|llc)\b/gi, '').trim().split(/\s+/).slice(0, 3).join(' ');
+    const { data } = await db
+      .from('clients')
+      .select('id, name, client_ref')
+      .eq('firm_id', firmId)
+      .ilike('name', `%${words}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (data) {
+      console.log(`[vault/tag] Matched client via name fallback: "${searchName}" → ${data.client_ref} (${data.id})`);
+      return data.id;
+    }
+
+    // Level 2b: try matching just the first significant word (e.g. "Techne" from "Techne Web Design")
+    const firstWord = words.split(' ')[0];
+    if (firstWord && firstWord.length >= 4) {
+      const { data: data2 } = await db
+        .from('clients')
+        .select('id, name, client_ref')
+        .eq('firm_id', firmId)
+        .ilike('name', `%${firstWord}%`)
+        .limit(1)
+        .maybeSingle();
+      if (data2) {
+        console.log(`[vault/tag] Matched client via first-word fallback: "${firstWord}" → ${data2.client_ref} (${data2.id})`);
+        return data2.id;
+      }
+    }
+  }
+
+  console.log(`[vault/tag] No client match found. matched_client_ref="${tags.matched_client_ref}", client_name="${tags.client_name}"`);
+  return null;
+}
+
 /**
  * Call Claude to tag a document.
+ * Pass clientList so Claude can match the document to a firm client.
  * Returns parsed VaultTaggerResult or throws on failure.
  */
 export async function tagDocumentWithClaude(
   fileBuffer: Buffer,
   mimeType: string,
   fileName: string,
-  anthropic: Anthropic
+  anthropic: Anthropic,
+  clientList?: ClientListEntry[]
 ): Promise<VaultTaggerResult> {
   const userContent: Anthropic.Messages.MessageParam['content'] = [];
 
@@ -149,9 +230,16 @@ export async function tagDocumentWithClaude(
     throw new Error(`Unsupported file type for tagging: ${mimeType}`);
   }
 
+  // Include the firm's client list so Claude can match the document recipient
+  const clientListText = clientList && clientList.length > 0
+    ? `\n\nCLIENT LIST (use these exact client_ref values for matched_client_ref):\n${
+        clientList.map(c => `- ${c.client_ref}: ${c.name}`).join('\n')
+      }`
+    : '';
+
   userContent.push({
     type: 'text',
-    text: `Please analyse this document (filename: "${fileName}") and extract all metadata as JSON.`,
+    text: `Please analyse this document (filename: "${fileName}") and extract all metadata as JSON.${clientListText}`,
   });
 
   const response = await anthropic.messages.create({
@@ -177,49 +265,54 @@ export async function tagDocumentWithClaude(
 
 /**
  * Apply Claude tags to a vault_documents row.
- * Updates the row in Supabase and returns the updated row.
+ * If clientId is provided, also sets client_id on the document.
  */
 export async function applyTagsToDocument(
   documentId: string,
-  tags: VaultTaggerResult
+  tags: VaultTaggerResult,
+  clientId?: string | null
 ): Promise<void> {
   const db = createServiceClient();
   const tagsArray = buildTagsArray(tags);
 
-  await db
-    .from('vault_documents')
-    .update({
-      tag_supplier_name: tags.supplier_name,
-      tag_client_code: tags.client_code,
-      tag_client_name: tags.client_name,
-      tag_document_date: tags.document_date,
-      tag_amount: tags.amount,
-      tag_currency: tags.currency ?? 'GBP',
-      tag_document_type: tags.document_type as VaultDocumentType | null,
-      tag_tax_year: tags.tax_year,
-      tag_accounting_period: tags.accounting_period,
-      tag_hmrc_reference: tags.hmrc_reference,
-      tag_vat_number: tags.vat_number,
-      tag_additional: {
-        vat_amount: tags.vat_amount,
-        net_amount: tags.net_amount,
-        invoice_number: tags.invoice_number,
-        account_number: tags.account_number,
-        sort_code: tags.sort_code,
-        property_address: tags.property_address,
-        period_from: tags.period_from,
-        period_to: tags.period_to,
-        ...(tags.additional ?? {}),
-      },
-      tag_summary: tags.summary,
-      tag_confidence: tags.confidence,
-      tags_array: tagsArray,
-      tagging_status: 'tagged',
-      tagging_error: null,
-      tagged_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', documentId);
+  const update: Record<string, unknown> = {
+    tag_supplier_name: tags.supplier_name,
+    tag_client_code: tags.client_code,
+    tag_client_name: tags.client_name,
+    tag_document_date: tags.document_date,
+    tag_amount: tags.amount,
+    tag_currency: tags.currency ?? 'GBP',
+    tag_document_type: tags.document_type as VaultDocumentType | null,
+    tag_tax_year: tags.tax_year,
+    tag_accounting_period: tags.accounting_period,
+    tag_hmrc_reference: tags.hmrc_reference,
+    tag_vat_number: tags.vat_number,
+    tag_additional: {
+      vat_amount: tags.vat_amount,
+      net_amount: tags.net_amount,
+      invoice_number: tags.invoice_number,
+      account_number: tags.account_number,
+      sort_code: tags.sort_code,
+      property_address: tags.property_address,
+      period_from: tags.period_from,
+      period_to: tags.period_to,
+      ...(tags.additional ?? {}),
+    },
+    tag_summary: tags.summary,
+    tag_confidence: tags.confidence,
+    tags_array: tagsArray,
+    tagging_status: 'tagged',
+    tagging_error: null,
+    tagged_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  // Only write client_id when we have a confident match — don't clear existing manual assignments
+  if (clientId) {
+    update.client_id = clientId;
+  }
+
+  await db.from('vault_documents').update(update).eq('id', documentId);
 }
 
 /** Get folder path string for a Drive file by traversing its parents */
@@ -231,6 +324,7 @@ export async function getDriveFolderPath(
     const fileRes = await drive.files.get({
       fileId,
       fields: 'parents,name',
+      supportsAllDrives: true,
     });
     const parents = fileRes.data.parents;
     if (!parents || parents.length === 0) return '';
@@ -242,6 +336,7 @@ export async function getDriveFolderPath(
       const parentRes = await drive.files.get({
         fileId: currentId,
         fields: 'id,name,parents',
+        supportsAllDrives: true,
       });
       if (parentRes.data.name === 'My Drive' || !parentRes.data.name) break;
       parts.unshift(parentRes.data.name!);
@@ -249,7 +344,7 @@ export async function getDriveFolderPath(
       if (!nextParents || nextParents.length === 0) break;
       currentId = nextParents[0];
     }
-    return parts.join('/');
+    return parts.join(' / ');
   } catch {
     return '';
   }

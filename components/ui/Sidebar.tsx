@@ -150,7 +150,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
     const isCalendar = item.moduleId === 'google-calendar';
     const calBadge   = isCalendar && todayEventCount > 0;
-    const badgeLabel = todayEventCount > 9 ? '9+' : String(todayEventCount);
+    const badgeLabel = todayEventCount > 99 ? '99+' : String(todayEventCount);
 
     if (collapsed) {
       return (

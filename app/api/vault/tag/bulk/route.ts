@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { getAnthropicForFirm } from '@/lib/getAnthropicForFirm';
-import { getDriveCredentials, fetchFileFromDrive, tagDocumentWithClaude, applyTagsToDocument } from '@/lib/vaultHelpers';
+import { getDriveCredentials, fetchFileFromDrive, tagDocumentWithClaude, applyTagsToDocument, resolveClientId } from '@/lib/vaultHelpers';
 import { createServiceClient } from '@/lib/supabase-server';
 
 const RequestSchema = z.object({
@@ -48,6 +48,16 @@ export async function POST(req: NextRequest) {
   }
 
   const db = createServiceClient();
+
+  // Fetch firm's client list once — passed to Claude for each document so it can match recipients
+  const { data: clientRows } = await db
+    .from('clients')
+    .select('id, client_ref, name')
+    .eq('firm_id', userCtx.firmId)
+    .order('client_ref', { ascending: true });
+  const clientList = (clientRows ?? [])
+    .filter(c => c.client_ref)
+    .map(c => ({ id: c.id as string, client_ref: c.client_ref as string, name: c.name as string }));
 
   // Resolve which documents to tag
   let query = db
@@ -105,10 +115,12 @@ export async function POST(req: NextRequest) {
                 fileBuffer,
                 doc.file_mime_type ?? 'application/octet-stream',
                 doc.file_name,
-                anthropic
+                anthropic,
+                clientList
               );
 
-              await applyTagsToDocument(doc.id, tags);
+              const matchedClientId = await resolveClientId(tags, clientList, userCtx.firmId);
+              await applyTagsToDocument(doc.id, tags, matchedClientId);
               completed++;
               send({ type: 'progress', total, completed, failed, documentId: doc.id, status: 'tagged' });
             } catch (err) {

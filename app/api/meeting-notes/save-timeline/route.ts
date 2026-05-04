@@ -29,6 +29,7 @@ const BodySchema = z.object({
   decisions:       z.array(z.string()).default([]),
   formalMinutes:   z.string().optional(),
   nextMeeting:     z.string().optional(),
+  driveVideoUrl:   z.string().optional(), // link to recording in Drive (if user opted in)
 });
 
 export async function POST(req: NextRequest) {
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
     location:      d.location ?? '',
     meetingTime:   d.meetingTime ?? '',
     meetingOrigin: d.meetingOrigin ?? '',
+    driveVideoUrl: d.driveVideoUrl ?? '',  // empty string = not set
   });
 
   const { data: note, error } = await svc

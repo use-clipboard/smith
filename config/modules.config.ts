@@ -121,7 +121,7 @@ export const MODULES: ModuleConfig[] = [
     iconName: 'FileText',
     route: '/summarise',
     alwaysOn: false,
-    monthlyPricePence: 900,
+    monthlyPricePence: 1900,
     category: 'tool',
   },
   {
@@ -170,6 +170,17 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
+    id: 'tasks',
+    name: 'Tasks',
+    description: 'Full practice management task system — create, assign and track client and internal tasks with workflow flowcharts, step-by-step progress, time tracking, recurring schedules, and email reminders.',
+    iconName: 'CheckSquare',
+    route: '/tasks',
+    alwaysOn: false,
+    monthlyPricePence: 9900,
+    category: 'tool',
+  },
+
+  {
     id: 'ch-secretarial',
     name: 'CH Secretarial Link',
     description: 'Live Companies House data for all your limited company clients — accounts due dates, confirmation statements, officer and PSC IDV deadlines, all in one place.',
@@ -188,7 +199,7 @@ export const MODULES: ModuleConfig[] = [
     iconName: 'HardDrive',
     route: null,
     alwaysOn: false,
-    monthlyPricePence: 1900,
+    monthlyPricePence: 900,
     category: 'integration',
   },
   {
@@ -198,7 +209,7 @@ export const MODULES: ModuleConfig[] = [
     iconName: 'CalendarDays',
     route: '/calendar',
     alwaysOn: false,
-    monthlyPricePence: 1900,
+    monthlyPricePence: 900,
     category: 'integration',
   },
 ];

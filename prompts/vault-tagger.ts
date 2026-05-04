@@ -11,8 +11,9 @@ Extract the following fields (use null if not found or not applicable):
 
 {
   "supplier_name": "Name of the supplier, sender, or issuing organisation",
-  "client_code": "Client reference code if visible (e.g. AB001)",
-  "client_name": "Client or recipient name",
+  "client_code": "Client reference code if visible on the document (e.g. AB001)",
+  "client_name": "Client or recipient name as it appears on the document",
+  "matched_client_ref": "The client_ref from the CLIENT LIST provided that best matches the recipient/addressee of this document. Use exact client_ref values only. null if no confident match.",
   "document_date": "ISO date string YYYY-MM-DD — the primary date on the document",
   "amount": "Primary monetary amount as a number (no currency symbols)",
   "currency": "Currency code e.g. GBP, USD — default GBP if not specified",
@@ -33,4 +34,13 @@ Extract the following fields (use null if not found or not applicable):
   "confidence": "high if most fields found, medium if some fields found, low if document is unclear or mostly unreadable",
   "additional": { "any other useful fields not listed above as key-value pairs" }
 }
+
+CLIENT MATCHING RULES for matched_client_ref:
+- The document recipient is typically the addressee (the company or individual the document is addressed TO, not the sender).
+- Compare the recipient name and address against the CLIENT LIST below.
+- Match on business name, trading name, individual name, or any name variation that clearly refers to the same entity.
+- Use fuzzy/partial matching — e.g. "Mad Hatter (Shrewsbury) Ltd" matches "Mad Hatter Shrewsbury".
+- If the client_ref is visible on the document, use it directly.
+- Only set matched_client_ref if you are confident (>80%) it is the correct client. Otherwise use null.
+- matched_client_ref must be an exact client_ref value from the CLIENT LIST — do not invent new values.
 `;

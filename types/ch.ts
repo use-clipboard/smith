@@ -38,6 +38,7 @@ export interface CHPSC {
   idvDueDate: string | null;
   idvOverdue: boolean;           // false if idvVerified is true
   idvVerified: boolean;          // true if CH API returned verification data
+  idvExempt: boolean;            // true for corporate/legal entity PSCs — not subject to ECCTA IDV
 }
 
 export interface CHCompanyData {

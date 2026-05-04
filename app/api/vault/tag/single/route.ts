@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
-import { getDriveCredentials, fetchFileFromDrive, tagDocumentWithClaude, applyTagsToDocument } from '@/lib/vaultHelpers';
+import { getDriveCredentials, fetchFileFromDrive, tagDocumentWithClaude, applyTagsToDocument, resolveClientId } from '@/lib/vaultHelpers';
 import { createServiceClient } from '@/lib/supabase-server';
 
 const RequestSchema = z.object({
@@ -67,11 +67,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
+    // Fetch firm's client list so Claude can match the document to a client
+    const { data: clientRows } = await db
+      .from('clients')
+      .select('id, client_ref, name')
+      .eq('firm_id', userCtx.firmId)
+      .order('client_ref', { ascending: true });
+    const clientList = (clientRows ?? [])
+      .filter(c => c.client_ref)
+      .map(c => ({ id: c.id as string, client_ref: c.client_ref as string, name: c.name as string }));
+
+    console.log(`[vault/tag/single] Passing ${clientList.length} clients to tagger`);
+
     // Call Claude to tag
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
     let tags;
     try {
-      tags = await tagDocumentWithClaude(fileBuffer, doc.file_mime_type ?? 'application/octet-stream', doc.file_name, anthropic);
+      tags = await tagDocumentWithClaude(
+        fileBuffer,
+        doc.file_mime_type ?? 'application/octet-stream',
+        doc.file_name,
+        anthropic,
+        clientList
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Tagging failed';
       await db.from('vault_documents').update({
@@ -82,8 +100,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 500 });
     }
 
-    // Apply tags to DB
-    await applyTagsToDocument(doc.id, tags);
+    console.log(`[vault/tag/single] Claude returned: matched_client_ref="${tags.matched_client_ref}", client_name="${tags.client_name}"`);
+
+    // Resolve client ID using matched_client_ref (from Claude) with name-based fallback
+    const matchedClientId = await resolveClientId(tags, clientList, userCtx.firmId);
+
+    // Apply tags to DB (includes client_id if matched)
+    await applyTagsToDocument(doc.id, tags, matchedClientId);
 
     // Return updated document
     const { data: updated } = await db

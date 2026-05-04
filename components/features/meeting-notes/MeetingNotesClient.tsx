@@ -17,13 +17,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Mic, MicOff, Square, Loader2, CheckCircle2,
   Users2, MapPin, Calendar, Clock, ExternalLink, Save,
-  AlertCircle, RefreshCw, X, Plus, Trash2,
+  AlertCircle, RefreshCw, X, Plus, Trash2, Check,
   FileText, Zap, ListChecks, Vote, BookText, PenLine,
   Phone, Video, PersonStanding, MonitorSpeaker, Monitor,
-  Upload, Film,
+  Upload, Film, FolderOpen,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 import { consumePendingClient } from '@/lib/pendingClient';
 
 // ── Web Speech API types ──────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ interface MeetingNotesResult {
 // ── Origin config ─────────────────────────────────────────────────────────────
 
 const ORIGIN_OPTIONS: { value: MeetingOrigin; label: string; icon: React.ReactNode; hint: string }[] = [
-  { value: 'recorded',  label: 'Recorded',   icon: <Mic size={14} />,            hint: 'Record via microphone with live transcription' },
+  { value: 'recorded',  label: 'Voice Recording',   icon: <Mic size={14} />,            hint: 'Record via microphone with live transcription' },
   { value: 'virtual',   label: 'Virtual',    icon: <Video size={14} />,          hint: 'Video call — screen record + mic transcription' },
   { value: 'in_person', label: 'In Person',  icon: <PersonStanding size={14} />, hint: 'Face-to-face — describe what was discussed' },
   { value: 'phone',     label: 'Phone Call', icon: <Phone size={14} />,          hint: 'Phone call — describe what was discussed' },
@@ -138,6 +139,9 @@ export default function MeetingNotesClient() {
   const [attendees,      setAttendees]      = useState<string[]>([]);
   const [attendeeInput,  setAttendeeInput]  = useState('');
 
+  // Team members (for attendee quick-add)
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; email: string; color?: string }[]>([]);
+
   // Client
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
 
@@ -163,6 +167,22 @@ export default function MeetingNotesClient() {
   const [uploadProgress,  setUploadProgress]  = useState<number | null>(null); // 0–100 or null
   const [driveVideoUrl,   setDriveVideoUrl]   = useState<string | null>(null);
   const [driveVideoError, setDriveVideoError] = useState<string | null>(null);
+  // Recording save modal
+  const [showRecordingSaveModal, setShowRecordingSaveModal] = useState(false);
+  const [saveRecordingToDrive,   setSaveRecordingToDrive]   = useState(false);
+  const [downloadRecording,      setDownloadRecording]      = useState(false);
+  const [addVideoToTimeline,     setAddVideoToTimeline]     = useState(false);
+
+  // Recording Drive destination
+  const [selectedDriveFolder, setSelectedDriveFolder] = useState<{ id: string; name: string; path: string } | null>(null);
+  const [showFolderPicker,    setShowFolderPicker]    = useState(false);
+
+  // PDF Drive destination (review/save panel)
+  const [saveToDrive,          setSaveToDrive]          = useState(false);
+  const [notesDriveFolder,     setNotesDriveFolder]     = useState<{ id: string; name: string; path: string } | null>(null);
+  const [showNotesFolderPicker, setShowNotesFolderPicker] = useState(false);
+  const [driveNotesUrl,        setDriveNotesUrl]        = useState<string | null>(null);
+  const [driveNotesSaving,     setDriveNotesSaving]     = useState(false);
 
   // Manual entry
   const [manualDescription, setManualDescription] = useState('');
@@ -229,6 +249,19 @@ export default function MeetingNotesClient() {
     setSpeechSupport(!!SR);
   }, []);
 
+  // Fetch team members for attendee quick-add
+  useEffect(() => {
+    fetch('/api/users/team')
+      .then(r => r.ok ? r.json() : { members: [] })
+      .then(d => setTeamMembers((d.members ?? []).map((m: { id: string; full_name: string | null; email: string; color?: string }) => ({
+        id: m.id,
+        name: m.full_name ?? '',
+        email: m.email,
+        color: m.color,
+      }))))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetch('/api/google-drive/status')
       .then(r => r.ok ? r.json() : { connected: false })
@@ -275,6 +308,16 @@ export default function MeetingNotesClient() {
     const val = attendeeInput.trim();
     if (val && !attendees.includes(val)) setAttendees(prev => [...prev, val]);
     setAttendeeInput('');
+  }
+
+  function toggleTeamMember(member: { name: string; email: string }) {
+    // Use display name if available, otherwise email
+    const label = member.name || member.email;
+    if (attendees.includes(label)) {
+      setAttendees(prev => prev.filter(a => a !== label));
+    } else {
+      setAttendees(prev => [...prev, label]);
+    }
   }
 
   // ── Start microphone speech recognition ───────────────────────────────────
@@ -415,6 +458,20 @@ export default function MeetingNotesClient() {
     setIsRecording(false); setIsScreenRecording(false);
   }, []);
 
+  // ── Download recording locally ────────────────────────────────────────────
+
+  function downloadRecordingLocally() {
+    if (recordingChunks.current.length === 0) return;
+    const mimeType = mediaRecorderRef.current?.mimeType ?? 'video/webm';
+    const blob = new Blob(recordingChunks.current, { type: mimeType });
+    const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const safeName = (meetingTitle || 'Meeting').replace(/[^a-zA-Z0-9 ._-]/g, '_');
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = `Recording - ${safeName} - ${meetingDate}.${ext}`;
+    a.click(); URL.revokeObjectURL(url);
+  }
+
   // ── Upload recording to Drive ──────────────────────────────────────────────
 
   async function uploadRecordingToDrive(): Promise<string | null> {
@@ -430,38 +487,45 @@ export default function MeetingNotesClient() {
     setPhase('uploading');
 
     try {
-      // Get a resumable upload session URL from our server
-      const sessionRes = await fetch('/api/meeting-notes/drive-upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, mimeType, fileSize: blob.size }),
-      });
-      const sessionData = await sessionRes.json() as { uploadUrl?: string; error?: string };
-      if (!sessionRes.ok || !sessionData.uploadUrl) {
-        throw new Error(sessionData.error ?? 'Could not get Drive upload URL');
+      // Build request headers — metadata travels in headers so the body can be
+      // a raw stream that the server pipes straight to Google Drive.
+      const headers: Record<string, string> = {
+        'Content-Type': mimeType,
+        'X-Filename':   filename,
+      };
+      if (selectedDriveFolder) {
+        headers['X-Folder-Id'] = selectedDriveFolder.id;
+      } else if (selectedClient?.client_ref) {
+        headers['X-Client-Code']  = selectedClient.client_ref;
+        headers['X-Meeting-Date'] = meetingDate;
       }
 
-      // Upload blob directly to Google Drive (browser → Drive, bypasses Next.js)
-      const fileData = await new Promise<{ id?: string; webViewLink?: string }>((resolve, reject) => {
+      // XHR so we get upload progress while the blob travels browser → server
+      const videoUrl = await new Promise<string | null>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
         });
         xhr.addEventListener('load', () => {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try { resolve(JSON.parse(xhr.responseText) as { id?: string; webViewLink?: string }); }
-            catch { resolve({}); }
+          if (xhr.status === 200) {
+            try {
+              const data = JSON.parse(xhr.responseText) as { driveUrl?: string; error?: string };
+              if (data.error) reject(new Error(data.error));
+              else resolve(data.driveUrl ?? null);
+            } catch { reject(new Error('Invalid response from server')); }
           } else {
-            reject(new Error(`Upload failed: HTTP ${xhr.status}`));
+            try {
+              const data = JSON.parse(xhr.responseText) as { error?: string };
+              reject(new Error(data.error ?? `Upload failed: HTTP ${xhr.status}`));
+            } catch { reject(new Error(`Upload failed: HTTP ${xhr.status}`)); }
           }
         });
-        xhr.addEventListener('error', () => reject(new Error('Upload network error')));
-        xhr.open('PUT', sessionData.uploadUrl!);
-        xhr.setRequestHeader('Content-Type', mimeType);
+        xhr.addEventListener('error', () => reject(new Error('Network error — check your connection and try again')));
+        xhr.open('POST', '/api/meeting-notes/upload-recording');
+        Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.send(blob);
       });
 
-      const videoUrl = fileData.webViewLink ?? null;
       setDriveVideoUrl(videoUrl);
       setUploadProgress(100);
       return videoUrl;
@@ -478,7 +542,7 @@ export default function MeetingNotesClient() {
   async function handleSummarise(skipUpload = false) {
     // For screen recordings, upload the video first (unless already done)
     let videoUrl = driveVideoUrl;
-    if (isScreenRecording || (entryMode === 'screen' && recordingChunks.current.length > 0 && !driveVideoUrl && !skipUpload && driveEnabled)) {
+    if (entryMode === 'screen' && recordingChunks.current.length > 0 && !driveVideoUrl && !skipUpload && driveEnabled && saveRecordingToDrive) {
       videoUrl = await uploadRecordingToDrive();
     }
 
@@ -535,7 +599,7 @@ export default function MeetingNotesClient() {
   // ── Save ───────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    setSaving(true); setSaveError(null); setTimelineSaved(false);
+    setSaving(true); setSaveError(null); setTimelineSaved(false); setDriveNotesUrl(null);
     try {
       const payload = {
         title: meetingTitle || 'Untitled Meeting',
@@ -549,50 +613,80 @@ export default function MeetingNotesClient() {
         formalMinutes: editMinutes, nextMeeting: editNext,
       };
 
-      // Download PDF
-      const pdfRes = await fetch('/api/meeting-notes/download-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!pdfRes.ok) {
-        const err = await pdfRes.json() as { error?: string };
-        throw new Error(err.error ?? 'Failed to generate PDF');
-      }
-      const blob = await pdfRes.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      const safeName = (meetingTitle || 'Meeting Notes').replace(/[^a-zA-Z0-9 ._-]/g, '_');
-      a.href = url; a.download = `Meeting Notes - ${safeName} - ${meetingDate}.pdf`;
-      a.click(); URL.revokeObjectURL(url);
-
-      // Save to client timeline (if opted in and a client is linked)
-      if (addToTimeline && selectedClient?.id) {
-        const tlRes = await fetch('/api/meeting-notes/save-timeline', {
+      // Run PDF download + optional Drive upload in parallel
+      const tasks: Promise<unknown>[] = [
+        // 1. Download PDF to browser
+        fetch('/api/meeting-notes/download-pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId:      selectedClient.id,
-            title:         meetingTitle || 'Untitled Meeting',
-            meetingDate,   meetingTime,
-            location:      location || undefined,
-            attendees,     meetingOrigin,
-            summary:       editSummary,
-            keyPoints:     editKeyPoints,
-            actionItems:   editActions,
-            decisions:     editDecisions,
-            formalMinutes: editMinutes,
-            nextMeeting:   editNext,
-          }),
-        });
-        if (tlRes.ok) {
-          setTimelineSaved(true);
-        } else {
-          const tlErr = await tlRes.json() as { error?: string };
-          setSaveError(`PDF downloaded but timeline save failed: ${tlErr.error ?? 'unknown error'}`);
-        }
+          body: JSON.stringify(payload),
+        }).then(async res => {
+          if (!res.ok) {
+            const err = await res.json() as { error?: string };
+            throw new Error(err.error ?? 'Failed to generate PDF');
+          }
+          const blob = await res.blob();
+          const url  = URL.createObjectURL(blob);
+          const a    = document.createElement('a');
+          const safeName = (meetingTitle || 'Meeting Notes').replace(/[^a-zA-Z0-9 ._-]/g, '_');
+          a.href = url; a.download = `Meeting Notes - ${safeName} - ${meetingDate}.pdf`;
+          a.click(); URL.revokeObjectURL(url);
+        }),
+      ];
+
+      // 2. Save PDF to Drive (server-side generate + upload, no round-trip)
+      if (saveToDrive && driveEnabled) {
+        setDriveNotesSaving(true);
+        tasks.push(
+          fetch('/api/meeting-notes/save-pdf-to-drive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...payload,
+              clientCode: selectedClient?.client_ref || undefined,
+              folderId:   notesDriveFolder?.id || undefined,
+            }),
+          }).then(async res => {
+            const data = await res.json() as { driveUrl?: string; error?: string };
+            if (!res.ok) throw new Error(data.error ?? 'Drive upload failed');
+            setDriveNotesUrl(data.driveUrl ?? null);
+          }).finally(() => setDriveNotesSaving(false)),
+        );
       }
 
+      // 3. Save to client timeline
+      if (addToTimeline && selectedClient?.id) {
+        tasks.push(
+          fetch('/api/meeting-notes/save-timeline', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientId:      selectedClient.id,
+              title:         meetingTitle || 'Untitled Meeting',
+              meetingDate,   meetingTime,
+              location:      location || undefined,
+              attendees,     meetingOrigin,
+              summary:       editSummary,
+              keyPoints:     editKeyPoints,
+              actionItems:   editActions,
+              decisions:     editDecisions,
+              formalMinutes: editMinutes,
+              nextMeeting:   editNext,
+              // Include recording link if user opted in during the recording save modal
+              driveVideoUrl: addVideoToTimeline && driveVideoUrl ? driveVideoUrl : undefined,
+            }),
+          }).then(async tlRes => {
+            if (tlRes.ok) {
+              setTimelineSaved(true);
+            } else {
+              const tlErr = await tlRes.json() as { error?: string };
+              setSaveError(`Timeline save failed: ${tlErr.error ?? 'unknown error'}`);
+            }
+          }),
+        );
+      }
+
+      await Promise.all(tasks);
       setPhase('saved');
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to generate PDF.');
@@ -610,6 +704,9 @@ export default function MeetingNotesClient() {
     setManualDescription(''); setSupplementalNotes('');
     setRecordingSize(0); setDriveVideoUrl(null); setDriveVideoError(null);
     setUploadProgress(null); recordingChunks.current = [];
+    setSelectedDriveFolder(null); setSaveRecordingToDrive(false);
+    setDownloadRecording(false); setAddVideoToTimeline(false);
+    setSaveToDrive(false); setNotesDriveFolder(null); setDriveNotesUrl(null);
     setNotes(null); setEditSummary(''); setEditKeyPoints([]);
     setEditActions([]); setEditDecisions([]); setEditMinutes(''); setEditNext('');
     setDriveUrl(null); setSaveError(null); setProcError(null);
@@ -711,7 +808,7 @@ export default function MeetingNotesClient() {
           </div>
           <div className="text-center">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Generating minutes…</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">Claude is writing your summary, action items, and formal minutes.</p>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">SMITH is writing your summary, action items, and formal minutes.</p>
           </div>
         </div>
       </ToolLayout>
@@ -801,6 +898,69 @@ export default function MeetingNotesClient() {
                       Add to <span className="font-medium">{selectedClient.name}</span>&apos;s timeline
                     </span>
                   </label>
+                )}
+
+                {/* Save to Drive option */}
+                {driveEnabled && (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={saveToDrive}
+                        onChange={e => setSaveToDrive(e.target.checked)}
+                        className="w-4 h-4 rounded accent-[var(--accent)]"
+                      />
+                      <span className="text-sm text-[var(--text-primary)]">Save PDF to Google Drive</span>
+                    </label>
+
+                    {saveToDrive && (
+                      selectedClient?.client_ref ? (
+                        /* Auto-path from client */
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] text-xs text-[var(--text-muted)]">
+                          <FolderOpen size={13} className="text-amber-500 shrink-0" />
+                          <span className="truncate">{selectedClient.client_ref} / Meeting Notes / {meetingDate}</span>
+                        </div>
+                      ) : notesDriveFolder ? (
+                        /* Manually selected folder */
+                        <button
+                          type="button"
+                          onClick={() => setShowNotesFolderPicker(true)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400 bg-amber-50 text-xs text-left hover:border-amber-500 transition-colors"
+                        >
+                          <FolderOpen size={13} className="text-amber-500 shrink-0" />
+                          <span className="flex-1 truncate text-[var(--text-primary)]">{notesDriveFolder.path}</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); setNotesDriveFolder(null); }}
+                            className="text-[var(--text-muted)] hover:text-red-500 shrink-0"
+                          >
+                            <X size={11} />
+                          </button>
+                        </button>
+                      ) : (
+                        /* Prompt to pick a folder */
+                        <button
+                          type="button"
+                          onClick={() => setShowNotesFolderPicker(true)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-amber-400 bg-amber-50 text-xs text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
+                          <FolderOpen size={13} className="shrink-0" />
+                          <span className="flex-1 text-left">Select Drive folder…</span>
+                        </button>
+                      )
+                    )}
+
+                    {driveNotesUrl && (
+                      <a href={driveNotesUrl} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-1.5 text-xs text-green-700 hover:underline">
+                        <CheckCircle2 size={12} />PDF saved to Drive <ExternalLink size={10} />
+                      </a>
+                    )}
+                    {driveNotesSaving && (
+                      <p className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                        <Loader2 size={11} className="animate-spin" />Uploading to Drive…
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {saveError && (
@@ -907,6 +1067,17 @@ export default function MeetingNotesClient() {
             </div>
           </div>
         </div>
+
+        {/* Drive folder picker — PDF notes destination (must live inside this return) */}
+        {showNotesFolderPicker && (
+          <DriveFolderPicker
+            onSelect={(folder, path) => {
+              setNotesDriveFolder({ id: folder.id, name: folder.name, path });
+              setShowNotesFolderPicker(false);
+            }}
+            onClose={() => setShowNotesFolderPicker(false)}
+          />
+        )}
       </ToolLayout>
     );
   }
@@ -955,7 +1126,7 @@ export default function MeetingNotesClient() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
           {/* ── Left: meeting details ─── */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-3 space-y-4">
             <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-4">
               <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Meeting Details</p>
 
@@ -1025,12 +1196,32 @@ export default function MeetingNotesClient() {
                     ))}
                   </div>
                 )}
+                {teamMembers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {teamMembers.map(m => {
+                      const label = m.name || m.email;
+                      const added = attendees.includes(label);
+                      return (
+                        <button key={m.id} type="button" onClick={() => toggleTeamMember(m)}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border transition-all
+                            ${added
+                              ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
+                              : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                            }`}>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                          {label}
+                          {added && <Check size={9} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
           {/* ── Right: entry area ─── */}
-          <div className="lg:col-span-3 space-y-4">
+          <div className="lg:col-span-2 space-y-4">
 
             {/* ── VIRTUAL / SCREEN RECORDING ─── */}
             {isScreenMode && (
@@ -1048,7 +1239,7 @@ export default function MeetingNotesClient() {
                       <li>Your microphone will also transcribe your own voice live</li>
                       <li>When finished, click <strong>Stop Recording</strong></li>
                     </ol>
-                    <p className="text-xs text-indigo-600 mt-1">The recording will be automatically uploaded to Google Drive{!driveEnabled ? ' (connect Drive in Settings first)' : ''}.</p>
+                    <p className="text-xs text-indigo-600 mt-1">When you click <strong>Generate Minutes</strong> you can choose to save the recording to Google Drive{!driveEnabled ? ' (connect Drive in Settings → Integrations first)' : ''} or download it locally.</p>
                   </div>
                 </div>
 
@@ -1079,7 +1270,15 @@ export default function MeetingNotesClient() {
                   {!driveEnabled && (
                     <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-1.5">
                       <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                      Google Drive is not connected. The recording will not be saved automatically. Connect Drive in Settings → Integrations.
+                      Google Drive is not connected. The recording will not be saved. Connect Drive in Settings → Integrations.
+                    </div>
+                  )}
+
+                  {/* Recording ready indicator */}
+                  {!isScreenRecording && recordingChunks.current.length > 0 && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
+                      <CheckCircle2 size={13} className="shrink-0" />
+                      <span>Recording ready — <span className="font-medium">{formatBytes(recordingSize)}</span></span>
                     </div>
                   )}
 
@@ -1096,10 +1295,15 @@ export default function MeetingNotesClient() {
                       </button>
                     )}
                     {!isScreenRecording && recordingChunks.current.length > 0 && (
-                      <button onClick={() => void handleSummarise()}
+                      <button
+                        onClick={() => {
+                          setSaveRecordingToDrive(driveEnabled);
+                          setDownloadRecording(false);
+                          setAddVideoToTimeline(false);
+                          setShowRecordingSaveModal(true);
+                        }}
                         className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm">
-                        <Zap size={16} />
-                        {driveEnabled ? 'Upload & Generate Minutes' : 'Generate Minutes'}
+                        <Zap size={16} />Generate Minutes
                       </button>
                     )}
                   </div>
@@ -1232,7 +1436,7 @@ export default function MeetingNotesClient() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-[var(--text-primary)]">Describe the Meeting</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">Write what was discussed — topics, decisions, actions agreed. Claude will turn this into full professional minutes.</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">Write what was discussed — topics, decisions, actions agreed. SMITH will turn this into full professional minutes.</p>
                   </div>
                 </div>
                 <textarea
@@ -1258,6 +1462,132 @@ export default function MeetingNotesClient() {
           </div>
         </div>
       </div>
+
+      {/* ── Recording Save Modal ────────────────────────────────────────────── */}
+      {showRecordingSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-2xl w-full max-w-sm mx-4">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Film size={15} className="text-[var(--accent)]" />Save Recording
+              </h3>
+              <button onClick={() => setShowRecordingSaveModal(false)} className="p-1 rounded hover:bg-[var(--bg-page)] text-[var(--text-muted)]">
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 space-y-4">
+              {/* Recording size */}
+              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                <Film size={12} /><span>{formatBytes(recordingSize)} recorded</span>
+              </div>
+
+              {/* Save to Drive */}
+              {driveEnabled && (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input type="checkbox" checked={saveRecordingToDrive}
+                      onChange={e => { setSaveRecordingToDrive(e.target.checked); if (!e.target.checked) setAddVideoToTimeline(false); }}
+                      className="w-4 h-4 rounded accent-[var(--accent)]" />
+                    <span className="text-sm text-[var(--text-primary)]">Save recording to Google Drive</span>
+                  </label>
+
+                  {saveRecordingToDrive && (
+                    selectedClient?.client_ref ? (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] text-xs text-[var(--text-muted)] ml-6">
+                        <FolderOpen size={13} className="text-amber-500 shrink-0" />
+                        <span className="truncate">{selectedClient.client_ref} / Meeting Notes / {meetingDate}</span>
+                      </div>
+                    ) : selectedDriveFolder ? (
+                      <button type="button" onClick={() => setShowFolderPicker(true)}
+                        className="ml-6 w-[calc(100%-1.5rem)] flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-400 bg-amber-50 text-xs text-left hover:border-amber-500 transition-colors">
+                        <FolderOpen size={13} className="text-amber-500 shrink-0" />
+                        <span className="flex-1 truncate text-[var(--text-primary)]">{selectedDriveFolder.path}</span>
+                        <button onClick={e => { e.stopPropagation(); setSelectedDriveFolder(null); }} className="text-[var(--text-muted)] hover:text-red-500 shrink-0"><X size={11} /></button>
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => setShowFolderPicker(true)}
+                        className="ml-6 w-[calc(100%-1.5rem)] flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-amber-400 bg-amber-50 text-xs text-amber-700 hover:bg-amber-100 transition-colors">
+                        <FolderOpen size={13} className="shrink-0" />
+                        <span className="flex-1 text-left">Select Drive folder…</span>
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* Download locally */}
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                <input type="checkbox" checked={downloadRecording}
+                  onChange={e => setDownloadRecording(e.target.checked)}
+                  className="w-4 h-4 rounded accent-[var(--accent)]" />
+                <span className="text-sm text-[var(--text-primary)]">Download recording to this device</span>
+              </label>
+
+              {/* Add video link to timeline */}
+              {driveEnabled && saveRecordingToDrive && selectedClient && (
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input type="checkbox" checked={addVideoToTimeline}
+                    onChange={e => setAddVideoToTimeline(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[var(--accent)]" />
+                  <span className="text-sm text-[var(--text-primary)]">
+                    Add video link to <span className="font-medium">{selectedClient.name}</span>&apos;s timeline
+                  </span>
+                </label>
+              )}
+
+              {/* Validation hint */}
+              {saveRecordingToDrive && !selectedClient?.client_ref && !selectedDriveFolder && (
+                <p className="text-xs text-amber-700 flex items-center gap-1.5">
+                  <AlertCircle size={12} />Please select a Drive folder above to save the recording
+                </p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-5 py-4 border-t border-[var(--border)] gap-3">
+              <button onClick={() => setShowRecordingSaveModal(false)}
+                className="px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)] transition-colors">
+                Cancel
+              </button>
+              <button
+                disabled={saveRecordingToDrive && !selectedClient?.client_ref && !selectedDriveFolder}
+                onClick={() => {
+                  setShowRecordingSaveModal(false);
+                  if (downloadRecording) downloadRecordingLocally();
+                  void handleSummarise();
+                }}
+                className="flex items-center gap-2 px-5 py-2 text-sm bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <Zap size={14} />Generate Minutes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Drive folder picker — recording destination */}
+      {showFolderPicker && (
+        <DriveFolderPicker
+          onSelect={(folder, path) => {
+            setSelectedDriveFolder({ id: folder.id, name: folder.name, path });
+            setShowFolderPicker(false);
+          }}
+          onClose={() => setShowFolderPicker(false)}
+        />
+      )}
+
+      {/* Drive folder picker — PDF notes destination */}
+      {showNotesFolderPicker && (
+        <DriveFolderPicker
+          onSelect={(folder, path) => {
+            setNotesDriveFolder({ id: folder.id, name: folder.name, path });
+            setShowNotesFolderPicker(false);
+          }}
+          onClose={() => setShowNotesFolderPicker(false)}
+        />
+      )}
     </ToolLayout>
   );
 }

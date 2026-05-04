@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Pencil, Trash2, ExternalLink, FileText, Clock,
@@ -481,35 +481,14 @@ function AddNoteForm({ clientId, onAdd, onCancel }: {
   const [noteType, setNoteType] = useState('other');
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   const [isPinned, setIsPinned] = useState(false);
-  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    setAttachmentFiles(prev => [...prev, ...files].slice(0, 5));
-    e.target.value = '';
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
     setSaving(true);
     try {
-      // Encode attachments as base64
-      const encodedAttachments = await Promise.all(
-        attachmentFiles.map(async f => {
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve((reader.result as string).split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(f);
-          });
-          return { name: f.name, mimeType: f.type || 'application/octet-stream', base64 };
-        })
-      );
-
       const res = await fetch(`/api/clients/${clientId}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -519,7 +498,7 @@ function AddNoteForm({ clientId, onAdd, onCancel }: {
           note_type: noteType,
           note_date: noteDate,
           is_pinned: isPinned,
-          attachments: encodedAttachments,
+          attachments: [],
         }),
       });
       if (res.ok) {
@@ -586,33 +565,6 @@ function AddNoteForm({ clientId, onAdd, onCancel }: {
           className="input-base w-full resize-none leading-relaxed" />
       </div>
 
-      {/* Attachments */}
-      <div>
-        <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Attachments</label>
-        {attachmentFiles.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {attachmentFiles.map((f, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 pl-2 pr-1 py-1 bg-[var(--accent-light)] border border-[var(--accent)]/30 rounded-lg text-xs text-[var(--accent)] font-medium">
-                {f.type.startsWith('image/') ? <Image size={11} /> : <Paperclip size={11} />}
-                {f.name}
-                <button type="button" onClick={() => setAttachmentFiles(prev => prev.filter((_, j) => j !== i))}
-                  className="p-0.5 rounded hover:bg-[var(--accent)]/20 transition-colors">
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-        <button type="button" onClick={() => fileInputRef.current?.click()}
-          disabled={attachmentFiles.length >= 5}
-          className="inline-flex items-center gap-1.5 px-3 py-2 border border-dashed border-[var(--border)] rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors disabled:opacity-40">
-          <Paperclip size={13} />
-          Add attachment{attachmentFiles.length > 0 ? ` (${attachmentFiles.length}/5)` : ''}
-        </button>
-        <input ref={fileInputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xlsx,.csv"
-          onChange={handleFileChange} className="hidden" />
-      </div>
-
       {/* Pin toggle */}
       <div className="flex items-center gap-3 py-1">
         <button type="button" onClick={() => setIsPinned(v => !v)}
@@ -661,6 +613,8 @@ export default function ClientDetailPage() {
   const [timelineFetched, setTimelineFetched] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showVaultItems, setShowVaultItems] = useState(true);
+  const [timelineSearch, setTimelineSearch] = useState('');
+  const [timelineTypeFilter, setTimelineTypeFilter] = useState<string | null>(null);
 
   // Links
   const [links, setLinks] = useState<ClientLink[]>([]);
@@ -907,8 +861,14 @@ export default function ClientDetailPage() {
   if (!client) return null;
 
   const type = client.business_type;
-  const pinnedNotes = notes.filter(n => n.is_pinned);
-  const unpinnedNotes = notes.filter(n => !n.is_pinned);
+
+  const filteredNotes = notes.filter(n => {
+    const matchesType = !timelineTypeFilter || n.note_type === timelineTypeFilter;
+    const matchesSearch = !timelineSearch.trim() || n.title.toLowerCase().includes(timelineSearch.toLowerCase());
+    return matchesType && matchesSearch;
+  });
+  const pinnedNotes = filteredNotes.filter(n => n.is_pinned);
+  const unpinnedNotes = filteredNotes.filter(n => !n.is_pinned);
 
   // Build year groups for unpinned notes + vault docs merged
   const timelineItems: Array<{ kind: 'note'; data: TimelineNote } | { kind: 'vault'; data: VaultDoc }> = [
@@ -1102,22 +1062,74 @@ export default function ClientDetailPage() {
           ) : (
             <div className="space-y-6">
               {/* Controls */}
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setShowAddNote(v => !v)}
-                    className={`btn-primary ${showAddNote ? 'opacity-80' : ''}`}>
-                    <Plus size={14} />Add Note
-                  </button>
-                  <button onClick={() => setShowVaultItems(v => !v)}
-                    className={`btn-secondary text-xs py-1.5 ${showVaultItems ? '' : 'opacity-60'}`}>
-                    <FileText size={12} />
-                    {showVaultItems ? 'Hide Vault Docs' : 'Show Vault Docs'}
-                  </button>
+              <div className="space-y-3">
+                {/* Top row: Add Note + Vault toggle + count */}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setShowAddNote(v => !v)}
+                      className={`btn-primary ${showAddNote ? 'opacity-80' : ''}`}>
+                      <Plus size={14} />Add Note
+                    </button>
+                    <button onClick={() => setShowVaultItems(v => !v)}
+                      className={`btn-secondary text-xs py-1.5 ${showVaultItems ? '' : 'opacity-60'}`}>
+                      <FileText size={12} />
+                      {showVaultItems ? 'Hide Vault Docs' : 'Show Vault Docs'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {filteredNotes.length !== notes.length
+                      ? `${filteredNotes.length} of ${notes.length} note${notes.length !== 1 ? 's' : ''}`
+                      : `${notes.length} note${notes.length !== 1 ? 's' : ''}`}
+                    {showVaultItems ? ` · ${vaultDocs.length} vault document${vaultDocs.length !== 1 ? 's' : ''}` : ''}
+                  </p>
                 </div>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {notes.length} note{notes.length !== 1 ? 's' : ''}
-                  {showVaultItems ? ` · ${vaultDocs.length} vault document${vaultDocs.length !== 1 ? 's' : ''}` : ''}
-                </p>
+
+                {/* Search + type filter row */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Keyword search */}
+                  <div className="relative flex-1 min-w-[180px] max-w-xs">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                    <input
+                      value={timelineSearch}
+                      onChange={e => setTimelineSearch(e.target.value)}
+                      placeholder="Search notes by title…"
+                      className="input-base w-full pl-8 text-sm py-1.5"
+                    />
+                    {timelineSearch && (
+                      <button onClick={() => setTimelineSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Type filter chips */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <button
+                      onClick={() => setTimelineTypeFilter(null)}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                        timelineTypeFilter === null
+                          ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                          : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                      }`}
+                    >
+                      All
+                    </button>
+                    {NOTE_TYPE_OPTIONS.map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => setTimelineTypeFilter(timelineTypeFilter === opt.key ? null : opt.key)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                          timelineTypeFilter === opt.key
+                            ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                            : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                        }`}
+                      >
+                        {opt.icon}
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Add Note form */}

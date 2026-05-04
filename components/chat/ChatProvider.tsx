@@ -16,6 +16,7 @@ interface ChatContextType {
   unreadCounts: Record<string, number>;
   typingUsers: Record<string, string[]>;
   nudgedConversations: Set<string>;
+  screenNudgeActive: boolean;
   totalUnread: number;
   isPanelOpen: boolean;
   currentUserId: string;
@@ -56,11 +57,13 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
   const [nudgedConversations, setNudgedConversations] = useState<Set<string>>(new Set());
+  const [screenNudgeActive, setScreenNudgeActive] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const messageChannels = useRef<Record<string, ReturnType<typeof supabase.channel>>>({});
   const typingTimeouts = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const screenNudgeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
@@ -147,6 +150,10 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
               setOpenConversationIds(prev =>
                 prev.includes(conversationId) ? prev : [...prev, conversationId].slice(-3)
               );
+              // Shake the whole screen
+              if (screenNudgeTimeout.current) clearTimeout(screenNudgeTimeout.current);
+              setScreenNudgeActive(true);
+              screenNudgeTimeout.current = setTimeout(() => setScreenNudgeActive(false), 900);
             }
           }
         }
@@ -166,6 +173,11 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
 
     messageChannels.current[conversationId] = channel;
   }, [supabase, userId]);
+
+  // Subscribe to all loaded conversations so real-time messages arrive even when windows are closed
+  useEffect(() => {
+    Object.keys(conversations).forEach(id => subscribeToConversation(id));
+  }, [conversations, subscribeToConversation]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
     const res = await fetch(`/api/messages/${conversationId}`);
@@ -289,13 +301,14 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
     return () => {
       Object.values(messageChannels.current).forEach(ch => ch.unsubscribe());
       Object.values(typingTimeouts.current).forEach(t => clearTimeout(t));
+      if (screenNudgeTimeout.current) clearTimeout(screenNudgeTimeout.current);
     };
   }, []);
 
   return (
     <ChatContext.Provider value={{
       teamMembers, onlineUserIds, openConversationIds, conversations,
-      messages, unreadCounts, typingUsers, nudgedConversations,
+      messages, unreadCounts, typingUsers, nudgedConversations, screenNudgeActive,
       totalUnread, isPanelOpen, currentUserId: userId,
       openConversationWith, closeConversation, sendMessage, sendNudge,
       addReaction, removeReaction, markAsRead, setTyping, clearNudge,

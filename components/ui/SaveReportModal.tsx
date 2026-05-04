@@ -43,8 +43,15 @@ async function generatePdfBlob(
     import('html2canvas'),
   ]);
 
-  // A4 page height at 794 px width (794 × 297/210 ≈ 1123 px)
-  const PAGE_H_PX = Math.round(794 * 297 / 210);
+  // ── Page geometry ─────────────────────────────────────────────────────────
+  // A4 at 794px wide.  We add 14 mm top + bottom margin on every page so
+  // content never butts right up against the edge.
+  const A4_W_MM   = 210;
+  const A4_H_MM   = 297;
+  const MARGIN_V  = 14;                                   // mm top & bottom
+  const CONTENT_H_MM = A4_H_MM - MARGIN_V * 2;           // 269 mm
+  // Pixel height of one content band at 794 px/210 mm scale (≈ 1017 px)
+  const PAGE_H_PX = Math.round(794 * CONTENT_H_MM / A4_W_MM);
 
   // ── Build the render container ───────────────────────────────────────────
   const wrapper = document.createElement('div');
@@ -92,7 +99,8 @@ async function generatePdfBlob(
     const bodyContent = doc.body.innerHTML;
 
     wrapper.style.background = '#fff';
-    wrapper.innerHTML = `<style>${styleContent}</style><div style="padding:48px;background:#fff;">${bodyContent}</div>`;
+    // padding-bottom:0 so the title-header negative margin reaches the edge
+    wrapper.innerHTML = `<style>${styleContent}</style><div style="padding:40px 40px 0;background:#fff;">${bodyContent}</div>`;
     document.body.appendChild(wrapper);
     captureTarget = wrapper;
   }
@@ -100,21 +108,60 @@ async function generatePdfBlob(
   try {
     void captureTarget.offsetHeight; // force layout
 
-    // Push .force-page-start elements to the next exact A4 boundary.
+    // ── Phase 1: push .force-page-start elements to the next page boundary ─
+    // Only push if the element is already in the BOTTOM 35 % of a page
+    // (pageOffset > 65 % of PAGE_H_PX).  Elements near the top of a page
+    // (small pageOffset) must NOT be pushed — that would create a near-blank
+    // page.
     for (let pass = 0; pass < 20; pass++) {
       let inserted = false;
       void captureTarget.offsetHeight;
       const originY = captureTarget.getBoundingClientRect().top;
 
       for (const el of Array.from(captureTarget.querySelectorAll('.force-page-start')) as HTMLElement[]) {
-        const elTop = Math.round(el.getBoundingClientRect().top - originY);
+        const elTop    = Math.round(el.getBoundingClientRect().top - originY);
         const pageOffset = elTop % PAGE_H_PX;
-        if (pageOffset > 4) {
+        // Only push if element is past 65% of the current page
+        if (pageOffset > PAGE_H_PX * 0.65) {
           const spacer = document.createElement('div');
           spacer.style.cssText = `height:${PAGE_H_PX - pageOffset}px;line-height:0;font-size:0;`;
           el.parentNode!.insertBefore(spacer, el);
           inserted = true;
           break;
+        }
+      }
+
+      if (!inserted) break;
+    }
+
+    // ── Phase 2: prevent .paper sections from spanning page boundaries ─────
+    // If a .paper element starts on one page and ends on the next, AND it
+    // fits entirely on a single page, push it down to start fresh on the next
+    // page.  Run multiple passes in case earlier insertions shift later items.
+    for (let pass = 0; pass < 30; pass++) {
+      let inserted = false;
+      void captureTarget.offsetHeight;
+      const originY = captureTarget.getBoundingClientRect().top;
+
+      for (const el of Array.from(captureTarget.querySelectorAll('.paper')) as HTMLElement[]) {
+        const rect       = el.getBoundingClientRect();
+        const elTop      = Math.round(rect.top  - originY);
+        const elBottom   = Math.round(rect.bottom - originY);
+        const elH        = elBottom - elTop;
+
+        // Does this element span a page boundary?
+        const pageStart  = Math.floor(elTop    / PAGE_H_PX);
+        const pageEnd    = Math.floor((elBottom - 1) / PAGE_H_PX);
+
+        if (pageStart < pageEnd && elH <= PAGE_H_PX) {
+          // Push it to start at the next page boundary
+          const pageOffset = elTop % PAGE_H_PX;
+          const pushBy     = PAGE_H_PX - pageOffset;
+          const spacer     = document.createElement('div');
+          spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
+          el.parentNode!.insertBefore(spacer, el);
+          inserted = true;
+          break; // restart — earlier insertions shift all subsequent elements
         }
       }
 
@@ -129,23 +176,18 @@ async function generatePdfBlob(
       windowWidth: 794,
     });
 
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const A4_W = 210;
-    const A4_H = 297;
-    const imgW = A4_W;
-    const imgH = (canvas.height * A4_W) / canvas.width;
-    let remaining = imgH;
-    let pos = 0;
+    const imgData  = canvas.toDataURL('image/png');
+    const pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const imgW     = A4_W_MM;
+    // Full image height in mm at the same 794 px / 210 mm scale
+    const imgH_MM  = (canvas.height * A4_W_MM) / canvas.width;
+    const numPages = Math.max(1, Math.ceil(imgH_MM / CONTENT_H_MM));
 
-    pdf.addImage(imgData, 'PNG', 0, pos, imgW, imgH);
-    remaining -= A4_H;
-
-    while (remaining > 0) {
-      pos -= A4_H;
-      pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, pos, imgW, imgH);
-      remaining -= A4_H;
+    for (let i = 0; i < numPages; i++) {
+      if (i > 0) pdf.addPage();
+      // Shift the image up by CONTENT_H_MM per page, but offset down by
+      // MARGIN_V so page 0 starts MARGIN_V mm below the top edge.
+      pdf.addImage(imgData, 'PNG', 0, MARGIN_V - i * CONTENT_H_MM, imgW, imgH_MM);
     }
 
     return pdf.output('blob');

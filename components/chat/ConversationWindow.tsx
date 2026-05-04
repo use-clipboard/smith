@@ -140,7 +140,7 @@ export default function ConversationWindow({ conversationId, index }: Props) {
         <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
           {unreadBadge > 0 && isMinimized && (
             <span className="min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-1 mr-1">
-              {unreadBadge > 9 ? '9+' : unreadBadge}
+              {unreadBadge > 99 ? '99+' : unreadBadge}
             </span>
           )}
           <button

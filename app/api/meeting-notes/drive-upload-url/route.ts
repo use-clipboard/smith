@@ -64,8 +64,9 @@ export async function POST(req: NextRequest) {
       });
       folderId = newFolder.id ?? folderId;
     }
-  } catch {
-    // Non-fatal — just upload to root if folder lookup fails
+  } catch (e) {
+    console.error('[drive-upload-url] folder lookup/create failed:', e);
+    // Non-fatal — file will go into the Drive root if folder lookup fails
   }
 
   // Initiate a Google Drive resumable upload session.

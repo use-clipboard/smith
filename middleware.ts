@@ -2,7 +2,6 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  // If Supabase env vars are missing, skip auth middleware to avoid a crash
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return NextResponse.next({ request });
   }
@@ -43,6 +42,40 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
+  }
+
+  // Single-session enforcement: verify the cookie nonce matches the DB nonce.
+  // If another device has logged in since, their login overwrites the DB nonce,
+  // causing this check to fail and immediately signing this session out.
+  if (user && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const cookieNonce = request.cookies.get('smith_snonce')?.value;
+    if (cookieNonce) {
+      try {
+        const service = createServerClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY,
+          { cookies: { getAll: () => [], setAll: () => {} } }
+        );
+        const { data } = await service
+          .from('users')
+          .select('active_session_nonce')
+          .eq('id', user.id)
+          .single();
+
+        if (data && data.active_session_nonce && data.active_session_nonce !== cookieNonce) {
+          // Another session has taken over — sign this one out immediately
+          await supabase.auth.signOut();
+          const url = request.nextUrl.clone();
+          url.pathname = '/login';
+          url.searchParams.set('error', 'You have been signed out because your account was accessed from another device.');
+          const redirect = NextResponse.redirect(url);
+          redirect.cookies.delete('smith_snonce');
+          return redirect;
+        }
+      } catch {
+        // Non-critical — if the check fails, allow through rather than blocking
+      }
+    }
   }
 
   return supabaseResponse;

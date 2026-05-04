@@ -101,10 +101,11 @@ function formatRelativeTime(iso: string): string {
 }
 
 function notifDotColor(type: string): string {
-  if (type === 'calendar_invite') return '#10b981';   // emerald
-  if (type === 'calendar_updated') return '#3b82f6';  // blue
-  if (type === 'calendar_deleted') return '#ef4444';  // red
-  return '#9ca3af';                                   // grey
+  if (type === 'calendar_invite') return '#10b981';      // emerald
+  if (type === 'calendar_updated') return '#3b82f6';     // blue
+  if (type === 'calendar_deleted') return '#ef4444';     // red
+  if (type === 'client_step_complete') return '#4F46E5'; // indigo
+  return '#9ca3af';                                      // grey
 }
 
 export default function TopBar({ userName, avatarUrl }: TopBarProps) {
@@ -414,11 +415,15 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
                 <div className="max-h-80 overflow-y-auto">
                   {notifications.map(n => {
                     const isCalendar = n.type === 'calendar_invite' || n.type === 'calendar_updated' || n.type === 'calendar_deleted';
+                    const taskLink = (n.data as { task_link?: string } | null)?.task_link ?? null;
+                    const isClickable = !!taskLink;
                     return (
                       <div
                         key={n.id}
+                        onClick={() => { if (taskLink) { navigate(taskLink); setNotifOpen(false); } }}
                         className={`flex items-start gap-3 px-4 py-3 border-b border-[var(--border)] last:border-b-0 group
-                          ${!n.read ? 'bg-[var(--accent-light)]' : 'bg-transparent'}`}
+                          ${!n.read ? 'bg-[var(--accent-light)]' : 'bg-transparent'}
+                          ${isClickable ? 'cursor-pointer hover:bg-[var(--bg-nav-hover)]' : ''}`}
                       >
                         {/* Type icon */}
                         <div className="shrink-0 mt-0.5">

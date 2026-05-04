@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -12,9 +12,10 @@ import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
+import TasksSettingsTab from './tabs/TasksSettingsTab';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks';
 
 interface Props {
   userId: string;
@@ -30,6 +31,9 @@ interface Props {
   seatCount: number;
   calendarModuleActive?: boolean;
   staffHireModuleActive?: boolean;
+  tasksModuleActive?: boolean;
+  emailSenderName?: string | null;
+  emailSenderAddress?: string | null;
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -41,7 +45,9 @@ const TIER_LABELS: Record<string, string> = {
 
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
-  firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount, calendarModuleActive, staffHireModuleActive,
+  firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive,
+  emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
   const searchParams = useSearchParams();
@@ -75,7 +81,8 @@ export default function SettingsClient({
     { id: 'modules' as Tab,     label: 'Tools',       icon: Puzzle,            adminOnly: true,  hidden: false },
     { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false },
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive },
-    { id: 'staff-hire' as Tab, label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive },
+    { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive },
+    { id: 'tasks' as Tab,       label: 'Tasks',       icon: CheckSquare,       adminOnly: true,  hidden: !tasksModuleActive },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
@@ -319,6 +326,7 @@ export default function SettingsClient({
               <GoogleDriveSettings />
             </div>
 
+
           </div>
         </div>
       )}
@@ -353,6 +361,16 @@ export default function SettingsClient({
       {/* Staff Hire tab — admin only, shown when module is active */}
       {activeTab === 'staff-hire' && isAdmin && staffHireModuleActive && (
         <StaffHireSettingsTab />
+      )}
+
+      {/* Tasks tab — admin only, shown when tasks module is active */}
+      {activeTab === 'tasks' && isAdmin && tasksModuleActive && firmId && (
+        <TasksSettingsTab
+          firmId={firmId}
+          isAdmin={isAdmin}
+          initialEmailFromName={emailSenderName ?? null}
+          initialEmailFromAddress={emailSenderAddress ?? null}
+        />
       )}
     </div>
   );

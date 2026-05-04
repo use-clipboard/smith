@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const clientId = (formData.get('client_id') as string | null) || null;
+    const folderId = (formData.get('folder_id') as string | null) || null;
+    const folderPath = (formData.get('folder_path') as string | null) || null;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
@@ -54,8 +56,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Google Drive not connected' }, { status: 400 });
     }
 
-    // Get or create vault folder
-    const vaultFolderId = await getOrCreateVaultFolder(creds.accessToken, creds.refreshToken);
+    // Use the user-selected folder if provided, otherwise fall back to default vault folder
+    const targetFolderId = folderId ?? await getOrCreateVaultFolder(creds.accessToken, creds.refreshToken);
+    const targetFolderPath = folderPath ?? VAULT_FOLDER_NAME;
 
     // Upload file to Drive
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -64,16 +67,17 @@ export async function POST(req: NextRequest) {
     const driveRes = await drive.files.create({
       requestBody: {
         name: file.name,
-        parents: [vaultFolderId],
+        parents: [targetFolderId],
       },
       media: {
         mimeType: file.type,
         body: Readable.from(buffer),
       },
       fields: 'id,webViewLink,name,mimeType,size,createdTime,modifiedTime',
+      supportsAllDrives: true,
     });
 
-    void uploadFileToDrive; // imported only to keep the import consistent — actual upload done above
+    void uploadFileToDrive; // imported for consistency — actual upload done above
 
     const driveFile = driveRes.data;
 
@@ -90,9 +94,9 @@ export async function POST(req: NextRequest) {
         file_name: file.name,
         file_mime_type: file.type,
         file_size_bytes: buffer.byteLength,
-        google_drive_folder_path: VAULT_FOLDER_NAME,
+        google_drive_folder_path: targetFolderPath,
         tagging_status: 'untagged',
-        source: 'agent_smith_tool',
+        source: 'google_drive',
         source_tool: 'vault_upload',
         drive_created_at: driveFile.createdTime ?? null,
         drive_modified_at: driveFile.modifiedTime ?? null,

@@ -325,6 +325,7 @@ export interface VaultTaggerResult {
   supplier_name: string | null;
   client_code: string | null;
   client_name: string | null;
+  matched_client_ref: string | null;
   document_date: string | null;
   amount: number | null;
   currency: string | null;
@@ -576,4 +577,179 @@ export interface AppState2 {
   flaggedEntries: FlaggedEntry[];
   ledgerAccounts: LedgerAccount[];
   currentView: View;
+}
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+
+export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'review' | 'complete';
+export type StepStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'complete' | 'skipped';
+export type RecurrenceType = 'once' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly' | 'annually' | 'custom';
+export type EmailReminderTiming = 'on_assign' | '1_day_before_due' | '3_days_before_due' | '1_week_before_due' | 'on_due_date';
+
+export interface EmailReminderConfig {
+  recipients: ('assignee' | 'client')[];
+  timing: EmailReminderTiming;
+  custom_message?: string;
+}
+
+export interface TaskUserRef {
+  id: string;
+  full_name: string | null;
+  email: string;
+}
+
+export interface TaskClientRef {
+  id: string;
+  name: string;
+  client_ref: string;
+  contact_email?: string | null;
+}
+
+// ─── Templates ───────────────────────────────────────────────────────────────
+
+export interface TaskTemplateStep {
+  id: string;
+  template_id: string;
+  step_key: string;
+  title: string;
+  description: string | null;
+  assignee_role: 'team_member' | 'client' | 'any';
+  default_assignee_id: string | null;
+  tool_module_id: string | null;
+  email_reminder_enabled: boolean;
+  email_reminder_config: EmailReminderConfig;
+  email_reminder_subject: string | null;
+  email_reminder_message: string | null;
+  client_instructions: string | null;
+  client_can_upload: boolean;
+  time_estimate_minutes: number | null;
+  position_x: number;
+  position_y: number;
+  default_assignee?: TaskUserRef | null;
+}
+
+export interface TaskTemplateEdge {
+  id: string;
+  template_id: string;
+  from_step_key: string;
+  to_step_key: string;
+  label: string | null;
+}
+
+export interface TaskTemplate {
+  id: string;
+  firm_id: string;
+  created_by: string;
+  name: string;
+  description: string | null;
+  is_firm_wide: boolean;
+  category: string;
+  recurrence_type: RecurrenceType | null;
+  recurrence_interval_days: number | null;
+  estimated_duration_days: number | null;
+  created_at: string;
+  updated_at: string;
+  steps?: TaskTemplateStep[];
+  edges?: TaskTemplateEdge[];
+  created_by_user?: TaskUserRef | null;
+}
+
+// ─── Task Instances ───────────────────────────────────────────────────────────
+
+export interface TaskStep {
+  id: string;
+  task_id: string;
+  template_step_id: string | null;
+  step_key: string;
+  title: string;
+  description: string | null;
+  assignee_id: string | null;
+  is_client_step: boolean;
+  status: StepStatus;
+  tool_module_id: string | null;
+  tool_output_id: string | null;
+  email_reminder_enabled: boolean;
+  email_reminder_config: EmailReminderConfig;
+  email_reminder_subject: string | null;
+  email_reminder_message: string | null;
+  client_instructions: string | null;
+  client_can_upload: boolean;
+  due_date: string | null;
+  completed_at: string | null;
+  position_x: number;
+  position_y: number;
+  created_at: string;
+  updated_at: string;
+  assignee?: TaskUserRef | null;
+}
+
+export interface TaskStepEdge {
+  id: string;
+  task_id: string;
+  from_step_key: string;
+  to_step_key: string;
+  label: string | null;
+}
+
+export interface TaskTimeEntry {
+  id: string;
+  task_id: string;
+  step_id: string | null;
+  user_id: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_minutes: number | null;
+  notes: string | null;
+  created_at: string;
+  user?: TaskUserRef | null;
+}
+
+export interface Task {
+  id: string;
+  firm_id: string;
+  client_id: string | null;
+  template_id: string | null;
+  created_by: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  due_date: string | null;
+  is_internal: boolean;
+  recurrence_type: RecurrenceType | null;
+  recurrence_interval_days: number | null;
+  parent_task_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: TaskClientRef | null;
+  created_by_user?: TaskUserRef | null;
+  steps?: TaskStep[];
+  edges?: TaskStepEdge[];
+  time_entries?: TaskTimeEntry[];
+}
+
+// ─── Default Templates (built-in, not stored in DB) ──────────────────────────
+
+export interface DefaultTemplateStep {
+  step_key: string;
+  title: string;
+  description?: string;
+  assignee_role: 'team_member' | 'client' | 'any';
+  tool_module_id?: string;
+  email_reminder_enabled?: boolean;
+  email_reminder_config?: Partial<EmailReminderConfig>;
+  time_estimate_minutes?: number;
+  position_x: number;
+  position_y: number;
+}
+
+export interface DefaultTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  recurrence_type: RecurrenceType | null;
+  estimated_duration_days: number | null;
+  steps: DefaultTemplateStep[];
+  edges: { from_step_key: string; to_step_key: string; label?: string }[];
 }

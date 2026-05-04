@@ -26,8 +26,9 @@ function LoginContent() {
     setLoading(true); setError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError('Invalid email or password. Please try again.'); setLoading(false); return; }
-    // End all other active sessions for this account — one session per user at a time
+    // End all other active sessions and register this as the sole valid session
     await supabase.auth.signOut({ scope: 'others' });
+    await fetch('/api/auth/session-checkin', { method: 'POST' });
     router.push('/dashboard'); router.refresh();
   }
 

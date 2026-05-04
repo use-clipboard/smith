@@ -1,6 +1,6 @@
 'use client';
 // vault page
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { consumePendingClient } from '@/lib/pendingClient';
 import {
   Archive,
@@ -30,6 +30,7 @@ import {
   Users,
 } from 'lucide-react';
 import type { VaultDocument, VaultSyncState, VaultTaggingStatus } from '@/types';
+import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -85,10 +86,29 @@ const DOC_TYPES = [
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type VaultClientStatus = 'active' | 'hold' | 'inactive';
+
 interface Client {
   id: string;
   name: string;
   client_ref: string | null;
+  status: VaultClientStatus;
+}
+
+const CLIENT_STATUS_STYLES: Record<VaultClientStatus, { dot: string; label: string; pill: string }> = {
+  active:   { dot: 'bg-green-500',  label: 'Active',   pill: 'bg-green-100 text-green-700' },
+  hold:     { dot: 'bg-amber-500',  label: 'On Hold',  pill: 'bg-amber-100 text-amber-700' },
+  inactive: { dot: 'bg-gray-400',   label: 'Inactive', pill: 'bg-gray-100 text-gray-500'   },
+};
+
+function ClientStatusPill({ status }: { status: VaultClientStatus }) {
+  const s = CLIENT_STATUS_STYLES[status] ?? CLIENT_STATUS_STYLES.active;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${s.pill}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
 }
 
 interface DocsResponse {
@@ -142,18 +162,20 @@ function ClientBadge({ name, clientRef }: { name?: string | null; clientRef?: st
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
 
 interface UploadModalProps {
-  clients: Client[];
   preselectedClientId?: string | null;
+  preselectedClientLabel?: string | null;  // name hint so button shows immediately
   onClose: () => void;
   onDone: () => void;
 }
 
-function UploadModal({ clients, preselectedClientId, onClose, onDone }: UploadModalProps) {
+function UploadModal({ preselectedClientId, preselectedClientLabel, onClose, onDone }: UploadModalProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [clientId, setClientId] = useState<string>(preselectedClientId ?? '');
   const [dragOver, setDragOver] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, 'idle' | 'uploading' | 'tagging' | 'done' | 'failed'>>({});
   const [uploading, setUploading] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<{ id: string; name: string; path: string } | null>(null);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
 
   function addFiles(incoming: FileList | null) {
     if (!incoming) return;
@@ -174,6 +196,10 @@ function UploadModal({ clients, preselectedClientId, onClose, onDone }: UploadMo
         const fd = new FormData();
         fd.append('file', file);
         if (clientId) fd.append('client_id', clientId);
+        if (selectedFolder) {
+          fd.append('folder_id', selectedFolder.id);
+          fd.append('folder_path', selectedFolder.path);
+        }
 
         const res = await fetch('/api/vault/upload', { method: 'POST', body: fd });
         if (!res.ok) throw new Error(await res.text());
@@ -189,91 +215,123 @@ function UploadModal({ clients, preselectedClientId, onClose, onDone }: UploadMo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">Upload Documents</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-page)] text-[var(--text-muted)]">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          {/* Drop zone */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
-            onClick={() => document.getElementById('vault-file-input')?.click()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent)]/5' : 'border-[var(--border)] hover:border-[var(--accent)]/50'}`}
-          >
-            <Upload size={24} className="mx-auto mb-2 text-[var(--text-muted)]" />
-            <p className="text-sm text-[var(--text-secondary)]">Drop files here or click to browse</p>
-            <p className="text-xs text-[var(--text-muted)] mt-1">PDF, images, spreadsheets</p>
-            <input
-              id="vault-file-input"
-              type="file"
-              multiple
-              className="hidden"
-              onChange={e => addFiles(e.target.files)}
-            />
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-xl w-full max-w-lg mx-4">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
+            <h2 className="text-base font-semibold text-[var(--text-primary)]">Upload Documents</h2>
+            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-page)] text-[var(--text-muted)]">
+              <X size={16} />
+            </button>
           </div>
 
-          {/* File list */}
-          {files.length > 0 && (
-            <ul className="space-y-1 max-h-40 overflow-y-auto">
-              {files.map(f => {
-                const status = statuses[f.name];
-                return (
-                  <li key={f.name} className="flex items-center gap-2 text-sm py-1">
-                    <FileText size={14} className="text-[var(--text-muted)] shrink-0" />
-                    <span className="flex-1 truncate text-[var(--text-primary)]">{f.name}</span>
-                    <span className="text-xs text-[var(--text-muted)]">{formatBytes(f.size)}</span>
-                    {!status && (
-                      <button onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))} className="p-0.5 hover:text-red-500 text-[var(--text-muted)]">
-                        <X size={12} />
-                      </button>
-                    )}
-                    {status === 'uploading' && <span className="text-xs text-blue-500">Uploading…</span>}
-                    {status === 'tagging' && <span className="text-xs text-blue-500">Tagging…</span>}
-                    {status === 'done' && <Check size={14} className="text-green-500" />}
-                    {status === 'failed' && <X size={14} className="text-red-500" />}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          {/* Client selector */}
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Assign to client (optional)</label>
-            <select
-              value={clientId}
-              onChange={e => setClientId(e.target.value)}
-              className="w-full text-sm px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] text-[var(--text-primary)]"
+          <div className="p-6 space-y-4">
+            {/* Drop zone */}
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+              onClick={() => document.getElementById('vault-file-input')?.click()}
+              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent)]/5' : 'border-[var(--border)] hover:border-[var(--accent)]/50'}`}
             >
-              <option value="">— No client —</option>
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.name} {c.client_ref ? `(${c.client_ref})` : ''}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+              <Upload size={24} className="mx-auto mb-2 text-[var(--text-muted)]" />
+              <p className="text-sm text-[var(--text-secondary)]">Drop files here or click to browse</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">PDF, images, spreadsheets</p>
+              <input
+                id="vault-file-input"
+                type="file"
+                multiple
+                className="hidden"
+                onChange={e => addFiles(e.target.files)}
+              />
+            </div>
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border)]">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)]">
-            Cancel
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={!files.length || uploading}
-            className="px-4 py-2 text-sm rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] disabled:opacity-50"
-          >
-            {uploading ? 'Uploading…' : 'Upload & Tag'}
-          </button>
+            {/* File list */}
+            {files.length > 0 && (
+              <ul className="space-y-1 max-h-36 overflow-y-auto">
+                {files.map(f => {
+                  const status = statuses[f.name];
+                  return (
+                    <li key={f.name} className="flex items-center gap-2 text-sm py-1">
+                      <FileText size={14} className="text-[var(--text-muted)] shrink-0" />
+                      <span className="flex-1 truncate text-[var(--text-primary)]">{f.name}</span>
+                      <span className="text-xs text-[var(--text-muted)]">{formatBytes(f.size)}</span>
+                      {!status && (
+                        <button onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))} className="p-0.5 hover:text-red-500 text-[var(--text-muted)]">
+                          <X size={12} />
+                        </button>
+                      )}
+                      {status === 'uploading' && <span className="text-xs text-blue-500">Uploading…</span>}
+                      {status === 'tagging'   && <span className="text-xs text-blue-500">Tagging…</span>}
+                      {status === 'done'      && <Check size={14} className="text-green-500" />}
+                      {status === 'failed'    && <X size={14} className="text-red-500" />}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {/* Drive folder selector */}
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Save to Drive folder</label>
+              <button
+                onClick={() => setShowFolderPicker(true)}
+                className="w-full flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] hover:border-[var(--accent)]/50 text-left transition-colors"
+              >
+                <FolderOpen size={14} className={selectedFolder ? 'text-amber-500' : 'text-[var(--text-muted)]'} />
+                <span className={`flex-1 truncate ${selectedFolder ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
+                  {selectedFolder ? selectedFolder.path : 'Default folder (Agent Smith Vault)'}
+                </span>
+                {selectedFolder && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setSelectedFolder(null); }}
+                    className="p-0.5 text-[var(--text-muted)] hover:text-red-500 shrink-0"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                {!selectedFolder && <ChevronDown size={13} className="text-[var(--text-muted)] shrink-0" />}
+              </button>
+            </div>
+
+            {/* Client selector */}
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Assign to client (optional)</label>
+              <ClientFilterDropdown
+                value={clientId}
+                onChange={setClientId}
+                fullWidth
+                initialLabel={preselectedClientLabel ?? undefined}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--border)]">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)]">
+              Cancel
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={!files.length || uploading}
+              className="px-4 py-2 text-sm rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            >
+              {uploading ? 'Uploading…' : 'Upload & Tag'}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Folder picker sits above the upload modal */}
+      {showFolderPicker && (
+        <DriveFolderPicker
+          onSelect={(folder, path) => {
+            setSelectedFolder({ id: folder.id, name: folder.name, path });
+            setShowFolderPicker(false);
+          }}
+          onClose={() => setShowFolderPicker(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -281,13 +339,13 @@ function UploadModal({ clients, preselectedClientId, onClose, onDone }: UploadMo
 
 interface PreviewDrawerProps {
   doc: VaultDocument;
-  clients: Client[];
+  clients?: Client[];  // no longer used; kept for API compat
   onClose: () => void;
   onUpdate: (updated: VaultDocument) => void;
   onDelete: (id: string) => void;
 }
 
-function PreviewDrawer({ doc, clients, onClose, onUpdate, onDelete }: PreviewDrawerProps) {
+function PreviewDrawer({ doc, onClose, onUpdate, onDelete }: PreviewDrawerProps) {
   const [editing, setEditing] = useState<Record<string, string | null>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -427,16 +485,16 @@ function PreviewDrawer({ doc, clients, onClose, onUpdate, onDelete }: PreviewDra
             {field('Acc. Period', 'tag_accounting_period', doc.tag_accounting_period)}
             {field('HMRC Ref', 'tag_hmrc_reference', doc.tag_hmrc_reference)}
             {field('VAT Number', 'tag_vat_number', doc.tag_vat_number)}
-            <div className="py-2 flex items-center gap-2">
-              <span className="w-36 text-xs text-[var(--text-muted)] font-medium shrink-0">Assign Client</span>
-              <select
-                className="flex-1 text-sm px-2 py-1 rounded border border-[var(--border)] bg-[var(--bg-page)] text-[var(--text-primary)]"
-                value={(editing['client_id'] as string | undefined) ?? doc.client_id ?? ''}
-                onChange={e => setEditing(prev => ({ ...prev, client_id: e.target.value || null }))}
-              >
-                <option value="">— Unassigned —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.client_ref ? `${c.client_ref} – ${c.name}` : c.name}</option>)}
-              </select>
+            <div className="py-2 flex items-start gap-2">
+              <span className="w-36 text-xs text-[var(--text-muted)] font-medium shrink-0 mt-1.5">Assign Client</span>
+              <div className="flex-1">
+                <ClientFilterDropdown
+                  value={(editing['client_id'] as string | undefined) ?? doc.client_id ?? ''}
+                  onChange={id => setEditing(prev => ({ ...prev, client_id: id || null }))}
+                  fullWidth
+                  initialLabel={doc.client_name ?? undefined}
+                />
+              </div>
             </div>
           </div>
 
@@ -556,9 +614,9 @@ function DocRow({ doc, selected, onSelect, onClick, onTag }: DocRowProps) {
         <span className="text-sm font-medium text-[var(--text-primary)] truncate block">{doc.file_name}</span>
         {doc.tag_summary && <span className="text-xs text-[var(--text-muted)] truncate block">{doc.tag_summary}</span>}
         {doc.google_drive_folder_path && (
-          <span className="text-xs text-[var(--text-muted)]/70 truncate block flex items-center gap-0.5 mt-0.5">
-            <FolderOpen size={10} className="shrink-0" />
-            {doc.google_drive_folder_path}
+          <span className="flex items-center gap-0.5 mt-0.5 min-w-0">
+            <FolderOpen size={10} className="text-[var(--text-muted)] shrink-0 opacity-60" />
+            <span className="text-xs text-[var(--text-muted)] opacity-60 truncate">{doc.google_drive_folder_path}</span>
           </span>
         )}
       </td>
@@ -625,9 +683,9 @@ function DocCard({ doc, onClick }: { doc: VaultDocument; onClick: () => void }) 
           <p className="text-sm font-medium text-[var(--text-primary)] truncate">{doc.file_name}</p>
           <p className="text-xs text-[var(--text-muted)]">{formatBytes(doc.file_size_bytes)}</p>
           {doc.google_drive_folder_path && (
-            <p className="text-xs text-[var(--text-muted)]/70 truncate flex items-center gap-0.5 mt-0.5">
-              <FolderOpen size={10} className="shrink-0" />
-              {doc.google_drive_folder_path}
+            <p className="flex items-center gap-0.5 mt-0.5 min-w-0">
+              <FolderOpen size={10} className="text-[var(--text-muted)] shrink-0 opacity-60" />
+              <span className="text-xs text-[var(--text-muted)] opacity-60 truncate">{doc.google_drive_folder_path}</span>
             </p>
           )}
         </div>
@@ -645,6 +703,223 @@ function DocCard({ doc, onClick }: { doc: VaultDocument; onClick: () => void }) 
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Client Sidebar (Client Files tab) ───────────────────────────────────────
+
+interface ClientSidebarProps {
+  selectedClient: Client | null;
+  onSelect: (c: Client | null) => void;
+}
+
+function ClientSidebar({ selectedClient, onSelect }: ClientSidebarProps) {
+  const [search, setSearch] = useState('');
+  const [sidebarClients, setSidebarClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch from server on mount and whenever search changes (debounced)
+  useEffect(() => {
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSidebarClients(data.clients ?? []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, search ? 200 : 0);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  return (
+    <div className="w-64 border-r border-[var(--border)] flex flex-col shrink-0">
+      {/* Search box */}
+      <div className="px-3 py-2 border-b border-[var(--border)] shrink-0">
+        <div className="relative">
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search clients…"
+            className="w-full pl-7 pr-2 py-1.5 text-xs rounded border border-[var(--border)] bg-[var(--bg-page)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none focus:border-[var(--accent)]"
+          />
+        </div>
+      </div>
+      {/* List */}
+      <div className="overflow-y-auto flex-1 min-h-0">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <RefreshCw size={16} className="animate-spin text-[var(--text-muted)]" />
+          </div>
+        ) : sidebarClients.length === 0 ? (
+          <p className="p-4 text-xs text-[var(--text-muted)]">No clients found.</p>
+        ) : (
+          <ul className="py-1">
+            {sidebarClients.map(c => {
+              const isActive = selectedClient?.id === c.id;
+              return (
+                <li key={c.id}>
+                  <button
+                    onClick={() => onSelect(isActive ? null : c)}
+                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 hover:bg-[var(--bg-page)] transition-colors ${isActive ? 'bg-[var(--bg-page)]' : ''}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {c.client_ref && <span className="text-xs text-[var(--text-muted)]">{c.client_ref}</span>}
+                        {c.client_ref && <span className="text-[var(--text-muted)] text-xs">·</span>}
+                        <ClientStatusPill status={c.status ?? 'active'} />
+                      </div>
+                    </div>
+                    {isActive && <ChevronRight size={14} className="text-[var(--accent)] shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Client Filter Dropdown (async server search) ─────────────────────────────
+// Used both in the filter bar (pill button) and in the upload modal (full-width).
+
+interface ClientFilterDropdownProps {
+  value: string;
+  onChange: (id: string) => void;
+  /** Render as a full-width bordered input instead of a compact pill button */
+  fullWidth?: boolean;
+  /** Pre-populate display label when value is set from outside (e.g. preselected client) */
+  initialLabel?: string;
+}
+
+function ClientFilterDropdown({ value, onChange, fullWidth, initialLabel }: ClientFilterDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedLabel, setSelectedLabel] = useState(initialLabel ?? '');
+  const ref = useRef<HTMLDivElement>(null);
+  const isActive = !!value;
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSearch(''); }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Fetch from server whenever the dropdown is open and search changes
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setResults(data.clients ?? []);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [open, search]);
+
+  // When results arrive, update the label for the selected item (keeps button text accurate)
+  useEffect(() => {
+    if (!value) { setSelectedLabel(''); return; }
+    const found = results.find(c => c.id === value);
+    if (found) setSelectedLabel(found.client_ref ? `${found.client_ref} – ${found.name}` : found.name);
+  }, [value, results]);
+
+  // If value is preset but label is missing, fetch the client name once
+  useEffect(() => {
+    if (!value || selectedLabel) return;
+    fetch(`/api/clients?search=`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const found = (data?.clients ?? []).find((c: Client) => c.id === value);
+        if (found) setSelectedLabel(found.client_ref ? `${found.client_ref} – ${found.name}` : found.name);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]); // intentionally runs only when value changes, not selectedLabel
+
+  function select(c: Client) {
+    onChange(c.id);
+    setSelectedLabel(c.client_ref ? `${c.client_ref} – ${c.name}` : c.name);
+    setOpen(false);
+    setSearch('');
+  }
+
+  function clear() {
+    onChange('');
+    setSelectedLabel('');
+    setOpen(false);
+    setSearch('');
+  }
+
+  const triggerClass = fullWidth
+    ? `w-full flex items-center justify-between gap-2 text-sm px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] hover:border-[var(--accent)]/50 text-left ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`
+    : `flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${isActive ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] bg-white dark:bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)]'}`;
+
+  return (
+    <div ref={ref} className={`relative ${fullWidth ? 'w-full' : ''}`}>
+      <button onClick={() => setOpen(o => !o)} className={triggerClass}>
+        <span className="truncate flex-1">
+          {isActive ? (selectedLabel || '…') : (fullWidth ? '— No client —' : 'Client')}
+        </span>
+        <ChevronDown size={fullWidth ? 14 : 12} className="text-[var(--text-muted)] shrink-0" />
+      </button>
+
+      {open && (
+        <div className={`absolute top-full left-0 mt-1 z-30 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-lg shadow-lg max-h-64 flex flex-col overflow-hidden ${fullWidth ? 'right-0' : 'w-72'}`}>
+          <div className="px-2 pt-2 pb-1 border-b border-[var(--border)] shrink-0">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search clients…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-xs px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--bg-page)] text-[var(--text-primary)] outline-none"
+            />
+          </div>
+          <div className="overflow-y-auto flex-1 min-h-0 py-1">
+            {(isActive || fullWidth) && !search && (
+              <button onClick={clear} className="w-full text-left px-3 py-2 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-page)] flex items-center gap-1">
+                <X size={10} /> {fullWidth ? 'No client' : 'Clear filter'}
+              </button>
+            )}
+            {loading && <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Loading…</p>}
+            {!loading && results.length === 0 && <p className="px-3 py-2 text-xs text-[var(--text-muted)]">No clients found</p>}
+            {!loading && results.map(c => (
+              <button
+                key={c.id}
+                onClick={() => select(c)}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-page)] flex items-center justify-between gap-2 ${c.id === value ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
+              >
+                <span className="truncate flex-1">{c.client_ref ? `${c.client_ref} – ${c.name}` : c.name}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <ClientStatusPill status={c.status ?? 'active'} />
+                  {c.id === value && <Check size={10} className="text-[var(--accent)]" />}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -951,7 +1226,6 @@ export default function VaultPage() {
         </div>
         {showUpload && (
           <UploadModal
-            clients={clients}
             preselectedClientId={uploadPreselectedClient}
             onClose={() => setShowUpload(false)}
             onDone={() => { setShowUpload(false); fetchDocs(1); fetchSyncStatus(); }}
@@ -1049,31 +1323,10 @@ export default function VaultPage() {
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
         {activeTab === 'clients' && (
-          <div className="w-64 border-r border-[var(--border)] overflow-y-auto shrink-0">
-            {clients.length === 0 ? (
-              <p className="p-4 text-sm text-[var(--text-muted)]">No clients found.</p>
-            ) : (
-              <ul className="py-2">
-                {clients.map(c => {
-                  const isActive = selectedClient?.id === c.id;
-                  return (
-                    <li key={c.id}>
-                      <button
-                        onClick={() => setSelectedClient(isActive ? null : c)}
-                        className={`w-full text-left px-4 py-3 flex items-center justify-between gap-2 hover:bg-[var(--bg-page)] transition-colors ${isActive ? 'bg-[var(--bg-page)]' : ''}`}
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
-                          {c.client_ref && <p className="text-xs text-[var(--text-muted)]">{c.client_ref}</p>}
-                        </div>
-                        {isActive && <ChevronRight size={14} className="text-[var(--accent)] shrink-0" />}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <ClientSidebar
+            selectedClient={selectedClient}
+            onSelect={setSelectedClient}
+          />
         )}
 
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -1114,14 +1367,8 @@ export default function VaultPage() {
                 multi
                 onChange={v => setFilterDocTypes(v ? v.split(',').filter(Boolean) : [])}
               />
-              {/* Client */}
-              <FilterDropdown
-                label="Client"
-                value={filterClient}
-                options={clients.map(c => ({ label: c.client_ref ? `${c.client_ref} – ${c.name}` : c.name, value: c.id }))}
-                onChange={setFilterClient}
-                searchable
-              />
+              {/* Client — async server search so it works regardless of list size */}
+              <ClientFilterDropdown value={filterClient} onChange={setFilterClient} />
               {/* Tax year */}
               <FilterDropdown
                 label="Tax Year"
@@ -1276,8 +1523,8 @@ export default function VaultPage() {
       {/* Upload Modal */}
       {showUpload && (
         <UploadModal
-          clients={clients}
           preselectedClientId={uploadPreselectedClient}
+          preselectedClientLabel={selectedClient?.name ?? null}
           onClose={() => setShowUpload(false)}
           onDone={() => { setShowUpload(false); fetchDocs(1); fetchSyncStatus(); }}
         />
@@ -1393,7 +1640,7 @@ function FilterDropdown({
               />
             </div>
           )}
-          <div className="overflow-y-auto py-1">
+          <div className="overflow-y-auto py-1 flex-1 min-h-0">
             {!multi && isActive && !search && (
               <button onClick={() => { onChange(''); setOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-page)] flex items-center gap-1">
                 <X size={10} /> Clear
@@ -1408,7 +1655,7 @@ function FilterDropdown({
                 onClick={() => toggle(opt.value)}
                 className="w-full text-left px-3 py-2 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-page)] flex items-center justify-between gap-2"
               >
-                {opt.label}
+                <span className="flex-1 min-w-0 truncate">{opt.label}</span>
                 {selected.includes(opt.value) && <Check size={10} className="text-[var(--accent)] shrink-0" />}
               </button>
             ))}
@@ -1423,12 +1670,12 @@ function FilterDropdown({
 
 interface BulkTagModalProps {
   count: number;
-  clients: Client[];
+  clients?: Client[];  // kept for API compatibility but no longer used internally
   onConfirm: (updates: Record<string, unknown>) => void;
   onClose: () => void;
 }
 
-function BulkTagModal({ count, clients, onConfirm, onClose }: BulkTagModalProps) {
+function BulkTagModal({ count, onConfirm, onClose }: BulkTagModalProps) {
   const [clientId, setClientId] = useState('');
   const [docType, setDocType] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -1469,16 +1716,7 @@ function BulkTagModal({ count, clients, onConfirm, onClose }: BulkTagModalProps)
           {/* Assign client */}
           <div>
             <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Assign to client</label>
-            <select
-              value={clientId}
-              onChange={e => setClientId(e.target.value)}
-              className="w-full text-sm px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-page)] text-[var(--text-primary)]"
-            >
-              <option value="">— Keep existing —</option>
-              {clients.map(c => (
-                <option key={c.id} value={c.id}>{c.client_ref ? `${c.client_ref} – ${c.name}` : c.name}</option>
-              ))}
-            </select>
+            <ClientFilterDropdown value={clientId} onChange={setClientId} fullWidth />
           </div>
 
           {/* Document type */}

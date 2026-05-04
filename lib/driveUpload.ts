@@ -1,5 +1,8 @@
 import { createServiceClient } from '@/lib/supabase-server';
 import { uploadFileWithDrive, createFolderWithDrive, getRefreshedDriveClient } from '@/lib/googleDrive';
+import { google } from 'googleapis';
+
+type DriveClient = ReturnType<typeof google.drive>;
 
 interface FilePayload {
   name: string;
@@ -14,6 +17,61 @@ interface UploadOptions {
   userId: string;
   firmId: string;
   feature: string;
+}
+
+// Map internal feature slugs to human-readable folder names
+const FEATURE_FOLDER_NAMES: Record<string, string> = {
+  'full_analysis':         'Full Analysis',
+  'bank_to_csv':           'Bank to CSV',
+  'bank-to-csv':           'Bank to CSV',
+  'landlord':              'Landlord Analysis',
+  'landlord_analysis':     'Landlord Analysis',
+  'final_accounts':        'Final Accounts',
+  'final_accounts_review': 'Final Accounts',
+  'performance':           'Performance Analysis',
+  'performance_analysis':  'Performance Analysis',
+  'p32':                   'P32 Summary',
+  'p32_summary':           'P32 Summary',
+  'risk_assessment':       'Risk Assessment',
+  'summarise':             'Summarise',
+};
+
+function featureFolderName(feature: string): string {
+  return FEATURE_FOLDER_NAMES[feature]
+    ?? feature.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function todayFolderName(): string {
+  const d = new Date();
+  const day  = String(d.getDate()).padStart(2, '0');
+  const mon  = d.toLocaleString('en-GB', { month: 'short' }); // "Apr"
+  const year = d.getFullYear();
+  return `${day} ${mon} ${year}`; // "30 Apr 2026"
+}
+
+/**
+ * Find an existing Drive folder by name inside a parent, or create it.
+ * Returns the folder ID.
+ */
+async function getOrCreateFolder(
+  drive: DriveClient,
+  name: string,
+  parentId: string
+): Promise<string> {
+  // Escape single quotes in folder name for Drive query
+  const safeName = name.replace(/'/g, "\\'");
+  const search = await drive.files.list({
+    q: `name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${parentId}' in parents`,
+    fields: 'files(id)',
+    pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  });
+  if (search.data.files?.length) {
+    return search.data.files[0].id!;
+  }
+  const folder = await createFolderWithDrive(drive, { name, parentFolderId: parentId });
+  return folder.id!;
 }
 
 /**
@@ -72,27 +130,24 @@ export async function uploadDocumentsToDrive({
 
   let targetFolderId = rootFolderId;
 
-  // Place files in a per-client-code subfolder when a client code is known
-  if (clientCode) {
-    try {
-      // Check if a folder for this client code already exists in Drive
-      const searchRes = await drive.files.list({
-        q: `name = '${clientCode}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '${rootFolderId}' in parents`,
-        fields: 'files(id)',
-        pageSize: 1,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      });
-      if (searchRes.data.files?.length) {
-        targetFolderId = searchRes.data.files[0].id!;
-      } else {
-        const folder = await createFolderWithDrive(drive, { name: clientCode, parentFolderId: rootFolderId });
-        targetFolderId = folder.id!;
-      }
-    } catch (err) {
-      console.error('[driveUpload] Failed to resolve client folder, falling back to root folder:', err);
-      targetFolderId = rootFolderId;
+  // Build folder hierarchy: root / ClientCode / ToolName / DD MMM YYYY
+  try {
+    // Level 1 — client code folder (skip if no client code)
+    let level1Id = rootFolderId;
+    if (clientCode) {
+      level1Id = await getOrCreateFolder(drive, clientCode, rootFolderId);
     }
+
+    // Level 2 — tool name folder
+    const toolFolderName = featureFolderName(feature);
+    const level2Id = await getOrCreateFolder(drive, toolFolderName, level1Id);
+
+    // Level 3 — date folder (today, so all uploads on the same day share one folder)
+    const dateFolderName = todayFolderName();
+    targetFolderId = await getOrCreateFolder(drive, dateFolderName, level2Id);
+  } catch (err) {
+    console.error('[driveUpload] Failed to resolve folder hierarchy, falling back to root folder:', err);
+    targetFolderId = rootFolderId;
   }
 
   for (const file of files) {
@@ -178,19 +233,19 @@ export async function saveDocumentsToVault({
   siteUrl: string;
   cookieHeader: string;
 }): Promise<void> {
-  if (!files.length || !siteUrl) return;
+  if (!files.length) return; // siteUrl no longer required for the insert
 
   const db = createServiceClient();
+  const now = new Date().toISOString();
 
   for (const file of files) {
     try {
-      // Build a synthetic Drive file ID from name+size hash so we can dedup
-      // In practice, files uploaded via tools are also uploaded to Drive via uploadDocumentsToDrive,
-      // so a Drive file ID should already exist.  We insert with a placeholder and the real ID
-      // will be overwritten when Drive upload completes.
-      const pseudoId = `tool:${sourceTool}:${firmId}:${file.name}:${file.base64.length}`;
+      const buffer = Buffer.from(file.base64, 'base64');
 
-      // Check if already vaulted
+      // Stable dedup key scoped to firm + tool + file name + size
+      const pseudoId = `tool:${sourceTool}:${firmId}:${file.name}:${buffer.byteLength}`;
+
+      // Skip if this exact file was already vaulted for this firm+tool
       const { data: existing } = await db
         .from('vault_documents')
         .select('id')
@@ -198,8 +253,6 @@ export async function saveDocumentsToVault({
         .maybeSingle();
 
       if (existing) continue;
-
-      const buffer = Buffer.from(file.base64, 'base64');
 
       const { data: doc } = await db
         .from('vault_documents')
@@ -211,6 +264,8 @@ export async function saveDocumentsToVault({
           file_name: file.name,
           file_mime_type: file.mimeType,
           file_size_bytes: buffer.byteLength,
+          // Set drive_modified_at so tool uploads sort near the top (not buried at bottom)
+          drive_modified_at: now,
           tagging_status: 'untagged',
           source: 'agent_smith_tool',
           source_tool: sourceTool,
@@ -218,16 +273,12 @@ export async function saveDocumentsToVault({
         .select('id')
         .single();
 
-      if (doc?.id) {
-        // Fire-and-forget tagging
-        fetch(`${siteUrl}/api/vault/tag/single`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Cookie: cookieHeader },
-          body: JSON.stringify({ vault_document_id: doc.id }),
-        }).catch(() => {});
-      }
-    } catch {
-      // Silently ignore per-file failures
+      // Note: we do NOT auto-tag tool uploads here. The google_drive_file_id is a
+      // pseudo-ID (not a real Drive file), so the tag/single route would fail trying
+      // to fetch it from Drive. Documents appear as 'untagged' — users can tag them
+      // manually from the vault, or they get picked up by Drive sync once uploaded.
+    } catch (err) {
+      console.error(`[saveDocumentsToVault] Failed to vault "${file.name}":`, err);
     }
   }
 }

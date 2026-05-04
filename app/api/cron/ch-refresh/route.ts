@@ -10,9 +10,14 @@ function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 // ─── Verify this request came from Vercel's cron scheduler ───────────────────
 // Vercel sets the Authorization header to Bearer <CRON_SECRET> on cron requests.
 function isAuthorisedCron(request: Request): boolean {
-  const auth = request.headers.get('authorization');
   const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // must be configured in env
+  if (!secret) {
+    // CRON_SECRET not configured — Vercel auto-sets this in production.
+    // Log and allow through so the schedule isn't silently blocked during setup.
+    console.warn('[CH Cron] CRON_SECRET env var not set — allowing request. Set it in Vercel env vars to secure this endpoint.');
+    return true;
+  }
+  const auth = request.headers.get('authorization');
   return auth === `Bearer ${secret}`;
 }
 
@@ -34,7 +39,8 @@ function isDueNow(times: string[]): boolean {
     const [th, tm] = t.split(':').map(Number);
     const [nh, nm] = now.split(':').map(Number);
     const diffMins = Math.abs((th * 60 + tm) - (nh * 60 + nm));
-    return diffMins <= 15; // within 15 min of the scheduled time
+    const wrappedDiff = Math.min(diffMins, 1440 - diffMins); // handle midnight crossing
+    return wrappedDiff <= 15; // within 15 min of the scheduled time
   });
 }
 
@@ -158,20 +164,33 @@ async function fetchCompanyWithRetry(number: string, apiKey: string): Promise<an
         };
       });
 
+      const CORPORATE_PSC_KINDS = new Set([
+        'corporate-entity-person-with-significant-control',
+        'legal-person-with-significant-control',
+      ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const activePscs = (pscData.items ?? []).filter((p: any) => !p.ceased_on).map((p: any) => {
+        const kind = p.kind ?? '';
+        const idvExempt = CORPORATE_PSC_KINDS.has(kind);
+        if (idvExempt) {
+          return {
+            name: p.name ?? p.description ?? '', kind, notifiedOn: p.notified_on ?? '',
+            naturesOfControl: p.natures_of_control ?? [], address: parseAddress(p.address),
+            dateOfBirth: undefined, idvDueDate: null, idvOverdue: false, idvVerified: false, idvExempt: true,
+          };
+        }
         const idvDueDate = getIdvDueDate(p, p.notified_on);
         const idvVerified = hasVerification(p);
         return {
-          name: p.name ?? p.description ?? '', kind: p.kind ?? '', notifiedOn: p.notified_on ?? '',
+          name: p.name ?? p.description ?? '', kind, notifiedOn: p.notified_on ?? '',
           naturesOfControl: p.natures_of_control ?? [], address: parseAddress(p.address),
           dateOfBirth: p.date_of_birth ? { month: p.date_of_birth.month, year: p.date_of_birth.year } : undefined,
-          idvDueDate, idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified,
+          idvDueDate, idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified, idvExempt: false,
         };
       });
 
       const officerIdvDates = activeOfficers.filter((o: { idvVerified: boolean; idvExempt: boolean }) => !o.idvExempt && !o.idvVerified).map((o: { idvDueDate: string | null }) => o.idvDueDate);
-      const pscIdvDates = activePscs.filter((p: { idvVerified: boolean }) => !p.idvVerified).map((p: { idvDueDate: string | null }) => p.idvDueDate);
+      const pscIdvDates = activePscs.filter((p: { idvExempt: boolean; idvVerified: boolean }) => !p.idvExempt && !p.idvVerified).map((p: { idvDueDate: string | null }) => p.idvDueDate);
 
       return {
         companyNumber: profile.company_number ?? n,

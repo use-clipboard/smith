@@ -197,14 +197,34 @@ async function fetchCompany(number: string, apiKey: string): Promise<CHCompanyDa
       };
     });
 
-    // PSCs (active only)
+    // PSCs (active only) — corporate/legal entity PSCs are not subject to ECCTA IDV
+    const CORPORATE_PSC_KINDS = new Set([
+      'corporate-entity-person-with-significant-control',
+      'legal-person-with-significant-control',
+    ]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const activePscs: CHPSC[] = (pscData.items ?? []).filter((p: any) => !p.ceased_on).map((p: any) => {
+      const kind = p.kind ?? '';
+      const idvExempt = CORPORATE_PSC_KINDS.has(kind);
+      if (idvExempt) {
+        return {
+          name: p.name ?? p.description ?? '',
+          kind,
+          notifiedOn: p.notified_on ?? '',
+          naturesOfControl: p.natures_of_control ?? [],
+          address: parseAddress(p.address),
+          dateOfBirth: undefined,
+          idvDueDate: null,
+          idvOverdue: false,
+          idvVerified: false,
+          idvExempt: true,
+        };
+      }
       const idvDueDate = getIdvDueDate(p, p.notified_on);
       const idvVerified = hasVerification(p);
       return {
         name: p.name ?? p.description ?? '',
-        kind: p.kind ?? '',
+        kind,
         notifiedOn: p.notified_on ?? '',
         naturesOfControl: p.natures_of_control ?? [],
         address: parseAddress(p.address),
@@ -212,11 +232,12 @@ async function fetchCompany(number: string, apiKey: string): Promise<CHCompanyDa
         idvDueDate,
         idvOverdue: !idvVerified && isIdvOverdue(idvDueDate),
         idvVerified,
+        idvExempt: false,
       };
     });
 
     const officerIdvDates = activeOfficers.filter(o => !o.idvExempt && !o.idvVerified).map(o => o.idvDueDate);
-    const pscIdvDates = activePscs.filter(p => !p.idvVerified).map(p => p.idvDueDate);
+    const pscIdvDates = activePscs.filter(p => !p.idvExempt && !p.idvVerified).map(p => p.idvDueDate);
 
     return {
       companyNumber: profile.company_number ?? n,
