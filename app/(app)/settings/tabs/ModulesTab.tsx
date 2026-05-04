@@ -4,14 +4,15 @@ import { useState } from 'react';
 import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  Check, Loader2, AlertTriangle, Puzzle, Info, CalendarDays, UserPlus,
+  Check, Loader2, AlertTriangle, Puzzle, Info, CalendarDays, UserPlus, CheckSquare, MicVocal,
 } from 'lucide-react';
 import { MODULES, type ModuleConfig } from '@/config/modules.config';
 
 // Map iconName strings to lucide components
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
-  Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House, CalendarDays, UserPlus,
+  Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
+  CalendarDays, UserPlus, CheckSquare, MicVocal,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
