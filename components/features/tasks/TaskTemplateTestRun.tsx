@@ -281,7 +281,7 @@ function EmailLightbox({ step, templateName, onClose, onContinue, hasClient }: E
   const toAddress = recipients.includes('client') ? 'accounts@acmeltd.com' : 'john.smith@yourfirm.com';
 
   return (
-    <div className="absolute inset-0 z-20 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-[70] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-full flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 bg-blue-600 text-white rounded-t-2xl flex-shrink-0">
           <div className="flex items-center gap-2.5">
@@ -351,7 +351,7 @@ interface ClientPortalLightboxProps {
 function ClientPortalLightbox({ step, templateName, onClose, onContinue }: ClientPortalLightboxProps) {
   const instructions = step.client_instructions ?? step.description;
   return (
-    <div className="absolute inset-0 z-20 bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-[70] bg-gray-900/70 backdrop-blur-sm flex items-center justify-center p-6">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-full flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 bg-amber-600 text-white rounded-t-2xl flex-shrink-0">
           <div className="flex items-center gap-2.5">
