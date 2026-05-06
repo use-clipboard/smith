@@ -854,6 +854,7 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
                 onCancelPlacement={() => setPlacementMode(false)}
                 onInsertOnEdge={handleInsertOnEdge}
                 onConditionChange={(from, to) => setConditionEdge({ from, to })}
+                onDeleteEdge={deleteEdge}
               />
             )}
           </div>

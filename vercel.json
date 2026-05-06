@@ -7,6 +7,10 @@
     {
       "path": "/api/tasks/reminders/process",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/timeout-conditions",
+      "schedule": "0 9 * * *"
     }
   ]
 }

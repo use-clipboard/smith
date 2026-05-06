@@ -45,14 +45,8 @@ function StatusIcon({ status }: { status: StepStatus }) {
   return <Circle className={`${cls} text-gray-300`} />;
 }
 
-// Shared handle styles — visible dots in edit mode, invisible in view mode
-const HANDLE_SRC: React.CSSProperties = {
-  width: 11, height: 11,
-  background: '#818cf8', border: '2px solid white',
-  borderRadius: '50%', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-  cursor: 'crosshair', zIndex: 10,
-};
-const HANDLE_TGT: React.CSSProperties = {
+// Handle styles — visible indigo dots in edit mode, hidden in view mode
+const HANDLE_STYLE: React.CSSProperties = {
   width: 11, height: 11,
   background: '#818cf8', border: '2px solid white',
   borderRadius: '50%', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
@@ -68,8 +62,10 @@ function StepNode({ data, selected }: NodeProps) {
   const bgClass = STATUS_BG[status];
   const isEdit = d.mode === 'edit';
 
-  const srcStyle = isEdit ? HANDLE_SRC : HIDDEN;
-  const tgtStyle = isEdit ? HANDLE_TGT : HIDDEN;
+  // All handles are source type — ConnectionMode.Loose on the canvas means
+  // the arrow direction is always determined by which node you dragged FROM,
+  // not by handle type. This prevents reversed connections.
+  const handleStyle = isEdit ? HANDLE_STYLE : HIDDEN;
 
   return (
     <div
@@ -81,18 +77,11 @@ function StepNode({ data, selected }: NodeProps) {
       `}
       style={{ fontFamily: 'inherit' }}
     >
-      {/* ── Handles — all 4 sides, source + target at each ── */}
-      <Handle type="target" position={Position.Top}    id="t-top"   style={tgtStyle} />
-      <Handle type="source" position={Position.Top}    id="s-top"   style={{ ...srcStyle, opacity: 0 }} />
-
-      <Handle type="source" position={Position.Bottom} id="s-bot"   style={srcStyle} />
-      <Handle type="target" position={Position.Bottom} id="t-bot"   style={{ ...tgtStyle, opacity: 0 }} />
-
-      <Handle type="source" position={Position.Left}   id="s-left"  style={srcStyle} />
-      <Handle type="target" position={Position.Left}   id="t-left"  style={{ ...tgtStyle, opacity: 0 }} />
-
-      <Handle type="source" position={Position.Right}  id="s-right" style={srcStyle} />
-      <Handle type="target" position={Position.Right}  id="t-right" style={{ ...tgtStyle, opacity: 0 }} />
+      {/* ── Handles — one per side, all source type ── */}
+      <Handle type="source" position={Position.Top}    id="h-top"   style={handleStyle} />
+      <Handle type="source" position={Position.Bottom} id="h-bot"   style={handleStyle} />
+      <Handle type="source" position={Position.Left}   id="h-left"  style={handleStyle} />
+      <Handle type="source" position={Position.Right}  id="h-right" style={handleStyle} />
 
       <div className="p-3">
         <div className="flex items-start gap-2 mb-1.5">
