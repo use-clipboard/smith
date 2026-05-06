@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { User, Puzzle, Mail, CheckCircle2, Circle, Loader2, Clock, SkipForward } from 'lucide-react';
 import type { StepStatus } from '@/types';
@@ -45,12 +45,12 @@ function StatusIcon({ status }: { status: StepStatus }) {
   return <Circle className={`${cls} text-gray-300`} />;
 }
 
-// Handle styles — visible indigo dots in edit mode, hidden in view mode
-const HANDLE_STYLE: React.CSSProperties = {
+const HANDLE_BASE: React.CSSProperties = {
   width: 11, height: 11,
   background: '#818cf8', border: '2px solid white',
   borderRadius: '50%', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
   cursor: 'crosshair', zIndex: 10,
+  transition: 'opacity 0.15s',
 };
 const HIDDEN: React.CSSProperties = { opacity: 0, pointerEvents: 'none' };
 
@@ -61,11 +61,14 @@ function StepNode({ data, selected }: NodeProps) {
   const borderClass = STATUS_BORDER[status];
   const bgClass = STATUS_BG[status];
   const isEdit = d.mode === 'edit';
+  const [hovered, setHovered] = useState(false);
 
-  // All handles are source type — ConnectionMode.Loose on the canvas means
-  // the arrow direction is always determined by which node you dragged FROM,
-  // not by handle type. This prevents reversed connections.
-  const handleStyle = isEdit ? HANDLE_STYLE : HIDDEN;
+  // Handles are only visible in edit mode when the node is hovered or selected
+  const showHandles = isEdit && (hovered || selected);
+  const handleStyle: React.CSSProperties = showHandles
+    ? HANDLE_BASE
+    : { ...HANDLE_BASE, opacity: 0, pointerEvents: 'none' };
+  const hiddenStyle = HIDDEN;
 
   return (
     <div
@@ -76,12 +79,14 @@ function StepNode({ data, selected }: NodeProps) {
         ${isEdit ? 'cursor-pointer' : ''}
       `}
       style={{ fontFamily: 'inherit' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {/* ── Handles — one per side, all source type ── */}
-      <Handle type="source" position={Position.Top}    id="h-top"   style={handleStyle} />
-      <Handle type="source" position={Position.Bottom} id="h-bot"   style={handleStyle} />
-      <Handle type="source" position={Position.Left}   id="h-left"  style={handleStyle} />
-      <Handle type="source" position={Position.Right}  id="h-right" style={handleStyle} />
+      {/* ── Handles — one per side, all source type, shown on hover/select only ── */}
+      <Handle type="source" position={Position.Top}    id="h-top"   style={isEdit ? handleStyle : hiddenStyle} />
+      <Handle type="source" position={Position.Bottom} id="h-bot"   style={isEdit ? handleStyle : hiddenStyle} />
+      <Handle type="source" position={Position.Left}   id="h-left"  style={isEdit ? handleStyle : hiddenStyle} />
+      <Handle type="source" position={Position.Right}  id="h-right" style={isEdit ? handleStyle : hiddenStyle} />
 
       <div className="p-3">
         <div className="flex items-start gap-2 mb-1.5">
