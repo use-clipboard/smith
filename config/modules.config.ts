@@ -191,6 +191,17 @@ export const MODULES: ModuleConfig[] = [
     category: 'tool',
   },
 
+  {
+    id: 'email-triage',
+    name: 'Email Triage',
+    description: 'Connect your Gmail account to triage emails directly in SMITH. Send and receive emails, allocate threads to client timelines, link emails to tasks, and use AI to draft replies.',
+    iconName: 'Mail',
+    route: '/email',
+    alwaysOn: false,
+    monthlyPricePence: 9900,
+    category: 'tool',
+  },
+
   // ─── Integrations ─────────────────────────────────────────────────────────
   {
     id: 'google-drive',

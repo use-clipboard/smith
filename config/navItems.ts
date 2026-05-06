@@ -7,7 +7,7 @@ import type { ElementType } from 'react';
 import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
-  BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare,
+  BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -39,6 +39,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'meeting-notes',  href: '/meeting-notes',  label: 'Meeting Notes',   icon: MicVocal },
   { moduleId: 'staff-hire',    href: '/staff-hire',     label: 'Staff Hire',      icon: UserPlus },
   { moduleId: 'tasks',         href: '/tasks',          label: 'Tasks',           icon: CheckSquare },
+  { moduleId: 'email-triage',  href: '/email',          label: 'Email Triage',    icon: Mail },
 ];
 
 /** Workspace nav items (always visible, no module gate). */

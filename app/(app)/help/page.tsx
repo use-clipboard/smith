@@ -5,7 +5,7 @@ import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
-  ExternalLink, CalendarDays, MicVocal, UserPlus,
+  ExternalLink, CalendarDays, MicVocal, UserPlus, Mail,
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
@@ -95,6 +95,34 @@ const FAQS: FAQ[] = [
     a: 'Meeting notes are saved to the linked client\'s Timeline tab on the client record page. Open a client, go to the Timeline tab, and you\'ll see all saved meeting notes alongside other notes and documents for that client.',
   },
   {
+    q: 'How do I connect my Gmail to Email Triage?',
+    a: 'Go to Settings → Email Triage and click "Connect Gmail Account". You\'ll be redirected to Google to authorise SMITH. Once connected, your inbox loads automatically and refreshes every 30 seconds. Each team member connects their own individual Gmail account.',
+  },
+  {
+    q: 'Are my emails stored in SMITH?',
+    a: 'No — emails are read live from Gmail and are never stored in SMITH\'s database. Only allocation metadata (which threads are linked to which clients or tasks) is stored. Email content stays in Gmail at all times.',
+  },
+  {
+    q: 'How do I edit my email signature in SMITH?',
+    a: 'Go to Settings → Email Triage → Email Signature. Use the built-in editor to write or update your signature (Bold, Italic, Underline, and link insertion are supported). Click "Save Signature" and it is written directly back to Gmail — it will appear on emails sent from any device, including Gmail on mobile.',
+  },
+  {
+    q: 'What is the difference between Reply, Reply All, and Forward?',
+    a: (
+      <span>
+        <ul className="space-y-1.5 list-none mt-1">
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>Reply</strong> — sends your response only to the person who sent the email.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>Reply All</strong> — sends your response to the original sender and all CC'd recipients. The original CC list is pre-filled automatically.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>Forward</strong> — opens a new compose window with the original message quoted and any attachments pre-loaded, so you can send it to someone new.</span></li>
+        </ul>
+      </span>
+    ),
+  },
+  {
+    q: 'Can I allocate an email to a client when sending or replying?',
+    a: 'Yes — the compose window has an Allocate button in the footer. Click it to link the sent email to one or more client records; it will then appear on their Timeline. If you\'re replying to a thread that already has a client allocated, SMITH pre-fills that client automatically (you can change or remove it before sending).',
+  },
+  {
     q: 'Who can access the Staff Hire tool?',
     a: 'Admins always have access. Staff members must be explicitly granted access by an admin, because the tool contains sensitive information such as salary data and applicant records. Admins can manage access in Settings → Staff Hire.',
   },
@@ -118,6 +146,7 @@ const TOOLS = [
   { icon: MicVocal, name: 'Meeting Notes', desc: 'Records and transcribes client meetings using your device microphone, then uses AI to produce a structured summary with action items and decisions. Notes are saved to the client\'s Timeline.' },
   { icon: BookOpen, name: 'Policies & Procedures', desc: 'A static reference section for the firm\'s internal policies and procedures.' },
   { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
+  { icon: Mail, name: 'Email Triage', desc: 'A full Gmail-connected email client built into SMITH. Read, send, reply, reply all, and forward emails. Allocate emails to client timelines and tasks. AI features include Suggest Reply, Rewrite, and AI Draft Reply. BCC support, file attachments, label management, and an in-app signature editor that syncs directly to Gmail. Each team member connects their own Gmail account.' },
 ];
 
 function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {

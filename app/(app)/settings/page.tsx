@@ -75,6 +75,7 @@ export default async function SettingsPage() {
       calendarModuleActive={activeModules.includes('google-calendar')}
       staffHireModuleActive={activeModules.includes('staff-hire')}
       tasksModuleActive={activeModules.includes('tasks')}
+      emailTriageModuleActive={activeModules.includes('email-triage')}
       emailSenderName={emailSenderName}
       emailSenderAddress={emailSenderAddress}
     />

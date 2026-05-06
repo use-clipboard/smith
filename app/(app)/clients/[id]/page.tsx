@@ -189,6 +189,22 @@ function NoteCard({
 
   const meta = NOTE_TYPE_META[note.note_type] ?? NOTE_TYPE_META.other;
 
+  const emailData = (() => {
+    if (!note.content) return null;
+    try {
+      const parsed = JSON.parse(note.content) as Record<string, unknown>;
+      if (parsed.__smith_email__) return parsed as {
+        threadId: string; subject: string; snippet: string;
+        fromName: string; fromEmail: string; date: string;
+        to?: string; cc?: string; bcc?: string; sentAt?: string;
+        bodyText?: string;
+        attachments?: { filename: string; mimeType: string; size: number }[];
+      };
+    } catch { /* not JSON */ }
+    return null;
+  })();
+  const isEmailNote = !!emailData;
+
   function startEdit() {
     setEditTitle(note.title); setEditContent(note.content ?? '');
     setEditType(note.note_type); setEditDate(note.note_date);
@@ -255,13 +271,15 @@ function NoteCard({
           </div>
         </div>
 
-        {/* Content */}
-        <div>
-          <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Notes</label>
-          <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4}
-            placeholder="Record what was discussed, agreed, or noted…"
-            className="input-base w-full resize-none text-sm leading-relaxed" />
-        </div>
+        {/* Content — hidden for email notes (content is system-managed JSON) */}
+        {!isEmailNote && (
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Notes</label>
+            <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4}
+              placeholder="Record what was discussed, agreed, or noted…"
+              className="input-base w-full resize-none text-sm leading-relaxed" />
+          </div>
+        )}
 
         <div className="flex justify-between items-center pt-1">
           <button onClick={() => setConfirmDel(true)} className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 transition-colors">
@@ -342,8 +360,66 @@ function NoteCard({
             <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">{md.summary}</p>
           )}
 
+          {/* Email note — collapsible card */}
+          {isEmailNote && emailData && (
+            <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-nav-hover)] overflow-hidden">
+              {/* From line + expand toggle — always visible */}
+              <button
+                onClick={() => setExpanded(v => !v)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-[var(--border)]/30 transition-colors text-left"
+              >
+                <p className="text-xs text-[var(--text-muted)] truncate">
+                  <span className="font-medium text-[var(--text-secondary)]">From: </span>
+                  {emailData.fromName && <span className="text-[var(--text-primary)]">{emailData.fromName} </span>}
+                  {emailData.fromEmail && <span className="text-[var(--text-muted)]">&lt;{emailData.fromEmail}&gt;</span>}
+                </p>
+                <ChevronDown size={13} className={`shrink-0 text-[var(--text-muted)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Expanded body + attachments */}
+              {expanded && (
+                <div className="border-t border-[var(--border)] px-3 py-2.5 space-y-2">
+                  {/* Addressing + sent time */}
+                  <div className="space-y-0.5 text-xs pb-2 border-b border-[var(--border)]">
+                    {emailData.to && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">To:</span> {emailData.to}</p>
+                    )}
+                    {emailData.cc && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">CC:</span> {emailData.cc}</p>
+                    )}
+                    {emailData.bcc && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">BCC:</span> {emailData.bcc}</p>
+                    )}
+                    {emailData.sentAt && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">Sent:</span> {new Date(emailData.sentAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+                    )}
+                  </div>
+                  {emailData.bodyText ? (
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{emailData.bodyText}</p>
+                  ) : emailData.snippet ? (
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed italic">{emailData.snippet}</p>
+                  ) : null}
+                  {emailData.attachments && emailData.attachments.length > 0 && (
+                    <div className="pt-1.5 border-t border-[var(--border)]">
+                      <p className="text-[11px] font-medium text-[var(--text-muted)] mb-1.5">Attachments</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {emailData.attachments.map((a, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-xs text-[var(--text-secondary)]">
+                            <Paperclip size={10} className="shrink-0 text-[var(--text-muted)]" />
+                            <span className="max-w-[180px] truncate">{a.filename}</span>
+                            {a.size > 0 && <span className="text-[var(--text-muted)] shrink-0">({Math.round(a.size / 1024)}KB)</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Regular note content */}
-          {!isMeetingNote && note.content && (
+          {!isMeetingNote && !isEmailNote && note.content && (
             <p className="text-sm text-[var(--text-secondary)] mt-1.5 leading-relaxed whitespace-pre-wrap">{note.content}</p>
           )}
 
@@ -375,10 +451,12 @@ function NoteCard({
             className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
             {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
           </button>
-          <button onClick={startEdit} title="Edit note"
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
-            <Pencil size={13} />
-          </button>
+          {!isEmailNote && (
+            <button onClick={startEdit} title="Edit note"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+              <Pencil size={13} />
+            </button>
+          )}
         </div>
       </div>
 

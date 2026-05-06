@@ -244,7 +244,7 @@ export default function AskSmithBubble() {
       {/* Floating button */}
       <button
         onClick={() => setOpen(!open)}
-        className={`fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-dropdown transition-all duration-200
+        className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full flex items-center justify-center shadow-dropdown transition-all duration-200
           ${open
             ? 'bg-[var(--text-primary)] text-[var(--bg-page)] scale-95'
             : 'bg-[#1A1A2E] dark:bg-white text-white dark:text-[#0F0F1A] hover:scale-105 hover:shadow-accent-glow'

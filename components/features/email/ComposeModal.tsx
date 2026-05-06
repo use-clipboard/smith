@@ -1,0 +1,728 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import {
+  X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
+  Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
+} from 'lucide-react';
+import type { EmailMessage } from '@/lib/gmail';
+import AllocateModal, { type Client } from './AllocateModal';
+import TaskLinkModal, { type Task } from './TaskLinkModal';
+
+interface RecipientResult {
+  type: 'client' | 'team';
+  id: string;
+  name: string;
+  email: string;
+  clientRef: string | null;
+  status: string | null;
+}
+
+interface SelectedRecipient {
+  name: string;
+  email: string;
+}
+
+interface ReplyAllRecipients {
+  to: SelectedRecipient[];
+  cc: SelectedRecipient[];
+}
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  replyTo?: EmailMessage | null;
+  /** Pre-fill body with AI-generated content (e.g. AI Draft Reply) */
+  prefilledBody?: string | null;
+  /** Override To/CC when doing Reply All */
+  replyAllRecipients?: ReplyAllRecipients | null;
+  /** Message being forwarded — leaves To empty, prefixes subject with Fwd: */
+  forwardOf?: EmailMessage | null;
+  /** Pre-populate client allocation (e.g. from existing thread allocation) */
+  defaultClients?: Client[] | null;
+  signature: string | null;
+  googleEmail: string;
+  displayName: string;
+  tasksModuleActive?: boolean;
+  onSent?: (threadId: string) => void;
+}
+
+const RECIPIENT_STATUS_COLOURS: Record<string, string> = {
+  active:   'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  hold:     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  inactive: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+
+const TEXT_COLOURS = [
+  { label: 'Default',  value: 'inherit' },
+  { label: 'Black',   value: '#111827' },
+  { label: 'Gray',    value: '#6B7280' },
+  { label: 'Red',     value: '#DC2626' },
+  { label: 'Orange',  value: '#EA580C' },
+  { label: 'Yellow',  value: '#CA8A04' },
+  { label: 'Green',   value: '#16A34A' },
+  { label: 'Blue',    value: '#2563EB' },
+  { label: 'Purple',  value: '#7C3AED' },
+];
+
+function RecipientTag({ r, onRemove }: { r: SelectedRecipient; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/20">
+      {r.name || r.email}
+      <button onClick={onRemove} className="hover:text-red-500 ml-0.5"><X size={11} /></button>
+    </span>
+  );
+}
+
+function RecipientInput({
+  label, recipients, onAdd, onRemove,
+}: {
+  label: string;
+  recipients: SelectedRecipient[];
+  onAdd: (r: SelectedRecipient) => void;
+  onRemove: (email: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<RecipientResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (query.length < 1) { setResults([]); setOpen(false); return; }
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/email/recipients?q=${encodeURIComponent(query)}`);
+        const data = await res.json() as { results: RecipientResult[] };
+        setResults(data.results ?? []);
+        setOpen(true);
+      } finally { setSearching(false); }
+    }, 200);
+  }, [query]);
+
+  function handleSelect(r: RecipientResult) {
+    if (!recipients.find(x => x.email === r.email)) onAdd({ name: r.name, email: r.email });
+    setQuery(''); setResults([]); setOpen(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter' && query.includes('@')) {
+      e.preventDefault();
+      if (!recipients.find(x => x.email === query)) onAdd({ name: '', email: query });
+      setQuery(''); setOpen(false);
+    }
+    if (e.key === 'Backspace' && query === '' && recipients.length > 0) {
+      onRemove(recipients[recipients.length - 1].email);
+    }
+  }
+
+  function handleBlur() {
+    if (query.includes('@')) {
+      if (!recipients.find(x => x.email === query)) onAdd({ name: '', email: query });
+      setQuery(''); setOpen(false);
+    }
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1 flex-wrap border-b border-[var(--border)] py-2 px-1 min-h-[38px]">
+        <span className="text-xs font-medium text-[var(--text-muted)] w-5 shrink-0">{label}</span>
+        {recipients.map(r => (
+          <RecipientTag key={r.email} r={r} onRemove={() => onRemove(r.email)} />
+        ))}
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleBlur}
+          placeholder={recipients.length === 0 ? 'Name, code, or email…' : ''}
+          className="flex-1 min-w-[120px] bg-transparent text-sm outline-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+        />
+        {searching && <Loader2 size={12} className="animate-spin text-[var(--text-muted)]" />}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden">
+          {results.map(r => (
+            <button
+              key={r.id}
+              onClick={() => handleSelect(r)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-nav-hover)] text-left transition-colors"
+            >
+              <div className="w-7 h-7 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-xs font-bold text-[var(--accent)] shrink-0">
+                {(r.name || r.email)[0].toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.name}</p>
+                <p className="text-xs text-[var(--text-muted)] truncate">{r.email}</p>
+              </div>
+              {r.type === 'client' && r.clientRef && (
+                <div className="shrink-0 flex items-center gap-1.5">
+                  <span className="text-[11px] text-[var(--text-muted)]">{r.clientRef}</span>
+                  {r.status && (
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize ${RECIPIENT_STATUS_COLOURS[r.status.toLowerCase()] ?? RECIPIENT_STATUS_COLOURS.inactive}`}>
+                      {r.status}
+                    </span>
+                  )}
+                </div>
+              )}
+              {r.type === 'team' && <span className="text-[11px] text-[var(--text-muted)] shrink-0">Team</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FmtBtn({ title, onActivate, children }: {
+  title: string;
+  onActivate: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      title={title}
+      onMouseDown={e => { e.preventDefault(); onActivate(); }}
+      className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+    >
+      {children}
+    </button>
+  );
+}
+
+export default function ComposeModal({
+  open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, signature, googleEmail, displayName, tasksModuleActive, onSent,
+}: Props) {
+  const [to, setTo] = useState<SelectedRecipient[]>([]);
+  const [cc, setCc] = useState<SelectedRecipient[]>([]);
+  const [bcc, setBcc] = useState<SelectedRecipient[]>([]);
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
+  const [subject, setSubject] = useState('');
+  const [sending, setSending] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [suggestingReply, setSuggestingReply] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+
+  // Attachments
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [fetchingAttachments, setFetchingAttachments] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Formatting colour picker
+  const [colorOpen, setColorOpen] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  // Allocation state
+  const [selectedClients, setSelectedClients] = useState<Client[]>([]);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [allocateOpen, setAllocateOpen] = useState(false);
+  const [taskLinkOpen, setTaskLinkOpen] = useState(false);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Close colour picker on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (colorOpen && colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setColorOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colorOpen]);
+
+  function fmt(command: string, value?: string) {
+    document.execCommand(command, false, value);
+    bodyRef.current?.focus();
+  }
+
+  function buildInitialBody(replyMsg: typeof replyTo, aiBody?: string | null, fwdMsg?: typeof forwardOf): string {
+    const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
+    const mainContent = aiBody ? aiBody : `<p><br/></p>`;
+    if (fwdMsg) {
+      const toLine = fwdMsg.to.map(a => a.name ? `${a.name} &lt;${a.email}&gt;` : a.email).join(', ');
+      const fwdBlock = `<br/><br/><div style="border-top:1px solid #e5e7eb;padding-top:12px;color:#555;font-size:13px">
+        <p style="margin:0 0 8px 0;font-weight:600;color:#374151">---------- Forwarded message ----------</p>
+        <p style="margin:0"><strong>From:</strong> ${fwdMsg.from.name || fwdMsg.from.email} &lt;${fwdMsg.from.email}&gt;<br/>
+        <strong>Date:</strong> ${fwdMsg.date}<br/>
+        <strong>Subject:</strong> ${fwdMsg.subject}<br/>
+        <strong>To:</strong> ${toLine}</p>
+        <br/>${fwdMsg.body}
+      </div>`;
+      return `${mainContent}${sig}${fwdBlock}`;
+    }
+    if (replyMsg) {
+      const quoted = `<br/><br/><blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#555;margin:0">
+        <p><strong>From:</strong> ${replyMsg.from.name || replyMsg.from.email} &lt;${replyMsg.from.email}&gt;<br/>
+        <strong>Date:</strong> ${replyMsg.date}<br/>
+        <strong>Subject:</strong> ${replyMsg.subject}</p>
+        ${replyMsg.body}
+      </blockquote>`;
+      return `${mainContent}${sig}${quoted}`;
+    }
+    return `${mainContent}${sig}`;
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    if (forwardOf) {
+      setTo([]); setCc([]); setShowCc(false);
+      setSubject(forwardOf.subject.startsWith('Fwd:') ? forwardOf.subject : `Fwd: ${forwardOf.subject}`);
+      // Fetch downloadable attachments from the original message
+      setAttachedFiles([]);
+      const downloadable = forwardOf.attachments.filter(a => a.attachmentId);
+      if (downloadable.length > 0) {
+        setFetchingAttachments(true);
+        Promise.allSettled(
+          downloadable.map(async att => {
+            const url = `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`;
+            const res = await fetch(url);
+            const blob = await res.blob();
+            return new File([blob], att.filename, { type: att.mimeType || 'application/octet-stream' });
+          })
+        ).then(results => {
+          setAttachedFiles(
+            results
+              .filter((r): r is PromiseFulfilledResult<File> => r.status === 'fulfilled')
+              .map(r => r.value)
+          );
+          setFetchingAttachments(false);
+        });
+      }
+    } else if (replyAllRecipients) {
+      setTo(replyAllRecipients.to);
+      setCc(replyAllRecipients.cc);
+      setShowCc(replyAllRecipients.cc.length > 0);
+      if (replyTo) setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
+    } else if (replyTo) {
+      setTo([{ name: replyTo.from.name, email: replyTo.from.email }]);
+      setCc([]); setShowCc(false);
+      setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
+    } else {
+      setTo([]); setCc([]); setShowCc(false); setSubject('');
+      setSelectedTask(null); setAttachedFiles([]);
+    }
+    setBcc([]); setShowBcc(false);
+    setSelectedClients(defaultClients ?? []);
+    requestAnimationFrame(() => {
+      if (bodyRef.current) bodyRef.current.innerHTML = buildInitialBody(replyTo, prefilledBody, forwardOf);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, replyTo, replyAllRecipients, forwardOf, prefilledBody, signature]);
+
+  async function handleSend() {
+    if (to.length === 0) return;
+    const htmlBody = bodyRef.current?.innerHTML ?? '';
+    setSending(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('to', JSON.stringify(to.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('cc', JSON.stringify(cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('bcc', JSON.stringify(bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('subject', subject || '(no subject)');
+      formData.append('htmlBody', htmlBody);
+      if (replyTo?.id) formData.append('replyToMessageId', replyTo.id);
+      if (replyTo?.threadId) formData.append('threadId', replyTo.threadId);
+      attachedFiles.forEach(f => formData.append('attachments', f));
+
+      const res = await fetch('/api/email/send', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Failed to send');
+      const data = await res.json() as { threadId?: string };
+      const sentThreadId = data.threadId ?? '';
+
+      const jobs: Promise<unknown>[] = [];
+      if (selectedClients.length > 0 && sentThreadId) {
+        jobs.push(fetch('/api/email/allocate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            threadId: sentThreadId,
+            subject: subject || '(no subject)',
+            snippet: '', date: new Date().toISOString(),
+            fromName: displayName, fromEmail: googleEmail,
+            clientIds: selectedClients.map(c => c.id),
+          }),
+        }));
+      }
+      if (selectedTask && sentThreadId) {
+        jobs.push(fetch('/api/email/task-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threadId: sentThreadId, taskId: selectedTask.id, subject: subject || '(no subject)' }),
+        }));
+      }
+      await Promise.allSettled(jobs);
+      onSent?.(sentThreadId);
+      onClose();
+    } catch {
+      setError('Failed to send email. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleSaveDraft() {
+    setSavingDraft(true);
+    setError(null);
+    try {
+      const htmlBody = bodyRef.current?.innerHTML ?? '';
+      await fetch('/api/email/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: to.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
+          cc: cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
+          bcc: bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
+          subject: subject || '(no subject)',
+          htmlBody: htmlBody || '',
+          replyToMessageId: replyTo?.id,
+          threadId: replyTo?.threadId,
+          fromEmail: googleEmail,
+          fromName: displayName,
+        }),
+      });
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 2500);
+    } catch {
+      setError('Failed to save draft.');
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  async function handleRewrite() {
+    const currentHtml = bodyRef.current?.innerHTML ?? '';
+    setRewriting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/email/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject,
+          body: currentHtml,
+          myName: displayName,
+          mode: 'rewrite',
+        }),
+      });
+      const data = await res.json() as { result?: string };
+      if (data.result && bodyRef.current) {
+        const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
+        const quoted = currentHtml.includes('<blockquote') ? '<br/>' + currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        bodyRef.current.innerHTML = data.result + sig + quoted;
+      }
+    } catch {
+      setError('Rewrite failed. Please try again.');
+    } finally {
+      setRewriting(false);
+    }
+  }
+
+  async function handleSuggestReply() {
+    if (!replyTo) return;
+    setSuggestingReply(true);
+    try {
+      const threadSummary = replyTo.body.replace(/<[^>]+>/g, ' ').slice(0, 2000);
+      const res = await fetch('/api/email/suggest-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: replyTo.subject, threadSummary,
+          senderName: replyTo.from.name || replyTo.from.email,
+          myName: displayName, myEmail: googleEmail,
+        }),
+      });
+      const data = await res.json() as { reply?: string };
+      if (data.reply && bodyRef.current) {
+        const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
+        const currentHtml = bodyRef.current.innerHTML;
+        const quoted = currentHtml.includes('<blockquote') ? currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        bodyRef.current.innerHTML = `<p>${data.reply.replace(/\n/g, '<br/>')}</p>${sig}${quoted ? '<br/>' + quoted : ''}`;
+      }
+    } finally {
+      setSuggestingReply(false);
+    }
+  }
+
+  function handleFiles(files: FileList | null) {
+    if (!files) return;
+    const MAX_TOTAL = 20 * 1024 * 1024; // 20 MB client-side guard
+    const incoming = Array.from(files);
+    const total = [...attachedFiles, ...incoming].reduce((s, f) => s + f.size, 0);
+    if (total > MAX_TOTAL) {
+      setError('Total attachment size must be under 20 MB.');
+      return;
+    }
+    setAttachedFiles(prev => [...prev, ...incoming]);
+  }
+
+  if (!open) return null;
+
+  const toEmails = to.map(r => r.email).filter(Boolean);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none">
+        <div
+          className="w-full max-w-2xl bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] pointer-events-auto flex flex-col"
+          style={{ maxHeight: '85vh' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0 bg-[var(--bg-nav)] rounded-t-xl">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              {forwardOf ? 'Forward' : replyTo ? (replyAllRecipients ? 'Reply All' : 'Reply') : 'New Message'}
+            </h3>
+            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors">
+              <X size={16} className="text-[var(--text-muted)]" />
+            </button>
+          </div>
+
+          {/* Recipients */}
+          <div className="px-4 shrink-0 bg-[var(--bg-card-solid)]">
+            <RecipientInput
+              label="To" recipients={to}
+              onAdd={r => setTo(prev => [...prev, r])}
+              onRemove={email => setTo(prev => prev.filter(x => x.email !== email))}
+            />
+            {showCc ? (
+              <RecipientInput
+                label="Cc" recipients={cc}
+                onAdd={r => setCc(prev => [...prev, r])}
+                onRemove={email => setCc(prev => prev.filter(x => x.email !== email))}
+              />
+            ) : null}
+            {showBcc ? (
+              <RecipientInput
+                label="Bcc" recipients={bcc}
+                onAdd={r => setBcc(prev => [...prev, r])}
+                onRemove={email => setBcc(prev => prev.filter(x => x.email !== email))}
+              />
+            ) : null}
+            {(!showCc || !showBcc) && (
+              <div className="flex gap-2 py-1.5 px-1">
+                {!showCc && (
+                  <button onClick={() => setShowCc(true)} className="text-xs text-[var(--accent)] hover:underline">
+                    + Cc
+                  </button>
+                )}
+                {!showBcc && (
+                  <button onClick={() => setShowBcc(true)} className="text-xs text-[var(--accent)] hover:underline">
+                    + Bcc
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Subject */}
+          <div className="px-4 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+            <input
+              type="text" value={subject} onChange={e => setSubject(e.target.value)}
+              placeholder="Subject (optional)"
+              className="w-full py-2 bg-transparent text-sm outline-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+            />
+          </div>
+
+          {/* Formatting toolbar */}
+          <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+            <FmtBtn title="Bold" onActivate={() => fmt('bold')}><Bold size={13} /></FmtBtn>
+            <FmtBtn title="Italic" onActivate={() => fmt('italic')}><Italic size={13} /></FmtBtn>
+            <FmtBtn title="Underline" onActivate={() => fmt('underline')}><Underline size={13} /></FmtBtn>
+            <FmtBtn title="Strikethrough" onActivate={() => fmt('strikeThrough')}><Strikethrough size={13} /></FmtBtn>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
+            {/* Colour picker */}
+            <div className="relative" ref={colorPickerRef}>
+              <button
+                title="Text colour"
+                onMouseDown={e => { e.preventDefault(); setColorOpen(o => !o); }}
+                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Palette size={13} />
+              </button>
+              {colorOpen && (
+                <div className="absolute left-0 top-full mt-1 z-50 p-2 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg flex gap-1.5 flex-wrap w-36">
+                  {TEXT_COLOURS.map(c => (
+                    <button
+                      key={c.value}
+                      title={c.label}
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        fmt('foreColor', c.value === 'inherit' ? '#111827' : c.value);
+                        setColorOpen(false);
+                      }}
+                      className="w-5 h-5 rounded-full border border-[var(--border)] hover:scale-110 transition-transform shrink-0"
+                      style={{ backgroundColor: c.value === 'inherit' ? '#F4F6FA' : c.value }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
+            <FmtBtn title="Bullet list" onActivate={() => fmt('insertUnorderedList')}><List size={13} /></FmtBtn>
+            <FmtBtn title="Numbered list" onActivate={() => fmt('insertOrderedList')}><ListOrdered size={13} /></FmtBtn>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-hidden relative bg-[var(--bg-page)]">
+            <div
+              ref={bodyRef}
+              contentEditable
+              suppressContentEditableWarning
+              className="w-full h-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm"
+              style={{ minHeight: 160 }}
+            />
+          </div>
+
+          {/* Attached files */}
+          {(attachedFiles.length > 0 || fetchingAttachments) && (
+            <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+              {fetchingAttachments && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs text-[var(--text-muted)] bg-[var(--bg-nav-hover)] border border-[var(--border)]">
+                  <Loader2 size={10} className="animate-spin" /> Fetching attachments…
+                </span>
+              )}
+              {attachedFiles.map((f, i) => (
+                <span key={i} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg text-xs bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] border border-[var(--border)]">
+                  <Paperclip size={10} />
+                  <span className="max-w-[140px] truncate">{f.name}</span>
+                  <span className="text-[var(--text-muted)] shrink-0">({Math.round(f.size / 1024)}KB)</span>
+                  <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 ml-0.5">
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="border-t border-[var(--border)] shrink-0 bg-[var(--bg-nav-hover)] rounded-b-xl">
+
+            {/* Chips row — only shown when something is allocated */}
+            {(selectedClients.length > 0 || selectedTask) && (
+              <div className="flex items-center flex-wrap gap-1.5 px-3 pt-2.5 pb-1">
+                {selectedClients.map(c => (
+                  <span key={c.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700">
+                    <UserPlus size={10} />{c.name}
+                    <button onClick={() => setSelectedClients(prev => prev.filter(x => x.id !== c.id))} className="hover:text-red-500 ml-0.5"><X size={10} /></button>
+                  </span>
+                ))}
+                {selectedTask && (
+                  <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-700">
+                    <CheckSquare size={10} />
+                    <span className="max-w-[160px] truncate">{selectedTask.title}</span>
+                    <button onClick={() => setSelectedTask(null)} className="hover:text-red-500 ml-0.5"><X size={10} /></button>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Action row */}
+            <div className="flex items-center gap-1.5 px-3 py-2.5">
+
+              {/* Group 1: Attach — icon-only */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors shrink-0"
+              >
+                <Paperclip size={15} />
+              </button>
+              <input
+                ref={fileInputRef} type="file" multiple className="hidden"
+                onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
+              />
+
+              <div className="w-px h-5 bg-[var(--border)] mx-0.5 shrink-0" />
+
+              {/* Group 2: AI actions — purple-tinted */}
+              {replyTo && (
+                <button
+                  onClick={handleSuggestReply} disabled={suggestingReply || rewriting}
+                  className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors font-medium shrink-0 disabled:opacity-50"
+                >
+                  {suggestingReply ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  Suggest
+                </button>
+              )}
+              <button
+                onClick={handleRewrite} disabled={rewriting || suggestingReply}
+                className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors font-medium shrink-0 disabled:opacity-50"
+              >
+                {rewriting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                Rewrite
+              </button>
+
+              <div className="w-px h-5 bg-[var(--border)] mx-0.5 shrink-0" />
+
+              {/* Group 3: Filing buttons */}
+              <button
+                onClick={() => setAllocateOpen(true)}
+                className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors font-medium shrink-0"
+              >
+                <UserPlus size={11} />{selectedClients.length > 0 ? 'Add Client' : 'Allocate'}
+              </button>
+              {tasksModuleActive && !selectedTask && (
+                <button
+                  onClick={() => setTaskLinkOpen(true)}
+                  className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors font-medium shrink-0"
+                >
+                  <CheckSquare size={11} /> Link Task
+                </button>
+              )}
+
+              {/* Spacer */}
+              <div className="flex-1" />
+
+              {/* Right: status + Save Draft icon + Send */}
+              {error && <span className="text-xs text-red-500 max-w-[140px] truncate shrink-0">{error}</span>}
+              {draftSaved && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
+                  <Check size={11} /> Saved
+                </span>
+              )}
+              <button
+                onClick={handleSaveDraft} disabled={savingDraft || sending}
+                title="Save draft"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
+              >
+                {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              </button>
+              <button
+                onClick={handleSend} disabled={sending || to.length === 0}
+                className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+              >
+                {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                {sending ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <AllocateModal
+        open={allocateOpen}
+        onClose={() => setAllocateOpen(false)}
+        suggestEmails={toEmails}
+        preSelectedIds={selectedClients.map(c => c.id)}
+        onSelect={clients => setSelectedClients(clients)}
+      />
+      <TaskLinkModal
+        open={taskLinkOpen}
+        onClose={() => setTaskLinkOpen(false)}
+        preSelectedTaskId={selectedTask?.id ?? null}
+        onSelect={task => setSelectedTask(task)}
+      />
+    </>
+  );
+}

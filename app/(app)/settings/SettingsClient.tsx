@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -13,9 +13,10 @@ import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
+import EmailTriageTab from './tabs/EmailTriageTab';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage';
 
 interface Props {
   userId: string;
@@ -32,6 +33,7 @@ interface Props {
   calendarModuleActive?: boolean;
   staffHireModuleActive?: boolean;
   tasksModuleActive?: boolean;
+  emailTriageModuleActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -46,7 +48,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -82,7 +84,8 @@ export default function SettingsClient({
     { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false },
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive },
-    { id: 'tasks' as Tab,       label: 'Tasks',       icon: CheckSquare,       adminOnly: true,  hidden: !tasksModuleActive },
+    { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare, adminOnly: true,  hidden: !tasksModuleActive },
+    { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,        adminOnly: false, hidden: !emailTriageModuleActive },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
@@ -371,6 +374,11 @@ export default function SettingsClient({
           initialEmailFromName={emailSenderName ?? null}
           initialEmailFromAddress={emailSenderAddress ?? null}
         />
+      )}
+
+      {/* Email Triage tab — all users, shown when module is active */}
+      {activeTab === 'email-triage' && emailTriageModuleActive && (
+        <EmailTriageTab />
       )}
     </div>
   );

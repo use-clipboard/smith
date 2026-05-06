@@ -173,17 +173,76 @@ A CRM for managing client records across the firm.
 
 ---
 
-### 12. Ask Smith (left nav → Ask Smith)
+### 12. Email Triage (left nav → Email Triage)
+A full Gmail-connected email client built into SMITH. Each team member connects their own Gmail account. Emails are never stored in SMITH — they are read live from Gmail.
+
+**Connecting Gmail:**
+- Go to Settings → Email Triage and click "Connect Gmail Account"
+- Authorise SMITH to access your Gmail
+- Once connected, your inbox loads automatically
+
+**Reading emails:**
+- The left sidebar shows Gmail labels (Inbox, Sent, Drafts, Starred, Spam, Trash, plus any user labels)
+- The middle panel shows the email list — unread emails are highlighted
+- The right panel shows the selected thread — messages are grouped and collapsible
+- Emails auto-refresh every 30 seconds
+- Hover over an email in the list to reveal quick Star and Delete buttons
+
+**Composing & replying:**
+- Click **Compose** (top of sidebar) to write a new email
+- Click **Reply** to reply to the sender only
+- Click **Reply All** to reply to the sender and all CC'd recipients
+- Click **Forward** to forward the email to someone new — the original message and any attachments are automatically included
+- The compose window has: To, Cc, Bcc fields; a formatting toolbar (Bold, Italic, Underline, Strikethrough, colour, bullet/numbered lists); file attachment support (up to 20 MB total); Save Draft; and Send
+- Add Cc with the "+ Cc" toggle, add Bcc with the "+ Bcc" toggle
+
+**AI features in compose:**
+- **Suggest** — drafts a reply from scratch based on the email you received (only shown when replying)
+- **Rewrite** — rewrites your current draft to be more professional and concise
+- **AI Draft Reply** — available in the thread toolbar; generates a full reply before opening the compose window (shown as a loading overlay)
+
+**Allocating emails:**
+- Click **Allocate** in the compose footer or **Allocate to Client** in the thread toolbar to link the email to one or more client records — it then appears on the client's Timeline
+- When replying to a thread that already has a client allocated, the compose window pre-fills with that client automatically (can be changed or removed)
+- Click **Link Task** to link the email to a task (Tasks module must be active)
+- After sending, the allocation and task link are saved automatically
+
+**Labels:**
+- Click **+ Create label** at the bottom of the sidebar to create a new Gmail label
+- Use **Move to** in the thread toolbar to move an email to any label
+- Labels sync with Gmail — changes appear in Gmail too
+
+**Thread toolbar actions:**
+- **Allocate** / **Link Task** — filing actions
+- **Reply** / **Reply All** / **Forward** — all accent-blue tinted
+- **AI Draft** — purple tinted
+- **Archive** icon — removes from inbox (or **Restore** if in Trash/Spam)
+- **Mark as Unread** icon — marks the thread unread
+- **Move to** icon — dropdown of labels to move to
+- **Delete** icon — moves to Trash (far right, icon-only)
+
+**Email signature:**
+- Your email signature is managed in **Settings → Email Triage → Email Signature**
+- Edit the signature using the built-in rich text editor (Bold, Italic, Underline, Insert Link)
+- Click **Save Signature** to save it directly to Gmail — it will appear on all emails sent from any device
+
+**Display preferences (Settings → Email Triage):**
+- Toggle conversation grouping on/off
+- Set the default inbox view (Inbox, All Mail, Starred, Important, or any label)
+
+---
+
+### 13. Ask Smith (left nav → Ask Smith)
 That's me! You can ask me anything about UK accounting, bookkeeping, tax, how to use SMITH, or how to interpret outputs from the tools. You can also attach documents (PDFs or images) to your message and I will read and explain them.
 
 ---
 
-### 13. Policies & Procedures (left nav → Policies)
+### 15. Policies & Procedures (left nav → Policies)
 A static reference section containing the firm's internal policies and procedures. No AI is involved — this is a content page for staff reference.
 
 ---
 
-### 14. Help Centre (left nav → Help, or via the ? icon)
+### 16. Help Centre (left nav → Help, or via the ? icon)
 A built-in help system covering:
 - **Getting Started** — overview of the platform and first steps
 - **AI & API Key** — how the AI works, how API keys are managed per firm
@@ -194,7 +253,7 @@ A built-in help system covering:
 
 ---
 
-### 15. Calendar (left nav → Calendar)
+### 17. Calendar (left nav → Calendar)
 A shared team calendar for scheduling and tracking events, meetings, and deadlines across the firm.
 
 **How to use:**
@@ -214,7 +273,7 @@ A shared team calendar for scheduling and tracking events, meetings, and deadlin
 
 ---
 
-### 16. Meeting Notes (left nav → Meeting Notes)
+### 18. Meeting Notes (left nav → Meeting Notes)
 Records, transcribes, and summarises client meetings using your device's microphone (and optionally screen audio).
 
 **How to use:**
@@ -238,7 +297,7 @@ Records, transcribes, and summarises client meetings using your device's microph
 
 ---
 
-### 17. Staff Hire (left nav → Staff Hire)
+### 19. Staff Hire (left nav → Staff Hire)
 An AI-powered recruitment tool for writing job postings, evaluating applicants, generating interview questions, scoring candidates, and making hiring recommendations.
 
 **Access control:** Admins always have access. Staff members must be explicitly granted access by an admin (Settings → Staff Hire), because the tool contains sensitive information such as salaries and applicant records.
@@ -289,6 +348,7 @@ Access via the **gear icon** at the bottom of the left sidebar. Settings has the
 
 - **Preferences** — set your Google Drive folder path for Document Vault syncing; manage sidebar favourites (pin tools to the top of the nav); manage device permissions (microphone and camera)
 - **Modules** — enable or disable individual tools for your firm; grayed-out features in the nav indicate a module is not active
+- **Email Triage** — connect or disconnect your Gmail account; edit your email signature (saved directly to Gmail); set display preferences (thread grouping, default inbox view)
 - **Team** (admin only) — invite new team members by email, change roles, remove members
 - **Billing** (admin only) — view subscription tier, manage seats, update billing details
 

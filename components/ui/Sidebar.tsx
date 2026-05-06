@@ -31,6 +31,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [signingOut, setSigningOut] = useState(false);
   const [untaggedCount, setUntaggedCount] = useState(0);
   const [todayEventCount, setTodayEventCount] = useState(0);
+  const [emailUnreadCount, setEmailUnreadCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
@@ -40,6 +41,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const supabase = createClient();
   const isAdmin = userRole === 'admin';
   const vaultActive = isModuleActive('document-vault');
+  const emailActive = isModuleActive('email-triage');
 
   useEffect(() => {
     if (!vaultActive) return;
@@ -48,6 +50,20 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       .then(data => { if (data?.untaggedCount > 0) setUntaggedCount(data.untaggedCount); })
       .catch(() => {});
   }, [vaultActive]);
+
+  // Fetch unread email count for the Email Triage badge
+  useEffect(() => {
+    if (!emailActive) return;
+    function fetchUnread() {
+      fetch('/api/email/unread')
+        .then(r => r.ok ? r.json() : { count: 0 })
+        .then(d => setEmailUnreadCount(d.count ?? 0))
+        .catch(() => {});
+    }
+    fetchUnread();
+    const id = setInterval(fetchUnread, 60_000);
+    return () => clearInterval(id);
+  }, [emailActive]);
 
   // Fetch count of today's remaining events for the calendar badge
   useEffect(() => {
@@ -150,14 +166,22 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
     const isCalendar = item.moduleId === 'google-calendar';
     const calBadge   = isCalendar && todayEventCount > 0;
-    const badgeLabel = todayEventCount > 99 ? '99+' : String(todayEventCount);
+    const calLabel   = todayEventCount > 99 ? '99+' : String(todayEventCount);
+
+    const isEmail    = item.moduleId === 'email-triage';
+    const emailBadge = isEmail && emailUnreadCount > 0;
+    const emailLabel = emailUnreadCount > 99 ? '99+' : String(emailUnreadCount);
 
     if (collapsed) {
       return (
         <div key={item.href} className="relative">
           <button
             onClick={() => handleNavClick(item)}
-            title={calBadge ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today` : item.label}
+            title={
+              calBadge ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
+              : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
+              : item.label
+            }
             className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
           >
             <Icon size={18} className={iconClass} />
@@ -166,7 +190,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
                              ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
-              {badgeLabel}
+              {calLabel}
+            </span>
+          )}
+          {emailBadge && (
+            <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
+                             text-[9px] font-bold flex items-center justify-center pointer-events-none
+                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+              {emailLabel}
             </span>
           )}
         </div>
@@ -225,7 +256,15 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
                            ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
-            {badgeLabel}
+            {calLabel}
+          </span>
+        )}
+
+        {emailBadge && (
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
+                           flex items-center justify-center mr-2
+                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+            {emailLabel}
           </span>
         )}
       </div>
