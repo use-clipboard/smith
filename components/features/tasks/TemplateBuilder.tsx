@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
-import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
 import { MERGE_TAGS, resolveMergeTags, type MergeTagContext } from '@/lib/emailMergeTags';
 import { TaskEditFlowChart } from './TaskFlowChart';
 import TaskTemplateTestRun from './TaskTemplateTestRun';
+import AITemplateBuilder from './AITemplateBuilder';
 import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig } from '@/types';
@@ -564,6 +565,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
   const [showClientModal, setShowClientModal] = useState(false);
   const [placementMode, setPlacementMode] = useState(false);
   const [showTestRun, setShowTestRun] = useState(false);
+  const [showAIEdit, setShowAIEdit] = useState(false);
   const [conditionEdge, setConditionEdge] = useState<{ from: string; to: string } | null>(null);
 
   const selectedStep = steps.find(s => s.step_key === selectedStepKey) ?? null;
@@ -760,6 +762,12 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {error && <span className="text-xs text-red-600">{error}</span>}
+            <button
+              onClick={() => setShowAIEdit(true)}
+              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-medium transition-colors"
+            >
+              <Sparkles className="h-4 w-4" /> AI Edit
+            </button>
             {steps.length > 0 && (
               <button
                 onClick={() => setShowTestRun(true)}
@@ -1194,6 +1202,34 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
         edges={edgesData}
         templateName={name || 'Untitled Template'}
         onClose={() => setShowTestRun(false)}
+      />
+    )}
+
+    {/* AI edit overlay */}
+    {showAIEdit && (
+      <AITemplateBuilder
+        teamMembers={teamMembers}
+        existingTemplate={{
+          name,
+          description,
+          is_firm_wide: isFirmWide,
+          category,
+          recurrence_type: recurrence || null,
+          estimated_duration_days: estimatedDays ? Number(estimatedDays) : null,
+          steps,
+          edges: edgesData,
+        }}
+        onOpenInEditor={data => {
+          setName(data.name);
+          setDescription(data.description ?? '');
+          setCategory(data.category);
+          setRecurrence((data.recurrence_type as RecurrenceType) ?? '');
+          setEstimatedDays(String(data.estimated_duration_days ?? ''));
+          setSteps(data.steps);
+          setEdgesData(data.edges);
+          setShowAIEdit(false);
+        }}
+        onClose={() => setShowAIEdit(false)}
       />
     )}
 

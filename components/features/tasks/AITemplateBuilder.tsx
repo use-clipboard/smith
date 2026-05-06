@@ -26,6 +26,7 @@ interface ChatMessage {
 
 interface Props {
   teamMembers: { id: string; full_name: string | null; email: string }[];
+  existingTemplate?: TemplateData | null; // set when editing an existing template
   onOpenInEditor: (data: TemplateData) => void;
   onClose: () => void;
 }
@@ -122,16 +123,45 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-const INITIAL_MESSAGE: ChatMessage = {
+const NEW_TEMPLATE_MESSAGE: ChatMessage = {
   role: 'assistant',
   content: "Hi! I'm here to help you build a workflow template. What kind of process would you like to create? For example: a VAT return, payroll run, year-end accounts, or something completely custom?",
 };
 
-export default function AITemplateBuilder({ onOpenInEditor, onClose }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
+function makeEditMessage(data: TemplateData): ChatMessage {
+  const templateJson = JSON.stringify({
+    name: data.name,
+    description: data.description ?? '',
+    category: data.category,
+    recurrence_type: data.recurrence_type ?? 'one_off',
+    estimated_duration_days: data.estimated_duration_days ?? 14,
+    steps: data.steps,
+    edges: data.edges,
+  }, null, 2);
+  return {
+    role: 'assistant',
+    content: `I've loaded your "${data.name}" template. Here's what it looks like right now:\n\n<template_json>\n${templateJson}\n</template_json>\n\nWhat would you like to change? I can add or remove steps, adjust reminders, change the order, add client-facing actions, tool integrations, automated chasers — just tell me in plain English.`,
+    hasTemplate: true,
+  };
+}
+
+export default function AITemplateBuilder({ existingTemplate, onOpenInEditor, onClose }: Props) {
+  const initialMessage = existingTemplate ? makeEditMessage(existingTemplate) : NEW_TEMPLATE_MESSAGE;
+
+  const [messages, setMessages] = useState<ChatMessage[]>([initialMessage]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [template, setTemplate] = useState<AITemplate | null>(null);
+  const [template, setTemplate] = useState<AITemplate | null>(
+    existingTemplate ? {
+      name: existingTemplate.name,
+      description: existingTemplate.description ?? '',
+      category: existingTemplate.category,
+      recurrence_type: existingTemplate.recurrence_type ?? 'one_off',
+      estimated_duration_days: existingTemplate.estimated_duration_days ?? 14,
+      steps: existingTemplate.steps,
+      edges: existingTemplate.edges,
+    } : null
+  );
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -265,8 +295,12 @@ export default function AITemplateBuilder({ onOpenInEditor, onClose }: Props) {
           <div className="flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-indigo-200" />
             <div>
-              <h2 className="text-base font-bold">AI Template Builder</h2>
-              <p className="text-indigo-200 text-xs mt-0.5">Describe your workflow and I'll build the template for you</p>
+              <h2 className="text-base font-bold">{existingTemplate ? 'AI Template Editor' : 'AI Template Builder'}</h2>
+              <p className="text-indigo-200 text-xs mt-0.5">
+                {existingTemplate
+                  ? `Editing "${existingTemplate.name}" — describe your changes in plain English`
+                  : 'Describe your workflow and I\'ll build the template for you'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -276,7 +310,7 @@ export default function AITemplateBuilder({ onOpenInEditor, onClose }: Props) {
                 className="flex items-center gap-2 bg-white text-indigo-700 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-50 transition-colors"
               >
                 <PenLine className="h-4 w-4" />
-                Open in Editor
+                {existingTemplate ? 'Apply Changes' : 'Open in Editor'}
               </button>
             )}
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-indigo-500 transition-colors ml-2">
