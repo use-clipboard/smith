@@ -6,7 +6,7 @@ import {
   useReactFlow, ConnectionMode,
   type Connection, type Edge, type Node, type EdgeProps,
   type OnConnect, type OnNodesChange, type OnEdgesChange,
-  MarkerType, BaseEdge, EdgeLabelRenderer, getBezierPath,
+  MarkerType, BaseEdge, EdgeLabelRenderer, getSmoothStepPath,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import StepNode, { type StepNodeData } from './StepNode';
@@ -52,9 +52,11 @@ function InsertableEdge({
   const hasCondition = !!conditionType;
   const edgeColor = conditionType ? (CONDITION_COLORS[conditionType] ?? '#9ca3af') : '#ef4444';
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX, sourceY, targetX, targetY, curvature: 0.5,
-  });
+  const [edgePath] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, borderRadius: 12 });
+  // Use the straight-line midpoint so the dot always sits visually centred on the arrow,
+  // regardless of how the path curves.
+  const labelX = (sourceX + targetX) / 2;
+  const labelY = (sourceY + targetY) / 2;
 
   return (
     <>
