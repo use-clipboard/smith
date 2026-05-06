@@ -12,6 +12,7 @@ import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, 
 
 interface Props {
   template: TaskTemplate | null; // null = creating new
+  initialData?: TemplateData | null; // pre-populate from AI builder
   teamMembers: { id: string; full_name: string | null; email: string }[];
   onSave: (data: TemplateData) => Promise<void>;
   onClose: () => void;
@@ -514,19 +515,19 @@ function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave
 let _keyCounter = 0;
 function newStepKey() { return `step_${Date.now()}_${++_keyCounter}`; }
 
-export default function TemplateBuilder({ template, teamMembers, onSave, onClose }: Props) {
-  // Meta
-  const [name, setName] = useState(template?.name ?? '');
-  const [description, setDescription] = useState(template?.description ?? '');
-  const [isFirmWide, setIsFirmWide] = useState(template?.is_firm_wide ?? true);
-  const [category, setCategory] = useState(template?.category ?? 'general');
-  const [recurrence, setRecurrence] = useState<RecurrenceType | ''>(template?.recurrence_type ?? '');
+export default function TemplateBuilder({ template, initialData, teamMembers, onSave, onClose }: Props) {
+  // Meta — initialData (from AI builder) takes precedence over blank, template takes precedence over both
+  const [name, setName] = useState(template?.name ?? initialData?.name ?? '');
+  const [description, setDescription] = useState(template?.description ?? initialData?.description ?? '');
+  const [isFirmWide, setIsFirmWide] = useState(template?.is_firm_wide ?? initialData?.is_firm_wide ?? true);
+  const [category, setCategory] = useState(template?.category ?? initialData?.category ?? 'general');
+  const [recurrence, setRecurrence] = useState<RecurrenceType | ''>(template?.recurrence_type ?? (initialData?.recurrence_type as RecurrenceType) ?? '');
   const [customInterval, setCustomInterval] = useState(String(template?.recurrence_interval_days ?? ''));
-  const [estimatedDays, setEstimatedDays] = useState(String(template?.estimated_duration_days ?? ''));
+  const [estimatedDays, setEstimatedDays] = useState(String(template?.estimated_duration_days ?? initialData?.estimated_duration_days ?? ''));
 
   // Steps (local state — push to React Flow via useMemo)
   const [steps, setSteps] = useState<TemplateStepData[]>(() =>
-    (template?.steps ?? []).map(s => ({
+    template ? template.steps.map(s => ({
       step_key: s.step_key,
       title: s.title,
       description: s.description,
@@ -542,10 +543,10 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
       time_estimate_minutes: s.time_estimate_minutes,
       position_x: s.position_x,
       position_y: s.position_y,
-    }))
+    })) : (initialData?.steps ?? [])
   );
   const [edgesData, setEdgesData] = useState<TemplateEdgeData[]>(() =>
-    (template?.edges ?? []).map(e => ({
+    template ? template.edges.map(e => ({
       from_step_key: e.from_step_key,
       to_step_key: e.to_step_key,
       label: e.label,
@@ -553,7 +554,7 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
       condition_config: e.condition_config ?? null,
       source_handle: e.source_handle ?? null,
       target_handle: e.target_handle ?? null,
-    }))
+    })) : (initialData?.edges ?? [])
   );
 
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
