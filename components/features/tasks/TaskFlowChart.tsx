@@ -42,7 +42,7 @@ interface InsertableEdgeData {
 }
 
 function InsertableEdge({
-  id, sourceX, sourceY, targetX, targetY,
+  id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
   markerEnd, source, target, data,
 }: EdgeProps) {
   const [hovered, setHovered] = useState(false);
@@ -52,11 +52,11 @@ function InsertableEdge({
   const hasCondition = !!conditionType;
   const edgeColor = conditionType ? (CONDITION_COLORS[conditionType] ?? '#9ca3af') : '#ef4444';
 
-  const [edgePath] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, borderRadius: 12 });
-  // Use the straight-line midpoint so the dot always sits visually centred on the arrow,
-  // regardless of how the path curves.
-  const labelX = (sourceX + targetX) / 2;
-  const labelY = (sourceY + targetY) / 2;
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    sourceX, sourceY, sourcePosition,
+    targetX, targetY, targetPosition,
+    borderRadius: 12,
+  });
 
   return (
     <>
