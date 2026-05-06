@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState } from 'react';
-import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2 } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X } from 'lucide-react';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, DefaultTemplate } from '@/types';
 
@@ -10,13 +10,15 @@ interface Props {
   onCreateFromDefault: (t: DefaultTemplate) => Promise<void>;
   onEdit: (t: TaskTemplate) => void;
   onCreateBlank: () => void;
+  onCreateAI: () => void;
   onDelete: (id: string) => Promise<void>;
 }
 
-export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onDelete }: Props) {
+export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onCreateAI, onDelete }: Props) {
   const [importing, setImporting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [showChoice, setShowChoice] = useState(false);
 
   async function handleImport(t: DefaultTemplate) {
     setImporting(t.id);
@@ -49,7 +51,7 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
           className="text-sm border border-gray-200 rounded-lg px-3 py-2 w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <button
-          onClick={onCreateBlank}
+          onClick={() => setShowChoice(true)}
           className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium"
         >
           <Plus className="h-4 w-4" /> New Template
@@ -143,6 +145,46 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
           })}
         </div>
       </div>
+
+      {/* ── New Template choice modal ────────────────────────────────────── */}
+      {showChoice && (
+        <div className="fixed inset-0 z-50 bg-gray-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold text-gray-900">Create a new template</h2>
+              <button onClick={() => setShowChoice(false)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => { setShowChoice(false); onCreateBlank(); }}
+                className="group flex flex-col items-start gap-3 border-2 border-gray-200 hover:border-indigo-400 rounded-xl p-5 text-left transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-gray-100 group-hover:bg-indigo-50 flex items-center justify-center transition-colors">
+                  <PenLine className="h-5 w-5 text-gray-500 group-hover:text-indigo-600 transition-colors" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">From scratch</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Start with a blank canvas and build your workflow manually.</p>
+                </div>
+              </button>
+              <button
+                onClick={() => { setShowChoice(false); onCreateAI(); }}
+                className="group flex flex-col items-start gap-3 border-2 border-gray-200 hover:border-indigo-400 rounded-xl p-5 text-left transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 group-hover:bg-indigo-100 flex items-center justify-center transition-colors">
+                  <Sparkles className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">AI Assisted</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Chat with the AI assistant to build your template automatically.</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

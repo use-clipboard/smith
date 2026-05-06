@@ -14,6 +14,7 @@ import TemplateLibrary from './TemplateLibrary';
 import TaskDetailPanel from './TaskDetailPanel';
 import CreateTaskModal, { type CreateTaskData } from './CreateTaskModal';
 import TemplateBuilder, { type TemplateData } from './TemplateBuilder';
+import AITemplateBuilder from './AITemplateBuilder';
 import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
@@ -51,6 +52,8 @@ export default function TasksPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
+  const [aiBuilderInitialData, setAiBuilderInitialData] = useState<TemplateData | null>(null);
+  const [showAIBuilder, setShowAIBuilder] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
 
   function clearFilters() {
@@ -323,7 +326,8 @@ export default function TasksPage() {
                   firmTemplates={templates}
                   onCreateFromDefault={handleCreateFromDefault}
                   onEdit={t => { setEditingTemplate(t); setShowTemplateBuilder(true); }}
-                  onCreateBlank={() => { setEditingTemplate(null); setShowTemplateBuilder(true); }}
+                  onCreateBlank={() => { setEditingTemplate(null); setAiBuilderInitialData(null); setShowTemplateBuilder(true); }}
+                  onCreateAI={() => setShowAIBuilder(true)}
                   onDelete={handleDeleteTemplate}
                 />
               </div>
@@ -360,9 +364,24 @@ export default function TasksPage() {
       {showTemplateBuilder && (
         <TemplateBuilder
           template={editingTemplate}
+          initialData={aiBuilderInitialData}
           teamMembers={teamMembers}
           onSave={handleSaveTemplate}
-          onClose={() => { setShowTemplateBuilder(false); setEditingTemplate(null); }}
+          onClose={() => { setShowTemplateBuilder(false); setEditingTemplate(null); setAiBuilderInitialData(null); }}
+        />
+      )}
+
+      {/* AI Template builder */}
+      {showAIBuilder && (
+        <AITemplateBuilder
+          teamMembers={teamMembers}
+          onOpenInEditor={data => {
+            setAiBuilderInitialData(data);
+            setEditingTemplate(null);
+            setShowAIBuilder(false);
+            setShowTemplateBuilder(true);
+          }}
+          onClose={() => setShowAIBuilder(false)}
         />
       )}
     </div>
