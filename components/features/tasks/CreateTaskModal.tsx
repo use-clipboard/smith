@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { X, ChevronRight, ChevronLeft, Loader2, RefreshCw, Search } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
-import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate } from '@/types';
+import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType } from '@/types';
 
 interface Props {
   onClose: () => void;
@@ -40,7 +40,7 @@ interface StepInput {
   position_y: number;
 }
 
-interface EdgeInput { from_step_key: string; to_step_key: string; label?: string | null }
+interface EdgeInput { from_step_key: string; to_step_key: string; label?: string | null; condition_type?: string | null; source_handle?: string | null; target_handle?: string | null }
 
 type Step = 'template' | 'details' | 'assignees' | 'preview';
 
@@ -98,7 +98,13 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   const edges: EdgeInput[] = useMemo(() => {
     if (!activeTemplate) return [];
     const templateEdges = selectedDefault ? selectedDefault.edges : (selectedFirmTemplate?.edges ?? []);
-    return templateEdges.map(e => ({ from_step_key: e.from_step_key, to_step_key: e.to_step_key, label: e.label ?? null }));
+    return templateEdges.map(e => ({
+      from_step_key: e.from_step_key,
+      to_step_key: e.to_step_key,
+      label: e.label ?? null,
+      source_handle: 'source_handle' in e ? (e.source_handle as string | null) : null,
+      target_handle: 'target_handle' in e ? (e.target_handle as string | null) : null,
+    }));
   }, [activeTemplate, selectedDefault, selectedFirmTemplate]);
 
   // Preview flowchart data (fake task steps from template)
@@ -135,6 +141,10 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
     from_step_key: e.from_step_key,
     to_step_key: e.to_step_key,
     label: e.label ?? null,
+    condition_type: (e.condition_type ?? null) as EdgeConditionType | null,
+    condition_config: null,
+    source_handle: e.source_handle ?? null,
+    target_handle: e.target_handle ?? null,
   })), [edges]);
 
   function handleSelectDefault(t: DefaultTemplate) {

@@ -11,30 +11,62 @@ import {
 import '@xyflow/react/dist/style.css';
 import StepNode, { type StepNodeData } from './StepNode';
 import { MODULES } from '@/config/modules.config';
-import type { TaskStep, TaskStepEdge, TaskTemplateStep, TaskTemplateEdge, StepStatus } from '@/types';
+import type { TaskStep, TaskStepEdge, TaskTemplateStep, TaskTemplateEdge, StepStatus, EdgeConditionType, EdgeConditionConfig } from '@/types';
 
 const NODE_TYPES = { stepNode: StepNode };
+
+// ── Condition colours & labels ────────────────────────────────────────────────
+
+const CONDITION_COLORS: Record<EdgeConditionType, string> = {
+  on_complete: '#16a34a',
+  timeout:     '#d97706',
+  always:      '#6b7280',
+};
+
+const CONDITION_LABELS: Record<EdgeConditionType, string> = {
+  on_complete: 'On complete',
+  timeout:     'After delay',
+  always:      'Always',
+};
 
 // ── Insertable edge (edit mode only) ─────────────────────────────────────────
 
 interface InsertableEdgeData {
   onInsert?: (fromKey: string, toKey: string) => void;
+  onCondition?: (fromKey: string, toKey: string) => void;
+  conditionType?: EdgeConditionType | null;
+  conditionConfig?: EdgeConditionConfig | null;
   [key: string]: unknown;
 }
 
 function InsertableEdge({
   id, sourceX, sourceY, targetX, targetY,
-  markerEnd, style, source, target, data,
+  markerEnd, source, target, data,
 }: EdgeProps) {
   const [hovered, setHovered] = useState(false);
   const edgeData = data as InsertableEdgeData | undefined;
 
-  const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY });
+  const conditionType = edgeData?.conditionType ?? null;
+  const hasCondition = !!conditionType;
+  const edgeColor = conditionType ? (CONDITION_COLORS[conditionType] ?? '#9ca3af') : '#ef4444';
+
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, targetX, targetY, curvature: 0.5,
+  });
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
-      {/* Wider invisible path for easier hover detection */}
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          stroke: edgeColor,
+          strokeWidth: 2,
+          strokeDasharray: hasCondition ? undefined : '5,4',
+        }}
+      />
+      {/* Wide invisible path for hover */}
       <path
         d={edgePath}
         fill="none"
@@ -54,16 +86,28 @@ function InsertableEdge({
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
         >
-          {hovered && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                edgeData?.onInsert?.(source, target);
-              }}
-              className="flex items-center gap-1 px-2 py-0.5 bg-indigo-600 text-white text-[11px] font-medium rounded-full shadow-md hover:bg-indigo-700 transition-colors"
-            >
-              + Insert
-            </button>
+          {hovered ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); edgeData?.onInsert?.(source, target); }}
+                className="flex items-center gap-1 px-2 py-0.5 bg-indigo-600 text-white text-[11px] font-medium rounded-full shadow-md hover:bg-indigo-700 transition-colors whitespace-nowrap"
+              >
+                + Insert Step
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); edgeData?.onCondition?.(source, target); }}
+                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full shadow-md transition-colors whitespace-nowrap text-white"
+                style={{ backgroundColor: edgeColor }}
+              >
+                {hasCondition ? 'Change Condition' : '⚠ Add Condition'}
+              </button>
+            </div>
+          ) : (
+            <div
+              className="w-4 h-4 rounded-full border-2 border-white shadow"
+              style={{ backgroundColor: edgeColor }}
+              title={hasCondition ? CONDITION_LABELS[conditionType!] : 'No condition set — click to add'}
+            />
           )}
         </div>
       </EdgeLabelRenderer>
@@ -110,15 +154,12 @@ function PlacementController({ placementMode, containerRef, onPlace, onCancel, o
     };
   }, [placementMode, containerRef, onCancel, onGhostMove]);
 
-  // Expose screenToFlowPosition via a click handler on the pane
-  // We store it in a ref so the outer component can call it
   const handlePaneClick = useCallback((e: React.MouseEvent) => {
     if (!placementMode) return;
     const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    onPlace(flowPos.x - 100, flowPos.y - 40); // offset to centre the node under cursor
+    onPlace(flowPos.x - 100, flowPos.y - 40);
   }, [placementMode, screenToFlowPosition, onPlace]);
 
-  // Return a transparent overlay that captures pane clicks when in placement mode
   if (!placementMode) return null;
   return (
     <div
@@ -157,15 +198,21 @@ export function TaskViewFlowChart({ steps, edges, onStepClick, onStepStatusChang
     } satisfies StepNodeData,
   })), [steps, onStepStatusChange]);
 
-  const rfEdges: Edge[] = useMemo(() => edges.map(e => ({
-    id: e.id,
-    source: steps.find(s => s.step_key === e.from_step_key)?.id ?? e.from_step_key,
-    target: steps.find(s => s.step_key === e.to_step_key)?.id ?? e.to_step_key,
-    label: e.label ?? undefined,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    style: { stroke: '#d1d5db' },
-    labelStyle: { fontSize: 11, fill: '#9ca3af' },
-  })), [edges, steps]);
+  const rfEdges: Edge[] = useMemo(() => edges.map(e => {
+    const ct = e.condition_type ?? null;
+    const edgeColor = ct ? (CONDITION_COLORS[ct] ?? '#9ca3af') : '#d1d5db';
+    return {
+      id: e.id,
+      source: steps.find(s => s.step_key === e.from_step_key)?.id ?? e.from_step_key,
+      target: steps.find(s => s.step_key === e.to_step_key)?.id ?? e.to_step_key,
+      sourceHandle: e.source_handle ?? undefined,
+      targetHandle: e.target_handle ?? undefined,
+      label: e.label ?? undefined,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edgeColor },
+      style: { stroke: edgeColor, strokeWidth: 2 },
+      labelStyle: { fontSize: 11, fill: '#9ca3af' },
+    };
+  }), [edges, steps]);
 
   return (
     <ReactFlow
@@ -201,19 +248,18 @@ interface EditFlowChartProps {
   onEdgesChange: OnEdgesChange;
   onConnect: OnConnect;
   onNodePositionChange: (stepKey: string, x: number, y: number) => void;
-  /** When true, the canvas enters placement mode — click to drop a new step */
   placementMode?: boolean;
   onPlaceStep?: (x: number, y: number) => void;
   onCancelPlacement?: () => void;
-  /** Called when user clicks "Insert" on an existing edge */
   onInsertOnEdge?: (fromKey: string, toKey: string) => void;
+  onConditionChange?: (fromKey: string, toKey: string) => void;
 }
 
 export function TaskEditFlowChart({
   steps, edges, selectedStepKey,
   onSelectStep, onNodesChange, onEdgesChange, onConnect,
   onNodePositionChange, placementMode = false,
-  onPlaceStep, onCancelPlacement, onInsertOnEdge,
+  onPlaceStep, onCancelPlacement, onInsertOnEdge, onConditionChange,
 }: EditFlowChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
@@ -237,17 +283,28 @@ export function TaskEditFlowChart({
     } satisfies StepNodeData,
   })), [steps, selectedStepKey]);
 
-  const rfEdges: Edge[] = useMemo(() => edges.map(e => ({
-    id: `${e.from_step_key}-${e.to_step_key}`,
-    source: e.from_step_key,
-    target: e.to_step_key,
-    type: onInsertOnEdge ? 'insertable' : 'default',
-    label: e.label ?? undefined,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    style: { stroke: '#9ca3af' },
-    labelStyle: { fontSize: 11, fill: '#9ca3af' },
-    data: { onInsert: onInsertOnEdge },
-  })), [edges, onInsertOnEdge]);
+  const rfEdges: Edge[] = useMemo(() => edges.map(e => {
+    const ct = e.condition_type ?? null;
+    const edgeColor = ct ? (CONDITION_COLORS[ct] ?? '#9ca3af') : '#ef4444';
+    return {
+      id: `${e.from_step_key}-${e.to_step_key}`,
+      source: e.from_step_key,
+      target: e.to_step_key,
+      sourceHandle: e.source_handle ?? undefined,
+      targetHandle: e.target_handle ?? undefined,
+      type: onInsertOnEdge ? 'insertable' : 'default',
+      label: e.label ?? undefined,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edgeColor },
+      style: { stroke: edgeColor, strokeWidth: 2, strokeDasharray: ct ? undefined : '5,4' },
+      labelStyle: { fontSize: 11, fill: '#9ca3af' },
+      data: {
+        onInsert: onInsertOnEdge,
+        onCondition: onConditionChange,
+        conditionType: e.condition_type,
+        conditionConfig: e.condition_config,
+      },
+    };
+  }), [edges, onInsertOnEdge, onConditionChange]);
 
   const handleConnect = useCallback((connection: Connection) => {
     onConnect(connection);
@@ -259,7 +316,7 @@ export function TaskEditFlowChart({
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      {/* Ghost step silhouette — follows cursor in placement mode */}
+      {/* Ghost step silhouette in placement mode */}
       {placementMode && ghostPos && (
         <div
           className="absolute z-20 pointer-events-none"
@@ -310,14 +367,12 @@ export function TaskEditFlowChart({
       >
         <Background gap={20} color="#f3f4f6" />
 
-        {/* Scroll-wheel to zoom hint — replaces the Controls panel which caused a white-box rendering bug */}
         <Panel position="bottom-left">
           <p className="text-[11px] text-gray-400 bg-white/80 px-2 py-1 rounded shadow-sm select-none">
             Scroll to zoom · Drag to pan
           </p>
         </Panel>
 
-        {/* PlacementController lives inside ReactFlow so it can use useReactFlow() */}
         <PlacementController
           placementMode={placementMode}
           containerRef={containerRef}

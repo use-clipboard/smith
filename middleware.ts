@@ -47,7 +47,8 @@ export async function middleware(request: NextRequest) {
   // Single-session enforcement: verify the cookie nonce matches the DB nonce.
   // If another device has logged in since, their login overwrites the DB nonce,
   // causing this check to fail and immediately signing this session out.
-  if (user && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  // Skipped in local dev to avoid conflicts between the dev server and production.
+  if (user && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NODE_ENV === 'production') {
     const cookieNonce = request.cookies.get('smith_snonce')?.value;
     if (cookieNonce) {
       try {

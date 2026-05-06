@@ -628,12 +628,23 @@ export interface TaskTemplateStep {
   default_assignee?: TaskUserRef | null;
 }
 
+export type EdgeConditionType = 'on_complete' | 'timeout' | 'always';
+
+export interface EdgeConditionConfig {
+  timeout_days?: number;
+  timeout_hours?: number;
+}
+
 export interface TaskTemplateEdge {
   id: string;
   template_id: string;
   from_step_key: string;
   to_step_key: string;
   label: string | null;
+  condition_type: EdgeConditionType | null;
+  condition_config: EdgeConditionConfig | null;
+  source_handle: string | null;
+  target_handle: string | null;
 }
 
 export interface TaskTemplate {
@@ -689,6 +700,10 @@ export interface TaskStepEdge {
   from_step_key: string;
   to_step_key: string;
   label: string | null;
+  condition_type: EdgeConditionType | null;
+  condition_config: EdgeConditionConfig | null;
+  source_handle: string | null;
+  target_handle: string | null;
 }
 
 export interface TaskTimeEntry {
@@ -751,5 +766,5 @@ export interface DefaultTemplate {
   recurrence_type: RecurrenceType | null;
   estimated_duration_days: number | null;
   steps: DefaultTemplateStep[];
-  edges: { from_step_key: string; to_step_key: string; label?: string }[];
+  edges: { from_step_key: string; to_step_key: string; label?: string; condition_type?: EdgeConditionType | null }[];
 }

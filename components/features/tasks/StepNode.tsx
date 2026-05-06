@@ -45,6 +45,21 @@ function StatusIcon({ status }: { status: StepStatus }) {
   return <Circle className={`${cls} text-gray-300`} />;
 }
 
+// Shared handle styles — visible dots in edit mode, invisible in view mode
+const HANDLE_SRC: React.CSSProperties = {
+  width: 11, height: 11,
+  background: '#818cf8', border: '2px solid white',
+  borderRadius: '50%', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+  cursor: 'crosshair', zIndex: 10,
+};
+const HANDLE_TGT: React.CSSProperties = {
+  width: 11, height: 11,
+  background: '#818cf8', border: '2px solid white',
+  borderRadius: '50%', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+  cursor: 'crosshair', zIndex: 10,
+};
+const HIDDEN: React.CSSProperties = { opacity: 0, pointerEvents: 'none' };
+
 function StepNode({ data, selected }: NodeProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const d = data as unknown as StepNodeData;
@@ -52,6 +67,9 @@ function StepNode({ data, selected }: NodeProps) {
   const borderClass = STATUS_BORDER[status];
   const bgClass = STATUS_BG[status];
   const isEdit = d.mode === 'edit';
+
+  const srcStyle = isEdit ? HANDLE_SRC : HIDDEN;
+  const tgtStyle = isEdit ? HANDLE_TGT : HIDDEN;
 
   return (
     <div
@@ -63,7 +81,18 @@ function StepNode({ data, selected }: NodeProps) {
       `}
       style={{ fontFamily: 'inherit' }}
     >
-      <Handle type="target" position={Position.Top} className="!bg-gray-300 !border-gray-400 !w-2.5 !h-2.5" />
+      {/* ── Handles — all 4 sides, source + target at each ── */}
+      <Handle type="target" position={Position.Top}    id="t-top"   style={tgtStyle} />
+      <Handle type="source" position={Position.Top}    id="s-top"   style={{ ...srcStyle, opacity: 0 }} />
+
+      <Handle type="source" position={Position.Bottom} id="s-bot"   style={srcStyle} />
+      <Handle type="target" position={Position.Bottom} id="t-bot"   style={{ ...tgtStyle, opacity: 0 }} />
+
+      <Handle type="source" position={Position.Left}   id="s-left"  style={srcStyle} />
+      <Handle type="target" position={Position.Left}   id="t-left"  style={{ ...tgtStyle, opacity: 0 }} />
+
+      <Handle type="source" position={Position.Right}  id="s-right" style={srcStyle} />
+      <Handle type="target" position={Position.Right}  id="t-right" style={{ ...tgtStyle, opacity: 0 }} />
 
       <div className="p-3">
         <div className="flex items-start gap-2 mb-1.5">
@@ -107,8 +136,6 @@ function StepNode({ data, selected }: NodeProps) {
           <p className="text-[11px] text-gray-400 mt-1.5">Est: {d.timeEstimate >= 60 ? `${Math.floor(d.timeEstimate / 60)}h ${d.timeEstimate % 60}m` : `${d.timeEstimate}m`}</p>
         )}
       </div>
-
-      <Handle type="source" position={Position.Bottom} className="!bg-gray-300 !border-gray-400 !w-2.5 !h-2.5" />
     </div>
   );
 }

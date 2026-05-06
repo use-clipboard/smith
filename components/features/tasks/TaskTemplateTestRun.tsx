@@ -455,6 +455,10 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
     from_step_key: e.from_step_key,
     to_step_key: e.to_step_key,
     label: e.label ?? null,
+    condition_type: e.condition_type ?? null,
+    condition_config: null,
+    source_handle: e.source_handle ?? null,
+    target_handle: e.target_handle ?? null,
   })), [edges]);
 
   const module = currentStep?.tool_module_id ? MODULES.find(m => m.id === currentStep.tool_module_id) : null;

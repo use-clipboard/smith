@@ -8,7 +8,7 @@ import { TaskEditFlowChart } from './TaskFlowChart';
 import TaskTemplateTestRun from './TaskTemplateTestRun';
 import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
-import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming } from '@/types';
+import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig } from '@/types';
 
 interface Props {
   template: TaskTemplate | null; // null = creating new
@@ -51,6 +51,10 @@ export interface TemplateEdgeData {
   from_step_key: string;
   to_step_key: string;
   label?: string | null;
+  condition_type: EdgeConditionType | null;
+  condition_config: EdgeConditionConfig | null;
+  source_handle: string | null;
+  target_handle: string | null;
 }
 
 const TIMING_OPTIONS: { value: EmailReminderTiming; label: string }[] = [
@@ -403,6 +407,108 @@ function ClientPortalEditorModal({ step, templateName, onUpdate, onClose }: Clie
   );
 }
 
+// ── Condition Editor Modal ────────────────────────────────────────────────────
+
+const CONDITION_OPTIONS: { value: EdgeConditionType; label: string; desc: string; color: string }[] = [
+  { value: 'on_complete', label: 'When previous step is marked complete', desc: 'The next step begins as soon as this one is completed.', color: '#16a34a' },
+  { value: 'timeout',     label: 'If no change after a set time',         desc: 'Move on or escalate if the previous step is not completed in time.', color: '#d97706' },
+  { value: 'always',      label: 'No condition (proceed immediately)',     desc: 'The next step is available as soon as the workflow reaches it.', color: '#6b7280' },
+];
+
+interface ConditionModalProps {
+  fromTitle: string;
+  toTitle: string;
+  currentType: EdgeConditionType | null;
+  currentConfig: EdgeConditionConfig | null;
+  onSave: (type: EdgeConditionType, config: EdgeConditionConfig | null) => void;
+  onClose: () => void;
+}
+
+function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave, onClose }: ConditionModalProps) {
+  const [type, setType] = useState<EdgeConditionType>(currentType ?? 'on_complete');
+  const [days, setDays] = useState(String(currentConfig?.timeout_days ?? ''));
+  const [hours, setHours] = useState(String(currentConfig?.timeout_hours ?? ''));
+
+  function handleSave() {
+    const config: EdgeConditionConfig | null = type === 'timeout'
+      ? { timeout_days: days ? parseInt(days) : undefined, timeout_hours: hours ? parseInt(hours) : undefined }
+      : null;
+    onSave(type, config);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Set Connection Condition</h3>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-xs">{fromTitle} → {toTitle}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="p-5 space-y-2.5">
+          <p className="text-xs text-gray-500 mb-3">When should the next step become active?</p>
+          {CONDITION_OPTIONS.map(opt => (
+            <label
+              key={opt.value}
+              className="flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all"
+              style={type === opt.value
+                ? { borderColor: opt.color, backgroundColor: `${opt.color}12` }
+                : { borderColor: '#f3f4f6' }}
+            >
+              <input
+                type="radio"
+                name="condition_type"
+                value={opt.value}
+                checked={type === opt.value}
+                onChange={() => setType(opt.value)}
+                className="mt-0.5 flex-shrink-0"
+              />
+              <div>
+                <p className="text-sm font-medium" style={type === opt.value ? { color: opt.color } : { color: '#111827' }}>
+                  {opt.label}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
+              </div>
+            </label>
+          ))}
+
+          {type === 'timeout' && (
+            <div className="border border-amber-200 rounded-xl p-3 bg-amber-50 space-y-2 mt-1">
+              <p className="text-xs font-semibold text-amber-700">Time limit</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min="0"
+                  value={days}
+                  onChange={e => setDays(e.target.value)}
+                  placeholder="0"
+                  className="w-16 text-sm border border-amber-300 rounded-lg px-2 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                />
+                <span className="text-xs text-amber-700">days</span>
+                <input
+                  type="number" min="0" max="23"
+                  value={hours}
+                  onChange={e => setHours(e.target.value)}
+                  placeholder="0"
+                  className="w-16 text-sm border border-amber-300 rounded-lg px-2 py-1.5 text-center focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                />
+                <span className="text-xs text-amber-700">hours</span>
+              </div>
+              <p className="text-[11px] text-amber-600">If the previous step is not completed within this time, this condition triggers.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">Cancel</button>
+          <button onClick={handleSave} className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Save Condition</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _keyCounter = 0;
@@ -439,7 +545,15 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
     }))
   );
   const [edgesData, setEdgesData] = useState<TemplateEdgeData[]>(() =>
-    (template?.edges ?? []).map(e => ({ from_step_key: e.from_step_key, to_step_key: e.to_step_key, label: e.label }))
+    (template?.edges ?? []).map(e => ({
+      from_step_key: e.from_step_key,
+      to_step_key: e.to_step_key,
+      label: e.label,
+      condition_type: e.condition_type ?? null,
+      condition_config: e.condition_config ?? null,
+      source_handle: e.source_handle ?? null,
+      target_handle: e.target_handle ?? null,
+    }))
   );
 
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
@@ -449,6 +563,7 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
   const [showClientModal, setShowClientModal] = useState(false);
   const [placementMode, setPlacementMode] = useState(false);
   const [showTestRun, setShowTestRun] = useState(false);
+  const [conditionEdge, setConditionEdge] = useState<{ from: string; to: string } | null>(null);
 
   const selectedStep = steps.find(s => s.step_key === selectedStepKey) ?? null;
 
@@ -480,6 +595,10 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
     from_step_key: e.from_step_key,
     to_step_key: e.to_step_key,
     label: e.label ?? null,
+    condition_type: e.condition_type ?? null,
+    condition_config: e.condition_config ?? null,
+    source_handle: e.source_handle ?? null,
+    target_handle: e.target_handle ?? null,
   })), [edgesData, template]);
 
   // React Flow internal state (needed for onNodesChange/onEdgesChange handlers)
@@ -493,7 +612,14 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
     setEdgesData(prev => {
       const exists = prev.some(e => e.from_step_key === connection.source && e.to_step_key === connection.target);
       if (exists) return prev;
-      return [...prev, { from_step_key: connection.source!, to_step_key: connection.target! }];
+      return [...prev, {
+        from_step_key: connection.source!,
+        to_step_key: connection.target!,
+        condition_type: null,
+        condition_config: null,
+        source_handle: connection.sourceHandle ?? null,
+        target_handle: connection.targetHandle ?? null,
+      }];
     });
   }, []);
 
@@ -566,8 +692,8 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
     // Replace the direct edge with two edges: from → new → to
     setEdgesData(prev => [
       ...prev.filter(e => !(e.from_step_key === fromKey && e.to_step_key === toKey)),
-      { from_step_key: fromKey, to_step_key: key },
-      { from_step_key: key, to_step_key: toKey },
+      { from_step_key: fromKey, to_step_key: key, condition_type: null, condition_config: null, source_handle: null, target_handle: null },
+      { from_step_key: key, to_step_key: toKey, condition_type: null, condition_config: null, source_handle: null, target_handle: null },
     ]);
     setSelectedStepKey(key);
   }
@@ -589,6 +715,11 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
 
   async function handleSave() {
     if (!name.trim()) { setError('Template name is required.'); return; }
+    const unconfiguredEdges = edgesData.filter(e => !e.condition_type);
+    if (unconfiguredEdges.length > 0) {
+      setError(`${unconfiguredEdges.length} connection${unconfiguredEdges.length > 1 ? 's' : ''} need${unconfiguredEdges.length === 1 ? 's' : ''} a condition set. Hover over each connection on the canvas to add one.`);
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -722,6 +853,7 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
                 onPlaceStep={placeStep}
                 onCancelPlacement={() => setPlacementMode(false)}
                 onInsertOnEdge={handleInsertOnEdge}
+                onConditionChange={(from, to) => setConditionEdge({ from, to })}
               />
             )}
           </div>
@@ -1009,15 +1141,32 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
 
                       {sortedEdges.length > 0 && (
                         <div className="mt-4">
-                          <p className="text-xs text-gray-400 mb-2">Connections ({sortedEdges.length})</p>
-                          <div className="space-y-1">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs text-gray-400">Connections ({sortedEdges.length})</p>
+                            {sortedEdges.some(e => !e.condition_type) && (
+                              <span className="text-[10px] text-red-500 font-medium">
+                                {sortedEdges.filter(e => !e.condition_type).length} need conditions
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-0.5">
                             {sortedEdges.map((e, i) => {
                               const fromTitle = steps.find(s => s.step_key === e.from_step_key)?.title ?? e.from_step_key;
                               const toTitle = steps.find(s => s.step_key === e.to_step_key)?.title ?? e.to_step_key;
+                              const conditionColor = e.condition_type === 'on_complete' ? '#16a34a' : e.condition_type === 'timeout' ? '#d97706' : e.condition_type === 'always' ? '#6b7280' : '#ef4444';
+                              const conditionLabel = e.condition_type === 'on_complete' ? 'On complete' : e.condition_type === 'timeout' ? 'After delay' : e.condition_type === 'always' ? 'Always' : 'Set condition';
                               return (
-                                <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500 group">
-                                  <span className="truncate">{fromTitle} → {toTitle}</span>
-                                  <button onClick={() => deleteEdge(e.from_step_key, e.to_step_key)} className="ml-auto text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                                <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500 group rounded px-1 py-1.5 hover:bg-white">
+                                  <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: conditionColor }} />
+                                  <span className="truncate flex-1 min-w-0">{fromTitle} → {toTitle}</span>
+                                  <button
+                                    onClick={() => setConditionEdge({ from: e.from_step_key, to: e.to_step_key })}
+                                    className="text-[10px] flex-shrink-0 opacity-0 group-hover:opacity-100 font-medium hover:underline"
+                                    style={{ color: conditionColor }}
+                                  >
+                                    {conditionLabel}
+                                  </button>
+                                  <button onClick={() => deleteEdge(e.from_step_key, e.to_step_key)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 flex-shrink-0">
                                     <X className="h-3 w-3" />
                                   </button>
                                 </div>
@@ -1065,6 +1214,30 @@ export default function TemplateBuilder({ template, teamMembers, onSave, onClose
         onClose={() => setShowClientModal(false)}
       />
     )}
+
+    {/* Condition editor modal */}
+    {conditionEdge && (() => {
+      const edgeEntry = edgesData.find(e => e.from_step_key === conditionEdge.from && e.to_step_key === conditionEdge.to);
+      const fromTitle = steps.find(s => s.step_key === conditionEdge.from)?.title ?? conditionEdge.from;
+      const toTitle = steps.find(s => s.step_key === conditionEdge.to)?.title ?? conditionEdge.to;
+      return (
+        <ConditionModal
+          fromTitle={fromTitle}
+          toTitle={toTitle}
+          currentType={edgeEntry?.condition_type ?? null}
+          currentConfig={edgeEntry?.condition_config ?? null}
+          onSave={(type, config) => {
+            setEdgesData(prev => prev.map(e =>
+              e.from_step_key === conditionEdge.from && e.to_step_key === conditionEdge.to
+                ? { ...e, condition_type: type, condition_config: config }
+                : e
+            ));
+            setConditionEdge(null);
+          }}
+          onClose={() => setConditionEdge(null)}
+        />
+      );
+    })()}
     </>
   );
 }

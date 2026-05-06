@@ -32,6 +32,13 @@ const CreateTaskSchema = z.object({
     from_step_key: z.string(),
     to_step_key: z.string(),
     label: z.string().optional().nullable(),
+    condition_type: z.enum(['on_complete', 'timeout', 'always']).optional().nullable(),
+    condition_config: z.object({
+      timeout_days: z.number().optional(),
+      timeout_hours: z.number().optional(),
+    }).optional().nullable(),
+    source_handle: z.string().optional().nullable(),
+    target_handle: z.string().optional().nullable(),
   })).optional(),
 });
 
@@ -158,7 +165,7 @@ export async function POST(req: NextRequest) {
   // Insert edges
   if (edges && edges.length > 0) {
     const { error: edgesError } = await supabase.from('task_step_edges').insert(
-      edges.map(e => ({ task_id: task.id, from_step_key: e.from_step_key, to_step_key: e.to_step_key, label: e.label ?? null }))
+      edges.map(e => ({ task_id: task.id, from_step_key: e.from_step_key, to_step_key: e.to_step_key, label: e.label ?? null, condition_type: e.condition_type ?? null, condition_config: e.condition_config ?? null, source_handle: e.source_handle ?? null, target_handle: e.target_handle ?? null }))
     );
     if (edgesError) console.error('POST /api/tasks edges', edgesError);
   }
