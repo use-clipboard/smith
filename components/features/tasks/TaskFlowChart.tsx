@@ -238,6 +238,7 @@ export function TaskViewFlowChart({ steps, edges, onStepClick, onStepStatusChang
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={true}
+      connectionMode={ConnectionMode.Loose}
     >
       <Background gap={20} color="#f3f4f6" />
       <Panel position="bottom-left">
