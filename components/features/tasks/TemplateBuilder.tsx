@@ -2,11 +2,13 @@
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
-import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles, AlertTriangle, AlertCircle, Info, ShieldCheck } from 'lucide-react';
 import { MERGE_TAGS, resolveMergeTags, type MergeTagContext } from '@/lib/emailMergeTags';
 import { TaskEditFlowChart } from './TaskFlowChart';
 import TaskTemplateTestRun from './TaskTemplateTestRun';
 import AITemplateBuilder from './AITemplateBuilder';
+import { runStaticAnalysis, type StaticIssue } from './TaskTemplateTestRun';
+import type { FlowAnalysis } from '@/app/api/tasks/templates/ai-check/route';
 import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig } from '@/types';
@@ -528,7 +530,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
 
   // Steps (local state — push to React Flow via useMemo)
   const [steps, setSteps] = useState<TemplateStepData[]>(() =>
-    template ? template.steps.map(s => ({
+    template ? (template.steps ?? []).map(s => ({
       step_key: s.step_key,
       title: s.title,
       description: s.description,
@@ -547,7 +549,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
     })) : (initialData?.steps ?? [])
   );
   const [edgesData, setEdgesData] = useState<TemplateEdgeData[]>(() =>
-    template ? template.edges.map(e => ({
+    template ? (template.edges ?? []).map(e => ({
       from_step_key: e.from_step_key,
       to_step_key: e.to_step_key,
       label: e.label,
@@ -568,7 +570,42 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
   const [showAIEdit, setShowAIEdit] = useState(false);
   const [conditionEdge, setConditionEdge] = useState<{ from: string; to: string } | null>(null);
 
+  // Flow analysis
+  const [aiCheckState, setAiCheckState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [aiCheckResult, setAiCheckResult] = useState<FlowAnalysis | null>(null);
+  const [aiCheckError, setAiCheckError] = useState('');
+  const [showIssuesPanel, setShowIssuesPanel] = useState(false);
+
   const selectedStep = steps.find(s => s.step_key === selectedStepKey) ?? null;
+
+  // Live static analysis (runs on every steps/edges change, zero cost)
+  const staticIssues = useMemo(() => runStaticAnalysis(steps, edgesData), [steps, edgesData]);
+  const staticErrorCount   = staticIssues.filter(i => i.severity === 'error').length;
+  const staticWarningCount = staticIssues.filter(i => i.severity === 'warning').length;
+
+  async function runAICheck() {
+    if (aiCheckState === 'loading') return;
+    setAiCheckState('loading');
+    setAiCheckError('');
+    setShowIssuesPanel(true);
+    try {
+      const res = await fetch('/api/tasks/templates/ai-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name || 'Untitled', steps, edges: edgesData }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? 'Analysis failed');
+      }
+      const data: FlowAnalysis = await res.json();
+      setAiCheckResult(data);
+      setAiCheckState('done');
+    } catch (err) {
+      setAiCheckError(err instanceof Error ? err.message : 'Analysis failed');
+      setAiCheckState('error');
+    }
+  }
 
   // Build fake TaskTemplateStep/Edge arrays for the flow chart
   const flowSteps: TaskTemplateStep[] = useMemo(() => steps.map(s => ({
@@ -762,6 +799,28 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {error && <span className="text-xs text-red-600">{error}</span>}
+
+            {/* Live issue badge */}
+            {steps.length > 0 && (staticErrorCount > 0 || staticWarningCount > 0) && (
+              <button
+                onClick={() => { setShowIssuesPanel(v => !v); setSelectedStepKey(null); }}
+                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
+                  staticErrorCount > 0
+                    ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                    : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                }`}
+                title="Show flow issues"
+              >
+                {staticErrorCount > 0 ? <AlertCircle className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                {staticErrorCount + staticWarningCount} issue{staticErrorCount + staticWarningCount > 1 ? 's' : ''}
+              </button>
+            )}
+            {steps.length > 0 && staticErrorCount === 0 && staticWarningCount === 0 && (
+              <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                <ShieldCheck className="h-3.5 w-3.5" /> Flow OK
+              </span>
+            )}
+
             <button
               onClick={() => setShowAIEdit(true)}
               className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-medium transition-colors"
@@ -1023,6 +1082,88 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
             ) : (
               <div className="p-4">
                 <p className="text-xs text-gray-400 mb-4">Click a step on the canvas to configure it. Drag between step handles to connect them.</p>
+
+                {/* Live issues panel */}
+                {showIssuesPanel && steps.length > 0 && (() => {
+                  const allIssues: StaticIssue[] = [...staticIssues];
+                  const aiExtras = aiCheckResult?.issues.filter(ai =>
+                    !staticIssues.some(s => s.step_key === ai.step_key && s.title === ai.title)
+                  ) ?? [];
+                  const combined = [...allIssues, ...aiExtras];
+                  const errors   = combined.filter(i => i.severity === 'error');
+                  const warnings = combined.filter(i => i.severity === 'warning');
+                  const infos    = combined.filter(i => i.severity === 'info');
+                  const sorted   = [...errors, ...warnings, ...infos];
+
+                  return (
+                    <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                        <span className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                          {errors.length > 0 ? <AlertCircle className="h-3.5 w-3.5 text-red-500" /> : warnings.length > 0 ? <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> : <ShieldCheck className="h-3.5 w-3.5 text-green-500" />}
+                          Flow Analysis
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={runAICheck}
+                            disabled={aiCheckState === 'loading'}
+                            className="flex items-center gap-1 text-[11px] text-indigo-600 hover:underline font-medium disabled:opacity-50"
+                          >
+                            {aiCheckState === 'loading'
+                              ? <><Loader2 className="h-3 w-3 animate-spin" /> Checking…</>
+                              : <><Sparkles className="h-3 w-3" /> {aiCheckState === 'done' ? 'Re-check' : 'AI check'}</>
+                            }
+                          </button>
+                          <button onClick={() => setShowIssuesPanel(false)} className="text-gray-400 hover:text-gray-600 ml-1">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {aiCheckState === 'error' && (
+                        <div className="px-3 py-2 text-[11px] text-red-600 bg-red-50 border-b border-red-100">
+                          {aiCheckError} — <button onClick={runAICheck} className="underline">retry</button>
+                        </div>
+                      )}
+                      {aiCheckState === 'done' && aiCheckResult && (
+                        <div className="px-3 py-2 text-[11px] text-indigo-700 bg-indigo-50 border-b border-indigo-100 flex items-start gap-1.5">
+                          <Sparkles className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                          <span>{aiCheckResult.summary}</span>
+                        </div>
+                      )}
+
+                      {sorted.length === 0 ? (
+                        <div className="flex items-center gap-2 px-3 py-3 text-xs text-green-700">
+                          <ShieldCheck className="h-4 w-4 text-green-500" /> No issues found — workflow looks good.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                          {sorted.map((issue, i) => (
+                            <div key={i} className="px-3 py-2.5">
+                              <div className="flex items-start gap-1.5 mb-1">
+                                {issue.severity === 'error'   && <AlertCircle  className="h-3.5 w-3.5 text-red-500 flex-shrink-0 mt-0.5"    />}
+                                {issue.severity === 'warning' && <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0 mt-0.5" />}
+                                {issue.severity === 'info'    && <Info          className="h-3.5 w-3.5 text-blue-500 flex-shrink-0 mt-0.5"   />}
+                                <p className="text-xs font-semibold text-gray-800 leading-snug">{issue.title}</p>
+                              </div>
+                              <p className="text-[11px] text-gray-500 leading-relaxed mb-1.5 pl-5">{issue.description}</p>
+                              <p className="text-[11px] text-gray-600 leading-relaxed pl-5">
+                                <span className="font-medium">Fix:</span> {issue.fix}
+                              </p>
+                              {issue.step_key && (
+                                <button
+                                  onClick={() => setSelectedStepKey(issue.step_key!)}
+                                  className="mt-1 pl-5 text-[11px] text-indigo-600 hover:underline font-medium"
+                                >
+                                  Select step →
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Step list — sorted in flow/connection order (topological sort) */}
                 {(() => {

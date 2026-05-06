@@ -766,5 +766,13 @@ export interface DefaultTemplate {
   recurrence_type: RecurrenceType | null;
   estimated_duration_days: number | null;
   steps: DefaultTemplateStep[];
-  edges: { from_step_key: string; to_step_key: string; label?: string; condition_type?: EdgeConditionType | null }[];
+  edges: {
+    from_step_key: string;
+    to_step_key: string;
+    label?: string;
+    condition_type?: EdgeConditionType | null;
+    condition_config?: EdgeConditionConfig | null;
+    source_handle?: string | null;
+    target_handle?: string | null;
+  }[];
 }
