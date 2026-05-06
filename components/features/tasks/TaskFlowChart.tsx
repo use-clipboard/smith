@@ -3,13 +3,14 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import {
   ReactFlow, Background, Panel,
-  useReactFlow,
+  useReactFlow, ConnectionMode,
   type Connection, type Edge, type Node, type EdgeProps,
   type OnConnect, type OnNodesChange, type OnEdgesChange,
   MarkerType, BaseEdge, EdgeLabelRenderer, getBezierPath,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import StepNode, { type StepNodeData } from './StepNode';
+import { Trash2 } from 'lucide-react';
 import { MODULES } from '@/config/modules.config';
 import type { TaskStep, TaskStepEdge, TaskTemplateStep, TaskTemplateEdge, StepStatus, EdgeConditionType, EdgeConditionConfig } from '@/types';
 
@@ -34,6 +35,7 @@ const CONDITION_LABELS: Record<EdgeConditionType, string> = {
 interface InsertableEdgeData {
   onInsert?: (fromKey: string, toKey: string) => void;
   onCondition?: (fromKey: string, toKey: string) => void;
+  onDelete?: (fromKey: string, toKey: string) => void;
   conditionType?: EdgeConditionType | null;
   conditionConfig?: EdgeConditionConfig | null;
   [key: string]: unknown;
@@ -82,6 +84,7 @@ function InsertableEdge({
             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             position: 'absolute',
             pointerEvents: 'all',
+            zIndex: 1000,
           }}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
@@ -100,6 +103,13 @@ function InsertableEdge({
                 style={{ backgroundColor: edgeColor }}
               >
                 {hasCondition ? 'Change Condition' : '⚠ Add Condition'}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); edgeData?.onDelete?.(source, target); }}
+                className="flex items-center justify-center w-6 h-6 bg-white border border-gray-200 text-gray-400 rounded-full shadow-md hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors"
+                title="Delete connection"
+              >
+                <Trash2 className="h-3 w-3" />
               </button>
             </div>
           ) : (
@@ -253,13 +263,14 @@ interface EditFlowChartProps {
   onCancelPlacement?: () => void;
   onInsertOnEdge?: (fromKey: string, toKey: string) => void;
   onConditionChange?: (fromKey: string, toKey: string) => void;
+  onDeleteEdge?: (fromKey: string, toKey: string) => void;
 }
 
 export function TaskEditFlowChart({
   steps, edges, selectedStepKey,
   onSelectStep, onNodesChange, onEdgesChange, onConnect,
   onNodePositionChange, placementMode = false,
-  onPlaceStep, onCancelPlacement, onInsertOnEdge, onConditionChange,
+  onPlaceStep, onCancelPlacement, onInsertOnEdge, onConditionChange, onDeleteEdge,
 }: EditFlowChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
@@ -300,6 +311,7 @@ export function TaskEditFlowChart({
       data: {
         onInsert: onInsertOnEdge,
         onCondition: onConditionChange,
+        onDelete: onDeleteEdge,
         conditionType: e.condition_type,
         conditionConfig: e.condition_config,
       },
@@ -356,6 +368,7 @@ export function TaskEditFlowChart({
         fitView
         fitViewOptions={{ padding: 0.3 }}
         proOptions={{ hideAttribution: true }}
+        connectionMode={ConnectionMode.Loose}
         connectionLineStyle={{ stroke: '#9ca3af', strokeWidth: 2 }}
         defaultEdgeOptions={{
           markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
