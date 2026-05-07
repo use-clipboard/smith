@@ -3,8 +3,10 @@
 import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight, History } from 'lucide-react';
 import TaskCard from '../TaskCard';
+import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
-import type { Task, TaskStatus } from '@/types';
+import ExportTasksButton from '../ExportTasksButton';
+import type { Task, TaskStatus, TaskStep } from '@/types';
 
 interface Props {
   tasks: Task[];
@@ -17,9 +19,21 @@ interface Props {
   teamMembers: { id: string; full_name: string | null; email: string }[];
   onClearFilters: () => void;
   onTaskClick: (task: Task) => void;
+  onStepUpdate?: (taskId: string, stepId: string, updates: Partial<TaskStep>) => Promise<void>;
+  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  viewMode: 'grid' | 'list';
+  isAdmin?: boolean;
+  onDelete?: (taskId: string) => Promise<void>;
+  onStopRecurrence?: (taskId: string) => Promise<void>;
 }
 
-export default function ByClientView({ tasks, currentUserId, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, teamMembers, onClearFilters, onTaskClick }: Props) {
+const STATUS_COLOURS: Record<string, string> = {
+  active:   'bg-green-100 text-green-700',
+  hold:     'bg-amber-100 text-amber-700',
+  inactive: 'bg-gray-100 text-gray-500',
+};
+
+export default function ByClientView({ tasks, currentUserId, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, teamMembers, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [showHistoryFor, setShowHistoryFor] = useState<Set<string>>(new Set());
 
@@ -31,11 +45,23 @@ export default function ByClientView({ tasks, currentUserId, search, onSearchCha
   }), [tasks, search, statusFilter, assigneeFilter]);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { label: string; active: Task[]; history: Task[] }>();
+    const map = new Map<string, {
+      label: string;
+      client_ref?: string;
+      client_status?: string | null;
+      active: Task[];
+      history: Task[];
+    }>();
     filtered.forEach(t => {
       const key = t.client_id ?? '__internal__';
       const label = t.client?.name ?? 'Internal / No Client';
-      if (!map.has(key)) map.set(key, { label, active: [], history: [] });
+      if (!map.has(key)) map.set(key, {
+        label,
+        client_ref:    t.client?.client_ref,
+        client_status: t.client?.status,
+        active:  [],
+        history: [],
+      });
       const bucket = map.get(key)!;
       if (t.status === 'complete') bucket.history.push(t);
       else bucket.active.push(t);
@@ -60,69 +86,113 @@ export default function ByClientView({ tasks, currentUserId, search, onSearchCha
   }
 
   return (
-    <div className="space-y-4">
-      <TaskFilters
-        search={search} onSearchChange={onSearchChange}
-        statusFilter={statusFilter} onStatusChange={onStatusChange}
-        clientFilter={clientFilter} onClientChange={onClientChange}
-        assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
-        clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
-      />
+    <div>
+      {/* Filters — sticky at top of scroll container */}
+      <div className="sticky top-0 z-30 bg-gray-50 pb-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <TaskFilters
+            search={search} onSearchChange={onSearchChange}
+            statusFilter={statusFilter} onStatusChange={onStatusChange}
+            clientFilter={clientFilter} onClientChange={onClientChange}
+            assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
+            clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
+          />
+          <ExportTasksButton tasks={filtered} filename="tasks-by-client" />
+        </div>
+      </div>
 
       {grouped.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks found.</p></div>
       ) : (
-        grouped.map(([key, { label, active, history }]) => {
-          const isExpanded = expandedClients.has(key) || active.length <= 3;
-          const showHistory = showHistoryFor.has(key);
-          const totalCount = active.length + history.length;
+        <div className="space-y-3">
+          {grouped.map(([key, { label, client_ref, client_status, active, history }]) => {
+            const isExpanded = expandedClients.has(key) || active.length <= 3;
+            const showHistory = showHistoryFor.has(key);
 
-          return (
-            <div key={key} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <button
-                onClick={() => toggle(key)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-sm text-gray-900">{label}</span>
-                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {active.length} active{history.length > 0 ? `, ${history.length} complete` : ''}
-                  </span>
-                </div>
-                {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
-              </button>
+            return (
+              <div key={key} className="bg-white border border-gray-200 rounded-lg">
+                {/* Section header — sticky below the filters bar */}
+                <button
+                  onClick={() => toggle(key)}
+                  className="sticky top-[50px] z-20 w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50 transition-colors rounded-lg border-b border-gray-100"
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm text-gray-900">{label}</span>
+                    {client_ref && (
+                      <span className="text-xs font-mono text-gray-400">{client_ref}</span>
+                    )}
+                    {client_status && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide ${
+                        STATUS_COLOURS[client_status] ?? 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {client_status === 'hold' ? 'On Hold' : client_status}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      {active.length} active{history.length > 0 ? `, ${history.length} complete` : ''}
+                    </span>
+                  </div>
+                  {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
+                </button>
 
-              {isExpanded && (
-                <div className="px-4 pb-4 border-t border-gray-100">
-                  {active.length === 0 ? (
-                    <p className="text-xs text-gray-400 py-3">No active tasks.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
-                      {active.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} />)}
-                    </div>
-                  )}
+                {isExpanded && (
+                  <div>
+                    {active.length === 0 ? (
+                      <p className="text-xs text-gray-400 px-4 py-3">No active tasks.</p>
+                    ) : viewMode === 'list' ? (
+                      <table className="w-full text-left">
+                        {/* Column headers — sticky below section header (50px filters + 44px section header) */}
+                        <thead className="sticky top-[94px] z-10">
+                          <tr className="bg-gray-50 border-b border-gray-100">
+                            <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Task</th>
+                            <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                            <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
+                            <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
+                            <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assignees</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {active.map(t => (
+                            <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} hideClient onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+                        {active.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
+                      </div>
+                    )}
 
-                  {history.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-100">
-                      <button
-                        onClick={() => toggleHistory(key)}
-                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
-                      >
-                        <History className="h-3.5 w-3.5" />
-                        {showHistory ? 'Hide' : 'Show'} {history.length} completed task{history.length !== 1 ? 's' : ''}
-                      </button>
-                      {showHistory && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-                          {history.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} />)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })
+                    {history.length > 0 && (
+                      <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+                        <button
+                          onClick={() => toggleHistory(key)}
+                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600"
+                        >
+                          <History className="h-3.5 w-3.5" />
+                          {showHistory ? 'Hide' : 'Show'} {history.length} completed task{history.length !== 1 ? 's' : ''}
+                        </button>
+                        {showHistory && (viewMode === 'list' ? (
+                          <table className="w-full text-left mt-3">
+                            <tbody>
+                              {history.map(t => (
+                                <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} hideClient onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+                            {history.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

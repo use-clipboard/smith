@@ -6,6 +6,7 @@ import {
   Mail, Puzzle, Clock, User, CheckCircle2, Circle, Zap,
   UserCheck, Upload, Eye, ArrowRight, ExternalLink,
   Sparkles, AlertTriangle, AlertCircle, Info, Loader2,
+  Rocket, Flag, type LucideIcon,
 } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { MODULES } from '@/config/modules.config';
@@ -100,26 +101,29 @@ export function runStaticAnalysis(steps: TemplateStepData[], edges: TemplateEdge
     }
   });
 
-  // 2. Dead ends (no outgoing edges, but not a lone step)
+  // 2. Dead ends (no outgoing edges, but not a lone step or intentional end node)
   const stepsWithOutgoing = new Set(edges.map(e => e.from_step_key));
   if (steps.length > 1) {
     steps.forEach(s => {
+      if (s.step_type === 'end') return; // end nodes are intentionally terminal
       if (!stepsWithOutgoing.has(s.step_key)) {
         issues.push({
           severity: 'warning',
           step_key: s.step_key,
           title: `"${s.title}" has no next step`,
           description: `This step has no outgoing connections. The workflow will stop here permanently unless this is the intended final step.`,
-          fix: `Connect this step to the next step, or confirm it is intentionally the end of the workflow.`,
+          fix: `Connect this step to the next step, or add an End node to mark the workflow as complete.`,
         });
       }
     });
   }
 
-  // 3. Orphaned steps (no incoming edges, not the first step)
+  // 3. Orphaned steps (no incoming edges, not the first step or a start node)
   const stepsWithIncoming = new Set(edges.map(e => e.to_step_key));
-  const rootSteps = steps.filter(s => !stepsWithIncoming.has(s.step_key));
+  // Start nodes are intentionally root nodes — they should be the only root(s)
+  const rootSteps = steps.filter(s => !stepsWithIncoming.has(s.step_key) && s.step_type !== 'start');
   if (rootSteps.length > 1) {
+    // If there are multiple non-start roots, flag all but the topmost one
     rootSteps.slice(1).forEach(s => {
       issues.push({
         severity: 'warning',
@@ -144,7 +148,7 @@ export function runStaticAnalysis(steps: TemplateStepData[], edges: TemplateEdge
   }
 
   // 5. Email reminders with no recipients
-  steps.filter(s => s.email_reminder_enabled && !(s.email_reminder_config?.recipients?.length)).forEach(s => {
+  steps.filter(s => s.step_type !== 'start' && s.step_type !== 'end' && s.email_reminder_enabled && !(s.email_reminder_config?.recipients?.length)).forEach(s => {
     issues.push({
       severity: 'warning',
       step_key: s.step_key,
@@ -155,7 +159,7 @@ export function runStaticAnalysis(steps: TemplateStepData[], edges: TemplateEdge
   });
 
   // 6. Client steps with no instructions
-  steps.filter(s => s.assignee_role === 'client' && !s.client_instructions && !s.description).forEach(s => {
+  steps.filter(s => s.step_type !== 'start' && s.step_type !== 'end' && s.assignee_role === 'client' && !s.client_instructions && !s.description).forEach(s => {
     issues.push({
       severity: 'info',
       step_key: s.step_key,
@@ -190,6 +194,8 @@ export function runStaticAnalysis(steps: TemplateStepData[], edges: TemplateEdge
 
 interface Narration {
   headline: string;
+  icon?: LucideIcon;
+  iconColor?: string;
   body: string;
   extras: string[];
   perspective: 'team' | 'client';
@@ -200,6 +206,47 @@ function buildNarration(
   prevStep: TemplateStepData | null,
   connectingEdge: TemplateEdgeData | null,
 ): Narration {
+  // Special handling for start and end nodes
+  if (step.step_type === 'start') {
+    const cfg = step.start_trigger_config;
+    let triggerDesc = 'A staff member manually starts this task.';
+    if (cfg?.type === 'deadline_relative') {
+      const unit = cfg.deadline_unit ?? 'months';
+      const n = unit === 'weeks' ? (cfg.weeks_before ?? 0)
+              : unit === 'days'  ? (cfg.days_before  ?? 0)
+              :                    (cfg.months_before ?? 0);
+      const unitLabel = unit === 'weeks' ? (n === 1 ? 'week' : 'weeks')
+                      : unit === 'days'  ? (n === 1 ? 'day'  : 'days')
+                      :                    (n === 1 ? 'month' : 'months');
+      const lbl = cfg.deadline_label ? `before ${cfg.deadline_label}` : 'before the deadline';
+      triggerDesc = `This workflow triggers automatically ${n} ${unitLabel} ${lbl}.`;
+    } else if (cfg?.type === 'day_of_month') {
+      triggerDesc = `This workflow triggers on a scheduled date each period.`;
+    } else if (cfg?.type === 'date_of_year') {
+      triggerDesc = `This workflow triggers on a fixed date each year.`;
+    }
+    return {
+      headline: 'Workflow starts',
+      icon: Rocket,
+      iconColor: 'text-green-600',
+      body: triggerDesc,
+      extras: [],
+      perspective: 'team',
+    };
+  }
+
+  if (step.step_type === 'end') {
+    const notif = step.end_config?.send_completion_notification;
+    return {
+      headline: 'Workflow complete',
+      icon: Flag,
+      iconColor: 'text-purple-600',
+      body: 'All steps have been completed. The task is marked as done.',
+      extras: notif ? ['Completion notification sent'] : [],
+      perspective: 'team',
+    };
+  }
+
   let prefix = '';
   if (connectingEdge?.condition_type === 'timeout') {
     const d = connectingEdge.condition_config?.timeout_days;
@@ -615,6 +662,9 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
     completed_at: null,
     position_x: s.position_x,
     position_y: s.position_y,
+    step_type: s.step_type ?? 'regular',
+    start_trigger_config: s.start_trigger_config ?? null,
+    end_config: s.end_config ?? null,
     created_at: '',
     updated_at: '',
     assignee: null,
@@ -731,7 +781,8 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
                           : <><User className="h-3 w-3" /> Team Member</>
                         }
                       </span>
-                      <span className={`text-xs font-semibold ${narration.perspective === 'client' ? 'text-amber-800' : 'text-indigo-800'}`}>
+                      <span className={`flex items-center gap-1 text-xs font-semibold ${narration.perspective === 'client' ? 'text-amber-800' : 'text-indigo-800'}`}>
+                        {narration.icon && <narration.icon className={`h-3.5 w-3.5 flex-shrink-0 ${narration.iconColor ?? ''}`} />}
                         {narration.headline}
                       </span>
                     </div>

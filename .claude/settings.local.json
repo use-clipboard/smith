@@ -86,7 +86,20 @@
       "Bash(pkill -f \"next dev\")",
       "Bash(ls *.tsx *.ts)",
       "Bash(ls components/chat/ components/ui/AskSmith*)",
-      "Bash(grep -l \"outputs\\\\|output_history\" app/api/*/route.ts app/api/**/*.ts)"
+      "Bash(grep -l \"outputs\\\\|output_history\" app/api/*/route.ts app/api/**/*.ts)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git rebase *)",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(git merge claude/admiring-swanson-be9638 --no-ff -m ' *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\\\\app\\\\api\\\\tasks\\\\[id]\\\\steps\\\\[stepId]\\\\comments\")",
+      "Bash(dir \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\" /s /b)",
+      "Bash(findstr /I \"faq\\\\|help\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\\\\\" -Recurse -Directory -Filter \"*settings*\" | Select-Object -ExpandProperty FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\" -Recurse -Directory | Where-Object { $_.Name -match \"settings|tasks\" } | Select-Object -ExpandProperty FullName)"
     ]
   }
 }

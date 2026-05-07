@@ -581,10 +581,37 @@ export interface AppState2 {
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'review' | 'complete';
+export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'records_here' | 'review' | 'complete' | 'draft';
 export type StepStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'complete' | 'skipped';
+export type StepType = 'regular' | 'start' | 'end';
 export type RecurrenceType = 'once' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly' | 'annually' | 'custom';
 export type EmailReminderTiming = 'on_assign' | '1_day_before_due' | '3_days_before_due' | '1_week_before_due' | 'on_due_date';
+
+export type StartTriggerType = 'manual' | 'deadline_relative' | 'day_of_month' | 'date_of_year';
+
+export interface StartTriggerConfig {
+  type: StartTriggerType;
+  /** Used when type = 'deadline_relative': months before the deadline to trigger */
+  months_before?: number;
+  /** Used when type = 'deadline_relative': weeks before the deadline (alternative to months) */
+  weeks_before?: number;
+  /** Used when type = 'deadline_relative': days before the deadline (alternative to months) */
+  days_before?: number;
+  /** The unit in use for deadline_relative: 'months' | 'weeks' | 'days' */
+  deadline_unit?: 'months' | 'weeks' | 'days';
+  /** Human-readable label for the deadline, e.g. "year end", "corporation tax deadline" */
+  deadline_label?: string;
+  /** Used when type = 'day_of_month' or 'date_of_year': day 1–31 */
+  day_of_month?: number;
+  /** Used when type = 'day_of_month': null = every recurrence period, 1–12 = specific month */
+  month?: number | null;
+}
+
+export interface EndConfig {
+  send_completion_notification: boolean;
+  notification_recipients?: ('assignee' | 'client')[];
+  notification_message?: string | null;
+}
 
 export interface EmailReminderConfig {
   recipients: ('assignee' | 'client')[];
@@ -603,6 +630,7 @@ export interface TaskClientRef {
   name: string;
   client_ref: string;
   contact_email?: string | null;
+  status?: string | null;
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────
@@ -625,6 +653,9 @@ export interface TaskTemplateStep {
   time_estimate_minutes: number | null;
   position_x: number;
   position_y: number;
+  step_type: StepType;
+  start_trigger_config: StartTriggerConfig | null;
+  end_config: EndConfig | null;
   default_assignee?: TaskUserRef | null;
 }
 
@@ -689,6 +720,9 @@ export interface TaskStep {
   completed_at: string | null;
   position_x: number;
   position_y: number;
+  step_type: StepType;
+  start_trigger_config: StartTriggerConfig | null;
+  end_config: EndConfig | null;
   created_at: string;
   updated_at: string;
   assignee?: TaskUserRef | null;
@@ -756,6 +790,9 @@ export interface DefaultTemplateStep {
   time_estimate_minutes?: number;
   position_x: number;
   position_y: number;
+  step_type?: StepType;
+  start_trigger_config?: StartTriggerConfig | null;
+  end_config?: EndConfig | null;
 }
 
 export interface DefaultTemplate {

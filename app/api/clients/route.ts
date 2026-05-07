@@ -39,25 +39,44 @@ export async function GET(req: NextRequest) {
   const typeFilter = url.searchParams.get('type');
   const riskFilter = url.searchParams.get('risk');
 
-  let query = supabase
-    .from('clients')
-    .select('id, name, client_ref, business_type, contact_email, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth')
-    .eq('firm_id', ctx.firmId)
-    .order('name', { ascending: true })
-    .limit(100000);
+  const SELECT_COLS = 'id, name, client_ref, business_type, contact_email, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth';
 
-  if (search) query = query.or(`name.ilike.%${search}%,client_ref.ilike.%${search}%`);
-  if (statusFilter === 'active' || statusFilter === 'hold' || statusFilter === 'inactive') query = query.eq('status', statusFilter);
-  if (typeFilter) query = query.eq('business_type', typeFilter);
-  if (riskFilter) query = query.eq('risk_rating', riskFilter);
+  // ── Paginated fetch ───────────────────────────────────────────────────────
+  // Supabase PostgREST has a server-level max_rows cap (default 1000) that
+  // silently overrides any .limit() set in code. We work around it by fetching
+  // in pages of 1000 and concatenating until we receive a partial page.
+  const PAGE_SIZE = 1000;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let allClients: any[] = [];
+  let offset = 0;
 
-  const { data: clients, error } = await query;
-  if (error) {
-    console.error('GET /api/clients', error);
-    return NextResponse.json({ error: 'Failed to load clients' }, { status: 500 });
+  while (true) {
+    let q = supabase
+      .from('clients')
+      .select(SELECT_COLS)
+      .eq('firm_id', ctx.firmId)
+      .order('name', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (search) q = q.or(`name.ilike.%${search}%,client_ref.ilike.%${search}%`);
+    if (statusFilter === 'active' || statusFilter === 'hold' || statusFilter === 'inactive') q = q.eq('status', statusFilter);
+    if (typeFilter) q = q.eq('business_type', typeFilter);
+    if (riskFilter) q = q.eq('risk_rating', riskFilter);
+
+    const { data, error } = await q;
+
+    if (error) {
+      console.error('GET /api/clients', error);
+      return NextResponse.json({ error: 'Failed to load clients' }, { status: 500 });
+    }
+
+    if (!data || data.length === 0) break;
+    allClients = allClients.concat(data);
+    if (data.length < PAGE_SIZE) break; // partial page → we've reached the end
+    offset += PAGE_SIZE;
   }
 
-  return NextResponse.json({ clients, userRole: ctx.userRole });
+  return NextResponse.json({ clients: allClients, userRole: ctx.userRole });
 }
 
 // POST /api/clients

@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
 import { useMemo } from 'react';
 import TaskCard from '../TaskCard';
+import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
-import { TaskStatusBadge } from '../TaskStatusBadge';
-import type { Task, TaskStatus } from '@/types';
+import ExportTasksButton from '../ExportTasksButton';
+import type { Task, TaskStatus, TaskStep } from '@/types';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
 
@@ -19,9 +20,15 @@ interface Props {
   clients: { id: string; name: string }[];
   onClearFilters: () => void;
   onTaskClick: (task: Task) => void;
+  onStepUpdate?: (taskId: string, stepId: string, updates: Partial<TaskStep>) => Promise<void>;
+  onTaskUpdate?: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  viewMode: 'grid' | 'list';
+  isAdmin?: boolean;
+  onDelete?: (taskId: string) => Promise<void>;
+  onStopRecurrence?: (taskId: string) => Promise<void>;
 }
 
-export default function ByTeamView({ tasks, currentUserId, teamMembers, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, onClearFilters, onTaskClick }: Props) {
+export default function ByTeamView({ tasks, currentUserId, teamMembers, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const filtered = useMemo(() => tasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
@@ -52,31 +59,39 @@ export default function ByTeamView({ tasks, currentUserId, teamMembers, search, 
 
   const activeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    grouped.forEach((tasks, id) => counts.set(id, tasks.filter(t => t.status !== 'complete').length));
+    grouped.forEach((memberTasks, id) => counts.set(id, memberTasks.filter(t => t.status !== 'complete').length));
     return counts;
   }, [grouped]);
 
   return (
-    <div className="space-y-4">
-      <TaskFilters
-        search={search} onSearchChange={onSearchChange}
-        statusFilter={statusFilter} onStatusChange={onStatusChange}
-        clientFilter={clientFilter} onClientChange={onClientChange}
-        assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
-        clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
-      />
+    <div>
+      <div className="sticky top-0 z-20 bg-gray-50 pb-4">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <TaskFilters
+            search={search} onSearchChange={onSearchChange}
+            statusFilter={statusFilter} onStatusChange={onStatusChange}
+            clientFilter={clientFilter} onClientChange={onClientChange}
+            assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
+            clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
+          />
+          <ExportTasksButton tasks={filtered} filename="tasks-by-team" />
+        </div>
+      </div>
 
-      {[...teamMembers, { id: '__unassigned__', full_name: 'Unassigned', email: '' }].map(member => {
+      <div className="space-y-3">
+      {[...teamMembers, { id: '__unassigned__', full_name: 'Unassigned', email: '' }]
+      .filter(member => !assigneeFilter || member.id === assigneeFilter)
+      .map(member => {
         const memberTasks = grouped.get(member.id) ?? [];
         if (memberTasks.length === 0) return null;
         const initials = (member.full_name ?? member.email).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
         const activeCount = activeCounts.get(member.id) ?? 0;
 
         return (
-          <div key={member.id} className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-9 w-9 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-sm font-bold text-white">{initials}</span>
+          <div key={member.id} className="bg-white border border-gray-200 rounded-lg">
+            <div className="sticky top-[50px] z-20 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 rounded-t-lg">
+              <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-white">{initials}</span>
               </div>
               <div>
                 <p className="font-semibold text-sm text-gray-900">{member.full_name ?? member.email}</p>
@@ -84,12 +99,31 @@ export default function ByTeamView({ tasks, currentUserId, teamMembers, search, 
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {memberTasks.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} />)}
-            </div>
+            {viewMode === 'list' ? (
+              <table className="w-full text-left">
+                <thead className="sticky top-[110px] z-10">
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Task</th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
+                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assignees</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {memberTasks.map(t => <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
+                </tbody>
+              </table>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+                {memberTasks.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
+              </div>
+            )}
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -6,8 +6,10 @@ const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; classes: string }>
   not_started:      { label: 'Not Started',       classes: 'bg-gray-100 text-gray-600' },
   in_progress:      { label: 'In Progress',        classes: 'bg-blue-100 text-blue-700' },
   waiting_on_client:{ label: 'Waiting on Client',  classes: 'bg-amber-100 text-amber-700' },
+  records_here:     { label: 'Records Here',       classes: 'bg-teal-100 text-teal-700' },
   review:           { label: 'Review',             classes: 'bg-purple-100 text-purple-700' },
   complete:         { label: 'Complete',           classes: 'bg-green-100 text-green-700' },
+  draft:            { label: 'Draft',              classes: 'bg-gray-100 text-gray-400' },
 };
 
 const STEP_STATUS_CONFIG: Record<StepStatus, { label: string; classes: string; dot: string }> = {

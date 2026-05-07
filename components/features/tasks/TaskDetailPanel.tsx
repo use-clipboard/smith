@@ -4,11 +4,15 @@ import { useState, useCallback } from 'react';
 import {
   X, Calendar, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
   Play, Pause, Plus, Trash2, ExternalLink, Loader2, AlertCircle, Puzzle,
+  XCircle, Users, UserCheck, Check,
 } from 'lucide-react';
 import { TaskStatusBadge, StepStatusBadge } from './TaskStatusBadge';
+import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import { TaskViewFlowChart } from './TaskFlowChart';
+import StepComments, { initials, avatarColour } from './StepComments';
+import AssigneePicker, { type TeamMember } from './AssigneePicker';
 import { MODULES } from '@/config/modules.config';
-import type { Task, TaskStatus, StepStatus, TaskStep } from '@/types';
+import type { Task, TaskStatus, StepStatus, TaskStep, RecurrenceType } from '@/types';
 
 interface Props {
   task: Task;
@@ -18,6 +22,36 @@ interface Props {
   onStepUpdate: (taskId: string, stepId: string, updates: Partial<TaskStep>) => Promise<void>;
   onLogTime: (taskId: string, entry: { step_id?: string; started_at: string; ended_at: string; notes?: string }) => Promise<void>;
   onDelete: (taskId: string) => Promise<void>;
+  isAdmin?: boolean;
+  teamMembers?: TeamMember[];
+  onStopRecurrence?: (taskId: string) => Promise<void>;
+}
+
+const RECURRENCE_LABELS: Record<string, string> = {
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  quarterly: 'Quarterly', annually: 'Annually',
+};
+function recurrenceLabel(type: RecurrenceType | null, intervalDays: number | null): string {
+  if (!type || type === 'once') return '';
+  if (type === 'custom' && intervalDays) return `Every ${intervalDays} days`;
+  return RECURRENCE_LABELS[type] ?? type;
+}
+function computeNextDue(dueDate: string | null, recType: RecurrenceType | null, intervalDays: number | null): string | null {
+  if (!recType || recType === 'once') return null;
+  const base = dueDate ? new Date(dueDate) : new Date();
+  switch (recType) {
+    case 'weekly':    base.setDate(base.getDate() + 7);          break;
+    case 'bi-weekly': base.setDate(base.getDate() + 14);         break;
+    case 'monthly':   base.setMonth(base.getMonth() + 1);        break;
+    case 'quarterly': base.setMonth(base.getMonth() + 3);        break;
+    case 'annually':  base.setFullYear(base.getFullYear() + 1);  break;
+    case 'custom':    if (intervalDays) base.setDate(base.getDate() + intervalDays); break;
+  }
+  return base.toISOString().split('T')[0];
+}
+function formatShortDate(d: string | null): string | null {
+  if (!d) return null;
+  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 type Tab = 'workflow' | 'time' | 'details';
@@ -34,9 +68,11 @@ const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'not_started',       label: 'Not Started' },
   { value: 'in_progress',       label: 'In Progress' },
   { value: 'waiting_on_client', label: 'Waiting on Client' },
+  { value: 'records_here',      label: 'Records Here' },
   { value: 'review',            label: 'Review' },
   { value: 'complete',          label: 'Complete' },
 ];
+
 
 function formatDate(d: string | null) {
   if (!d) return '—';
@@ -214,15 +250,28 @@ function TimeTracker({ task, steps, onLogTime }: {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate, onStepUpdate, onLogTime, onDelete }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('workflow');
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
-  const [updatingStep, setUpdatingStep] = useState<string | null>(null);
-  const [updatingTask, setUpdatingTask] = useState(false);
+export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate, onStepUpdate, onLogTime, onDelete, isAdmin = false, teamMembers = [], onStopRecurrence }: Props) {
+  const [activeTab, setActiveTab]             = useState<Tab>('workflow');
+  const [selectedStepId, setSelectedStepId]   = useState<string | null>(null);
+  const [updatingStep, setUpdatingStep]       = useState<string | null>(null);
+  const [updatingTask, setUpdatingTask]       = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [stoppingRec, setStoppingRec]         = useState(false);
 
-  const steps = task.steps ?? [];
+  // Step reassignment state
+  const [reassignMode, setReassignMode]       = useState(false);
+  const [selectedStepIds, setSelectedStepIds] = useState<Set<string>>(new Set());
+  const [batchTarget, setBatchTarget]         = useState('');
+  const [applying, setApplying]               = useState(false);
+
+  function exitReassign() {
+    setReassignMode(false);
+    setSelectedStepIds(new Set());
+    setBatchTarget('');
+  }
+
   const edges = task.edges ?? [];
+  const steps = sortStepsByWorkflow(task.steps ?? [], edges);
   const selectedStep = steps.find(s => s.id === selectedStepId) ?? null;
 
   async function handleStepStatus(stepId: string, status: StepStatus) {
@@ -237,8 +286,56 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
     finally { setUpdatingTask(false); }
   }
 
-  const completedCount = steps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
-  const progressPct = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0;
+  // Ticking the 'end' step marks every incomplete step complete and closes the task
+  async function handleCompleteAll() {
+    setUpdatingTask(true);
+    try {
+      const incomplete = (task.steps ?? []).filter(
+        s => s.step_type !== 'start' && s.status !== 'complete' && s.status !== 'skipped'
+      );
+      await Promise.all(incomplete.map(s => onStepUpdate(task.id, s.id, { status: 'complete' })));
+      await onUpdate(task.id, { status: 'complete' });
+    } finally {
+      setUpdatingTask(false);
+    }
+  }
+
+  async function handleStopRecurrence() {
+    if (!onStopRecurrence) return;
+    setStoppingRec(true);
+    try { await onStopRecurrence(task.id); }
+    finally { setStoppingRec(false); }
+  }
+
+  async function handleInlineAssign(stepId: string, memberId: string | null) {
+    setUpdatingStep(stepId);
+    try { await onStepUpdate(task.id, stepId, { assignee_id: memberId } as Partial<TaskStep>); }
+    finally { setUpdatingStep(null); }
+  }
+
+  async function handleApplyBatch() {
+    if (!batchTarget || selectedStepIds.size === 0) return;
+    setApplying(true);
+    try {
+      const newId = batchTarget === '__unassigned__' ? null : batchTarget;
+      await Promise.all([...selectedStepIds].map(sid =>
+        onStepUpdate(task.id, sid, { assignee_id: newId } as Partial<TaskStep>)
+      ));
+      exitReassign();
+    } finally { setApplying(false); }
+  }
+
+  function toggleStep(stepId: string) {
+    setSelectedStepIds(prev => { const n = new Set(prev); n.has(stepId) ? n.delete(stepId) : n.add(stepId); return n; });
+  }
+
+  // 'start' steps are workflow entry markers, not actionable work items — exclude from counts and the checklist
+  const workSteps = steps.filter(s => s.step_type !== 'start');
+  const completedCount = workSteps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
+  const progressPct = workSteps.length > 0 ? Math.round((completedCount / workSteps.length) * 100) : 0;
+
+  // The "next up" step is the first work step that isn't complete or skipped
+  const nextStep = workSteps.find(s => s.status !== 'complete' && s.status !== 'skipped') ?? null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -249,11 +346,16 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 mb-1 flex-wrap">
               <h2 className="text-lg font-bold text-gray-900 truncate">{task.title}</h2>
-              {task.recurrence_type && task.recurrence_type !== 'once' && (
-                <span className="flex items-center gap-1 text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                  <RefreshCw className="h-3 w-3" /> {task.recurrence_type}
-                </span>
-              )}
+              {task.recurrence_type && task.recurrence_type !== 'once' && (() => {
+                const nextDue = computeNextDue(task.due_date, task.recurrence_type, task.recurrence_interval_days);
+                return (
+                  <span className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 px-2.5 py-0.5 rounded-full font-medium">
+                    <RefreshCw className="h-3 w-3" />
+                    {recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}
+                    {nextDue && <span className="text-indigo-400 font-normal">· Next: {formatShortDate(nextDue)}</span>}
+                  </span>
+                );
+              })()}
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {task.client ? (
@@ -267,15 +369,27 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                   Due {formatDate(task.due_date)}
                 </span>
               )}
-              {steps.length > 0 && (
+              {workSteps.length > 0 && (
                 <span className="flex items-center gap-1 text-xs text-gray-400">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  {completedCount}/{steps.length} steps
+                  {completedCount}/{workSteps.length} steps
                 </span>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+            {/* Stop recurrence — admin only */}
+            {isAdmin && task.recurrence_type && task.recurrence_type !== 'once' && onStopRecurrence && (
+              <button
+                onClick={() => void handleStopRecurrence()}
+                disabled={stoppingRec}
+                title="Stop recurrence — this task will no longer repeat"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-600 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors"
+              >
+                {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                Stop Repeat
+              </button>
+            )}
             <select
               value={task.status}
               onChange={e => handleTaskStatus(e.target.value as TaskStatus)}
@@ -291,7 +405,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
         </div>
 
         {/* Progress bar */}
-        {steps.length > 0 && (
+        {workSteps.length > 0 && (
           <div className="px-6 py-2 bg-gray-50 border-b border-gray-100 flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -331,6 +445,8 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                   <TaskViewFlowChart
                     steps={steps}
                     edges={edges}
+                    selectedStepId={selectedStepId}
+                    nextStepId={nextStep?.id ?? null}
                     onStepClick={setSelectedStepId}
                     onStepStatusChange={handleStepStatus}
                   />
@@ -338,9 +454,9 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
               </div>
 
               {/* Step detail sidebar */}
-              <div className="w-72 border-l border-gray-200 overflow-y-auto flex-shrink-0">
+              <div className="w-72 border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0">
                 {selectedStep ? (
-                  <div className="p-4">
+                  <div className="p-4 overflow-y-auto flex-1">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-semibold text-sm text-gray-900">Step Detail</h4>
                       <button onClick={() => setSelectedStepId(null)} className="text-gray-400 hover:text-gray-600">
@@ -419,20 +535,210 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4">
-                    <p className="text-xs text-gray-400 mb-3">Click any step in the chart to view and update it.</p>
-                    <div className="space-y-1.5">
-                      {steps.map(s => (
-                        <button
-                          key={s.id}
-                          onClick={() => setSelectedStepId(s.id)}
-                          className="w-full flex items-center justify-between rounded px-2 py-2 hover:bg-gray-50 text-left transition-colors"
-                        >
-                          <span className="text-sm text-gray-700 truncate mr-2">{s.title}</span>
-                          <StepStatusBadge status={s.status} />
-                        </button>
-                      ))}
+                  <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="px-4 pt-3 pb-2.5 border-b border-gray-100 flex-shrink-0">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Steps</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{completedCount} of {workSteps.length} done</p>
+                        </div>
+                        {isAdmin && workSteps.filter(s => !s.is_client_step).length > 0 && (
+                          reassignMode ? (
+                            <button onClick={exitReassign} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 px-2 py-1 rounded-lg transition-colors">
+                              Cancel
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setReassignMode(true)}
+                              className="inline-flex items-center gap-1 text-xs text-gray-500 border border-gray-200 px-2 py-1 rounded-lg hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors"
+                            >
+                              <Users className="h-3 w-3" /> Reassign
+                            </button>
+                          )
+                        )}
+                      </div>
+                      {/* Reassign: select-all row */}
+                      {isAdmin && reassignMode && (() => {
+                        const reassignable = workSteps.filter(s => !s.is_client_step);
+                        const allSel = reassignable.length > 0 && reassignable.every(s => selectedStepIds.has(s.id));
+                        const someSel = selectedStepIds.size > 0 && !allSel;
+                        return (
+                          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-indigo-100">
+                            <button
+                              onClick={() => allSel
+                                ? setSelectedStepIds(new Set())
+                                : setSelectedStepIds(new Set(reassignable.map(s => s.id)))}
+                              className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
+                                ${allSel ? 'bg-indigo-500 border-indigo-500' : someSel ? 'bg-indigo-200 border-indigo-400' : 'border-gray-300 hover:border-indigo-400 bg-white'}`}
+                            >
+                              {allSel && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                              {someSel && !allSel && <div className="w-2 h-0.5 bg-indigo-600 rounded" />}
+                            </button>
+                            <span className="text-xs text-indigo-600">
+                              {selectedStepIds.size > 0 ? `${selectedStepIds.size} selected` : 'Select steps'}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
+
+                    {/* Step list */}
+                    <div className="flex-1 overflow-y-auto py-2 min-h-0">
+                      {workSteps.map((s, idx) => {
+                        const isDone     = s.status === 'complete' || s.status === 'skipped';
+                        const isProgress = s.status === 'in_progress';
+                        const isWaiting  = s.status === 'waiting_on_client';
+                        const isUpdating = updatingStep === s.id || (s.step_type === 'end' && updatingTask);
+                        const isNextUp   = s.id === nextStep?.id;
+                        const isEndStep  = s.step_type === 'end';
+
+                        const rowBg = isDone     ? 'bg-green-50/60'
+                                    : isProgress ? 'bg-indigo-50/40'
+                                    : isWaiting  ? 'bg-amber-50/40'
+                                    : isEndStep  ? 'bg-indigo-50/30'
+                                    : '';
+
+                        return (
+                          <div
+                            key={s.id}
+                            className={`group flex items-start gap-2.5 px-4 py-2.5 transition-colors
+                              ${isDone ? 'bg-green-50/60' : selectedStepIds.has(s.id) ? 'bg-indigo-50/60' : isProgress ? 'bg-indigo-50/40' : isWaiting ? 'bg-amber-50/40' : isEndStep ? 'bg-indigo-50/30' : 'hover:bg-gray-50'}
+                              ${selectedStepIds.has(s.id) ? 'border-l-2 border-indigo-500' : isNextUp ? 'border-l-2 border-indigo-400' : 'border-l-2 border-transparent'}`}
+                          >
+                            {/* Reassign checkbox */}
+                            {reassignMode && (
+                              <button
+                                onClick={() => !s.is_client_step && toggleStep(s.id)}
+                                disabled={s.is_client_step}
+                                className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
+                                  ${selectedStepIds.has(s.id) ? 'bg-indigo-500 border-indigo-500' : s.is_client_step ? 'border-gray-200 opacity-25 cursor-default bg-white' : 'border-gray-300 hover:border-indigo-400 cursor-pointer bg-white'}`}
+                              >
+                                {selectedStepIds.has(s.id) && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                              </button>
+                            )}
+
+                            {/* Complete checkbox */}
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                if (isEndStep && !isDone) handleCompleteAll();
+                                else handleStepStatus(s.id, isDone ? 'not_started' : 'complete');
+                              }}
+                              disabled={isUpdating || reassignMode}
+                              title={isEndStep && !isDone ? 'Complete task — marks all steps done' : isDone ? 'Mark as not started' : 'Mark as complete'}
+                              className={`mt-0.5 flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
+                                ${isDone ? 'bg-green-500 border-green-500' : isEndStep ? 'border-indigo-400 bg-white group-hover:bg-indigo-50' : 'border-gray-300 bg-white group-hover:border-indigo-400'}
+                                ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              {isUpdating ? (
+                                <Loader2 className="h-3 w-3 text-white animate-spin" />
+                              ) : isDone ? (
+                                <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="2,6 5,9 10,3" />
+                                </svg>
+                              ) : null}
+                            </button>
+
+                            {/* Step info + comments */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                {/* Step number + title — click opens detail */}
+                                <button onClick={() => !reassignMode && setSelectedStepId(s.id)} className="flex-1 text-left min-w-0">
+                                  <div className="flex items-baseline gap-1.5">
+                                    <span className="text-[10px] font-semibold text-gray-300 tabular-nums flex-shrink-0">
+                                      {String(idx + 1).padStart(2, '0')}
+                                    </span>
+                                    <span className={`text-sm font-medium leading-snug ${isDone ? 'line-through text-gray-400' : isEndStep ? 'text-indigo-700' : 'text-gray-800'}`}>
+                                      {s.title}
+                                    </span>
+                                  </div>
+                                  {isEndStep && !isDone && (
+                                    <p className="text-[10px] text-indigo-400 mt-0.5 ml-6">Ticking this completes all steps &amp; closes the task</p>
+                                  )}
+                                </button>
+
+                                {/* Assignee: clickable picker for admin (non-reassign mode), static otherwise */}
+                                {isAdmin && !s.is_client_step && !reassignMode ? (
+                                  <AssigneePicker
+                                    current={s.assignee ?? null}
+                                    teamMembers={teamMembers}
+                                    onSelect={mid => void handleInlineAssign(s.id, mid)}
+                                    disabled={isUpdating}
+                                    size="sm"
+                                  />
+                                ) : s.assignee ? (
+                                  <div
+                                    title={s.assignee.full_name ?? s.assignee.email}
+                                    className={`flex-shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${avatarColour(s.assignee.id)}`}
+                                  >
+                                    {initials(s.assignee.full_name, s.assignee.email)}
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {/* Status row */}
+                              {!reassignMode && (
+                                <div className="flex items-center gap-2 mt-1 flex-wrap ml-6">
+                                  {!isDone && (
+                                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                                      isProgress ? 'bg-indigo-100 text-indigo-600' : isWaiting ? 'bg-amber-100 text-amber-600' : 'bg-gray-100 text-gray-400'
+                                    }`}>
+                                      {isProgress ? 'In Progress' : isWaiting ? 'Waiting' : 'Not Started'}
+                                    </span>
+                                  )}
+                                  {isNextUp && !isProgress && !isWaiting && !isDone && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500 text-white">Next up</span>
+                                  )}
+                                  {s.tool_module_id && (
+                                    <span className="text-[10px] font-medium text-indigo-400 flex items-center gap-0.5">
+                                      <Puzzle className="h-3 w-3" />Tool
+                                    </span>
+                                  )}
+                                  {s.is_client_step && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 font-medium">Client</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Comments */}
+                              {!reassignMode && (
+                                <div className="mt-2">
+                                  <StepComments taskId={task.id} stepId={s.id} currentUserId={currentUserId} compact />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Batch reassign bar */}
+                    {isAdmin && reassignMode && selectedStepIds.size > 0 && (
+                      <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-indigo-600 border-t border-indigo-500">
+                        <UserCheck className="h-4 w-4 text-indigo-200 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-white whitespace-nowrap">
+                          {selectedStepIds.size} step{selectedStepIds.size !== 1 ? 's' : ''}
+                        </span>
+                        <select
+                          value={batchTarget}
+                          onChange={e => setBatchTarget(e.target.value)}
+                          className="flex-1 text-xs rounded-lg px-2 py-1.5 border-0 bg-indigo-500 text-white focus:outline-none focus:ring-1 focus:ring-white/40 min-w-0"
+                        >
+                          <option value="" disabled>Choose person…</option>
+                          <option value="__unassigned__">— Unassign —</option>
+                          {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name ?? m.email}</option>)}
+                        </select>
+                        <button
+                          onClick={() => void handleApplyBatch()}
+                          disabled={!batchTarget || applying}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-white text-indigo-700 text-xs font-semibold rounded-lg hover:bg-indigo-50 disabled:opacity-40 transition-colors flex-shrink-0"
+                        >
+                          {applying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                          Apply
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -443,7 +749,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
             <div className="flex-1 overflow-y-auto p-6">
               <TimeTracker
                 task={task}
-                steps={steps}
+                steps={workSteps}
                 onLogTime={entry => onLogTime(task.id, entry)}
               />
             </div>

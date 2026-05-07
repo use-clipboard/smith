@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
-import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles, AlertTriangle, AlertCircle, Info, ShieldCheck } from 'lucide-react';
+import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles, AlertTriangle, AlertCircle, Info, ShieldCheck, Rocket, Flag, Bell } from 'lucide-react';
 import { MERGE_TAGS, resolveMergeTags, type MergeTagContext } from '@/lib/emailMergeTags';
 import { TaskEditFlowChart } from './TaskFlowChart';
 import TaskTemplateTestRun from './TaskTemplateTestRun';
@@ -11,12 +11,14 @@ import { runStaticAnalysis, type StaticIssue } from './TaskTemplateTestRun';
 import type { FlowAnalysis } from '@/app/api/tasks/templates/ai-check/route';
 import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
-import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig } from '@/types';
+import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig, StepType, StartTriggerConfig, EndConfig } from '@/types';
+import { triggerLabel } from './StartEndNodes';
 
 interface Props {
   template: TaskTemplate | null; // null = creating new
   initialData?: TemplateData | null; // pre-populate from AI builder
   teamMembers: { id: string; full_name: string | null; email: string }[];
+  existingTemplates?: { id: string; name: string }[]; // for duplicate-name detection
   onSave: (data: TemplateData) => Promise<void>;
   onClose: () => void;
 }
@@ -49,6 +51,10 @@ export interface TemplateStepData {
   time_estimate_minutes?: number | null;
   position_x: number;
   position_y: number;
+  /** 'regular' by default; 'start' = trigger node, 'end' = completion node */
+  step_type?: StepType;
+  start_trigger_config?: StartTriggerConfig | null;
+  end_config?: EndConfig | null;
 }
 
 export interface TemplateEdgeData {
@@ -518,7 +524,7 @@ function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave
 let _keyCounter = 0;
 function newStepKey() { return `step_${Date.now()}_${++_keyCounter}`; }
 
-export default function TemplateBuilder({ template, initialData, teamMembers, onSave, onClose }: Props) {
+export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose }: Props) {
   // Meta — initialData (from AI builder) takes precedence over blank, template takes precedence over both
   const [name, setName] = useState(template?.name ?? initialData?.name ?? '');
   const [description, setDescription] = useState(template?.description ?? initialData?.description ?? '');
@@ -546,6 +552,9 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
       time_estimate_minutes: s.time_estimate_minutes,
       position_x: s.position_x,
       position_y: s.position_y,
+      step_type: s.step_type ?? 'regular',
+      start_trigger_config: s.start_trigger_config ?? null,
+      end_config: s.end_config ?? null,
     })) : (initialData?.steps ?? [])
   );
   const [edgesData, setEdgesData] = useState<TemplateEdgeData[]>(() =>
@@ -626,6 +635,9 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
     time_estimate_minutes: s.time_estimate_minutes ?? null,
     position_x: s.position_x,
     position_y: s.position_y,
+    step_type: s.step_type ?? 'regular',
+    start_trigger_config: s.start_trigger_config ?? null,
+    end_config: s.end_config ?? null,
     default_assignee: s.default_assignee_id ? (teamMembers.find(m => m.id === s.default_assignee_id) ?? null) : null,
   })), [steps, template, teamMembers]);
 
@@ -676,6 +688,58 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
       setPlacementMode(true);
       setSelectedStepKey(null);
     }
+  }
+
+  function addStartNode() {
+    const minY = steps.length > 0 ? Math.min(...steps.map(s => s.position_y)) : 200;
+    const key = `start_${Date.now()}`;
+    setSteps(prev => [...prev, {
+      step_key: key,
+      step_type: 'start',
+      title: 'Start',
+      description: null,
+      assignee_role: 'any',
+      default_assignee_id: null,
+      tool_module_id: null,
+      email_reminder_enabled: false,
+      email_reminder_config: { recipients: [], timing: 'on_assign' },
+      email_reminder_subject: null,
+      email_reminder_message: null,
+      client_instructions: null,
+      client_can_upload: false,
+      time_estimate_minutes: null,
+      position_x: 220,
+      position_y: minY - 220,
+      start_trigger_config: { type: 'manual' },
+      end_config: null,
+    }]);
+    setSelectedStepKey(key);
+  }
+
+  function addEndNode() {
+    const maxY = steps.length > 0 ? Math.max(...steps.map(s => s.position_y)) : 0;
+    const key = `end_${Date.now()}`;
+    setSteps(prev => [...prev, {
+      step_key: key,
+      step_type: 'end',
+      title: 'Complete',
+      description: null,
+      assignee_role: 'any',
+      default_assignee_id: null,
+      tool_module_id: null,
+      email_reminder_enabled: false,
+      email_reminder_config: { recipients: [], timing: 'on_assign' },
+      email_reminder_subject: null,
+      email_reminder_message: null,
+      client_instructions: null,
+      client_can_upload: false,
+      time_estimate_minutes: null,
+      position_x: 220,
+      position_y: maxY + 220,
+      start_trigger_config: null,
+      end_config: { send_completion_notification: false, notification_recipients: [] },
+    }]);
+    setSelectedStepKey(key);
   }
 
   function placeStep(x: number, y: number) {
@@ -755,6 +819,11 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
 
   async function handleSave() {
     if (!name.trim()) { setError('Template name is required.'); return; }
+    // Duplicate name check — skip the current template if editing
+    const duplicate = existingTemplates?.find(
+      t => t.name.toLowerCase() === name.trim().toLowerCase() && t.id !== template?.id
+    );
+    if (duplicate) { setError(`A template named "${duplicate.name}" already exists. Please choose a different name.`); return; }
     const unconfiguredEdges = edgesData.filter(e => !e.condition_type);
     if (unconfiguredEdges.length > 0) {
       setError(`${unconfiguredEdges.length} connection${unconfiguredEdges.length > 1 ? 's' : ''} need${unconfiguredEdges.length === 1 ? 's' : ''} a condition set. Hover over each connection on the canvas to add one.`);
@@ -851,7 +920,6 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
         <div className="flex items-center gap-4 px-6 py-2 border-b border-gray-100 flex-shrink-0 flex-wrap">
           <select value={category} onChange={e => setCategory(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
             {Object.entries(TEMPLATE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            <option value="general">General</option>
           </select>
           <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
             <option value="">No recurrence</option>
@@ -885,7 +953,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
 
           {/* Flowchart canvas */}
           <div className="flex-1 min-w-0 relative">
-            <div className="absolute top-3 left-3 z-10">
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
               {placementMode ? (
                 <button
                   onClick={() => setPlacementMode(false)}
@@ -894,12 +962,30 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
                   <X className="h-4 w-4" /> Cancel
                 </button>
               ) : (
-                <button
-                  onClick={addStep}
-                  className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50 hover:border-indigo-400"
-                >
-                  <Plus className="h-4 w-4 text-indigo-600" /> Add Step
-                </button>
+                <>
+                  <button
+                    onClick={addStep}
+                    className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-gray-700 px-3 py-1.5 rounded-lg hover:bg-gray-50 hover:border-indigo-400"
+                  >
+                    <Plus className="h-4 w-4 text-indigo-600" /> Add Step
+                  </button>
+                  <button
+                    onClick={addStartNode}
+                    disabled={steps.some(s => s.step_type === 'start')}
+                    title={steps.some(s => s.step_type === 'start') ? 'Start node already exists' : 'Add a trigger/start node'}
+                    className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 hover:border-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Rocket className="h-4 w-4" /> Start
+                  </button>
+                  <button
+                    onClick={addEndNode}
+                    disabled={steps.some(s => s.step_type === 'end')}
+                    title={steps.some(s => s.step_type === 'end') ? 'End node already exists' : 'Add a completion/end node'}
+                    className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-50 hover:border-purple-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Flag className="h-4 w-4" /> End
+                  </button>
+                </>
               )}
             </div>
             {steps.length === 0 ? (
@@ -929,7 +1015,251 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
 
           {/* Step configuration panel */}
           <div className="w-72 border-l border-gray-200 overflow-y-auto flex-shrink-0 bg-gray-50">
-            {selectedStep ? (
+
+            {/* ── Start Node Config ─────────────────────────────── */}
+            {selectedStep?.step_type === 'start' && (
+              <div className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Rocket className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    <h4 className="text-sm font-semibold text-green-700">Start Node</h4>
+                  </div>
+                  <button onClick={() => deleteStep(selectedStep.step_key)} className="text-red-400 hover:text-red-600 p-1 rounded" title="Remove start node">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">Sets when this workflow is triggered. Connect this node to your first step.</p>
+
+                {/* Label */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Label</label>
+                  <input value={selectedStep.title} onChange={e => updateSelectedStep({ title: e.target.value })} className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-500 bg-white" />
+                </div>
+
+                {/* Trigger type */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Trigger Type</label>
+                  <select
+                    value={selectedStep.start_trigger_config?.type ?? 'manual'}
+                    onChange={e => updateSelectedStep({
+                      start_trigger_config: {
+                        ...(selectedStep.start_trigger_config ?? {}),
+                        type: e.target.value as StartTriggerConfig['type'],
+                      }
+                    })}
+                    className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                  >
+                    <option value="manual">Manual — staff clicks "Start Task"</option>
+                    <option value="deadline_relative">Deadline-relative — N months/weeks/days before deadline</option>
+                    <option value="day_of_month">Day of month / period</option>
+                    <option value="date_of_year">Specific date each year</option>
+                  </select>
+                </div>
+
+                {/* Deadline-relative options */}
+                {selectedStep.start_trigger_config?.type === 'deadline_relative' && (() => {
+                  const cfg = selectedStep.start_trigger_config!;
+                  const unit = cfg.deadline_unit ?? 'months';
+                  const currentValue = unit === 'weeks' ? (cfg.weeks_before ?? '')
+                                     : unit === 'days'  ? (cfg.days_before  ?? '')
+                                     :                    (cfg.months_before ?? '');
+                  return (
+                    <>
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1">How far in advance</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="number" min="0" max="365"
+                            value={currentValue}
+                            onChange={e => {
+                              const n = parseInt(e.target.value) || undefined;
+                              updateSelectedStep({
+                                start_trigger_config: {
+                                  ...cfg,
+                                  months_before: unit === 'months' ? n : undefined,
+                                  weeks_before:  unit === 'weeks'  ? n : undefined,
+                                  days_before:   unit === 'days'   ? n : undefined,
+                                }
+                              });
+                            }}
+                            placeholder="e.g. 3"
+                            className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                          />
+                          <select
+                            value={unit}
+                            onChange={e => {
+                              const newUnit = e.target.value as 'months' | 'weeks' | 'days';
+                              updateSelectedStep({
+                                start_trigger_config: {
+                                  ...cfg,
+                                  deadline_unit: newUnit,
+                                  months_before: newUnit === 'months' ? (cfg.months_before ?? cfg.weeks_before ?? cfg.days_before) : undefined,
+                                  weeks_before:  newUnit === 'weeks'  ? (cfg.weeks_before  ?? cfg.months_before ?? cfg.days_before) : undefined,
+                                  days_before:   newUnit === 'days'   ? (cfg.days_before   ?? cfg.months_before ?? cfg.weeks_before) : undefined,
+                                }
+                              });
+                            }}
+                            className="text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                          >
+                            <option value="months">Months</option>
+                            <option value="weeks">Weeks</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 block mb-1">Deadline label</label>
+                        <input
+                          value={cfg.deadline_label ?? ''}
+                          onChange={e => updateSelectedStep({
+                            start_trigger_config: { ...cfg, deadline_label: e.target.value || undefined }
+                          })}
+                          placeholder="e.g. year end, tax deadline"
+                          className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                        />
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                        <p className="text-xs text-green-700 font-medium">Preview</p>
+                        <p className="text-xs text-green-600 mt-0.5">{triggerLabel(cfg)}</p>
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {/* Day of month options */}
+                {(selectedStep.start_trigger_config?.type === 'day_of_month' || selectedStep.start_trigger_config?.type === 'date_of_year') && (
+                  <>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">Day of month (1–31)</label>
+                      <input
+                        type="number" min="1" max="31"
+                        value={selectedStep.start_trigger_config?.day_of_month ?? ''}
+                        onChange={e => updateSelectedStep({
+                          start_trigger_config: {
+                            ...selectedStep.start_trigger_config!,
+                            day_of_month: parseInt(e.target.value) || undefined,
+                          }
+                        })}
+                        placeholder="e.g. 1"
+                        className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-green-500 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1">
+                        {selectedStep.start_trigger_config?.type === 'date_of_year' ? 'Month' : 'Month (leave blank = every period)'}
+                      </label>
+                      <select
+                        value={selectedStep.start_trigger_config?.month ?? ''}
+                        onChange={e => updateSelectedStep({
+                          start_trigger_config: {
+                            ...selectedStep.start_trigger_config!,
+                            month: e.target.value ? parseInt(e.target.value) : null,
+                          }
+                        })}
+                        className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-green-500"
+                      >
+                        {selectedStep.start_trigger_config?.type !== 'date_of_year' && <option value="">Every period</option>}
+                        {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                          <option key={i+1} value={i+1}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <p className="text-xs text-green-700 font-medium">Preview</p>
+                      <p className="text-xs text-green-600 mt-0.5">{triggerLabel(selectedStep.start_trigger_config)}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── End Node Config ───────────────────────────────── */}
+            {selectedStep?.step_type === 'end' && (
+              <div className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Flag className="h-4 w-4 text-purple-600 flex-shrink-0" />
+                    <h4 className="text-sm font-semibold text-purple-700">End Node</h4>
+                  </div>
+                  <button onClick={() => deleteStep(selectedStep.step_key)} className="text-red-400 hover:text-red-600 p-1 rounded" title="Remove end node">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">Marks where the workflow is complete. Connect your last step to this node.</p>
+
+                {/* Label */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Label</label>
+                  <input value={selectedStep.title} onChange={e => updateSelectedStep({ title: e.target.value })} className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white" />
+                </div>
+
+                {/* Completion notification */}
+                <div>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedStep.end_config?.send_completion_notification ?? false}
+                      onChange={e => updateSelectedStep({
+                        end_config: {
+                          ...(selectedStep.end_config ?? {}),
+                          send_completion_notification: e.target.checked,
+                        }
+                      })}
+                      className="mt-0.5 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700 font-medium">Send completion notification</span>
+                  </label>
+                  <p className="text-xs text-gray-400 mt-1 ml-5">Notify specified recipients when the workflow reaches this end node.</p>
+                </div>
+
+                {selectedStep.end_config?.send_completion_notification && (
+                  <>
+                    <div>
+                      <label className="text-xs text-gray-500 block mb-1.5">Notify</label>
+                      <div className="space-y-1.5">
+                        {(['assignee', 'client'] as const).map(r => (
+                          <label key={r} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(selectedStep.end_config?.notification_recipients ?? []).includes(r)}
+                              onChange={e => {
+                                const current = selectedStep.end_config?.notification_recipients ?? [];
+                                const next = e.target.checked ? [...current, r] : current.filter(x => x !== r);
+                                updateSelectedStep({
+                                  end_config: { ...selectedStep.end_config!, notification_recipients: next }
+                                });
+                              }}
+                              className="rounded border-gray-300"
+                            />
+                            <span className="text-sm text-gray-700 capitalize">{r === 'assignee' ? 'Team (task assignee)' : 'Client'}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+                        <Bell className="h-3.5 w-3.5" /> Notification message (optional)
+                      </label>
+                      <textarea
+                        value={selectedStep.end_config?.notification_message ?? ''}
+                        onChange={e => updateSelectedStep({
+                          end_config: {
+                            ...selectedStep.end_config!,
+                            notification_message: e.target.value || null,
+                          }
+                        })}
+                        rows={3}
+                        placeholder="e.g. Your tax return has been completed and submitted. Please review the confirmation below."
+                        className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white resize-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── Regular Step Config ───────────────────────────── */}
+            {selectedStep && (!selectedStep.step_type || selectedStep.step_type === 'regular') && (
               <div className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-semibold text-gray-700">Step Settings</h4>
@@ -1079,7 +1409,10 @@ export default function TemplateBuilder({ template, initialData, teamMembers, on
                 )}
 
               </div>
-            ) : (
+            )}
+
+            {/* ── No step selected — issues panel + step list ── */}
+            {!selectedStep && (
               <div className="p-4">
                 <p className="text-xs text-gray-400 mb-4">Click a step on the canvas to configure it. Drag between step handles to connect them.</p>
 

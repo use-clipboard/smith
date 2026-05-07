@@ -15,6 +15,7 @@ import { useTabContext, Tab } from '@/components/ui/TabContext';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { setPendingClient } from '@/lib/pendingClient';
+import ClientTasksPanel from '@/components/features/tasks/ClientTasksPanel';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -679,7 +680,7 @@ export default function ClientDetailPage() {
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'outputs' | 'documents' | 'timeline' | 'details'>('details');
+  const [activeTab, setActiveTab] = useState<'outputs' | 'documents' | 'timeline' | 'details' | 'tasks'>('details');
 
   // Documents tab
   const [docsTabLoading, setDocsTabLoading] = useState(false);
@@ -1061,6 +1062,14 @@ export default function ClientDetailPage() {
             {tab === 'outputs' ? `AI Outputs (${outputs.length})` : tab === 'documents' ? `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}` : tab === 'timeline' ? `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}` : 'Details'}
           </button>
         ))}
+        {isModuleActive('tasks') && (
+          <button
+            onClick={() => setActiveTab('tasks')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'tasks' ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
+          >
+            Tasks
+          </button>
+        )}
       </div>
 
       {/* ── Outputs Tab ───────────────────────────────────────────────────────── */}
@@ -1480,6 +1489,11 @@ export default function ClientDetailPage() {
               )}
           </div>
         </div>
+      )}
+
+      {/* ── Tasks Tab ─────────────────────────────────────────────────────────── */}
+      {activeTab === 'tasks' && isModuleActive('tasks') && (
+        <ClientTasksPanel clientId={clientId} />
       )}
 
       {/* ── Edit Modal ────────────────────────────────────────────────────────── */}

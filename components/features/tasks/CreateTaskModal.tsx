@@ -5,6 +5,7 @@ import { X, ChevronRight, ChevronLeft, Loader2, RefreshCw, Search } from 'lucide
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType } from '@/types';
+import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
 interface Props {
   onClose: () => void;
@@ -38,6 +39,9 @@ interface StepInput {
   email_reminder_config: { recipients: string[]; timing: string };
   position_x: number;
   position_y: number;
+  step_type?: 'regular' | 'start' | 'end';
+  start_trigger_config?: object | null;
+  end_config?: object | null;
 }
 
 interface EdgeInput { from_step_key: string; to_step_key: string; label?: string | null; condition_type?: string | null; source_handle?: string | null; target_handle?: string | null }
@@ -92,6 +96,9 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
       email_reminder_config: (s.email_reminder_config as { recipients: string[]; timing: string } | undefined) ?? { recipients: [], timing: 'on_assign' },
       position_x: s.position_x,
       position_y: s.position_y,
+      step_type: ('step_type' in s ? s.step_type : undefined) as 'regular' | 'start' | 'end' | undefined,
+      start_trigger_config: ('start_trigger_config' in s ? s.start_trigger_config : null) as object | null,
+      end_config: ('end_config' in s ? s.end_config : null) as object | null,
     }));
   }, [activeTemplate, selectedDefault, selectedFirmTemplate, assigneeMap]);
 
@@ -130,6 +137,9 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
     email_reminder_message: null,
     client_instructions: null,
     client_can_upload: false,
+    step_type: (s.step_type ?? 'regular') as 'regular' | 'start' | 'end',
+    start_trigger_config: s.start_trigger_config ?? null,
+    end_config: s.end_config ?? null,
     created_at: '',
     updated_at: '',
     assignee: teamMembers.find(m => m.id === s.assignee_id) ?? null,
@@ -318,10 +328,12 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                     <button onClick={() => { setIsInternal(true); setClientId(''); }} className={`flex-1 text-sm py-2 rounded-lg border-2 font-medium ${isInternal ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500'}`}>Internal</button>
                   </div>
                   {!isInternal && (
-                    <select value={clientId} onChange={e => setClientId(e.target.value)} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white">
-                      <option value="">Select a client…</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{c.name} ({c.client_ref})</option>)}
-                    </select>
+                    <ClientSearchInput
+                      value={clientId}
+                      onChange={(id, _name, _ref) => setClientId(id)}
+                      placeholder="Select a client…"
+                      className="w-full"
+                    />
                   )}
                 </div>
 

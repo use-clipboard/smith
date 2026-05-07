@@ -1,8 +1,10 @@
 ﻿'use client';
 
 import { useState } from 'react';
-import { Mail, Clock, Info } from 'lucide-react';
+import { Mail, Clock, Info, LayoutGrid, List } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
+
+const TASKS_DEFAULT_VIEW_KEY = 'smith:tasks_default_view';
 
 interface Props {
   firmId: string;
@@ -20,6 +22,23 @@ export default function TasksSettingsTab({ firmId, isAdmin, initialEmailFromName
   const [savingEmail, setSavingEmail] = useState(false);
   const [emailSaved, setEmailSaved] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
+
+  // Default view preference (per-user, stored in localStorage)
+  const [defaultView, setDefaultView] = useState<'list' | 'grid'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem(TASKS_DEFAULT_VIEW_KEY) as 'list' | 'grid') ?? 'list';
+    }
+    return 'list';
+  });
+
+  function handleSetDefaultView(view: 'list' | 'grid') {
+    setDefaultView(view);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(TASKS_DEFAULT_VIEW_KEY, view);
+      // Also clear the session override so the new default takes effect immediately
+      sessionStorage.removeItem('tasks_view_mode');
+    }
+  }
 
   async function handleSaveEmailSettings() {
     if (!isAdmin) return;
@@ -136,6 +155,52 @@ export default function TasksSettingsTab({ firmId, isAdmin, initialEmailFromName
             {emailSaved && <span className="text-xs text-green-500 font-medium">Saved!</span>}
           </div>
         )}
+      </div>
+
+      {/* Default view preference */}
+      <div className="glass-solid rounded-xl p-6 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 mt-0.5">
+            <List size={16} className="text-indigo-600 dark:text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Default Task View</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Choose whether the task tool opens in list or card view by default. You can still switch between views at any time.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleSetDefaultView('list')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+              defaultView === 'list'
+                ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
+                : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+            }`}
+          >
+            <List size={16} />
+            List View
+            {defaultView === 'list' && <span className="text-[10px] font-semibold uppercase tracking-wide bg-[var(--accent)] text-white px-1.5 py-0.5 rounded-full ml-1">Default</span>}
+          </button>
+          <button
+            onClick={() => handleSetDefaultView('grid')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-medium transition-all ${
+              defaultView === 'grid'
+                ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
+                : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+            }`}
+          >
+            <LayoutGrid size={16} />
+            Card View
+            {defaultView === 'grid' && <span className="text-[10px] font-semibold uppercase tracking-wide bg-[var(--accent)] text-white px-1.5 py-0.5 rounded-full ml-1">Default</span>}
+          </button>
+        </div>
+
+        <p className="text-xs text-[var(--text-muted)]">
+          This preference is saved per browser. Each team member can set their own default.
+        </p>
       </div>
 
       {/* Reminder schedule info */}

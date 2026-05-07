@@ -32,6 +32,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [untaggedCount, setUntaggedCount] = useState(0);
   const [todayEventCount, setTodayEventCount] = useState(0);
   const [emailUnreadCount, setEmailUnreadCount] = useState(0);
+  const [myTaskCount, setMyTaskCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
@@ -64,6 +65,22 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const id = setInterval(fetchUnread, 60_000);
     return () => clearInterval(id);
   }, [emailActive]);
+
+  // Fetch active task count assigned to the current user for the Tasks badge
+  useEffect(() => {
+    const tasksActive = isModuleActive('tasks');
+    if (!tasksActive) return;
+    function fetchTaskCount() {
+      fetch('/api/tasks/my-count')
+        .then(r => r.ok ? r.json() : { count: 0 })
+        .then(d => setMyTaskCount(d.count ?? 0))
+        .catch(() => {});
+    }
+    fetchTaskCount();
+    // Re-fetch every 2 minutes so the count stays fresh
+    const id = setInterval(fetchTaskCount, 2 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [isModuleActive]);
 
   // Fetch count of today's remaining events for the calendar badge
   useEffect(() => {
@@ -172,14 +189,19 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const emailBadge = isEmail && emailUnreadCount > 0;
     const emailLabel = emailUnreadCount > 99 ? '99+' : String(emailUnreadCount);
 
+    const isTasks    = item.moduleId === 'tasks';
+    const taskBadge  = isTasks && myTaskCount > 0;
+    const taskLabel  = myTaskCount > 99 ? '99+' : String(myTaskCount);
+
     if (collapsed) {
       return (
         <div key={item.href} className="relative">
           <button
             onClick={() => handleNavClick(item)}
             title={
-              calBadge ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
+              calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
               : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
+              : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
               : item.label
             }
             className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
@@ -198,6 +220,13 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
                              ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
               {emailLabel}
+            </span>
+          )}
+          {taskBadge && (
+            <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
+                             text-[9px] font-bold flex items-center justify-center pointer-events-none
+                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+              {taskLabel}
             </span>
           )}
         </div>
@@ -265,6 +294,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                            flex items-center justify-center mr-2
                            ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
             {emailLabel}
+          </span>
+        )}
+
+        {taskBadge && (
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
+                           flex items-center justify-center mr-2
+                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+            {taskLabel}
           </span>
         )}
       </div>

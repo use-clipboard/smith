@@ -1,13 +1,17 @@
-﻿'use client';
+'use client';
 
-import { Calendar, Clock, User, Users, RefreshCw, Puzzle } from 'lucide-react';
+import { useState } from 'react';
+import { Calendar, Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 'lucide-react';
 import { TaskStatusBadge } from './TaskStatusBadge';
-import type { Task } from '@/types';
+import type { Task, RecurrenceType } from '@/types';
 
 interface TaskCardProps {
   task: Task;
   onClick: () => void;
   currentUserId: string;
+  isAdmin?: boolean;
+  onDelete?: (taskId: string) => Promise<void>;
+  onStopRecurrence?: (taskId: string) => Promise<void>;
 }
 
 function formatDate(d: string | null) {
@@ -30,50 +34,159 @@ function fmtDuration(mins: number) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-export default function TaskCard({ task, onClick, currentUserId }: TaskCardProps) {
-  const steps = task.steps ?? [];
-  const totalSteps = steps.length;
-  const completedSteps = steps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
-  const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
-  const overdue = isOverdue(task.due_date, task.status);
-  const timeLogged = totalMinutes(task.time_entries);
+const RECURRENCE_LABELS: Record<string, string> = {
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  quarterly: 'Quarterly', annually: 'Annually',
+};
 
-  // Unique assignees across all steps
+function recurrenceLabel(type: RecurrenceType | null, intervalDays: number | null): string {
+  if (!type || type === 'once') return '';
+  if (type === 'custom' && intervalDays) return `Every ${intervalDays}d`;
+  return RECURRENCE_LABELS[type] ?? type;
+}
+
+function computeNextDue(dueDate: string | null, recType: RecurrenceType | null, intervalDays: number | null): string | null {
+  if (!recType || recType === 'once') return null;
+  const base = dueDate ? new Date(dueDate) : new Date();
+  switch (recType) {
+    case 'weekly':    base.setDate(base.getDate() + 7);          break;
+    case 'bi-weekly': base.setDate(base.getDate() + 14);         break;
+    case 'monthly':   base.setMonth(base.getMonth() + 1);        break;
+    case 'quarterly': base.setMonth(base.getMonth() + 3);        break;
+    case 'annually':  base.setFullYear(base.getFullYear() + 1);  break;
+    case 'custom':    if (intervalDays) base.setDate(base.getDate() + intervalDays); break;
+  }
+  return base.toISOString().split('T')[0];
+}
+
+export default function TaskCard({ task, onClick, currentUserId, isAdmin = false, onDelete, onStopRecurrence }: TaskCardProps) {
+  const [confirmDelete, setConfirmDelete]   = useState(false);
+  const [deleting, setDeleting]             = useState(false);
+  const [stoppingRec, setStoppingRec]       = useState(false);
+
+  const steps        = task.steps ?? [];
+  const totalSteps   = steps.length;
+  const completedSteps = steps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
+  const progressPct  = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+  const overdue      = isOverdue(task.due_date, task.status);
+  const timeLogged   = totalMinutes(task.time_entries);
+
+  const isRecurring  = task.recurrence_type && task.recurrence_type !== 'once';
+  const nextDueDate  = isRecurring ? computeNextDue(task.due_date, task.recurrence_type, task.recurrence_interval_days) : null;
+  const nextDueStr   = nextDueDate ? formatDate(nextDueDate) : null;
+
   const assignees = Array.from(
-    new Map(
-      steps
-        .filter(s => s.assignee)
-        .map(s => [s.assignee!.id, s.assignee!])
-    ).values()
+    new Map(steps.filter(s => s.assignee).map(s => [s.assignee!.id, s.assignee!])).values()
   ).slice(0, 3);
 
   const myStep = steps.find(s => s.assignee_id === currentUserId && s.status !== 'complete' && s.status !== 'skipped');
 
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onDelete) return;
+    setDeleting(true);
+    try { await onDelete(task.id); }
+    finally { setDeleting(false); setConfirmDelete(false); }
+  }
+
+  async function handleStopRecurrence(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onStopRecurrence) return;
+    setStoppingRec(true);
+    try { await onStopRecurrence(task.id); }
+    finally { setStoppingRec(false); }
+  }
+
   return (
     <div
-      onClick={onClick}
-      className="bg-white border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-indigo-400 hover:shadow-sm transition-all group"
+      onClick={!confirmDelete ? onClick : undefined}
+      className={`relative bg-white border rounded-lg p-4 transition-all group
+        ${confirmDelete ? 'border-red-300 bg-red-50/30 cursor-default' : 'border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-sm'}`}
     >
+      {/* Admin action buttons — top-right, hover-reveal */}
+      {isAdmin && !confirmDelete && (
+        <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          {isRecurring && onStopRecurrence && (
+            <button
+              onClick={handleStopRecurrence}
+              disabled={stoppingRec}
+              title="Stop recurrence"
+              className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
+            >
+              {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+              title="Delete task"
+              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Delete confirmation overlay */}
+      {confirmDelete && (
+        <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-lg bg-white/90 z-10 p-3">
+          <span className="text-xs text-red-600 font-medium">Delete this task?</span>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors"
+          >
+            {deleting ? <Loader2 className="h-3 w-3 animate-spin inline" /> : 'Yes, delete'}
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); setConfirmDelete(false); }}
+            className="px-3 py-1.5 text-xs border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3 mb-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-700">
               {task.title}
             </h3>
-            {task.recurrence_type && task.recurrence_type !== 'once' && (
-              <RefreshCw className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+            {isRecurring && (
+              <RefreshCw className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" title={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} />
             )}
           </div>
-          <p className="text-xs text-gray-500">
-            {task.client ? (
-              <span className="font-medium text-gray-700">{task.client.name}</span>
-            ) : (
-              <span className="text-gray-400 italic">Internal</span>
-            )}
-          </p>
+          {task.client ? (
+            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              <span className="text-xs font-medium text-gray-700 truncate">{task.client.name}</span>
+              <span className="text-[10px] font-mono text-gray-400">{task.client.client_ref}</span>
+              {task.client.status && (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wide flex-shrink-0 ${
+                  task.client.status === 'active'   ? 'bg-green-100 text-green-700' :
+                  task.client.status === 'hold'     ? 'bg-amber-100 text-amber-700' :
+                                                      'bg-gray-100 text-gray-500'
+                }`}>{task.client.status === 'hold' ? 'On Hold' : task.client.status}</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 italic mt-0.5">Internal</p>
+          )}
         </div>
         <TaskStatusBadge status={task.status} size="sm" />
       </div>
+
+      {/* Next repeat date — all users */}
+      {isRecurring && nextDueStr && (
+        <div className="flex items-center gap-1.5 mb-2.5 px-2.5 py-1.5 bg-indigo-50 rounded-lg border border-indigo-100">
+          <RefreshCw className="h-3 w-3 text-indigo-500 flex-shrink-0" />
+          <span className="text-xs text-indigo-600">
+            <span className="font-medium">{recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}</span>
+            {' · '}Next: <span className="font-semibold">{nextDueStr}</span>
+          </span>
+        </div>
+      )}
 
       {/* Progress bar */}
       {totalSteps > 0 && (
@@ -83,10 +196,7 @@ export default function TaskCard({ task, onClick, currentUserId }: TaskCardProps
             <span className="text-xs text-gray-400">{progressPct}%</span>
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full bg-indigo-500 transition-all"
-              style={{ width: `${progressPct}%` }}
-            />
+            <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${progressPct}%` }} />
           </div>
         </div>
       )}
@@ -118,11 +228,7 @@ export default function TaskCard({ task, onClick, currentUserId }: TaskCardProps
           {assignees.length > 0 ? (
             <div className="flex -space-x-1.5">
               {assignees.map(a => (
-                <div
-                  key={a.id}
-                  className="h-6 w-6 rounded-full bg-indigo-600 border-2 border-white flex items-center justify-center"
-                  title={a.full_name ?? a.email}
-                >
+                <div key={a.id} className="h-6 w-6 rounded-full bg-indigo-600 border-2 border-white flex items-center justify-center" title={a.full_name ?? a.email}>
                   <span className="text-[10px] font-bold text-white">
                     {(a.full_name ?? a.email).charAt(0).toUpperCase()}
                   </span>

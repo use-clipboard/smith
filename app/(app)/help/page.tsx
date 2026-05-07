@@ -5,7 +5,7 @@ import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
-  ExternalLink, CalendarDays, MicVocal, UserPlus, Mail,
+  ExternalLink, CalendarDays, MicVocal, UserPlus, Mail, ListChecks,
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
@@ -130,6 +130,55 @@ const FAQS: FAQ[] = [
     q: 'How does the Staff Hire AI ranking work?',
     a: 'Once you have evaluated at least two applicants using their CV and/or cover letter, you can run the AI Ranking from the job\'s Ranking tab. The AI compares all evaluated applicants against the job requirements and each other, then produces a ranked list with a hire/consider/reject recommendation for each person, plus an overall hiring recommendation.',
   },
+  {
+    q: 'What is the difference between the Tasks views (My Tasks, My Week, All Tasks, etc.)?',
+    a: (
+      <span>
+        The sidebar groups views into two sections:
+        <ul className="mt-2 space-y-1.5 list-none">
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>My Tasks</strong> — all tasks that have at least one step assigned to you, regardless of due date.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>My Week</strong> — your tasks with steps due within the current week.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>My Month</strong> — your tasks with steps due within the current month.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>All Tasks</strong> — every task across the whole firm.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>By Client</strong> — tasks grouped by client — useful for a quick client job review.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>By Team</strong> — tasks grouped by assignee — useful for workload reviews.</span></li>
+          <li className="flex gap-2"><span className="text-[var(--accent)] shrink-0">•</span><span><strong>By Type</strong> — tasks grouped by task type or template.</span></li>
+        </ul>
+      </span>
+    ),
+  },
+  {
+    q: 'What does the "Records Here" status mean?',
+    a: 'Records Here is a task status that means the client\'s records (invoices, bank statements, etc.) have arrived and the job is ready to start. It sits between "Waiting on Client" and "Review" in the workflow. Use the status filter on the task list to quickly pull up all tasks with Records Here — these are the jobs that can be picked up immediately.',
+  },
+  {
+    q: 'How do I expand the step checklist on a task without opening the full detail panel?',
+    a: 'Click the chevron (›) icon on the left of any task row in the list view. This expands an inline panel below the row showing all steps with checkboxes, a progress bar, and a task status dropdown. You can tick steps, mark the task complete, and leave notes — all without leaving the list view. Click the chevron again to collapse it.',
+  },
+  {
+    q: 'How do step comments work? Who can see them?',
+    a: 'Every step in a task has an inline notes area. Comments are visible to and postable by all firm members — they are shared across the whole firm, not private to one user. Comments load automatically when you expand a task or open the detail panel. Click the "Add a note…" ghost input to open the thread and post a comment. The most recent comment is always previewed in the collapsed row so you can see activity at a glance.',
+  },
+  {
+    q: 'Can I edit or delete a comment someone else left?',
+    a: 'No — you can only edit or delete your own comments. Hover over one of your own comments to reveal the pencil (edit) and bin (delete) icons. Other users\' notes are read-only for you.',
+  },
+  {
+    q: 'What happens when I tick the final "Complete" step on a task?',
+    a: 'Ticking the end step (labelled "Complete" or similar — it is the last node in the workflow) automatically marks every other incomplete step as complete and sets the overall task status to Complete in one action. A tooltip on the checkbox reminds you of this before you click.',
+  },
+  {
+    q: 'Why does the "Start" node not appear in the step checklist?',
+    a: '"Start" is a workflow trigger marker — it indicates when the task should be created or kicked off, not an actionable work item. It is intentionally excluded from the step count, progress bar, and checklist so that the numbers and percentage reflect only real work steps.',
+  },
+  {
+    q: 'How does the task flowchart highlight the next step?',
+    a: 'The next incomplete step in the workflow is highlighted with a pulsing indigo ring on the flowchart to guide you to what should be worked on next. If you click a step in the step list on the right, that node gets a solid indigo ring to show which step you are viewing. You can still mark steps complete in any order — the "next up" indicator is guidance, not a lock.',
+  },
+  {
+    q: 'What is Bulk Tasks?',
+    a: 'Bulk Tasks lets you create multiple tasks at once by applying a workflow template across a list of clients in a single operation. This is useful at the start of a period (e.g. year-end) when you need to create the same job for dozens of clients. Click the "Bulk Tasks" button at the top of the Tasks sidebar to open the bulk creation modal.',
+  },
 ];
 
 const TOOLS = [
@@ -147,6 +196,7 @@ const TOOLS = [
   { icon: BookOpen, name: 'Policies & Procedures', desc: 'A static reference section for the firm\'s internal policies and procedures.' },
   { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
   { icon: Mail, name: 'Email Triage', desc: 'A full Gmail-connected email client built into SMITH. Read, send, reply, reply all, and forward emails. Allocate emails to client timelines and tasks. AI features include Suggest Reply, Rewrite, and AI Draft Reply. BCC support, file attachments, label management, and an in-app signature editor that syncs directly to Gmail. Each team member connects their own Gmail account.' },
+  { icon: ListChecks, name: 'Tasks', desc: 'A full workflow and task management tool. Create tasks from templates, assign steps to team members, track progress with a live flowchart and checklist, log time, and leave step-level notes visible to the whole team. Includes personal views (My Tasks, My Week, My Month) and firm-wide views (All Tasks, By Client, By Team, By Type). A "Records Here" status lets the team instantly see which jobs are ready to start.' },
 ];
 
 function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {

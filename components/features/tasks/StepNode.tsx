@@ -17,6 +17,7 @@ export interface StepNodeData {
   timeEstimate?: number | null;
   mode: 'view' | 'edit';
   selected?: boolean;
+  isNext?: boolean;
   onStatusChange?: (status: StepStatus) => void;
 }
 
@@ -61,10 +62,12 @@ function StepNode({ data, selected }: NodeProps) {
   const borderClass = STATUS_BORDER[status];
   const bgClass = STATUS_BG[status];
   const isEdit = d.mode === 'edit';
+  const isSelected = selected || d.selected;
+  const isNext = !isEdit && d.isNext;
   const [hovered, setHovered] = useState(false);
 
   // Handles are only visible in edit mode when the node is hovered or selected
-  const showHandles = isEdit && (hovered || selected);
+  const showHandles = isEdit && (hovered || isSelected);
   const handleStyle: React.CSSProperties = showHandles
     ? HANDLE_BASE
     : { ...HANDLE_BASE, opacity: 0, pointerEvents: 'none' };
@@ -75,7 +78,8 @@ function StepNode({ data, selected }: NodeProps) {
       className={`
         rounded-lg border-2 ${borderClass} ${bgClass} shadow-sm
         min-w-[200px] max-w-[240px]
-        ${selected ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+        ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 shadow-md' : ''}
+        ${isNext && !isSelected ? 'ring-2 ring-indigo-300 ring-offset-1 animate-pulse' : ''}
         ${isEdit ? 'cursor-pointer' : ''}
       `}
       style={{ fontFamily: 'inherit' }}

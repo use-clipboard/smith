@@ -8,7 +8,7 @@ const UpdateTaskSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional().nullable(),
   client_id: z.string().uuid().optional().nullable(),
-  status: z.enum(['not_started', 'in_progress', 'waiting_on_client', 'review', 'complete']).optional(),
+  status: z.enum(['not_started', 'in_progress', 'waiting_on_client', 'records_here', 'review', 'complete', 'draft']).optional(),
   due_date: z.string().optional().nullable(),
   is_internal: z.boolean().optional(),
   recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),

@@ -1,29 +1,57 @@
 ﻿'use client';
 
-import { useState } from 'react';
-import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X, Copy, AlertCircle } from 'lucide-react';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, DefaultTemplate } from '@/types';
 
 interface Props {
   firmTemplates: TaskTemplate[];
-  onCreateFromDefault: (t: DefaultTemplate) => Promise<void>;
+  onCreateFromDefault: (t: DefaultTemplate, nameOverride?: string) => Promise<void>;
   onEdit: (t: TaskTemplate) => void;
   onCreateBlank: () => void;
   onCreateAI: () => void;
   onDelete: (id: string) => Promise<void>;
+  onCopy: (t: TaskTemplate, newName: string) => Promise<void>;
 }
 
-export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onCreateAI, onDelete }: Props) {
+export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onCreateAI, onDelete, onCopy }: Props) {
   const [importing, setImporting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [copying, setCopying] = useState<string | null>(null);
+  const [copyTarget, setCopyTarget] = useState<TaskTemplate | null>(null);
+  const [copyName, setCopyName] = useState('');
+  // Import rename modal — shown when the default template name already exists
+  const [importRenameTarget, setImportRenameTarget] = useState<DefaultTemplate | null>(null);
+  const [importRenameName, setImportRenameName] = useState('');
   const [search, setSearch] = useState('');
   const [showChoice, setShowChoice] = useState(false);
+  const copyInputRef = useRef<HTMLInputElement>(null);
+  const importRenameInputRef = useRef<HTMLInputElement>(null);
 
   async function handleImport(t: DefaultTemplate) {
+    const nameInUse = firmTemplates.some(ft => ft.name.toLowerCase() === t.name.toLowerCase());
+    if (nameInUse) {
+      // Show rename modal instead of importing directly
+      setImportRenameTarget(t);
+      setImportRenameName(t.name);
+      return;
+    }
     setImporting(t.id);
     try { await onCreateFromDefault(t); }
     finally { setImporting(null); }
+  }
+
+  async function handleImportRenameConfirm() {
+    if (!importRenameTarget || !importRenameName.trim()) return;
+    setImporting(importRenameTarget.id);
+    try {
+      await onCreateFromDefault(importRenameTarget, importRenameName.trim());
+      setImportRenameTarget(null);
+      setImportRenameName('');
+    } finally {
+      setImporting(null);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -33,6 +61,32 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
     finally { setDeleting(null); }
   }
 
+  function openCopyModal(t: TaskTemplate) {
+    setCopyTarget(t);
+    setCopyName(`COPY_${t.name}`);
+  }
+
+  async function handleCopyConfirm() {
+    if (!copyTarget || !copyName.trim()) return;
+    setCopying(copyTarget.id);
+    try {
+      await onCopy(copyTarget, copyName.trim());
+      setCopyTarget(null);
+      setCopyName('');
+    } finally {
+      setCopying(null);
+    }
+  }
+
+  // Auto-focus name inputs when modals open
+  useEffect(() => {
+    if (copyTarget) setTimeout(() => copyInputRef.current?.select(), 50);
+  }, [copyTarget]);
+
+  useEffect(() => {
+    if (importRenameTarget) setTimeout(() => importRenameInputRef.current?.select(), 50);
+  }, [importRenameTarget]);
+
   const filteredDefaults = DEFAULT_TASK_TEMPLATES.filter(t =>
     t.name.toLowerCase().includes(search.toLowerCase()) || t.category.includes(search.toLowerCase())
   );
@@ -40,6 +94,26 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
   const filteredFirm = firmTemplates.filter(t =>
     t.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Group helpers
+  function groupByCategory<T extends { category: string }>(items: T[]): [string, T[]][] {
+    const map = new Map<string, T[]>();
+    for (const item of items) {
+      const cat = item.category ?? 'general';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(item);
+    }
+    // Sort groups by the order they appear in TEMPLATE_CATEGORY_LABELS
+    const labelKeys = Object.keys(TEMPLATE_CATEGORY_LABELS);
+    return [...map.entries()].sort(([a], [b]) => {
+      const ai = labelKeys.indexOf(a);
+      const bi = labelKeys.indexOf(b);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+  }
+
+  const firmGroups   = groupByCategory(filteredFirm);
+  const defaultGroups = groupByCategory(filteredDefaults);
 
   return (
     <div className="space-y-6">
@@ -67,39 +141,56 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
             <p className="text-xs text-gray-400">Import a built-in template below or create one from scratch.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredFirm.map(t => (
-              <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors">
-                <div className="flex items-start justify-between mb-2">
-                  <h4 className="font-semibold text-sm text-gray-900">{t.name}</h4>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => onEdit(t)} className="p-1 text-gray-400 hover:text-indigo-600 rounded" title="Edit">
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(t.id)}
-                      disabled={deleting === t.id}
-                      className="p-1 text-gray-400 hover:text-red-500 rounded"
-                      title="Delete"
-                    >
-                      {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-                {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded">
-                    {TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}
+          <div className="space-y-5">
+            {firmGroups.map(([cat, items]) => (
+              <div key={cat}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
                   </span>
-                  <span className="text-xs text-gray-400">{t.steps?.length ?? 0} steps</span>
-                  {t.recurrence_type && (
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <RefreshCw className="h-3 w-3" /> {t.recurrence_type}
-                    </span>
-                  )}
-                  {!t.is_firm_wide && (
-                    <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">Personal</span>
-                  )}
+                  <div className="flex-1 h-px bg-gray-100" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {items.map(t => (
+                    <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors">
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="font-semibold text-sm text-gray-900">{t.name}</h4>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button onClick={() => onEdit(t)} className="p-1 text-gray-400 hover:text-indigo-600 rounded" title="Edit">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => openCopyModal(t)}
+                            disabled={copying === t.id}
+                            className="p-1 text-gray-400 hover:text-indigo-600 rounded"
+                            title="Copy"
+                          >
+                            {copying === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(t.id)}
+                            disabled={deleting === t.id}
+                            className="p-1 text-gray-400 hover:text-red-500 rounded"
+                            title="Delete"
+                          >
+                            {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                      {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-gray-400">{t.steps?.length ?? 0} steps</span>
+                        {t.recurrence_type && (
+                          <span className="flex items-center gap-1 text-xs text-gray-400">
+                            <RefreshCw className="h-3 w-3" /> {t.recurrence_type}
+                          </span>
+                        )}
+                        {!t.is_firm_wide && (
+                          <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">Personal</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -110,41 +201,159 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
       {/* SMITH built-in templates */}
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-1">SMITH Built-in Templates</h3>
-        <p className="text-xs text-gray-400 mb-3">Import any of these into your firm's library to customise them.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredDefaults.map(t => {
-            const alreadyImported = firmTemplates.some(ft => ft.name === t.name);
-            return (
-              <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <h4 className="font-semibold text-sm text-gray-800">{t.name}</h4>
-                  <button
-                    onClick={() => handleImport(t)}
-                    disabled={importing === t.id || alreadyImported}
-                    className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-40 flex-shrink-0"
-                    title={alreadyImported ? 'Already imported' : 'Import to your library'}
-                  >
-                    {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                    {alreadyImported ? 'Imported' : 'Import'}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 mb-2">{t.description}</p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded">
-                    {TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}
-                  </span>
-                  <span className="text-xs text-gray-400">{t.steps.length} steps</span>
-                  {t.recurrence_type && (
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <RefreshCw className="h-3 w-3" /> {t.recurrence_type}
-                    </span>
-                  )}
-                </div>
+        <p className="text-xs text-gray-400 mb-4">Import any of these into your firm's library to customise them.</p>
+        <div className="space-y-5">
+          {defaultGroups.map(([cat, items]) => (
+            <div key={cat}>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
+                </span>
+                <div className="flex-1 h-px bg-gray-100" />
               </div>
-            );
-          })}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {items.map(t => (
+                  <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <h4 className="font-semibold text-sm text-gray-800">{t.name}</h4>
+                      <button
+                        onClick={() => handleImport(t)}
+                        disabled={importing === t.id}
+                        className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-50 flex-shrink-0"
+                        title="Import to your library"
+                      >
+                        {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                        Import
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">{t.description}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400">{t.steps.length} steps</span>
+                      {t.recurrence_type && (
+                        <span className="flex items-center gap-1 text-xs text-gray-400">
+                          <RefreshCw className="h-3 w-3" /> {t.recurrence_type}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* ── Import Rename modal ─────────────────────────────────────────── */}
+      {importRenameTarget && (
+        <div className="fixed inset-0 z-50 bg-gray-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                </div>
+                <h2 className="text-base font-bold text-gray-900">Name Already In Use</h2>
+              </div>
+              <button onClick={() => setImportRenameTarget(null)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              You already have a template named <span className="font-semibold text-gray-700">{importRenameTarget.name}</span>. Please choose a different name for this import:
+            </p>
+            <input
+              ref={importRenameInputRef}
+              value={importRenameName}
+              onChange={e => setImportRenameName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleImportRenameConfirm(); if (e.key === 'Escape') setImportRenameTarget(null); }}
+              className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 mb-1 ${
+                firmTemplates.some(ft => ft.name.toLowerCase() === importRenameName.trim().toLowerCase())
+                  ? 'border-red-400 focus:ring-red-400'
+                  : 'border-gray-300 focus:ring-indigo-500'
+              }`}
+              placeholder="Template name…"
+            />
+            {firmTemplates.some(ft => ft.name.toLowerCase() === importRenameName.trim().toLowerCase()) && (
+              <p className="text-xs text-red-500 mb-3 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3 flex-shrink-0" /> A template with this name already exists.
+              </p>
+            )}
+            {!firmTemplates.some(ft => ft.name.toLowerCase() === importRenameName.trim().toLowerCase()) && <div className="mb-3" />}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setImportRenameTarget(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImportRenameConfirm}
+                disabled={!importRenameName.trim() || importing === importRenameTarget.id || firmTemplates.some(ft => ft.name.toLowerCase() === importRenameName.trim().toLowerCase())}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {importing === importRenameTarget.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Copy Template modal ─────────────────────────────────────────── */}
+      {copyTarget && (
+        <div className="fixed inset-0 z-50 bg-gray-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                  <Copy className="h-4 w-4 text-indigo-600" />
+                </div>
+                <h2 className="text-base font-bold text-gray-900">Copy Template</h2>
+              </div>
+              <button onClick={() => setCopyTarget(null)} className="p-1 rounded-lg hover:bg-gray-100 text-gray-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Copying <span className="font-semibold text-gray-700">{copyTarget.name}</span>. Give the copy a name:
+            </p>
+            <input
+              ref={copyInputRef}
+              value={copyName}
+              onChange={e => setCopyName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCopyConfirm(); if (e.key === 'Escape') setCopyTarget(null); }}
+              className={`w-full text-sm border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 mb-1 ${
+                firmTemplates.some(ft => ft.name.toLowerCase() === copyName.trim().toLowerCase())
+                  ? 'border-red-400 focus:ring-red-400'
+                  : 'border-gray-300 focus:ring-indigo-500'
+              }`}
+              placeholder="Template name…"
+            />
+            {firmTemplates.some(ft => ft.name.toLowerCase() === copyName.trim().toLowerCase()) && (
+              <p className="text-xs text-red-500 mb-3 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3 flex-shrink-0" /> A template with this name already exists.
+              </p>
+            )}
+            {!firmTemplates.some(ft => ft.name.toLowerCase() === copyName.trim().toLowerCase()) && <div className="mb-3" />}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setCopyTarget(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCopyConfirm}
+                disabled={!copyName.trim() || copying === copyTarget.id || firmTemplates.some(ft => ft.name.toLowerCase() === copyName.trim().toLowerCase())}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {copying === copyTarget.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Copy className="h-4 w-4" />}
+                Create Copy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── New Template choice modal ────────────────────────────────────── */}
       {showChoice && (

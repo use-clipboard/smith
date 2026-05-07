@@ -343,6 +343,80 @@ An AI-powered recruitment tool for writing job postings, evaluating applicants, 
 
 ---
 
+### 20. Tasks (left nav → Tasks)
+A full workflow and task management tool for the firm. Track client jobs, assign steps to team members, monitor progress, and leave notes directly on individual steps.
+
+**Navigation sidebar — two grouped sections:**
+- Under your **name** (personal views): My Tasks, My Week, My Month
+- Under the **firm name** (firm-wide views): All Tasks, By Client, By Team, By Type
+
+**Creating a task:**
+- Click **+ New Task** to create a single task manually
+- Click **Bulk Tasks** to create multiple tasks at once from a pre-built workflow template, applied across multiple clients in one operation
+
+**Task statuses** (apply to whole tasks):
+- **Not Started** — task has been created but no work has begun
+- **In Progress** — work is actively underway
+- **Waiting on Client** — waiting for the client to provide something
+- **Records Here** — the client's records have arrived and the task is ready to start (useful for quickly spotting which jobs can be picked up)
+- **Review** — work is complete and is awaiting internal review
+- **Complete** — fully done
+- **Draft** — created by Bulk Tasks, not yet activated
+
+**List view:**
+- Tasks appear as rows showing: title, client, status badge, step progress bar, due date, and assignee avatars
+- Click a task title to open the full detail panel
+- Click the **chevron (›)** on any task row to expand an inline step panel without opening the full modal
+- Overdue tasks show the due date in red
+
+**Inline expanded step panel (chevron view):**
+- Shows all steps in workflow order (the "Start" trigger node is excluded from counts)
+- Each step row shows: checkbox, step number, step title, notes area, assignee, and status pill
+- **Tick a checkbox** to mark a step complete; tick again to revert to not started
+- Ticking the **Complete** step (the final end node) marks every step done and sets the task to Complete automatically
+- A **"Next up"** badge shows the next incomplete step at a glance
+- The panel header shows a progress bar and a task status dropdown
+- **Step notes** — each step has an inline notes / comments area in the middle of the row. Comments are visible to and editable by all firm members. Click "Add a note…" to open the thread; the comment count badge shows how many notes exist. Hover over a step title to see full step details in a tooltip (description, assignee, due date, client step badge)
+- **Editing and deleting notes** — hover over your own comment to reveal a pencil (edit) and bin (delete) icon. Other users' notes cannot be edited or deleted by you
+
+**Full task detail panel (click task title):**
+Three tabs: **Workflow**, **Time**, **Details**
+
+*Workflow tab:*
+- Left side: interactive flowchart showing the task's step diagram — scroll to zoom, drag to pan
+- Right side: step list sidebar
+  - When no step is selected: shows all steps in order with checkboxes, step numbers, assignee pills, status badges, "Next up" indicator, and inline step comments (same as inline panel above)
+  - When a step is clicked: shows Step Detail panel — title, description, status dropdown, assignee, due date, linked tool, client step flag; click × to return to the list
+- Clicking a step in the checklist **highlights that node on the flowchart** (indigo ring)
+- The next incomplete step is shown with a **pulsing indigo ring** on the flowchart
+- Checking the end step marks all steps complete and closes the task
+
+*Time tab:*
+- Live timer — start and stop to log time; time is attributed to a specific step or the task overall
+- Manual time entry — enter hours and minutes directly
+- History of all logged time entries with user and date
+
+*Details tab:*
+- Shows task metadata: status, client, due date, created by, recurrence, description
+- Delete task button (with confirmation prompt)
+
+**Step comments (both views):**
+- Comments load automatically when you expand a task or open the detail panel — no need to click first
+- While loading, the message icon shows a spinner
+- Once loaded, the last comment is previewed in the ghost row; click to open the full thread
+- Post new notes using the text input and Send button
+- Your own notes show **pencil** and **bin** icons on hover — click pencil to edit inline, click bin to delete instantly
+- Other users' notes are read-only for you
+
+**Tips:**
+- Use **Records Here** status to build a quick filter of tasks that are ready to work on
+- The **My Week** and **My Month** views filter to steps assigned to you that are due within the current week or month
+- The **By Client** view groups tasks by client — useful for client-specific job reviews
+- The **By Team** view lets managers see workload by team member
+- Step comments are a good place to log what happened on a step, note client communications, or flag issues for the reviewer
+
+---
+
 ## Settings
 Access via the **gear icon** at the bottom of the left sidebar. Settings has the following tabs:
 

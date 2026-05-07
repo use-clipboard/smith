@@ -10,11 +10,16 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import StepNode, { type StepNodeData } from './StepNode';
+import { StartNodeMemo, EndNodeMemo, type StartNodeData, type EndNodeData } from './StartEndNodes';
 import { Trash2 } from 'lucide-react';
 import { MODULES } from '@/config/modules.config';
 import type { TaskStep, TaskStepEdge, TaskTemplateStep, TaskTemplateEdge, StepStatus, EdgeConditionType, EdgeConditionConfig } from '@/types';
 
-const NODE_TYPES = { stepNode: StepNode };
+const NODE_TYPES = {
+  stepNode: StepNode,
+  startNode: StartNodeMemo,
+  endNode: EndNodeMemo,
+};
 
 // ── Condition colours & labels ────────────────────────────────────────────────
 
@@ -187,28 +192,68 @@ function PlacementController({ placementMode, containerRef, onPlace, onCancel, o
 interface ViewFlowChartProps {
   steps: TaskStep[];
   edges: TaskStepEdge[];
+  selectedStepId?: string | null;
+  nextStepId?: string | null;
   onStepClick?: (stepId: string) => void;
   onStepStatusChange?: (stepId: string, status: StepStatus) => void;
 }
 
-export function TaskViewFlowChart({ steps, edges, onStepClick, onStepStatusChange }: ViewFlowChartProps) {
-  const nodes: Node[] = useMemo(() => steps.map(s => ({
-    id: s.id,
-    type: 'stepNode',
-    position: { x: s.position_x, y: s.position_y },
-    data: {
-      label: s.title,
-      description: s.description,
-      status: s.status,
-      assigneeName: s.assignee?.full_name ?? s.assignee?.email ?? null,
-      isClientStep: s.is_client_step,
-      toolModuleId: s.tool_module_id,
-      toolModuleName: s.tool_module_id ? (MODULES.find(m => m.id === s.tool_module_id)?.name ?? null) : null,
-      emailReminder: s.email_reminder_enabled,
-      mode: 'view',
-      onStatusChange: onStepStatusChange ? (status: StepStatus) => onStepStatusChange(s.id, status) : undefined,
-    } satisfies StepNodeData,
-  })), [steps, onStepStatusChange]);
+export function TaskViewFlowChart({ steps, edges, selectedStepId, nextStepId, onStepClick, onStepStatusChange }: ViewFlowChartProps) {
+  const nodes: Node[] = useMemo(() => steps.map(s => {
+    const stepType = s.step_type ?? 'regular';
+    const isSelected = s.id === selectedStepId;
+    const isNext = s.id === nextStepId;
+    if (stepType === 'start') {
+      return {
+        id: s.id,
+        type: 'startNode',
+        position: { x: s.position_x, y: s.position_y },
+        selected: isSelected,
+        data: {
+          label: s.title,
+          triggerConfig: s.start_trigger_config ?? null,
+          mode: 'view',
+          status: s.status,
+          selected: isSelected,
+        } satisfies StartNodeData,
+      };
+    }
+    if (stepType === 'end') {
+      return {
+        id: s.id,
+        type: 'endNode',
+        position: { x: s.position_x, y: s.position_y },
+        selected: isSelected,
+        data: {
+          label: s.title,
+          endConfig: s.end_config ?? null,
+          mode: 'view',
+          status: s.status,
+          selected: isSelected,
+        } satisfies EndNodeData,
+      };
+    }
+    return {
+      id: s.id,
+      type: 'stepNode',
+      position: { x: s.position_x, y: s.position_y },
+      selected: isSelected,
+      data: {
+        label: s.title,
+        description: s.description,
+        status: s.status,
+        assigneeName: s.assignee?.full_name ?? s.assignee?.email ?? null,
+        isClientStep: s.is_client_step,
+        toolModuleId: s.tool_module_id,
+        toolModuleName: s.tool_module_id ? (MODULES.find(m => m.id === s.tool_module_id)?.name ?? null) : null,
+        emailReminder: s.email_reminder_enabled,
+        mode: 'view',
+        selected: isSelected,
+        isNext,
+        onStatusChange: onStepStatusChange ? (status: StepStatus) => onStepStatusChange(s.id, status) : undefined,
+      } satisfies StepNodeData,
+    };
+  }), [steps, selectedStepId, nextStepId, onStepStatusChange]);
 
   const rfEdges: Edge[] = useMemo(() => edges.map(e => {
     const ct = e.condition_type ?? null;
@@ -278,24 +323,56 @@ export function TaskEditFlowChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
 
-  const nodes: Node[] = useMemo(() => steps.map(s => ({
-    id: s.step_key,
-    type: 'stepNode',
-    position: { x: s.position_x, y: s.position_y },
-    selected: s.step_key === selectedStepKey,
-    data: {
-      label: s.title,
-      description: s.description,
-      assigneeName: s.default_assignee?.full_name ?? null,
-      isClientStep: s.assignee_role === 'client',
-      toolModuleId: s.tool_module_id,
-      toolModuleName: s.tool_module_id ? (MODULES.find(m => m.id === s.tool_module_id)?.name ?? null) : null,
-      emailReminder: s.email_reminder_enabled,
-      timeEstimate: s.time_estimate_minutes,
-      mode: 'edit',
-      selected: s.step_key === selectedStepKey,
-    } satisfies StepNodeData,
-  })), [steps, selectedStepKey]);
+  const nodes: Node[] = useMemo(() => steps.map(s => {
+    const stepType = s.step_type ?? 'regular';
+    const isSelected = s.step_key === selectedStepKey;
+    if (stepType === 'start') {
+      return {
+        id: s.step_key,
+        type: 'startNode',
+        position: { x: s.position_x, y: s.position_y },
+        selected: isSelected,
+        data: {
+          label: s.title,
+          triggerConfig: s.start_trigger_config ?? null,
+          mode: 'edit',
+          selected: isSelected,
+        } satisfies StartNodeData,
+      };
+    }
+    if (stepType === 'end') {
+      return {
+        id: s.step_key,
+        type: 'endNode',
+        position: { x: s.position_x, y: s.position_y },
+        selected: isSelected,
+        data: {
+          label: s.title,
+          endConfig: s.end_config ?? null,
+          mode: 'edit',
+          selected: isSelected,
+        } satisfies EndNodeData,
+      };
+    }
+    return {
+      id: s.step_key,
+      type: 'stepNode',
+      position: { x: s.position_x, y: s.position_y },
+      selected: isSelected,
+      data: {
+        label: s.title,
+        description: s.description,
+        assigneeName: s.default_assignee?.full_name ?? null,
+        isClientStep: s.assignee_role === 'client',
+        toolModuleId: s.tool_module_id,
+        toolModuleName: s.tool_module_id ? (MODULES.find(m => m.id === s.tool_module_id)?.name ?? null) : null,
+        emailReminder: s.email_reminder_enabled,
+        timeEstimate: s.time_estimate_minutes,
+        mode: 'edit',
+        selected: isSelected,
+      } satisfies StepNodeData,
+    };
+  }), [steps, selectedStepKey]);
 
   const rfEdges: Edge[] = useMemo(() => edges.map(e => {
     const ct = e.condition_type ?? null;
