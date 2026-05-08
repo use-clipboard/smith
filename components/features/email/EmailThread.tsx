@@ -113,10 +113,10 @@ function AttachmentChips({ attachments }: { attachments: EmailMessage['attachmen
           : undefined;
         const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
         const chip = (
-          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)] bg-[var(--bg-card-solid)] ${canDownload ? 'hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer' : ''}`}>
-            <Paperclip size={11} />
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-700 text-white border border-slate-600 ${canDownload ? 'hover:bg-slate-600 transition-colors cursor-pointer' : ''}`}>
+            <Paperclip size={11} className="shrink-0 opacity-80" />
             <span className="truncate max-w-[160px]">{att.filename}</span>
-            <span className="text-[var(--text-muted)]">({Math.round(att.size / 1024)}KB)</span>
+            <span className="opacity-60 font-normal">({Math.round(att.size / 1024)}KB)</span>
           </div>
         );
         return canDownload ? (
