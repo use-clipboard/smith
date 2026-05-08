@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Pencil, Trash2, ExternalLink, FileText, Clock,
-  Link2, Plus, X, Search, Pin, PinOff, Phone, Users2,
+  Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
   Archive, CalendarDays, MicVocal,
@@ -1079,7 +1079,7 @@ export default function ClientDetailPage() {
               title="Create Task"
               className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
             >
-              <Plus size={17} />
+              <CheckSquare size={17} />
               <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                 Create Task
               </span>
