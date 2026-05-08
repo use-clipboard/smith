@@ -1059,26 +1059,53 @@ export default function ClientDetailPage() {
             {client.business_type && <span className="text-xs text-[var(--text-muted)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Action icon buttons */}
+        <div className="flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] shadow-sm">
           {isModuleActive('google-calendar') && (
             <button
               onClick={() => setShowScheduleMeeting(true)}
-              className="btn-secondary flex items-center gap-1.5"
+              title="Schedule Meeting"
+              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-50 transition-all"
             >
-              <CalendarDays size={13} />Schedule Meeting
+              <CalendarDays size={17} />
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                Schedule Meeting
+              </span>
             </button>
           )}
           {isModuleActive('tasks') && (
             <button
               onClick={openTaskTypeSelector}
-              className="btn-secondary flex items-center gap-1.5"
+              title="Create Task"
+              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
             >
-              <Plus size={13} />Create Task
+              <Plus size={17} />
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                Create Task
+              </span>
             </button>
           )}
-          <button onClick={startEdit} className="btn-secondary"><Pencil size={13} />Edit</button>
-          <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
-            <Trash2 size={13} />Delete
+          {/* Divider before edit/delete */}
+          <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
+          <button
+            onClick={startEdit}
+            title="Edit Client"
+            className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-slate-700 hover:bg-slate-100 transition-all"
+          >
+            <Pencil size={17} />
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+              Edit Client
+            </span>
+          </button>
+          <button
+            onClick={() => setConfirmDelete(true)}
+            title="Delete Client"
+            className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 transition-all"
+          >
+            <Trash2 size={17} />
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+              Delete Client
+            </span>
           </button>
         </div>
       </div>
