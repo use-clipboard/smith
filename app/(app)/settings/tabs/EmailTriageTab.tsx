@@ -18,7 +18,7 @@ export default function EmailTriageTab() {
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
 
-  const [showAsThreads, setShowAsThreads] = useState(true);
+  const [showAsThreads, setShowAsThreads] = useState(false);
   const [inboxLabel, setInboxLabel] = useState('INBOX');
   const [labels, setLabels] = useState<{ id: string; name: string }[]>([]);
 
@@ -39,7 +39,7 @@ export default function EmailTriageTab() {
       const s = await statusRes.json() as GmailStatus;
       const l = await labelsRes.json() as { labels: { id: string; name: string; type: string }[] };
       setStatus(s);
-      setShowAsThreads(s.showAsThreads ?? true);
+      setShowAsThreads(s.showAsThreads ?? false);
       setInboxLabel(s.inboxLabel ?? 'INBOX');
       setLabels((l.labels ?? []).filter(x => ['INBOX', 'ALL_MAIL', 'SENT', 'STARRED', 'IMPORTANT'].includes(x.id) || x.type === 'user'));
       if (s.connected) loadSignature();

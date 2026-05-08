@@ -19,16 +19,10 @@ interface TaskLink {
   tasks: { id: string; title: string; status: string } | null;
 }
 
-export interface ReactionRow {
-  id: string;
-  message_id: string;
-  emoji: string;
-  user_id: string;
-  users: { full_name: string | null; email: string } | null;
-}
-
 interface Props {
   thread: EmailThreadType;
+  /** When set (non-threaded view), only this message ID is shown in the panel. */
+  targetMessageId?: string;
   allocations: Allocation[];
   taskLinks: TaskLink[];
   googleEmail: string;
@@ -55,6 +49,12 @@ interface Props {
 
 const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '👀', '✅', '🔥'];
 
+/** Returns true if message body is a single emoji reaction */
+function isEmojiOnlyMessage(body: string): boolean {
+  const text = body.replace(/<[^>]+>/g, '').trim();
+  return QUICK_EMOJIS.includes(text);
+}
+
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -65,7 +65,11 @@ function formatDate(dateStr: string) {
   });
 }
 
-function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) {
+function EmojiPicker({ onSelect, onClose, openAbove = true }: {
+  onSelect: (emoji: string) => void;
+  onClose: () => void;
+  openAbove?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -78,7 +82,7 @@ function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void;
   return (
     <div
       ref={ref}
-      className="absolute bottom-full mb-1 left-0 z-40 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1"
+      className={`absolute ${openAbove ? 'bottom-full mb-1' : 'top-full mt-1'} left-0 z-40 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1`}
       style={{ width: 188 }}
     >
       {QUICK_EMOJIS.map(e => (
@@ -94,32 +98,104 @@ function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void;
   );
 }
 
+function AttachmentChips({ attachments }: { attachments: EmailMessage['attachments'] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {attachments.map((att, i) => {
+        const canDownload = !!att.attachmentId;
+        const url = canDownload
+          ? `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`
+          : undefined;
+        const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
+        const chip = (
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)] bg-[var(--bg-card-solid)] ${canDownload ? 'hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer' : ''}`}>
+            <Paperclip size={11} />
+            <span className="truncate max-w-[160px]">{att.filename}</span>
+            <span className="text-[var(--text-muted)]">({Math.round(att.size / 1024)}KB)</span>
+          </div>
+        );
+        return canDownload ? (
+          <a key={i} href={url} target={isInline ? '_blank' : undefined} rel="noopener noreferrer" download={isInline ? undefined : att.filename}>
+            {chip}
+          </a>
+        ) : (
+          <div key={i}>{chip}</div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MessageCard({
-  message, defaultOpen, onReply, onReplyAll, onForward,
-  reactions, currentUserId, onReact,
+  message, defaultOpen, nonThreaded, onReply, onReplyAll, onForward, onReact,
 }: {
   message: EmailMessage;
   defaultOpen: boolean;
+  /** When true: non-collapsible flat view; no action strips; no attachments (shown in main header). */
+  nonThreaded?: boolean;
   onReply: (m: EmailMessage) => void;
   onReplyAll: (m: EmailMessage) => void;
   onForward: (m: EmailMessage) => void;
-  reactions: ReactionRow[];
-  currentUserId: string;
   onReact: (messageId: string, emoji: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [emojiPickerTopOpen, setEmojiPickerTopOpen] = useState(false);
+  const [emojiPickerBottomOpen, setEmojiPickerBottomOpen] = useState(false);
   const initials = (message.from.name || message.from.email)[0]?.toUpperCase() ?? '?';
 
-  // Group reactions by emoji
-  const grouped = reactions.reduce<Record<string, { count: number; names: string[]; mine: boolean }>>((acc, r) => {
-    if (!acc[r.emoji]) acc[r.emoji] = { count: 0, names: [], mine: false };
-    acc[r.emoji].count++;
-    acc[r.emoji].names.push(r.users?.full_name || r.users?.email || 'Someone');
-    if (r.user_id === currentUserId) acc[r.emoji].mine = true;
-    return acc;
-  }, {});
+  const replyBtnClass = 'text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium';
 
+  // ── Non-threaded (single-message) flat view ─────────────────────────────────
+  if (nonThreaded) {
+    return (
+      <div className="bg-[var(--bg-card-solid)]">
+        {/* Sender / date row */}
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-[var(--border)]">
+          <div className="w-8 h-8 rounded-full bg-[var(--accent-light)] flex items-center justify-center shrink-0 text-xs font-bold text-[var(--accent)]">
+            {initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+              {message.from.name || message.from.email}
+              {message.from.name && (
+                <span className="ml-1.5 text-xs text-[var(--text-muted)] font-normal">&lt;{message.from.email}&gt;</span>
+              )}
+            </p>
+            <p className="text-xs text-[var(--text-muted)]">{formatDate(message.date)}</p>
+          </div>
+        </div>
+
+        {/* To / CC */}
+        <div className="px-5 py-2 bg-[var(--bg-nav-hover)] border-b border-[var(--border)] text-xs text-[var(--text-muted)] space-y-0.5">
+          <p>
+            <span className="font-medium text-[var(--text-secondary)]">To: </span>
+            {message.to.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}
+          </p>
+          {message.cc.length > 0 && (
+            <p>
+              <span className="font-medium text-[var(--text-secondary)]">CC: </span>
+              {message.cc.map(a => a.name ? `${a.name} <${a.email}>` : a.email).join(', ')}
+            </p>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-5 bg-white dark:bg-[var(--bg-card-solid)]">
+          {message.body ? (
+            <div
+              className="prose prose-sm max-w-none text-[var(--text-primary)] text-sm [&_a]:text-[var(--accent)] [&_a]:underline"
+              dangerouslySetInnerHTML={{ __html: message.body }}
+            />
+          ) : (
+            <p className="text-sm text-[var(--text-muted)] italic">No body content</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Threaded (collapsible card) view ────────────────────────────────────────
   return (
     <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--bg-card-solid)] shadow-sm">
       <button
@@ -149,6 +225,37 @@ function MessageCard({
 
       {open && (
         <div className="border-t border-[var(--border)]">
+          {/* Action buttons at the top of the expanded message */}
+          <div className="px-4 py-2 bg-[var(--bg-nav-hover)] flex items-center gap-2 border-b border-[var(--border)]">
+            <button onClick={() => onReply(message)} className={replyBtnClass}>
+              <Reply size={12} /> Reply
+            </button>
+            {(message.to.length > 0 || message.cc.length > 0) && (
+              <button onClick={() => onReplyAll(message)} className={replyBtnClass}>
+                <Reply size={12} /> Reply All
+              </button>
+            )}
+            <button onClick={() => onForward(message)} className={replyBtnClass}>
+              <Forward size={12} /> Forward
+            </button>
+            <div className="relative ml-auto">
+              <button
+                onClick={() => setEmojiPickerTopOpen(v => !v)}
+                title="React with emoji"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
+              >
+                <Smile size={14} />
+              </button>
+              {emojiPickerTopOpen && (
+                <EmojiPicker
+                  onSelect={emoji => onReact(message.id, emoji)}
+                  onClose={() => setEmojiPickerTopOpen(false)}
+                  openAbove={false}
+                />
+              )}
+            </div>
+          </div>
+
           <div className="px-4 py-2 bg-[var(--bg-nav-hover)] text-xs text-[var(--text-muted)] space-y-0.5">
             <p>
               <span className="font-medium text-[var(--text-secondary)]">To: </span>
@@ -175,78 +282,38 @@ function MessageCard({
 
           {message.attachments.length > 0 && (
             <div className="px-4 pb-3 border-t border-[var(--border)] pt-3 flex flex-wrap gap-2 bg-[var(--bg-nav-hover)]">
-              {message.attachments.map((att, i) => {
-                const canDownload = !!att.attachmentId;
-                const url = canDownload
-                  ? `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`
-                  : undefined;
-                const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
-                const chip = (
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)] bg-[var(--bg-card-solid)] ${canDownload ? 'hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors cursor-pointer' : ''}`}>
-                    <Paperclip size={11} />
-                    <span className="truncate max-w-[160px]">{att.filename}</span>
-                    <span className="text-[var(--text-muted)]">({Math.round(att.size / 1024)}KB)</span>
-                  </div>
-                );
-                return canDownload ? (
-                  <a key={i} href={url} target={isInline ? '_blank' : undefined} rel="noopener noreferrer" download={isInline ? undefined : att.filename}>
-                    {chip}
-                  </a>
-                ) : (
-                  <div key={i}>{chip}</div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Reactions row (only if any exist) */}
-          {Object.keys(grouped).length > 0 && (
-            <div className="px-4 py-2 border-t border-[var(--border)] bg-[var(--bg-nav-hover)] flex flex-wrap gap-1.5">
-              {Object.entries(grouped).map(([emoji, info]) => (
-                <button
-                  key={emoji}
-                  onClick={() => onReact(message.id, emoji)}
-                  title={info.names.join(', ')}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
-                    info.mine
-                      ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
-                      : 'bg-[var(--bg-card-solid)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent-light)]'
-                  }`}
-                >
-                  <span>{emoji}</span>
-                  {info.count > 1 && <span className="font-medium">{info.count}</span>}
-                </button>
-              ))}
+              <AttachmentChips attachments={message.attachments} />
             </div>
           )}
 
           {/* Message footer: reply actions + react button */}
           <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-nav-hover)] flex items-center gap-2">
-            <button onClick={() => onReply(message)} className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium">
+            <button onClick={() => onReply(message)} className={replyBtnClass}>
               <Reply size={12} /> Reply
             </button>
             {(message.to.length > 0 || message.cc.length > 0) && (
-              <button onClick={() => onReplyAll(message)} className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium">
+              <button onClick={() => onReplyAll(message)} className={replyBtnClass}>
                 <Reply size={12} /> Reply All
               </button>
             )}
-            <button onClick={() => onForward(message)} className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium">
+            <button onClick={() => onForward(message)} className={replyBtnClass}>
               <Forward size={12} /> Forward
             </button>
 
             {/* Emoji react button */}
             <div className="relative ml-auto">
               <button
-                onClick={() => setEmojiPickerOpen(v => !v)}
+                onClick={() => setEmojiPickerBottomOpen(v => !v)}
                 title="React with emoji"
                 className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
               >
                 <Smile size={14} />
               </button>
-              {emojiPickerOpen && (
+              {emojiPickerBottomOpen && (
                 <EmojiPicker
                   onSelect={emoji => onReact(message.id, emoji)}
-                  onClose={() => setEmojiPickerOpen(false)}
+                  onClose={() => setEmojiPickerBottomOpen(false)}
+                  openAbove={true}
                 />
               )}
             </div>
@@ -258,7 +325,7 @@ function MessageCard({
 }
 
 export default function EmailThread({
-  thread, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
+  thread, targetMessageId, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
   onAllocate, onCreateTask, creatingTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
   isPinned, onPin,
@@ -269,6 +336,9 @@ export default function EmailThread({
   const [restoring, setRestoring]     = useState(false);
   const [markingUnread, setMarkingUnread] = useState(false);
   const [pinning, setPinning]         = useState(false);
+  // Emoji picker for non-threaded mode (lives in main header)
+  const [emojiPickerHeaderOpen, setEmojiPickerHeaderOpen] = useState(false);
+  const emojiPickerHeaderRef = useRef<HTMLDivElement>(null);
 
   const isInTrash  = thread.labelIds.includes('TRASH');
   const isInSpam   = thread.labelIds.includes('SPAM');
@@ -278,26 +348,10 @@ export default function EmailThread({
   const [moving, setMoving]       = useState<string | null>(null);
   const moveRef = useRef<HTMLDivElement>(null);
 
-  // Emoji reactions
-  const [reactions, setReactions]       = useState<ReactionRow[]>([]);
-  const [currentUserId, setCurrentUserId] = useState('');
-
   // Sync star state when thread changes
   useEffect(() => {
     setIsStarred(thread.labelIds.includes('STARRED'));
   }, [thread.id, thread.labelIds]);
-
-  // Load reactions for this thread
-  useEffect(() => {
-    if (!thread.id) return;
-    fetch(`/api/email/reactions?threadId=${encodeURIComponent(thread.id)}`)
-      .then(r => r.ok ? r.json() : { reactions: [], currentUserId: '' })
-      .then((d: { reactions: ReactionRow[]; currentUserId: string }) => {
-        setReactions(d.reactions ?? []);
-        setCurrentUserId(d.currentUserId ?? '');
-      })
-      .catch(() => {});
-  }, [thread.id]);
 
   // Close move dropdown on outside click
   useEffect(() => {
@@ -416,33 +470,29 @@ export default function EmailThread({
   }
 
   async function handleReact(messageId: string, emoji: string) {
-    // Optimistic update
-    const existing = reactions.find(r => r.message_id === messageId && r.emoji === emoji && r.user_id === currentUserId);
-    if (existing) {
-      setReactions(prev => prev.filter(r => r.id !== existing.id));
-    } else {
-      const temp: ReactionRow = { id: `temp-${Date.now()}`, message_id: messageId, emoji, user_id: currentUserId, users: null };
-      setReactions(prev => [...prev, temp]);
-    }
-    // Server update
+    // Send the emoji as an actual email reply to the sender
+    const message = thread.messages.find(m => m.id === messageId);
+    if (!message) return;
     try {
-      await fetch('/api/email/reactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: thread.id, messageId, emoji }),
-      });
-      // Refresh reactions from server
-      const res = await fetch(`/api/email/reactions?threadId=${encodeURIComponent(thread.id)}`);
-      if (res.ok) {
-        const d = await res.json() as { reactions: ReactionRow[]; currentUserId: string };
-        setReactions(d.reactions ?? []);
-      }
+      const formData = new FormData();
+      formData.append('to', JSON.stringify([message.from.email]));
+      formData.append('cc', JSON.stringify([]));
+      formData.append('bcc', JSON.stringify([]));
+      const reSubject = message.subject.startsWith('Re:') ? message.subject : `Re: ${message.subject}`;
+      formData.append('subject', reSubject);
+      formData.append('htmlBody', emoji);
+      formData.append('replyToMessageId', messageId);
+      formData.append('threadId', thread.id);
+      await fetch('/api/email/send', { method: 'POST', body: formData });
     } catch {
-      // Silently revert on error — next thread open will re-sync
+      // Silently fail
     }
   }
 
-  const lastMessage  = thread.messages[thread.messages.length - 1];
+  // In non-threaded view use the targeted message; otherwise use the last message in the thread
+  const lastMessage = targetMessageId
+    ? (thread.messages.find(m => m.id === targetMessageId) ?? thread.messages[thread.messages.length - 1])
+    : thread.messages[thread.messages.length - 1];
   const moveTargets  = labels.filter(l => l.type === 'user' || ['STARRED', 'IMPORTANT', 'SPAM'].includes(l.id));
 
   return (
@@ -591,6 +641,26 @@ export default function EmailThread({
             </button>
           )}
 
+          {/* Non-threaded: emoji reaction button in main header */}
+          {targetMessageId && lastMessage && (
+            <div className="relative" ref={emojiPickerHeaderRef}>
+              <button
+                onClick={() => setEmojiPickerHeaderOpen(v => !v)}
+                title="React with emoji"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Smile size={15} />
+              </button>
+              {emojiPickerHeaderOpen && (
+                <EmojiPicker
+                  onSelect={emoji => { handleReact(lastMessage.id, emoji); setEmojiPickerHeaderOpen(false); }}
+                  onClose={() => setEmojiPickerHeaderOpen(false)}
+                  openAbove={false}
+                />
+              )}
+            </div>
+          )}
+
           {/* Far right: Delete — icon-only, red on hover */}
           <button
             onClick={handleDelete}
@@ -601,6 +671,13 @@ export default function EmailThread({
             {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
           </button>
         </div>
+
+        {/* Non-threaded: attachment chips in main header */}
+        {targetMessageId && lastMessage && lastMessage.attachments.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <AttachmentChips attachments={lastMessage.attachments} />
+          </div>
+        )}
 
         {/* Allocation badges */}
         {allocations.length > 0 && (
@@ -632,20 +709,40 @@ export default function EmailThread({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-        {thread.messages.map((msg, idx) => (
-          <MessageCard
-            key={msg.id}
-            message={msg}
-            defaultOpen={idx === thread.messages.length - 1}
-            onReply={onReply}
-            onReplyAll={onReplyAll}
-            onForward={onForward}
-            reactions={reactions.filter(r => r.message_id === msg.id)}
-            currentUserId={currentUserId}
-            onReact={handleReact}
-          />
-        ))}
+      <div className={`flex-1 overflow-y-auto ${targetMessageId ? '' : 'px-5 py-4 space-y-3'}`}>
+        {(targetMessageId
+          ? thread.messages.filter(m => m.id === targetMessageId)
+          : thread.messages
+        ).map((msg, idx, arr) => {
+          // Emoji-only messages are reactions — render as a small chip instead of a full card
+          if (isEmojiOnlyMessage(msg.body)) {
+            const emoji = msg.body.replace(/<[^>]+>/g, '').trim();
+            const senderName = msg.from.name || msg.from.email.split('@')[0];
+            return (
+              <div key={msg.id} className="flex items-center gap-2 px-1">
+                <span
+                  title={`${senderName} reacted`}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-[var(--accent-light)] border border-[var(--accent)]/20 text-[var(--text-secondary)]"
+                >
+                  <span>{emoji}</span>
+                  <span className="text-xs text-[var(--text-muted)]">{senderName}</span>
+                </span>
+              </div>
+            );
+          }
+          return (
+            <MessageCard
+              key={msg.id}
+              message={msg}
+              defaultOpen={idx === arr.length - 1}
+              nonThreaded={!!targetMessageId}
+              onReply={onReply}
+              onReplyAll={onReplyAll}
+              onForward={onForward}
+              onReact={handleReact}
+            />
+          );
+        })}
       </div>
     </div>
   );

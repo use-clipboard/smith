@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { notifyTaskStepAssignments } from '@/lib/notifications';
+import { notifyTaskStepAssignments, createNotification } from '@/lib/notifications';
+
+function formatStatusLabel(status: string): string {
+  return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 const UpdateStepSchema = z.object({
   title: z.string().min(1).optional(),
@@ -32,10 +36,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 
   const supabase = createClient();
 
-  // Fetch current step state so we can detect assignee changes and get the task title
+  // Fetch current step state so we can detect assignee/status changes and get the task title
   const { data: existingStep } = await supabase
     .from('task_steps')
-    .select('assignee_id, title, task:tasks(id, title)')
+    .select('assignee_id, title, status, task:tasks(id, title)')
     .eq('id', params.stepId)
     .eq('task_id', params.id)
     .single();
@@ -76,6 +80,27 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
           stepTitle: (existingStep.title as string) ?? parsed.data.title ?? '',
         }],
       }).catch(err => console.error('Step reassignment notification error', err));
+    }
+  }
+
+  // Notify step assignee when step status changes
+  if (parsed.data.status && parsed.data.status !== ((existingStep?.status as string | null) ?? null) && existingStep) {
+    // The effective assignee: use updated value if being changed, else existing
+    const effectiveAssigneeId =
+      parsed.data.assignee_id !== undefined
+        ? parsed.data.assignee_id
+        : ((existingStep.assignee_id as string | null) ?? null);
+
+    if (effectiveAssigneeId && effectiveAssigneeId !== ctx.userId) {
+      const taskData = existingStep.task as unknown as { id: string; title: string } | null;
+      createNotification({
+        userId: effectiveAssigneeId,
+        firmId: ctx.firmId,
+        type: 'task_status_changed',
+        title: `Step updated: ${(existingStep.title as string) ?? ''}`,
+        body: `Status changed to ${formatStatusLabel(parsed.data.status)}`,
+        data: { task_id: taskData?.id ?? params.id, task_link: '/tasks' },
+      }).catch(err => console.error('Step status notification error', err));
     }
   }
 

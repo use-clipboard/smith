@@ -60,6 +60,8 @@ export interface EmailMessage {
 
 export interface EmailThread {
   id: string;
+  /** The actual Gmail thread ID — differs from id only in non-threaded view (where id is the message ID). */
+  gmailThreadId?: string;
   subject: string;
   snippet: string;
   from: EmailAddress;

@@ -28,15 +28,34 @@ export async function GET() {
     const res = await gmail.users.labels.list({ userId: 'me' });
     const raw = res.data.labels ?? [];
 
+    // labels.list doesn't reliably return message counts — fetch them individually
+    // for the labels we display counts on (INBOX unread, DRAFT total, STARRED total)
+    const COUNT_LABELS = ['INBOX', 'DRAFT', 'STARRED', 'SENT', 'SPAM', 'TRASH'];
+    const detailedCounts: Record<string, { messagesUnread: number; messagesTotal: number }> = {};
+    await Promise.allSettled(
+      COUNT_LABELS.map(async id => {
+        try {
+          const detail = await gmail.users.labels.get({ userId: 'me', id });
+          detailedCounts[id] = {
+            messagesUnread: detail.data.messagesUnread ?? 0,
+            messagesTotal:  detail.data.messagesTotal  ?? 0,
+          };
+        } catch { /* ignore missing labels */ }
+      })
+    );
+
     const labels: GmailLabel[] = raw
       .filter(l => l.id && l.name)
-      .map(l => ({
-        id: l.id!,
-        name: l.name!,
-        type: (l.type === 'user' ? 'user' : 'system') as 'system' | 'user',
-        messagesUnread: l.messagesUnread ?? 0,
-        messagesTotal: l.messagesTotal ?? 0,
-      }))
+      .map(l => {
+        const detailed = detailedCounts[l.id!];
+        return {
+          id: l.id!,
+          name: l.name!,
+          type: (l.type === 'user' ? 'user' : 'system') as 'system' | 'user',
+          messagesUnread: detailed?.messagesUnread ?? l.messagesUnread ?? 0,
+          messagesTotal:  detailed?.messagesTotal  ?? l.messagesTotal  ?? 0,
+        };
+      })
       .sort((a, b) => {
         const aOrder = SYSTEM_LABEL_ORDER[a.id] ?? 99;
         const bOrder = SYSTEM_LABEL_ORDER[b.id] ?? 99;

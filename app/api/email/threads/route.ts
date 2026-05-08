@@ -26,71 +26,126 @@ export async function GET(req: NextRequest) {
   const label = searchParams.get('label') || connection.inbox_label || 'INBOX';
   const q = searchParams.get('q') || undefined;
   const pageToken = searchParams.get('pageToken') || undefined;
-  const maxResults = 30;
+  const maxResults = 50;
 
   try {
     const { gmail, accessToken } = await getRefreshedGmailClient(connection.refresh_token);
 
-    // Fetch thread list — use search query when provided, otherwise label filter
-    const listRes = await gmail.users.threads.list({
-      userId: 'me',
-      ...(q ? { q } : { labelIds: [label] }),
-      maxResults,
-      pageToken,
-    });
+    const showAsThreads = connection.show_as_threads !== false; // default true
 
-    const threadItems = listRes.data.threads ?? [];
-    const nextPageToken = listRes.data.nextPageToken ?? null;
+    let threads: EmailThread[];
+    let nextPageToken: string | null;
 
-    // Fetch first message of each thread for preview
-    const threads = await Promise.all(
-      threadItems.map(async (t): Promise<EmailThread> => {
-        try {
-          const threadRes = await gmail.users.threads.get({
-            userId: 'me',
-            id: t.id!,
-            format: 'metadata',
-            metadataHeaders: ['Subject', 'From', 'To', 'Date'],
-          });
+    if (showAsThreads) {
+      // ── Threaded mode: group messages into conversations ──────────────────
+      const listRes = await gmail.users.threads.list({
+        userId: 'me',
+        ...(q ? { q } : { labelIds: [label] }),
+        maxResults,
+        pageToken,
+      });
 
-          const messages = (threadRes.data.messages ?? []).map(m =>
-            parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0])
-          );
-          const first = messages[0];
-          const last = messages[messages.length - 1];
-          const hasUnread = messages.some(m => !m.isRead);
-          const allLabelIds = Array.from(new Set(messages.flatMap(m => m.labelIds)));
+      const threadItems = listRes.data.threads ?? [];
+      nextPageToken = listRes.data.nextPageToken ?? null;
 
-          return {
-            id: t.id ?? '',
-            subject: first?.subject ?? '(no subject)',
-            snippet: threadRes.data.snippet ?? '',
-            from: last?.from ?? { name: '', email: '' },
-            date: last?.date ?? first?.date ?? '',
-            messageCount: messages.length,
-            isRead: !hasUnread,
-            labelIds: allLabelIds,
-            messages,
-          };
-        } catch {
-          return {
-            id: t.id ?? '',
-            subject: '(error loading)',
-            snippet: '',
-            from: { name: '', email: '' },
-            date: '',
-            messageCount: 1,
-            isRead: true,
-            labelIds: [],
-            messages: [],
-          };
-        }
-      })
-    );
+      threads = await Promise.all(
+        threadItems.map(async (t): Promise<EmailThread> => {
+          try {
+            const threadRes = await gmail.users.threads.get({
+              userId: 'me',
+              id: t.id!,
+              format: 'metadata',
+              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+            });
 
-    // Save new history ID for incremental polling
-    const historyId = listRes.data.resultSizeEstimate?.toString() ?? null;
-    void historyId; // updated via the poll endpoint instead
+            const messages = (threadRes.data.messages ?? []).map(m =>
+              parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0])
+            );
+            const first = messages[0];
+            const last = messages[messages.length - 1];
+            const hasUnread = messages.some(m => !m.isRead);
+            const allLabelIds = Array.from(new Set(messages.flatMap(m => m.labelIds)));
+
+            return {
+              id: t.id ?? '',
+              subject: first?.subject ?? '(no subject)',
+              snippet: threadRes.data.snippet ?? '',
+              from: last?.from ?? { name: '', email: '' },
+              date: last?.date ?? first?.date ?? '',
+              messageCount: messages.length,
+              isRead: !hasUnread,
+              labelIds: allLabelIds,
+              messages,
+            };
+          } catch {
+            return {
+              id: t.id ?? '',
+              subject: '(error loading)',
+              snippet: '',
+              from: { name: '', email: '' },
+              date: '',
+              messageCount: 1,
+              isRead: true,
+              labelIds: [],
+              messages: [],
+            };
+          }
+        })
+      );
+    } else {
+      // ── Non-threaded mode: each message is its own list item ──────────────
+      const listRes = await gmail.users.messages.list({
+        userId: 'me',
+        ...(q ? { q } : { labelIds: [label] }),
+        maxResults,
+        pageToken,
+      });
+
+      const msgItems = listRes.data.messages ?? [];
+      nextPageToken = listRes.data.nextPageToken ?? null;
+
+      threads = await Promise.all(
+        msgItems.map(async (m): Promise<EmailThread> => {
+          try {
+            const msgRes = await gmail.users.messages.get({
+              userId: 'me',
+              id: m.id!,
+              format: 'metadata',
+              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+            });
+
+            const parsed = parseGmailMessage(msgRes.data as Parameters<typeof parseGmailMessage>[0]);
+
+            return {
+              // Use message ID as the list key; store real threadId so detail view works
+              id: m.id ?? '',
+              gmailThreadId: msgRes.data.threadId ?? m.id ?? '',
+              subject: parsed.subject ?? '(no subject)',
+              snippet: msgRes.data.snippet ?? '',
+              from: parsed.from,
+              date: parsed.date,
+              messageCount: 1,
+              isRead: parsed.isRead,
+              labelIds: parsed.labelIds,
+              messages: [parsed],
+            };
+          } catch {
+            return {
+              id: m.id ?? '',
+              gmailThreadId: m.id ?? '',
+              subject: '(error loading)',
+              snippet: '',
+              from: { name: '', email: '' },
+              date: '',
+              messageCount: 1,
+              isRead: true,
+              labelIds: [],
+              messages: [],
+            };
+          }
+        })
+      );
+    }
 
     // Update access token in DB
     await supabase

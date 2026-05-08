@@ -17,7 +17,7 @@ export async function GET() {
     connected: !!data,
     googleEmail: data?.google_email ?? null,
     inboxLabel: data?.inbox_label ?? 'INBOX',
-    showAsThreads: data?.show_as_threads ?? true,
+    showAsThreads: data?.show_as_threads ?? false,
     connectedAt: data?.connected_at ?? null,
   });
 }

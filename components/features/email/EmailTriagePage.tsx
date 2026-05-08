@@ -57,9 +57,27 @@ export default function EmailTriagePage() {
   const [activeThread, setActiveThread] = useState<EmailThreadType | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [threadMeta, setThreadMeta] = useState<Record<string, { hasAllocation: boolean; hasTaskLink: boolean }>>({});
+  const [threadMeta, setThreadMeta] = useState<Record<string, { hasAllocation: boolean; hasTaskLink: boolean; isReplied?: boolean; isForwarded?: boolean }>>({});
 
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+
+  // Track which inbox threads have been forwarded (persisted locally)
+  const [forwardedThreadIds, setForwardedThreadIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem('email-forwarded-ids');
+      return stored ? new Set<string>(JSON.parse(stored) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+
+  // Track which inbox threads have been replied to (persisted locally)
+  const [repliedThreadIds, setRepliedThreadIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem('email-replied-ids');
+      return stored ? new Set<string>(JSON.parse(stored) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
 
   // Email rules
   const [emailRules, setEmailRules] = useState<EmailRule[]>([]);
@@ -89,6 +107,57 @@ export default function EmailTriagePage() {
   const [teamMembersLoaded, setTeamMembersLoaded] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Resizable column widths (persisted to localStorage)
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 192;
+    return parseInt(localStorage.getItem('email-sidebar-width') ?? '192', 10);
+  });
+  const [threadListWidth, setThreadListWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 288;
+    return parseInt(localStorage.getItem('email-threadlist-width') ?? '288', 10);
+  });
+  const colDragRef = useRef<{ col: 'sidebar' | 'threadlist'; startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const d = colDragRef.current;
+      if (!d) return;
+      const delta = e.clientX - d.startX;
+      if (d.col === 'sidebar') {
+        const w = Math.max(140, Math.min(360, d.startWidth + delta));
+        setSidebarWidth(w);
+        localStorage.setItem('email-sidebar-width', String(w));
+      } else {
+        const w = Math.max(180, Math.min(500, d.startWidth + delta));
+        setThreadListWidth(w);
+        localStorage.setItem('email-threadlist-width', String(w));
+      }
+    }
+    function onMouseUp() {
+      if (!colDragRef.current) return;
+      colDragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
+  function startColDrag(col: 'sidebar' | 'threadlist', e: React.MouseEvent) {
+    e.preventDefault();
+    colDragRef.current = {
+      col,
+      startX: e.clientX,
+      startWidth: col === 'sidebar' ? sidebarWidth : threadListWidth,
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }
 
   // Load current user's name for compose display
   useEffect(() => {
@@ -277,16 +346,48 @@ export default function EmailTriagePage() {
     setThreadDetail(null);
     setLoadingDetail(true);
     try {
-      const res = await fetch(`/api/email/thread/${thread.id}`);
+      // In non-threaded view, gmailThreadId holds the real thread ID; fall back to id
+      const detailId = thread.gmailThreadId ?? thread.id;
+      const res = await fetch(`/api/email/thread/${detailId}`);
       const data = await res.json() as ThreadDetail;
       setThreadDetail(data);
+      // Detect replied / forwarded from the full thread messages
+      const sentMsgs = data.messages.filter((m: { labelIds?: string[] }) => m.labelIds?.includes('SENT'));
+      const hasInbound = data.messages.some((m: { labelIds?: string[] }) => !m.labelIds?.includes('SENT'));
+      // isReplied: there are received messages AND at least one sent message that is not a forward
+      const isReplied = hasInbound && sentMsgs.length > 0
+        && sentMsgs.some((m: { subject?: string }) => !/^fwd:/i.test(m.subject ?? ''));
+      const isForwarded = sentMsgs.some((m: { subject?: string }) => /^fwd:/i.test(m.subject ?? ''))
+        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id);
       setThreadMeta(prev => ({
         ...prev,
         [thread.id]: {
           hasAllocation: data.allocations.length > 0,
           hasTaskLink: data.taskLinks.length > 0,
+          isReplied,
+          isForwarded,
         },
       }));
+      // Persist detected reply/forward status to localStorage so it survives page refreshes
+      const realId = thread.gmailThreadId ?? thread.id;
+      if (isReplied) {
+        setRepliedThreadIds(prev => {
+          if (prev.has(realId)) return prev;
+          const next = new Set(prev);
+          next.add(realId);
+          try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+          return next;
+        });
+      }
+      if (isForwarded) {
+        setForwardedThreadIds(prev => {
+          if (prev.has(realId)) return prev;
+          const next = new Set(prev);
+          next.add(realId);
+          try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+          return next;
+        });
+      }
       // Mark thread as read in local state
       setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, isRead: true } : t));
     } finally {
@@ -379,7 +480,7 @@ export default function EmailTriagePage() {
     await fetch('/api/email/allocate', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThread.id, clientId }),
+      body: JSON.stringify({ threadId: activeThread.gmailThreadId ?? activeThread.id, clientId }),
     });
     await openThread(activeThread);
     setThreadMeta(prev => {
@@ -394,7 +495,7 @@ export default function EmailTriagePage() {
     await fetch('/api/email/task-link', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThread.id, taskId }),
+      body: JSON.stringify({ threadId: activeThread.gmailThreadId ?? activeThread.id, taskId }),
     });
     await openThread(activeThread);
     setThreadMeta(prev => {
@@ -499,12 +600,72 @@ export default function EmailTriagePage() {
     }
   }
 
+  function handleForwardSent(originalThreadId: string) {
+    // Immediately show forwarded chip in the list for the active thread
+    if (activeThread) {
+      setThreadMeta(prev => ({
+        ...prev,
+        [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isForwarded: true },
+      }));
+    }
+    setForwardedThreadIds(prev => {
+      const next = new Set(prev);
+      next.add(originalThreadId);
+      try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  function handleReplySent(originalThreadId: string) {
+    // Immediately show replied chip in the list for the active thread
+    if (activeThread) {
+      setThreadMeta(prev => ({
+        ...prev,
+        [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isReplied: true },
+      }));
+    }
+    setRepliedThreadIds(prev => {
+      const next = new Set(prev);
+      next.add(originalThreadId);
+      try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
   async function handleTaskCreated(data: CreateTaskData) {
-    await fetch('/api/tasks', {
+    const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!res.ok) return;
+
+    const created = await res.json() as { task?: { id: string } };
+    const taskId = created.task?.id;
+
+    // Link the new task to the email thread that triggered its creation
+    if (taskId && activeThread) {
+      await fetch('/api/email/task-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threadId: activeThread.gmailThreadId ?? activeThread.id,
+          taskId,
+          subject: activeThread.subject ?? '',
+        }),
+      }).catch(() => {});
+
+      // Update the thread list indicator immediately — no need to re-fetch
+      setThreadMeta(prev => ({
+        ...prev,
+        [activeThread.id]: {
+          ...prev[activeThread.id],
+          hasTaskLink: true,
+        },
+      }));
+    }
+
+    setShowQuickTask(false);
   }
 
   function handleDelete() {
@@ -560,6 +721,39 @@ export default function EmailTriagePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ threadId }),
     }).catch(() => {});
+  }
+
+  function handleBulkDelete(ids: string[]) {
+    setThreads(prev => prev.filter(t => !ids.includes(t.id)));
+    if (activeThread && ids.includes(activeThread.id)) {
+      setActiveThread(null);
+      setThreadDetail(null);
+    }
+    // Fire-and-forget trash for each
+    ids.forEach(threadId =>
+      fetch('/api/email/trash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId }),
+      }).catch(() => {})
+    );
+  }
+
+  function handleBulkMarkRead(ids: string[]) {
+    // Optimistically mark as read in state
+    setThreads(prev => prev.map(t =>
+      ids.includes(t.id)
+        ? { ...t, isRead: true, labelIds: t.labelIds.filter(l => l !== 'UNREAD') }
+        : t
+    ));
+    // Fire-and-forget mark-read for each
+    ids.forEach(threadId =>
+      fetch('/api/email/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId, removeLabelIds: ['UNREAD'], addLabelIds: [] }),
+      }).catch(() => {})
+    );
   }
 
   function handleMove() {
@@ -638,7 +832,7 @@ export default function EmailTriagePage() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Labels sidebar */}
-      <div className="w-48 shrink-0 border-r border-[var(--border)] overflow-y-auto bg-[var(--bg-card-solid)]">
+      <div style={{ width: sidebarWidth }} className="shrink-0 overflow-y-auto bg-[var(--bg-card-solid)]">
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <button
             onClick={() => { setReplyTo(null); setComposeOpen(true); }}
@@ -661,8 +855,15 @@ export default function EmailTriagePage() {
         />
       </div>
 
+      {/* Drag handle — sidebar / thread list */}
+      <div
+        className="w-1 shrink-0 cursor-col-resize bg-[var(--border)] hover:bg-[var(--accent)]/50 transition-colors"
+        onMouseDown={e => startColDrag('sidebar', e)}
+        title="Drag to resize"
+      />
+
       {/* Thread list */}
-      <div className="w-72 shrink-0 border-r border-[var(--border)] overflow-hidden flex flex-col bg-[var(--bg-card-solid)]">
+      <div style={{ width: threadListWidth }} className="shrink-0 overflow-hidden flex flex-col bg-[var(--bg-card-solid)]">
         <EmailList
           threads={sortedThreads}
           activeThreadId={activeThread?.id ?? null}
@@ -680,8 +881,19 @@ export default function EmailTriagePage() {
           loadingMore={loadingMore}
           pinnedIds={pinnedIds}
           onPin={handlePin}
+          forwardedThreadIds={forwardedThreadIds}
+          repliedThreadIds={repliedThreadIds}
+          onBulkDelete={handleBulkDelete}
+          onBulkMarkRead={handleBulkMarkRead}
         />
       </div>
+
+      {/* Drag handle — thread list / detail */}
+      <div
+        className="w-1 shrink-0 cursor-col-resize bg-[var(--border)] hover:bg-[var(--accent)]/50 transition-colors"
+        onMouseDown={e => startColDrag('threadlist', e)}
+        title="Drag to resize"
+      />
 
       {/* Thread detail */}
       <div className="flex-1 overflow-hidden relative">
@@ -698,6 +910,7 @@ export default function EmailTriagePage() {
         ) : activeThread && threadDetail ? (
           <EmailThread
             thread={{ ...activeThread, messages: threadDetail.messages }}
+            targetMessageId={activeThread.gmailThreadId ? activeThread.id : undefined}
             allocations={threadDetail.allocations}
             taskLinks={threadDetail.taskLinks}
             googleEmail={threadDetail.googleEmail || googleEmail}
@@ -744,6 +957,8 @@ export default function EmailTriagePage() {
         displayName={signatureDisplayName || userName}
         tasksModuleActive={tasksModuleActive}
         onSent={() => fetchThreads(activeLabel)}
+        onForwardSent={handleForwardSent}
+        onReplySent={handleReplySent}
         onCreateTaskFromSent={handleCreateTaskFromSent}
       />
 
@@ -771,7 +986,7 @@ export default function EmailTriagePage() {
       {showQuickTask && (
         <QuickTaskModal
           onClose={() => setShowQuickTask(false)}
-          onCreate={async (data) => { await handleTaskCreated(data); }}
+          onCreate={handleTaskCreated}
           teamMembers={teamMembers}
           defaultTitle={taskSuggestedTitle}
           defaultSteps={taskSuggestedSteps}

@@ -172,7 +172,7 @@ export default function AllocateModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          threadId: thread.id,
+          threadId: thread.gmailThreadId ?? thread.id,
           subject: thread.subject,
           snippet: thread.snippet,
           date: lastMsg?.date ?? '',

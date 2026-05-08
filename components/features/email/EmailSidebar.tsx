@@ -69,7 +69,10 @@ export default function EmailSidebar({ labels, activeLabel, onSelectLabel, onLab
     const Icon = SYSTEM_ICONS[label.id] ?? Tag;
     const name = SYSTEM_LABEL_NAMES[label.id] ?? label.name;
     const isActive = activeLabel === label.id;
-    const unread = label.messagesUnread ?? 0;
+    // Drafts and Starred show total count; everything else shows unread count
+    const count = ['DRAFT', 'STARRED'].includes(label.id)
+      ? (label.messagesTotal ?? 0)
+      : (label.messagesUnread ?? 0);
 
     return (
       <button
@@ -82,10 +85,10 @@ export default function EmailSidebar({ labels, activeLabel, onSelectLabel, onLab
       >
         <Icon size={15} className="shrink-0" />
         <span className="flex-1 truncate">{name}</span>
-        {unread > 0 && (
-          <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full
+        {count > 0 && (
+          <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center
             ${isActive ? 'bg-[var(--accent)]/20 text-[var(--accent)]' : 'bg-[var(--border)] text-[var(--text-secondary)]'}`}>
-            {unread > 99 ? '99+' : unread}
+            {count}
           </span>
         )}
       </button>

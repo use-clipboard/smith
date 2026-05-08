@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { createNotification } from '@/lib/notifications';
 import type { RecurrenceType } from '@/types';
+
+function formatStatusLabel(status: string): string {
+  return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
 const UpdateTaskSchema = z.object({
   title: z.string().min(1).optional(),
@@ -63,6 +68,39 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (error) {
     console.error('PUT /api/tasks/[id]', error);
     return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
+  }
+
+  // Notify step assignees when task status changes
+  if (parsed.data.status && parsed.data.status !== existing.status) {
+    const { data: steps } = await supabase
+      .from('task_steps')
+      .select('assignee_id')
+      .eq('task_id', params.id)
+      .not('assignee_id', 'is', null);
+
+    const uniqueAssignees = [
+      ...new Set(
+        (steps ?? [])
+          .map((s: { assignee_id: string }) => s.assignee_id)
+          .filter((id: string) => id !== ctx.userId)
+      ),
+    ] as string[];
+
+    if (uniqueAssignees.length > 0) {
+      const statusLabel = formatStatusLabel(parsed.data.status);
+      await Promise.allSettled(
+        uniqueAssignees.map(userId =>
+          createNotification({
+            userId,
+            firmId: ctx.firmId,
+            type: 'task_status_changed',
+            title: `Task updated: ${existing.title}`,
+            body: `Status changed to ${statusLabel}`,
+            data: { task_id: params.id, task_link: '/tasks' },
+          })
+        )
+      );
+    }
   }
 
   // Handle recurrence: if completing a recurring task, spawn the next one

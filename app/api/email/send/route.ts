@@ -93,7 +93,13 @@ export async function POST(req: NextRequest) {
       threadId: sendRes.data.threadId,
     });
   } catch (err) {
+    // Extract the most useful part of the Gmail API error
+    let message = 'Failed to send email';
+    if (err instanceof Error) {
+      // Gmail API errors often have a `message` like "Invalid Credentials" or include a code
+      message = err.message.slice(0, 300);
+    }
     console.error('Email send error:', err);
-    return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

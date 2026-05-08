@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Smile,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
@@ -49,6 +49,10 @@ interface Props {
   displayName: string;
   tasksModuleActive?: boolean;
   onSent?: (threadId: string) => void;
+  /** Called after a successful forward send — passes the original thread ID so the inbox can mark it as forwarded */
+  onForwardSent?: (originalThreadId: string) => void;
+  /** Called after a successful reply send — passes the original thread ID so the inbox can mark it as replied */
+  onReplySent?: (originalThreadId: string) => void;
   /** Called after a successful send when the user ticked "Create Task" */
   onCreateTaskFromSent?: (emailData: { subject: string; plainBody: string; toEmail: string; toName: string }) => void;
 }
@@ -58,6 +62,8 @@ const RECIPIENT_STATUS_COLOURS: Record<string, string> = {
   hold:     'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   inactive: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 };
+
+const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '👀', '✅', '🔥'];
 
 const TEXT_COLOURS = [
   { label: 'Default',  value: 'inherit' },
@@ -201,7 +207,7 @@ function FmtBtn({ title, onActivate, children }: {
 
 export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
-  threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onCreateTaskFromSent,
+  threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
@@ -225,6 +231,10 @@ export default function ComposeModal({
   const [colorOpen, setColorOpen] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
 
+  // Emoji picker in toolbar
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
   // Allocation state
   const [selectedClients, setSelectedClients] = useState<Client[]>([]);
   const [allocateOpen, setAllocateOpen] = useState(false);
@@ -247,6 +257,17 @@ export default function ComposeModal({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [colorOpen]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (emojiPickerOpen && emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setEmojiPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [emojiPickerOpen]);
 
   function fmt(command: string, value?: string) {
     document.execCommand(command, false, value);
@@ -346,7 +367,10 @@ export default function ComposeModal({
       attachedFiles.forEach(f => formData.append('attachments', f));
 
       const res = await fetch('/api/email/send', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('Failed to send');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(errData.error ?? `Send failed (${res.status})`);
+      }
       const data = await res.json() as { threadId?: string };
       const sentThreadId = data.threadId ?? '';
 
@@ -372,6 +396,14 @@ export default function ComposeModal({
       const shouldCreateTask = createTaskEnabled;
 
       onSent?.(sentThreadId);
+      // If this was a forward, notify the parent so it can mark the original thread
+      if (forwardOf?.threadId) {
+        onForwardSent?.(forwardOf.threadId);
+      }
+      // If this was a reply (not a forward), notify so the inbox can mark it as replied
+      if (replyTo?.threadId && !forwardOf) {
+        onReplySent?.(replyTo.threadId);
+      }
       onClose();
 
       // Open Create Task flow after modal closes
@@ -383,8 +415,8 @@ export default function ComposeModal({
           toName:  firstTo.name,
         });
       }
-    } catch {
-      setError('Failed to send email. Please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send email. Please try again.');
     } finally {
       setSending(false);
     }
@@ -593,6 +625,40 @@ export default function ComposeModal({
 
             <FmtBtn title="Bullet list" onActivate={() => fmt('insertUnorderedList')}><List size={13} /></FmtBtn>
             <FmtBtn title="Numbered list" onActivate={() => fmt('insertOrderedList')}><ListOrdered size={13} /></FmtBtn>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
+            {/* Emoji picker */}
+            <div className="relative" ref={emojiPickerRef}>
+              <button
+                title="Insert emoji"
+                onMouseDown={e => { e.preventDefault(); setEmojiPickerOpen(o => !o); }}
+                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Smile size={13} />
+              </button>
+              {emojiPickerOpen && (
+                <div
+                  className="absolute bottom-full mb-1 left-0 z-50 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1"
+                  style={{ width: 188 }}
+                >
+                  {QUICK_EMOJIS.map(em => (
+                    <button
+                      key={em}
+                      onMouseDown={ev => {
+                        ev.preventDefault();
+                        bodyRef.current?.focus();
+                        document.execCommand('insertText', false, em);
+                        setEmojiPickerOpen(false);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Body */}
@@ -742,7 +808,7 @@ export default function ComposeModal({
               <div className="flex-1" />
 
               {/* Right: status + Save Draft icon + Send */}
-              {error && <span className="text-xs text-red-500 max-w-[140px] truncate shrink-0">{error}</span>}
+              {error && <span className="text-xs text-red-500 shrink-0 max-w-xs leading-tight">{error}</span>}
               {draftSaved && (
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
                   <Check size={11} /> Saved
