@@ -69,6 +69,35 @@ const RECURRENCE_SHORT: Record<string, string> = {
   quarterly: 'Quarterly', annually: 'Annually', custom: 'Custom',
 };
 
+/** Display order for category groups */
+const CATEGORY_ORDER: string[] = [
+  'year_end', 'vat', 'self_assessment', 'payroll', 'companies_house',
+  'bookkeeping', 'cis', 'management', 'performance', 'audit',
+  'onboarding', 'internal', 'general', 'other',
+];
+
+/** Tailwind colour classes per category — badge bg/text + section accent */
+const CATEGORY_COLOURS: Record<string, { badge: string; header: string; dot: string }> = {
+  year_end:        { badge: 'bg-indigo-100 text-indigo-700',  header: 'text-indigo-700',  dot: 'bg-indigo-400' },
+  vat:             { badge: 'bg-teal-100 text-teal-700',      header: 'text-teal-700',    dot: 'bg-teal-400' },
+  self_assessment: { badge: 'bg-orange-100 text-orange-700',  header: 'text-orange-700',  dot: 'bg-orange-400' },
+  payroll:         { badge: 'bg-green-100 text-green-700',    header: 'text-green-700',   dot: 'bg-green-400' },
+  companies_house: { badge: 'bg-blue-100 text-blue-700',      header: 'text-blue-700',    dot: 'bg-blue-400' },
+  bookkeeping:     { badge: 'bg-sky-100 text-sky-700',        header: 'text-sky-700',     dot: 'bg-sky-400' },
+  cis:             { badge: 'bg-yellow-100 text-yellow-700',  header: 'text-yellow-700',  dot: 'bg-yellow-400' },
+  management:      { badge: 'bg-violet-100 text-violet-700',  header: 'text-violet-700',  dot: 'bg-violet-400' },
+  performance:     { badge: 'bg-emerald-100 text-emerald-700',header: 'text-emerald-700', dot: 'bg-emerald-400' },
+  audit:           { badge: 'bg-red-100 text-red-700',        header: 'text-red-700',     dot: 'bg-red-400' },
+  onboarding:      { badge: 'bg-pink-100 text-pink-700',      header: 'text-pink-700',    dot: 'bg-pink-400' },
+  internal:        { badge: 'bg-gray-100 text-gray-600',      header: 'text-gray-600',    dot: 'bg-gray-400' },
+  general:         { badge: 'bg-slate-100 text-slate-600',    header: 'text-slate-600',   dot: 'bg-slate-400' },
+  other:           { badge: 'bg-stone-100 text-stone-600',    header: 'text-stone-600',   dot: 'bg-stone-400' },
+};
+
+function categoryColours(category: string) {
+  return CATEGORY_COLOURS[category] ?? { badge: 'bg-gray-100 text-gray-600', header: 'text-gray-600', dot: 'bg-gray-400' };
+}
+
 function getStartTrigger(steps: { step_type?: string; start_trigger_config?: StartTriggerConfig | null }[] | undefined): string | null {
   const startStep = steps?.find(s => s.step_type === 'start');
   const cfg = startStep?.start_trigger_config ?? null;
@@ -104,7 +133,7 @@ function TemplateCard({ name, description, category, stepCount, recurrenceType, 
       <p className="text-sm font-semibold text-gray-800 mb-1 leading-snug">{name}</p>
       {description && <p className="text-xs text-gray-500 mb-2 line-clamp-2">{description}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+        <span className={`text-xs px-2 py-0.5 rounded font-medium ${categoryColours(category).badge}`}>
           {TEMPLATE_CATEGORY_LABELS[category] ?? category}
         </span>
         <span className="text-xs text-gray-400">{stepCount} steps</span>
@@ -134,6 +163,23 @@ interface SmithTemplatesSectionProps {
 
 function SmithTemplatesSection({ templates, selectedId, onSelect }: SmithTemplatesSectionProps) {
   const [open, setOpen] = useState(false);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, DefaultTemplate[]>();
+    templates.forEach(t => {
+      const cat = t.category ?? 'general';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(t);
+    });
+    const ordered = CATEGORY_ORDER
+      .filter(cat => map.has(cat))
+      .map(cat => ({ cat, items: map.get(cat)! }));
+    Array.from(map.entries())
+      .filter(([cat]) => !CATEGORY_ORDER.includes(cat))
+      .forEach(([cat, items]) => ordered.push({ cat, items }));
+    return ordered;
+  }, [templates]);
+
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <button
@@ -150,22 +196,105 @@ function SmithTemplatesSection({ templates, selectedId, onSelect }: SmithTemplat
         }
       </button>
       {open && (
-        <div className="p-3 grid grid-cols-2 gap-3">
-          {templates.map(t => (
-            <TemplateCard
-              key={t.id}
-              name={t.name}
-              description={t.description}
-              category={t.category}
-              stepCount={t.steps.length}
-              recurrenceType={t.recurrence_type}
-              steps={t.steps}
-              selected={selectedId === t.id}
-              onClick={() => onSelect(t)}
-            />
-          ))}
+        <div className="p-4 space-y-5">
+          {groups.map(({ cat, items }) => {
+            const colours = categoryColours(cat);
+            return (
+              <div key={cat}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <div className={`h-2 w-2 rounded-full flex-shrink-0 ${colours.dot}`} />
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${colours.header}`}>
+                    {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
+                  </span>
+                  <span className="text-xs text-gray-400">({items.length})</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {items.map(t => (
+                    <TemplateCard
+                      key={t.id}
+                      name={t.name}
+                      description={t.description}
+                      category={cat}
+                      stepCount={t.steps.length}
+                      recurrenceType={t.recurrence_type}
+                      steps={t.steps}
+                      selected={selectedId === t.id}
+                      onClick={() => onSelect(t)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Firm templates grouped by category ───────────────────────────────────────
+
+interface FirmTemplatesGroupedProps {
+  templates: TaskTemplate[];
+  selectedId: string | null;
+  onSelect: (t: TaskTemplate) => void;
+}
+
+function FirmTemplatesGrouped({ templates, selectedId, onSelect }: FirmTemplatesGroupedProps) {
+  const groups = useMemo(() => {
+    const map = new Map<string, TaskTemplate[]>();
+    templates.forEach(t => {
+      const cat = t.category ?? 'general';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(t);
+    });
+    const ordered = CATEGORY_ORDER
+      .filter(cat => map.has(cat))
+      .map(cat => ({ cat, items: map.get(cat)! }));
+    // append any categories not in CATEGORY_ORDER (future-proofing)
+    Array.from(map.entries())
+      .filter(([cat]) => !CATEGORY_ORDER.includes(cat))
+      .forEach(([cat, items]) => ordered.push({ cat, items }));
+    return ordered;
+  }, [templates]);
+
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="mb-6 space-y-5">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Your Firm's Templates</h3>
+      {groups.map(({ cat, items }) => {
+        const colours = categoryColours(cat);
+        return (
+          <div key={cat}>
+            {/* Category header */}
+            <div className="flex items-center gap-2 mb-2.5">
+              <div className={`h-2 w-2 rounded-full flex-shrink-0 ${colours.dot}`} />
+              <span className={`text-xs font-semibold uppercase tracking-wider ${colours.header}`}>
+                {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
+              </span>
+              <span className="text-xs text-gray-400">({items.length})</span>
+            </div>
+            {/* Template cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {items.map(t => (
+                <TemplateCard
+                  key={t.id}
+                  name={t.name}
+                  description={t.description}
+                  category={cat}
+                  stepCount={t.steps?.length ?? 0}
+                  recurrenceType={t.recurrence_type}
+                  recurrenceIntervalDays={t.recurrence_interval_days}
+                  steps={t.steps}
+                  selected={selectedId === t.id}
+                  onClick={() => onSelect(t)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -407,29 +536,13 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                 </button>
               </div>
 
-              {/* Firm templates — shown first */}
+              {/* Firm templates — grouped by category */}
               {firmTemplates.length > 0 ? (
-                <div className="mb-6">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Your Firm's Templates</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {firmTemplates
-                      .filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))
-                      .map(t => (
-                        <TemplateCard
-                          key={t.id}
-                          name={t.name}
-                          description={t.description}
-                          category={t.category ?? 'general'}
-                          stepCount={t.steps?.length ?? 0}
-                          recurrenceType={t.recurrence_type}
-                          recurrenceIntervalDays={t.recurrence_interval_days}
-                          steps={t.steps}
-                          selected={selectedFirmTemplate?.id === t.id}
-                          onClick={() => handleSelectFirm(t)}
-                        />
-                      ))}
-                  </div>
-                </div>
+                <FirmTemplatesGrouped
+                  templates={firmTemplates.filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))}
+                  selectedId={selectedFirmTemplate?.id ?? null}
+                  onSelect={handleSelectFirm}
+                />
               ) : (
                 <div className="mb-6 px-3 py-3 bg-gray-50 rounded-lg border border-dashed border-gray-200">
                   <p className="text-xs text-gray-400 text-center">No firm templates yet — use a SMITH template below or start from scratch.</p>
