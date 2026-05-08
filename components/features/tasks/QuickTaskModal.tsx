@@ -15,6 +15,10 @@ interface Props {
   /** Pre-populate client from a client context (e.g. client detail page) */
   defaultClientId?: string;
   defaultClientName?: string;
+  /** AI-suggested values (e.g. from email content) — all overridable by the user */
+  defaultTitle?: string;
+  defaultSteps?: string[];
+  defaultDueDate?: string;
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
@@ -27,13 +31,13 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'custom', label: 'Custom interval…' },
 ];
 
-export default function QuickTaskModal({ onClose, onCreate, teamMembers, defaultClientId, defaultClientName }: Props) {
-  const [title, setTitle] = useState('');
+export default function QuickTaskModal({ onClose, onCreate, teamMembers, defaultClientId, defaultClientName, defaultTitle, defaultSteps, defaultDueDate }: Props) {
+  const [title, setTitle] = useState(defaultTitle ?? '');
   const [clientId, setClientId] = useState(defaultClientId ?? '');
   const [isInternal, setIsInternal] = useState(false);
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(defaultDueDate ?? '');
   const [assigneeId, setAssigneeId] = useState('');
-  const [steps, setSteps] = useState<string[]>(['']);
+  const [steps, setSteps] = useState<string[]>(defaultSteps?.length ? defaultSteps : ['']);
   const [showRepeat, setShowRepeat] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceType | ''>('');
   const [customInterval, setCustomInterval] = useState('');

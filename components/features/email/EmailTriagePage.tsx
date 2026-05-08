@@ -7,7 +7,8 @@ import EmailList from './EmailList';
 import EmailThread from './EmailThread';
 import ComposeModal from './ComposeModal';
 import AllocateModal from './AllocateModal';
-import TaskLinkModal from './TaskLinkModal';
+import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { createClient } from '@/lib/supabase';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
@@ -69,7 +70,17 @@ export default function EmailTriagePage() {
   const [draftingAIReply, setDraftingAIReply] = useState(false);
   const [defaultClients, setDefaultClients] = useState<Client[] | null>(null);
   const [allocateOpen, setAllocateOpen] = useState(false);
-  const [taskLinkOpen, setTaskLinkOpen] = useState(false);
+
+  // Task creation from email
+  const [creatingTask, setCreatingTask]         = useState(false);
+  const [showQuickTask, setShowQuickTask]       = useState(false);
+  const [taskSuggestedTitle, setTaskSuggestedTitle]   = useState('');
+  const [taskSuggestedSteps, setTaskSuggestedSteps]   = useState<string[]>([]);
+  const [taskSuggestedDueDate, setTaskSuggestedDueDate] = useState('');
+  const [taskSuggestedClientId, setTaskSuggestedClientId]     = useState('');
+  const [taskSuggestedClientName, setTaskSuggestedClientName] = useState('');
+  const [teamMembers, setTeamMembers] = useState<{ id: string; full_name: string | null; email: string }[]>([]);
+  const [teamMembersLoaded, setTeamMembersLoaded] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -306,11 +317,68 @@ export default function EmailTriagePage() {
     });
   }
 
-  function handleLinkedTask() {
-    if (activeThread) {
-      setThreadMeta(prev => ({ ...prev, [activeThread.id]: { ...prev[activeThread.id], hasTaskLink: true } }));
-      openThread(activeThread);
+  async function handleCreateTaskFromEmail() {
+    if (!activeThread) return;
+    setCreatingTask(true);
+
+    // Lazy-load team members once
+    if (!teamMembersLoaded) {
+      fetch('/api/users/team')
+        .then(r => r.ok ? r.json() : { members: [] })
+        .then((d: { members: { id: string; full_name: string | null; email: string }[] }) => {
+          setTeamMembers(d.members ?? []);
+          setTeamMembersLoaded(true);
+        })
+        .catch(() => {});
     }
+
+    // Get the most recent message to extract sender + body
+    const messages = activeThread.messages ?? [];
+    const latest = messages[messages.length - 1] ?? messages[0];
+    const fromEmail = latest?.from?.email ?? '';
+    const fromName  = latest?.from?.name  ?? '';
+    const body      = latest?.body ?? '';
+
+    try {
+      const res = await fetch('/api/email/suggest-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject:   activeThread.subject ?? '',
+          body,
+          fromEmail,
+          fromName,
+        }),
+      });
+
+      interface SuggestResult { title: string; steps: string[]; dueDate: string | null; clientId: string | null; clientName: string | null; }
+      const data = res.ok
+        ? await res.json() as SuggestResult
+        : { title: activeThread.subject ?? '', steps: [], dueDate: null, clientId: null, clientName: null };
+
+      setTaskSuggestedTitle(data.title ?? activeThread.subject ?? '');
+      setTaskSuggestedSteps(data.steps ?? []);
+      setTaskSuggestedDueDate(data.dueDate ?? '');
+      setTaskSuggestedClientId(data.clientId ?? '');
+      setTaskSuggestedClientName(data.clientName ?? '');
+    } catch {
+      setTaskSuggestedTitle(activeThread.subject ?? '');
+      setTaskSuggestedSteps([]);
+      setTaskSuggestedDueDate('');
+      setTaskSuggestedClientId('');
+      setTaskSuggestedClientName('');
+    } finally {
+      setCreatingTask(false);
+      setShowQuickTask(true);
+    }
+  }
+
+  async function handleTaskCreated(data: CreateTaskData) {
+    await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
   }
 
   function handleDelete() {
@@ -504,7 +572,8 @@ export default function EmailTriagePage() {
             tasksModuleActive={tasksModuleActive}
             labels={labels}
             onAllocate={() => setAllocateOpen(true)}
-            onLinkTask={() => setTaskLinkOpen(true)}
+            onCreateTask={() => void handleCreateTaskFromEmail()}
+            creatingTask={creatingTask}
             onReply={handleReply}
             onReplyAll={handleReplyAll}
             onForward={handleForward}
@@ -552,13 +621,18 @@ export default function EmailTriagePage() {
         onAllocated={handleAllocated}
       />
 
-      <TaskLinkModal
-        open={taskLinkOpen}
-        onClose={() => setTaskLinkOpen(false)}
-        thread={activeThread}
-        existingLinks={threadDetail?.taskLinks ?? []}
-        onLinked={handleLinkedTask}
-      />
+      {showQuickTask && (
+        <QuickTaskModal
+          onClose={() => setShowQuickTask(false)}
+          onCreate={async (data) => { await handleTaskCreated(data); }}
+          teamMembers={teamMembers}
+          defaultTitle={taskSuggestedTitle}
+          defaultSteps={taskSuggestedSteps}
+          defaultDueDate={taskSuggestedDueDate}
+          defaultClientId={taskSuggestedClientId}
+          defaultClientName={taskSuggestedClientName}
+        />
+      )}
     </div>
   );
 }

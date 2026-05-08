@@ -27,7 +27,8 @@ interface Props {
   tasksModuleActive: boolean;
   labels: GmailLabel[];
   onAllocate: () => void;
-  onLinkTask: () => void;
+  onCreateTask: () => void;
+  creatingTask?: boolean;
   onReply: (message: EmailMessage) => void;
   onReplyAll: (message: EmailMessage) => void;
   onForward: (message: EmailMessage) => void;
@@ -164,7 +165,7 @@ function MessageCard({ message, defaultOpen, onReply, onReplyAll, onForward }: {
 
 export default function EmailThread({
   thread, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
-  onAllocate, onLinkTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
+  onAllocate, onCreateTask, creatingTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
   isPinned, onPin,
 }: Props) {
@@ -353,8 +354,15 @@ export default function EmailThread({
             <UserPlus size={12} /> Allocate
           </button>
           {tasksModuleActive && (
-            <button onClick={onLinkTask} className="btn-secondary text-xs flex items-center gap-1.5">
-              <CheckSquare size={12} /> Link Task
+            <button
+              onClick={onCreateTask}
+              disabled={creatingTask}
+              className="btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-60"
+            >
+              {creatingTask
+                ? <><Loader2 size={12} className="animate-spin" /> Preparing…</>
+                : <><CheckSquare size={12} /> Create Task</>
+              }
             </button>
           )}
 
