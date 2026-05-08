@@ -16,9 +16,11 @@ import ByTypeView from './views/ByTypeView';
 import TemplateLibrary from './TemplateLibrary';
 import TaskDetailPanel from './TaskDetailPanel';
 import CreateTaskModal, { type CreateTaskData } from './CreateTaskModal';
-import TemplateBuilder, { type TemplateData } from './TemplateBuilder';
+import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from './TemplateBuilder';
 import AITemplateBuilder from './AITemplateBuilder';
 import BulkTaskModal from './BulkTaskModal';
+import TaskTypeSelector from './TaskTypeSelector';
+import QuickTaskModal from './QuickTaskModal';
 import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
@@ -76,7 +78,13 @@ export default function TasksPage() {
 
   // Modals
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
+  // Task creation flow: selector → quick or full (wizard or builder)
+  const [showTaskTypeSelector, setShowTaskTypeSelector] = useState(false);
+  const [showQuickTask, setShowQuickTask]               = useState(false);
+  const [showCreate, setShowCreate]                     = useState(false); // Full Task wizard
+  const [showTaskBuilder, setShowTaskBuilder]           = useState(false); // Full Task visual builder
+  const [taskBuilderInitialData, setTaskBuilderInitialData] = useState<TemplateData | null>(null);
+  // Template editing
   const [showTemplateBuilder, setShowTemplateBuilder] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<TaskTemplate | null>(null);
   const [aiBuilderInitialData, setAiBuilderInitialData] = useState<TemplateData | null>(null);
@@ -161,6 +169,25 @@ export default function TasksPage() {
     });
     if (!r.ok) throw new Error('Failed to create task');
     await refreshTasks();
+  }
+
+  /** Called when the visual task builder (TemplateBuilder in task mode) saves */
+  async function handleTaskBuilderCreate(data: TaskCreationOutput, saveAsTemplate: boolean, templateData: TemplateData) {
+    // Create the task
+    await handleCreate(data as CreateTaskData);
+    // Optionally also save as a reusable template
+    if (saveAsTemplate) {
+      await handleSaveTemplate(templateData);
+    }
+    setShowTaskBuilder(false);
+    setTaskBuilderInitialData(null);
+  }
+
+  /** Called when the Full Task wizard wants to open the visual builder (from scratch or customise) */
+  function handleGoToBuilder(initialData?: TemplateData | null) {
+    setShowCreate(false);
+    setTaskBuilderInitialData(initialData ?? null);
+    setShowTaskBuilder(true);
   }
 
   async function handleUpdate(taskId: string, updates: Partial<Task>) {
@@ -390,7 +417,7 @@ export default function TasksPage() {
             <h1 className="text-base font-bold text-gray-900">Tasks</h1>
           </div>
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={() => setShowTaskTypeSelector(true)}
             className="w-full flex items-center justify-center gap-1.5 bg-indigo-600 text-white text-sm py-2 rounded-lg hover:bg-indigo-700 font-medium transition-colors"
           >
             <Plus className="h-4 w-4" /> New Task
@@ -592,7 +619,25 @@ export default function TasksPage() {
         />
       )}
 
-      {/* Create task modal */}
+      {/* Task type selector — shown first on +New Task */}
+      {showTaskTypeSelector && (
+        <TaskTypeSelector
+          onClose={() => setShowTaskTypeSelector(false)}
+          onQuickTask={() => { setShowTaskTypeSelector(false); setShowQuickTask(true); }}
+          onFullTask={() => { setShowTaskTypeSelector(false); setShowCreate(true); }}
+        />
+      )}
+
+      {/* Quick Task modal */}
+      {showQuickTask && (
+        <QuickTaskModal
+          onClose={() => setShowQuickTask(false)}
+          onCreate={handleCreate}
+          teamMembers={teamMembers}
+        />
+      )}
+
+      {/* Full Task wizard (template → details → assignees → preview) */}
       {showCreate && (
         <CreateTaskModal
           onClose={() => setShowCreate(false)}
@@ -600,6 +645,22 @@ export default function TasksPage() {
           clients={clients}
           teamMembers={teamMembers}
           firmTemplates={templates}
+          onGoToBuilder={handleGoToBuilder}
+        />
+      )}
+
+      {/* Full Task visual builder (from scratch or customise-first) */}
+      {showTaskBuilder && (
+        <TemplateBuilder
+          template={null}
+          initialData={taskBuilderInitialData}
+          teamMembers={teamMembers}
+          existingTemplates={templates.map(t => ({ id: t.id, name: t.name }))}
+          onSave={handleSaveTemplate}
+          onClose={() => { setShowTaskBuilder(false); setTaskBuilderInitialData(null); }}
+          mode="task"
+          clients={clients}
+          onCreateTask={handleTaskBuilderCreate}
         />
       )}
 

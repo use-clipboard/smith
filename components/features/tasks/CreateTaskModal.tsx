@@ -1,10 +1,11 @@
 ﻿'use client';
 
 import { useState, useMemo } from 'react';
-import { X, ChevronRight, ChevronLeft, Loader2, RefreshCw, Search } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Loader2, RefreshCw, Search, Pencil, ExternalLink } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType } from '@/types';
+import type { TemplateData } from './TemplateBuilder';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
 interface Props {
@@ -13,6 +14,8 @@ interface Props {
   clients: { id: string; name: string; client_ref: string }[];
   teamMembers: { id: string; full_name: string | null; email: string }[];
   firmTemplates: TaskTemplate[];
+  /** Called when the user wants to open the full visual builder (optionally pre-populated) */
+  onGoToBuilder?: (initialData?: TemplateData | null) => void;
 }
 
 export interface CreateTaskData {
@@ -58,11 +61,54 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'custom', label: 'Custom interval' },
 ];
 
-export default function CreateTaskModal({ onClose, onCreate, clients, teamMembers, firmTemplates }: Props) {
+/** Convert a DefaultTemplate or TaskTemplate into the TemplateData shape the builder expects */
+function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
+  const isDefault = 'steps' in t && !('id' in t && typeof (t as TaskTemplate).is_firm_wide !== 'undefined');
+  const source = t as DefaultTemplate; // safe to cast — fields are structurally compatible
+  return {
+    name: t.name,
+    description: ('description' in t ? t.description : null) ?? null,
+    is_firm_wide: ('is_firm_wide' in t ? (t as TaskTemplate).is_firm_wide : true) ?? true,
+    category: ('category' in t ? t.category : 'general') ?? 'general',
+    recurrence_type: (t.recurrence_type as RecurrenceType) ?? null,
+    recurrence_interval_days: ('recurrence_interval_days' in t ? (t as TaskTemplate).recurrence_interval_days : null) ?? null,
+    estimated_duration_days: ('estimated_duration_days' in t ? t.estimated_duration_days : null) ?? null,
+    steps: (t.steps ?? []).map((s: Record<string, unknown>) => ({
+      step_key:              String(s.step_key ?? ''),
+      title:                 String(s.title ?? ''),
+      description:           (s.description as string | null) ?? null,
+      assignee_role:         (s.assignee_role as 'team_member' | 'client' | 'any') ?? 'team_member',
+      default_assignee_id:   (s.default_assignee_id as string | null) ?? null,
+      tool_module_id:        (s.tool_module_id as string | null) ?? null,
+      email_reminder_enabled:(s.email_reminder_enabled as boolean) ?? false,
+      email_reminder_config: (s.email_reminder_config as { recipients: ('assignee' | 'client')[]; timing: string }) ?? { recipients: [], timing: 'on_assign' },
+      email_reminder_subject:(s.email_reminder_subject as string | null) ?? null,
+      email_reminder_message:(s.email_reminder_message as string | null) ?? null,
+      client_instructions:   (s.client_instructions as string | null) ?? null,
+      client_can_upload:     (s.client_can_upload as boolean) ?? false,
+      time_estimate_minutes: (s.time_estimate_minutes as number | null) ?? null,
+      position_x:            Number(s.position_x ?? 220),
+      position_y:            Number(s.position_y ?? 0),
+      step_type:             (s.step_type as 'regular' | 'start' | 'end') ?? 'regular',
+      start_trigger_config:  (s.start_trigger_config as object | null) ?? null,
+      end_config:            (s.end_config as object | null) ?? null,
+    })),
+    edges: (('edges' in t ? t.edges : []) ?? []).map((e: Record<string, unknown>) => ({
+      from_step_key:  String(e.from_step_key ?? ''),
+      to_step_key:    String(e.to_step_key ?? ''),
+      label:          (e.label as string | null) ?? null,
+      condition_type: (e.condition_type as EdgeConditionType | null) ?? null,
+      condition_config: null,
+      source_handle:  (e.source_handle as string | null) ?? null,
+      target_handle:  (e.target_handle as string | null) ?? null,
+    })),
+  };
+}
+
+export default function CreateTaskModal({ onClose, onCreate, clients, teamMembers, firmTemplates, onGoToBuilder }: Props) {
   const [step, setStep] = useState<Step>('template');
   const [selectedDefault, setSelectedDefault] = useState<DefaultTemplate | null>(null);
   const [selectedFirmTemplate, setSelectedFirmTemplate] = useState<TaskTemplate | null>(null);
-  const [isBlank, setIsBlank] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
 
   // Details
@@ -160,7 +206,6 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   function handleSelectDefault(t: DefaultTemplate) {
     setSelectedDefault(t);
     setSelectedFirmTemplate(null);
-    setIsBlank(false);
     if (!title) setTitle(t.name);
     if (!recurrence && t.recurrence_type) setRecurrence(t.recurrence_type);
   }
@@ -168,15 +213,8 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   function handleSelectFirm(t: TaskTemplate) {
     setSelectedFirmTemplate(t);
     setSelectedDefault(null);
-    setIsBlank(false);
     if (!title) setTitle(t.name);
     if (!recurrence && t.recurrence_type) setRecurrence(t.recurrence_type as RecurrenceType);
-  }
-
-  function handleBlank() {
-    setIsBlank(true);
-    setSelectedDefault(null);
-    setSelectedFirmTemplate(null);
   }
 
   async function handleCreate() {
@@ -242,14 +280,19 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                 <input placeholder="Search templates…" value={templateSearch} onChange={e => setTemplateSearch(e.target.value)} className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500" />
               </div>
 
-              {/* Blank option */}
+              {/* Start from scratch → opens full visual builder */}
               <div className="mb-6">
                 <button
-                  onClick={handleBlank}
-                  className={`w-full text-left border-2 rounded-lg p-3 transition-all ${isBlank ? 'border-indigo-500 bg-indigo-50' : 'border-dashed border-gray-200 hover:border-gray-300'}`}
+                  onClick={() => onGoToBuilder?.(null)}
+                  className="w-full flex items-center justify-between text-left border-2 border-dashed border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 rounded-lg p-3 transition-all group"
                 >
-                  <p className="text-sm font-semibold text-gray-700">Start from scratch</p>
-                  <p className="text-xs text-gray-400">Create a blank task and add steps manually</p>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 group-hover:text-indigo-700">Start from scratch</p>
+                    <p className="text-xs text-gray-400">Build a custom flowchart in the visual editor</p>
+                  </div>
+                  <span className="text-xs text-indigo-500 font-medium flex items-center gap-1 flex-shrink-0 ml-3">
+                    Open builder <ExternalLink className="h-3 w-3" />
+                  </span>
                 </button>
               </div>
 
@@ -415,18 +458,40 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                 <ChevronLeft className="h-4 w-4" /> Back
               </button>
             )}
-            {step !== 'preview' ? (
+
+            {/* Template step: show Customise / Use as-is when a template is selected */}
+            {step === 'template' && activeTemplate && (
+              <>
+                <button
+                  onClick={() => onGoToBuilder?.(toTemplateData(activeTemplate))}
+                  className="flex items-center gap-1.5 text-sm text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 border border-gray-200 font-medium"
+                >
+                  <Pencil className="h-4 w-4" /> Customise first
+                </button>
+                <button
+                  onClick={() => { setError(''); setStep('details'); }}
+                  className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium"
+                >
+                  Use as-is <ChevronRight className="h-4 w-4" />
+                </button>
+              </>
+            )}
+
+            {/* Template step: no template selected yet — nothing in footer (start from scratch is inline) */}
+
+            {/* Steps 2-4 */}
+            {step !== 'template' && step !== 'preview' && (
               <button
                 onClick={() => {
-                  if (step === 'template') { if (!activeTemplate && !isBlank) { setError('Please select a template or choose blank.'); return; } setError(''); setStep('details'); }
-                  else if (step === 'details') { if (!title.trim()) { setError('Please enter a task title.'); return; } setError(''); setStep('assignees'); }
+                  if (step === 'details') { if (!title.trim()) { setError('Please enter a task title.'); return; } setError(''); setStep('assignees'); }
                   else if (step === 'assignees') { setStep('preview'); }
                 }}
                 className="flex items-center gap-1.5 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700"
               >
                 Next <ChevronRight className="h-4 w-4" />
               </button>
-            ) : (
+            )}
+            {step === 'preview' && (
               <button
                 onClick={handleCreate}
                 disabled={saving}

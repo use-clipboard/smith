@@ -13,14 +13,55 @@ import { MODULES } from '@/config/modules.config';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskTemplateStep, TaskTemplateEdge, RecurrenceType, EmailReminderTiming, EdgeConditionType, EdgeConditionConfig, StepType, StartTriggerConfig, EndConfig } from '@/types';
 import { triggerLabel } from './StartEndNodes';
+import ClientSearchInput from '@/components/ui/ClientSearchInput';
+
+/** The shape passed back when TemplateBuilder is in task-creation mode */
+export interface TaskCreationOutput {
+  title: string;
+  description?: string | null;
+  client_id?: string | null;
+  due_date?: string | null;
+  is_internal: boolean;
+  recurrence_type?: RecurrenceType | null;
+  recurrence_interval_days?: number | null;
+  steps: Array<{
+    step_key: string;
+    title: string;
+    description?: string | null;
+    assignee_id?: string | null;
+    is_client_step: boolean;
+    tool_module_id?: string | null;
+    email_reminder_enabled: boolean;
+    email_reminder_config: { recipients: string[]; timing: string };
+    position_x: number;
+    position_y: number;
+    step_type?: 'regular' | 'start' | 'end';
+    start_trigger_config?: object | null;
+    end_config?: object | null;
+  }>;
+  edges: Array<{
+    from_step_key: string;
+    to_step_key: string;
+    label?: string | null;
+    condition_type?: string | null;
+    source_handle?: string | null;
+    target_handle?: string | null;
+  }>;
+}
 
 interface Props {
   template: TaskTemplate | null; // null = creating new
-  initialData?: TemplateData | null; // pre-populate from AI builder
+  initialData?: TemplateData | null; // pre-populate from AI builder or selected template
   teamMembers: { id: string; full_name: string | null; email: string }[];
   existingTemplates?: { id: string; name: string }[]; // for duplicate-name detection
   onSave: (data: TemplateData) => Promise<void>;
   onClose: () => void;
+  /** When set, the builder operates in task-creation mode instead of template-saving mode */
+  mode?: 'template' | 'task';
+  /** Client list — only used in task mode for the client selector */
+  clients?: { id: string; name: string; client_ref?: string }[];
+  /** Called instead of onSave when mode === 'task' */
+  onCreateTask?: (data: TaskCreationOutput, saveAsTemplate: boolean, templateData: TemplateData) => Promise<void>;
 }
 
 export interface TemplateData {
@@ -524,7 +565,8 @@ function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave
 let _keyCounter = 0;
 function newStepKey() { return `step_${Date.now()}_${++_keyCounter}`; }
 
-export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose }: Props) {
+export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose, mode = 'template', clients = [], onCreateTask }: Props) {
+  const isTaskMode = mode === 'task';
   // Meta — initialData (from AI builder) takes precedence over blank, template takes precedence over both
   const [name, setName] = useState(template?.name ?? initialData?.name ?? '');
   const [description, setDescription] = useState(template?.description ?? initialData?.description ?? '');
@@ -572,6 +614,14 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // ── Task-mode only state ────────────────────────────────────────────────────
+  const [taskClientId, setTaskClientId]       = useState('');
+  const [taskIsInternal, setTaskIsInternal]   = useState(false);
+  const [taskDueDate, setTaskDueDate]         = useState('');
+  const [taskSaveAsTemplate, setTaskSaveAsTemplate] = useState(false);
+  // ───────────────────────────────────────────────────────────────────────────
+
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
   const [placementMode, setPlacementMode] = useState(false);
@@ -818,34 +868,80 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   }
 
   async function handleSave() {
-    if (!name.trim()) { setError('Template name is required.'); return; }
-    // Duplicate name check — skip the current template if editing
-    const duplicate = existingTemplates?.find(
-      t => t.name.toLowerCase() === name.trim().toLowerCase() && t.id !== template?.id
-    );
-    if (duplicate) { setError(`A template named "${duplicate.name}" already exists. Please choose a different name.`); return; }
+    if (!name.trim()) { setError(isTaskMode ? 'Task title is required.' : 'Template name is required.'); return; }
+
+    // Duplicate-name check only applies in template mode (or when saving as template)
+    if (!isTaskMode || taskSaveAsTemplate) {
+      const duplicate = existingTemplates?.find(
+        t => t.name.toLowerCase() === name.trim().toLowerCase() && t.id !== template?.id
+      );
+      if (duplicate) { setError(`A template named "${duplicate.name}" already exists. Please choose a different name.`); return; }
+    }
+
     const unconfiguredEdges = edgesData.filter(e => !e.condition_type);
     if (unconfiguredEdges.length > 0) {
       setError(`${unconfiguredEdges.length} connection${unconfiguredEdges.length > 1 ? 's' : ''} need${unconfiguredEdges.length === 1 ? 's' : ''} a condition set. Hover over each connection on the canvas to add one.`);
       return;
     }
+
     setSaving(true);
     setError('');
+
+    const templateData: TemplateData = {
+      name: name.trim(),
+      description: description || null,
+      is_firm_wide: isFirmWide,
+      category,
+      recurrence_type: recurrence as RecurrenceType || null,
+      recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
+      estimated_duration_days: estimatedDays ? parseInt(estimatedDays) : null,
+      steps,
+      edges: edgesData,
+    };
+
     try {
-      await onSave({
-        name: name.trim(),
-        description: description || null,
-        is_firm_wide: isFirmWide,
-        category,
-        recurrence_type: recurrence as RecurrenceType || null,
-        recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
-        estimated_duration_days: estimatedDays ? parseInt(estimatedDays) : null,
-        steps,
-        edges: edgesData,
-      });
+      if (isTaskMode && onCreateTask) {
+        // Map TemplateStepData → TaskCreationOutput steps
+        const taskSteps = steps.map(s => ({
+          step_key:               s.step_key,
+          title:                  s.title,
+          description:            s.description ?? null,
+          assignee_id:            s.default_assignee_id ?? null,
+          is_client_step:         s.assignee_role === 'client',
+          tool_module_id:         s.tool_module_id ?? null,
+          email_reminder_enabled: s.email_reminder_enabled,
+          email_reminder_config:  s.email_reminder_config as { recipients: string[]; timing: string },
+          position_x:             s.position_x,
+          position_y:             s.position_y,
+          step_type:              s.step_type,
+          start_trigger_config:   s.start_trigger_config ?? null,
+          end_config:             s.end_config ?? null,
+        }));
+        const taskEdges = edgesData.map(e => ({
+          from_step_key:  e.from_step_key,
+          to_step_key:    e.to_step_key,
+          label:          e.label ?? null,
+          condition_type: e.condition_type,
+          source_handle:  e.source_handle,
+          target_handle:  e.target_handle,
+        }));
+        await onCreateTask({
+          title:                    name.trim(),
+          description:              description || null,
+          client_id:                taskIsInternal ? null : (taskClientId || null),
+          due_date:                 taskDueDate || null,
+          is_internal:              taskIsInternal || !taskClientId,
+          recurrence_type:          recurrence as RecurrenceType || null,
+          recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
+          steps:                    taskSteps,
+          edges:                    taskEdges,
+        }, taskSaveAsTemplate, templateData);
+      } else {
+        await onSave(templateData);
+      }
       onClose();
     } catch {
-      setError('Failed to save template. Please try again.');
+      setError(isTaskMode ? 'Failed to create task. Please try again.' : 'Failed to save template. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -862,7 +958,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
             <input
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="Template name…"
+              placeholder={isTaskMode ? 'Task title…' : 'Template name…'}
               className="text-lg font-bold text-gray-900 border-0 bg-transparent focus:outline-none focus:ring-0 min-w-0 flex-1 placeholder-gray-300"
             />
           </div>
@@ -904,48 +1000,118 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                 <Zap className="h-4 w-4" /> Test Flow
               </button>
             )}
+            {/* Task mode: save-as-template checkbox */}
+            {isTaskMode && (
+              <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={taskSaveAsTemplate}
+                  onChange={e => setTaskSaveAsTemplate(e.target.checked)}
+                  className="rounded"
+                />
+                Save as template
+              </label>
+            )}
             <button
               onClick={handleSave}
               disabled={saving}
               className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save
+              {isTaskMode ? 'Create Task' : 'Save'}
             </button>
             <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-200 text-gray-400"><X className="h-5 w-5" /></button>
           </div>
         </div>
 
-        {/* Sub-header — template settings */}
+        {/* Sub-header — template settings / task details */}
         <div className="flex items-center gap-4 px-6 py-2 border-b border-gray-100 flex-shrink-0 flex-wrap">
-          <select value={category} onChange={e => setCategory(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            {Object.entries(TEMPLATE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value="">No recurrence</option>
-            <option value="weekly">Weekly</option>
-            <option value="bi-weekly">Bi-weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="annually">Annually</option>
-            <option value="custom">Custom</option>
-          </select>
-          {recurrence === 'custom' && (
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-gray-500">Every</span>
-              <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-14 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-              <span className="text-xs text-gray-500">days</span>
-            </div>
+          {isTaskMode ? (
+            /* Task mode: client + due date */
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setTaskIsInternal(false)}
+                  className={`text-xs px-2.5 py-1 rounded border font-medium transition-colors ${!taskIsInternal ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                >
+                  Client task
+                </button>
+                <button
+                  onClick={() => { setTaskIsInternal(true); setTaskClientId(''); }}
+                  className={`text-xs px-2.5 py-1 rounded border font-medium transition-colors ${taskIsInternal ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                >
+                  Internal
+                </button>
+              </div>
+              {!taskIsInternal && (
+                <div className="w-56">
+                  <ClientSearchInput
+                    value={taskClientId}
+                    onChange={(id) => setTaskClientId(id)}
+                    placeholder="Select client…"
+                    className="w-full"
+                  />
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-gray-500">Due</span>
+                <input
+                  type="date"
+                  value={taskDueDate}
+                  onChange={e => setTaskDueDate(e.target.value)}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="">No recurrence</option>
+                <option value="weekly">Weekly</option>
+                <option value="bi-weekly">Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annually">Annually</option>
+                <option value="custom">Custom</option>
+              </select>
+              {recurrence === 'custom' && (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Every</span>
+                  <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-14 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                  <span className="text-xs text-gray-500">days</span>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Template mode: original controls */
+            <>
+              <select value={category} onChange={e => setCategory(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                {Object.entries(TEMPLATE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="">No recurrence</option>
+                <option value="weekly">Weekly</option>
+                <option value="bi-weekly">Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annually">Annually</option>
+                <option value="custom">Custom</option>
+              </select>
+              {recurrence === 'custom' && (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-gray-500">Every</span>
+                  <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-14 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                  <span className="text-xs text-gray-500">days</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">Est.</span>
+                <input type="number" min="1" placeholder="days" value={estimatedDays} onChange={e => setEstimatedDays(e.target.value)} className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                <span className="text-xs text-gray-500">days</span>
+              </div>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                <input type="checkbox" checked={isFirmWide} onChange={e => setIsFirmWide(e.target.checked)} className="rounded" />
+                Firm-wide
+              </label>
+            </>
           )}
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">Est.</span>
-            <input type="number" min="1" placeholder="days" value={estimatedDays} onChange={e => setEstimatedDays(e.target.value)} className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-            <span className="text-xs text-gray-500">days</span>
-          </div>
-          <label className="flex items-center gap-1.5 text-xs text-gray-500">
-            <input type="checkbox" checked={isFirmWide} onChange={e => setIsFirmWide(e.target.checked)} className="rounded" />
-            Firm-wide
-          </label>
         </div>
 
         {/* Body: flowchart + step panel */}
