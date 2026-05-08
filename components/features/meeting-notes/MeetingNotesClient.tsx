@@ -20,12 +20,15 @@ import {
   AlertCircle, RefreshCw, X, Plus, Trash2, Check,
   FileText, Zap, ListChecks, Vote, BookText, PenLine,
   Phone, Video, PersonStanding, MonitorSpeaker, Monitor,
-  Upload, Film, FolderOpen,
+  Upload, Film, FolderOpen, CheckSquare,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 import { consumePendingClient } from '@/lib/pendingClient';
+import { useModules } from '@/components/ui/ModulesProvider';
+import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 
 // ── Web Speech API types ──────────────────────────────────────────────────────
 
@@ -127,6 +130,9 @@ function TabPill({ label, icon, active, onClick }: {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MeetingNotesClient() {
+  const { isModuleActive } = useModules();
+  const tasksModuleActive = isModuleActive('tasks');
+
   const [phase,         setPhase]         = useState<Phase>('setup');
   const [entryMode,     setEntryMode]     = useState<EntryMode>('record');
   const [meetingOrigin, setMeetingOrigin] = useState<MeetingOrigin>('recorded');
@@ -210,6 +216,9 @@ export default function MeetingNotesClient() {
   const [driveUrl,         setDriveUrl]         = useState<string | null>(null);
   const [addToTimeline,    setAddToTimeline]    = useState(true);
   const [timelineSaved,    setTimelineSaved]    = useState(false);
+
+  // Create Task from meeting notes
+  const [showQuickTask, setShowQuickTask] = useState(false);
 
   // Refs
   const recogRef         = useRef<SpeechRecognitionInstance | null>(null);
@@ -851,6 +860,14 @@ export default function MeetingNotesClient() {
               <button onClick={() => void handleSummarise(true)} className="btn-ghost text-sm flex items-center gap-1.5">
                 <Zap size={14} />Re-analyse
               </button>
+              {tasksModuleActive && editActions.length > 0 && (
+                <button
+                  onClick={() => setShowQuickTask(true)}
+                  className="btn-secondary text-sm flex items-center gap-1.5"
+                >
+                  <CheckSquare size={14} />Create Task
+                </button>
+              )}
             </div>
           </div>
 
@@ -1078,6 +1095,42 @@ export default function MeetingNotesClient() {
             onClose={() => setShowNotesFolderPicker(false)}
           />
         )}
+
+        {/* Create Task from meeting notes */}
+        {showQuickTask && (() => {
+          // Map action items → step strings
+          const steps = editActions.map(a => a.action).filter(Boolean);
+
+          // Find the earliest parseable deadline from action items
+          const dueDate = editActions
+            .map(a => a.deadline)
+            .map(d => { try { const dt = new Date(d); return isNaN(dt.getTime()) ? null : dt; } catch { return null; } })
+            .filter((d): d is Date => d !== null)
+            .sort((a, b) => a.getTime() - b.getTime())[0]
+            ?.toISOString().split('T')[0] ?? '';
+
+          // Remap teamMembers (name → full_name) for QuickTaskModal
+          const members = teamMembers.map(m => ({ id: m.id, full_name: m.name || null, email: m.email }));
+
+          return (
+            <QuickTaskModal
+              onClose={() => setShowQuickTask(false)}
+              onCreate={async (data: CreateTaskData) => {
+                await fetch('/api/tasks', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(data),
+                });
+              }}
+              teamMembers={members}
+              defaultTitle={meetingTitle || 'Meeting Action Items'}
+              defaultSteps={steps}
+              defaultDueDate={dueDate}
+              defaultClientId={selectedClient?.id ?? ''}
+              defaultClientName={selectedClient?.name ?? ''}
+            />
+          );
+        })()}
       </ToolLayout>
     );
   }
