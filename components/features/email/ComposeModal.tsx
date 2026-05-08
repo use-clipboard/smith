@@ -40,6 +40,8 @@ interface Props {
   forwardOf?: EmailMessage | null;
   /** Pre-populate client allocation (e.g. from existing thread allocation) */
   defaultClients?: Client[] | null;
+  /** Pre-populate the To field (e.g. when composing from a client page) */
+  defaultTo?: { name: string; email: string }[] | null;
   signature: string | null;
   googleEmail: string;
   displayName: string;
@@ -194,7 +196,7 @@ function FmtBtn({ title, onActivate, children }: {
 }
 
 export default function ComposeModal({
-  open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, signature, googleEmail, displayName, tasksModuleActive, onSent,
+  open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo, signature, googleEmail, displayName, tasksModuleActive, onSent,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
@@ -305,7 +307,7 @@ export default function ComposeModal({
       setCc([]); setShowCc(false);
       setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
     } else {
-      setTo([]); setCc([]); setShowCc(false); setSubject('');
+      setTo(defaultTo ?? []); setCc([]); setShowCc(false); setSubject('');
       setSelectedTask(null); setAttachedFiles([]);
     }
     setBcc([]); setShowBcc(false);

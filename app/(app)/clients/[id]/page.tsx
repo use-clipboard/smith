@@ -20,6 +20,7 @@ import TaskTypeSelector from '@/components/features/tasks/TaskTypeSelector';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import CreateTaskModal, { type CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from '@/components/features/tasks/TemplateBuilder';
+import ComposeModal from '@/components/features/email/ComposeModal';
 import type { TaskTemplate } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -745,6 +746,13 @@ export default function ClientDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [showScheduleMeeting, setShowScheduleMeeting] = useState(false);
 
+  // Email compose (launched from header button)
+  const [showCompose, setShowCompose]           = useState(false);
+  const [emailGoogleEmail, setEmailGoogleEmail] = useState('');
+  const [emailSignature, setEmailSignature]     = useState<string | null>(null);
+  const [emailDisplayName, setEmailDisplayName] = useState('');
+  const [emailDataLoaded, setEmailDataLoaded]   = useState(false);
+
   // Task creation flow (launched from header button)
   const [showTaskTypeSelector, setShowTaskTypeSelector] = useState(false);
   const [showQuickTask, setShowQuickTask]               = useState(false);
@@ -816,6 +824,30 @@ export default function ClientDetailPage() {
     void fetchLinks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  /** Lazy-load Gmail status + signature on first "Email" click */
+  async function ensureEmailData() {
+    if (emailDataLoaded) return;
+    const [statusRes, sigRes] = await Promise.allSettled([
+      fetch('/api/email/status'),
+      fetch('/api/email/signature'),
+    ]);
+    if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
+      const d = await statusRes.value.json() as { googleEmail?: string };
+      setEmailGoogleEmail(d.googleEmail ?? '');
+    }
+    if (sigRes.status === 'fulfilled' && sigRes.value.ok) {
+      const d = await sigRes.value.json() as { signature?: string | null; displayName?: string | null };
+      setEmailSignature(d.signature ?? null);
+      setEmailDisplayName(d.displayName ?? '');
+    }
+    setEmailDataLoaded(true);
+  }
+
+  function openCompose() {
+    void ensureEmailData();
+    setShowCompose(true);
+  }
 
   /** Lazy-load team members + firm templates on first "Create Task" click */
   async function ensureTaskData() {
@@ -1070,6 +1102,18 @@ export default function ClientDetailPage() {
               <CalendarDays size={17} />
               <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
                 Schedule Meeting
+              </span>
+            </button>
+          )}
+          {isModuleActive('email-triage') && client?.contact_email && (
+            <button
+              onClick={openCompose}
+              title="Email Client"
+              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-sky-600 hover:bg-sky-50 transition-all"
+            >
+              <Mail size={17} />
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                Email Client
               </span>
             </button>
           )}
@@ -1755,6 +1799,20 @@ export default function ClientDetailPage() {
           clientName={client.name}
           clientEmail={client.contact_email}
           onClose={() => setShowScheduleMeeting(false)}
+        />
+      )}
+
+      {/* ── Email compose ─────────────────────────────────────────────────────── */}
+      {client && (
+        <ComposeModal
+          open={showCompose}
+          onClose={() => setShowCompose(false)}
+          googleEmail={emailGoogleEmail}
+          signature={emailSignature}
+          displayName={emailDisplayName}
+          defaultTo={client.contact_email ? [{ name: client.name, email: client.contact_email }] : []}
+          defaultClients={[{ id: client.id, name: client.name, client_ref: client.client_ref ?? '', contact_email: client.contact_email, risk_rating: client.risk_rating }]}
+          tasksModuleActive={isModuleActive('tasks')}
         />
       )}
 
