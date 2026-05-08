@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { notifyTaskStepAssignments } from '@/lib/notifications';
 import type { TaskStatus, RecurrenceType } from '@/types';
 
 const CreateTaskSchema = z.object({
@@ -144,6 +145,15 @@ export async function POST(req: NextRequest) {
       }))
     ).select('id, step_key, is_client_step');
     if (stepsError) console.error('POST /api/tasks steps', stepsError);
+
+    // Notify assignees (fire-and-forget; don't block the response)
+    notifyTaskStepAssignments({
+      actorUserId: ctx.userId,
+      firmId: ctx.firmId,
+      taskId: task.id,
+      taskTitle: task.title,
+      assignments: steps.map(s => ({ assigneeId: s.assignee_id ?? null, stepTitle: s.title })),
+    }).catch(err => console.error('Task assignment notification error', err));
 
     // Generate client portal tokens for every client step
     if (insertedSteps && insertedSteps.length > 0) {

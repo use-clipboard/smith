@@ -105,6 +105,7 @@ function notifDotColor(type: string): string {
   if (type === 'calendar_updated') return '#3b82f6';     // blue
   if (type === 'calendar_deleted') return '#ef4444';     // red
   if (type === 'client_step_complete') return '#4F46E5'; // indigo
+  if (type === 'task_assigned') return '#f59e0b';        // amber
   return '#9ca3af';                                      // grey
 }
 

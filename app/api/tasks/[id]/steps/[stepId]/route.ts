@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { notifyTaskStepAssignments } from '@/lib/notifications';
 
 const UpdateStepSchema = z.object({
   title: z.string().min(1).optional(),
@@ -31,6 +32,14 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 
   const supabase = createClient();
 
+  // Fetch current step state so we can detect assignee changes and get the task title
+  const { data: existingStep } = await supabase
+    .from('task_steps')
+    .select('assignee_id, title, task:tasks(id, title)')
+    .eq('id', params.stepId)
+    .eq('task_id', params.id)
+    .single();
+
   const updates: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
   if (parsed.data.status === 'complete') updates.completed_at = new Date().toISOString();
 
@@ -45,6 +54,29 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
   if (error) {
     console.error('PUT /api/tasks/[id]/steps/[stepId]', error);
     return NextResponse.json({ error: 'Failed to update step' }, { status: 500 });
+  }
+
+  // Notify if assignee was changed to a new (non-null) person
+  const newAssigneeId = parsed.data.assignee_id;
+  const oldAssigneeId = (existingStep?.assignee_id as string | null) ?? null;
+  if (
+    newAssigneeId &&
+    newAssigneeId !== oldAssigneeId &&
+    existingStep
+  ) {
+    const taskData = existingStep.task as unknown as { id: string; title: string } | null;
+    if (taskData) {
+      notifyTaskStepAssignments({
+        actorUserId: ctx.userId,
+        firmId: ctx.firmId,
+        taskId: taskData.id,
+        taskTitle: taskData.title,
+        assignments: [{
+          assigneeId: newAssigneeId,
+          stepTitle: (existingStep.title as string) ?? parsed.data.title ?? '',
+        }],
+      }).catch(err => console.error('Step reassignment notification error', err));
+    }
   }
 
   // Auto-update task status based on step statuses

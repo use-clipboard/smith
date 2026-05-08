@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { notifyTaskStepAssignments } from '@/lib/notifications';
 
 const BulkRowSchema = z.object({
   template_id: z.string().uuid(),
@@ -170,6 +171,26 @@ export async function POST(req: NextRequest) {
           .select('id, step_key, is_client_step');
 
         if (stepsError) console.error(`Bulk row ${i + 1} steps error`, stepsError);
+
+        // Notify assignees for this task's steps (fire-and-forget, mirrors assignee resolution above)
+        const assignmentList = steps.map(s => {
+          let assigneeId: string | null = s.default_assignee_id ?? null;
+          const ov = stepAssignees[s.step_key];
+          if (ov === 'client') {
+            assigneeId = null;
+          } else if (ov && ov !== '') {
+            assigneeId = ov;
+          }
+          const isClientStep = ov === 'client' ? true : ov && ov !== '' ? false : s.assignee_role === 'client';
+          return { assigneeId: isClientStep ? null : assigneeId, stepTitle: s.title };
+        });
+        notifyTaskStepAssignments({
+          actorUserId: ctx.userId,
+          firmId: ctx.firmId,
+          taskId: task.id,
+          taskTitle: template.name,
+          assignments: assignmentList,
+        }).catch(err => console.error('Bulk task assignment notification error', err));
 
         // Client portal tokens for client steps
         if (insertedSteps) {

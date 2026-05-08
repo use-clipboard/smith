@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { notifyTaskStepAssignments } from '@/lib/notifications';
 
 const CreateStepSchema = z.object({
   step_key: z.string().min(1),
@@ -46,8 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const supabase = createClient();
 
-  // Verify task belongs to firm
-  const { data: task } = await supabase.from('tasks').select('id').eq('id', params.id).eq('firm_id', ctx.firmId).single();
+  // Verify task belongs to firm (also fetch title for notifications)
+  const { data: task } = await supabase.from('tasks').select('id, title').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
   const { data: step, error } = await supabase
@@ -73,6 +74,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (error) {
     console.error('POST /api/tasks/[id]/steps', error);
     return NextResponse.json({ error: 'Failed to create step' }, { status: 500 });
+  }
+
+  // Notify assignee if one was set
+  if (parsed.data.assignee_id) {
+    notifyTaskStepAssignments({
+      actorUserId: ctx.userId,
+      firmId: ctx.firmId,
+      taskId: params.id,
+      taskTitle: (task as { id: string; title: string }).title,
+      assignments: [{ assigneeId: parsed.data.assignee_id, stepTitle: parsed.data.title }],
+    }).catch(err => console.error('Step assignment notification error', err));
   }
 
   return NextResponse.json({ step }, { status: 201 });
