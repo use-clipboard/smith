@@ -53,6 +53,7 @@ export default function EmailTriagePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const [activeThread, setActiveThread] = useState<EmailThreadType | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
@@ -290,8 +291,11 @@ export default function EmailTriagePage() {
     if (pageToken) setLoadingMore(true);
     else setLoadingThreads(true);
     try {
-      const base = searchQuery
-        ? `/api/email/threads?q=${encodeURIComponent(searchQuery)}`
+      // Build the Gmail query: combine free-text search and/or unread filter
+      let q = searchQuery;
+      if (unreadOnly) q = q ? `${q} is:unread` : 'is:unread';
+      const base = q
+        ? `/api/email/threads?q=${encodeURIComponent(q)}`
         : `/api/email/threads?label=${encodeURIComponent(label)}`;
       const url = `${base}${pageToken ? `&pageToken=${pageToken}` : ''}`;
       const res = await fetch(url);
@@ -319,16 +323,16 @@ export default function EmailTriagePage() {
       setLoadingThreads(false);
       setLoadingMore(false);
     }
-  }, [searchQuery]);
+  }, [searchQuery, unreadOnly]);
 
-  // Fetch threads when label or search changes
+  // Fetch threads when label, search, or unread filter changes
   useEffect(() => {
     if (!connected) return;
     setActiveThread(null);
     setThreadDetail(null);
     setFetchError(null);
     fetchThreads(activeLabel);
-  }, [connected, activeLabel, searchQuery, fetchThreads]);
+  }, [connected, activeLabel, searchQuery, unreadOnly, fetchThreads]);
 
   // Start polling (skip during active search to avoid disrupting results)
   useEffect(() => {
@@ -749,6 +753,24 @@ export default function EmailTriagePage() {
     );
   }
 
+  function handleMarkRead(threadId: string, markAsRead: boolean) {
+    // Optimistic update
+    setThreads(prev => prev.map(t =>
+      t.id === threadId
+        ? { ...t, isRead: markAsRead, labelIds: markAsRead ? t.labelIds.filter(l => l !== 'UNREAD') : [...t.labelIds.filter(l => l !== 'UNREAD'), 'UNREAD'] }
+        : t
+    ));
+    fetch('/api/email/modify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        threadId,
+        removeLabelIds: markAsRead ? ['UNREAD'] : [],
+        addLabelIds: markAsRead ? [] : ['UNREAD'],
+      }),
+    }).catch(() => {});
+  }
+
   function handleBulkMarkRead(ids: string[]) {
     // Optimistically mark as read in state
     setThreads(prev => prev.map(t =>
@@ -885,6 +907,7 @@ export default function EmailTriagePage() {
           onSelect={openThread}
           onStar={handleListStar}
           onDelete={handleListDelete}
+          onMarkRead={handleMarkRead}
           onRefresh={() => { setFetchError(null); fetchThreads(activeLabel); }}
           hasNextPage={!!nextPageToken}
           onLoadMore={() => nextPageToken && fetchThreads(activeLabel, nextPageToken)}
@@ -893,6 +916,8 @@ export default function EmailTriagePage() {
           onPin={handlePin}
           forwardedThreadIds={forwardedThreadIds}
           repliedThreadIds={repliedThreadIds}
+          unreadOnly={unreadOnly}
+          onUnreadOnlyChange={v => { setUnreadOnly(v); }}
           onBulkDelete={handleBulkDelete}
           onBulkMarkRead={handleBulkMarkRead}
         />

@@ -32,6 +32,7 @@ interface Props {
   onRefresh: () => void;
   onStar: (threadId: string, starred: boolean) => void;
   onDelete: (threadId: string) => void;
+  onMarkRead?: (threadId: string, markAsRead: boolean) => void;
   hasNextPage: boolean;
   onLoadMore: () => void;
   loadingMore: boolean;
@@ -41,19 +42,22 @@ interface Props {
   repliedThreadIds?: Set<string>;
   onBulkDelete?: (ids: string[]) => void;
   onBulkMarkRead?: (ids: string[]) => void;
+  /** Controlled: true = only unread emails are fetched server-side */
+  unreadOnly: boolean;
+  onUnreadOnlyChange: (v: boolean) => void;
 }
 
 export default function EmailList({
   threads, activeThreadId, loading, error, threadMeta, searchQuery, onSearch,
-  onSelect, onRefresh, onStar, onDelete, hasNextPage, onLoadMore, loadingMore,
+  onSelect, onRefresh, onStar, onDelete, onMarkRead, hasNextPage, onLoadMore, loadingMore,
   pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead,
+  unreadOnly, onUnreadOnlyChange,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   // Filter / sort state
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortDesc, setSortDesc] = useState(true);    // true = newest first (default)
-  const [unreadOnly, setUnreadOnly] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
 
   // Multi-select state
@@ -71,13 +75,8 @@ export default function EmailList({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [filterOpen]);
 
-  // Derived: apply unread filter and sort order to threads
-  const displayThreads = (() => {
-    let list = threads;
-    if (unreadOnly) list = list.filter(t => !t.isRead);
-    if (!sortDesc) list = [...list].reverse();
-    return list;
-  })();
+  // Sort only — unread filter is applied server-side (whole inbox), not just loaded batch
+  const displayThreads = sortDesc ? threads : [...threads].reverse();
 
   const anyFilterActive = unreadOnly || !sortDesc;
 
@@ -203,11 +202,14 @@ export default function EmailList({
                     Filter
                   </div>
                   <button
-                    onClick={() => setUnreadOnly(o => !o)}
+                    onClick={() => { onUnreadOnlyChange(!unreadOnly); setFilterOpen(false); }}
                     className={`w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-[var(--bg-nav-hover)] transition-colors
                       ${unreadOnly ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
                   >
-                    Unread only
+                    <span className="flex flex-col items-start">
+                      Unread only
+                      <span className="text-[10px] text-[var(--text-muted)] font-normal">Searches entire inbox</span>
+                    </span>
                     {unreadOnly && <span className="text-[var(--accent)] text-[10px]">✓</span>}
                   </button>
 
@@ -241,7 +243,7 @@ export default function EmailList({
                     <>
                       <div className="mx-3 my-1 border-t border-[var(--border)]" />
                       <button
-                        onClick={() => { setSortDesc(true); setUnreadOnly(false); setFilterOpen(false); }}
+                        onClick={() => { setSortDesc(true); onUnreadOnlyChange(false); setFilterOpen(false); }}
                         className="w-full text-left px-3 py-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-[var(--bg-nav-hover)] transition-colors"
                       >
                         Reset filters
@@ -432,6 +434,15 @@ export default function EmailList({
                           >
                             <Star size={13} className={thread.labelIds.includes('STARRED') ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'} />
                           </button>
+                          {onMarkRead && (
+                            <button
+                              onClick={e => { e.stopPropagation(); onMarkRead(thread.id, !thread.isRead); }}
+                              title={thread.isRead ? 'Mark as unread' : 'Mark as read'}
+                              className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--accent)]"
+                            >
+                              <MailOpen size={13} />
+                            </button>
+                          )}
                           <button
                             onClick={e => { e.stopPropagation(); onDelete(thread.id); }}
                             title="Delete"
