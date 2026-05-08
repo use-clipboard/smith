@@ -291,9 +291,25 @@ export default function EmailTriagePage() {
     if (pageToken) setLoadingMore(true);
     else setLoadingThreads(true);
     try {
-      // Build the Gmail query: combine free-text search and/or unread filter
+      // Build the Gmail query: combine free-text search and/or unread filter.
+      // When using a query we must also preserve the label scope, otherwise Gmail
+      // searches everywhere (including archived mail).
       let q = searchQuery;
-      if (unreadOnly) q = q ? `${q} is:unread` : 'is:unread';
+      if (unreadOnly) {
+        q = q ? `${q} is:unread` : 'is:unread';
+        // Map the active label to its Gmail query equivalent so archived/other
+        // folder emails are excluded even when switching to query mode.
+        const labelScope: Record<string, string> = {
+          INBOX:   'in:inbox',
+          SENT:    'in:sent',
+          STARRED: 'is:starred',
+          SPAM:    'in:spam',
+          TRASH:   'in:trash',
+          DRAFT:   'in:drafts',
+        };
+        const scope = labelScope[label] ?? `label:${label.toLowerCase().replace(/\s+/g, '-')}`;
+        q = `${q} ${scope}`;
+      }
       const base = q
         ? `/api/email/threads?q=${encodeURIComponent(q)}`
         : `/api/email/threads?label=${encodeURIComponent(label)}`;
