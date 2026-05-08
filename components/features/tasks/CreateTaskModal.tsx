@@ -1,11 +1,12 @@
 ﻿'use client';
 
 import { useState, useMemo } from 'react';
-import { X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Pencil, ExternalLink } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Pencil, ExternalLink, Clock } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
-import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType } from '@/types';
+import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType, StartTriggerConfig } from '@/types';
 import type { TemplateData } from './TemplateBuilder';
+import { triggerLabel } from './StartEndNodes';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
 interface Props {
@@ -61,6 +62,68 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'custom', label: 'Custom interval' },
 ];
 
+// ── Template card helpers ─────────────────────────────────────────────────────
+
+const RECURRENCE_SHORT: Record<string, string> = {
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  quarterly: 'Quarterly', annually: 'Annually', custom: 'Custom',
+};
+
+function getStartTrigger(steps: { step_type?: string; start_trigger_config?: StartTriggerConfig | null }[] | undefined): string | null {
+  const startStep = steps?.find(s => s.step_type === 'start');
+  const cfg = startStep?.start_trigger_config ?? null;
+  if (!cfg || cfg.type === 'manual') return null;
+  return triggerLabel(cfg);
+}
+
+interface TemplateCardProps {
+  name: string;
+  description?: string | null;
+  category: string;
+  stepCount: number;
+  recurrenceType?: RecurrenceType | null;
+  recurrenceIntervalDays?: number | null;
+  steps?: { step_type?: string; start_trigger_config?: StartTriggerConfig | null }[];
+  selected: boolean;
+  onClick: () => void;
+}
+
+function TemplateCard({ name, description, category, stepCount, recurrenceType, recurrenceIntervalDays, steps, selected, onClick }: TemplateCardProps) {
+  const triggerText = getStartTrigger(steps);
+  const recurrenceText = recurrenceType && recurrenceType !== 'once'
+    ? (recurrenceType === 'custom' && recurrenceIntervalDays
+        ? `Every ${recurrenceIntervalDays}d`
+        : RECURRENCE_SHORT[recurrenceType] ?? recurrenceType)
+    : null;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left border-2 rounded-lg p-3 transition-all ${selected ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
+    >
+      <p className="text-sm font-semibold text-gray-800 mb-1 leading-snug">{name}</p>
+      {description && <p className="text-xs text-gray-500 mb-2 line-clamp-2">{description}</p>}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+          {TEMPLATE_CATEGORY_LABELS[category] ?? category}
+        </span>
+        <span className="text-xs text-gray-400">{stepCount} steps</span>
+        {recurrenceText && (
+          <span className="flex items-center gap-1 text-xs text-indigo-600 font-medium">
+            <RefreshCw className="h-3 w-3" />{recurrenceText}
+          </span>
+        )}
+      </div>
+      {triggerText && (
+        <div className="flex items-center gap-1 mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1 rounded">
+          <Clock className="h-3 w-3 flex-shrink-0 text-amber-500" />
+          <span className="truncate">{triggerText}</span>
+        </div>
+      )}
+    </button>
+  );
+}
+
 // ── Collapsible SMITH built-in templates section ──────────────────────────────
 
 interface SmithTemplatesSectionProps {
@@ -89,22 +152,17 @@ function SmithTemplatesSection({ templates, selectedId, onSelect }: SmithTemplat
       {open && (
         <div className="p-3 grid grid-cols-2 gap-3">
           {templates.map(t => (
-            <button
+            <TemplateCard
               key={t.id}
+              name={t.name}
+              description={t.description}
+              category={t.category}
+              stepCount={t.steps.length}
+              recurrenceType={t.recurrence_type}
+              steps={t.steps}
+              selected={selectedId === t.id}
               onClick={() => onSelect(t)}
-              className={`text-left border-2 rounded-lg p-3 transition-all ${selectedId === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
-            >
-              <div className="flex items-start justify-between mb-1">
-                <p className="text-sm font-semibold text-gray-800">{t.name}</p>
-                {t.recurrence_type && <RefreshCw className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 mt-0.5" />}
-              </div>
-              <p className="text-xs text-gray-500 mb-2">{t.description}</p>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">{TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}</span>
-                <span className="text-xs text-gray-400">{t.steps.length} steps</span>
-                {t.recurrence_type && <span className="text-xs text-indigo-600 capitalize">{t.recurrence_type}</span>}
-              </div>
-            </button>
+            />
           ))}
         </div>
       )}
@@ -357,18 +415,18 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                     {firmTemplates
                       .filter(t => t.name.toLowerCase().includes(templateSearch.toLowerCase()))
                       .map(t => (
-                        <button
+                        <TemplateCard
                           key={t.id}
+                          name={t.name}
+                          description={t.description}
+                          category={t.category ?? 'general'}
+                          stepCount={t.steps?.length ?? 0}
+                          recurrenceType={t.recurrence_type}
+                          recurrenceIntervalDays={t.recurrence_interval_days}
+                          steps={t.steps}
+                          selected={selectedFirmTemplate?.id === t.id}
                           onClick={() => handleSelectFirm(t)}
-                          className={`text-left border-2 rounded-lg p-3 transition-all ${selectedFirmTemplate?.id === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
-                        >
-                          <p className="text-sm font-semibold text-gray-800">{t.name}</p>
-                          {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded">Firm template</span>
-                            <span className="text-xs text-gray-400">{t.steps?.length ?? 0} steps</span>
-                          </div>
-                        </button>
+                        />
                       ))}
                   </div>
                 </div>
