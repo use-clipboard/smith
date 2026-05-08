@@ -16,6 +16,11 @@ import { useModules } from '@/components/ui/ModulesProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { setPendingClient } from '@/lib/pendingClient';
 import ClientTasksPanel from '@/components/features/tasks/ClientTasksPanel';
+import TaskTypeSelector from '@/components/features/tasks/TaskTypeSelector';
+import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import CreateTaskModal, { type CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
+import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from '@/components/features/tasks/TemplateBuilder';
+import type { TaskTemplate } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -740,6 +745,16 @@ export default function ClientDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [showScheduleMeeting, setShowScheduleMeeting] = useState(false);
 
+  // Task creation flow (launched from header button)
+  const [showTaskTypeSelector, setShowTaskTypeSelector] = useState(false);
+  const [showQuickTask, setShowQuickTask]               = useState(false);
+  const [showCreate, setShowCreate]                     = useState(false);
+  const [showTaskBuilder, setShowTaskBuilder]           = useState(false);
+  const [taskBuilderInitialData, setTaskBuilderInitialData] = useState<TemplateData | null>(null);
+  const [taskTeamMembers, setTaskTeamMembers] = useState<{ id: string; full_name: string | null; email: string }[]>([]);
+  const [taskFirmTemplates, setTaskFirmTemplates] = useState<TaskTemplate[]>([]);
+  const [taskDataLoaded, setTaskDataLoaded] = useState(false);
+
   // ── Fetch ────────────────────────────────────────────────────────────────────
 
   const fetchClient = useCallback(async () => {
@@ -801,6 +816,62 @@ export default function ClientDetailPage() {
     void fetchLinks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  /** Lazy-load team members + firm templates on first "Create Task" click */
+  async function ensureTaskData() {
+    if (taskDataLoaded) return;
+    const [teamRes, templatesRes] = await Promise.allSettled([
+      fetch('/api/users/team'),
+      fetch('/api/tasks/templates'),
+    ]);
+    if (teamRes.status === 'fulfilled' && teamRes.value.ok) {
+      const d = await teamRes.value.json();
+      setTaskTeamMembers(d.members ?? []);
+    }
+    if (templatesRes.status === 'fulfilled' && templatesRes.value.ok) {
+      const d = await templatesRes.value.json();
+      setTaskFirmTemplates(d.templates ?? []);
+    }
+    setTaskDataLoaded(true);
+  }
+
+  function openTaskTypeSelector() {
+    void ensureTaskData();
+    setShowTaskTypeSelector(true);
+  }
+
+  async function handleCreateTask(data: CreateTaskData) {
+    // Always pre-populate client_id with the current client (overridable by the modals)
+    const payload: CreateTaskData = {
+      ...data,
+      client_id: data.client_id !== undefined ? data.client_id : clientId,
+    };
+    const r = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error('Failed to create task');
+  }
+
+  async function handleTaskBuilderCreate(data: TaskCreationOutput, saveAsTemplate: boolean, templateData: TemplateData) {
+    await handleCreateTask(data as CreateTaskData);
+    if (saveAsTemplate) {
+      await fetch('/api/tasks/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(templateData),
+      });
+    }
+    setShowTaskBuilder(false);
+    setTaskBuilderInitialData(null);
+  }
+
+  function handleGoToBuilder(initialData?: TemplateData | null) {
+    setShowCreate(false);
+    setTaskBuilderInitialData(initialData ?? null);
+    setShowTaskBuilder(true);
+  }
 
   useEffect(() => {
     if (!showAddLink || linkSearch.length < 2) { setLinkSearchResults([]); return; }
@@ -995,6 +1066,14 @@ export default function ClientDetailPage() {
               className="btn-secondary flex items-center gap-1.5"
             >
               <CalendarDays size={13} />Schedule Meeting
+            </button>
+          )}
+          {isModuleActive('tasks') && (
+            <button
+              onClick={openTaskTypeSelector}
+              className="btn-secondary flex items-center gap-1.5"
+            >
+              <Plus size={13} />Create Task
             </button>
           )}
           <button onClick={startEdit} className="btn-secondary"><Pencil size={13} />Edit</button>
@@ -1649,6 +1728,76 @@ export default function ClientDetailPage() {
           clientName={client.name}
           clientEmail={client.contact_email}
           onClose={() => setShowScheduleMeeting(false)}
+        />
+      )}
+
+      {/* ── Task creation flow ─────────────────────────────────────────────────── */}
+
+      {/* Step 0: Quick vs Full selector */}
+      {showTaskTypeSelector && (
+        <TaskTypeSelector
+          onQuickTask={() => { setShowTaskTypeSelector(false); setShowQuickTask(true); }}
+          onFullTask={() =>  { setShowTaskTypeSelector(false); setShowCreate(true); }}
+          onClose={() => setShowTaskTypeSelector(false)}
+        />
+      )}
+
+      {/* Quick Task modal — client pre-populated */}
+      {showQuickTask && client && (
+        <QuickTaskModal
+          onClose={() => setShowQuickTask(false)}
+          onCreate={async (data) => {
+            // Pre-populate client unless user explicitly cleared it
+            await handleCreateTask({
+              ...data,
+              client_id: data.client_id !== undefined ? data.client_id : client.id,
+              is_internal: data.is_internal,
+            });
+          }}
+          teamMembers={taskTeamMembers}
+          defaultClientId={client.id}
+          defaultClientName={client.name}
+        />
+      )}
+
+      {/* Full Task wizard — client pre-populated */}
+      {showCreate && client && (
+        <CreateTaskModal
+          onClose={() => setShowCreate(false)}
+          onCreate={async (data) => {
+            await handleCreateTask({
+              ...data,
+              client_id: data.client_id !== undefined ? data.client_id : client.id,
+            });
+          }}
+          clients={[]}
+          teamMembers={taskTeamMembers}
+          firmTemplates={taskFirmTemplates}
+          onGoToBuilder={handleGoToBuilder}
+          defaultClientId={client.id}
+          defaultClientName={client.name}
+        />
+      )}
+
+      {/* Full Task visual builder */}
+      {showTaskBuilder && client && (
+        <TemplateBuilder
+          template={null}
+          mode="task"
+          initialData={taskBuilderInitialData ?? undefined}
+          onSave={async () => { setShowTaskBuilder(false); setTaskBuilderInitialData(null); }}
+          onCreateTask={async (data, saveAsTemplate, templateData) => {
+            await handleTaskBuilderCreate(
+              { ...data, client_id: data.client_id ?? client.id } as TaskCreationOutput,
+              saveAsTemplate,
+              templateData,
+            );
+          }}
+          onClose={() => { setShowTaskBuilder(false); setTaskBuilderInitialData(null); }}
+          clients={[{ id: client.id, name: client.name, client_ref: client.client_ref ?? '' }]}
+          teamMembers={taskTeamMembers}
+          defaultClientId={client.id}
+          defaultClientName={client.name}
         />
       )}
     </ToolLayout>

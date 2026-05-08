@@ -17,6 +17,9 @@ interface Props {
   firmTemplates: TaskTemplate[];
   /** Called when the user wants to open the full visual builder (optionally pre-populated) */
   onGoToBuilder?: (initialData?: TemplateData | null) => void;
+  /** Pre-populate client from a client context (e.g. client detail page) */
+  defaultClientId?: string;
+  defaultClientName?: string;
 }
 
 export interface CreateTaskData {
@@ -345,7 +348,7 @@ function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
   };
 }
 
-export default function CreateTaskModal({ onClose, onCreate, clients, teamMembers, firmTemplates, onGoToBuilder }: Props) {
+export default function CreateTaskModal({ onClose, onCreate, clients, teamMembers, firmTemplates, onGoToBuilder, defaultClientId, defaultClientName }: Props) {
   const [step, setStep] = useState<Step>('template');
   const [selectedDefault, setSelectedDefault] = useState<DefaultTemplate | null>(null);
   const [selectedFirmTemplate, setSelectedFirmTemplate] = useState<TaskTemplate | null>(null);
@@ -354,7 +357,7 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   // Details
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(defaultClientId ?? '');
   const [isInternal, setIsInternal] = useState(false);
   const [dueDate, setDueDate] = useState('');
   const [recurrence, setRecurrence] = useState<RecurrenceType | ''>('');
@@ -583,6 +586,7 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                   {!isInternal && (
                     <ClientSearchInput
                       value={clientId}
+                      valueName={clientId === (defaultClientId ?? '') ? (defaultClientName ?? '') : undefined}
                       onChange={(id, _name, _ref) => setClientId(id)}
                       placeholder="Select a client…"
                       className="w-full"

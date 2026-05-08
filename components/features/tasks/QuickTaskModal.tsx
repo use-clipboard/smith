@@ -12,6 +12,9 @@ interface Props {
   onClose: () => void;
   onCreate: (data: CreateTaskData) => Promise<void>;
   teamMembers: TeamMember[];
+  /** Pre-populate client from a client context (e.g. client detail page) */
+  defaultClientId?: string;
+  defaultClientName?: string;
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
@@ -24,9 +27,9 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'custom', label: 'Custom interval…' },
 ];
 
-export default function QuickTaskModal({ onClose, onCreate, teamMembers }: Props) {
+export default function QuickTaskModal({ onClose, onCreate, teamMembers, defaultClientId, defaultClientName }: Props) {
   const [title, setTitle] = useState('');
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(defaultClientId ?? '');
   const [isInternal, setIsInternal] = useState(false);
   const [dueDate, setDueDate] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
@@ -145,6 +148,7 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers }: Props
             {!isInternal && (
               <ClientSearchInput
                 value={clientId}
+                valueName={clientId === (defaultClientId ?? '') ? (defaultClientName ?? '') : undefined}
                 onChange={(id) => setClientId(id)}
                 placeholder="Search for a client…"
                 className="w-full"

@@ -62,6 +62,9 @@ interface Props {
   clients?: { id: string; name: string; client_ref?: string }[];
   /** Called instead of onSave when mode === 'task' */
   onCreateTask?: (data: TaskCreationOutput, saveAsTemplate: boolean, templateData: TemplateData) => Promise<void>;
+  /** Pre-populate client when launched from a client context */
+  defaultClientId?: string;
+  defaultClientName?: string;
 }
 
 export interface TemplateData {
@@ -565,7 +568,7 @@ function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave
 let _keyCounter = 0;
 function newStepKey() { return `step_${Date.now()}_${++_keyCounter}`; }
 
-export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose, mode = 'template', clients = [], onCreateTask }: Props) {
+export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose, mode = 'template', clients = [], onCreateTask, defaultClientId, defaultClientName }: Props) {
   const isTaskMode = mode === 'task';
   // Meta — initialData (from AI builder) takes precedence over blank, template takes precedence over both
   const [name, setName] = useState(template?.name ?? initialData?.name ?? '');
@@ -616,7 +619,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   const [error, setError] = useState('');
 
   // ── Task-mode only state ────────────────────────────────────────────────────
-  const [taskClientId, setTaskClientId]       = useState('');
+  const [taskClientId, setTaskClientId]       = useState(defaultClientId ?? '');
   const [taskIsInternal, setTaskIsInternal]   = useState(false);
   const [taskDueDate, setTaskDueDate]         = useState('');
   const [taskSaveAsTemplate, setTaskSaveAsTemplate] = useState(false);
@@ -1047,6 +1050,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                 <div className="w-56">
                   <ClientSearchInput
                     value={taskClientId}
+                    valueName={taskClientId === (defaultClientId ?? '') ? (defaultClientName ?? '') : undefined}
                     onChange={(id) => setTaskClientId(id)}
                     placeholder="Select client…"
                     className="w-full"
