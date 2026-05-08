@@ -1074,7 +1074,7 @@ export default function ClientDetailPage() {
   return (
     <ToolLayout title={client.name} icon={Users} iconColor="#4F46E5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-5">
         <div className="space-y-1.5">
           <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
             <ArrowLeft size={14} />All Clients
@@ -1091,118 +1091,113 @@ export default function ClientDetailPage() {
             {client.business_type && <span className="text-xs text-[var(--text-muted)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
           </div>
         </div>
-        {/* Action icon buttons */}
-        <div className="flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] shadow-sm">
-          {isModuleActive('google-calendar') && (
-            <button
-              onClick={() => setShowScheduleMeeting(true)}
-              title="Schedule Meeting"
-              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-50 transition-all"
-            >
-              <CalendarDays size={17} />
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                Schedule Meeting
-              </span>
-            </button>
-          )}
-          {isModuleActive('email-triage') && client?.contact_email && (
-            <button
-              onClick={openCompose}
-              title="Email Client"
-              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-sky-600 hover:bg-sky-50 transition-all"
-            >
-              <Mail size={17} />
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                Email Client
-              </span>
-            </button>
-          )}
-          {isModuleActive('tasks') && (
-            <button
-              onClick={openTaskTypeSelector}
-              title="Create Task"
-              className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-            >
-              <CheckSquare size={17} />
-              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                Create Task
-              </span>
-            </button>
-          )}
-          {/* Divider before edit/delete */}
-          <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
-          <button
-            onClick={startEdit}
-            title="Edit Client"
-            className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-slate-700 hover:bg-slate-100 transition-all"
-          >
-            <Pencil size={17} />
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-              Edit Client
-            </span>
-          </button>
-          <button
-            onClick={() => setConfirmDelete(true)}
-            title="Delete Client"
-            className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 transition-all"
-          >
-            <Trash2 size={17} />
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-              Delete Client
-            </span>
-          </button>
-        </div>
-      </div>
+        {/* Combined pill: favourites on the left, actions on the right */}
+        {(() => {
+          const btype = client.business_type;
+          const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active' };
+          type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; hoverBg: string; hoverText: string; show: boolean };
+          const quickTools: QuickTool[] = [
+            { moduleId: 'full-analysis',   label: 'Full Analysis',    icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', hoverBg: 'hover:bg-indigo-50',  hoverText: 'hover:text-indigo-600', show: true },
+            { moduleId: 'bank-to-csv',     label: 'Bank to CSV',      icon: ArrowLeftRight, route: '/bank-to-csv',     color: '#0891B2', hoverBg: 'hover:bg-cyan-50',    hoverText: 'hover:text-cyan-600',   show: true },
+            { moduleId: 'landlord',        label: 'Landlord',         icon: House,          route: '/landlord',        color: '#D97706', hoverBg: 'hover:bg-amber-50',   hoverText: 'hover:text-amber-600',  show: true },
+            { moduleId: 'final-accounts',  label: 'Accounts Review',  icon: ClipboardCheck, route: '/final-accounts',  color: '#7C3AED', hoverBg: 'hover:bg-violet-50',  hoverText: 'hover:text-violet-600', show: true },
+            { moduleId: 'risk-assessment', label: 'Risk Assessment',  icon: ShieldAlert,    route: '/risk-assessment', color: '#DC2626', hoverBg: 'hover:bg-red-50',     hoverText: 'hover:text-red-600',    show: true },
+            { moduleId: 'p32',             label: 'P32 Summary',      icon: Receipt,        route: '/p32',             color: '#CA8A04', hoverBg: 'hover:bg-yellow-50',  hoverText: 'hover:text-yellow-600', show: true },
+            { moduleId: 'performance',     label: 'Performance',      icon: TrendingUp,     route: '/performance',     color: '#059669', hoverBg: 'hover:bg-emerald-50', hoverText: 'hover:text-emerald-600',show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
+            { moduleId: 'summarise',       label: 'Summarise',        icon: FileText,       route: '/summarise',       color: '#6B7280', hoverBg: 'hover:bg-gray-100',   hoverText: 'hover:text-gray-700',   show: true },
+            { moduleId: 'document-vault',  label: 'Document Vault',   icon: Archive,        route: '/vault',           color: '#0F766E', hoverBg: 'hover:bg-teal-50',    hoverText: 'hover:text-teal-600',   show: true },
+            { moduleId: 'meeting-notes',   label: 'Meeting Notes',    icon: MicVocal,       route: '/meeting-notes',   color: '#6D28D9', hoverBg: 'hover:bg-purple-50',  hoverText: 'hover:text-purple-600', show: true },
+          ];
+          const activeTools = quickTools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
 
-      {/* Quick Launch */}
-      {client && (() => {
-        const btype = client.business_type;
-        const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active' };
-        type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; show: boolean };
-        const tools: QuickTool[] = [
-          { moduleId: 'full-analysis',   label: 'Full Analysis',    icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', show: true },
-          { moduleId: 'bank-to-csv',     label: 'Bank to CSV',      icon: ArrowLeftRight, route: '/bank-to-csv',     color: '#0891B2', show: true },
-          { moduleId: 'landlord',        label: 'Landlord',         icon: House,          route: '/landlord',        color: '#D97706', show: true },
-          { moduleId: 'final-accounts',  label: 'Accounts Review',  icon: ClipboardCheck, route: '/final-accounts',  color: '#7C3AED', show: true },
-          { moduleId: 'risk-assessment', label: 'Risk Assessment',  icon: ShieldAlert,    route: '/risk-assessment', color: '#DC2626', show: true },
-          { moduleId: 'p32',             label: 'P32 Summary',      icon: Receipt,        route: '/p32',             color: '#CA8A04', show: true },
-          { moduleId: 'performance',     label: 'Performance',      icon: TrendingUp,     route: '/performance',     color: '#059669', show: ['limited_company','partnership','sole_trader'].includes(btype ?? '') },
-          { moduleId: 'summarise',       label: 'Summarise',        icon: FileText,       route: '/summarise',       color: '#6B7280', show: true },
-          { moduleId: 'document-vault',  label: 'Document Vault',   icon: Archive,        route: '/vault',           color: '#0F766E', show: true },
-          { moduleId: 'meeting-notes',   label: 'Meeting Notes',    icon: MicVocal,       route: '/meeting-notes',   color: '#6D28D9', show: true },
-        ];
-        // Only show tools the user has pinned as favourites (and that are relevant for this client type)
-        const active = tools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
-        if (active.length === 0) return null;
-        return (
-          <div className="flex items-center gap-3 mb-5 px-4 py-3 rounded-xl bg-[var(--bg-nav-hover)] border border-[var(--border)]">
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Zap size={12} className="text-[var(--accent)]" />
-              <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide whitespace-nowrap">Quick Launch</span>
+          return (
+            <div className="flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] shadow-sm">
+
+              {/* ── Left: Favourited quick-launch tools ── */}
+              {activeTools.length > 0 && (
+                <>
+                  {activeTools.map(tool => {
+                    const Icon = tool.icon;
+                    return (
+                      <button
+                        key={tool.route}
+                        onClick={() => {
+                          setPendingClient(tool.route, pendingClient);
+                          openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
+                          window.history.replaceState(null, '', tool.route);
+                        }}
+                        className={`group relative p-2 rounded-lg text-[var(--text-muted)] ${tool.hoverText} ${tool.hoverBg} transition-all`}
+                      >
+                        <Icon size={17} style={{ color: 'currentColor' }} className="transition-colors" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                          {tool.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {/* Divider between favourites and actions */}
+                  <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
+                </>
+              )}
+
+              {/* ── Right: Context actions ── */}
+              {isModuleActive('google-calendar') && (
+                <button
+                  onClick={() => setShowScheduleMeeting(true)}
+                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-50 transition-all"
+                >
+                  <CalendarDays size={17} />
+                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                    Schedule Meeting
+                  </span>
+                </button>
+              )}
+              {isModuleActive('email-triage') && client?.contact_email && (
+                <button
+                  onClick={openCompose}
+                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-sky-600 hover:bg-sky-50 transition-all"
+                >
+                  <Mail size={17} />
+                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                    Email Client
+                  </span>
+                </button>
+              )}
+              {isModuleActive('tasks') && (
+                <button
+                  onClick={openTaskTypeSelector}
+                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                >
+                  <CheckSquare size={17} />
+                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                    Create Task
+                  </span>
+                </button>
+              )}
+              {/* Divider before edit/delete */}
+              <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
+              <button
+                onClick={startEdit}
+                className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-slate-700 hover:bg-slate-100 transition-all"
+              >
+                <Pencil size={17} />
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                  Edit Client
+                </span>
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 transition-all"
+              >
+                <Trash2 size={17} />
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+                  Delete Client
+                </span>
+              </button>
             </div>
-            <div className="w-px h-4 bg-[var(--border)] shrink-0" />
-            <div className="flex flex-wrap gap-2">
-              {active.map(tool => {
-                const Icon = tool.icon;
-                return (
-                  <button
-                    key={tool.route}
-                    onClick={() => {
-                      setPendingClient(tool.route, pendingClient);
-                      openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
-                      window.history.replaceState(null, '', tool.route);
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-sm font-medium text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all group"
-                  >
-                    <Icon size={13} style={{ color: tool.color }} className="shrink-0" />
-                    {tool.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5 flex-wrap">
