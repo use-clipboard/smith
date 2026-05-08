@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useMemo } from 'react';
-import { X, ChevronRight, ChevronLeft, Loader2, RefreshCw, Search, Pencil, ExternalLink } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Pencil, ExternalLink } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType } from '@/types';
@@ -60,6 +60,59 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'annually', label: 'Annually' },
   { value: 'custom', label: 'Custom interval' },
 ];
+
+// ── Collapsible SMITH built-in templates section ──────────────────────────────
+
+interface SmithTemplatesSectionProps {
+  templates: DefaultTemplate[];
+  selectedId: string | null;
+  onSelect: (t: DefaultTemplate) => void;
+}
+
+function SmithTemplatesSection({ templates, selectedId, onSelect }: SmithTemplatesSectionProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">SMITH Built-in Templates</span>
+          <span className="text-xs text-gray-400 bg-gray-200 px-1.5 py-0.5 rounded-full">{templates.length}</span>
+        </div>
+        {open
+          ? <ChevronUp className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          : <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+        }
+      </button>
+      {open && (
+        <div className="p-3 grid grid-cols-2 gap-3">
+          {templates.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onSelect(t)}
+              className={`text-left border-2 rounded-lg p-3 transition-all ${selectedId === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
+            >
+              <div className="flex items-start justify-between mb-1">
+                <p className="text-sm font-semibold text-gray-800">{t.name}</p>
+                {t.recurrence_type && <RefreshCw className="h-3.5 w-3.5 text-gray-400 flex-shrink-0 mt-0.5" />}
+              </div>
+              <p className="text-xs text-gray-500 mb-2">{t.description}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">{TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}</span>
+                <span className="text-xs text-gray-400">{t.steps.length} steps</span>
+                {t.recurrence_type && <span className="text-xs text-indigo-600 capitalize">{t.recurrence_type}</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** Convert a DefaultTemplate or TaskTemplate into the TemplateData shape the builder expects */
 function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
@@ -296,36 +349,9 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                 </button>
               </div>
 
-              {/* SMITH defaults */}
-              {filteredDefaults.length > 0 && (
+              {/* Firm templates — shown first */}
+              {firmTemplates.length > 0 ? (
                 <div className="mb-6">
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">SMITH Built-in Templates</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {filteredDefaults.map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => handleSelectDefault(t)}
-                        className={`text-left border-2 rounded-lg p-3 transition-all ${selectedDefault?.id === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}
-                      >
-                        <div className="flex items-start justify-between mb-1">
-                          <p className="text-sm font-semibold text-gray-800">{t.name}</p>
-                          {t.recurrence_type && <RefreshCw className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
-                        </div>
-                        <p className="text-xs text-gray-500 mb-2">{t.description}</p>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">{TEMPLATE_CATEGORY_LABELS[t.category] ?? t.category}</span>
-                          <span className="text-xs text-gray-400">{t.steps.length} steps</span>
-                          {t.recurrence_type && <span className="text-xs text-indigo-600 capitalize">{t.recurrence_type}</span>}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Firm templates */}
-              {firmTemplates.length > 0 && (
-                <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Your Firm's Templates</p>
                   <div className="grid grid-cols-2 gap-3">
                     {firmTemplates
@@ -346,6 +372,19 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
                       ))}
                   </div>
                 </div>
+              ) : (
+                <div className="mb-6 px-3 py-3 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  <p className="text-xs text-gray-400 text-center">No firm templates yet — use a SMITH template below or start from scratch.</p>
+                </div>
+              )}
+
+              {/* SMITH built-in templates — collapsible */}
+              {filteredDefaults.length > 0 && (
+                <SmithTemplatesSection
+                  templates={filteredDefaults}
+                  selectedId={selectedDefault?.id ?? null}
+                  onSelect={handleSelectDefault}
+                />
               )}
             </div>
           )}
