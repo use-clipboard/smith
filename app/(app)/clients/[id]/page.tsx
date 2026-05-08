@@ -6,8 +6,10 @@ import {
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
-  Archive, CalendarDays, MicVocal,
+  Archive, CalendarDays, MicVocal, Network,
 } from 'lucide-react';
+import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
+import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import ScheduleMeetingModal from '@/components/features/calendar/ScheduleMeetingModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
@@ -706,15 +708,18 @@ export default function ClientDetailPage() {
   const [linksLoading, setLinksLoading] = useState(false);
   const [linksFetched, setLinksFetched] = useState(false);
   const [showAddLink, setShowAddLink] = useState(false);
-  const [linkSearch, setLinkSearch] = useState('');
-  const [linkSearchResults, setLinkSearchResults] = useState<SearchableClient[]>([]);
-  const [linkSearchLoading, setLinkSearchLoading] = useState(false);
   const [selectedLinkClient, setSelectedLinkClient] = useState<SearchableClient | null>(null);
   const [newLinkType, setNewLinkType] = useState('other');
   const [newLinkNotes, setNewLinkNotes] = useState('');
   const [addingLink, setAddingLink] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [removingLinkId, setRemovingLinkId] = useState<string | null>(null);
+  const [showLinkGraph, setShowLinkGraph] = useState(false);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editLinkType, setEditLinkType] = useState('other');
+  const [editLinkNotes, setEditLinkNotes] = useState('');
+  const [editLinkSaving, setEditLinkSaving] = useState(false);
+  const [editLinkError, setEditLinkError] = useState<string | null>(null);
 
   // Edit
   const [editing, setEditing] = useState(false);
@@ -905,22 +910,6 @@ export default function ClientDetailPage() {
     setShowTaskBuilder(true);
   }
 
-  useEffect(() => {
-    if (!showAddLink || linkSearch.length < 2) { setLinkSearchResults([]); return; }
-    const t = setTimeout(async () => {
-      setLinkSearchLoading(true);
-      try {
-        const res = await fetch(`/api/clients?search=${encodeURIComponent(linkSearch)}`);
-        if (res.ok) {
-          const d = await res.json();
-          const linkedIds = new Set(links.map(l => l.other_client?.id).filter(Boolean));
-          setLinkSearchResults((d.clients as SearchableClient[]).filter(c => c.id !== clientId && !linkedIds.has(c.id)).slice(0, 8));
-        }
-      } finally { setLinkSearchLoading(false); }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [linkSearch, showAddLink, clientId, links]);
-
   // ── Note CRUD ─────────────────────────────────────────────────────────────────
 
   function handleAddNote(note: TimelineNote) {
@@ -972,8 +961,30 @@ export default function ClientDetailPage() {
       const data = await res.json();
       if (!res.ok) { setLinkError(data.error || 'Failed to create link'); return; }
       await fetchLinks(true);
-      setShowAddLink(false); setLinkSearch(''); setSelectedLinkClient(null); setNewLinkType('other'); setNewLinkNotes('');
+      setShowAddLink(false); setSelectedLinkClient(null); setNewLinkType('other'); setNewLinkNotes('');
     } catch { setLinkError('An unexpected error occurred'); } finally { setAddingLink(false); }
+  }
+
+  function handleStartEditLink(link: ClientLink) {
+    setEditingLinkId(link.id);
+    setEditLinkType(link.link_type);
+    setEditLinkNotes(link.notes ?? '');
+    setEditLinkError(null);
+  }
+
+  async function handleSaveLinkEdit() {
+    if (!editingLinkId) return;
+    setEditLinkSaving(true); setEditLinkError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/links/${editingLinkId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ link_type: editLinkType, notes: editLinkNotes || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditLinkError(data.error || 'Failed to update link'); return; }
+      setLinks(prev => prev.map(l => l.id === editingLinkId ? { ...l, link_type: editLinkType, notes: editLinkNotes || null } : l));
+      setEditingLinkId(null);
+    } catch { setEditLinkError('An unexpected error occurred'); } finally { setEditLinkSaving(false); }
   }
 
   async function handleRemoveLink(linkId: string) {
@@ -1468,7 +1479,8 @@ export default function ClientDetailPage() {
 
       {/* ── Details Tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'details' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="glass-solid rounded-xl p-6">
             <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Client Information</h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
@@ -1497,6 +1509,12 @@ export default function ClientDetailPage() {
                 </dd>
               </div>
               <InfoRow label="Created" value={formatDate(client.created_at)} />
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Address</dt>
+                <dd className="mt-1 text-sm text-[var(--text-primary)] whitespace-pre-wrap">
+                  {client.address ?? <span className="text-[var(--text-muted)]">—</span>}
+                </dd>
+              </div>
             </dl>
           </div>
 
@@ -1528,12 +1546,9 @@ export default function ClientDetailPage() {
             </dl>
           </div>
 
-          <div className="glass-solid rounded-xl p-6">
-            <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Address</h3>
-            <p className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{client.address ?? <span className="text-[var(--text-muted)]">—</span>}</p>
           </div>
 
-          {/* Linked Clients */}
+          {/* Linked Clients — full width */}
           <div className="glass-solid rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -1541,43 +1556,34 @@ export default function ClientDetailPage() {
                 <h3 className="font-semibold text-[var(--text-primary)] text-sm">Linked Clients</h3>
                 {links.length > 0 && <span className="px-1.5 py-0.5 bg-[var(--accent-light)] text-[var(--accent)] text-xs font-medium rounded">{links.length}</span>}
               </div>
-              <button onClick={() => { setShowAddLink(v => !v); setLinkError(null); }} className="btn-secondary text-xs py-1.5"><Plus size={12} />Add Link</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowLinkGraph(true)}
+                  disabled={links.length === 0}
+                  title={links.length === 0 ? 'No links to map yet' : 'Open connections map — click to expand'}
+                  className="group p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] hover:scale-110"
+                  aria-label="Open connections map"
+                >
+                  <Network size={16} className="transition-transform group-hover:rotate-3" />
+                </button>
+                <button onClick={() => { setShowAddLink(v => !v); setLinkError(null); }} className="btn-secondary text-xs py-1.5"><Plus size={12} />Add Link</button>
+              </div>
             </div>
 
             {showAddLink && (
               <div className="mb-4 p-4 bg-[var(--bg-page)] rounded-xl border border-[var(--border)] space-y-3">
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Add a Link</p>
-                {!selectedLinkClient ? (
-                  <div className="relative">
-                    <div className="flex items-center gap-2 px-3 py-2 glass-solid rounded-lg border border-[var(--border-input)]">
-                      <Search size={13} className="text-[var(--text-muted)]" />
-                      <input value={linkSearch} onChange={e => setLinkSearch(e.target.value)} placeholder="Search for a client to link…"
-                        className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none" />
-                      {linkSearchLoading && <span className="text-xs text-[var(--text-muted)]">…</span>}
-                    </div>
-                    {linkSearchResults.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 glass-solid rounded-xl border border-[var(--border)] shadow-lg z-10 overflow-hidden">
-                        {linkSearchResults.map(c => (
-                          <button key={c.id} onClick={() => { setSelectedLinkClient(c); setLinkSearch(''); setLinkSearchResults([]); }}
-                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-nav-hover)] transition-colors text-left">
-                            <div>
-                              <p className="text-sm font-medium text-[var(--text-primary)]">{c.name}</p>
-                              <p className="text-xs text-[var(--text-muted)]">{c.client_ref && <span className="font-mono mr-2">{c.client_ref}</span>}{c.business_type ? CLIENT_TYPE_LABELS[c.business_type] ?? c.business_type : ''}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between px-3 py-2 bg-[var(--accent-light)] rounded-lg border border-[var(--accent)]/20">
-                    <div>
-                      <p className="text-sm font-medium text-[var(--accent)]">{selectedLinkClient.name}</p>
-                      {selectedLinkClient.client_ref && <p className="text-xs text-[var(--accent)]/70 font-mono">{selectedLinkClient.client_ref}</p>}
-                    </div>
-                    <button onClick={() => setSelectedLinkClient(null)} className="text-[var(--accent)] hover:text-[var(--accent)]/70"><X size={14} /></button>
-                  </div>
-                )}
+                <ClientSearchInput
+                  value={selectedLinkClient?.id ?? ''}
+                  valueName={selectedLinkClient?.name}
+                  onChange={(id, name, clientRef) => {
+                    if (!id) { setSelectedLinkClient(null); setLinkError(null); return; }
+                    if (id === clientId) { setLinkError("Can't link a client to itself"); return; }
+                    setLinkError(null);
+                    setSelectedLinkClient({ id, name, client_ref: clientRef, business_type: null });
+                  }}
+                  placeholder="Search for a client to link…"
+                />
                 <select value={newLinkType} onChange={e => setNewLinkType(e.target.value)} className="input-base w-full text-sm">
                   <option value="director">Director of</option><option value="shareholder">Shareholder of</option>
                   <option value="spouse_partner">Spouse / Partner of</option><option value="trustee">Trustee of</option>
@@ -1588,7 +1594,7 @@ export default function ClientDetailPage() {
                 <input value={newLinkNotes} onChange={e => setNewLinkNotes(e.target.value)} placeholder="Notes (optional)" className="input-base w-full text-sm" />
                 {linkError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{linkError}</p>}
                 <div className="flex justify-end gap-2">
-                  <button onClick={() => { setShowAddLink(false); setSelectedLinkClient(null); setLinkSearch(''); }} className="btn-ghost text-xs">Cancel</button>
+                  <button onClick={() => { setShowAddLink(false); setSelectedLinkClient(null); }} className="btn-ghost text-xs">Cancel</button>
                   <button onClick={() => void handleAddLink()} disabled={!selectedLinkClient || addingLink} className="btn-primary text-xs disabled:opacity-50">
                     {addingLink ? 'Linking…' : 'Add Link'}
                   </button>
@@ -1599,12 +1605,35 @@ export default function ClientDetailPage() {
             {linksLoading ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">Loading links…</p>
               : links.length === 0 ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">No linked clients yet.</p>
               : (
-                <ul className="space-y-2">
+                <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {links.map(link => {
                     if (!link.other_client) return null;
                     const tc = LINK_TYPE_COLOURS[link.link_type] ?? LINK_TYPE_COLOURS.other;
+                    const isEditing = editingLinkId === link.id;
+                    if (isEditing) {
+                      return (
+                        <li key={link.id} className="px-3 py-3 rounded-lg bg-[var(--bg-page)] border border-[var(--accent)]/30 space-y-2">
+                          <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Edit link to {link.other_client.name}</div>
+                          <select value={editLinkType} onChange={e => setEditLinkType(e.target.value)} className="input-base w-full text-sm">
+                            <option value="director">Director of</option><option value="shareholder">Shareholder of</option>
+                            <option value="spouse_partner">Spouse / Partner of</option><option value="trustee">Trustee of</option>
+                            <option value="beneficiary">Beneficiary of</option><option value="associated_company">Associated Company</option>
+                            <option value="parent_company">Parent Company of</option><option value="subsidiary">Subsidiary of</option>
+                            <option value="guarantor">Guarantor of</option><option value="other">Other / Associated</option>
+                          </select>
+                          <input value={editLinkNotes} onChange={e => setEditLinkNotes(e.target.value)} placeholder="Notes (optional)" className="input-base w-full text-sm" />
+                          {editLinkError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{editLinkError}</p>}
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditingLinkId(null)} className="btn-ghost text-xs">Cancel</button>
+                            <button onClick={() => void handleSaveLinkEdit()} disabled={editLinkSaving} className="btn-primary text-xs disabled:opacity-50">
+                              {editLinkSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    }
                     return (
-                      <li key={link.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[var(--bg-page)] border border-[var(--border)]">
+                      <li key={link.id} className="group flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[var(--bg-page)] border border-[var(--border)]">
                         <div className="flex items-center gap-3 min-w-0">
                           <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${tc}`}>{LINK_TYPE_LABELS[link.link_type] ?? link.link_type}</span>
                           <div className="min-w-0">
@@ -1623,10 +1652,16 @@ export default function ClientDetailPage() {
                             {link.notes && <p className="text-xs text-[var(--text-muted)] mt-0.5">{link.notes}</p>}
                           </div>
                         </div>
-                        <button onClick={() => void handleRemoveLink(link.id)} disabled={removingLinkId === link.id}
-                          className="shrink-0 p-1.5 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-40">
-                          <X size={13} />
-                        </button>
+                        <div className="shrink-0 flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => void handleRemoveLink(link.id)} disabled={removingLinkId === link.id} title="Remove link"
+                            className="p-1 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-40">
+                            <X size={13} />
+                          </button>
+                          <button onClick={() => handleStartEditLink(link)} title="Edit link"
+                            className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] rounded transition-colors">
+                            <Pencil size={13} />
+                          </button>
+                        </div>
                       </li>
                     );
                   })}
@@ -1785,6 +1820,11 @@ export default function ClientDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Connections map lightbox */}
+      {showLinkGraph && client && (
+        <LinkGraphLightbox clientId={client.id} onClose={() => setShowLinkGraph(false)} />
       )}
 
       {/* Schedule Meeting modal */}

@@ -126,7 +126,9 @@ export async function POST(
     return NextResponse.json({ error: 'One or both clients not found' }, { status: 404 });
   }
 
-  // Check for existing link in either direction
+  // Block only if the same pair already has a link of the same type (in either direction).
+  // Multiple link types between the same two clients are allowed
+  // (e.g. someone can be both a Director and a Shareholder of the same company).
   const { data: existing } = await supabase
     .from('client_links')
     .select('id')
@@ -134,10 +136,11 @@ export async function POST(
       `and(client_id.eq.${params.id},linked_client_id.eq.${linked_client_id}),and(client_id.eq.${linked_client_id},linked_client_id.eq.${params.id})`
     )
     .eq('firm_id', ctx.firmId)
+    .eq('link_type', link_type)
     .maybeSingle();
 
   if (existing) {
-    return NextResponse.json({ error: 'These clients are already linked' }, { status: 409 });
+    return NextResponse.json({ error: 'These clients are already linked with this connection type' }, { status: 409 });
   }
 
   const { data: link, error } = await supabase
