@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
-  Star, Archive, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall,
+  Star, Archive, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 
@@ -17,6 +17,14 @@ interface Allocation {
 interface TaskLink {
   task_id: string;
   tasks: { id: string; title: string; status: string } | null;
+}
+
+export interface ReactionRow {
+  id: string;
+  message_id: string;
+  emoji: string;
+  user_id: string;
+  users: { full_name: string | null; email: string } | null;
 }
 
 interface Props {
@@ -45,6 +53,8 @@ interface Props {
   onPin?: (pin: boolean) => Promise<void>;
 }
 
+const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '👀', '✅', '🔥'];
+
 function formatDate(dateStr: string) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -55,15 +65,60 @@ function formatDate(dateStr: string) {
   });
 }
 
-function MessageCard({ message, defaultOpen, onReply, onReplyAll, onForward }: {
+function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="absolute bottom-full mb-1 left-0 z-40 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1"
+      style={{ width: 188 }}
+    >
+      {QUICK_EMOJIS.map(e => (
+        <button
+          key={e}
+          onClick={() => { onSelect(e); onClose(); }}
+          className="w-8 h-8 flex items-center justify-center text-lg rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors"
+        >
+          {e}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MessageCard({
+  message, defaultOpen, onReply, onReplyAll, onForward,
+  reactions, currentUserId, onReact,
+}: {
   message: EmailMessage;
   defaultOpen: boolean;
   onReply: (m: EmailMessage) => void;
   onReplyAll: (m: EmailMessage) => void;
   onForward: (m: EmailMessage) => void;
+  reactions: ReactionRow[];
+  currentUserId: string;
+  onReact: (messageId: string, emoji: string) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const initials = (message.from.name || message.from.email)[0]?.toUpperCase() ?? '?';
+
+  // Group reactions by emoji
+  const grouped = reactions.reduce<Record<string, { count: number; names: string[]; mine: boolean }>>((acc, r) => {
+    if (!acc[r.emoji]) acc[r.emoji] = { count: 0, names: [], mine: false };
+    acc[r.emoji].count++;
+    acc[r.emoji].names.push(r.users?.full_name || r.users?.email || 'Someone');
+    if (r.user_id === currentUserId) acc[r.emoji].mine = true;
+    return acc;
+  }, {});
 
   return (
     <div className="rounded-xl border border-[var(--border)] overflow-hidden bg-[var(--bg-card-solid)] shadow-sm">
@@ -144,6 +199,28 @@ function MessageCard({ message, defaultOpen, onReply, onReplyAll, onForward }: {
             </div>
           )}
 
+          {/* Reactions row (only if any exist) */}
+          {Object.keys(grouped).length > 0 && (
+            <div className="px-4 py-2 border-t border-[var(--border)] bg-[var(--bg-nav-hover)] flex flex-wrap gap-1.5">
+              {Object.entries(grouped).map(([emoji, info]) => (
+                <button
+                  key={emoji}
+                  onClick={() => onReact(message.id, emoji)}
+                  title={info.names.join(', ')}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                    info.mine
+                      ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+                      : 'bg-[var(--bg-card-solid)] border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent-light)]'
+                  }`}
+                >
+                  <span>{emoji}</span>
+                  {info.count > 1 && <span className="font-medium">{info.count}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Message footer: reply actions + react button */}
           <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-nav-hover)] flex items-center gap-2">
             <button onClick={() => onReply(message)} className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium">
               <Reply size={12} /> Reply
@@ -156,6 +233,23 @@ function MessageCard({ message, defaultOpen, onReply, onReplyAll, onForward }: {
             <button onClick={() => onForward(message)} className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)] hover:bg-[var(--accent)]/15 transition-colors font-medium">
               <Forward size={12} /> Forward
             </button>
+
+            {/* Emoji react button */}
+            <div className="relative ml-auto">
+              <button
+                onClick={() => setEmojiPickerOpen(v => !v)}
+                title="React with emoji"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
+              >
+                <Smile size={14} />
+              </button>
+              {emojiPickerOpen && (
+                <EmojiPicker
+                  onSelect={emoji => onReact(message.id, emoji)}
+                  onClose={() => setEmojiPickerOpen(false)}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -169,25 +263,41 @@ export default function EmailThread({
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
   isPinned, onPin,
 }: Props) {
-  const [deleting, setDeleting] = useState(false);
-  const [archiving, setArchiving] = useState(false);
-  const [starring, setStarring] = useState(false);
-  const [restoring, setRestoring] = useState(false);
+  const [deleting, setDeleting]       = useState(false);
+  const [archiving, setArchiving]     = useState(false);
+  const [starring, setStarring]       = useState(false);
+  const [restoring, setRestoring]     = useState(false);
   const [markingUnread, setMarkingUnread] = useState(false);
-  const [pinning, setPinning] = useState(false);
+  const [pinning, setPinning]         = useState(false);
 
-  const isInTrash = thread.labelIds.includes('TRASH');
-  const isInSpam = thread.labelIds.includes('SPAM');
-  const isRead = !thread.labelIds.includes('UNREAD');
+  const isInTrash  = thread.labelIds.includes('TRASH');
+  const isInSpam   = thread.labelIds.includes('SPAM');
+  const isRead     = !thread.labelIds.includes('UNREAD');
   const [isStarred, setIsStarred] = useState(thread.labelIds.includes('STARRED'));
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [moving, setMoving] = useState<string | null>(null);
+  const [moveOpen, setMoveOpen]   = useState(false);
+  const [moving, setMoving]       = useState<string | null>(null);
   const moveRef = useRef<HTMLDivElement>(null);
+
+  // Emoji reactions
+  const [reactions, setReactions]       = useState<ReactionRow[]>([]);
+  const [currentUserId, setCurrentUserId] = useState('');
 
   // Sync star state when thread changes
   useEffect(() => {
     setIsStarred(thread.labelIds.includes('STARRED'));
   }, [thread.id, thread.labelIds]);
+
+  // Load reactions for this thread
+  useEffect(() => {
+    if (!thread.id) return;
+    fetch(`/api/email/reactions?threadId=${encodeURIComponent(thread.id)}`)
+      .then(r => r.ok ? r.json() : { reactions: [], currentUserId: '' })
+      .then((d: { reactions: ReactionRow[]; currentUserId: string }) => {
+        setReactions(d.reactions ?? []);
+        setCurrentUserId(d.currentUserId ?? '');
+      })
+      .catch(() => {});
+  }, [thread.id]);
 
   // Close move dropdown on outside click
   useEffect(() => {
@@ -238,7 +348,7 @@ export default function EmailThread({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           threadId: thread.id,
-          addLabelIds: newStarred ? ['STARRED'] : [],
+          addLabelIds:    newStarred ? ['STARRED'] : [],
           removeLabelIds: newStarred ? [] : ['STARRED'],
         }),
       });
@@ -256,7 +366,7 @@ export default function EmailThread({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           threadId: thread.id,
-          addLabelIds: ['INBOX'],
+          addLabelIds:    ['INBOX'],
           removeLabelIds: isInTrash ? ['TRASH'] : ['SPAM'],
         }),
       });
@@ -295,7 +405,7 @@ export default function EmailThread({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           threadId: thread.id,
-          addLabelIds: [labelId],
+          addLabelIds:    [labelId],
           removeLabelIds: ['INBOX'],
         }),
       });
@@ -305,46 +415,41 @@ export default function EmailThread({
     }
   }
 
-  const lastMessage = thread.messages[thread.messages.length - 1];
+  async function handleReact(messageId: string, emoji: string) {
+    // Optimistic update
+    const existing = reactions.find(r => r.message_id === messageId && r.emoji === emoji && r.user_id === currentUserId);
+    if (existing) {
+      setReactions(prev => prev.filter(r => r.id !== existing.id));
+    } else {
+      const temp: ReactionRow = { id: `temp-${Date.now()}`, message_id: messageId, emoji, user_id: currentUserId, users: null };
+      setReactions(prev => [...prev, temp]);
+    }
+    // Server update
+    try {
+      await fetch('/api/email/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: thread.id, messageId, emoji }),
+      });
+      // Refresh reactions from server
+      const res = await fetch(`/api/email/reactions?threadId=${encodeURIComponent(thread.id)}`);
+      if (res.ok) {
+        const d = await res.json() as { reactions: ReactionRow[]; currentUserId: string };
+        setReactions(d.reactions ?? []);
+      }
+    } catch {
+      // Silently revert on error — next thread open will re-sync
+    }
+  }
 
-  // Labels available as move targets: user labels + key system folders
-  const moveTargets = labels.filter(l =>
-    l.type === 'user' || ['STARRED', 'IMPORTANT', 'SPAM'].includes(l.id)
-  );
+  const lastMessage  = thread.messages[thread.messages.length - 1];
+  const moveTargets  = labels.filter(l => l.type === 'user' || ['STARRED', 'IMPORTANT', 'SPAM'].includes(l.id));
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-page)]">
       {/* Thread header */}
       <div className="px-5 py-4 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
-        <div className="flex items-start gap-2">
-          <h2 className="text-base font-semibold text-[var(--text-primary)] leading-snug flex-1 min-w-0">{thread.subject}</h2>
-          {/* Star toggle */}
-          <button
-            onClick={handleStar}
-            disabled={starring}
-            title={isStarred ? 'Unstar' : 'Star'}
-            className="shrink-0 p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors"
-          >
-            <Star
-              size={16}
-              className={isStarred ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)]'}
-            />
-          </button>
-          {/* Pin toggle */}
-          {onPin && (
-            <button
-              onClick={handlePin}
-              disabled={pinning}
-              title={isPinned ? 'Unpin' : 'Pin to top'}
-              className="shrink-0 p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors"
-            >
-              {pinning
-                ? <Loader2 size={16} className="animate-spin text-[var(--text-muted)]" />
-                : <Pin size={16} className={isPinned ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)]'} />
-              }
-            </button>
-          )}
-        </div>
+        <h2 className="text-base font-semibold text-[var(--text-primary)] leading-snug">{thread.subject}</h2>
 
         {/* Action bar */}
         <div className="flex items-center gap-1 mt-3 flex-wrap">
@@ -458,6 +563,34 @@ export default function EmailThread({
             </div>
           )}
 
+          {/* Star toggle — now in toolbar */}
+          <button
+            onClick={handleStar}
+            disabled={starring}
+            title={isStarred ? 'Unstar' : 'Star'}
+            className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
+          >
+            <Star
+              size={15}
+              className={isStarred ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)]'}
+            />
+          </button>
+
+          {/* Pin toggle — now in toolbar */}
+          {onPin && (
+            <button
+              onClick={handlePin}
+              disabled={pinning}
+              title={isPinned ? 'Unpin' : 'Pin to top'}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
+            >
+              {pinning
+                ? <Loader2 size={15} className="animate-spin text-[var(--text-muted)]" />
+                : <Pin size={15} className={isPinned ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)]'} />
+              }
+            </button>
+          )}
+
           {/* Far right: Delete — icon-only, red on hover */}
           <button
             onClick={handleDelete}
@@ -508,6 +641,9 @@ export default function EmailThread({
             onReply={onReply}
             onReplyAll={onReplyAll}
             onForward={onForward}
+            reactions={reactions.filter(r => r.message_id === msg.id)}
+            currentUserId={currentUserId}
+            onReact={handleReact}
           />
         ))}
       </div>

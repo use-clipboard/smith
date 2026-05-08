@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
-import TaskLinkModal, { type Task } from './TaskLinkModal';
 
 interface RecipientResult {
   type: 'client' | 'team';
@@ -42,11 +42,15 @@ interface Props {
   defaultClients?: Client[] | null;
   /** Pre-populate the To field (e.g. when composing from a client page) */
   defaultTo?: { name: string; email: string }[] | null;
+  /** Full thread messages for the "show quoted thread" panel (reply mode only) */
+  threadMessages?: EmailMessage[] | null;
   signature: string | null;
   googleEmail: string;
   displayName: string;
   tasksModuleActive?: boolean;
   onSent?: (threadId: string) => void;
+  /** Called after a successful send when the user ticked "Create Task" */
+  onCreateTaskFromSent?: (emailData: { subject: string; plainBody: string; toEmail: string; toName: string }) => void;
 }
 
 const RECIPIENT_STATUS_COLOURS: Record<string, string> = {
@@ -196,7 +200,8 @@ function FmtBtn({ title, onActivate, children }: {
 }
 
 export default function ComposeModal({
-  open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo, signature, googleEmail, displayName, tasksModuleActive, onSent,
+  open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
+  threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onCreateTaskFromSent,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
@@ -222,9 +227,13 @@ export default function ComposeModal({
 
   // Allocation state
   const [selectedClients, setSelectedClients] = useState<Client[]>([]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [allocateOpen, setAllocateOpen] = useState(false);
-  const [taskLinkOpen, setTaskLinkOpen] = useState(false);
+
+  // Create Task after send
+  const [createTaskEnabled, setCreateTaskEnabled] = useState(false);
+
+  // Thread history preview (in reply mode)
+  const [showThread, setShowThread] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -308,10 +317,12 @@ export default function ComposeModal({
       setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
     } else {
       setTo(defaultTo ?? []); setCc([]); setShowCc(false); setSubject('');
-      setSelectedTask(null); setAttachedFiles([]);
+      setAttachedFiles([]);
     }
     setBcc([]); setShowBcc(false);
     setSelectedClients(defaultClients ?? []);
+    setCreateTaskEnabled(false);
+    setShowThread(false);
     requestAnimationFrame(() => {
       if (bodyRef.current) bodyRef.current.innerHTML = buildInitialBody(replyTo, prefilledBody, forwardOf);
     });
@@ -353,16 +364,25 @@ export default function ComposeModal({
           }),
         }));
       }
-      if (selectedTask && sentThreadId) {
-        jobs.push(fetch('/api/email/task-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ threadId: sentThreadId, taskId: selectedTask.id, subject: subject || '(no subject)' }),
-        }));
-      }
       await Promise.allSettled(jobs);
+
+      // Capture email data BEFORE closing (for Create Task flow)
+      const plainBody = htmlBody.replace(/<[^>]+>/g, ' ').slice(0, 3000);
+      const firstTo   = to[0] ?? { name: '', email: '' };
+      const shouldCreateTask = createTaskEnabled;
+
       onSent?.(sentThreadId);
       onClose();
+
+      // Open Create Task flow after modal closes
+      if (shouldCreateTask && onCreateTaskFromSent) {
+        onCreateTaskFromSent({
+          subject: subject || '(no subject)',
+          plainBody,
+          toEmail: firstTo.email,
+          toName:  firstTo.name,
+        });
+      }
     } catch {
       setError('Failed to send email. Please try again.');
     } finally {
@@ -586,6 +606,41 @@ export default function ComposeModal({
             />
           </div>
 
+          {/* Thread history (reply/forward mode — shows prior messages collapsed) */}
+          {replyTo && threadMessages && threadMessages.length > 0 && (
+            <div className="border-t border-[var(--border)] shrink-0">
+              <button
+                onClick={() => setShowThread(v => !v)}
+                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-secondary)] transition-colors"
+              >
+                {showThread ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {showThread ? 'Hide' : 'Show'} thread history ({threadMessages.length} message{threadMessages.length !== 1 ? 's' : ''})
+              </button>
+              {showThread && (
+                <div className="max-h-52 overflow-y-auto bg-[var(--bg-page)] border-t border-[var(--border)] divide-y divide-[var(--border)]">
+                  {threadMessages.map(msg => (
+                    <div key={msg.id} className="px-4 py-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-xs font-medium text-[var(--text-secondary)]">
+                          {msg.from.name || msg.from.email}
+                        </span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{msg.date}</span>
+                      </div>
+                      {msg.body ? (
+                        <div
+                          className="text-xs text-[var(--text-muted)] line-clamp-3 [&_a]:text-[var(--accent)] [&_img]:hidden"
+                          dangerouslySetInnerHTML={{ __html: msg.body }}
+                        />
+                      ) : (
+                        <p className="text-xs text-[var(--text-muted)] italic">{msg.snippet}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Attached files */}
           {(attachedFiles.length > 0 || fetchingAttachments) && (
             <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
@@ -610,8 +665,8 @@ export default function ComposeModal({
           {/* Footer */}
           <div className="border-t border-[var(--border)] shrink-0 bg-[var(--bg-nav-hover)] rounded-b-xl">
 
-            {/* Chips row — only shown when something is allocated */}
-            {(selectedClients.length > 0 || selectedTask) && (
+            {/* Chips row — shown when clients are allocated */}
+            {selectedClients.length > 0 && (
               <div className="flex items-center flex-wrap gap-1.5 px-3 pt-2.5 pb-1">
                 {selectedClients.map(c => (
                   <span key={c.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700">
@@ -619,13 +674,6 @@ export default function ComposeModal({
                     <button onClick={() => setSelectedClients(prev => prev.filter(x => x.id !== c.id))} className="hover:text-red-500 ml-0.5"><X size={10} /></button>
                   </span>
                 ))}
-                {selectedTask && (
-                  <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-700">
-                    <CheckSquare size={10} />
-                    <span className="max-w-[160px] truncate">{selectedTask.title}</span>
-                    <button onClick={() => setSelectedTask(null)} className="hover:text-red-500 ml-0.5"><X size={10} /></button>
-                  </span>
-                )}
               </div>
             )}
 
@@ -674,12 +722,19 @@ export default function ComposeModal({
               >
                 <UserPlus size={11} />{selectedClients.length > 0 ? 'Add Client' : 'Allocate'}
               </button>
-              {tasksModuleActive && !selectedTask && (
+              {tasksModuleActive && (
                 <button
-                  onClick={() => setTaskLinkOpen(true)}
-                  className="text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors font-medium shrink-0"
+                  onClick={() => setCreateTaskEnabled(v => !v)}
+                  title={createTaskEnabled ? 'Create Task after send (on)' : 'Create Task after send (off)'}
+                  className={`text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors font-medium shrink-0 ${
+                    createTaskEnabled
+                      ? 'border-indigo-400 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
+                      : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                  }`}
                 >
-                  <CheckSquare size={11} /> Link Task
+                  <CheckSquare size={11} className={createTaskEnabled ? 'fill-indigo-200' : ''} />
+                  Create Task
+                  {createTaskEnabled && <Check size={10} />}
                 </button>
               )}
 
@@ -718,12 +773,6 @@ export default function ComposeModal({
         suggestEmails={toEmails}
         preSelectedIds={selectedClients.map(c => c.id)}
         onSelect={clients => setSelectedClients(clients)}
-      />
-      <TaskLinkModal
-        open={taskLinkOpen}
-        onClose={() => setTaskLinkOpen(false)}
-        preSelectedTaskId={selectedTask?.id ?? null}
-        onSelect={task => setSelectedTask(task)}
       />
     </>
   );

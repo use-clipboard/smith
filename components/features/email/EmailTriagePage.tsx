@@ -1,18 +1,20 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Mail, PenSquare, Loader2, Settings } from 'lucide-react';
+import { Mail, PenSquare, Loader2, Settings, Settings2 } from 'lucide-react';
 import EmailSidebar from './EmailSidebar';
 import EmailList from './EmailList';
 import EmailThread from './EmailThread';
 import ComposeModal from './ComposeModal';
 import AllocateModal from './AllocateModal';
+import EmailRulesModal from './EmailRulesModal';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { createClient } from '@/lib/supabase';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 import type { Client } from './AllocateModal';
+import type { EmailRule } from '@/app/api/email/rules/route';
 
 interface Allocation {
   client_id: string;
@@ -58,6 +60,10 @@ export default function EmailTriagePage() {
   const [threadMeta, setThreadMeta] = useState<Record<string, { hasAllocation: boolean; hasTaskLink: boolean }>>({});
 
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+
+  // Email rules
+  const [emailRules, setEmailRules] = useState<EmailRule[]>([]);
+  const [rulesOpen, setRulesOpen]   = useState(false);
 
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureDisplayName, setSignatureDisplayName] = useState('');
@@ -115,6 +121,15 @@ export default function EmailTriagePage() {
       .catch(() => {});
   }, [connected]);
 
+  // Load email rules
+  useEffect(() => {
+    if (!connected) return;
+    fetch('/api/email/rules')
+      .then(r => r.ok ? r.json() : { rules: [] })
+      .then((d: { rules: EmailRule[] }) => setEmailRules(d.rules ?? []))
+      .catch(() => {});
+  }, [connected]);
+
   // Load pinned thread IDs
   useEffect(() => {
     if (!connected) return;
@@ -136,6 +151,72 @@ export default function EmailTriagePage() {
       .catch(() => {});
   }, [connected, userName]);
 
+  function matchesRule(thread: EmailThreadType, rule: EmailRule): boolean {
+    if (!rule.is_active) return false;
+    const val = rule.condition_value.toLowerCase();
+    let target = '';
+    switch (rule.condition_field) {
+      case 'from':      target = (thread.from?.email ?? '' + ' ' + (thread.from?.name ?? '')).toLowerCase(); break;
+      case 'to':        target = ''; break; // threads don't expose To at list level
+      case 'subject':   target = (thread.subject ?? '').toLowerCase(); break;
+      case 'has_words':  target = (thread.snippet ?? '').toLowerCase(); break;
+    }
+    switch (rule.condition_operator) {
+      case 'contains':    return target.includes(val);
+      case 'equals':      return target === val;
+      case 'starts_with': return target.startsWith(val);
+      case 'ends_with':   return target.endsWith(val);
+    }
+    return false;
+  }
+
+  function applyRulesToThreads(unreadThreads: EmailThreadType[]) {
+    const activeRules = emailRules.filter(r => r.is_active);
+    if (!activeRules.length || !unreadThreads.length) return;
+    for (const thread of unreadThreads) {
+      for (const rule of activeRules) {
+        if (!matchesRule(thread, rule)) continue;
+        switch (rule.action_type) {
+          case 'archive':
+            fetch('/api/email/modify', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ threadId: thread.id, removeLabelIds: ['INBOX'] }),
+            }).then(() => setThreads(prev => prev.filter(t => t.id !== thread.id))).catch(() => {});
+            break;
+          case 'label':
+            if (rule.action_label_id) {
+              fetch('/api/email/modify', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ threadId: thread.id, addLabelIds: [rule.action_label_id] }),
+              }).catch(() => {});
+            }
+            break;
+          case 'mark_read':
+            fetch('/api/email/modify', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ threadId: thread.id, removeLabelIds: ['UNREAD'] }),
+            }).then(() => setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, isRead: true } : t))).catch(() => {});
+            break;
+          case 'star':
+            fetch('/api/email/modify', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ threadId: thread.id, addLabelIds: ['STARRED'] }),
+            }).then(() => setThreads(prev => prev.map(t => t.id === thread.id
+              ? { ...t, labelIds: [...t.labelIds.filter(l => l !== 'STARRED'), 'STARRED'] }
+              : t))).catch(() => {});
+            break;
+          case 'trash':
+            fetch('/api/email/trash', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ threadId: thread.id }),
+            }).then(() => setThreads(prev => prev.filter(t => t.id !== thread.id))).catch(() => {});
+            break;
+        }
+        break; // only apply first matching rule per thread
+      }
+    }
+  }
+
   const fetchThreads = useCallback(async (label: string, pageToken?: string) => {
     if (pageToken) setLoadingMore(true);
     else setLoadingThreads(true);
@@ -151,12 +232,18 @@ export default function EmailTriagePage() {
         return;
       }
       setFetchError(null);
+      const newThreads = data.threads ?? [];
       if (pageToken) {
-        setThreads(prev => [...prev, ...(data.threads ?? [])]);
+        setThreads(prev => [...prev, ...newThreads]);
       } else {
-        setThreads(data.threads ?? []);
+        setThreads(newThreads);
       }
       setNextPageToken(data.nextPageToken ?? null);
+
+      // Apply active rules to unread threads (fire-and-forget)
+      if (label === 'INBOX' && !pageToken) {
+        applyRulesToThreads(newThreads.filter(t => !t.isRead));
+      }
     } catch (err) {
       if (!pageToken) setFetchError('Could not reach the server. Please try again.');
     } finally {
@@ -373,6 +460,45 @@ export default function EmailTriagePage() {
     }
   }
 
+  async function handleCreateTaskFromSent({ subject, plainBody, toEmail, toName }: { subject: string; plainBody: string; toEmail: string; toName: string }) {
+    // Lazy-load team members
+    if (!teamMembersLoaded) {
+      fetch('/api/users/team')
+        .then(r => r.ok ? r.json() : { members: [] })
+        .then((d: { members: { id: string; full_name: string | null; email: string }[] }) => {
+          setTeamMembers(d.members ?? []);
+          setTeamMembersLoaded(true);
+        })
+        .catch(() => {});
+    }
+    setCreatingTask(true);
+    try {
+      const res = await fetch('/api/email/suggest-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, body: plainBody, fromEmail: toEmail, fromName: toName }),
+      });
+      interface SuggestResult { title: string; steps: string[]; dueDate: string | null; clientId: string | null; clientName: string | null; }
+      const data = res.ok
+        ? await res.json() as SuggestResult
+        : { title: subject, steps: [], dueDate: null, clientId: null, clientName: null };
+      setTaskSuggestedTitle(data.title ?? subject);
+      setTaskSuggestedSteps(data.steps ?? []);
+      setTaskSuggestedDueDate(data.dueDate ?? '');
+      setTaskSuggestedClientId(data.clientId ?? '');
+      setTaskSuggestedClientName(data.clientName ?? '');
+    } catch {
+      setTaskSuggestedTitle(subject);
+      setTaskSuggestedSteps([]);
+      setTaskSuggestedDueDate('');
+      setTaskSuggestedClientId('');
+      setTaskSuggestedClientName('');
+    } finally {
+      setCreatingTask(false);
+      setShowQuickTask(true);
+    }
+  }
+
   async function handleTaskCreated(data: CreateTaskData) {
     await fetch('/api/tasks', {
       method: 'POST',
@@ -513,12 +639,18 @@ export default function EmailTriagePage() {
     <div className="flex h-full overflow-hidden">
       {/* Labels sidebar */}
       <div className="w-48 shrink-0 border-r border-[var(--border)] overflow-y-auto bg-[var(--bg-card-solid)]">
-        <div className="p-3 border-b border-[var(--border)]">
+        <div className="p-3 border-b border-[var(--border)] space-y-2">
           <button
             onClick={() => { setReplyTo(null); setComposeOpen(true); }}
             className="btn-primary w-full text-sm flex items-center justify-center gap-2"
           >
             <PenSquare size={14} /> Compose
+          </button>
+          <button
+            onClick={() => setRulesOpen(true)}
+            className="w-full text-xs flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+          >
+            <Settings2 size={12} /> Rules
           </button>
         </div>
         <EmailSidebar
@@ -606,11 +738,13 @@ export default function EmailTriagePage() {
         forwardOf={forwardOf}
         defaultClients={defaultClients}
         prefilledBody={prefilledBody}
+        threadMessages={replyTo || forwardOf ? (activeThread?.messages ?? threadDetail?.messages ?? null) : null}
         signature={signature}
         googleEmail={googleEmail}
         displayName={signatureDisplayName || userName}
         tasksModuleActive={tasksModuleActive}
         onSent={() => fetchThreads(activeLabel)}
+        onCreateTaskFromSent={handleCreateTaskFromSent}
       />
 
       <AllocateModal
@@ -619,6 +753,19 @@ export default function EmailTriagePage() {
         thread={activeThread}
         existingAllocations={threadDetail?.allocations ?? []}
         onAllocated={handleAllocated}
+      />
+
+      <EmailRulesModal
+        open={rulesOpen}
+        onClose={() => {
+          setRulesOpen(false);
+          // Reload rules after editing
+          fetch('/api/email/rules')
+            .then(r => r.ok ? r.json() : { rules: [] })
+            .then((d: { rules: EmailRule[] }) => setEmailRules(d.rules ?? []))
+            .catch(() => {});
+        }}
+        labels={labels}
       />
 
       {showQuickTask && (
