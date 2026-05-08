@@ -57,7 +57,7 @@ export default function EmailTriagePage() {
   const [activeThread, setActiveThread] = useState<EmailThreadType | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [threadMeta, setThreadMeta] = useState<Record<string, { hasAllocation: boolean; hasTaskLink: boolean; isReplied?: boolean; isForwarded?: boolean }>>({});
+  const [threadMeta, setThreadMeta] = useState<Record<string, { hasAllocation: boolean; hasTaskLink: boolean; isReplied?: boolean; isForwarded?: boolean; reactions?: string[] }>>({});
 
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
 
@@ -616,6 +616,16 @@ export default function EmailTriagePage() {
     });
   }
 
+  function handleReacted(emoji: string) {
+    if (!activeThread) return;
+    setThreadMeta(prev => {
+      const current = prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false };
+      const existing = current.reactions ?? [];
+      if (existing.includes(emoji)) return prev;
+      return { ...prev, [activeThread.id]: { ...current, reactions: [...existing, emoji] } };
+    });
+  }
+
   function handleReplySent(originalThreadId: string) {
     // Immediately show replied chip in the list for the active thread
     if (activeThread) {
@@ -933,6 +943,8 @@ export default function EmailTriagePage() {
             onRemoveTaskLink={handleRemoveTaskLink}
             isPinned={activeThread ? pinnedIds.has(activeThread.id) : false}
             onPin={activeThread ? (pin) => handlePin(activeThread.id, pin) : undefined}
+            existingReactions={activeThread ? (threadMeta[activeThread.id]?.reactions ?? []) : []}
+            onReacted={handleReacted}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center gap-2">

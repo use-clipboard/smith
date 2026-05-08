@@ -45,6 +45,10 @@ interface Props {
   onRemoveTaskLink: (taskId: string) => void;
   isPinned?: boolean;
   onPin?: (pin: boolean) => Promise<void>;
+  /** Reactions already sent for this thread (from threadMeta — persists across tab switches) */
+  existingReactions?: string[];
+  /** Called when a reaction is successfully sent */
+  onReacted?: (emoji: string) => void;
 }
 
 const QUICK_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🙏', '👀', '✅', '🔥'];
@@ -328,7 +332,7 @@ export default function EmailThread({
   thread, targetMessageId, allocations, taskLinks, googleEmail, tasksModuleActive, labels,
   onAllocate, onCreateTask, creatingTask, onReply, onReplyAll, onForward, onAIDraftReply, onDelete, onArchive, onStar, onMove,
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
-  isPinned, onPin,
+  isPinned, onPin, existingReactions, onReacted,
 }: Props) {
   const [deleting, setDeleting]       = useState(false);
   const [archiving, setArchiving]     = useState(false);
@@ -339,6 +343,8 @@ export default function EmailThread({
   // Emoji picker for non-threaded mode (lives in main header)
   const [emojiPickerHeaderOpen, setEmojiPickerHeaderOpen] = useState(false);
   const emojiPickerHeaderRef = useRef<HTMLDivElement>(null);
+  // Track reactions sent in this session (merged with existingReactions from parent)
+  const [sessionReactions, setSessionReactions] = useState<string[]>([]);
 
   const isInTrash  = thread.labelIds.includes('TRASH');
   const isInSpam   = thread.labelIds.includes('SPAM');
@@ -352,6 +358,11 @@ export default function EmailThread({
   useEffect(() => {
     setIsStarred(thread.labelIds.includes('STARRED'));
   }, [thread.id, thread.labelIds]);
+
+  // Reset session reactions when switching to a different thread
+  useEffect(() => {
+    setSessionReactions([]);
+  }, [thread.id]);
 
   // Close move dropdown on outside click
   useEffect(() => {
@@ -484,10 +495,16 @@ export default function EmailThread({
       formData.append('replyToMessageId', messageId);
       formData.append('threadId', thread.id);
       await fetch('/api/email/send', { method: 'POST', body: formData });
+      // Track locally and bubble up to parent
+      setSessionReactions(prev => prev.includes(emoji) ? prev : [...prev, emoji]);
+      onReacted?.(emoji);
     } catch {
       // Silently fail
     }
   }
+
+  // All reactions to display (deduplicated union of session + parent-persisted)
+  const allReactions = [...new Set([...(existingReactions ?? []), ...sessionReactions])];
 
   // In non-threaded view use the targeted message; otherwise use the last message in the thread
   const lastMessage = targetMessageId
@@ -676,6 +693,22 @@ export default function EmailThread({
         {targetMessageId && lastMessage && lastMessage.attachments.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             <AttachmentChips attachments={lastMessage.attachments} />
+          </div>
+        )}
+
+        {/* Reaction badges — shown after you react */}
+        {allReactions.length > 0 && (
+          <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-[var(--text-muted)] font-medium">You reacted:</span>
+            {allReactions.map(e => (
+              <span
+                key={e}
+                className="text-base leading-none px-2 py-1 rounded-full bg-[var(--accent-light)] border border-[var(--accent)]/20 select-none"
+                title="Your reaction"
+              >
+                {e}
+              </span>
+            ))}
           </div>
         )}
 

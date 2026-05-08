@@ -25,7 +25,7 @@ interface Props {
   activeThreadId: string | null;
   loading: boolean;
   error?: string | null;
-  threadMeta?: Record<string, { hasAllocation: boolean; hasTaskLink: boolean; isReplied?: boolean; isForwarded?: boolean }>;
+  threadMeta?: Record<string, { hasAllocation: boolean; hasTaskLink: boolean; isReplied?: boolean; isForwarded?: boolean; reactions?: string[] }>;
   searchQuery: string;
   onSearch: (q: string) => void;
   onSelect: (thread: EmailThread) => void;
@@ -451,8 +451,8 @@ export default function EmailList({
                     </p>
 
                     {/* Status chips */}
-                    {(isReplied || isForwarded) && (
-                      <div className="flex items-center gap-1.5 mt-1.5">
+                    {(isReplied || isForwarded || (meta?.reactions?.length ?? 0) > 0) && (
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         {isReplied && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]" title="Replied">
                             <Reply size={9} /> Replied
@@ -461,6 +461,13 @@ export default function EmailList({
                         {isForwarded && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]" title="Forwarded">
                             <Forward size={9} /> Forwarded
+                          </span>
+                        )}
+                        {meta?.reactions && meta.reactions.length > 0 && (
+                          <span className="inline-flex items-center gap-0.5" title="You reacted">
+                            {meta.reactions.map(e => (
+                              <span key={e} className="text-sm leading-none">{e}</span>
+                            ))}
                           </span>
                         )}
                       </div>
