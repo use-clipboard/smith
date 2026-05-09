@@ -422,11 +422,15 @@ export default function EmailList({
                 );
                 return latest.date || undefined;
               }
-              // Prefer the date from a real SENT message in the thread; fall back
-              // to the persisted timestamp captured when the user sent through the app
-              // (covers the window before the next inbox poll picks up the reply).
-              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedThreadIds?.get(realThreadId)   || undefined) : undefined;
-              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedThreadIds?.get(realThreadId) || undefined) : undefined;
+              // Prefer the date from a real SENT message in the thread that matches
+              // the subject prefix; fall back to the persisted timestamp captured when
+              // the user sent through the app; final fallback is the latest SENT message
+              // in the thread regardless of subject (covers Outlook-forwarded threads
+              // where the prefix didn't survive, or legacy localStorage entries with
+              // no recorded date).
+              const latestAnySent = pickLatestSent(() => true);
+              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedThreadIds?.get(realThreadId)   || latestAnySent || undefined) : undefined;
+              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedThreadIds?.get(realThreadId) || latestAnySent || undefined) : undefined;
 
               return (
                 <div

@@ -33,6 +33,10 @@ interface ThreadDetail {
   allocations: Allocation[];
   taskLinks: TaskLink[];
   googleEmail: string;
+  /** Date of the most recent forward of this thread's subject found in the
+   * user's Sent folder, when no Fwd:/FW: SENT message exists in the current
+   * thread (e.g. threading was broken on forward). null when no match. */
+  externalForwardedAt?: string | null;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -498,7 +502,8 @@ export default function EmailTriagePage() {
       const isReplied = hasInbound && sentMsgs.length > 0
         && sentMsgs.some((m: { subject?: string }) => !FORWARD_PREFIX.test(m.subject ?? ''));
       const isForwarded = sentMsgs.some((m: { subject?: string }) => FORWARD_PREFIX.test(m.subject ?? ''))
-        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id);
+        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id)
+        || !!data.externalForwardedAt;
       setThreadMeta(prev => ({
         ...prev,
         [thread.id]: {
@@ -535,7 +540,9 @@ export default function EmailTriagePage() {
         });
       }
       if (isForwarded) {
-        const date = pickLatest(sentMsgs, true);
+        // Prefer the in-thread forward date; fall back to the date found via
+        // Sent-folder search when threading was broken on forward.
+        const date = pickLatest(sentMsgs, true) || data.externalForwardedAt || '';
         setForwardedThreadIds(prev => {
           if (prev.get(realId) === date) return prev;
           const next = new Map(prev);
