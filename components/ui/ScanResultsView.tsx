@@ -1,6 +1,7 @@
 'use client';
 
 import { CheckCircle2, XCircle, RotateCcw, ArrowRight, ExternalLink, FileWarning } from 'lucide-react';
+import Tooltip from './Tooltip';
 import type { DocumentScanResult } from '@/types';
 
 interface ScanResultsViewProps {
@@ -101,7 +102,7 @@ export default function ScanResultsView({
             {successful.map(r => (
               <div key={r.fileName} className="flex items-center gap-3 px-4 py-3 bg-[var(--surface)]">
                 <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-                <span className="text-sm text-[var(--text-primary)] truncate flex-1" title={r.fileName}>
+                <span className="text-sm text-[var(--text-primary)] truncate flex-1" aria-label={r.fileName}>
                   {r.fileName}
                 </span>
                 <span className="text-xs text-[var(--text-muted)] shrink-0">
@@ -127,7 +128,7 @@ export default function ScanResultsView({
                   <div className="flex items-start gap-3">
                     <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[var(--text-primary)] truncate" title={r.fileName}>
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate" aria-label={r.fileName}>
                         {r.fileName}
                       </p>
                       <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
@@ -135,14 +136,16 @@ export default function ScanResultsView({
                       </p>
                     </div>
                     {fileRef && (
-                      <button
-                        onClick={() => openFilePreview(fileRef)}
-                        className="flex items-center gap-1.5 text-xs text-[var(--accent)] hover:underline shrink-0 mt-0.5"
-                        title="Open this file in a new tab"
-                      >
-                        <ExternalLink size={12} />
-                        View
-                      </button>
+                      <Tooltip label="Open this file in a new tab" className="shrink-0 mt-0.5">
+                        <button
+                          onClick={() => openFilePreview(fileRef)}
+                          aria-label="Open this file in a new tab"
+                          className="flex items-center gap-1.5 text-xs text-[var(--accent)] hover:underline"
+                        >
+                          <ExternalLink size={12} />
+                          View
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -165,15 +168,28 @@ export default function ScanResultsView({
           </button>
         )}
 
-        <button
-          onClick={onDismissAndContinue}
-          disabled={allFailed || isRescanning}
-          className="btn-primary flex items-center justify-center gap-2 sm:ml-auto"
-          title={allFailed ? 'No documents succeeded — nothing to continue with' : undefined}
-        >
-          {allSucceeded ? 'Continue to results' : 'Dismiss failed and continue'}
-          <ArrowRight size={15} />
-        </button>
+        {allFailed ? (
+          <Tooltip label="No documents succeeded — nothing to continue with" className="sm:ml-auto">
+            <button
+              onClick={onDismissAndContinue}
+              disabled
+              aria-label="Continue (disabled)"
+              className="btn-primary flex items-center justify-center gap-2"
+            >
+              {allSucceeded ? 'Continue to results' : 'Dismiss failed and continue'}
+              <ArrowRight size={15} />
+            </button>
+          </Tooltip>
+        ) : (
+          <button
+            onClick={onDismissAndContinue}
+            disabled={isRescanning}
+            className="btn-primary flex items-center justify-center gap-2 sm:ml-auto"
+          >
+            {allSucceeded ? 'Continue to results' : 'Dismiss failed and continue'}
+            <ArrowRight size={15} />
+          </button>
+        )}
       </div>
 
       {allFailed && (

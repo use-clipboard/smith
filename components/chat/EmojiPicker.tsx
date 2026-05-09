@@ -43,8 +43,8 @@ export default function EmojiPicker({ onSelect, compact = false }: EmojiPickerPr
               <button
                 key={i}
                 onClick={() => onSelect(emoji)}
+                aria-label={emoji}
                 className="w-7 h-7 flex items-center justify-center text-base rounded hover:bg-[var(--bg-nav-hover)] transition-all"
-                title={emoji}
               >
                 {emoji}
               </button>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Key, Eye, EyeOff, CheckCircle2, AlertCircle, Trash2, ExternalLink } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 export default function ApiKeySettings() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -105,14 +106,16 @@ export default function ApiKeySettings() {
               className="input-base pr-10 font-mono text-sm"
               onKeyDown={e => { if (e.key === 'Enter') void handleSave(); }}
             />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              title={showKey ? 'Hide key' : 'Show key'}
-            >
-              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
+            <Tooltip label={showKey ? 'Hide key' : 'Show key'} side="left" className="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                aria-label={showKey ? 'Hide key' : 'Show key'}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </Tooltip>
           </div>
           <button
             onClick={handleSave}

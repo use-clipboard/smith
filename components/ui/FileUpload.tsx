@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useRef } from 'react';
 import { UploadCloud, FileIcon, X } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface FileUploadProps {
   title: string;
@@ -83,13 +84,15 @@ export default function FileUpload({
               <p className="text-sm font-semibold text-[var(--accent)]">
                 {existingFiles.length} file{existingFiles.length !== 1 ? 's' : ''} selected
               </p>
-              <button
-                onClick={clearFiles}
-                className="ml-1 p-0.5 rounded hover:bg-[var(--accent)] hover:text-white transition-colors"
-                title="Remove files"
-              >
-                <X size={13} className="text-[var(--accent)]" />
-              </button>
+              <Tooltip label="Remove files" className="ml-1">
+                <button
+                  onClick={clearFiles}
+                  aria-label="Remove files"
+                  className="p-0.5 rounded hover:bg-[var(--accent)] hover:text-white transition-colors"
+                >
+                  <X size={13} className="text-[var(--accent)]" />
+                </button>
+              </Tooltip>
             </div>
             <ul className="space-y-0.5">
               {existingFiles.slice(0, 3).map(f => (

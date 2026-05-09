@@ -5,6 +5,7 @@ import {
   X, ChevronRight, ChevronLeft, Key, Users, Puzzle,
   Sparkles, HelpCircle, CheckCircle2, ExternalLink,
 } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface Props {
   onDismiss: () => void;
@@ -70,13 +71,15 @@ export default function OnboardingModal({ onDismiss }: Props) {
         </div>
 
         {/* Skip button */}
-        <button
-          onClick={onDismiss}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
-          title="Skip setup guide"
-        >
-          <X size={16} />
-        </button>
+        <Tooltip label="Skip setup guide" className="absolute top-4 right-4" side="left">
+          <button
+            onClick={onDismiss}
+            aria-label="Skip setup guide"
+            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </Tooltip>
 
         <div className="px-8 pt-10 pb-8">
           {/* Step indicator */}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ExternalLink, FolderOpen, ChevronRight, HardDrive, Check, RefreshCw, X } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface DriveItem {
   id: string;
@@ -270,14 +271,16 @@ export default function GoogleDriveSettings() {
                             <ChevronRight size={13} className="text-[var(--text-muted)] shrink-0" />
                           </button>
                           {item.type === 'folder' && (
-                            <button
-                              onClick={() => handleSelectFolder(item.id, item.name)}
-                              disabled={savingFolder}
-                              className="shrink-0 px-3 py-2.5 text-xs font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] disabled:opacity-50 border-l border-[var(--border)]"
-                              title="Use this folder"
-                            >
-                              Use
-                            </button>
+                            <Tooltip label="Use this folder" className="shrink-0">
+                              <button
+                                onClick={() => handleSelectFolder(item.id, item.name)}
+                                disabled={savingFolder}
+                                aria-label="Use this folder"
+                                className="px-3 py-2.5 text-xs font-medium text-[var(--accent)] hover:text-[var(--accent-hover)] disabled:opacity-50 border-l border-[var(--border)]"
+                              >
+                                Use
+                              </button>
+                            </Tooltip>
                           )}
                         </li>
                       ))}

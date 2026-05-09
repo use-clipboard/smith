@@ -1,5 +1,6 @@
 'use client';
 import { ExternalLink, UserCheck, Shield, MapPin, Calendar, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { CHCompanyData, CHOfficer, CHPSC } from '@/types/ch';
 import { formatCHAddress } from '@/types/ch';
 
@@ -36,9 +37,9 @@ function DueBadge({ dateStr, overdue }: { dateStr: string | null; overdue?: bool
 }
 
 function IdvStatusIcon({ overdue, verified }: { overdue: boolean; verified: boolean }) {
-  if (verified) return <span title="IDV verified"><CheckCircle size={13} className="text-emerald-500 shrink-0" /></span>;
-  if (overdue) return <span title="IDV overdue"><AlertTriangle size={13} className="text-red-500 shrink-0" /></span>;
-  return <span title="IDV not yet due"><CheckCircle size={13} className="text-[var(--text-muted)] shrink-0" /></span>;
+  if (verified) return <Tooltip label="IDV verified"><span><CheckCircle size={13} className="text-emerald-500 shrink-0" /></span></Tooltip>;
+  if (overdue) return <Tooltip label="IDV overdue"><span><AlertTriangle size={13} className="text-red-500 shrink-0" /></span></Tooltip>;
+  return <Tooltip label="IDV not yet due"><span><CheckCircle size={13} className="text-[var(--text-muted)] shrink-0" /></span></Tooltip>;
 }
 
 function OfficerCard({ officer }: { officer: CHOfficer }) {

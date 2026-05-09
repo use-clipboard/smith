@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Mail, Wifi, WifiOff, Check, Loader2, ExternalLink, AlertTriangle, RefreshCw, Bold, Italic, Underline, Link } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface GmailStatus {
   connected: boolean;
@@ -301,35 +302,11 @@ export default function EmailTriageTab() {
             <>
               {/* Formatting toolbar */}
               <div className="flex items-center gap-0.5 p-1.5 bg-[var(--bg-nav-hover)] border border-[var(--border)] rounded-t-lg border-b-0">
-                <button
-                  title="Bold"
-                  onMouseDown={e => { e.preventDefault(); fmt('bold'); }}
-                  className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <Bold size={13} />
-                </button>
-                <button
-                  title="Italic"
-                  onMouseDown={e => { e.preventDefault(); fmt('italic'); }}
-                  className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <Italic size={13} />
-                </button>
-                <button
-                  title="Underline"
-                  onMouseDown={e => { e.preventDefault(); fmt('underline'); }}
-                  className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <Underline size={13} />
-                </button>
+                <Tooltip label="Bold"><button aria-label="Bold" onMouseDown={e => { e.preventDefault(); fmt('bold'); }} className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"><Bold size={13} /></button></Tooltip>
+                <Tooltip label="Italic"><button aria-label="Italic" onMouseDown={e => { e.preventDefault(); fmt('italic'); }} className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"><Italic size={13} /></button></Tooltip>
+                <Tooltip label="Underline"><button aria-label="Underline" onMouseDown={e => { e.preventDefault(); fmt('underline'); }} className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"><Underline size={13} /></button></Tooltip>
                 <div className="w-px h-4 bg-[var(--border)] mx-1" />
-                <button
-                  title="Insert link"
-                  onMouseDown={e => { e.preventDefault(); handleInsertLink(); }}
-                  className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                  <Link size={13} />
-                </button>
+                <Tooltip label="Insert link"><button aria-label="Insert link" onMouseDown={e => { e.preventDefault(); handleInsertLink(); }} className="p-1.5 rounded hover:bg-[var(--bg-page)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"><Link size={13} /></button></Tooltip>
               </div>
 
               {/* Editor */}

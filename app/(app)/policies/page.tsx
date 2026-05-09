@@ -7,6 +7,7 @@ import {
   ChevronRight, ChevronDown,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 
 // Load editor client-side only (Tiptap uses browser APIs)
 const RichTextEditor = dynamic(() => import('@/components/ui/RichTextEditor'), { ssr: false, loading: () => (
@@ -201,10 +202,12 @@ export default function PoliciesPage() {
               {search && <button onClick={() => setSearch('')}><X size={12} className="text-[var(--text-muted)]" /></button>}
             </div>
             {isAdmin && (
-              <button onClick={startNew} title="New policy"
-                className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--accent)] text-white hover:opacity-90 transition-opacity">
-                <Plus size={16} />
-              </button>
+              <Tooltip label="New policy" className="shrink-0">
+                <button onClick={startNew} aria-label="New policy"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--accent)] text-white hover:opacity-90 transition-opacity">
+                  <Plus size={16} />
+                </button>
+              </Tooltip>
             )}
           </div>
 

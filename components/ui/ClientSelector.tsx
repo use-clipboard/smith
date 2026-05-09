@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { User, X, ChevronDown, Search } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 export type ClientStatus = 'active' | 'hold' | 'inactive';
 
@@ -106,14 +107,16 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
             <span className="text-[var(--accent)] opacity-70 font-mono text-xs">({value.client_ref})</span>
           )}
           <StatusPill status={value.status} />
-          <button
-            type="button"
-            onClick={handleClear}
-            className="ml-auto text-[var(--accent)] opacity-60 hover:opacity-100 transition-opacity"
-            title="Clear client"
-          >
-            <X size={12} />
-          </button>
+          <Tooltip label="Clear client" className="ml-auto">
+            <button
+              type="button"
+              onClick={handleClear}
+              aria-label="Clear client"
+              className="text-[var(--accent)] opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X size={12} />
+            </button>
+          </Tooltip>
         </div>
       ) : (
         <button

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from './StepComments';
 
 export interface TeamMember { id: string; full_name: string | null; email: string }
@@ -31,16 +32,18 @@ export default function AssigneePicker({
 
   return (
     <div ref={ref} className="relative flex-shrink-0">
-      <button
-        onClick={e => { e.stopPropagation(); if (!disabled) setOpen(v => !v); }}
-        disabled={disabled}
-        title={current ? `${current.full_name ?? current.email} — click to change` : 'Unassigned — click to assign'}
-        className={`${sz} rounded-full flex items-center justify-center font-bold text-white ring-2 ring-white transition-all
-          ${current ? avatarColour(current.id) : 'bg-gray-200'}
-          ${disabled ? 'opacity-50 cursor-default' : 'hover:ring-indigo-300 hover:scale-110 cursor-pointer'}`}
-      >
-        {current ? initials(current.full_name, current.email) : <span className="text-gray-400 text-xs">?</span>}
-      </button>
+      <Tooltip label={current ? `${current.full_name ?? current.email} — click to change` : 'Unassigned — click to assign'} side="top">
+        <button
+          onClick={e => { e.stopPropagation(); if (!disabled) setOpen(v => !v); }}
+          disabled={disabled}
+          aria-label={current ? `Change assignee from ${current.full_name ?? current.email}` : 'Assign'}
+          className={`${sz} rounded-full flex items-center justify-center font-bold text-white ring-2 ring-white transition-all
+            ${current ? avatarColour(current.id) : 'bg-gray-200'}
+            ${disabled ? 'opacity-50 cursor-default' : 'hover:ring-indigo-300 hover:scale-110 cursor-pointer'}`}
+        >
+          {current ? initials(current.full_name, current.email) : <span className="text-gray-400 text-xs">?</span>}
+        </button>
+      </Tooltip>
 
       {open && (
         <div className="absolute right-0 top-full mt-1.5 z-50 w-52 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">

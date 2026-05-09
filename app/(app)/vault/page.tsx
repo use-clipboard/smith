@@ -29,6 +29,7 @@ import {
   MoreHorizontal,
   Users,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { VaultDocument, VaultSyncState, VaultTaggingStatus } from '@/types';
 import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 
@@ -128,10 +129,11 @@ interface SyncStatusResponse {
 
 function TaggingDot({ status }: { status: VaultTaggingStatus }) {
   return (
-    <span
-      className={`inline-block w-2 h-2 rounded-full ${STATUS_COLOURS[status]}`}
-      title={STATUS_LABELS[status]}
-    />
+    <Tooltip label={STATUS_LABELS[status]}>
+      <span
+        className={`inline-block w-2 h-2 rounded-full ${STATUS_COLOURS[status]}`}
+      />
+    </Tooltip>
   );
 }
 

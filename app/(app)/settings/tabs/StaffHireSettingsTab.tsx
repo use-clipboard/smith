@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Shield, Check, Loader2, Users, Crown } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { StaffHireAccessUser } from '@/types';
 
 export default function StaffHireSettingsTab() {
@@ -103,15 +104,17 @@ export default function StaffHireSettingsTab() {
                     <div className="flex items-center gap-2">
                       {isSaved && <span className="text-xs text-green-500">Saved!</span>}
                       {isSaving && <Loader2 size={14} className="animate-spin text-[var(--accent)]" />}
-                      <button
-                        onClick={() => handleToggle(user.user_id, !user.has_access)}
-                        disabled={isSaving}
-                        className={`relative w-10 h-5.5 rounded-full transition-colors ${user.has_access ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'} disabled:opacity-50`}
-                        style={{ height: '1.375rem' }}
-                        title={user.has_access ? 'Revoke access' : 'Grant access'}
-                      >
-                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${user.has_access ? 'left-5' : 'left-0.5'}`} />
-                      </button>
+                      <Tooltip label={user.has_access ? 'Revoke access' : 'Grant access'}>
+                        <button
+                          onClick={() => handleToggle(user.user_id, !user.has_access)}
+                          disabled={isSaving}
+                          aria-label={user.has_access ? 'Revoke access' : 'Grant access'}
+                          className={`relative w-10 h-5.5 rounded-full transition-colors ${user.has_access ? 'bg-[var(--accent)]' : 'bg-[var(--border)]'} disabled:opacity-50`}
+                          style={{ height: '1.375rem' }}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${user.has_access ? 'left-5' : 'left-0.5'}`} />
+                        </button>
+                      </Tooltip>
                       <span className={`text-xs font-medium ${user.has_access ? 'text-green-600 dark:text-green-400' : 'text-[var(--text-muted)]'}`}>
                         {user.has_access ? 'Access granted' : 'No access'}
                       </span>

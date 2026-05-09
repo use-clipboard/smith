@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { useTheme } from '@/components/ui/ThemeProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
@@ -182,17 +183,19 @@ export default function PreferencesTab() {
                     {state === 'granted' ? (
                       <>
                         <CheckCircle2 size={15} className="text-green-500" />
-                        <button
-                          onClick={() => void revokePermission(type)}
-                          className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                            showRevoke
-                              ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
-                              : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-red-600 hover:border-red-200'
-                          }`}
-                          title="Remove this permission"
-                        >
-                          Revoke
-                        </button>
+                        <Tooltip label="Remove this permission">
+                          <button
+                            onClick={() => void revokePermission(type)}
+                            aria-label="Remove this permission"
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                              showRevoke
+                                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                                : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-red-600 hover:border-red-200'
+                            }`}
+                          >
+                            Revoke
+                          </button>
+                        </Tooltip>
                       </>
                     ) : state !== 'requesting' ? (
                       <button
@@ -271,31 +274,37 @@ export default function PreferencesTab() {
                   <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{item.label}</span>
                   {/* Reorder */}
                   <div className="flex items-center gap-0.5">
-                    <button
-                      onClick={() => moveUp(index)}
-                      disabled={index === 0}
-                      className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
-                      title="Move up"
-                    >
-                      <ChevronUp size={13} className="text-[var(--text-muted)]" />
-                    </button>
-                    <button
-                      onClick={() => moveDown(index)}
-                      disabled={index === activeFavourites.length - 1}
-                      className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
-                      title="Move down"
-                    >
-                      <ChevronDown size={13} className="text-[var(--text-muted)]" />
-                    </button>
+                    <Tooltip label="Move up">
+                      <button
+                        onClick={() => moveUp(index)}
+                        disabled={index === 0}
+                        aria-label="Move up"
+                        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronUp size={13} className="text-[var(--text-muted)]" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Move down">
+                      <button
+                        onClick={() => moveDown(index)}
+                        disabled={index === activeFavourites.length - 1}
+                        aria-label="Move down"
+                        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
+                      >
+                        <ChevronDown size={13} className="text-[var(--text-muted)]" />
+                      </button>
+                    </Tooltip>
                   </div>
                   {/* Remove */}
-                  <button
-                    onClick={() => removeFavourite(item.moduleId)}
-                    className="p-1 rounded hover:bg-[var(--danger)]/10 transition-colors"
-                    title="Remove from favourites"
-                  >
-                    <X size={13} className="text-[var(--text-muted)] hover:text-[var(--danger)]" />
-                  </button>
+                  <Tooltip label="Remove from favourites">
+                    <button
+                      onClick={() => removeFavourite(item.moduleId)}
+                      aria-label="Remove from favourites"
+                      className="p-1 rounded hover:bg-[var(--danger)]/10 transition-colors"
+                    >
+                      <X size={13} className="text-[var(--text-muted)] hover:text-[var(--danger)]" />
+                    </button>
+                  </Tooltip>
                 </div>
               );
             })}
@@ -324,14 +333,16 @@ export default function PreferencesTab() {
                   <Star size={13} className="text-[var(--text-muted)] opacity-30 shrink-0" />
                   <Icon size={15} className="text-[var(--text-muted)] shrink-0" />
                   <span className="text-sm text-[var(--text-secondary)] flex-1">{item.label}</span>
-                  <button
-                    onClick={() => addFavourite(item.moduleId)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-[var(--accent)] opacity-0 group-hover:opacity-100 hover:bg-[var(--accent-light)] transition-all"
-                    title="Add to favourites"
-                  >
-                    <Plus size={11} />
-                    Pin
-                  </button>
+                  <Tooltip label="Add to favourites">
+                    <button
+                      onClick={() => addFavourite(item.moduleId)}
+                      aria-label="Add to favourites"
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-[var(--accent)] opacity-0 group-hover:opacity-100 hover:bg-[var(--accent-light)] transition-all"
+                    >
+                      <Plus size={11} />
+                      Pin
+                    </button>
+                  </Tooltip>
                 </div>
               );
             })}

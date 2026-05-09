@@ -8,6 +8,7 @@ import {
   Sparkles, AlertTriangle, AlertCircle, Info, Loader2,
   Rocket, Flag, type LucideIcon,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { MODULES } from '@/config/modules.config';
 import { resolveMergeTags, MERGE_TAGS, type MergeTagContext } from '@/lib/emailMergeTags';
@@ -1084,9 +1085,11 @@ export default function TaskTemplateTestRun({ steps, edges, templateName, onClos
             </div>
             <div className="flex-1" />
             <div className="flex items-center gap-1.5">
-              <button onClick={handleReset} title="Reset" className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors">
-                <RotateCcw className="h-4 w-4" />
-              </button>
+              <Tooltip label="Reset">
+                <button onClick={handleReset} aria-label="Reset" className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 transition-colors">
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              </Tooltip>
               <button onClick={handlePrev} disabled={currentIdx === 0 && !completed} className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-200 disabled:opacity-30 transition-colors">
                 <ChevronLeft className="h-4 w-4" />
               </button>

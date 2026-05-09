@@ -6,6 +6,7 @@ import {
   Eye, EyeOff, Users, List, X, Loader2, Info, Save, Trash2, Clock,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import CHSettingsPanel from '@/components/features/ch-secretarial/CHSettingsPanel';
 import CHExpandedRow from '@/components/features/ch-secretarial/CHExpandedRow';
 import { exportCHWorkbook } from '@/utils/chExport';
@@ -592,10 +593,11 @@ export default function CHSecretarialPage() {
               {/* Schedule button — admin only */}
               {userRole === 'admin' && (
                 <div className="relative">
+                  <Tooltip label="Schedule automatic refreshes (admin only)">
                   <button
                     onClick={() => setShowSchedulePanel(v => !v)}
+                    aria-label="Schedule automatic refreshes"
                     className={`btn-secondary flex items-center gap-2 text-sm ${scheduleTimes.length > 0 ? 'text-[var(--accent)] border-[var(--accent)]' : ''}`}
-                    title="Schedule automatic refreshes (admin only)"
                   >
                     <Clock size={14} />
                     {scheduleLoading
@@ -604,6 +606,7 @@ export default function CHSecretarialPage() {
                         ? <span>{scheduleTimes.length} scheduled</span>
                         : 'Schedule'}
                   </button>
+                  </Tooltip>
 
                   {showSchedulePanel && (
                     <div className="absolute right-0 top-full mt-2 z-40 glass-solid rounded-xl shadow-xl border border-[var(--border)] p-4 w-80 space-y-3">

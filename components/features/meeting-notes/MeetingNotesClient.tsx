@@ -23,6 +23,7 @@ import {
   Upload, Film, FolderOpen, CheckSquare,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 import { consumePendingClient } from '@/lib/pendingClient';
@@ -1204,7 +1205,8 @@ export default function MeetingNotesClient() {
                 <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Meeting Type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {ORIGIN_OPTIONS.map(opt => (
-                    <button key={opt.value} type="button" onClick={() => setMeetingOrigin(opt.value)} title={opt.hint}
+                    <Tooltip key={opt.value} label={opt.hint}>
+                    <button type="button" onClick={() => setMeetingOrigin(opt.value)} aria-label={opt.hint}
                       className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                         meetingOrigin === opt.value
                           ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
@@ -1212,6 +1214,7 @@ export default function MeetingNotesClient() {
                       }`}>
                       {opt.icon}{opt.label}
                     </button>
+                    </Tooltip>
                   ))}
                 </div>
               </div>

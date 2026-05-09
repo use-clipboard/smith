@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useRef } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
 import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles, AlertTriangle, AlertCircle, Info, ShieldCheck, Rocket, Flag, Bell } from 'lucide-react';
 import { MERGE_TAGS, resolveMergeTags, type MergeTagContext } from '@/lib/emailMergeTags';
+import Tooltip from '@/components/ui/Tooltip';
 import { TaskEditFlowChart } from './TaskFlowChart';
 import TaskTemplateTestRun from './TaskTemplateTestRun';
 import AITemplateBuilder from './AITemplateBuilder';
@@ -271,10 +272,12 @@ function EmailEditorModal({ step, templateName, onUpdate, onClose }: EmailEditor
                       <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">{group}</p>
                       <div className="flex flex-wrap gap-1">
                         {MERGE_TAGS.filter(t => t.group === group).map(tag => (
-                          <button key={tag.tag} type="button" title={`Example: ${tag.example}`} onClick={() => insertTag(tag.tag)}
-                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors">
-                            {tag.label}
-                          </button>
+                          <Tooltip key={tag.tag} label={`Example: ${tag.example}`}>
+                            <button type="button" onClick={() => insertTag(tag.tag)} aria-label={`Insert ${tag.label}`}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors">
+                              {tag.label}
+                            </button>
+                          </Tooltip>
                         ))}
                       </div>
                     </div>
@@ -970,18 +973,20 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
 
             {/* Live issue badge */}
             {steps.length > 0 && (staticErrorCount > 0 || staticWarningCount > 0) && (
-              <button
-                onClick={() => { setShowIssuesPanel(v => !v); setSelectedStepKey(null); }}
-                className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
-                  staticErrorCount > 0
-                    ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
-                    : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                }`}
-                title="Show flow issues"
-              >
-                {staticErrorCount > 0 ? <AlertCircle className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                {staticErrorCount + staticWarningCount} issue{staticErrorCount + staticWarningCount > 1 ? 's' : ''}
-              </button>
+              <Tooltip label="Show flow issues">
+                <button
+                  onClick={() => { setShowIssuesPanel(v => !v); setSelectedStepKey(null); }}
+                  aria-label="Show flow issues"
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-colors ${
+                    staticErrorCount > 0
+                      ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                      : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                  }`}
+                >
+                  {staticErrorCount > 0 ? <AlertCircle className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {staticErrorCount + staticWarningCount} issue{staticErrorCount + staticWarningCount > 1 ? 's' : ''}
+                </button>
+              </Tooltip>
             )}
             {steps.length > 0 && staticErrorCount === 0 && staticWarningCount === 0 && (
               <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
@@ -1139,22 +1144,26 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                   >
                     <Plus className="h-4 w-4 text-indigo-600" /> Add Step
                   </button>
-                  <button
-                    onClick={addStartNode}
-                    disabled={steps.some(s => s.step_type === 'start')}
-                    title={steps.some(s => s.step_type === 'start') ? 'Start node already exists' : 'Add a trigger/start node'}
-                    className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 hover:border-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Rocket className="h-4 w-4" /> Start
-                  </button>
-                  <button
-                    onClick={addEndNode}
-                    disabled={steps.some(s => s.step_type === 'end')}
-                    title={steps.some(s => s.step_type === 'end') ? 'End node already exists' : 'Add a completion/end node'}
-                    className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-50 hover:border-purple-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Flag className="h-4 w-4" /> End
-                  </button>
+                  <Tooltip label={steps.some(s => s.step_type === 'start') ? 'Start node already exists' : 'Add a trigger/start node'}>
+                    <button
+                      onClick={addStartNode}
+                      disabled={steps.some(s => s.step_type === 'start')}
+                      aria-label="Add start node"
+                      className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 hover:border-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Rocket className="h-4 w-4" /> Start
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={steps.some(s => s.step_type === 'end') ? 'End node already exists' : 'Add a completion/end node'}>
+                    <button
+                      onClick={addEndNode}
+                      disabled={steps.some(s => s.step_type === 'end')}
+                      aria-label="Add end node"
+                      className="flex items-center gap-1.5 bg-white border border-gray-300 shadow-sm text-sm text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-50 hover:border-purple-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Flag className="h-4 w-4" /> End
+                    </button>
+                  </Tooltip>
                 </>
               )}
             </div>
@@ -1194,9 +1203,11 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                     <Rocket className="h-4 w-4 text-green-600 flex-shrink-0" />
                     <h4 className="text-sm font-semibold text-green-700">Start Node</h4>
                   </div>
-                  <button onClick={() => deleteStep(selectedStep.step_key)} className="text-red-400 hover:text-red-600 p-1 rounded" title="Remove start node">
+                  <Tooltip label="Remove start node">
+                  <button onClick={() => deleteStep(selectedStep.step_key)} aria-label="Remove start node" className="text-red-400 hover:text-red-600 p-1 rounded">
                     <Trash2 className="h-4 w-4" />
                   </button>
+                  </Tooltip>
                 </div>
                 <p className="text-xs text-gray-500">Sets when this workflow is triggered. Connect this node to your first step.</p>
 
@@ -1351,9 +1362,11 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                     <Flag className="h-4 w-4 text-purple-600 flex-shrink-0" />
                     <h4 className="text-sm font-semibold text-purple-700">End Node</h4>
                   </div>
-                  <button onClick={() => deleteStep(selectedStep.step_key)} className="text-red-400 hover:text-red-600 p-1 rounded" title="Remove end node">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <Tooltip label="Remove end node">
+                    <button onClick={() => deleteStep(selectedStep.step_key)} aria-label="Remove end node" className="text-red-400 hover:text-red-600 p-1 rounded">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </Tooltip>
                 </div>
                 <p className="text-xs text-gray-500">Marks where the workflow is complete. Connect your last step to this node.</p>
 
@@ -1783,8 +1796,8 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                                 {item.step.title}
                               </span>
                               <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-                                {item.isOrphan && <span title="Not connected" className="text-[10px] text-amber-500">⚠</span>}
-                                {item.isSplit && <span title="Splits into multiple paths" className="text-[10px] text-indigo-400 font-medium">split</span>}
+                                {item.isOrphan && <Tooltip label="Not connected" side="top"><span className="text-[10px] text-amber-500">⚠</span></Tooltip>}
+                                {item.isSplit && <Tooltip label="Splits into multiple paths" side="top"><span className="text-[10px] text-indigo-400 font-medium">split</span></Tooltip>}
                                 {item.step.email_reminder_enabled && <Mail className="h-3.5 w-3.5 text-blue-400" />}
                                 {item.step.tool_module_id && <Puzzle className="h-3.5 w-3.5 text-indigo-400" />}
                               </div>

@@ -5,6 +5,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Minus, Send, Smile, Zap } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { useChatContext } from './ChatProvider';
 import EmojiPicker from './EmojiPicker';
 import Avatar from '@/components/ui/Avatar';
@@ -234,13 +235,15 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 
               {/* Action buttons */}
               <div className="flex flex-col gap-1.5">
-                <button
-                  onClick={() => sendNudge(conversationId)}
-                  title="Nudge"
-                  className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-100 text-amber-600 hover:bg-amber-200 transition-all dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-800/40"
-                >
-                  <Zap size={14} />
-                </button>
+                <Tooltip label="Nudge">
+                  <button
+                    onClick={() => sendNudge(conversationId)}
+                    aria-label="Nudge"
+                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-100 text-amber-600 hover:bg-amber-200 transition-all dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-800/40"
+                  >
+                    <Zap size={14} />
+                  </button>
+                </Tooltip>
                 <button
                   onClick={handleSend}
                   disabled={!input.trim()}
@@ -252,7 +255,7 @@ export default function ConversationWindow({ conversationId, index }: Props) {
             </div>
 
             <p className="text-[10px] text-[var(--text-muted)] mt-1 px-0.5">
-              Enter to send · Shift+Enter for new line · <span title="Send a nudge to get their attention">⚡ Nudge</span>
+              Enter to send · Shift+Enter for new line · <Tooltip label="Send a nudge to get their attention" side="top"><span>⚡ Nudge</span></Tooltip>
             </p>
           </div>
         </>
@@ -359,20 +362,22 @@ function MessageBubble({
       {/* Hover: add reaction button */}
       {isHovered && !isNudge && (
         <div className={`absolute top-0 ${isMine ? 'left-0 -translate-x-1' : 'right-0 translate-x-1'} z-10`}>
-          <button
-            ref={reactionBtnRef}
-            onClick={() => {
-              if (!showReactionPicker && reactionBtnRef.current) {
-                const rect = reactionBtnRef.current.getBoundingClientRect();
-                setReactionPickerPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-              }
-              onToggleReactionPicker();
-            }}
-            className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--bg-card-solid)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] shadow-sm transition-all"
-            title="Add reaction"
-          >
-            <Smile size={11} />
-          </button>
+          <Tooltip label="Add reaction">
+            <button
+              ref={reactionBtnRef}
+              onClick={() => {
+                if (!showReactionPicker && reactionBtnRef.current) {
+                  const rect = reactionBtnRef.current.getBoundingClientRect();
+                  setReactionPickerPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                }
+                onToggleReactionPicker();
+              }}
+              aria-label="Add reaction"
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--bg-card-solid)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] shadow-sm transition-all"
+            >
+              <Smile size={11} />
+            </button>
+          </Tooltip>
 
           {showReactionPicker && reactionPickerPos && createPortal(
             <div style={{ position: 'fixed', top: reactionPickerPos.top, right: reactionPickerPos.right, zIndex: 9999 }}>

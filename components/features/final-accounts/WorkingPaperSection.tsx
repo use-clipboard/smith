@@ -1,5 +1,6 @@
 'use client';
 import { Trash2, Plus } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { WorkingPaper, WorkingPaperTableRow } from '@/types';
 
 // Serialise table rows back to a plain-text content string for PDF export
@@ -100,13 +101,15 @@ function TableSection({ paper, onChange }: Props) {
                   </td>
                 ))}
                 <td className="px-2 py-1">
-                  <button
-                    onClick={() => removeRow(rowIdx)}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                    title="Remove row"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  <Tooltip label="Remove row">
+                    <button
+                      onClick={() => removeRow(rowIdx)}
+                      aria-label="Remove row"
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </Tooltip>
                 </td>
               </tr>
             ))}

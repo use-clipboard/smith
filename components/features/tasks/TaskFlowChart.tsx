@@ -12,6 +12,7 @@ import '@xyflow/react/dist/style.css';
 import StepNode, { type StepNodeData } from './StepNode';
 import { StartNodeMemo, EndNodeMemo, type StartNodeData, type EndNodeData } from './StartEndNodes';
 import { Trash2 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { MODULES } from '@/config/modules.config';
 import type { TaskStep, TaskStepEdge, TaskTemplateStep, TaskTemplateEdge, StepStatus, EdgeConditionType, EdgeConditionConfig } from '@/types';
 
@@ -111,20 +112,23 @@ function InsertableEdge({
               >
                 {hasCondition ? 'Change Condition' : '⚠ Add Condition'}
               </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); edgeData?.onDelete?.(source, target); }}
-                className="flex items-center justify-center w-6 h-6 bg-white border border-gray-200 text-gray-400 rounded-full shadow-md hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors"
-                title="Delete connection"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
+              <Tooltip label="Delete connection">
+                <button
+                  onClick={(e) => { e.stopPropagation(); edgeData?.onDelete?.(source, target); }}
+                  aria-label="Delete connection"
+                  className="flex items-center justify-center w-6 h-6 bg-white border border-gray-200 text-gray-400 rounded-full shadow-md hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </Tooltip>
             </div>
           ) : (
-            <div
-              className="w-4 h-4 rounded-full border-2 border-white shadow"
-              style={{ backgroundColor: edgeColor }}
-              title={hasCondition ? CONDITION_LABELS[conditionType!] : 'No condition set — click to add'}
-            />
+            <Tooltip label={hasCondition ? CONDITION_LABELS[conditionType!] : 'No condition set — click to add'}>
+              <div
+                className="w-4 h-4 rounded-full border-2 border-white shadow"
+                style={{ backgroundColor: edgeColor }}
+              />
+            </Tooltip>
           )}
         </div>
       </EdgeLabelRenderer>

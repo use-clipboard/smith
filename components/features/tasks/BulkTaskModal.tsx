@@ -7,6 +7,7 @@ import {
   ToggleLeft, ToggleRight, Zap, Clock, Filter, Search, CheckSquare, Square,
 } from 'lucide-react';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
+import Tooltip from '@/components/ui/Tooltip';
 import type { TaskTemplate, TaskTemplateStep } from '@/types';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
@@ -1092,13 +1093,14 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
                       {stepCols.map((s, i) => (
                         <th
                           key={s.step_key}
-                          className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2.5 border-b border-gray-200 w-32 cursor-help"
-                          title={s.title}
+                          className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-2.5 border-b border-gray-200 w-32"
                         >
-                          <span className="flex items-center gap-1">
-                            Step {i + 1}
-                            <Info className="h-3 w-3 text-gray-300 flex-shrink-0" />
-                          </span>
+                          <Tooltip label={s.title} side="top">
+                            <span className="flex items-center gap-1 cursor-help">
+                              Step {i + 1}
+                              <Info className="h-3 w-3 text-gray-300 flex-shrink-0" />
+                            </span>
+                          </Tooltip>
                         </th>
                       ))}
                       <th className="border-b border-gray-200 w-10 sticky right-0 bg-gray-50" />
