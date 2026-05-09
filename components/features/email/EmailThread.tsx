@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
-  Star, Archive, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
+  Star, Archive, ArchiveRestore, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 import Tooltip from '@/components/ui/Tooltip';
@@ -575,14 +575,17 @@ export default function EmailThread({
 
           {/* Group 3: Utility — icon-only with tooltips */}
           {(isInTrash || isInSpam) ? (
-            <Tooltip label="Restore to Inbox">
+            <Tooltip label={isInSpam ? 'Move to Inbox (not spam)' : 'Restore to Inbox'}>
               <button
                 onClick={handleRestore}
                 disabled={restoring}
-                aria-label="Restore to Inbox"
-                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+                aria-label={isInSpam ? 'Move to Inbox' : 'Restore to Inbox'}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors text-xs font-medium disabled:opacity-50"
               >
-                {restoring ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+                {restoring
+                  ? <Loader2 size={13} className="animate-spin" />
+                  : <ArchiveRestore size={13} />}
+                {isInSpam ? 'Not Spam' : 'Restore'}
               </button>
             </Tooltip>
           ) : (
