@@ -21,6 +21,7 @@ import AITemplateBuilder from './AITemplateBuilder';
 import BulkTaskModal from './BulkTaskModal';
 import TaskTypeSelector from './TaskTypeSelector';
 import QuickTaskModal from './QuickTaskModal';
+import Tooltip from '@/components/ui/Tooltip';
 import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
@@ -527,28 +528,32 @@ export default function TasksPage() {
         {!loading && !['templates', 'drafts'].includes(view) && (
           <div className="flex-shrink-0 flex justify-end px-6 pt-5 pb-3 bg-gray-50">
             <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
-              <button
-                onClick={() => handleSetViewMode('grid')}
-                title="Card view"
-                className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
-                  viewMode === 'grid'
-                    ? 'bg-white text-indigo-600 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => handleSetViewMode('list')}
-                title="List view"
-                className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-white text-indigo-600 shadow-sm'
-                    : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                <List className="h-4 w-4" />
-              </button>
+              <Tooltip label="Card view">
+                <button
+                  onClick={() => handleSetViewMode('grid')}
+                  aria-label="Card view"
+                  className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+              </Tooltip>
+              <Tooltip label="List view">
+                <button
+                  onClick={() => handleSetViewMode('list')}
+                  aria-label="List view"
+                  className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-white text-indigo-600 shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  <List className="h-4 w-4" />
+                </button>
+              </Tooltip>
             </div>
           </div>
         )}

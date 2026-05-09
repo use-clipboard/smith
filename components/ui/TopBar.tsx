@@ -7,6 +7,7 @@ import {
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
 } from 'lucide-react';
 import Avatar from './Avatar';
+import Tooltip from './Tooltip';
 import { useChatContext } from '@/components/chat/ChatProvider';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
@@ -269,15 +270,17 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
         {/* Search */}
         <div className="relative" ref={searchRef}>
-          <button
-            onClick={() => { setSearchOpen(v => !v); setNotifOpen(false); }}
-            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-              searchOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-            }`}
-            title="Search"
-          >
-            <Search size={16} />
-          </button>
+          <Tooltip label="Search">
+            <button
+              onClick={() => { setSearchOpen(v => !v); setNotifOpen(false); }}
+              aria-label="Search"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                searchOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Search size={16} />
+            </button>
+          </Tooltip>
 
           {searchOpen && (
             <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-50">
@@ -350,41 +353,45 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
         {/* Team Messages */}
         <div className="relative">
-          <button
-            onClick={() => setIsPanelOpen(!isPanelOpen)}
-            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all relative ${
-              isPanelOpen
-                ? 'bg-[var(--accent)] text-white'
-                : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-            }`}
-            title="Team Messages"
-          >
-            <MessageSquare size={16} />
-            {totalUnread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-0.5 leading-none">
-                {totalUnread > 9 ? '9+' : totalUnread}
-              </span>
-            )}
-          </button>
+          <Tooltip label="Team Messages">
+            <button
+              onClick={() => setIsPanelOpen(!isPanelOpen)}
+              aria-label="Team Messages"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all relative ${
+                isPanelOpen
+                  ? 'bg-[var(--accent)] text-white'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <MessageSquare size={16} />
+              {totalUnread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-0.5 leading-none">
+                  {totalUnread > 9 ? '9+' : totalUnread}
+                </span>
+              )}
+            </button>
+          </Tooltip>
           {isPanelOpen && <ChatPanel />}
         </div>
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>
-          <button
-            onClick={() => { setNotifOpen(v => !v); setSearchOpen(false); }}
-            className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-              notifOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-            }`}
-            title="Notifications"
-          >
-            <Bell size={16} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-0.5 leading-none">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
+          <Tooltip label="Notifications">
+            <button
+              onClick={() => { setNotifOpen(v => !v); setSearchOpen(false); }}
+              aria-label="Notifications"
+              className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
+                notifOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              <Bell size={16} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold px-0.5 leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </Tooltip>
 
           {notifOpen && (
             <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-50">
@@ -453,13 +460,15 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
                         </div>
 
                         {/* Dismiss button */}
-                        <button
-                          onClick={e => handleDismiss(n.id, e)}
-                          className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Dismiss"
-                        >
-                          <X size={12} />
-                        </button>
+                        <Tooltip label="Dismiss" side="left" className="shrink-0">
+                          <button
+                            onClick={e => handleDismiss(n.id, e)}
+                            aria-label="Dismiss"
+                            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X size={12} />
+                          </button>
+                        </Tooltip>
                       </div>
                     );
                   })}

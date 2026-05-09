@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface RecipientResult {
   type: 'client' | 'team';
@@ -195,13 +196,15 @@ function FmtBtn({ title, onActivate, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <button
-      title={title}
-      onMouseDown={e => { e.preventDefault(); onActivate(); }}
-      className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-    >
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button
+        aria-label={title}
+        onMouseDown={e => { e.preventDefault(); onActivate(); }}
+        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -595,27 +598,30 @@ export default function ComposeModal({
 
             {/* Colour picker */}
             <div className="relative" ref={colorPickerRef}>
-              <button
-                title="Text colour"
-                onMouseDown={e => { e.preventDefault(); setColorOpen(o => !o); }}
-                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Palette size={13} />
-              </button>
+              <Tooltip label="Text colour">
+                <button
+                  aria-label="Text colour"
+                  onMouseDown={e => { e.preventDefault(); setColorOpen(o => !o); }}
+                  className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <Palette size={13} />
+                </button>
+              </Tooltip>
               {colorOpen && (
                 <div className="absolute left-0 top-full mt-1 z-50 p-2 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg flex gap-1.5 flex-wrap w-36">
                   {TEXT_COLOURS.map(c => (
-                    <button
-                      key={c.value}
-                      title={c.label}
-                      onMouseDown={e => {
-                        e.preventDefault();
-                        fmt('foreColor', c.value === 'inherit' ? '#111827' : c.value);
-                        setColorOpen(false);
-                      }}
-                      className="w-5 h-5 rounded-full border border-[var(--border)] hover:scale-110 transition-transform shrink-0"
-                      style={{ backgroundColor: c.value === 'inherit' ? '#F4F6FA' : c.value }}
-                    />
+                    <Tooltip key={c.value} label={c.label}>
+                      <button
+                        aria-label={c.label}
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          fmt('foreColor', c.value === 'inherit' ? '#111827' : c.value);
+                          setColorOpen(false);
+                        }}
+                        className="w-5 h-5 rounded-full border border-[var(--border)] hover:scale-110 transition-transform shrink-0"
+                        style={{ backgroundColor: c.value === 'inherit' ? '#F4F6FA' : c.value }}
+                      />
+                    </Tooltip>
                   ))}
                 </div>
               )}
@@ -630,13 +636,15 @@ export default function ComposeModal({
 
             {/* Emoji picker */}
             <div className="relative" ref={emojiPickerRef}>
-              <button
-                title="Insert emoji"
-                onMouseDown={e => { e.preventDefault(); setEmojiPickerOpen(o => !o); }}
-                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Smile size={13} />
-              </button>
+              <Tooltip label="Insert emoji">
+                <button
+                  aria-label="Insert emoji"
+                  onMouseDown={e => { e.preventDefault(); setEmojiPickerOpen(o => !o); }}
+                  className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <Smile size={13} />
+                </button>
+              </Tooltip>
               {emojiPickerOpen && (
                 <div
                   className="absolute bottom-full mb-1 left-0 z-50 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg p-2 flex flex-wrap gap-1"
@@ -747,13 +755,15 @@ export default function ComposeModal({
             <div className="flex items-center gap-1.5 px-3 py-2.5">
 
               {/* Group 1: Attach — icon-only */}
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach files"
-                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors shrink-0"
-              >
-                <Paperclip size={15} />
-              </button>
+              <Tooltip label="Attach files">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Attach files"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors shrink-0"
+                >
+                  <Paperclip size={15} />
+                </button>
+              </Tooltip>
               <input
                 ref={fileInputRef} type="file" multiple className="hidden"
                 onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
@@ -789,19 +799,21 @@ export default function ComposeModal({
                 <UserPlus size={11} />{selectedClients.length > 0 ? 'Add Client' : 'Allocate'}
               </button>
               {tasksModuleActive && (
-                <button
-                  onClick={() => setCreateTaskEnabled(v => !v)}
-                  title={createTaskEnabled ? 'Create Task after send (on)' : 'Create Task after send (off)'}
-                  className={`text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors font-medium shrink-0 ${
-                    createTaskEnabled
-                      ? 'border-indigo-400 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
-                      : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                  }`}
-                >
-                  <CheckSquare size={11} className={createTaskEnabled ? 'fill-indigo-200' : ''} />
-                  Create Task
-                  {createTaskEnabled && <Check size={10} />}
-                </button>
+                <Tooltip label={createTaskEnabled ? 'Create Task after send (on)' : 'Create Task after send (off)'} side="top">
+                  <button
+                    onClick={() => setCreateTaskEnabled(v => !v)}
+                    aria-label={createTaskEnabled ? 'Create Task after send (on)' : 'Create Task after send (off)'}
+                    className={`text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors font-medium shrink-0 ${
+                      createTaskEnabled
+                        ? 'border-indigo-400 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
+                        : 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                    }`}
+                  >
+                    <CheckSquare size={11} className={createTaskEnabled ? 'fill-indigo-200' : ''} />
+                    Create Task
+                    {createTaskEnabled && <Check size={10} />}
+                  </button>
+                </Tooltip>
               )}
 
               {/* Spacer */}
@@ -814,13 +826,15 @@ export default function ComposeModal({
                   <Check size={11} /> Saved
                 </span>
               )}
-              <button
-                onClick={handleSaveDraft} disabled={savingDraft || sending}
-                title="Save draft"
-                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
-              >
-                {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-              </button>
+              <Tooltip label="Save draft" side="top">
+                <button
+                  onClick={handleSaveDraft} disabled={savingDraft || sending}
+                  aria-label="Save draft"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                </button>
+              </Tooltip>
               <button
                 onClick={handleSend} disabled={sending || to.length === 0}
                 className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"

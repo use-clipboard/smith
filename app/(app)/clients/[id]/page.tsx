@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
+import Tooltip from '@/components/ui/Tooltip';
 import ScheduleMeetingModal from '@/components/features/calendar/ScheduleMeetingModal';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
@@ -455,16 +456,20 @@ function NoteCard({
 
         {/* Actions (appear on hover) */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button onClick={() => void onPin(note.id, !note.is_pinned)}
-            title={note.is_pinned ? 'Unpin' : 'Pin to top'}
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
-            {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
-          </button>
-          {!isEmailNote && (
-            <button onClick={startEdit} title="Edit note"
-              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
-              <Pencil size={13} />
+          <Tooltip label={note.is_pinned ? 'Unpin' : 'Pin to top'}>
+            <button onClick={() => void onPin(note.id, !note.is_pinned)}
+              aria-label={note.is_pinned ? 'Unpin' : 'Pin to top'}
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
+              {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
+          </Tooltip>
+          {!isEmailNote && (
+            <Tooltip label="Edit note">
+              <button onClick={startEdit} aria-label="Edit note"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+                <Pencil size={13} />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -1594,15 +1599,16 @@ export default function ClientDetailPage() {
                     )}
                   </div>
                 )}
-                <button
-                  onClick={() => setShowLinkGraph(true)}
-                  disabled={links.length === 0}
-                  title={links.length === 0 ? 'No links to map yet' : 'Open connections map — click to expand'}
-                  className="group p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] hover:scale-110"
-                  aria-label="Open connections map"
-                >
-                  <Network size={16} className="transition-transform group-hover:rotate-3" />
-                </button>
+                <Tooltip label={links.length === 0 ? 'No links to map yet' : 'Open connections map — click to expand'}>
+                  <button
+                    onClick={() => setShowLinkGraph(true)}
+                    disabled={links.length === 0}
+                    aria-label="Open connections map"
+                    className="group p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] hover:scale-110"
+                  >
+                    <Network size={16} className="transition-transform group-hover:rotate-3" />
+                  </button>
+                </Tooltip>
                 <button onClick={() => { setShowAddLink(v => !v); setLinkError(null); }} className="btn-secondary text-xs py-1.5"><Plus size={12} />Add Link</button>
               </div>
             </div>
@@ -1695,14 +1701,18 @@ export default function ClientDetailPage() {
                           </div>
                         </div>
                         <div className="shrink-0 flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => void handleRemoveLink(link.id)} disabled={removingLinkId === link.id} title="Remove link"
-                            className="p-1 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-40">
-                            <X size={13} />
-                          </button>
-                          <button onClick={() => handleStartEditLink(link)} title="Edit link"
-                            className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] rounded transition-colors">
-                            <Pencil size={13} />
-                          </button>
+                          <Tooltip label="Remove link" side="left">
+                            <button onClick={() => void handleRemoveLink(link.id)} disabled={removingLinkId === link.id} aria-label="Remove link"
+                              className="p-1 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-40">
+                              <X size={13} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Edit link" side="left">
+                            <button onClick={() => handleStartEditLink(link)} aria-label="Edit link"
+                              className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] rounded transition-colors">
+                              <Pencil size={13} />
+                            </button>
+                          </Tooltip>
                         </div>
                       </li>
                     );

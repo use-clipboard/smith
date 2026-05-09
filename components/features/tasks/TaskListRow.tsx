@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { RefreshCw, ChevronRight, Loader2, Trash2, XCircle, Users, UserCheck, Check } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import StepComments, { initials, avatarColour } from './StepComments';
@@ -269,7 +270,9 @@ export default function TaskListRow({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 {isRecurring && (
-                  <RefreshCw className="h-3 w-3 text-indigo-400 flex-shrink-0" title={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} />
+                  <Tooltip label={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} className="flex-shrink-0">
+                    <RefreshCw className="h-3 w-3 text-indigo-400" />
+                  </Tooltip>
                 )}
                 <button onClick={onClick} className="text-sm font-medium text-gray-900 truncate text-left hover:text-indigo-700 transition-colors">
                   {task.title}
@@ -352,10 +355,12 @@ export default function TaskListRow({
               {/* Assignee avatars */}
               <div className="flex -space-x-1.5 cursor-pointer" onClick={onClick}>
                 {assignees.map(a => (
-                  <div key={a.id} title={a.full_name ?? a.email}
-                    className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0 ring-2 ring-white ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}>
-                    {initials(a.full_name, a.email)}
-                  </div>
+                  <Tooltip key={a.id} label={a.full_name ?? a.email} side="top" className="flex-shrink-0">
+                    <div
+                      className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}>
+                      {initials(a.full_name, a.email)}
+                    </div>
+                  </Tooltip>
                 ))}
                 {assignees.length === 0 && <span className="text-xs text-gray-300">—</span>}
               </div>
@@ -364,23 +369,27 @@ export default function TaskListRow({
               {isAdmin && (
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                   {isRecurring && onStopRecurrence && (
-                    <button
-                      onClick={e => { e.stopPropagation(); void handleStopRecurrence(); }}
-                      disabled={stoppingRec}
-                      title="Stop recurrence"
-                      className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
-                    >
-                      {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-                    </button>
+                    <Tooltip label="Stop recurrence">
+                      <button
+                        onClick={e => { e.stopPropagation(); void handleStopRecurrence(); }}
+                        disabled={stoppingRec}
+                        aria-label="Stop recurrence"
+                        className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
+                      >
+                        {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                      </button>
+                    </Tooltip>
                   )}
                   {onDelete && (
-                    <button
-                      onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
-                      title="Delete task"
-                      className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <Tooltip label="Delete task">
+                      <button
+                        onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+                        aria-label="Delete task"
+                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               )}
@@ -491,25 +500,27 @@ export default function TaskListRow({
                       )}
 
                       {/* Complete checkbox */}
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (isEndStep && !isDone) handleCompleteAll();
-                          else handleStepStatus(s.id, isDone ? 'not_started' : 'complete');
-                        }}
-                        disabled={isUpdating || reassignMode}
-                        title={isEndStep && !isDone ? 'Complete task — marks all steps done' : isDone ? 'Mark as not started' : 'Mark as complete'}
-                        className={`flex-shrink-0 mt-1 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
-                          ${isDone ? 'bg-green-500 border-green-500' : isEndStep ? 'border-indigo-400 bg-white hover:bg-indigo-50' : 'border-gray-300 bg-white hover:border-indigo-400'}
-                          ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                      >
-                        {isUpdating ? <Loader2 className="h-3 w-3 text-white animate-spin" /> :
-                         isDone ? (
-                          <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="2,6 5,9 10,3" />
-                          </svg>
-                        ) : null}
-                      </button>
+                      <Tooltip label={isEndStep && !isDone ? 'Complete task — marks all steps done' : isDone ? 'Mark as not started' : 'Mark as complete'} className="flex-shrink-0 mt-1">
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            if (isEndStep && !isDone) handleCompleteAll();
+                            else handleStepStatus(s.id, isDone ? 'not_started' : 'complete');
+                          }}
+                          disabled={isUpdating || reassignMode}
+                          aria-label={isEndStep && !isDone ? 'Complete task' : isDone ? 'Mark as not started' : 'Mark as complete'}
+                          className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
+                            ${isDone ? 'bg-green-500 border-green-500' : isEndStep ? 'border-indigo-400 bg-white hover:bg-indigo-50' : 'border-gray-300 bg-white hover:border-indigo-400'}
+                            ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                        >
+                          {isUpdating ? <Loader2 className="h-3 w-3 text-white animate-spin" /> :
+                           isDone ? (
+                            <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="2,6 5,9 10,3" />
+                            </svg>
+                          ) : null}
+                        </button>
+                      </Tooltip>
 
                       {/* Step number */}
                       <span className="text-[10px] font-semibold text-gray-300 tabular-nums w-5 flex-shrink-0 mt-1.5">

@@ -123,6 +123,19 @@ export default function EmailTriagePage() {
     }, 60_000);
   }
 
+  // Same propagation issue as trash — when we mark-as-read locally, Gmail's
+  // index lags for a few seconds. Without this override, the next poll sees
+  // the thread still UNREAD and the optimistic update flips back. Map keys
+  // are thread.id (= what poll responses return), values are the desired
+  // isRead state we want to enforce for the next 60s.
+  const pendingReadStateRef = useRef<Map<string, boolean>>(new Map());
+  function markPendingReadState(ids: string[], isRead: boolean) {
+    ids.forEach(id => pendingReadStateRef.current.set(id, isRead));
+    window.setTimeout(() => {
+      ids.forEach(id => pendingReadStateRef.current.delete(id));
+    }, 60_000);
+  }
+
   // Resizable column widths (persisted to localStorage)
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return 192;
@@ -381,7 +394,22 @@ export default function EmailTriagePage() {
       // Filter out threads that have been optimistically trashed but Gmail
       // hasn't reflected the change yet — otherwise they reappear briefly.
       const pendingTrash = pendingTrashIdsRef.current;
-      const newThreads = (data.threads ?? []).filter(t => !pendingTrash.has(t.id));
+      const pendingRead = pendingReadStateRef.current;
+      const newThreads = (data.threads ?? [])
+        .filter(t => !pendingTrash.has(t.id))
+        .map(t => {
+          // Override read state if we have a recent local action — protects
+          // mark-read / mark-unread from being undone by stale poll responses.
+          const desired = pendingRead.get(t.id);
+          if (desired === undefined) return t;
+          return {
+            ...t,
+            isRead: desired,
+            labelIds: desired
+              ? t.labelIds.filter(l => l !== 'UNREAD')
+              : Array.from(new Set([...t.labelIds, 'UNREAD'])),
+          };
+        });
       if (pageToken) {
         setThreads(prev => [...prev, ...newThreads]);
       } else {
@@ -834,8 +862,12 @@ export default function EmailTriagePage() {
   }
 
   function handleListDelete(threadId: string) {
+    // In non-threaded view, threadId is the message ID — but Gmail's threads.trash
+    // requires the real thread ID. Resolve via gmailThreadId.
+    const t = threads.find(x => x.id === threadId);
+    const gmailId = t?.gmailThreadId ?? threadId;
     markPendingTrash([threadId]);
-    setThreads(prev => prev.filter(t => t.id !== threadId));
+    setThreads(prev => prev.filter(x => x.id !== threadId));
     if (activeThread?.id === threadId) {
       setActiveThread(null);
       setThreadDetail(null);
@@ -843,39 +875,44 @@ export default function EmailTriagePage() {
     fetch('/api/email/trash', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId }),
+      body: JSON.stringify({ threadId: gmailId }),
     }).catch(() => {});
   }
 
   function handleBulkDelete(ids: string[]) {
     markPendingTrash(ids);
+    const gmailIds = ids.map(id => threads.find(t => t.id === id)?.gmailThreadId ?? id);
     setThreads(prev => prev.filter(t => !ids.includes(t.id)));
     if (activeThread && ids.includes(activeThread.id)) {
       setActiveThread(null);
       setThreadDetail(null);
     }
     // Fire-and-forget trash for each
-    ids.forEach(threadId =>
+    gmailIds.forEach(gmailId =>
       fetch('/api/email/trash', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId }),
+        body: JSON.stringify({ threadId: gmailId }),
       }).catch(() => {})
     );
   }
 
   function handleMarkRead(threadId: string, markAsRead: boolean) {
-    // Optimistic update
-    setThreads(prev => prev.map(t =>
-      t.id === threadId
-        ? { ...t, isRead: markAsRead, labelIds: markAsRead ? t.labelIds.filter(l => l !== 'UNREAD') : [...t.labelIds.filter(l => l !== 'UNREAD'), 'UNREAD'] }
-        : t
+    // Resolve the real Gmail thread ID — required for the modify API call
+    // when running in non-threaded view (where threadId is a message ID).
+    const t = threads.find(x => x.id === threadId);
+    const gmailId = t?.gmailThreadId ?? threadId;
+    markPendingReadState([threadId], markAsRead);
+    setThreads(prev => prev.map(x =>
+      x.id === threadId
+        ? { ...x, isRead: markAsRead, labelIds: markAsRead ? x.labelIds.filter(l => l !== 'UNREAD') : [...x.labelIds.filter(l => l !== 'UNREAD'), 'UNREAD'] }
+        : x
     ));
     fetch('/api/email/modify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        threadId,
+        threadId: gmailId,
         removeLabelIds: markAsRead ? ['UNREAD'] : [],
         addLabelIds: markAsRead ? [] : ['UNREAD'],
       }),
@@ -883,18 +920,19 @@ export default function EmailTriagePage() {
   }
 
   function handleBulkMarkRead(ids: string[]) {
-    // Optimistically mark as read in state
+    markPendingReadState(ids, true);
+    const gmailIds = ids.map(id => threads.find(t => t.id === id)?.gmailThreadId ?? id);
     setThreads(prev => prev.map(t =>
       ids.includes(t.id)
         ? { ...t, isRead: true, labelIds: t.labelIds.filter(l => l !== 'UNREAD') }
         : t
     ));
     // Fire-and-forget mark-read for each
-    ids.forEach(threadId =>
+    gmailIds.forEach(gmailId =>
       fetch('/api/email/modify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId, removeLabelIds: ['UNREAD'], addLabelIds: [] }),
+        body: JSON.stringify({ threadId: gmailId, removeLabelIds: ['UNREAD'], addLabelIds: [] }),
       }).catch(() => {})
     );
   }
@@ -1016,7 +1054,7 @@ export default function EmailTriagePage() {
       <div
         className="w-1 shrink-0 cursor-col-resize bg-[var(--border)] hover:bg-[var(--accent)]/50 transition-colors"
         onMouseDown={e => startColDrag('sidebar', e)}
-        title="Drag to resize"
+        aria-label="Drag to resize"
       />
 
       {/* Thread list */}
@@ -1057,7 +1095,7 @@ export default function EmailTriagePage() {
       <div
         className="w-1 shrink-0 cursor-col-resize bg-[var(--border)] hover:bg-[var(--accent)]/50 transition-colors"
         onMouseDown={e => startColDrag('threadlist', e)}
-        title="Drag to resize"
+        aria-label="Drag to resize"
       />
 
       {/* Thread detail */}

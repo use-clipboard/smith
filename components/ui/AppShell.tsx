@@ -6,6 +6,7 @@ import TopBar from './TopBar';
 import TabBar from './TabBar';
 import TabPanels, { TOOL_ROUTES } from './TabPanels';
 import AskSmithBubble from './AskSmithBubble';
+import Tooltip from './Tooltip';
 import OnboardingModal from './OnboardingModal';
 import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
@@ -68,9 +69,9 @@ function UnreadMessageChips() {
           <button
             key={chip.id}
             onClick={() => otherMember && openConversationWith(otherMember.id)}
+            aria-label={`Message from ${otherMember?.full_name ?? 'teammate'}`}
             className="fixed bottom-0 z-[60] flex items-center gap-2.5 px-3 py-2.5 bg-[var(--accent)] rounded-t-2xl shadow-2xl border border-[var(--border)] text-left hover:brightness-110 transition-all"
             style={{ right: rightOffset, width: 200 }}
-            title={`Message from ${otherMember?.full_name ?? 'teammate'}`}
           >
             <div className="relative shrink-0">
               <Avatar name={otherMember?.full_name} avatarUrl={otherMember?.avatar_url ?? null} size={24} />

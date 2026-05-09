@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { X, Send, MessageSquare, Sparkles, Paperclip, FileText, Image } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface Attachment {
   name: string;
@@ -195,15 +196,17 @@ export default function AskSmithBubble() {
 
             <div className="flex gap-2 items-end">
               {/* Attach button */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || attachments.length >= 5}
-                title="Attach a file"
-                className="h-[38px] w-[38px] shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors disabled:opacity-40"
-              >
-                <Paperclip size={14} />
-              </button>
+              <Tooltip label="Attach a file" side="top" className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || attachments.length >= 5}
+                  aria-label="Attach a file"
+                  className="h-[38px] w-[38px] flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors disabled:opacity-40"
+                >
+                  <Paperclip size={14} />
+                </button>
+              </Tooltip>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -242,15 +245,16 @@ export default function AskSmithBubble() {
       )}
 
       {/* Floating button */}
+      {/* Floating button — `position: fixed` means a Tooltip wrapper can't track its hover state.
+          The aria-label keeps it accessible; the visual purpose is obvious from the icon and corner placement. */}
       <button
         onClick={() => setOpen(!open)}
+        aria-label="Open Ask Smith chat"
         className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full flex items-center justify-center shadow-dropdown transition-all duration-200
           ${open
             ? 'bg-[var(--text-primary)] text-[var(--bg-page)] scale-95'
             : 'bg-[#1A1A2E] dark:bg-white text-white dark:text-[#0F0F1A] hover:scale-105 hover:shadow-accent-glow'
           }`}
-        title="Ask Smith"
-        aria-label="Open Ask Smith chat"
       >
         {open ? <X size={22} /> : <Sparkles size={22} />}
       </button>

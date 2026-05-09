@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2 } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
+import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
 
@@ -468,14 +469,16 @@ export default function ClientsPage() {
                     {/* Checkbox column — admin only */}
                     {isAdmin && (
                       <th className="px-4 py-3 w-10">
-                        <input
-                          ref={selectAllRef}
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={toggleSelectAll}
-                          className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
-                          title={allSelected ? 'Deselect all' : 'Select all'}
-                        />
+                        <Tooltip label={allSelected ? 'Deselect all' : 'Select all'}>
+                          <input
+                            ref={selectAllRef}
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            aria-label={allSelected ? 'Deselect all' : 'Select all'}
+                            className="accent-[var(--accent)] w-3.5 h-3.5 cursor-pointer"
+                          />
+                        </Tooltip>
                       </th>
                     )}
                     {visibleColumns.map(col => (

@@ -6,6 +6,7 @@ import {
   UserCheck, Check, Users,
 } from 'lucide-react';
 import { TaskStatusBadge } from './TaskStatusBadge';
+import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker from './AssigneePicker';
@@ -265,17 +266,19 @@ function ClientTaskRow({
         {/* Assignee avatars */}
         <div className="flex -space-x-1.5 flex-shrink-0">
           {assignees.map(a => (
-            <div
-              key={a.id}
-              title={a.full_name ?? a.email}
-              className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white flex-shrink-0
-                ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}
-            >
-              {initials(a.full_name, a.email)}
-            </div>
+            <Tooltip key={a.id} label={a.full_name ?? a.email} side="top" className="flex-shrink-0">
+              <div
+                className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white
+                  ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}
+              >
+                {initials(a.full_name, a.email)}
+              </div>
+            </Tooltip>
           ))}
           {assignees.length === 0 && (
-            <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white flex-shrink-0" title="Unassigned" />
+            <Tooltip label="Unassigned" side="top" className="flex-shrink-0">
+              <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white" />
+            </Tooltip>
           )}
         </div>
 
@@ -288,24 +291,28 @@ function ClientTaskRow({
         {isAdmin && !confirmDelete && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
             {isRecurring && (
-              <button
-                onClick={() => void handleStopRecurrence()}
-                disabled={stoppingRecurrence}
-                title="Stop recurrence — this task will no longer repeat"
-                className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
-              >
-                {stoppingRecurrence
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <XCircle className="h-3.5 w-3.5" />}
-              </button>
+              <Tooltip label="Stop recurrence — this task will no longer repeat">
+                <button
+                  onClick={() => void handleStopRecurrence()}
+                  disabled={stoppingRecurrence}
+                  aria-label="Stop recurrence"
+                  className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
+                >
+                  {stoppingRecurrence
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <XCircle className="h-3.5 w-3.5" />}
+                </button>
+              </Tooltip>
             )}
-            <button
-              onClick={() => setConfirmDelete(true)}
-              title="Delete task"
-              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip label="Delete task">
+              <button
+                onClick={() => setConfirmDelete(true)}
+                aria-label="Delete task"
+                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
           </div>
         )}
 
@@ -400,11 +407,12 @@ function ClientTaskRow({
             {isAdmin && reassignMode && (
               <div className="flex items-center gap-3 px-5 py-2.5 bg-indigo-50 border-b border-indigo-100">
                 {/* Select-all checkbox */}
-                <button
-                  onClick={toggleSelectAll}
-                  title={allSelected ? 'Deselect all' : 'Select all steps'}
-                  className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
-                    ${allSelected
+                <Tooltip label={allSelected ? 'Deselect all' : 'Select all steps'} className="flex-shrink-0">
+                  <button
+                    onClick={toggleSelectAll}
+                    aria-label={allSelected ? 'Deselect all' : 'Select all steps'}
+                    className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-all
+                      ${allSelected
                       ? 'bg-indigo-500 border-indigo-500'
                       : someSelected
                         ? 'bg-indigo-200 border-indigo-400'
@@ -418,7 +426,8 @@ function ClientTaskRow({
                   {someSelected && !allSelected && (
                     <div className="w-2 h-0.5 bg-indigo-600 rounded" />
                   )}
-                </button>
+                  </button>
+                </Tooltip>
                 <span className="text-xs text-indigo-600 font-medium">
                   {selectedStepIds.size > 0
                     ? `${selectedStepIds.size} step${selectedStepIds.size !== 1 ? 's' : ''} selected`
@@ -445,39 +454,42 @@ function ClientTaskRow({
                   >
                     {/* Reassign mode: checkbox */}
                     {reassignMode && (
-                      <button
-                        onClick={() => canReassign && toggleStep(s.id)}
-                        disabled={!canReassign}
-                        title={canReassign ? 'Select for reassignment' : 'Client steps cannot be reassigned'}
-                        className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
-                          ${isSelected
-                            ? 'bg-indigo-500 border-indigo-500'
-                            : canReassign
-                              ? 'border-gray-300 hover:border-indigo-400 cursor-pointer bg-white'
-                              : 'border-gray-200 opacity-25 cursor-default bg-white'}`}
-                      >
-                        {isSelected && (
-                          <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="2,6 5,9 10,3" />
-                          </svg>
-                        )}
-                      </button>
+                      <Tooltip label={canReassign ? 'Select for reassignment' : 'Client steps cannot be reassigned'} className="flex-shrink-0 mt-0.5">
+                        <button
+                          onClick={() => canReassign && toggleStep(s.id)}
+                          disabled={!canReassign}
+                          aria-label={canReassign ? 'Select for reassignment' : 'Client steps cannot be reassigned'}
+                          className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-all
+                            ${isSelected
+                              ? 'bg-indigo-500 border-indigo-500'
+                              : canReassign
+                                ? 'border-gray-300 hover:border-indigo-400 cursor-pointer bg-white'
+                                : 'border-gray-200 opacity-25 cursor-default bg-white'}`}
+                        >
+                          {isSelected && (
+                            <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="2,6 5,9 10,3" />
+                            </svg>
+                          )}
+                        </button>
+                      </Tooltip>
                     )}
 
                     {/* Complete toggle */}
+                    <Tooltip label={
+                      reassignMode ? 'Exit reassign mode to toggle steps'
+                        : isEndStep && !isDone ? 'Complete task — marks all steps done'
+                        : isDone ? 'Mark as not started'
+                        : 'Mark as complete'
+                    } className="flex-shrink-0 mt-0.5">
                     <button
                       onClick={() => {
                         if (isEndStep && !isDone) void handleCompleteAll();
                         else void handleStepStatus(s.id, isDone ? 'not_started' : 'complete');
                       }}
                       disabled={isUpdating || reassignMode}
-                      title={
-                        reassignMode ? 'Exit reassign mode to toggle steps'
-                          : isEndStep && !isDone ? 'Complete task — marks all steps done'
-                          : isDone ? 'Mark as not started'
-                          : 'Mark as complete'
-                      }
-                      className={`flex-shrink-0 mt-0.5 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
+                      aria-label="Toggle step complete"
+                      className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
                         ${isDone
                           ? 'bg-emerald-500 border-emerald-500'
                           : isEndStep
@@ -495,6 +507,7 @@ function ClientTaskRow({
                           )
                           : null}
                     </button>
+                    </Tooltip>
 
                     {/* Step number */}
                     <span className="text-[11px] font-semibold text-gray-300 tabular-nums flex-shrink-0 w-5 text-right mt-0.5">
@@ -504,12 +517,17 @@ function ClientTaskRow({
                     {/* Step title + description tooltip + notes */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span
-                          title={s.description ?? undefined}
-                          className={`text-sm leading-snug ${isDone ? 'line-through text-gray-400' : isEndStep ? 'font-semibold text-indigo-700' : 'font-medium text-[var(--text-primary)]'} ${s.description ? 'cursor-help' : ''}`}
-                        >
-                          {s.title}
-                        </span>
+                        {s.description ? (
+                          <Tooltip label={s.description} side="top">
+                            <span className={`text-sm leading-snug cursor-help ${isDone ? 'line-through text-gray-400' : isEndStep ? 'font-semibold text-indigo-700' : 'font-medium text-[var(--text-primary)]'}`}>
+                              {s.title}
+                            </span>
+                          </Tooltip>
+                        ) : (
+                          <span className={`text-sm leading-snug ${isDone ? 'line-through text-gray-400' : isEndStep ? 'font-semibold text-indigo-700' : 'font-medium text-[var(--text-primary)]'}`}>
+                            {s.title}
+                          </span>
+                        )}
                         {isEndStep && !isDone && (
                           <span className="text-[10px] text-indigo-400 italic">Completes all steps</span>
                         )}
@@ -543,12 +561,13 @@ function ClientTaskRow({
                           size="sm"
                         />
                       ) : s.assignee ? (
-                        <div
-                          title={s.assignee.full_name ?? s.assignee.email}
-                          className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${avatarColour(s.assignee.id)}`}
-                        >
-                          {initials(s.assignee.full_name, s.assignee.email)}
-                        </div>
+                        <Tooltip label={s.assignee.full_name ?? s.assignee.email} side="top">
+                          <div
+                            className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${avatarColour(s.assignee.id)}`}
+                          >
+                            {initials(s.assignee.full_name, s.assignee.email)}
+                          </div>
+                        </Tooltip>
                       ) : (
                         <div className="h-6 w-6 rounded-full bg-gray-100 ring-2 ring-white" />
                       )}

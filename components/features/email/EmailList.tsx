@@ -6,6 +6,7 @@ import {
   UserPlus, CheckSquare, Search, Star, Trash2, X, Pin,
   SlidersHorizontal, MailOpen, Square,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { EmailThread } from '@/lib/gmail';
 
 function formatDate(dateStr: string): string {
@@ -157,30 +158,34 @@ export default function EmailList({
             </span>
 
             {/* Search */}
-            <button
-              onClick={handleSearchToggle}
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              title="Search emails"
-            >
-              <Search size={13} />
-            </button>
+            <Tooltip label="Search emails">
+              <button
+                onClick={handleSearchToggle}
+                aria-label="Search emails"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Search size={13} />
+              </button>
+            </Tooltip>
 
             {/* Filter / sort */}
             <div className="relative" ref={filterRef}>
-              <button
-                onClick={() => setFilterOpen(o => !o)}
-                className={`p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors relative
-                  ${filterOpen || anyFilterActive
-                    ? 'text-[var(--accent)] bg-[var(--accent-light)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                  }`}
-                title="Filter & sort"
-              >
-                <SlidersHorizontal size={13} />
-                {anyFilterActive && (
-                  <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                )}
-              </button>
+              <Tooltip label="Filter & sort">
+                <button
+                  onClick={() => setFilterOpen(o => !o)}
+                  aria-label="Filter & sort"
+                  className={`p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors relative
+                    ${filterOpen || anyFilterActive
+                      ? 'text-[var(--accent)] bg-[var(--accent-light)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                    }`}
+                >
+                  <SlidersHorizontal size={13} />
+                  {anyFilterActive && (
+                    <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
+                  )}
+                </button>
+              </Tooltip>
 
               {filterOpen && (
                 <div className="absolute right-0 top-full mt-1 w-52 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg z-50 py-1.5 text-xs">
@@ -288,14 +293,16 @@ export default function EmailList({
             </div>
 
             {/* Refresh */}
-            <button
-              onClick={onRefresh}
-              disabled={loading}
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-              title="Refresh"
-            >
-              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            </button>
+            <Tooltip label="Refresh">
+              <button
+                onClick={onRefresh}
+                disabled={loading}
+                aria-label="Refresh"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </Tooltip>
           </>
         )}
       </div>
@@ -313,27 +320,33 @@ export default function EmailList({
           <span className="text-xs font-medium text-[var(--accent)] flex-1">
             {selectedIds.size} selected
           </span>
-          <button
-            onClick={handleBulkMarkRead}
-            title="Mark as read"
-            className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
-          >
-            <MailOpen size={13} />
-          </button>
-          <button
-            onClick={handleBulkDelete}
-            title="Delete selected"
-            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-[var(--text-secondary)] hover:text-red-500 transition-colors"
-          >
-            <Trash2 size={13} />
-          </button>
-          <button
-            onClick={clearSelection}
-            title="Clear selection"
-            className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)]"
-          >
-            <X size={12} />
-          </button>
+          <Tooltip label="Mark as read">
+            <button
+              onClick={handleBulkMarkRead}
+              aria-label="Mark as read"
+              className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+            >
+              <MailOpen size={13} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Delete selected">
+            <button
+              onClick={handleBulkDelete}
+              aria-label="Delete selected"
+              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-[var(--text-secondary)] hover:text-red-500 transition-colors"
+            >
+              <Trash2 size={13} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Clear selection">
+            <button
+              onClick={clearSelection}
+              aria-label="Clear selection"
+              className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)]"
+            >
+              <X size={12} />
+            </button>
+          </Tooltip>
         </div>
       )}
 
@@ -412,14 +425,12 @@ export default function EmailList({
                     <span
                       aria-hidden
                       className="absolute inset-y-0 left-0 w-1 pointer-events-none bg-emerald-500"
-                      title="Allocated to client"
                     />
                   )}
                   {meta?.hasTaskLink && (
                     <span
                       aria-hidden
                       className="absolute inset-y-0 right-0 w-1 pointer-events-none bg-blue-500"
-                      title="Linked to task"
                     />
                   )}
                   {/* Active (currently-viewed) indicator — sits on top of the allocation bar
@@ -432,17 +443,19 @@ export default function EmailList({
                     />
                   )}
                   {/* Checkbox column */}
-                  <button
-                    onClick={e => toggleSelect(thread.id, e)}
-                    className={`shrink-0 flex items-center pl-2 pr-1 transition-opacity
-                      ${isSelected || selectedIds.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                    title={isSelected ? 'Deselect' : 'Select'}
-                  >
-                    {isSelected
-                      ? <CheckSquare size={14} className="text-[var(--accent)]" />
-                      : <Square size={14} className="text-[var(--text-muted)]" />
-                    }
-                  </button>
+                  <Tooltip label={isSelected ? 'Deselect' : 'Select'} side="right" className="shrink-0">
+                    <button
+                      onClick={e => toggleSelect(thread.id, e)}
+                      aria-label={isSelected ? 'Deselect' : 'Select'}
+                      className={`flex items-center pl-2 pr-1 transition-opacity
+                        ${isSelected || selectedIds.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                      {isSelected
+                        ? <CheckSquare size={14} className="text-[var(--accent)]" />
+                        : <Square size={14} className="text-[var(--text-muted)]" />
+                      }
+                    </button>
+                  </Tooltip>
 
                   {/* Main clickable area */}
                   <button
@@ -479,47 +492,55 @@ export default function EmailList({
                         {thread.labelIds.includes('STARRED') && <Star size={11} className="text-amber-400 fill-amber-400 group-hover:hidden" />}
                         {hasAttachments && <Paperclip size={11} className="text-[var(--text-muted)] group-hover:hidden" />}
                         {meta?.hasAllocation && (
-                          <UserPlus size={11} className="text-emerald-500 dark:text-emerald-400 group-hover:hidden" title="Allocated to client" />
+                          <UserPlus size={11} className="text-emerald-500 dark:text-emerald-400 group-hover:hidden" />
                         )}
                         {meta?.hasTaskLink && (
-                          <CheckSquare size={11} className="text-blue-500 dark:text-blue-400 group-hover:hidden" title="Linked to task" />
+                          <CheckSquare size={11} className="text-blue-500 dark:text-blue-400 group-hover:hidden" />
                         )}
                         {/* Date — hidden on hover */}
                         <span className="text-[11px] text-[var(--text-muted)] group-hover:hidden">{formatDate(thread.date)}</span>
                         {/* Hover actions */}
                         <div className="hidden group-hover:flex items-center gap-0.5">
                           {onPin && (
+                            <Tooltip label={pinnedIds?.has(thread.id) ? 'Unpin' : 'Pin to top'}>
+                              <button
+                                onClick={e => { e.stopPropagation(); onPin(thread.id, !pinnedIds?.has(thread.id)); }}
+                                aria-label={pinnedIds?.has(thread.id) ? 'Unpin' : 'Pin to top'}
+                                className="p-1 rounded hover:bg-[var(--bg-nav-hover)]"
+                              >
+                                <Pin size={13} className={pinnedIds?.has(thread.id) ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--accent)]'} />
+                              </button>
+                            </Tooltip>
+                          )}
+                          <Tooltip label={thread.labelIds.includes('STARRED') ? 'Unstar' : 'Star'}>
                             <button
-                              onClick={e => { e.stopPropagation(); onPin(thread.id, !pinnedIds?.has(thread.id)); }}
-                              title={pinnedIds?.has(thread.id) ? 'Unpin' : 'Pin to top'}
+                              onClick={e => { e.stopPropagation(); onStar(thread.id, !thread.labelIds.includes('STARRED')); }}
+                              aria-label={thread.labelIds.includes('STARRED') ? 'Unstar' : 'Star'}
                               className="p-1 rounded hover:bg-[var(--bg-nav-hover)]"
                             >
-                              <Pin size={13} className={pinnedIds?.has(thread.id) ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--accent)]'} />
+                              <Star size={13} className={thread.labelIds.includes('STARRED') ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'} />
                             </button>
-                          )}
-                          <button
-                            onClick={e => { e.stopPropagation(); onStar(thread.id, !thread.labelIds.includes('STARRED')); }}
-                            title={thread.labelIds.includes('STARRED') ? 'Unstar' : 'Star'}
-                            className="p-1 rounded hover:bg-[var(--bg-nav-hover)]"
-                          >
-                            <Star size={13} className={thread.labelIds.includes('STARRED') ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)] hover:text-amber-400'} />
-                          </button>
+                          </Tooltip>
                           {onMarkRead && (
-                            <button
-                              onClick={e => { e.stopPropagation(); onMarkRead(thread.id, !thread.isRead); }}
-                              title={thread.isRead ? 'Mark as unread' : 'Mark as read'}
-                              className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--accent)]"
-                            >
-                              <MailOpen size={13} />
-                            </button>
+                            <Tooltip label={thread.isRead ? 'Mark as unread' : 'Mark as read'}>
+                              <button
+                                onClick={e => { e.stopPropagation(); onMarkRead(thread.id, !thread.isRead); }}
+                                aria-label={thread.isRead ? 'Mark as unread' : 'Mark as read'}
+                                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--accent)]"
+                              >
+                                <MailOpen size={13} />
+                              </button>
+                            </Tooltip>
                           )}
-                          <button
-                            onClick={e => { e.stopPropagation(); onDelete(thread.id); }}
-                            title="Delete"
-                            className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-[var(--text-muted)] hover:text-red-500"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <Tooltip label="Delete">
+                            <button
+                              onClick={e => { e.stopPropagation(); onDelete(thread.id); }}
+                              aria-label="Delete"
+                              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-[var(--text-muted)] hover:text-red-500"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
                     </div>
@@ -535,21 +556,23 @@ export default function EmailList({
                     {(isReplied || isForwarded || (meta?.reactions?.length ?? 0) > 0) && (
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         {isReplied && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]" title="Replied">
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
                             <Reply size={9} /> Replied
                           </span>
                         )}
                         {isForwarded && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]" title="Forwarded">
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
                             <Forward size={9} /> Forwarded
                           </span>
                         )}
                         {meta?.reactions && meta.reactions.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5" title="You reacted">
-                            {meta.reactions.map(e => (
-                              <span key={e} className="text-sm leading-none">{e}</span>
-                            ))}
-                          </span>
+                          <Tooltip label="You reacted" side="top">
+                            <span className="inline-flex items-center gap-0.5">
+                              {meta.reactions.map(e => (
+                                <span key={e} className="text-sm leading-none">{e}</span>
+                              ))}
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                     )}

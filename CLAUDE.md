@@ -437,6 +437,7 @@ Enable Row Level Security (RLS) on all tables. Users should only be able to read
 - Loading skeletons on all data-fetching components
 - Never hardcode API keys anywhere
 - Do not use `any` types in TypeScript unless absolutely unavoidable
+- **Hover tooltips:** never use the native `title=""` attribute on interactive elements — it renders in inconsistent platform-default chrome (beige on macOS Chrome, etc.). Always wrap the trigger in `<Tooltip label="…">` from `components/ui/Tooltip.tsx`, which renders the standard dark-pill tooltip used across SMITH. Pair with `aria-label` on the trigger for screen readers.
 
 ---
 

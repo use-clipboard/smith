@@ -9,6 +9,7 @@ import {
   CalendarDays, MicVocal, UserPlus, CheckSquare, X, MessageSquare,
 } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
+import Tooltip from '@/components/ui/Tooltip';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
 import { useModules } from '@/components/ui/ModulesProvider';
 import Whiteboard from '@/components/features/whiteboard/Whiteboard';
@@ -317,10 +318,11 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                         {m.full_name || m.email.split('@')[0]}
                       </p>
                     </div>
-                    <div
-                      className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? 'bg-emerald-400' : 'bg-[var(--text-muted)] opacity-30'}`}
-                      title={isOnline ? 'Online' : 'Offline'}
-                    />
+                    <Tooltip label={isOnline ? 'Online' : 'Offline'} side="left" className="shrink-0">
+                      <div
+                        className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-[var(--text-muted)] opacity-30'}`}
+                      />
+                    </Tooltip>
                   </li>
                 );
               })}
@@ -348,8 +350,8 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                     route: tool.href,
                     icon: Icon as Tab['icon'],
                   })}
+                  aria-label={tool.desc}
                   className="glass rounded-xl p-4 flex flex-col items-center gap-2 text-center hover:border-[var(--accent)] hover:shadow-card group transition-all duration-150 hover:-translate-y-0.5"
-                  title={tool.desc}
                 >
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
@@ -464,17 +466,19 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
 
                     {/* Message button — hidden for self */}
                     {!isSelf && (
-                      <button
-                        onClick={() => {
-                          setTeamOpen(false);
-                          openConversationWith(m.id);
-                        }}
-                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shrink-0"
-                        title={`Message ${m.full_name?.split(' ')[0] ?? 'them'}`}
-                      >
-                        <MessageSquare size={12} />
-                        Message
-                      </button>
+                      <Tooltip label={`Message ${m.full_name?.split(' ')[0] ?? 'them'}`} className="shrink-0">
+                        <button
+                          onClick={() => {
+                            setTeamOpen(false);
+                            openConversationWith(m.id);
+                          }}
+                          aria-label={`Message ${m.full_name?.split(' ')[0] ?? 'them'}`}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
+                        >
+                          <MessageSquare size={12} />
+                          Message
+                        </button>
+                      </Tooltip>
                     )}
                   </li>
                 );

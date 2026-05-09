@@ -6,6 +6,7 @@ import { X, LayoutDashboard, Plus } from 'lucide-react';
 import { useTabContext } from './TabContext';
 import { TOOL_ROUTES } from './TabPanels';
 import { useTabActivityContext } from './TabActivityContext';
+import Tooltip from './Tooltip';
 
 export default function TabBar() {
   const { tabs, activeTabId, setActiveTabId, addTab, closeTab } = useTabContext();
@@ -73,26 +74,30 @@ export default function TabBar() {
               <Icon size={13} className="shrink-0" />
               <span className="truncate">{tab.title}</span>
             </button>
-            <button
-              onClick={e => handleCloseTab(e, tab.id)}
-              className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--danger)] ml-0.5 p-0.5 rounded"
-              title="Close tab"
-            >
-              <X size={11} />
-            </button>
+            <Tooltip label="Close tab" className="shrink-0">
+              <button
+                onClick={e => handleCloseTab(e, tab.id)}
+                aria-label="Close tab"
+                className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--danger)] ml-0.5 p-0.5 rounded"
+              >
+                <X size={11} />
+              </button>
+            </Tooltip>
           </div>
         );
       })}
 
       {/* New tab button — still uses router.push since newtab is a normal Next.js page */}
       {tabs.length < 8 && (
-        <button
-          onClick={() => router.push(addTab())}
-          className="flex items-center justify-center w-7 h-9 mb-px text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] rounded transition-all duration-150 shrink-0"
-          title="Open new tab"
-        >
-          <Plus size={13} />
-        </button>
+        <Tooltip label="Open new tab">
+          <button
+            onClick={() => router.push(addTab())}
+            aria-label="Open new tab"
+            className="flex items-center justify-center w-7 h-9 mb-px text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] rounded transition-all duration-150 shrink-0"
+          >
+            <Plus size={13} />
+          </button>
+        </Tooltip>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   Star, Archive, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface Allocation {
   client_id: string;
@@ -243,13 +244,15 @@ function MessageCard({
               <Forward size={12} /> Forward
             </button>
             <div className="relative ml-auto">
-              <button
-                onClick={() => setEmojiPickerTopOpen(v => !v)}
-                title="React with emoji"
-                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
-              >
-                <Smile size={14} />
-              </button>
+              <Tooltip label="React with emoji">
+                <button
+                  onClick={() => setEmojiPickerTopOpen(v => !v)}
+                  aria-label="React with emoji"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
+                >
+                  <Smile size={14} />
+                </button>
+              </Tooltip>
               {emojiPickerTopOpen && (
                 <EmojiPicker
                   onSelect={emoji => onReact(message.id, emoji)}
@@ -306,13 +309,15 @@ function MessageCard({
 
             {/* Emoji react button */}
             <div className="relative ml-auto">
-              <button
-                onClick={() => setEmojiPickerBottomOpen(v => !v)}
-                title="React with emoji"
-                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
-              >
-                <Smile size={14} />
-              </button>
+              <Tooltip label="React with emoji">
+                <button
+                  onClick={() => setEmojiPickerBottomOpen(v => !v)}
+                  aria-label="React with emoji"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors"
+                >
+                  <Smile size={14} />
+                </button>
+              </Tooltip>
               {emojiPickerBottomOpen && (
                 <EmojiPicker
                   onSelect={emoji => onReact(message.id, emoji)}
@@ -570,47 +575,55 @@ export default function EmailThread({
 
           {/* Group 3: Utility — icon-only with tooltips */}
           {(isInTrash || isInSpam) ? (
-            <button
-              onClick={handleRestore}
-              disabled={restoring}
-              title="Restore to Inbox"
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-            >
-              {restoring ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
-            </button>
+            <Tooltip label="Restore to Inbox">
+              <button
+                onClick={handleRestore}
+                disabled={restoring}
+                aria-label="Restore to Inbox"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+              >
+                {restoring ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+              </button>
+            </Tooltip>
           ) : (
-            <button
-              onClick={handleArchive}
-              disabled={archiving}
-              title="Archive"
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-            >
-              {archiving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
-            </button>
+            <Tooltip label="Archive">
+              <button
+                onClick={handleArchive}
+                disabled={archiving}
+                aria-label="Archive"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+              >
+                {archiving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+              </button>
+            </Tooltip>
           )}
 
           {isRead && (
-            <button
-              onClick={handleMarkUnread}
-              disabled={markingUnread}
-              title="Mark as Unread"
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
-            >
-              {markingUnread ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
-            </button>
+            <Tooltip label="Mark as Unread">
+              <button
+                onClick={handleMarkUnread}
+                disabled={markingUnread}
+                aria-label="Mark as Unread"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+              >
+                {markingUnread ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+              </button>
+            </Tooltip>
           )}
 
           {moveTargets.length > 0 && (
             <div className="relative" ref={moveRef}>
-              <button
-                onClick={() => setMoveOpen(o => !o)}
-                disabled={!!moving}
-                title="Move to label"
-                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50 flex items-center gap-0.5"
-              >
-                {moving ? <Loader2 size={15} className="animate-spin" /> : <Tag size={15} />}
-                <ChevronDownSmall size={10} />
-              </button>
+              <Tooltip label="Move to label">
+                <button
+                  onClick={() => setMoveOpen(o => !o)}
+                  disabled={!!moving}
+                  aria-label="Move to label"
+                  className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50 flex items-center gap-0.5"
+                >
+                  {moving ? <Loader2 size={15} className="animate-spin" /> : <Tag size={15} />}
+                  <ChevronDownSmall size={10} />
+                </button>
+              </Tooltip>
               {moveOpen && (
                 <div className="absolute left-0 top-full mt-1 z-30 w-48 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden">
                   <div className="py-1 max-h-56 overflow-y-auto">
@@ -631,43 +644,49 @@ export default function EmailThread({
           )}
 
           {/* Star toggle — now in toolbar */}
-          <button
-            onClick={handleStar}
-            disabled={starring}
-            title={isStarred ? 'Unstar' : 'Star'}
-            className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
-          >
-            <Star
-              size={15}
-              className={isStarred ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)]'}
-            />
-          </button>
+          <Tooltip label={isStarred ? 'Unstar' : 'Star'}>
+            <button
+              onClick={handleStar}
+              disabled={starring}
+              aria-label={isStarred ? 'Unstar' : 'Star'}
+              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
+            >
+              <Star
+                size={15}
+                className={isStarred ? 'text-amber-400 fill-amber-400' : 'text-[var(--text-muted)]'}
+              />
+            </button>
+          </Tooltip>
 
           {/* Pin toggle — now in toolbar */}
           {onPin && (
-            <button
-              onClick={handlePin}
-              disabled={pinning}
-              title={isPinned ? 'Unpin' : 'Pin to top'}
-              className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
-            >
-              {pinning
-                ? <Loader2 size={15} className="animate-spin text-[var(--text-muted)]" />
-                : <Pin size={15} className={isPinned ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)]'} />
-              }
-            </button>
+            <Tooltip label={isPinned ? 'Unpin' : 'Pin to top'}>
+              <button
+                onClick={handlePin}
+                disabled={pinning}
+                aria-label={isPinned ? 'Unpin' : 'Pin to top'}
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-50"
+              >
+                {pinning
+                  ? <Loader2 size={15} className="animate-spin text-[var(--text-muted)]" />
+                  : <Pin size={15} className={isPinned ? 'text-[var(--accent)] fill-[var(--accent)]' : 'text-[var(--text-muted)]'} />
+                }
+              </button>
+            </Tooltip>
           )}
 
           {/* Non-threaded: emoji reaction button in main header */}
           {targetMessageId && lastMessage && (
             <div className="relative" ref={emojiPickerHeaderRef}>
-              <button
-                onClick={() => setEmojiPickerHeaderOpen(v => !v)}
-                title="React with emoji"
-                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Smile size={15} />
-              </button>
+              <Tooltip label="React with emoji">
+                <button
+                  onClick={() => setEmojiPickerHeaderOpen(v => !v)}
+                  aria-label="React with emoji"
+                  className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  <Smile size={15} />
+                </button>
+              </Tooltip>
               {emojiPickerHeaderOpen && (
                 <EmojiPicker
                   onSelect={emoji => { handleReact(lastMessage.id, emoji); setEmojiPickerHeaderOpen(false); }}
@@ -679,14 +698,16 @@ export default function EmailThread({
           )}
 
           {/* Far right: Delete — icon-only, red on hover */}
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Delete"
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 ml-auto"
-          >
-            {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-          </button>
+          <Tooltip label="Delete" className="ml-auto">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              aria-label="Delete"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50"
+            >
+              {deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            </button>
+          </Tooltip>
         </div>
 
         {/* Non-threaded: attachment chips in main header */}
@@ -701,13 +722,11 @@ export default function EmailThread({
           <div className="mt-3 flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] text-[var(--text-muted)] font-medium">You reacted:</span>
             {allReactions.map(e => (
-              <span
-                key={e}
-                className="text-base leading-none px-2 py-1 rounded-full bg-[var(--accent-light)] border border-[var(--accent)]/20 select-none"
-                title="Your reaction"
-              >
-                {e}
-              </span>
+              <Tooltip key={e} label="Your reaction" side="top">
+                <span className="text-base leading-none px-2 py-1 rounded-full bg-[var(--accent-light)] border border-[var(--accent)]/20 select-none">
+                  {e}
+                </span>
+              </Tooltip>
             ))}
           </div>
         )}
@@ -753,13 +772,12 @@ export default function EmailThread({
             const senderName = msg.from.name || msg.from.email.split('@')[0];
             return (
               <div key={msg.id} className="flex items-center gap-2 px-1">
-                <span
-                  title={`${senderName} reacted`}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-[var(--accent-light)] border border-[var(--accent)]/20 text-[var(--text-secondary)]"
-                >
-                  <span>{emoji}</span>
-                  <span className="text-xs text-[var(--text-muted)]">{senderName}</span>
-                </span>
+                <Tooltip label={`${senderName} reacted`} side="top">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm bg-[var(--accent-light)] border border-[var(--accent)]/20 text-[var(--text-secondary)]">
+                    <span>{emoji}</span>
+                    <span className="text-xs text-[var(--text-muted)]">{senderName}</span>
+                  </span>
+                </Tooltip>
               </div>
             );
           }

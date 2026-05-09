@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTabActivityContext } from './TabActivityContext';
 import Avatar from './Avatar';
+import Tooltip from './Tooltip';
 import { useTabContext, Tab } from './TabContext';
 import { useModules } from './ModulesProvider';
 import { useFavourites } from './FavouritesProvider';
@@ -194,20 +195,22 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const taskLabel  = myTaskCount > 99 ? '99+' : String(myTaskCount);
 
     if (collapsed) {
+      const collapsedLabel =
+        calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
+        : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
+        : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
+        : item.label;
       return (
         <div key={item.href} className="relative">
-          <button
-            onClick={() => handleNavClick(item)}
-            title={
-              calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
-              : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
-              : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
-              : item.label
-            }
-            className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
-          >
-            <Icon size={18} className={iconClass} />
-          </button>
+          <Tooltip label={collapsedLabel} side="right">
+            <button
+              onClick={() => handleNavClick(item)}
+              aria-label={collapsedLabel}
+              className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+            >
+              <Icon size={18} className={iconClass} />
+            </button>
+          </Tooltip>
           {calBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
@@ -253,9 +256,9 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="flex items-center shrink-0 pr-2 gap-1">
             {isInBackgroundTab && (
               <span className="group-hover:hidden flex items-center">
-                {activity === 'processing' && <span title="Processing"><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span>}
-                {activity === 'done'       && <span title="Done"><Check size={11} className="text-emerald-500" /></span>}
-                {activity === 'idle'       && <span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" title="Open in tab" />}
+                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span></Tooltip>}
+                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-emerald-500" /></span></Tooltip>}
+                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" /></Tooltip>}
               </span>
             )}
             {isFavourite && (
@@ -265,13 +268,15 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                 fill="currentColor"
               />
             )}
-            <button
-              onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
-              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
-              title="Open in new tab"
-            >
-              <Plus size={10} />
-            </button>
+            <Tooltip label="Open in new tab">
+              <button
+                onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
+                aria-label="Open in new tab"
+                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+              >
+                <Plus size={10} />
+              </button>
+            </Tooltip>
           </span>
         )}
 
@@ -323,15 +328,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
     if (collapsed) {
       return (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={() => handleNavClick(item)}
-          title={item.label}
-          className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
-        >
-          <Icon size={18} className={iconClass} />
-        </Link>
+        <Tooltip key={item.href} label={item.label} side="right">
+          <Link
+            href={item.href}
+            onClick={() => handleNavClick(item)}
+            aria-label={item.label}
+            className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+          >
+            <Icon size={18} className={iconClass} />
+          </Link>
+        </Tooltip>
       );
     }
 
@@ -354,9 +360,9 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="flex items-center shrink-0 pr-2 gap-1">
             {isInBackgroundTab && (
               <span className="group-hover:hidden flex items-center">
-                {activity === 'processing' && <span title="Processing"><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span>}
-                {activity === 'done'       && <span title="Done"><Check size={11} className="text-emerald-500" /></span>}
-                {activity === 'idle'       && <span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" title="Open in tab" />}
+                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span></Tooltip>}
+                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-emerald-500" /></span></Tooltip>}
+                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" /></Tooltip>}
               </span>
             )}
             {isFavourite && (
@@ -366,13 +372,15 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                 fill="currentColor"
               />
             )}
-            <button
-              onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
-              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
-              title="Open in new tab"
-            >
-              <Plus size={10} />
-            </button>
+            <Tooltip label="Open in new tab">
+              <button
+                onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
+                aria-label="Open in new tab"
+                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+              >
+                <Plus size={10} />
+              </button>
+            </Tooltip>
           </span>
         )}
       </div>
@@ -414,19 +422,24 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2 space-y-0.5">
 
         {/* ── Dashboard (always first, no section label) ─────────────────── */}
-        <Link
-          href="/dashboard"
-          onClick={() => handleNavClick(DASHBOARD_ITEM)}
-          title={collapsed ? 'Dashboard' : undefined}
-          className={`flex items-center gap-3 rounded-lg transition-all duration-150 group
-            ${collapsed ? 'justify-center px-0 h-11' : 'px-3 h-11'} ${dashColorClass}`}
-        >
-          <DashIcon
-            size={18}
-            className={`shrink-0 transition-colors duration-150 ${dashIsActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`}
-          />
-          {!collapsed && <span className="text-sm font-medium truncate">Dashboard</span>}
-        </Link>
+        {(() => {
+          const dashLink = (
+            <Link
+              href="/dashboard"
+              onClick={() => handleNavClick(DASHBOARD_ITEM)}
+              aria-label="Dashboard"
+              className={`flex items-center gap-3 rounded-lg transition-all duration-150 group
+                ${collapsed ? 'justify-center px-0 h-11' : 'px-3 h-11'} ${dashColorClass}`}
+            >
+              <DashIcon
+                size={18}
+                className={`shrink-0 transition-colors duration-150 ${dashIsActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`}
+              />
+              {!collapsed && <span className="text-sm font-medium truncate">Dashboard</span>}
+            </Link>
+          );
+          return collapsed ? <Tooltip label="Dashboard" side="right">{dashLink}</Tooltip> : dashLink;
+        })()}
 
         {/* ── Favourites section (only shown when user has active favourites) */}
         {activeFavouriteItems.length > 0 && (
@@ -488,25 +501,29 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                 {userRole || 'staff'}
               </p>
             </div>
-            <button
-              onClick={handleSignOut}
-              disabled={signingOut}
-              title="Sign out"
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:text-[var(--danger)]"
-            >
-              <LogOut size={14} className="text-[var(--text-muted)]" />
-            </button>
+            <Tooltip label="Sign out" side="top">
+              <button
+                onClick={handleSignOut}
+                disabled={signingOut}
+                aria-label="Sign out"
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:text-[var(--danger)]"
+              >
+                <LogOut size={14} className="text-[var(--text-muted)]" />
+              </button>
+            </Tooltip>
           </div>
         )}
 
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center h-8 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-all duration-150 mt-1"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          {!collapsed && <span className="text-xs ml-1">Collapse</span>}
-        </button>
+        <Tooltip label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} side="top">
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="w-full flex items-center justify-center h-8 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-all duration-150 mt-1"
+          >
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {!collapsed && <span className="text-xs ml-1">Collapse</span>}
+          </button>
+        </Tooltip>
       </div>
     </aside>
   );

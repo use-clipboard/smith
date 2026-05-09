@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Calendar, Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import type { Task, RecurrenceType } from '@/types';
 
@@ -107,23 +108,27 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
       {isAdmin && !confirmDelete && (
         <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
           {isRecurring && onStopRecurrence && (
-            <button
-              onClick={handleStopRecurrence}
-              disabled={stoppingRec}
-              title="Stop recurrence"
-              className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
-            >
-              {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-            </button>
+            <Tooltip label="Stop recurrence">
+              <button
+                onClick={handleStopRecurrence}
+                disabled={stoppingRec}
+                aria-label="Stop recurrence"
+                className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
+              >
+                {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+              </button>
+            </Tooltip>
           )}
           {onDelete && (
-            <button
-              onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
-              title="Delete task"
-              className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip label="Delete task">
+              <button
+                onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+                aria-label="Delete task"
+                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
           )}
         </div>
       )}
@@ -155,7 +160,9 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
               {task.title}
             </h3>
             {isRecurring && (
-              <RefreshCw className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" title={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} />
+              <Tooltip label={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} className="flex-shrink-0">
+                <RefreshCw className="h-3.5 w-3.5 text-indigo-400" />
+              </Tooltip>
             )}
           </div>
           {task.client ? (
@@ -228,16 +235,20 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
           {assignees.length > 0 ? (
             <div className="flex -space-x-1.5">
               {assignees.map(a => (
-                <div key={a.id} className="h-6 w-6 rounded-full bg-indigo-600 border-2 border-white flex items-center justify-center" title={a.full_name ?? a.email}>
-                  <span className="text-[10px] font-bold text-white">
-                    {(a.full_name ?? a.email).charAt(0).toUpperCase()}
-                  </span>
-                </div>
+                <Tooltip key={a.id} label={a.full_name ?? a.email} side="top">
+                  <div className="h-6 w-6 rounded-full bg-indigo-600 border-2 border-white flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-white">
+                      {(a.full_name ?? a.email).charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                </Tooltip>
               ))}
               {steps.some(s => s.is_client_step) && (
-                <div className="h-6 w-6 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center" title="Client step">
-                  <User className="h-3 w-3 text-white" />
-                </div>
+                <Tooltip label="Client step" side="top">
+                  <div className="h-6 w-6 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center">
+                    <User className="h-3 w-3 text-white" />
+                  </div>
+                </Tooltip>
               )}
             </div>
           ) : (
@@ -247,7 +258,9 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
             </span>
           )}
           {steps.some(s => s.tool_module_id) && (
-            <span title="Has tool integration"><Puzzle className="h-3.5 w-3.5 text-gray-300" /></span>
+            <Tooltip label="Has tool integration" side="top">
+              <span><Puzzle className="h-3.5 w-3.5 text-gray-300" /></span>
+            </Tooltip>
           )}
         </div>
       </div>
