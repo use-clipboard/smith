@@ -11,6 +11,7 @@ import LandlordEditModal from '@/components/features/landlord/LandlordEditModal'
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
@@ -604,13 +605,15 @@ export default function LandlordPage() {
               <td className="px-4 py-2.5 text-[var(--text-muted)] max-w-[140px] truncate">{r.Category}</td>
               <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)] whitespace-nowrap">{fmt(r.Amount)}</td>
               <td className="px-4 py-2.5 w-8">
-                <button
-                  onClick={() => setEditItem({ type: 'income', id: r._id })}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
-                  title="Edit"
-                >
-                  <Pencil size={13} />
-                </button>
+                <Tooltip label="Edit">
+                  <button
+                    onClick={() => setEditItem({ type: 'income', id: r._id })}
+                    aria-label="Edit"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </Tooltip>
               </td>
             </tr>
           ))}
@@ -650,13 +653,15 @@ export default function LandlordPage() {
               <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)] whitespace-nowrap">{fmt(r.Amount)}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[140px] truncate">{r.PropertyAddress}</td>
               <td className="px-4 py-2.5 w-8">
-                <button
-                  onClick={() => setEditItem({ type: 'expense', id: r._id })}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
-                  title="Edit"
-                >
-                  <Pencil size={13} />
-                </button>
+                <Tooltip label="Edit">
+                  <button
+                    onClick={() => setEditItem({ type: 'expense', id: r._id })}
+                    aria-label="Edit"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </Tooltip>
               </td>
             </tr>
           ))}
@@ -851,26 +856,30 @@ export default function LandlordPage() {
             {/* Right controls */}
             <div className="flex items-center gap-2 flex-wrap">
               {/* Undo/Redo */}
-              <button onClick={() => setHistoryIndex(i => i - 1)} disabled={!canUndo} title="Undo" className="btn-secondary px-2 disabled:opacity-40"><Undo2 size={14} /></button>
-              <button onClick={() => setHistoryIndex(i => i + 1)} disabled={!canRedo} title="Redo" className="btn-secondary px-2 disabled:opacity-40"><Redo2 size={14} /></button>
+              <Tooltip label="Undo"><button onClick={() => setHistoryIndex(i => i - 1)} disabled={!canUndo} aria-label="Undo" className="btn-secondary px-2 disabled:opacity-40"><Undo2 size={14} /></button></Tooltip>
+              <Tooltip label="Redo"><button onClick={() => setHistoryIndex(i => i + 1)} disabled={!canRedo} aria-label="Redo" className="btn-secondary px-2 disabled:opacity-40"><Redo2 size={14} /></button></Tooltip>
 
               {/* Breakdown toggle */}
               {(view === 'income' || view === 'expenses' || view === 'rent_comp') && (
                 <>
+                  <Tooltip label="All properties">
                   <button
                     onClick={() => setBreakdown('all')}
-                    title="All properties"
+                    aria-label="All properties"
                     className={`btn-secondary px-2 ${breakdown === 'all' ? 'ring-2 ring-[var(--accent)]' : ''}`}
                   >
                     <LayoutList size={14} />
                   </button>
+                  </Tooltip>
+                  <Tooltip label="By property">
                   <button
                     onClick={() => setBreakdown('property')}
-                    title="By property"
+                    aria-label="By property"
                     className={`btn-secondary px-2 ${breakdown === 'property' ? 'ring-2 ring-[var(--accent)]' : ''}`}
                   >
                     <LayoutGrid size={14} />
                   </button>
+                  </Tooltip>
                 </>
               )}
 
@@ -1167,8 +1176,8 @@ export default function LandlordPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{fmt(r.Amount)}</span>
-                    <button onClick={() => handleUnflagRow(r._id, 'income')} title="Mark as valid" className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"><CheckCircle size={15} /></button>
-                    <button onClick={() => setEditItem({ type: 'income', id: r._id })} title="Edit" className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] transition-colors"><Pencil size={15} /></button>
+                    <Tooltip label="Mark as valid"><button onClick={() => handleUnflagRow(r._id, 'income')} aria-label="Mark as valid" className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"><CheckCircle size={15} /></button></Tooltip>
+                    <Tooltip label="Edit"><button onClick={() => setEditItem({ type: 'income', id: r._id })} aria-label="Edit" className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] transition-colors"><Pencil size={15} /></button></Tooltip>
                   </div>
                 </div>
               ))}
@@ -1188,8 +1197,8 @@ export default function LandlordPage() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{fmt(r.Amount)}</span>
-                    <button onClick={() => handleUnflagRow(r._id, 'expense')} title="Mark as valid" className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"><CheckCircle size={15} /></button>
-                    <button onClick={() => setEditItem({ type: 'expense', id: r._id })} title="Edit" className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] transition-colors"><Pencil size={15} /></button>
+                    <Tooltip label="Mark as valid"><button onClick={() => handleUnflagRow(r._id, 'expense')} aria-label="Mark as valid" className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"><CheckCircle size={15} /></button></Tooltip>
+                    <Tooltip label="Edit"><button onClick={() => setEditItem({ type: 'expense', id: r._id })} aria-label="Edit" className="p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] transition-colors"><Pencil size={15} /></button></Tooltip>
                   </div>
                 </div>
               ))}

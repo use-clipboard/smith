@@ -6,6 +6,7 @@ import {
   EyeOff, Eye, Copy, UserPlus,
 } from 'lucide-react';
 import { dispatchCalendarChanged } from '@/lib/calendarBus';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface Props {
   clientId: string;
@@ -454,7 +455,7 @@ export default function ScheduleMeetingModal({ clientId, clientName, clientEmail
                   value={timezone}
                   onChange={e => setTimezone(e.target.value)}
                   className="text-xs font-medium text-[var(--accent)] bg-transparent border-none outline-none cursor-pointer hover:underline px-0"
-                  title="Time zone"
+                  aria-label="Time zone"
                 >
                   {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
                 </select>
@@ -608,12 +609,11 @@ export default function ScheduleMeetingModal({ clientId, clientName, clientEmail
                   .filter(m => m.id !== currentUserId && m.email)
                   .map(m => {
                     const added = attendees.includes(m.email.toLowerCase());
-                    return (
+                    const memberPill = (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => toggleTeamMember(m.email.toLowerCase())}
-                        title={!m.connected ? `${m.name}'s calendar is not connected` : undefined}
                         className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border transition-all
                           ${added
                             ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
@@ -625,6 +625,9 @@ export default function ScheduleMeetingModal({ clientId, clientName, clientEmail
                         {added && <Check size={9} />}
                       </button>
                     );
+                    return !m.connected
+                      ? <Tooltip key={m.id} label={`${m.name}'s calendar is not connected`}>{memberPill}</Tooltip>
+                      : memberPill;
                   })}
               </div>
             )}

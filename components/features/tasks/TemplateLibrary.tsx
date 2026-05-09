@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X, Copy, AlertCircle } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, DefaultTemplate } from '@/types';
 
@@ -156,25 +157,31 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-semibold text-sm text-gray-900">{t.name}</h4>
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <button onClick={() => onEdit(t)} className="p-1 text-gray-400 hover:text-indigo-600 rounded" title="Edit">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => openCopyModal(t)}
-                            disabled={copying === t.id}
-                            className="p-1 text-gray-400 hover:text-indigo-600 rounded"
-                            title="Copy"
-                          >
-                            {copying === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(t.id)}
-                            disabled={deleting === t.id}
-                            className="p-1 text-gray-400 hover:text-red-500 rounded"
-                            title="Delete"
-                          >
-                            {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                          </button>
+                          <Tooltip label="Edit">
+                            <button onClick={() => onEdit(t)} aria-label="Edit" className="p-1 text-gray-400 hover:text-indigo-600 rounded">
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Copy">
+                            <button
+                              onClick={() => openCopyModal(t)}
+                              disabled={copying === t.id}
+                              aria-label="Copy"
+                              className="p-1 text-gray-400 hover:text-indigo-600 rounded"
+                            >
+                              {copying === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Delete">
+                            <button
+                              onClick={() => handleDelete(t.id)}
+                              disabled={deleting === t.id}
+                              aria-label="Delete"
+                              className="p-1 text-gray-400 hover:text-red-500 rounded"
+                            >
+                              {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            </button>
+                          </Tooltip>
                         </div>
                       </div>
                       {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
@@ -216,15 +223,17 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
                   <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-sm text-gray-800">{t.name}</h4>
-                      <button
-                        onClick={() => handleImport(t)}
-                        disabled={importing === t.id}
-                        className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-50 flex-shrink-0"
-                        title="Import to your library"
-                      >
-                        {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                        Import
-                      </button>
+                      <Tooltip label="Import to your library" className="flex-shrink-0">
+                        <button
+                          onClick={() => handleImport(t)}
+                          disabled={importing === t.id}
+                          aria-label="Import to your library"
+                          className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-50"
+                        >
+                          {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                          Import
+                        </button>
+                      </Tooltip>
                     </div>
                     <p className="text-xs text-gray-500 mb-2">{t.description}</p>
                     <div className="flex items-center gap-2 flex-wrap">

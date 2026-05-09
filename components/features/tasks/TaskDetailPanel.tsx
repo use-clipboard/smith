@@ -7,6 +7,7 @@ import {
   XCircle, Users, UserCheck, Check,
 } from 'lucide-react';
 import { TaskStatusBadge, StepStatusBadge } from './TaskStatusBadge';
+import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import StepComments, { initials, avatarColour } from './StepComments';
@@ -380,15 +381,17 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
           <div className="flex items-center gap-2 ml-4 flex-shrink-0">
             {/* Stop recurrence — admin only */}
             {isAdmin && task.recurrence_type && task.recurrence_type !== 'once' && onStopRecurrence && (
+              <Tooltip label="Stop recurrence — this task will no longer repeat">
               <button
                 onClick={() => void handleStopRecurrence()}
                 disabled={stoppingRec}
-                title="Stop recurrence — this task will no longer repeat"
+                aria-label="Stop recurrence"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-600 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50 transition-colors"
               >
                 {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                 Stop Repeat
               </button>
+              </Tooltip>
             )}
             <select
               value={task.status}
@@ -511,9 +514,11 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                 <Puzzle className="h-3.5 w-3.5 text-indigo-600" />
                                 <span className="text-xs text-indigo-700 font-medium">{mod.name}</span>
                                 {mod.route && (
-                                  <a href={mod.route} className="ml-auto text-indigo-600 hover:text-indigo-800" title="Open tool">
-                                    <ExternalLink className="h-3.5 w-3.5" />
-                                  </a>
+                                  <Tooltip label="Open tool" className="ml-auto">
+                                    <a href={mod.route} aria-label="Open tool" className="text-indigo-600 hover:text-indigo-800">
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                  </Tooltip>
                                 )}
                               </div>
                             ) : (
@@ -619,6 +624,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                             )}
 
                             {/* Complete checkbox */}
+                            <Tooltip label={isEndStep && !isDone ? 'Complete task — marks all steps done' : isDone ? 'Mark as not started' : 'Mark as complete'} className="mt-0.5 flex-shrink-0">
                             <button
                               onClick={e => {
                                 e.stopPropagation();
@@ -626,8 +632,8 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                 else handleStepStatus(s.id, isDone ? 'not_started' : 'complete');
                               }}
                               disabled={isUpdating || reassignMode}
-                              title={isEndStep && !isDone ? 'Complete task — marks all steps done' : isDone ? 'Mark as not started' : 'Mark as complete'}
-                              className={`mt-0.5 flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
+                              aria-label="Toggle step complete"
+                              className={`h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all
                                 ${isDone ? 'bg-green-500 border-green-500' : isEndStep ? 'border-indigo-400 bg-white group-hover:bg-indigo-50' : 'border-gray-300 bg-white group-hover:border-indigo-400'}
                                 ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                             >
@@ -639,6 +645,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                 </svg>
                               ) : null}
                             </button>
+                            </Tooltip>
 
                             {/* Step info + comments */}
                             <div className="flex-1 min-w-0">
@@ -668,12 +675,13 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                     size="sm"
                                   />
                                 ) : s.assignee ? (
-                                  <div
-                                    title={s.assignee.full_name ?? s.assignee.email}
-                                    className={`flex-shrink-0 h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${avatarColour(s.assignee.id)}`}
-                                  >
-                                    {initials(s.assignee.full_name, s.assignee.email)}
-                                  </div>
+                                  <Tooltip label={s.assignee.full_name ?? s.assignee.email} side="top" className="flex-shrink-0">
+                                    <div
+                                      className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${avatarColour(s.assignee.id)}`}
+                                    >
+                                      {initials(s.assignee.full_name, s.assignee.email)}
+                                    </div>
+                                  </Tooltip>
                                 ) : null}
                               </div>
 

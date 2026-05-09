@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Loader2, MessageSquare, Send, Pencil, Trash2, Check, X } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -212,20 +213,24 @@ export default function StepComments({ taskId, stepId, currentUserId, compact = 
                     <span className="text-[10px] text-gray-400">{timeAgo(c.created_at)}</span>
                     {isOwn && !isEditing && !isDeleting && (
                       <span className="ml-auto flex items-center gap-1 opacity-0 group-hover/comment:opacity-100 transition-opacity">
-                        <button
-                          onClick={e => { e.stopPropagation(); startEdit(c); }}
-                          title="Edit note"
-                          className="p-0.5 rounded text-gray-300 hover:text-indigo-500 transition-colors"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); deleteComment(c.id); }}
-                          title="Delete note"
-                          className="p-0.5 rounded text-gray-300 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+                        <Tooltip label="Edit note">
+                          <button
+                            onClick={e => { e.stopPropagation(); startEdit(c); }}
+                            aria-label="Edit note"
+                            className="p-0.5 rounded text-gray-300 hover:text-indigo-500 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete note">
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteComment(c.id); }}
+                            aria-label="Delete note"
+                            className="p-0.5 rounded text-gray-300 hover:text-red-500 transition-colors"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </Tooltip>
                       </span>
                     )}
                     {isDeleting && <Loader2 className="ml-1 h-3 w-3 animate-spin text-gray-300" />}
@@ -244,22 +249,26 @@ export default function StepComments({ taskId, stepId, currentUserId, compact = 
                         onClick={e => e.stopPropagation()}
                         className="flex-1 text-xs border border-indigo-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white min-w-0"
                       />
-                      <button
-                        type="submit"
-                        disabled={!editDraft.trim() || savingEdit}
-                        title="Save"
-                        className="flex-shrink-0 flex items-center justify-center h-7 w-7 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition-colors"
-                      >
-                        {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={e => { e.stopPropagation(); cancelEdit(); }}
-                        title="Cancel"
-                        className="flex-shrink-0 flex items-center justify-center h-7 w-7 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-lg transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <Tooltip label="Save" className="flex-shrink-0">
+                        <button
+                          type="submit"
+                          disabled={!editDraft.trim() || savingEdit}
+                          aria-label="Save"
+                          className="flex items-center justify-center h-7 w-7 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                        >
+                          {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Cancel" className="flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); cancelEdit(); }}
+                          aria-label="Cancel"
+                          className="flex items-center justify-center h-7 w-7 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-lg transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </Tooltip>
                     </form>
                   ) : (
                     <p className="text-xs text-gray-600 leading-snug break-words">{c.content}</p>

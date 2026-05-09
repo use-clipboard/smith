@@ -8,6 +8,7 @@ import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import ScanResultsView from '@/components/ui/ScanResultsView';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import TransactionEditModal from '@/components/features/full-analysis/TransactionEditModal';
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight } from 'lucide-react';
@@ -513,9 +514,11 @@ export default function FullAnalysisPage() {
   );
 
   const EditBtn = ({ onClick }: { onClick: () => void }) => (
-    <button onClick={onClick} className="p-1 rounded hover:bg-[var(--accent-light)] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors" title="View / Edit">
-      <Pencil size={13} />
-    </button>
+    <Tooltip label="View / Edit">
+      <button onClick={onClick} aria-label="View / Edit" className="p-1 rounded hover:bg-[var(--accent-light)] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors">
+        <Pencil size={13} />
+      </button>
+    </Tooltip>
   );
 
   // Bulk action bar for valid transactions

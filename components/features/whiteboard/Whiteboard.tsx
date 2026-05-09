@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, X, StickyNote as StickyNoteIcon, Pencil, Check } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { createClient } from '@/lib/supabase';
 
 type NoteColor = 'yellow' | 'pink' | 'blue';
@@ -257,7 +258,7 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
                 <button
                   key={c.value}
                   onClick={() => setColor(c.value)}
-                  title={c.label}
+                  aria-label={c.label}
                   className="transition-all duration-150 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
                   style={{
                     background: c.bg,
@@ -434,20 +435,24 @@ function StickyNoteCard({
         {/* Own-note controls — pencil + X, appear on hover */}
         {isOwn && !editing && (
           <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={() => setEditing(true)}
-              className="rounded-full hover:bg-black/10 p-0.5"
-              title="Edit note"
-            >
-              <Pencil size={10} style={{ color: '#9ca3af' }} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="rounded-full hover:bg-black/10 p-0.5"
-              title="Remove note"
-            >
-              <X size={11} style={{ color: '#9ca3af' }} />
-            </button>
+            <Tooltip label="Edit note">
+              <button
+                onClick={() => setEditing(true)}
+                aria-label="Edit note"
+                className="rounded-full hover:bg-black/10 p-0.5"
+              >
+                <Pencil size={10} style={{ color: '#9ca3af' }} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Remove note">
+              <button
+                onClick={onDelete}
+                aria-label="Remove note"
+                className="rounded-full hover:bg-black/10 p-0.5"
+              >
+                <X size={11} style={{ color: '#9ca3af' }} />
+              </button>
+            </Tooltip>
           </div>
         )}
 
@@ -493,21 +498,25 @@ function StickyNoteCard({
                 {editContent.length}/200
               </span>
               <div style={{ display: 'flex', gap: '2px' }}>
-                <button
-                  onClick={handleCancel}
-                  className="rounded hover:bg-black/10 p-0.5"
-                  title="Cancel (Esc)"
-                >
-                  <X size={11} style={{ color: '#9ca3af' }} />
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving || !editContent.trim()}
-                  className="rounded hover:bg-black/10 p-0.5 disabled:opacity-40"
-                  title="Save (Ctrl+Enter)"
-                >
-                  <Check size={11} style={{ color: saving ? '#9ca3af' : '#16a34a' }} />
-                </button>
+                <Tooltip label="Cancel (Esc)">
+                  <button
+                    onClick={handleCancel}
+                    aria-label="Cancel"
+                    className="rounded hover:bg-black/10 p-0.5"
+                  >
+                    <X size={11} style={{ color: '#9ca3af' }} />
+                  </button>
+                </Tooltip>
+                <Tooltip label="Save (Ctrl+Enter)">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving || !editContent.trim()}
+                    aria-label="Save"
+                    className="rounded hover:bg-black/10 p-0.5 disabled:opacity-40"
+                  >
+                    <Check size={11} style={{ color: saving ? '#9ca3af' : '#16a34a' }} />
+                  </button>
+                </Tooltip>
               </div>
             </div>
           </>

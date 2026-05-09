@@ -439,7 +439,7 @@ export default function CreateEventModal({
                       value={timezone}
                       onChange={e => setTimezone(e.target.value)}
                       className="text-xs font-medium text-[var(--accent)] bg-transparent border-none outline-none cursor-pointer hover:underline px-0"
-                      title="Time zone"
+                      aria-label="Time zone"
                     >
                       {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
                     </select>

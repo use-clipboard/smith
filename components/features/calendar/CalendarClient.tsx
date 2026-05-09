@@ -6,6 +6,7 @@ import {
   CalendarDays, List, WifiOff, Trash2, Loader2, Pencil, EyeOff, Eye, Lock, Check,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import CreateEventModal from './CreateEventModal';
 import EditEventModal from './EditEventModal';
 import { createClient } from '@/lib/supabase';
@@ -381,11 +382,10 @@ export default function CalendarClient() {
                 ...members.filter(m => m.id !== userId),
               ].map(m => {
                 const isVisible = !hiddenMembers.has(m.id);
-                return (
+                const memberBtn = (
                   <button
                     key={m.id}
                     onClick={() => toggleMember(m.id)}
-                    title={!m.connected ? `${m.id === userId ? 'Your' : `${m.name}'s`} calendar is not connected` : undefined}
                     className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all text-left w-full hover:bg-[var(--bg-nav-hover)]"
                   >
                     {/* Coloured checkbox */}
@@ -404,6 +404,9 @@ export default function CalendarClient() {
                     {!m.connected && <WifiOff size={10} className="text-[var(--text-muted)] shrink-0" />}
                   </button>
                 );
+                return !m.connected
+                  ? <Tooltip key={m.id} label={`${m.id === userId ? 'Your' : `${m.name}'s`} calendar is not connected`}>{memberBtn}</Tooltip>
+                  : memberBtn;
               })}
             </div>
           )}
@@ -604,10 +607,11 @@ export default function CalendarClient() {
                       {selectedEvent.isHidden ? 'Hidden from team' : 'Visible to team'}
                     </span>
                   </div>
+                  <Tooltip label={selectedEvent.isHidden ? 'Make visible to team' : 'Hide from team'}>
                   <button
                     onClick={() => handleToggleVisibility(selectedEvent)}
                     disabled={togglingVisibility}
-                    title={selectedEvent.isHidden ? 'Make visible to team' : 'Hide from team'}
+                    aria-label={selectedEvent.isHidden ? 'Make visible to team' : 'Hide from team'}
                     className={`relative inline-flex h-5 w-9 rounded-full transition-colors disabled:opacity-50
                       ${!selectedEvent.isHidden ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
                   >
@@ -615,6 +619,7 @@ export default function CalendarClient() {
                       ${!selectedEvent.isHidden ? 'translate-x-4' : 'translate-x-0'}`}
                     />
                   </button>
+                  </Tooltip>
                 </div>
               )}
 
@@ -748,23 +753,22 @@ function MonthView({
                 {dayEvents.slice(0, 3).map(ev => {
                   const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                   return isMasked ? (
+                    <Tooltip key={ev.id} label={`${ev.ownerName ?? 'Team member'} is busy`} side="top">
                     <div
-                      key={ev.id}
                       onClick={e => onEventClick(e, ev)}
                       className="text-[11px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer hover:opacity-70 flex items-center gap-0.5 opacity-40"
                       style={{ backgroundColor: '#9ca3af33', color: '#6b7280' }}
-                      title={`${ev.ownerName ?? 'Team member'} is busy`}
                     >
                       <Lock size={9} className="shrink-0" />
                       <span className="truncate italic">Hidden</span>
                     </div>
+                    </Tooltip>
                   ) : (
+                    <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
                     <div
-                      key={ev.id}
                       onClick={e => onEventClick(e, ev)}
                       className="text-[11px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer hover:opacity-80 flex items-center gap-0.5"
                       style={{ backgroundColor: (ev.ownerColor ?? '#3b82f6') + '33', color: ev.ownerColor ?? '#3b82f6' }}
-                      title={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title}
                     >
                       {ev.isHidden && <Lock size={9} className="shrink-0 opacity-70" />}
                       {ev.start.includes('T')
@@ -773,6 +777,7 @@ function MonthView({
                       }
                       <span className="truncate">{ev.title}</span>
                     </div>
+                    </Tooltip>
                   );
                 })}
                 {dayEvents.length > 3 && (
@@ -831,12 +836,11 @@ function WeekView({
               {dayEvents.map(ev => {
                 const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                 return isMasked ? (
+                  <Tooltip key={ev.id} label={`${ev.ownerName ?? 'Team member'} is busy`} side="top">
                   <div
-                    key={ev.id}
                     onClick={e => onEventClick(e, ev)}
                     className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-70 opacity-40"
                     style={{ backgroundColor: '#9ca3af33', color: '#6b7280' }}
-                    title={`${ev.ownerName ?? 'Team member'} is busy`}
                   >
                     {ev.start.includes('T') && <span className="block text-[10px]">{formatTime(ev.start)}</span>}
                     <span className="flex items-center gap-0.5">
@@ -844,13 +848,13 @@ function WeekView({
                       <span className="truncate italic">Hidden</span>
                     </span>
                   </div>
+                  </Tooltip>
                 ) : (
+                  <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
                   <div
-                    key={ev.id}
                     onClick={e => onEventClick(e, ev)}
                     className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-80"
                     style={{ backgroundColor: (ev.ownerColor ?? '#3b82f6') + '33', color: ev.ownerColor ?? '#3b82f6' }}
-                    title={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title}
                   >
                     {ev.start.includes('T')
                       ? <span className="block text-[10px] opacity-70">{formatTime(ev.start)}</span>
@@ -861,6 +865,7 @@ function WeekView({
                       <span className="truncate">{ev.title}</span>
                     </span>
                   </div>
+                  </Tooltip>
                 );
               })}
             </div>

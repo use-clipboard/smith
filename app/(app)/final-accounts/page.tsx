@@ -8,6 +8,7 @@ import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import { ClipboardCheck, FileText, Download, Undo2, Redo2 } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { ReviewPoint, WorkingPaper } from '@/types';
@@ -655,18 +656,22 @@ export default function FinalAccountsPage() {
           )}
           {activeTab === 'papers' && workingPapers.length > 0 && (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setWpHistoryIndex(i => i - 1)}
-                disabled={wpHistoryIndex <= 1}
-                className="btn-secondary py-1.5 px-3 disabled:opacity-40"
-                title="Undo"
-              ><Undo2 size={14} /></button>
-              <button
-                onClick={() => setWpHistoryIndex(i => i + 1)}
-                disabled={wpHistoryIndex >= workingPapersHistory.length - 1}
-                className="btn-secondary py-1.5 px-3 disabled:opacity-40"
-                title="Redo"
-              ><Redo2 size={14} /></button>
+              <Tooltip label="Undo">
+                <button
+                  onClick={() => setWpHistoryIndex(i => i - 1)}
+                  disabled={wpHistoryIndex <= 1}
+                  aria-label="Undo"
+                  className="btn-secondary py-1.5 px-3 disabled:opacity-40"
+                ><Undo2 size={14} /></button>
+              </Tooltip>
+              <Tooltip label="Redo">
+                <button
+                  onClick={() => setWpHistoryIndex(i => i + 1)}
+                  disabled={wpHistoryIndex >= workingPapersHistory.length - 1}
+                  aria-label="Redo"
+                  className="btn-secondary py-1.5 px-3 disabled:opacity-40"
+                ><Redo2 size={14} /></button>
+              </Tooltip>
               <span className="text-xs text-[var(--text-muted)]">
                 {wpHistoryIndex <= 1 ? 'No edits yet' : `Edit ${wpHistoryIndex - 1}`}
               </span>

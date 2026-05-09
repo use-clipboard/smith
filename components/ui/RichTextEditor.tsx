@@ -13,6 +13,7 @@ import {
   List, ListOrdered, Quote, Minus, Undo2, Redo2,
   Highlighter, Palette, ChevronDown, Link2Off,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 // ── Colour palettes ───────────────────────────────────────────────────────────
 
@@ -43,17 +44,19 @@ function ToolBtn({
   onClick: () => void; active?: boolean; disabled?: boolean; title: string; children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button" onMouseDown={e => { e.preventDefault(); onClick(); }}
-      disabled={disabled} title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded-md text-sm transition-colors
-        ${active
-          ? 'bg-[var(--accent)] text-white'
-          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}
-        disabled:opacity-30 disabled:cursor-not-allowed`}
-    >
-      {children}
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button" onMouseDown={e => { e.preventDefault(); onClick(); }}
+        disabled={disabled} aria-label={title}
+        className={`w-8 h-8 flex items-center justify-center rounded-md text-sm transition-colors
+          ${active
+            ? 'bg-[var(--accent)] text-white'
+            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}
+          disabled:opacity-30 disabled:cursor-not-allowed`}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -73,26 +76,30 @@ function ColourPicker({
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        type="button" title={title} onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
-        className="w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
-      >
-        <div className="flex flex-col items-center gap-0">
-          {icon}
-          <div className="w-4 h-1 rounded-sm mt-0.5 border border-black/10" style={{ background: currentColour && currentColour !== 'transparent' ? currentColour : '#111827' }} />
-        </div>
-      </button>
+      <Tooltip label={title}>
+        <button
+          type="button" aria-label={title} onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          className="w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <div className="flex flex-col items-center gap-0">
+            {icon}
+            <div className="w-4 h-1 rounded-sm mt-0.5 border border-black/10" style={{ background: currentColour && currentColour !== 'transparent' ? currentColour : '#111827' }} />
+          </div>
+        </button>
+      </Tooltip>
       {open && (
         <div className="absolute top-full left-0 mt-1 z-30 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-2.5 w-44">
           <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2 px-0.5">{title}</p>
           <div className="grid grid-cols-6 gap-1.5">
             {colours.map(c => (
-              <button key={c} type="button"
-                onMouseDown={e => { e.preventDefault(); onSelect(c); setOpen(false); }}
-                title={c}
-                className="w-6 h-6 rounded border border-black/10 hover:scale-110 transition-transform"
-                style={{ background: c === 'transparent' ? 'linear-gradient(135deg, #fff 45%, #f00 45%, #f00 55%, #fff 55%)' : c }}
-              />
+              <Tooltip key={c} label={c}>
+                <button type="button"
+                  onMouseDown={e => { e.preventDefault(); onSelect(c); setOpen(false); }}
+                  aria-label={c}
+                  className="w-6 h-6 rounded border border-black/10 hover:scale-110 transition-transform"
+                  style={{ background: c === 'transparent' ? 'linear-gradient(135deg, #fff 45%, #f00 45%, #f00 55%, #fff 55%)' : c }}
+                />
+              </Tooltip>
             ))}
           </div>
         </div>

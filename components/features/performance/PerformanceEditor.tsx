@@ -18,6 +18,7 @@ import {
   LayoutTemplate, Upload, ExternalLink,
 } from 'lucide-react';
 import type { CoverOptions, CoverStyleId } from '@/app/(app)/performance/page';
+import Tooltip from '@/components/ui/Tooltip';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,22 +124,26 @@ function ToolBtn({ onClick, active = false, disabled = false, title, children }:
   onClick: () => void; active?: boolean; disabled?: boolean; title: string; children: React.ReactNode;
 }) {
   return (
-    <button type="button" onMouseDown={e => { e.preventDefault(); onClick(); }} disabled={disabled} title={title}
-      className={`w-8 h-8 flex items-center justify-center rounded-md text-sm transition-colors shrink-0
-        ${active ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}
-        disabled:opacity-30 disabled:cursor-not-allowed`}>
-      {children}
-    </button>
+    <Tooltip label={title} className="shrink-0">
+      <button type="button" onMouseDown={e => { e.preventDefault(); onClick(); }} disabled={disabled} aria-label={title}
+        className={`w-8 h-8 flex items-center justify-center rounded-md text-sm transition-colors
+          ${active ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}
+          disabled:opacity-30 disabled:cursor-not-allowed`}>
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 
 function PanelBtn({ label, icon, active, onClick }: { label: string; icon: React.ReactNode; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" onMouseDown={e => { e.preventDefault(); onClick(); }} title={`${label} panel`}
-      className={`flex items-center gap-1.5 px-2.5 h-8 rounded-md text-xs font-medium transition-colors border shrink-0
-        ${active ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] border-[var(--border)]'}`}>
-      {icon}{label}
-    </button>
+    <Tooltip label={`${label} panel`} className="shrink-0">
+      <button type="button" onMouseDown={e => { e.preventDefault(); onClick(); }} aria-label={`${label} panel`}
+        className={`flex items-center gap-1.5 px-2.5 h-8 rounded-md text-xs font-medium transition-colors border
+          ${active ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] border-[var(--border)]'}`}>
+        {icon}{label}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -163,22 +168,26 @@ function ColourPicker({ colours, currentColour, onSelect, icon, title }: {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative shrink-0">
-      <button type="button" title={title} onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
-        className="w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
-        <div className="flex flex-col items-center gap-0">
-          {icon}
-          <div className="w-4 h-1 rounded-sm mt-0.5 border border-black/10"
-            style={{ background: currentColour && currentColour !== 'transparent' ? currentColour : '#111827' }} />
-        </div>
-      </button>
+      <Tooltip label={title}>
+        <button type="button" aria-label={title} onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          className="w-8 h-8 flex items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+          <div className="flex flex-col items-center gap-0">
+            {icon}
+            <div className="w-4 h-1 rounded-sm mt-0.5 border border-black/10"
+              style={{ background: currentColour && currentColour !== 'transparent' ? currentColour : '#111827' }} />
+          </div>
+        </button>
+      </Tooltip>
       {open && (
         <div className="absolute top-full left-0 mt-1 z-30 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-2.5 w-44">
           <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2 px-0.5">{title}</p>
           <div className="grid grid-cols-6 gap-1.5">
             {colours.map(c => (
-              <button key={c} type="button" onMouseDown={e => { e.preventDefault(); onSelect(c); setOpen(false); }} title={c}
-                className="w-6 h-6 rounded border border-black/10 hover:scale-110 transition-transform"
-                style={{ background: c === 'transparent' ? 'linear-gradient(135deg,#fff 45%,#f00 45%,#f00 55%,#fff 55%)' : c }} />
+              <Tooltip key={c} label={c}>
+                <button type="button" onMouseDown={e => { e.preventDefault(); onSelect(c); setOpen(false); }} aria-label={c}
+                  className="w-6 h-6 rounded border border-black/10 hover:scale-110 transition-transform"
+                  style={{ background: c === 'transparent' ? 'linear-gradient(135deg,#fff 45%,#f00 45%,#f00 55%,#fff 55%)' : c }} />
+              </Tooltip>
             ))}
           </div>
         </div>
@@ -211,11 +220,13 @@ function SectionsBar({ sections, onToggle, onMove }: {
             <ChevronDown size={10} />
           </button>
           <span className="text-[var(--text-primary)] font-medium max-w-[120px] truncate">{section.title}</span>
-          <button type="button" onMouseDown={e => { e.preventDefault(); onToggle(section.id); }}
-            title={section.visible ? 'Hide' : 'Show'}
-            className="p-0.5 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] ml-0.5">
-            {section.visible ? <Eye size={11} /> : <EyeOff size={11} />}
-          </button>
+          <Tooltip label={section.visible ? 'Hide' : 'Show'}>
+            <button type="button" onMouseDown={e => { e.preventDefault(); onToggle(section.id); }}
+              aria-label={section.visible ? 'Hide section' : 'Show section'}
+              className="p-0.5 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] ml-0.5">
+              {section.visible ? <Eye size={11} /> : <EyeOff size={11} />}
+            </button>
+          </Tooltip>
         </div>
       ))}
     </div>
@@ -272,9 +283,10 @@ function CoverBar({ firmLogoUrl, options, onChange, onFirmLogoUpload }: {
           const isActive = (options.coverStyle ?? 'gradient') === sid;
           const tc = getThemeColor(options.gradient);
           return (
-            <button key={sid} type="button" title={label}
+            <Tooltip key={sid} label={label} className="shrink-0">
+            <button type="button" aria-label={label}
               onMouseDown={e => { e.preventDefault(); update({ coverStyle: sid }); }}
-              className={`relative w-9 h-[52px] rounded overflow-hidden border-2 transition-all shrink-0
+              className={`relative w-9 h-[52px] rounded overflow-hidden border-2 transition-all
                 ${isActive ? 'border-[var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]'}`}>
               {sid === 'gradient' && <div style={{ width: '100%', height: '100%', background: options.gradient }} />}
               {sid === 'split' && (
@@ -304,6 +316,7 @@ function CoverBar({ firmLogoUrl, options, onChange, onFirmLogoUpload }: {
                 {label}
               </div>
             </button>
+            </Tooltip>
           );
         })}
 
@@ -402,16 +415,18 @@ function ThemeBar({ options, onChange }: {
       <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest shrink-0">Theme</span>
       <div className="flex items-center gap-2 shrink-0">
         {COVER_THEMES.map(theme => (
-          <button key={theme.id} type="button"
+          <Tooltip key={theme.id} label={theme.label} className="shrink-0">
+          <button type="button"
             onClick={() => onChange({ ...options, gradient: theme.gradient })}
-            title={theme.label}
-            className={`flex items-center gap-2 h-7 pl-1.5 pr-2.5 rounded-lg border-2 text-[11px] font-medium transition-all shrink-0
+            aria-label={theme.label}
+            className={`flex items-center gap-2 h-7 pl-1.5 pr-2.5 rounded-lg border-2 text-[11px] font-medium transition-all
               ${activeTheme?.id === theme.id
                 ? 'border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-card)]'
                 : 'border-transparent hover:border-[var(--border)] text-[var(--text-secondary)]'}`}>
             <span className="w-4 h-4 rounded-sm shrink-0" style={{ background: theme.gradient }} />
             {theme.label}
           </button>
+          </Tooltip>
         ))}
       </div>
     </div>
@@ -423,11 +438,13 @@ function ThemeBar({ options, onChange }: {
 function TableBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
   if (!editor) return null;
   const btn = (label: string, cmd: () => boolean, title?: string) => (
-    <button type="button" title={title ?? label}
-      onMouseDown={e => { e.preventDefault(); cmd(); }}
-      className="flex items-center gap-1 h-7 px-2.5 rounded-md border border-[var(--border)] text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors shrink-0 whitespace-nowrap">
-      {label}
-    </button>
+    <Tooltip label={title ?? label} className="shrink-0">
+      <button type="button" aria-label={title ?? label}
+        onMouseDown={e => { e.preventDefault(); cmd(); }}
+        className="flex items-center gap-1 h-7 px-2.5 rounded-md border border-[var(--border)] text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors whitespace-nowrap">
+        {label}
+      </button>
+    </Tooltip>
   );
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--border)] bg-[var(--accent-light)] overflow-x-auto scrollbar-thin">
@@ -456,11 +473,13 @@ function TableBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
       <TDivider />
 
       {/* Delete */}
-      <button type="button" title="Delete table"
-        onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteTable().run(); }}
-        className="flex items-center gap-1 h-7 px-2.5 rounded-md border border-red-200 text-[11px] font-medium text-red-500 hover:bg-red-50 transition-colors shrink-0 whitespace-nowrap">
-        Delete Table
-      </button>
+      <Tooltip label="Delete table" className="shrink-0">
+        <button type="button" aria-label="Delete table"
+          onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteTable().run(); }}
+          className="flex items-center gap-1 h-7 px-2.5 rounded-md border border-red-200 text-[11px] font-medium text-red-500 hover:bg-red-50 transition-colors whitespace-nowrap">
+          Delete Table
+        </button>
+      </Tooltip>
     </div>
   );
 }
