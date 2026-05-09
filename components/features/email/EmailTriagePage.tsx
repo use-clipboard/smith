@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Mail, PenSquare, Loader2, Settings, Settings2 } from 'lucide-react';
+import { Mail, PenSquare, Loader2, Settings, Settings2, X } from 'lucide-react';
 import EmailSidebar from './EmailSidebar';
 import EmailList from './EmailList';
 import EmailThread from './EmailThread';
@@ -41,6 +41,7 @@ export default function EmailTriagePage() {
   const { isModuleActive } = useModules();
   const tasksModuleActive = isModuleActive('tasks');
   const [userName, setUserName] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [googleEmail, setGoogleEmail] = useState('');
   const [activeLabel, setActiveLabel] = useState('INBOX');
@@ -54,6 +55,8 @@ export default function EmailTriagePage() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [taskLinkedOnly, setTaskLinkedOnly] = useState(false);
+  const [allocatedOnly, setAllocatedOnly] = useState(false);
 
   const [activeThread, setActiveThread] = useState<EmailThreadType | null>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
@@ -108,6 +111,17 @@ export default function EmailTriagePage() {
   const [teamMembersLoaded, setTeamMembersLoaded] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Threads we've just trashed but Gmail's INBOX query may still return for a short
+  // window. Filter these out of incoming poll/refresh results so deleted emails
+  // don't ghost back into the list.
+  const pendingTrashIdsRef = useRef<Set<string>>(new Set());
+  function markPendingTrash(ids: string[]) {
+    ids.forEach(id => pendingTrashIdsRef.current.add(id));
+    // Clear after Gmail has had time to propagate the trash action.
+    window.setTimeout(() => {
+      ids.forEach(id => pendingTrashIdsRef.current.delete(id));
+    }, 60_000);
+  }
 
   // Resizable column widths (persisted to localStorage)
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -119,6 +133,13 @@ export default function EmailTriagePage() {
     return parseInt(localStorage.getItem('email-threadlist-width') ?? '288', 10);
   });
   const colDragRef = useRef<{ col: 'sidebar' | 'threadlist'; startX: number; startWidth: number } | null>(null);
+
+  // Transient banner used to surface non-blocking results (e.g. forward-email failure)
+  const [toast, setToast] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
+  function showToast(kind: 'success' | 'error', message: string) {
+    setToast({ kind, message });
+    window.setTimeout(() => setToast(null), 5000);
+  }
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
@@ -165,6 +186,7 @@ export default function EmailTriagePage() {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
+      setCurrentUserId(user.id);
       supabase.from('users').select('full_name').eq('id', user.id).single()
         .then(({ data }) => { if (data?.full_name) setUserName(data.full_name); });
     });
@@ -206,6 +228,33 @@ export default function EmailTriagePage() {
     fetch('/api/email/pin')
       .then(r => r.json())
       .then((data: { pinnedIds: string[] }) => setPinnedIds(new Set(data.pinnedIds ?? [])))
+      .catch(() => {});
+  }, [connected]);
+
+  // Bulk-load allocation/task-link state for the firm so the green & blue edge
+  // bars appear on every relevant inbox row without needing the user to click
+  // through each thread first.
+  useEffect(() => {
+    if (!connected) return;
+    fetch('/api/email/thread-meta')
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { allocatedThreadIds?: string[]; taskLinkedThreadIds?: string[] } | null) => {
+        if (!data) return;
+        const allocSet = new Set(data.allocatedThreadIds ?? []);
+        const taskSet = new Set(data.taskLinkedThreadIds ?? []);
+        const allIds = new Set<string>([...allocSet, ...taskSet]);
+        setThreadMeta(prev => {
+          const next = { ...prev };
+          for (const id of allIds) {
+            next[id] = {
+              ...(next[id] ?? {}),
+              hasAllocation: allocSet.has(id),
+              hasTaskLink: taskSet.has(id),
+            };
+          }
+          return next;
+        });
+      })
       .catch(() => {});
   }, [connected]);
 
@@ -276,6 +325,7 @@ export default function EmailTriagePage() {
               : t))).catch(() => {});
             break;
           case 'trash':
+            markPendingTrash([thread.id]);
             fetch('/api/email/trash', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ threadId: thread.id }),
@@ -310,9 +360,16 @@ export default function EmailTriagePage() {
         const scope = labelScope[label] ?? `label:${label.toLowerCase().replace(/\s+/g, '-')}`;
         q = `${q} ${scope}`;
       }
-      const base = q
-        ? `/api/email/threads?q=${encodeURIComponent(q)}`
-        : `/api/email/threads?label=${encodeURIComponent(label)}`;
+      // Task-linked / allocated filters bypass Gmail's label/search and pull from
+      // our DB tables instead — same UX as the unread filter (inbox-wide).
+      const dbFilterParams: string[] = [];
+      if (taskLinkedOnly) dbFilterParams.push('taskLinkedOnly=true');
+      if (allocatedOnly) dbFilterParams.push('allocatedOnly=true');
+      const base = dbFilterParams.length > 0
+        ? `/api/email/threads?${dbFilterParams.join('&')}`
+        : q
+          ? `/api/email/threads?q=${encodeURIComponent(q)}`
+          : `/api/email/threads?label=${encodeURIComponent(label)}`;
       const url = `${base}${pageToken ? `&pageToken=${pageToken}` : ''}`;
       const res = await fetch(url);
       const data = await res.json() as { threads?: EmailThreadType[]; nextPageToken?: string | null; error?: string };
@@ -321,7 +378,10 @@ export default function EmailTriagePage() {
         return;
       }
       setFetchError(null);
-      const newThreads = data.threads ?? [];
+      // Filter out threads that have been optimistically trashed but Gmail
+      // hasn't reflected the change yet — otherwise they reappear briefly.
+      const pendingTrash = pendingTrashIdsRef.current;
+      const newThreads = (data.threads ?? []).filter(t => !pendingTrash.has(t.id));
       if (pageToken) {
         setThreads(prev => [...prev, ...newThreads]);
       } else {
@@ -339,16 +399,16 @@ export default function EmailTriagePage() {
       setLoadingThreads(false);
       setLoadingMore(false);
     }
-  }, [searchQuery, unreadOnly]);
+  }, [searchQuery, unreadOnly, taskLinkedOnly, allocatedOnly]);
 
-  // Fetch threads when label, search, or unread filter changes
+  // Fetch threads when label, search, or any active filter changes
   useEffect(() => {
     if (!connected) return;
     setActiveThread(null);
     setThreadDetail(null);
     setFetchError(null);
     fetchThreads(activeLabel);
-  }, [connected, activeLabel, searchQuery, unreadOnly, fetchThreads]);
+  }, [connected, activeLabel, searchQuery, unreadOnly, taskLinkedOnly, allocatedOnly, fetchThreads]);
 
   // Start polling (skip during active search to avoid disrupting results)
   useEffect(() => {
@@ -663,10 +723,18 @@ export default function EmailTriagePage() {
   }
 
   async function handleTaskCreated(data: CreateTaskData) {
+    // When a task is created from inside the email triage flow, mark its title with
+    // an envelope emoji so the source is immediately visible everywhere the task
+    // is rendered. The user never sees this in the modal — we apply it on submit.
+    const isFromEmail = !!activeThread;
+    const submittedData: CreateTaskData = isFromEmail && !data.title.startsWith('📩')
+      ? { ...data, title: `📩 ${data.title}` }
+      : data;
+
     const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(submittedData),
     });
     if (!res.ok) return;
 
@@ -693,6 +761,30 @@ export default function EmailTriagePage() {
           hasTaskLink: true,
         },
       }));
+
+      // Quick-task assigns to a single person via the first step. Forward the
+      // email to that assignee with the task context — skip if it's the creator
+      // themself (no point) or there's no assignee at all.
+      const assigneeUserId = submittedData.steps?.[0]?.assignee_id ?? null;
+      if (assigneeUserId && assigneeUserId !== currentUserId) {
+        void fetch('/api/email/forward-task-assignment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            threadId: activeThread.gmailThreadId ?? activeThread.id,
+            assigneeUserId,
+            taskTitle: submittedData.title,
+            dueDate: submittedData.due_date ?? null,
+            steps: (submittedData.steps ?? []).map(s => s.title).filter(Boolean),
+          }),
+        }).then(async r => {
+          if (!r.ok) {
+            showToast('error', "Task created, but the forward email couldn't be sent.");
+          }
+        }).catch(() => {
+          showToast('error', "Task created, but the forward email couldn't be sent.");
+        });
+      }
     }
 
     setShowQuickTask(false);
@@ -700,6 +792,7 @@ export default function EmailTriagePage() {
 
   function handleDelete() {
     if (!activeThread) return;
+    markPendingTrash([activeThread.id]);
     setThreads(prev => prev.filter(t => t.id !== activeThread.id));
     setActiveThread(null);
     setThreadDetail(null);
@@ -741,6 +834,7 @@ export default function EmailTriagePage() {
   }
 
   function handleListDelete(threadId: string) {
+    markPendingTrash([threadId]);
     setThreads(prev => prev.filter(t => t.id !== threadId));
     if (activeThread?.id === threadId) {
       setActiveThread(null);
@@ -754,6 +848,7 @@ export default function EmailTriagePage() {
   }
 
   function handleBulkDelete(ids: string[]) {
+    markPendingTrash(ids);
     setThreads(prev => prev.filter(t => !ids.includes(t.id)));
     if (activeThread && ids.includes(activeThread.id)) {
       setActiveThread(null);
@@ -878,7 +973,21 @@ export default function EmailTriagePage() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden relative">
+      {/* Transient toast banner */}
+      {toast && (
+        <div
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 ${
+            toast.kind === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+          }`}
+        >
+          {toast.message}
+          <button onClick={() => setToast(null)} className="ml-2 opacity-80 hover:opacity-100">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Labels sidebar */}
       <div style={{ width: sidebarWidth }} className="shrink-0 overflow-y-auto bg-[var(--bg-card-solid)]">
         <div className="p-3 border-b border-[var(--border)] space-y-2">
@@ -934,6 +1043,11 @@ export default function EmailTriagePage() {
           repliedThreadIds={repliedThreadIds}
           unreadOnly={unreadOnly}
           onUnreadOnlyChange={v => { setUnreadOnly(v); }}
+          taskLinkedOnly={taskLinkedOnly}
+          onTaskLinkedOnlyChange={v => { setTaskLinkedOnly(v); if (v) { setAllocatedOnly(false); setUnreadOnly(false); } }}
+          allocatedOnly={allocatedOnly}
+          onAllocatedOnlyChange={v => { setAllocatedOnly(v); if (v) { setTaskLinkedOnly(false); setUnreadOnly(false); } }}
+          activeLabel={activeLabel}
           onBulkDelete={handleBulkDelete}
           onBulkMarkRead={handleBulkMarkRead}
         />

@@ -26,7 +26,36 @@ export async function GET(req: NextRequest) {
   const label = searchParams.get('label') || connection.inbox_label || 'INBOX';
   const q = searchParams.get('q') || undefined;
   const pageToken = searchParams.get('pageToken') || undefined;
+  const taskLinkedOnly = searchParams.get('taskLinkedOnly') === 'true';
+  const allocatedOnly = searchParams.get('allocatedOnly') === 'true';
   const maxResults = 50;
+
+  // ── DB-driven filters: task-linked / client-allocated ──────────────────────
+  // These filters search the user's entire mailbox by joining against our DB
+  // tables, then fetching only the matching threads from Gmail. They behave
+  // like the unread filter (inbox-wide), but the data lives outside Gmail.
+  let restrictThreadIds: string[] | null = null;
+  if (taskLinkedOnly || allocatedOnly) {
+    const sets: string[][] = [];
+    if (taskLinkedOnly) {
+      const { data: links } = await supabase
+        .from('email_task_links')
+        .select('thread_id')
+        .eq('firm_id', ctx.firmId);
+      sets.push((links ?? []).map(r => r.thread_id as string));
+    }
+    if (allocatedOnly) {
+      const { data: allocs } = await supabase
+        .from('email_allocations')
+        .select('thread_id')
+        .eq('firm_id', ctx.firmId);
+      sets.push((allocs ?? []).map(r => r.thread_id as string));
+    }
+    // Intersect when both filters are on, else use the single set
+    restrictThreadIds = sets.length === 1
+      ? Array.from(new Set(sets[0]))
+      : Array.from(new Set(sets[0].filter(id => sets[1].includes(id))));
+  }
 
   try {
     const { gmail, accessToken } = await getRefreshedGmailClient(connection.refresh_token);
@@ -35,6 +64,65 @@ export async function GET(req: NextRequest) {
 
     let threads: EmailThread[];
     let nextPageToken: string | null;
+
+    // When DB filters are active, bypass Gmail's list/search and fetch each
+    // matching thread directly. Pagination is dropped — these sets are bounded
+    // by what the firm has linked, typically far smaller than an inbox page.
+    if (restrictThreadIds !== null) {
+      nextPageToken = null;
+      const ids = restrictThreadIds.slice(0, 200); // safety cap
+      threads = await Promise.all(
+        ids.map(async (id): Promise<EmailThread> => {
+          try {
+            const threadRes = await gmail.users.threads.get({
+              userId: 'me',
+              id,
+              format: 'metadata',
+              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+            });
+            const messages = (threadRes.data.messages ?? []).map(m =>
+              parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0])
+            );
+            const first = messages[0];
+            const last = messages[messages.length - 1];
+            const hasUnread = messages.some(m => !m.isRead);
+            const allLabelIds = Array.from(new Set(messages.flatMap(m => m.labelIds)));
+            return {
+              id,
+              subject: first?.subject ?? '(no subject)',
+              snippet: threadRes.data.snippet ?? '',
+              from: last?.from ?? { name: '', email: '' },
+              date: last?.date ?? first?.date ?? '',
+              messageCount: messages.length,
+              isRead: !hasUnread,
+              labelIds: allLabelIds,
+              messages,
+            };
+          } catch {
+            return {
+              id,
+              subject: '(unavailable)',
+              snippet: '',
+              from: { name: '', email: '' },
+              date: '',
+              messageCount: 0,
+              isRead: true,
+              labelIds: [],
+              messages: [],
+            };
+          }
+        })
+      );
+      // Most recent first
+      threads.sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0));
+
+      await supabase
+        .from('email_connections')
+        .update({ access_token: accessToken, updated_at: new Date().toISOString() })
+        .eq('user_id', ctx.userId);
+
+      return NextResponse.json({ threads, nextPageToken });
+    }
 
     if (showAsThreads) {
       // ── Threaded mode: group messages into conversations ──────────────────

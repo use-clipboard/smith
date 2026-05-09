@@ -6,7 +6,7 @@ import {
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
-  Archive, CalendarDays, MicVocal, Network,
+  Archive, CalendarDays, MicVocal, Network, Sparkles, Info,
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
@@ -720,6 +720,16 @@ export default function ClientDetailPage() {
   const [editLinkNotes, setEditLinkNotes] = useState('');
   const [editLinkSaving, setEditLinkSaving] = useState(false);
   const [editLinkError, setEditLinkError] = useState<string | null>(null);
+  const [hideHoldLinks, setHideHoldLinks] = useState(false);
+  const [hideInactiveLinks, setHideInactiveLinks] = useState(false);
+  const holdLinkCount = links.filter(l => l.other_client?.status === 'hold').length;
+  const inactiveLinkCount = links.filter(l => l.other_client?.status === 'inactive').length;
+  const visibleLinks = links.filter(l => {
+    const s = l.other_client?.status;
+    if (s === 'hold' && hideHoldLinks) return false;
+    if (s === 'inactive' && hideInactiveLinks) return false;
+    return true;
+  });
 
   // Edit
   const [editing, setEditing] = useState(false);
@@ -988,6 +998,10 @@ export default function ClientDetailPage() {
   }
 
   async function handleRemoveLink(linkId: string) {
+    const link = links.find(l => l.id === linkId);
+    const targetName = link?.other_client?.name ?? 'this client';
+    const typeLabel = link ? (LINK_TYPE_LABELS[link.link_type] ?? link.link_type) : 'link';
+    if (!window.confirm(`Remove the "${typeLabel} ${targetName}" link?\n\nThis only removes the relationship — neither client is deleted.`)) return;
     setRemovingLinkId(linkId);
     try { await fetch(`/api/clients/${clientId}/links/${linkId}`, { method: 'DELETE' }); setLinks(prev => prev.filter(l => l.id !== linkId)); }
     finally { setRemovingLinkId(null); }
@@ -1212,17 +1226,24 @@ export default function ClientDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-2 mb-5 flex-wrap">
-        {(['outputs', 'documents', 'timeline', 'details'] as const).map(tab => (
+        {([
+          ['outputs',   Sparkles, `AI Outputs (${outputs.length})`],
+          ['documents', FileText, `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}`],
+          ['timeline',  Clock,    `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}`],
+          ['details',   Info,     'Details'],
+        ] as const).map(([tab, Icon, label]) => (
           <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'documents') void fetchDocumentsTab(); if (tab === 'timeline') void fetchTimeline(); if (tab === 'details') void fetchLinks(); }}
-            className={`px-4 py-2 rounded-lg font-medium text-sm capitalize transition-colors ${activeTab === tab ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}>
-            {tab === 'outputs' ? `AI Outputs (${outputs.length})` : tab === 'documents' ? `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}` : tab === 'timeline' ? `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}` : 'Details'}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === tab ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}>
+            <Icon size={14} />
+            {label}
           </button>
         ))}
         {isModuleActive('tasks') && (
           <button
             onClick={() => setActiveTab('tasks')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'tasks' ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'tasks' ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
           >
+            <CheckSquare size={14} />
             Tasks
           </button>
         )}
@@ -1550,13 +1571,29 @@ export default function ClientDetailPage() {
 
           {/* Linked Clients — full width */}
           <div className="glass-solid rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between mb-4 gap-4">
+              <div className="flex items-center gap-2 min-w-0">
                 <Link2 size={16} className="text-[var(--accent)]" />
                 <h3 className="font-semibold text-[var(--text-primary)] text-sm">Linked Clients</h3>
-                {links.length > 0 && <span className="px-1.5 py-0.5 bg-[var(--accent-light)] text-[var(--accent)] text-xs font-medium rounded">{links.length}</span>}
+                {links.length > 0 && <span className="px-1.5 py-0.5 bg-[var(--accent-light)] text-[var(--accent)] text-xs font-medium rounded">{visibleLinks.length}{visibleLinks.length !== links.length && <span className="text-[var(--text-muted)] font-normal"> / {links.length}</span>}</span>}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3 shrink-0">
+                {(holdLinkCount > 0 || inactiveLinkCount > 0) && (
+                  <div className="flex items-center gap-3 pr-1">
+                    {holdLinkCount > 0 && (
+                      <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                        <input type="checkbox" checked={!hideHoldLinks} onChange={e => setHideHoldLinks(!e.target.checked)} className="accent-orange-500" />
+                        <span>Show on-hold <span className="text-[var(--text-muted)]">({holdLinkCount})</span></span>
+                      </label>
+                    )}
+                    {inactiveLinkCount > 0 && (
+                      <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                        <input type="checkbox" checked={!hideInactiveLinks} onChange={e => setHideInactiveLinks(!e.target.checked)} className="accent-gray-500" />
+                        <span>Show inactive <span className="text-[var(--text-muted)]">({inactiveLinkCount})</span></span>
+                      </label>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={() => setShowLinkGraph(true)}
                   disabled={links.length === 0}
@@ -1604,9 +1641,10 @@ export default function ClientDetailPage() {
 
             {linksLoading ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">Loading links…</p>
               : links.length === 0 ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">No linked clients yet.</p>
+              : visibleLinks.length === 0 ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">All linked clients are hidden by the filters above.</p>
               : (
                 <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {links.map(link => {
+                  {visibleLinks.map(link => {
                     if (!link.other_client) return null;
                     const tc = LINK_TYPE_COLOURS[link.link_type] ?? LINK_TYPE_COLOURS.other;
                     const isEditing = editingLinkId === link.id;
@@ -1640,14 +1678,18 @@ export default function ClientDetailPage() {
                             <button onClick={() => router.push(`/clients/${link.other_client!.id}`)} className="text-sm font-medium text-[var(--accent)] hover:underline truncate">
                               {link.other_client.name}
                             </button>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               {link.other_client.client_ref && <span className="text-xs text-[var(--text-muted)] font-mono">{link.other_client.client_ref}</span>}
                               {link.other_client.business_type && <span className="text-xs text-[var(--text-muted)]">· {CLIENT_TYPE_LABELS[link.other_client.business_type] ?? link.other_client.business_type}</span>}
-                              {link.other_client.status !== 'active' && (
-                                <span className={`text-xs italic ${link.other_client.status === 'hold' ? 'text-amber-500' : 'text-gray-400'}`}>
-                                  {STATUS_CONFIG[link.other_client.status]?.label ?? link.other_client.status}
-                                </span>
-                              )}
+                              {link.other_client.status !== 'active' && (() => {
+                                const s = STATUS_CONFIG[link.other_client.status] ?? STATUS_CONFIG.inactive;
+                                return (
+                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${s.bg} ${s.text}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                                    {s.label}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             {link.notes && <p className="text-xs text-[var(--text-muted)] mt-0.5">{link.notes}</p>}
                           </div>
@@ -1709,9 +1751,13 @@ export default function ClientDetailPage() {
                 <div>
                   <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Status</label>
                   <div className="flex items-center gap-1 bg-[var(--bg-page)] rounded-lg border border-[var(--border)] p-1">
-                    {([['active', 'Active'], ['hold', 'On Hold'], ['inactive', 'Inactive']] as [ClientStatus, string][]).map(([val, label]) => (
+                    {([
+                      ['active',   'Active',   'bg-green-600 text-white'],
+                      ['hold',     'On Hold',  'bg-amber-500 text-white'],
+                      ['inactive', 'Inactive', 'bg-gray-500 text-white'],
+                    ] as [ClientStatus, string, string][]).map(([val, label, activeCls]) => (
                       <button key={val} type="button" onClick={() => setEditStatus(val)}
-                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${editStatus === val ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                        className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${editStatus === val ? activeCls : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
                         {label}
                       </button>
                     ))}

@@ -325,37 +325,73 @@ export default function ClientsPage() {
               className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none" />
           </div>
           <div className="flex items-center gap-2 ml-auto">
-            <div className="relative" ref={colPickerRef}>
-              <button onClick={() => setShowColPicker(v => !v)}
-                className={`btn-secondary text-xs py-1.5 ${showColPicker ? 'border-[var(--accent)]' : ''}`}>
-                <SlidersHorizontal size={13} />Columns
-              </button>
-              {showColPicker && (
-                <div className="absolute right-0 top-full mt-2 z-20 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-3 w-48 space-y-1">
-                  <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-1 mb-2">Show / Hide Columns</p>
-                  {COLUMNS.filter(c => !c.always).map(col => (
-                    <label key={col.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] cursor-pointer transition-colors">
-                      <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)} className="accent-[var(--accent)] w-3.5 h-3.5" />
-                      <span className="text-sm text-[var(--text-primary)]">{col.label}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center gap-1 glass-solid rounded-full border border-[var(--border)] px-2 py-1 shadow-sm">
+              <div className="relative group/tip" ref={colPickerRef}>
+                <button onClick={() => setShowColPicker(v => !v)} aria-label="Show / hide columns"
+                  className={`p-1.5 rounded-full transition-colors ${showColPicker ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}>
+                  <SlidersHorizontal size={15} />
+                </button>
+                {!showColPicker && (
+                  <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
+                    Show / hide columns
+                  </span>
+                )}
+                {showColPicker && (
+                  <div className="absolute right-0 top-full mt-2 z-20 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-3 w-48 space-y-1">
+                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-1 mb-2">Show / Hide Columns</p>
+                    {COLUMNS.filter(c => !c.always).map(col => (
+                      <label key={col.key} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] cursor-pointer transition-colors">
+                        <input type="checkbox" checked={visibleCols.has(col.key)} onChange={() => toggleCol(col.key)} className="accent-[var(--accent)] w-3.5 h-3.5" />
+                        <span className="text-sm text-[var(--text-primary)]">{col.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
+              <div className="relative group/tip">
+                <button onClick={() => exportToCsv(sortedClients)} aria-label="Export to CSV"
+                  className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <Download size={15} />
+                </button>
+                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
+                  Export to CSV
+                </span>
+              </div>
+              <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
+              <div className="relative group/tip">
+                <button onClick={() => setShowImport(true)} aria-label="Import from CSV"
+                  className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <Upload size={15} />
+                </button>
+                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
+                  Import from CSV
+                </span>
+              </div>
             </div>
-            <button onClick={() => exportToCsv(sortedClients)} className="btn-secondary text-xs py-1.5" title="Export to CSV">
-              <Download size={13} />Export
-            </button>
-            <button onClick={() => setShowImport(true)} className="btn-secondary"><Upload size={14} />Import CSV</button>
-            <button onClick={() => { setShowModal(true); setFormError(null); }} className="btn-primary"><Plus size={14} />New Client</button>
+            <div className="relative group/tip">
+              <button onClick={() => { setShowModal(true); setFormError(null); }} aria-label="Add a new client"
+                className="p-2.5 rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-sm">
+                <Plus size={16} />
+              </button>
+              <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
+                Add a new client
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Row 2: Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 glass-solid rounded-lg border border-[var(--border)] p-1">
-            {([['all', 'All'], ['active', 'Active'], ['hold', 'On Hold'], ['inactive', 'Inactive']] as [StatusFilter, string][]).map(([val, label]) => (
+            {([
+              ['all',      'All',      'bg-[var(--accent)] text-white'],
+              ['active',   'Active',   'bg-green-600 text-white'],
+              ['hold',     'On Hold',  'bg-amber-500 text-white'],
+              ['inactive', 'Inactive', 'bg-gray-500 text-white'],
+            ] as [StatusFilter, string, string][]).map(([val, label, activeCls]) => (
               <button key={val} onClick={() => setStatusFilter(val)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${statusFilter === val ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${statusFilter === val ? activeCls : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
                 {label}
               </button>
             ))}

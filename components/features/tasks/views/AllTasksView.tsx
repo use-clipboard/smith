@@ -1,11 +1,14 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import TaskCard from '../TaskCard';
 import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
 import { TaskStatusBadge } from '../TaskStatusBadge';
 import ExportTasksButton from '../ExportTasksButton';
+import DueWindowChips from '../DueWindowChips';
+import SortHeader, { type SortDir } from '../SortHeader';
+import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
 interface Props {
@@ -29,7 +32,12 @@ interface Props {
 
 const STATUS_ORDER: TaskStatus[] = ['in_progress', 'waiting_on_client', 'records_here', 'review', 'not_started', 'complete'];
 
+type SortField = 'task' | 'client' | 'status' | 'due';
+
 export default function AllTasksView({ tasks, currentUserId, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, teamMembers, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
+  const [dueFilter, setDueFilter] = useState<DueWindow>('all');
+  const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'due', dir: 'asc' });
+
   const filtered = useMemo(() => tasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
@@ -39,16 +47,52 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
     return true;
   }), [tasks, search, statusFilter, clientFilter, assigneeFilter]);
 
+  const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(filtered), [filtered]);
+  const dueFiltered = useMemo(() => applyDueFilter(filtered, dueClassMap, dueFilter), [filtered, dueClassMap, dueFilter]);
+
+  const clientNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of clients) m.set(c.id, c.name);
+    return m;
+  }, [clients]);
+
+  const sortedTasks = useMemo(() => {
+    const arr = [...dueFiltered];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      if (sort.field === 'due') {
+        const ad = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
+        const bd = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
+        cmp = ad - bd;
+      } else if (sort.field === 'task') {
+        cmp = a.title.localeCompare(b.title);
+      } else if (sort.field === 'client') {
+        const an = a.is_internal ? 'Internal' : (a.client_id ? clientNameById.get(a.client_id) ?? '' : '');
+        const bn = b.is_internal ? 'Internal' : (b.client_id ? clientNameById.get(b.client_id) ?? '' : '');
+        cmp = an.localeCompare(bn);
+      } else if (sort.field === 'status') {
+        cmp = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+      }
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [dueFiltered, sort, clientNameById]);
+
+  function toggleSort(field: SortField) {
+    setSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
+  }
+
+  // Grid view still groups by status, with active sort applied within each group
   const grouped = useMemo(() => {
     const map = new Map<TaskStatus, Task[]>();
     STATUS_ORDER.forEach(s => map.set(s, []));
-    filtered.forEach(t => { const b = map.get(t.status) ?? []; b.push(t); map.set(t.status, b); });
+    sortedTasks.forEach(t => { const b = map.get(t.status) ?? []; b.push(t); map.set(t.status, b); });
     return map;
-  }, [filtered]);
+  }, [sortedTasks]);
 
   return (
     <div>
-      <div className="sticky top-0 z-20 bg-gray-50 flex items-center justify-between flex-wrap gap-2 pb-4">
+      <div className="sticky top-0 z-20 bg-gray-50 flex items-center justify-between flex-wrap gap-2 pb-3">
         <TaskFilters
           search={search} onSearchChange={onSearchChange}
           statusFilter={statusFilter} onStatusChange={onStatusChange}
@@ -57,35 +101,35 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
           clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
         />
         <div className="flex items-center gap-2">
-          <p className="text-xs text-gray-400">{filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
-          <ExportTasksButton tasks={filtered} filename="all-tasks" />
+          <p className="text-xs text-gray-400">{sortedTasks.length} of {filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
+          <ExportTasksButton tasks={sortedTasks} filename="all-tasks" />
         </div>
       </div>
 
+      <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} className="mb-4" />
+
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks found.</p></div>
+      ) : sortedTasks.length === 0 ? (
+        <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks match the current filters.</p></div>
       ) : viewMode === 'list' ? (
         /* ── List view ── */
         <div className="bg-white border border-gray-200 rounded-xl">
           <table className="w-full text-left">
             <thead className="sticky top-[50px] z-10">
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tl-xl">Task</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="rounded-tl-xl" />
+                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
+                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
+                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
                 <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tr-xl">Assignees</th>
               </tr>
             </thead>
             <tbody>
-              {STATUS_ORDER.map(status => {
-                const bucket = grouped.get(status) ?? [];
-                if (bucket.length === 0) return null;
-                return bucket.map((t, i) => (
-                  <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
-                ));
-              })}
+              {sortedTasks.map(t => (
+                <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+              ))}
             </tbody>
           </table>
         </div>

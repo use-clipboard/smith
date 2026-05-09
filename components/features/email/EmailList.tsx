@@ -45,6 +45,14 @@ interface Props {
   /** Controlled: true = only unread emails are fetched server-side */
   unreadOnly: boolean;
   onUnreadOnlyChange: (v: boolean) => void;
+  /** Controlled: true = only emails linked to a task are fetched server-side */
+  taskLinkedOnly: boolean;
+  onTaskLinkedOnlyChange: (v: boolean) => void;
+  /** Controlled: true = only emails allocated to a client are fetched server-side */
+  allocatedOnly: boolean;
+  onAllocatedOnlyChange: (v: boolean) => void;
+  /** Active Gmail label — used to flip the "from" column to recipients in SENT */
+  activeLabel?: string;
 }
 
 export default function EmailList({
@@ -52,6 +60,9 @@ export default function EmailList({
   onSelect, onRefresh, onStar, onDelete, onMarkRead, hasNextPage, onLoadMore, loadingMore,
   pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead,
   unreadOnly, onUnreadOnlyChange,
+  taskLinkedOnly, onTaskLinkedOnlyChange,
+  allocatedOnly, onAllocatedOnlyChange,
+  activeLabel,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -78,7 +89,7 @@ export default function EmailList({
   // Sort only — unread filter is applied server-side (whole inbox), not just loaded batch
   const displayThreads = sortDesc ? threads : [...threads].reverse();
 
-  const anyFilterActive = unreadOnly || !sortDesc;
+  const anyFilterActive = unreadOnly || taskLinkedOnly || allocatedOnly || !sortDesc;
 
   function handleSearchToggle() {
     if (searchOpen && searchQuery) onSearch('');
@@ -211,6 +222,28 @@ export default function EmailList({
                       <span className="text-[10px] text-[var(--text-muted)] font-normal">Searches entire inbox</span>
                     </span>
                     {unreadOnly && <span className="text-[var(--accent)] text-[10px]">✓</span>}
+                  </button>
+                  <button
+                    onClick={() => { onTaskLinkedOnlyChange(!taskLinkedOnly); setFilterOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-[var(--bg-nav-hover)] transition-colors
+                      ${taskLinkedOnly ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
+                  >
+                    <span className="flex flex-col items-start">
+                      Linked to a task
+                      <span className="text-[10px] text-[var(--text-muted)] font-normal">Searches entire inbox</span>
+                    </span>
+                    {taskLinkedOnly && <span className="text-[var(--accent)] text-[10px]">✓</span>}
+                  </button>
+                  <button
+                    onClick={() => { onAllocatedOnlyChange(!allocatedOnly); setFilterOpen(false); }}
+                    className={`w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-[var(--bg-nav-hover)] transition-colors
+                      ${allocatedOnly ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
+                  >
+                    <span className="flex flex-col items-start">
+                      Allocated to a client
+                      <span className="text-[10px] text-[var(--text-muted)] font-normal">Searches entire inbox</span>
+                    </span>
+                    {allocatedOnly && <span className="text-[var(--accent)] text-[10px]">✓</span>}
                   </button>
 
                   <div className="mx-3 my-1 border-t border-[var(--border)]" />
@@ -368,12 +401,36 @@ export default function EmailList({
                     ${isSelected
                       ? 'bg-[var(--accent-light)]'
                       : isActive
-                        ? 'bg-[var(--accent-light)]'
+                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-card-solid)]'
                         : !thread.isRead
                           ? 'bg-[var(--accent-light)] hover:bg-[var(--accent-light)]'
                           : 'hover:bg-[var(--bg-nav-hover)]'
                     }`}
                 >
+                  {/* Status edge bars — green on the left edge when allocated to a client, blue on the right edge when task-linked. Stack both when both apply. */}
+                  {meta?.hasAllocation && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 left-0 w-1 pointer-events-none bg-emerald-500"
+                      title="Allocated to client"
+                    />
+                  )}
+                  {meta?.hasTaskLink && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 right-0 w-1 pointer-events-none bg-blue-500"
+                      title="Linked to task"
+                    />
+                  )}
+                  {/* Active (currently-viewed) indicator — sits on top of the allocation bar
+                      so the active state is unmistakable while still showing the right-edge
+                      task bar untouched. Uses the same light-blue as unread email rows. */}
+                  {isActive && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-y-0 left-0 w-1 pointer-events-none bg-indigo-500"
+                    />
+                  )}
                   {/* Checkbox column */}
                   <button
                     onClick={e => toggleSelect(thread.id, e)}
@@ -399,7 +456,20 @@ export default function EmailList({
 
                     <div className="flex items-start justify-between gap-2">
                       <span className={`text-sm truncate flex-1 ${!thread.isRead ? 'font-semibold text-[var(--text-primary)]' : 'font-normal text-[var(--text-secondary)]'}`}>
-                        {thread.from.name || thread.from.email}
+                        {(() => {
+                          // In Sent, the user is always the sender — show the
+                          // recipient instead so each row is meaningful.
+                          if (activeLabel === 'SENT') {
+                            const sentMsg = thread.messages.find(m => m.labelIds?.includes('SENT')) ?? thread.messages[0];
+                            const recipients = sentMsg?.to ?? [];
+                            if (recipients.length === 0) return '(no recipient)';
+                            const primary = recipients[0].name || recipients[0].email;
+                            return recipients.length > 1
+                              ? <>To: {primary} <span className="text-xs text-[var(--text-muted)] font-normal">+{recipients.length - 1}</span></>
+                              : <>To: {primary}</>;
+                          }
+                          return thread.from.name || thread.from.email;
+                        })()}
                         {thread.messageCount > 1 && (
                           <span className="ml-1.5 text-xs text-[var(--text-muted)] font-normal">({thread.messageCount})</span>
                         )}

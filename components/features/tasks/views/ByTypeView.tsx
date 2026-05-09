@@ -6,6 +6,9 @@ import TaskCard from '../TaskCard';
 import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
 import ExportTasksButton from '../ExportTasksButton';
+import DueWindowChips from '../DueWindowChips';
+import SortHeader, { type SortDir } from '../SortHeader';
+import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
 interface Props {
@@ -27,8 +30,13 @@ interface Props {
   onStopRecurrence?: (taskId: string) => Promise<void>;
 }
 
+const STATUS_ORDER: TaskStatus[] = ['in_progress', 'waiting_on_client', 'records_here', 'review', 'not_started', 'complete'];
+type SortField = 'task' | 'client' | 'status' | 'due';
+
 export default function ByTypeView({ tasks, currentUserId, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, teamMembers, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [dueFilter, setDueFilter] = useState<DueWindow>('all');
+  const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'due', dir: 'asc' });
 
   const filtered = useMemo(() => tasks.filter(t => {
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
@@ -39,18 +47,52 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
     return true;
   }), [tasks, search, statusFilter, clientFilter, assigneeFilter]);
 
-  // Group by template name (or "Ad Hoc" if no template)
+  const { classMap: dueClassMap, counts: dueCounts } = useMemo(() => classifyTasks(filtered), [filtered]);
+  const dueFiltered = useMemo(() => applyDueFilter(filtered, dueClassMap, dueFilter), [filtered, dueClassMap, dueFilter]);
+
+  const clientNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of clients) m.set(c.id, c.name);
+    return m;
+  }, [clients]);
+
+  function toggleSort(field: SortField) {
+    setSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
+  }
+
+  // Group by template name (or "Ad Hoc" if no template), then sort within each group
   const grouped = useMemo(() => {
     const map = new Map<string, Task[]>();
-    filtered.forEach(t => {
+    dueFiltered.forEach(t => {
       const key = t.template_id
         ? (t.title.split(' – ')[0] ?? t.title)
         : 'Ad Hoc';
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     });
+    map.forEach((arr, k) => {
+      const copy = [...arr];
+      copy.sort((a, b) => {
+        let cmp = 0;
+        if (sort.field === 'due') {
+          const ad = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
+          const bd = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
+          cmp = ad - bd;
+        } else if (sort.field === 'task') {
+          cmp = a.title.localeCompare(b.title);
+        } else if (sort.field === 'client') {
+          const an = a.is_internal ? 'Internal' : (a.client_id ? clientNameById.get(a.client_id) ?? '' : '');
+          const bn = b.is_internal ? 'Internal' : (b.client_id ? clientNameById.get(b.client_id) ?? '' : '');
+          cmp = an.localeCompare(bn);
+        } else if (sort.field === 'status') {
+          cmp = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+        }
+        return sort.dir === 'asc' ? cmp : -cmp;
+      });
+      map.set(k, copy);
+    });
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filtered]);
+  }, [dueFiltered, sort, clientNameById]);
 
   function toggle(key: string) {
     setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -58,7 +100,7 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
 
   return (
     <div>
-      <div className="sticky top-0 z-20 bg-gray-50 pb-4">
+      <div className="sticky top-0 z-20 bg-gray-50 pb-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TaskFilters
             search={search} onSearchChange={onSearchChange}
@@ -67,9 +109,11 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
             assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
             clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
           />
-          <ExportTasksButton tasks={filtered} filename="tasks-by-type" />
+          <ExportTasksButton tasks={dueFiltered} filename="tasks-by-type" />
         </div>
       </div>
+
+      <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} className="mb-4" />
 
       {grouped.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks found.</p></div>
@@ -96,11 +140,11 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
                     <table className="w-full text-left">
                       <thead className="sticky top-[94px] z-10">
                         <tr className="bg-gray-50 border-b border-gray-100">
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Task</th>
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                          <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
+                          <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
+                          <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
                           <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
+                          <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
                           <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assignees</th>
                         </tr>
                       </thead>

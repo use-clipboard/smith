@@ -56,7 +56,7 @@ const FALLBACK_STYLE = {
 };
 
 const NODE_WIDTH = 220;
-const NODE_HEIGHT = 86;
+const NODE_HEIGHT = 108;
 
 // ── Custom Entity Node ───────────────────────────────────────────────────────
 
@@ -286,6 +286,27 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
   const [error, setError] = useState<string | null>(null);
   const [graph, setGraph] = useState<{ rootId: string; nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const [hideInactive, setHideInactive] = useState(false);
+  const [hideOnHold, setHideOnHold] = useState(false);
+
+  // Filter the graph based on status toggles. The root client is always shown
+  // (the user is viewing the connections OF this client) so they don't end up
+  // staring at an empty canvas if the client itself is inactive/on-hold.
+  const filteredGraph = useMemo(() => {
+    if (!graph) return null;
+    const visibleNodes = graph.nodes.filter(n =>
+      n.id === graph.rootId ||
+      (n.status === 'inactive' ? !hideInactive : true) &&
+      (n.status === 'hold' ? !hideOnHold : true),
+    );
+    const visibleIds = new Set(visibleNodes.map(n => n.id));
+    const visibleEdges = graph.edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+    const counts = {
+      inactive: graph.nodes.filter(n => n.status === 'inactive' && n.id !== graph.rootId).length,
+      hold: graph.nodes.filter(n => n.status === 'hold' && n.id !== graph.rootId).length,
+    };
+    return { rootId: graph.rootId, nodes: visibleNodes, edges: visibleEdges, counts };
+  }, [graph, hideInactive, hideOnHold]);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,20 +331,20 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
     router.push(`/clients/${id}`);
   }, [clientId, onClose, router]);
 
-  // Stable layout — recomputed only when the graph changes.
+  // Stable layout — recomputed when the filtered graph changes.
   const layout = useMemo(() => {
-    if (!graph) return { nodes: [] as Node[], edges: [] as Edge[] };
-    const rfNodes: Node[] = graph.nodes.map(n => ({
+    if (!filteredGraph) return { nodes: [] as Node[], edges: [] as Edge[] };
+    const rfNodes: Node[] = filteredGraph.nodes.map(n => ({
       id: n.id,
       type: 'entity',
       data: {
         name: n.name, client_ref: n.client_ref, business_type: n.business_type,
-        status: n.status, isRoot: n.id === graph.rootId, onOpen: handleOpen, id: n.id,
+        status: n.status, isRoot: n.id === filteredGraph.rootId, onOpen: handleOpen, id: n.id,
         highlighted: false, dimmed: false,
       } satisfies EntityNodeData,
       position: { x: 0, y: 0 },
     }));
-    const rfEdges: Edge[] = graph.edges.map(e => ({
+    const rfEdges: Edge[] = filteredGraph.edges.map(e => ({
       id: e.id,
       source: e.source,
       target: e.target,
@@ -354,7 +375,7 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
       data: { ...(e.data as LinkEdgeData), laneOffset: stagger[e.id] ?? 0 },
     }));
     return laid;
-  }, [graph, handleOpen]);
+  }, [filteredGraph, handleOpen]);
 
   // Apply hover highlight as a cheap pass over the laid-out elements.
   const { nodes, edges } = useMemo(() => {
@@ -391,14 +412,32 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
         className="relative bg-[var(--bg-page)] rounded-2xl shadow-2xl w-full max-w-7xl h-[88vh] flex flex-col overflow-hidden border border-[var(--border)]"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)]">
-          <div>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] gap-4">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-[var(--text-primary)]">Connections Map</h2>
             <p className="text-xs text-[var(--text-muted)]">All entities connected to this client. Hover an arrow for the relationship type. Click a node to open it.</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label="Close">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            {filteredGraph && (filteredGraph.counts.hold > 0 || filteredGraph.counts.inactive > 0) && (
+              <div className="flex items-center gap-3 pr-2">
+                {filteredGraph.counts.hold > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                    <input type="checkbox" checked={!hideOnHold} onChange={e => setHideOnHold(!e.target.checked)} className="accent-orange-500" />
+                    <span>Show on-hold <span className="text-[var(--text-muted)]">({filteredGraph.counts.hold})</span></span>
+                  </label>
+                )}
+                {filteredGraph.counts.inactive > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
+                    <input type="checkbox" checked={!hideInactive} onChange={e => setHideInactive(!e.target.checked)} className="accent-gray-500" />
+                    <span>Show inactive <span className="text-[var(--text-muted)]">({filteredGraph.counts.inactive})</span></span>
+                  </label>
+                )}
+              </div>
+            )}
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 relative bg-[var(--bg-page)]">
