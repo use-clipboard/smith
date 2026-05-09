@@ -441,7 +441,7 @@ export default function EmailList({
                       : isActive
                         // Active row: elevated card look — soft indigo-tinted shadow,
                         // subtle ring, and z-10 so the shadow isn't clipped by neighbours.
-                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-card-solid)] shadow-[0_4px_16px_rgba(99,102,241,0.25)] ring-1 ring-indigo-300/60 dark:ring-indigo-500/40 z-10'
+                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-nav-hover)] shadow-[0_4px_16px_rgba(99,102,241,0.25)] ring-1 ring-indigo-300/60 dark:ring-indigo-500/40 z-10'
                         : !thread.isRead
                           ? 'bg-indigo-100 dark:bg-indigo-900/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
                           : 'hover:bg-[var(--bg-nav-hover)]'
