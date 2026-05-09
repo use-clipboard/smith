@@ -121,6 +121,21 @@ export default function SaveBankCsvModal({
 
     setStatus('exporting');
     exportToCsv(results as unknown as Record<string, unknown>[], filename);
+
+    // Persist to outputs history (fire-and-forget)
+    const sourceFilenames = Array.from(new Set(documentFiles.map(f => f.name)));
+    fetch('/api/outputs/bank-to-csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? null,
+        clientCode: clientCode.trim() || null,
+        transactions: results,
+        sourceFilenames,
+      }),
+    }).catch(err => console.error('[SaveBankCsvModal] history save failed:', err));
+
     setStatus('done');
   };
 

@@ -4,7 +4,7 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 import { buildFinalAccountsPrompt, buildWorkingPapersPrompt } from '@/prompts/final-accounts';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
 
@@ -284,7 +284,8 @@ export async function POST(req: NextRequest) {
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'final_accounts_review', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'final_accounts_review', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'final_accounts_review' });
+      // No auto-save to outputs — saving happens via /api/outputs/final-accounts
+      // when the user clicks Save in SaveReportModal (onAfterSave).
     }
 
     return NextResponse.json({ reviewPoints, workingPapers });

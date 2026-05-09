@@ -4,7 +4,7 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 import { buildBankToCsvPrompt } from '@/prompts/bank-to-csv';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
 
@@ -74,7 +74,8 @@ export async function POST(req: NextRequest) {
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'bank_to_csv', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'bank_to_csv', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'bank_to_csv' });
+      // No auto-save to outputs — saving now happens via /api/outputs/bank-to-csv
+      // when the user clicks Save in SaveBankCsvModal.
     }
 
     const result = JSON.parse(jsonText);

@@ -4,7 +4,7 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 import { buildP32Prompt } from '@/prompts/p32';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
 
@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'p32_summary', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'p32_summary', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'p32_summary' });
+      // No auto-save to outputs — saving happens via /api/outputs/p32 when the
+      // user clicks Copy to Clipboard or Save to Drive on the success view.
     }
 
     return NextResponse.json(JSON.parse(jsonText));

@@ -4,25 +4,31 @@ import { Download, FolderOpen, Check, Loader2, X, Link2, AlertTriangle, Lock, Se
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { fileToBase64, exportToCsv } from '@/utils/fileUtils';
 import { useModules } from '@/components/ui/ModulesProvider';
-import type { Transaction, TargetSoftware } from '@/types';
+import type { Transaction, TargetSoftware, FlaggedEntry } from '@/types';
 
 type Status = 'idle' | 'uploading' | 'exporting' | 'done' | 'error';
 
 interface SaveAnalysisModalProps {
   isOpen: boolean;
   transactions: Transaction[];
+  flaggedEntries?: FlaggedEntry[];
   documentFiles: File[];
   targetSoftware: TargetSoftware;
   initialClient?: SelectedClient | null;
+  dateFrom?: string;
+  dateTo?: string;
   onClose: () => void;
 }
 
 export default function SaveAnalysisModal({
   isOpen,
   transactions,
+  flaggedEntries = [],
   documentFiles,
   targetSoftware,
   initialClient,
+  dateFrom = '',
+  dateTo = '',
   onClose,
 }: SaveAnalysisModalProps) {
   const { isModuleActive } = useModules();
@@ -131,6 +137,25 @@ export default function SaveAnalysisModal({
       return row;
     });
     exportToCsv(rows, filename, targetSoftware);
+
+    // Persist to outputs history (fire-and-forget — never block download on this)
+    const sourceFilenames = Array.from(new Set(documentFiles.map(f => f.name)));
+    fetch('/api/outputs/full-analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? null,
+        clientCode: clientCode.trim() || null,
+        targetSoftware,
+        transactions: rows,
+        flaggedEntries,
+        sourceFilenames,
+        dateFrom,
+        dateTo,
+      }),
+    }).catch(err => console.error('[SaveAnalysisModal] history save failed:', err));
+
     setStatus('done');
   };
 

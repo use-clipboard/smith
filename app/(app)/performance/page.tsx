@@ -9,7 +9,9 @@ import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import PerformanceEditor, { getThemeColor } from '@/components/features/performance/PerformanceEditor';
-import { TrendingUp, Check } from 'lucide-react';
+import PerformanceHistory, { type PerformanceSeed } from '@/components/features/performance/PerformanceHistory';
+import { TrendingUp, Check, ArrowLeft, Sparkles } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { fileToBase64 } from '@/utils/fileUtils';
 
 type AppState = 'idle' | 'loading' | 'success' | 'error';
@@ -196,7 +198,44 @@ const PERFORMANCE_SECTIONS = [
 
 type SectionId = typeof PERFORMANCE_SECTIONS[number]['id'];
 
+// ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function PerformancePage() {
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<PerformanceSeed | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <PerformanceHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <PerformanceTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
+}
+
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/performance', appState);
   const [error, setError] = useState<string | null>(null);
@@ -214,6 +253,36 @@ export default function PerformancePage() {
   const [paCustomEnd, setPaCustomEnd] = useState('');
 
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
+
+  // ── Seed loader: when opened from history, hydrate the success view
+  const seedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seedLoadedRef.current) return;
+    seedLoadedRef.current = true;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: seed.client.business_type ?? null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+    }
+    setPaBusinessName(seed.paBusinessName ?? '');
+    setPaBusinessType(seed.paBusinessType ?? '');
+    setPaBusinessTrade(seed.paBusinessTrade ?? '');
+    setPaTradingLocation(seed.paTradingLocation ?? '');
+    setPaRelevantInfo(seed.paRelevantInfo ?? '');
+    setPaAnalysisPeriod(seed.paAnalysisPeriod ?? '');
+    setPaAnalysisPeriodDescription(seed.paAnalysisPeriodDescription ?? '');
+    setSelectedSections((seed.selectedSections ?? []) as SectionId[]);
+    setReportHtml(seed.reportHtml ?? '');
+    setEditorHtml(seed.editorHtml ?? seed.reportHtml ?? '');
+    setTitlePageHtml(seed.titlePageHtml ?? '');
+    setStoredPeriod(seed.paAnalysisPeriodDescription ?? '');
+    setAppState('success');
+  }, [seed]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -243,6 +312,31 @@ export default function PerformancePage() {
     if (selectedClient.name) setPaBusinessName(selectedClient.name);
     if (selectedClient.business_type) setPaBusinessType(selectedClient.business_type);
   }, [selectedClient]);
+  // ── Auto client-context: pulls past Performance analyses for this client and
+  // feeds them to the AI for narrative continuity & trend awareness.
+  type PastAnalysis = { createdAt: string; periodType: string; periodDescription: string; selectedSections: string[]; summaryText: string };
+  const [pastAnalyses, setPastAnalyses]      = useState<PastAnalysis[]>([]);
+  const [pastCtxLoading, setPastCtxLoading]  = useState(false);
+  const [usePastContext, setUsePastContext]  = useState(true);
+
+  useEffect(() => {
+    if (!selectedClient?.id) {
+      setPastAnalyses([]);
+      return;
+    }
+    let cancelled = false;
+    setPastCtxLoading(true);
+    fetch(`/api/performance/client-context?clientId=${selectedClient.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d) return;
+        setPastAnalyses(d.pastAnalyses ?? []);
+      })
+      .catch(() => {/* silent — context is optional */})
+      .finally(() => { if (!cancelled) setPastCtxLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedClient?.id]);
+
   const [managementAccounts, setManagementAccounts] = useState<File[]>([]);
   const [priorAccounts, setPriorAccounts] = useState<File[]>([]);
   const [priorAnalysis, setPriorAnalysis] = useState<File[]>([]);
@@ -301,7 +395,8 @@ export default function PerformancePage() {
       const effectivePeriodDescription = paAnalysisPeriod === 'custom'
         ? `${paCustomStart} to ${paCustomEnd}`
         : paAnalysisPeriodDescription;
-      const res = await fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription: effectivePeriodDescription, selectedSections, files: fileData, clientId: selectedClient?.id ?? null, clientCode: selectedClient?.client_ref ?? null }) });
+      const effectivePastAnalyses = (usePastContext && pastAnalyses.length > 0) ? pastAnalyses.slice(0, 3) : null;
+      const res = await fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription: effectivePeriodDescription, selectedSections, pastAnalyses: effectivePastAnalyses, files: fileData, clientId: selectedClient?.id ?? null, clientCode: selectedClient?.client_ref ?? null }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed'); }
       const data = await res.json();
       if (progressRef.current) clearInterval(progressRef.current);
@@ -313,7 +408,7 @@ export default function PerformancePage() {
       if (progressRef.current) clearInterval(progressRef.current);
       setError(err instanceof Error ? err.message : 'Unknown error'); setAppState('error'); setProgress(0);
     }
-  }, [canProcess, paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription, allFiles, selectedClient?.id]);
+  }, [canProcess, paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription, allFiles, selectedClient?.id, usePastContext, pastAnalyses]);
 
   // Wrap the current (possibly edited) HTML in a standalone document for download/Drive
   const themeColor = getThemeColor(coverOpts.gradient);
@@ -364,10 +459,43 @@ export default function PerformancePage() {
       />
     );
   }
-  if (appState === 'error') return <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669"><ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} /></ToolLayout>;
+  if (appState === 'error') return (
+    <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669">
+      <BackToHistory onBack={onBack} />
+      <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
+    </ToolLayout>
+  );
+
+  // Persist a snapshot of the current report to outputs history.
+  const persistRunToHistory = (currentClient: SelectedClient | null) => {
+    const sourceFilenames = Array.from(new Set(allFiles.map(f => f.name)));
+    fetch('/api/outputs/performance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: currentClient?.id ?? null,
+        clientName: currentClient?.name ?? paBusinessName ?? null,
+        clientCode: currentClient?.client_ref ?? null,
+        paBusinessName,
+        paBusinessType,
+        paBusinessTrade,
+        paTradingLocation,
+        paRelevantInfo,
+        paAnalysisPeriod,
+        paAnalysisPeriodDescription: storedPeriod || paAnalysisPeriodDescription,
+        selectedSections,
+        reportHtml,
+        editorHtml,
+        titlePageHtml,
+        themeColor,
+        sourceFilenames,
+      }),
+    }).catch(err => console.error('[Performance] history save failed:', err));
+  };
 
   return (
     <ToolLayout title="Performance Analysis" description="Analyse management accounts and produce a business performance report with KPI ratios." icon={TrendingUp} iconColor="#059669">
+      <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="glass-solid rounded-xl p-5 space-y-4">
@@ -468,6 +596,38 @@ export default function PerformancePage() {
               <FileUpload title="Prior Analysis/Reports" onFilesChange={setPriorAnalysis} multiple accept="application/pdf" optional helpText="For context and follow-up." existingFiles={priorAnalysis} />
             </div>
           </div>
+
+          {/* Auto-context pill — visible when this client has past performance analyses */}
+          {selectedClient && (pastCtxLoading || pastAnalyses.length > 0) && (
+            <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+              usePastContext
+                ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+                : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+            }`}>
+              <Sparkles size={13} className="shrink-0" />
+              <div className="flex-1 leading-snug">
+                {pastCtxLoading ? (
+                  <span>Looking for past performance reports for this client…</span>
+                ) : usePastContext ? (
+                  <>
+                    Using <span className="font-semibold">{pastAnalyses.length}</span> past performance {pastAnalyses.length === 1 ? 'report' : 'reports'} ({pastAnalyses.map(p => p.periodDescription || p.periodType || 'unknown').join(', ')}) to keep the new commentary continuous with prior findings.
+                  </>
+                ) : (
+                  <>Past-report continuity is off — the new report will be written from scratch.</>
+                )}
+              </div>
+              <Tooltip label={usePastContext ? 'Turn off past-report continuity' : 'Turn continuity back on'}>
+                <button
+                  onClick={() => setUsePastContext(v => !v)}
+                  aria-label="Toggle past-report continuity"
+                  className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${usePastContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${usePastContext ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              </Tooltip>
+            </div>
+          )}
+
           <div className="flex justify-end">
             <button onClick={handleProcess} disabled={!canProcess} className="btn-primary"><TrendingUp size={15} />Analyse Documents</button>
           </div>
@@ -483,6 +643,7 @@ export default function PerformancePage() {
             feature="performance_analysis"
             documentType="report"
             initialClient={selectedClient}
+            onAfterSave={ctx => persistRunToHistory(ctx.client)}
             onClose={() => setSaveModalOpen(false)}
           />
 

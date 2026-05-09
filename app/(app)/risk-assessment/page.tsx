@@ -7,8 +7,10 @@ import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
-import { ShieldAlert, Download } from 'lucide-react';
+import { ShieldAlert, Download, ArrowLeft } from 'lucide-react';
 import type { RiskAssessmentReport } from '@/types';
+import { generateRiskReportHtml } from '@/utils/riskAssessmentReport';
+import RiskAssessmentHistory, { type RiskAssessmentSeed } from '@/components/features/risk-assessment/RiskAssessmentHistory';
 
 type AppState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -36,67 +38,45 @@ const RISK_QUESTIONS = [
   ]},
 ];
 
-function generateRiskReportHtml(
-  clientName: string,
-  clientCode: string,
-  usersName: string,
-  report: RiskAssessmentReport,
-): string {
-  const riskColour = report.overallRiskLevel === 'High' ? '#dc2626' : report.overallRiskLevel === 'Medium' ? '#d97706' : '#16a34a';
-  const dateGenerated = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>AML Risk Assessment — ${clientName}</title>
-  <style>
-    body { font-family: Arial, sans-serif; color: #111; margin: 0; padding: 40px; font-size: 13px; line-height: 1.6; max-width: 800px; }
-    h1 { font-size: 22px; margin-bottom: 4px; }
-    .meta { color: #555; font-size: 12px; margin-bottom: 32px; }
-    .risk-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #555; margin-bottom: 8px; }
-    .risk-badge { display: inline-block; padding: 10px 28px; border-radius: 8px; font-size: 32px; font-weight: 900; color: ${riskColour}; border: 2px solid ${riskColour}; margin-bottom: 32px; }
-    section { margin-bottom: 28px; page-break-inside: avoid; }
-    h2 { font-size: 14px; font-weight: 700; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin-bottom: 12px; }
-    p { margin: 0 0 8px; white-space: pre-wrap; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
-    th { text-align: left; padding: 6px 10px; background: #f3f4f6; font-weight: 700; border: 1px solid #e5e7eb; }
-    td { padding: 6px 10px; border: 1px solid #e5e7eb; vertical-align: top; }
-    @media print { body { padding: 20px; } }
-  </style>
-</head>
-<body>
-  <h1>AML Client Risk Assessment</h1>
-  <div class="meta">Client: <strong>${clientName}</strong>${clientCode ? ` (${clientCode})` : ''} &nbsp;·&nbsp; Prepared by: ${usersName} &nbsp;·&nbsp; Date: ${dateGenerated}</div>
-  <div class="risk-label">Overall Risk Level</div>
-  <div class="risk-badge">${report.overallRiskLevel}</div>
-  <section>
-    <h2>Risk Justification</h2>
-    <p>${report.riskJustification}</p>
-  </section>
-  <section>
-    <h2>Suggested Controls</h2>
-    <p>${report.suggestedControls}</p>
-  </section>
-  <section>
-    <h2>Training Suggestions</h2>
-    <p>${report.trainingSuggestions}</p>
-  </section>
-  ${report.summaryOfAnswers?.length ? `
-  <section>
-    <h2>Question Summary</h2>
-    <table>
-      <thead><tr><th>Question</th><th>Answer</th><th>Comment</th></tr></thead>
-      <tbody>
-        ${report.summaryOfAnswers.map(a => `<tr><td>${a.question}</td><td>${a.answer}</td><td>${a.userComment || '—'}</td></tr>`).join('')}
-      </tbody>
-    </table>
-  </section>` : ''}
-</body>
-</html>`;
+// ── Page wrapper: history dashboard or tool ─────────────────────────────────
+export default function RiskAssessmentPage() {
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<RiskAssessmentSeed | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <RiskAssessmentHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <RiskAssessmentTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
 }
 
-export default function RiskAssessmentPage() {
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function RiskAssessmentTool({ seed, onBack }: { seed: RiskAssessmentSeed | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/risk-assessment', appState);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +84,30 @@ export default function RiskAssessmentPage() {
   const [raUsersName, setRaUsersName] = useState('');
   const [raClientName, setRaClientName] = useState('');
   const [raClientCode, setRaClientCode] = useState('');
+
+  // ── Seed loader: when opened from history dashboard, hydrate the success view
+  useEffect(() => {
+    if (!seed) return;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: seed.client.business_type ?? null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+    }
+    setRaUsersName(seed.raUsersName ?? '');
+    setRaClientName(seed.raClientName ?? '');
+    setRaClientCode(seed.raClientCode ?? '');
+    setRaClientType(seed.raClientType ?? '');
+    setAnswers(seed.answers ?? {});
+    setReport(seed.report);
+    setAppState('success');
+    // run only on first seed change — subsequent edits to seed shouldn't override user changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -178,10 +182,36 @@ export default function RiskAssessmentPage() {
       steps={['Processing questionnaire', 'Assessing risk factors', 'Evaluating AML controls', 'Generating recommendations', 'Compiling report']}
     />
   );
-  if (appState === 'error') return <ToolLayout title="Risk Assessment" icon={ShieldAlert} iconColor="#DC2626"><ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} /></ToolLayout>;
+  if (appState === 'error') return (
+    <ToolLayout title="Risk Assessment" icon={ShieldAlert} iconColor="#DC2626">
+      <BackToHistory onBack={onBack} />
+      <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
+    </ToolLayout>
+  );
+
+  // Persist a snapshot of the current assessment to outputs history.
+  const persistRunToHistory = (currentClient: SelectedClient | null) => {
+    if (!report) return;
+    fetch('/api/outputs/risk-assessment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: currentClient?.id ?? null,
+        clientName: currentClient?.name ?? raClientName ?? null,
+        clientCode: currentClient?.client_ref ?? raClientCode ?? null,
+        raUsersName,
+        raClientName,
+        raClientCode,
+        raClientType,
+        answers,
+        report,
+      }),
+    }).catch(err => console.error('[RiskAssessment] history save failed:', err));
+  };
 
   return (
     <ToolLayout title="Risk Assessment" description="Conduct an AML client risk assessment and produce a risk report." icon={ShieldAlert} iconColor="#DC2626">
+      <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="glass-solid rounded-xl p-5 space-y-4">
@@ -254,6 +284,7 @@ export default function RiskAssessmentPage() {
             feature="risk_assessment"
             documentType="risk_assessment"
             initialClient={selectedClient}
+            onAfterSave={ctx => persistRunToHistory(ctx.client)}
             onClose={() => setSaveModalOpen(false)}
           />
 

@@ -16,6 +16,8 @@ interface SaveSummariseModalProps {
   documentFiles: File[];
   initialClient?: SelectedClient | null;
   groupBy: GroupBy;
+  dateFrom?: string;
+  dateTo?: string;
   onClose: () => void;
 }
 
@@ -94,6 +96,8 @@ export default function SaveSummariseModal({
   documentFiles,
   initialClient,
   groupBy,
+  dateFrom = '',
+  dateTo = '',
   onClose,
 }: SaveSummariseModalProps) {
   const { isModuleActive } = useModules();
@@ -196,6 +200,24 @@ export default function SaveSummariseModal({
 
     setStatus('exporting');
     exportToXlsx(results, filename);
+
+    // Persist to outputs history (fire-and-forget)
+    const sourceFilenames = Array.from(new Set(documentFiles.map(f => f.name)));
+    fetch('/api/outputs/summarise', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? null,
+        clientCode: clientCode.trim() || null,
+        documents: results,
+        groupBy,
+        dateFrom,
+        dateTo,
+        sourceFilenames,
+      }),
+    }).catch(err => console.error('[SaveSummariseModal] history save failed:', err));
+
     setStatus('done');
   };
 

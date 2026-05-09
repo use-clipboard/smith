@@ -7,15 +7,53 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import ScanResultsView from '@/components/ui/ScanResultsView';
 import SaveBankCsvModal from '@/components/features/bank-to-csv/SaveBankCsvModal';
+import BankToCsvHistory, { type BankCsvSeed } from '@/components/features/bank-to-csv/BankToCsvHistory';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { BankCsvTransaction, DocumentScanResult } from '@/types';
-import { ArrowLeftRight, Download } from 'lucide-react';
+import { ArrowLeftRight, Download, ArrowLeft } from 'lucide-react';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 
+// ── Page wrapper ────────────────────────────────────────────────────────────
 export default function BankToCsvPage() {
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<BankCsvSeed | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <BankToCsvHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <BankToCsvTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
+}
+
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/bank-to-csv', appState);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +65,27 @@ export default function BankToCsvPage() {
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const [clientName, setClientName] = useState('');
   const [clientCode, setClientCode] = useState('');
+
+  // ── Seed loader: when opened from history dashboard, hydrate the success view
+  const seedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seedLoadedRef.current) return;
+    seedLoadedRef.current = true;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+      setClientName(seed.client.name);
+      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
+    }
+    setResults(seed.transactions ?? []);
+    setAppState('success');
+  }, [seed]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -217,12 +276,14 @@ export default function BankToCsvPage() {
 
   if (appState === 'error') return (
     <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2">
+      <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
 
   if (appState === 'scan_results') return (
     <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2">
+      <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
         fileRefs={fileRefs.current}
@@ -235,6 +296,7 @@ export default function BankToCsvPage() {
 
   return (
     <ToolLayout title="Bank to CSV" description="Extract transactions from bank statements and produce a clean CSV." icon={ArrowLeftRight} iconColor="#0891B2">
+      <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

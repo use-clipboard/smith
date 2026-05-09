@@ -8,6 +8,7 @@ import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import ScanResultsView from '@/components/ui/ScanResultsView';
 import SaveLandlordModal from '@/components/features/landlord/SaveLandlordModal';
 import LandlordEditModal from '@/components/features/landlord/LandlordEditModal';
+import LandlordHistory, { type LandlordSeed } from '@/components/features/landlord/LandlordHistory';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
@@ -15,7 +16,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
-  Plus, Trash2, TrendingUp,
+  Plus, Trash2, TrendingUp, ArrowLeft, Sparkles,
 } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment } from '@/types';
@@ -93,7 +94,44 @@ function buildExpenseRows(txs: LandlordExpenseTransaction[], dateFrom: string, d
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ── Page wrapper: history dashboard or tool ──────────────────────────────────
 export default function LandlordPage() {
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<LandlordSeed | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <LandlordHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <LandlordTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
+}
+
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/landlord', appState);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +144,75 @@ export default function LandlordPage() {
   const [clientCode, setClientCode] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // ── Auto client-context: pulls past saved Landlord analyses for this client
+  // and feeds them to the AI so it stays consistent with previously-chosen
+  // categories, supplier names, addresses, and capital-vs-revenue calls.
+  const [autoCtxIncome, setAutoCtxIncome]    = useState<{ Date: string; PropertyAddress: string; Description: string; Amount: number }[]>([]);
+  const [autoCtxExpenses, setAutoCtxExpenses]= useState<{ DueDate: string; Description: string; Category: string; Supplier: string; PropertyAddress: string; Amount: number; CapitalExpense: boolean; TenantPayable: boolean }[]>([]);
+  const [autoCtxAnalyses, setAutoCtxAnalyses]= useState(0);
+  const [autoCtxLoading, setAutoCtxLoading]  = useState(false);
+  const [useAutoContext, setUseAutoContext]  = useState(true);
+
+  useEffect(() => {
+    if (!selectedClient?.id) {
+      setAutoCtxIncome([]); setAutoCtxExpenses([]); setAutoCtxAnalyses(0);
+      return;
+    }
+    let cancelled = false;
+    setAutoCtxLoading(true);
+    fetch(`/api/landlord/client-context?clientId=${selectedClient.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d) return;
+        setAutoCtxIncome(d.pastIncome ?? []);
+        setAutoCtxExpenses(d.pastExpenses ?? []);
+        setAutoCtxAnalyses(d.analysisCount ?? 0);
+      })
+      .catch(() => {/* silent — context is optional */})
+      .finally(() => { if (!cancelled) setAutoCtxLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedClient?.id]);
+
+  // ── Seed loader: when opened from history dashboard, hydrate the success view
+  const seedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seedLoadedRef.current) return;
+    seedLoadedRef.current = true;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+      setClientName(seed.client.name);
+      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
+    }
+    setDateFrom(seed.dateFrom ?? '');
+    setDateTo(seed.dateTo ?? '');
+    setAdjustments(seed.adjustments ?? []);
+
+    // Hydrate income/expense rows back into UI shape (re-tag with internal _id, _flagged etc.)
+    const incomeRows = buildIncomeRows(seed.income, seed.dateFrom ?? '', seed.dateTo ?? '');
+    const expenseRows = buildExpenseRows(seed.expenses, seed.dateFrom ?? '', seed.dateTo ?? '');
+
+    // Re-flag the previously-flagged entries by matching fileName + amount + date
+    for (const fi of seed.flaggedIncome ?? []) {
+      const m = incomeRows.find(r => r.fileName === fi.fileName && Math.abs(r.Amount - fi.amount) < 0.01 && r.Date === fi.date);
+      if (m) { m._flagged = true; m._flagReason = fi.reason; }
+    }
+    for (const fe of seed.flaggedExpenses ?? []) {
+      const m = expenseRows.find(r => r.fileName === fe.fileName && Math.abs(r.Amount - fe.amount) < 0.01 && r.DueDate === fe.date);
+      if (m) { m._flagged = true; m._flagReason = fe.reason; }
+    }
+
+    setHistory([{ income: incomeRows, expenses: expenseRows }]);
+    setHistoryIndex(0);
+    setAppState('success');
+  }, [seed]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -221,6 +328,9 @@ export default function LandlordPage() {
     clientCode: string | null,
   ): Promise<DocumentScanResult[]> => {
     const docResults: DocumentScanResult[] = [];
+    const pastContext = (useAutoContext && (autoCtxIncome.length > 0 || autoCtxExpenses.length > 0))
+      ? { pastIncome: autoCtxIncome, pastExpenses: autoCtxExpenses }
+      : null;
     for (let i = 0; i < filesToScan.length; i++) {
       const file = filesToScan[i];
       setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
@@ -229,7 +339,7 @@ export default function LandlordPage() {
         const res = await fetch('/api/landlord', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }], clientId, clientCode }),
+          body: JSON.stringify({ files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }], clientId, clientCode, pastContext }),
         });
         if (!res.ok) {
           const err = await res.json();
@@ -252,7 +362,7 @@ export default function LandlordPage() {
       });
     }
     return docResults;
-  }, []);
+  }, [useAutoContext, autoCtxIncome, autoCtxExpenses]);
 
   const applyAndProceed = useCallback((allScanResults: DocumentScanResult[], df: string, dt: string) => {
     const successful = allScanResults.filter(r => r.status === 'success');
@@ -532,11 +642,13 @@ export default function LandlordPage() {
   }
   if (appState === 'error') return (
     <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706">
+      <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
   if (appState === 'scan_results') return (
     <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706">
+      <BackToHistory onBack={onBack} />
       <ScanResultsView results={scanResults} fileRefs={fileRefs.current} isRescanning={isRescanning} onRescan={handleRescan} onDismissAndContinue={handleDismissAndContinue} />
     </ToolLayout>
   );
@@ -749,6 +861,7 @@ export default function LandlordPage() {
 
   return (
     <ToolLayout title="Landlord Analysis" description="Analyse income and expense documents for a rental property portfolio." icon={House} iconColor="#D97706">
+      <BackToHistory onBack={onBack} />
 
       {/* ── Idle ── */}
       {appState === 'idle' && (
@@ -800,7 +913,41 @@ export default function LandlordPage() {
                 <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
               </div>
             </div>
-            <FileUpload title="Landlord Documents" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload letting agent statements, invoices, and receipts." existingFiles={documentFiles} />
+            <div className="space-y-3">
+              {/* Auto-context pill — visible when this client has past landlord analyses */}
+              {selectedClient && (autoCtxLoading || (autoCtxIncome.length + autoCtxExpenses.length > 0)) && (
+                <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+                  useAutoContext
+                    ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+                    : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+                }`}>
+                  <Sparkles size={13} className="shrink-0" />
+                  <div className="flex-1 leading-snug">
+                    {autoCtxLoading ? (
+                      <span>Looking for past analyses for this client…</span>
+                    ) : useAutoContext ? (
+                      <>
+                        Using <span className="font-semibold">{autoCtxIncome.length}</span> past income and
+                        {' '}<span className="font-semibold">{autoCtxExpenses.length}</span> past expense entries from
+                        {' '}<span className="font-semibold">{autoCtxAnalyses}</span> previous {autoCtxAnalyses === 1 ? 'analysis' : 'analyses'} to improve category, supplier and capital-vs-revenue accuracy.
+                      </>
+                    ) : (
+                      <>Past-analysis learning is off — accuracy may be lower.</>
+                    )}
+                  </div>
+                  <Tooltip label={useAutoContext ? 'Turn off learning from past analyses' : 'Turn learning back on'}>
+                    <button
+                      onClick={() => setUseAutoContext(v => !v)}
+                      aria-label="Toggle past-analysis learning"
+                      className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${useAutoContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
+              <FileUpload title="Landlord Documents" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload letting agent statements, invoices, and receipts." existingFiles={documentFiles} />
+            </div>
           </div>
           <div className="flex justify-end">
             <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary">

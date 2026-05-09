@@ -11,7 +11,8 @@ import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import TransactionEditModal from '@/components/features/full-analysis/TransactionEditModal';
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
-import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight } from 'lucide-react';
+import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/full-analysis/FullAnalysisHistory';
+import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 
@@ -35,6 +36,45 @@ function buildMinimalTx(entry: FlaggedEntry, software: TargetSoftware): Transact
 }
 
 export default function FullAnalysisPage() {
+  // ── History dashboard wrapper ────────────────────────────────────────────
+  // Default landing screen is the history dashboard. The user clicks
+  // "New Analysis" to enter the tool, or "Open" on a past row to reload it.
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<SeedAnalysis | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <FullAnalysisHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <FullAnalysisTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
+}
+
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/full-analysis', appState);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +94,31 @@ export default function FullAnalysisPage() {
   const [clientAddress, setClientAddress] = useState('');
   const [isVatRegistered, setIsVatRegistered] = useState(false);
   const [targetSoftware, setTargetSoftware] = useState<TargetSoftware>('general');
+
+  // ── Seed loader: when opened from history dashboard, hydrate the success view
+  const seedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seedLoadedRef.current) return;
+    seedLoadedRef.current = true;
+    setTargetSoftware(seed.targetSoftware);
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+      setClientName(seed.client.name);
+    }
+    setTransactionHistory([seed.transactions as Transaction[]]);
+    setHistoryIndex(0);
+    setFlaggedEntries(seed.flaggedEntries as FlaggedEntry[]);
+    if (seed.dateFrom) setDateFrom(seed.dateFrom);
+    if (seed.dateTo)   setDateTo(seed.dateTo);
+    setAppState('success');
+  }, [seed]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -77,6 +142,34 @@ export default function FullAnalysisPage() {
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [pastTransactionsFile, setPastTransactionsFile] = useState<File | null>(null);
   const [ledgersFile, setLedgersFile] = useState<File | null>(null);
+
+  // ── Auto client-context: pulls past saved analyses for this client + software
+  // and uses them as a synthetic "past transactions" CSV so the AI stays consistent
+  // with previous account-code choices. Disabled automatically if the user uploads
+  // their own past-transactions CSV.
+  const [autoContextCsv,    setAutoContextCsv]    = useState<string>('');
+  const [autoContextCount,  setAutoContextCount]  = useState({ rows: 0, analyses: 0 });
+  const [autoContextLoading, setAutoContextLoading] = useState(false);
+  const [useAutoContext,    setUseAutoContext]    = useState(true);
+
+  useEffect(() => {
+    if (!selectedClient?.id) {
+      setAutoContextCsv(''); setAutoContextCount({ rows: 0, analyses: 0 });
+      return;
+    }
+    let cancelled = false;
+    setAutoContextLoading(true);
+    fetch(`/api/full-analysis/client-context?clientId=${selectedClient.id}&software=${targetSoftware}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d) return;
+        setAutoContextCsv(d.csv ?? '');
+        setAutoContextCount({ rows: d.rowCount ?? 0, analyses: d.analysisCount ?? 0 });
+      })
+      .catch(() => {/* silent — context is optional */})
+      .finally(() => { if (!cancelled) setAutoContextLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedClient?.id, targetSoftware]);
 
   const [transactionHistory, setTransactionHistory] = useState<Transaction[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -387,7 +480,11 @@ export default function FullAnalysisPage() {
     setFileRefs(fileMap);
 
     // Read shared inputs once — reused across all per-file calls and any re-scans
-    const pastTransactionsContent = pastTransactionsFile ? await readFileAsText(pastTransactionsFile) : null;
+    let pastTransactionsContent = pastTransactionsFile ? await readFileAsText(pastTransactionsFile) : null;
+    // No manual upload? Fall back to the auto-built client context (if enabled).
+    if (!pastTransactionsContent && useAutoContext && autoContextCsv) {
+      pastTransactionsContent = autoContextCsv;
+    }
     const ledgersContent = ledgersFile ? await readFileAsText(ledgersFile) : null;
     let parsedLedgerAccounts: LedgerAccount[] = [];
     if (ledgersContent) { parsedLedgerAccounts = parseLedgerCsv(ledgersContent); setLedgerAccounts(parsedLedgerAccounts); }
@@ -414,7 +511,7 @@ export default function FullAnalysisPage() {
     setScanProgress(null);
     setScanResults(results);
     setAppState('scan_results');
-  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, applyValidationAndProceed]);
+  }, [documentFiles, pastTransactionsFile, ledgersFile, scanFiles, applyValidationAndProceed, useAutoContext, autoContextCsv]);
 
   // ─── Re-scan failed documents ─────────────────────────────────────────────
 
@@ -467,6 +564,7 @@ export default function FullAnalysisPage() {
   }
   if (appState === 'scan_results') return (
     <ToolLayout title="Full Transaction Analysis" icon={FileSearch}>
+      <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
         fileRefs={fileRefs}
@@ -478,6 +576,7 @@ export default function FullAnalysisPage() {
   );
   if (appState === 'error') return (
     <ToolLayout title="Full Transaction Analysis" icon={FileSearch}>
+      <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || 'Unknown error'} code={errorCode} onRetry={() => { setAppState('idle'); setErrorCode(undefined); }} />
     </ToolLayout>
   );
@@ -579,6 +678,7 @@ export default function FullAnalysisPage() {
 
   return (
     <ToolLayout title="Full Transaction Analysis" description="Analyse invoices and receipts and produce bookkeeping entries for VT, Capium, Xero, QuickBooks, FreeAgent, or Sage." icon={FileSearch}>
+      <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="glass-solid rounded-xl p-5">
@@ -638,7 +738,39 @@ export default function FullAnalysisPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <FileUpload title="3. Documents to Analyse" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload invoices, receipts, and bank statements." existingFiles={documentFiles} />
             <div className="space-y-4">
-              <FileUpload title="4. Past Transactions (CSV)" onFileChange={setPastTransactionsFile} accept=".csv" optional helpText="Helps identify duplicate transactions." existingFiles={pastTransactionsFile ? [pastTransactionsFile] : []} />
+              {/* Auto-context pill — shown when this client has past analyses we can learn from */}
+              {selectedClient && !pastTransactionsFile && (autoContextLoading || autoContextCount.rows > 0) && (
+                <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+                  useAutoContext
+                    ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+                    : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+                }`}>
+                  <Sparkles size={13} className="shrink-0" />
+                  <div className="flex-1 leading-snug">
+                    {autoContextLoading ? (
+                      <span>Looking for past analyses for this client…</span>
+                    ) : useAutoContext ? (
+                      <>
+                        Using <span className="font-semibold">{autoContextCount.rows}</span> past
+                        {' '}entries from <span className="font-semibold">{autoContextCount.analyses}</span> previous
+                        {' '}{autoContextCount.analyses === 1 ? 'analysis' : 'analyses'} to improve account-code accuracy.
+                      </>
+                    ) : (
+                      <>Past-analysis learning is off — accuracy may be lower.</>
+                    )}
+                  </div>
+                  <Tooltip label={useAutoContext ? 'Turn off learning from past analyses' : 'Turn learning back on'}>
+                    <button
+                      onClick={() => setUseAutoContext(v => !v)}
+                      aria-label="Toggle past-analysis learning"
+                      className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${useAutoContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
+              <FileUpload title="4. Past Transactions (CSV)" onFileChange={setPastTransactionsFile} accept=".csv" optional helpText={selectedClient && autoContextCount.rows > 0 && useAutoContext ? 'Optional — past analyses for this client are used automatically. Upload to override.' : 'Helps identify duplicate transactions.'} existingFiles={pastTransactionsFile ? [pastTransactionsFile] : []} />
               <FileUpload title="5. Chart of Accounts (CSV)" onFileChange={setLedgersFile} accept=".csv" optional helpText="Improves accuracy of ledger allocation." existingFiles={ledgersFile ? [ledgersFile] : []} />
             </div>
           </div>
@@ -934,9 +1066,12 @@ export default function FullAnalysisPage() {
       <SaveAnalysisModal
         isOpen={saveModalOpen}
         transactions={processedTransactions}
+        flaggedEntries={flaggedEntries}
         documentFiles={documentFiles}
         targetSoftware={targetSoftware}
         initialClient={selectedClient}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
         onClose={() => setSaveModalOpen(false)}
       />
 

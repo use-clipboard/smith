@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
-import { buildPerformancePrompt } from '@/prompts/performance';
+import { buildPerformancePrompt, type PerformancePastAnalysis } from '@/prompts/performance';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
 // Allow up to 5 minutes — the performance report is a long generation task
 export const maxDuration = 300;
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
+
+const PastAnalysisSchema = z.object({
+  createdAt: z.string(),
+  periodType: z.string(),
+  periodDescription: z.string(),
+  selectedSections: z.array(z.string()),
+  summaryText: z.string(),
+});
 
 const RequestSchema = z.object({
   paBusinessName: z.string(),
@@ -20,6 +28,7 @@ const RequestSchema = z.object({
   paAnalysisPeriod: z.string(),
   paAnalysisPeriodDescription: z.string().default(''),
   selectedSections: z.array(z.string()).default([]),
+  pastAnalyses: z.array(PastAnalysisSchema).max(3).optional().nullable(),
   clientId: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
@@ -32,7 +41,7 @@ export async function POST(req: NextRequest) {
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive, paBusinessName, selectedSections, ...opts } = parsed.data;
+    const { files, clientId, clientCode, saveToDrive, paBusinessName, selectedSections, pastAnalyses, ...opts } = parsed.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -40,7 +49,12 @@ export async function POST(req: NextRequest) {
     if (!isModuleActive('performance')) return moduleNotActive('performance');
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
-    const prompt = buildPerformancePrompt({ paBusinessName, selectedSections, ...opts });
+    const prompt = buildPerformancePrompt({
+      paBusinessName,
+      selectedSections,
+      pastAnalyses: (pastAnalyses ?? null) as PerformancePastAnalysis[] | null,
+      ...opts,
+    });
 
     const fileContent = files.map(f => {
       if (f.mimeType === 'application/pdf') {
@@ -115,7 +129,8 @@ Do not add any text before or after the JSON object.`,
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'performance_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'performance_analysis', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'performance_analysis' });
+      // No auto-save to outputs — saving happens via /api/outputs/performance
+      // when the user clicks Save in SaveReportModal (onAfterSave).
     }
 
     return NextResponse.json(reportData);

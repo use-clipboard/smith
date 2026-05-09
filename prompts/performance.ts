@@ -1,3 +1,11 @@
+export interface PerformancePastAnalysis {
+  createdAt: string;
+  periodType: string;
+  periodDescription: string;
+  selectedSections: string[];
+  summaryText: string;
+}
+
 interface PerformancePromptOptions {
   paBusinessName: string;
   paBusinessType: string;
@@ -7,6 +15,7 @@ interface PerformancePromptOptions {
   paAnalysisPeriod: string;
   paAnalysisPeriodDescription: string;
   selectedSections: string[];
+  pastAnalyses?: PerformancePastAnalysis[] | null;
 }
 
 // Full descriptions for each section — used to build the dynamic prompt
@@ -140,6 +149,51 @@ Your output MUST be a single JSON object with exactly two keys: "reportHtml" and
 - Analysis Period: ${opts.paAnalysisPeriod} ${periodDesc}
 - Other Relevant Info / Key Priorities: ${opts.paRelevantInfo || 'None provided'}
 
-**Report Sections to Generate:**
+${buildPastAnalysesSection(opts.pastAnalyses)}**Report Sections to Generate:**
 ${sections}`;
+}
+
+function buildPastAnalysesSection(past?: PerformancePastAnalysis[] | null): string {
+  if (!past || past.length === 0) return '';
+  const labels: Record<string, string> = {
+    executive_summary: 'Executive Summary',
+    financial_performance: 'Financial Performance',
+    margin_analysis: 'Margin Analysis',
+    comparative: 'Year-on-Year Comparison',
+    kpi_dashboard: 'KPI Dashboard',
+    industry_benchmarking: 'Actual vs Industry Averages',
+    swot: 'SWOT Analysis',
+    budget_vs_actual: 'Budget vs Actual',
+    cashflow_forecast: 'Rolling Cashflow Forecast',
+    projections: 'Forecasts & Projections',
+    strategy_advice: 'Performance Strategy Advice',
+    tax_strategy: 'Tax Strategy Planning',
+  };
+  const fmtDate = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); }
+    catch { return iso; }
+  };
+  const blocks = past.map((a, i) => {
+    const sectionsList = (a.selectedSections ?? []).map(id => labels[id] ?? id).join(', ') || '—';
+    return `--- Past Analysis ${i + 1} ---
+Generated on: ${fmtDate(a.createdAt)}
+Period type: ${a.periodType || '—'}
+Period covered: ${a.periodDescription || '—'}
+Sections produced: ${sectionsList}
+Report content (stripped to plain text):
+${a.summaryText || '(empty)'}`;
+  }).join('\n\n');
+  return `**Reference: Prior Performance Analyses for the Same Client**
+
+The following ${past.length} past performance ${past.length === 1 ? 'analysis is' : 'analyses are'} provided as background context. Use ${past.length === 1 ? 'it' : 'them'} to:
+- Maintain narrative continuity (do not repeat the same observations verbatim — build on what was previously said).
+- Reference whether prior recommendations have likely been actioned, based on the new figures.
+- Note material trend changes vs prior commentary (improving, stable, deteriorating).
+- Avoid contradicting earlier findings without justification — if a previous concern is now resolved, call that out as progress.
+
+Do NOT copy past content into the new report. The new report must analyse the documents currently uploaded; the past content is reference only.
+
+${blocks}
+
+`;
 }

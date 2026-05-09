@@ -4,7 +4,7 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 import { buildRiskAssessmentPrompt } from '@/prompts/risk-assessment';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { logAiUsage, saveOutput } from '@/lib/driveUpload';
+import { logAiUsage } from '@/lib/driveUpload';
 
 const RequestSchema = z.object({
   raUsersName: z.string().default(''),
@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
 
     if (userCtx) {
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'risk_assessment', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'risk_assessment' });
+      // No auto-save to outputs — saving happens via /api/outputs/risk-assessment
+      // when the user clicks Save in SaveReportModal (onAfterSave).
     }
 
     return NextResponse.json(JSON.parse(jsonText));

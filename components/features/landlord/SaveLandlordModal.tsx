@@ -150,6 +150,27 @@ export default function SaveLandlordModal({
       filename: `landlord_analysis_${dateStr}.xlsx`,
       driveLinks,
     });
+
+    // Persist to outputs history (fire-and-forget — never block download on this)
+    const sourceFilenames = Array.from(new Set(documentFiles.map(f => f.name)));
+    fetch('/api/outputs/landlord', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: client?.id ?? null,
+        clientName: client?.name ?? initialClientName ?? null,
+        clientCode: clientCode.trim() || null,
+        income,
+        expenses,
+        adjustments,
+        flaggedIncome,
+        flaggedExpenses,
+        dateFrom,
+        dateTo,
+        sourceFilenames,
+      }),
+    }).catch(err => console.error('[SaveLandlordModal] history save failed:', err));
+
     setStatus('done');
   };
 

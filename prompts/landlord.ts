@@ -1,4 +1,36 @@
-export function buildLandlordPrompt(): string {
+export interface LandlordPastContext {
+  pastIncome: Array<{ Date: string; PropertyAddress: string; Description: string; Amount: number }>;
+  pastExpenses: Array<{ DueDate: string; Description: string; Category: string; Supplier: string; PropertyAddress: string; Amount: number; CapitalExpense: boolean; TenantPayable: boolean }>;
+}
+
+function buildPastContextSection(ctx: LandlordPastContext | null | undefined): string {
+  if (!ctx) return '';
+  const incCount = ctx.pastIncome?.length ?? 0;
+  const expCount = ctx.pastExpenses?.length ?? 0;
+  if (incCount === 0 && expCount === 0) return '';
+
+  return `
+
+**Reference: Prior Analyses for the Same Client**
+
+Below are past income and expense entries that this client's previous analyses produced. Use them — and only them — as a hint for:
+- Choosing the SAME canonical PropertyAddress when an address you extract obviously refers to the same property the past entries used (e.g. partial-vs-full match).
+- Reusing the SAME Supplier name when the supplier on the current document is clearly the same entity (avoid "Brit Gas" vs "British Gas Plc" splits).
+- Picking the SAME Category for recurring expenses from the same supplier or for the same kind of work.
+- Reusing the same TenantPayable / CapitalExpense classification for like-for-like items unless the new document plainly says otherwise.
+- Detecting probable duplicates: if the current document matches a past income/expense by date + amount + property/supplier, flag it with reason "Possible duplicate of past analysis".
+
+Do NOT copy past entries into your output. Only extract from the documents you are given. Past entries are reference, not source material.
+
+Past income (${incCount} entries):
+${JSON.stringify(ctx.pastIncome ?? []).slice(0, 12000)}
+
+Past expenses (${expCount} entries):
+${JSON.stringify(ctx.pastExpenses ?? []).slice(0, 18000)}
+`;
+}
+
+export function buildLandlordPrompt(pastContext?: LandlordPastContext | null): string {
   const categories = [
     "Allowable loan interest and other financial costs",
     "Car, van and other travel expenses",
@@ -40,7 +72,7 @@ Your goal is to extract both INCOME and EXPENSE transactions and flag anything i
 - If a document is clearly not property-related (e.g., a personal shopping receipt), you MUST flag it.
 - When flagging an entry, you MUST still attempt to extract and include the 'date', 'supplier', 'amount', 'description', and 'PropertyAddress' (if available, otherwise "No Address") in the flagged entry object.
 
-Return a single JSON object with three keys: 'income', 'expenses', and 'flaggedEntries'.`;
+Return a single JSON object with three keys: 'income', 'expenses', and 'flaggedEntries'.${buildPastContextSection(pastContext)}`;
 }
 
 export function buildAddressGroupingPrompt(addresses: string[]): string {

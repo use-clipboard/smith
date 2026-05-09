@@ -4,15 +4,29 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 import { buildLandlordPrompt, buildAddressGroupingPrompt } from '@/prompts/landlord';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
+import type { LandlordPastContext } from '@/prompts/landlord';
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
+
+const PastIncomeSchema = z.object({
+  Date: z.string(), PropertyAddress: z.string(), Description: z.string(), Amount: z.number(),
+});
+const PastExpenseSchema = z.object({
+  DueDate: z.string(), Description: z.string(), Category: z.string(), Supplier: z.string(),
+  PropertyAddress: z.string(), Amount: z.number(), CapitalExpense: z.boolean(), TenantPayable: z.boolean(),
+});
+const PastContextSchema = z.object({
+  pastIncome: z.array(PastIncomeSchema).default([]),
+  pastExpenses: z.array(PastExpenseSchema).default([]),
+}).optional().nullable();
 
 const RequestSchema = z.object({
   files: z.array(FileSchema),
   clientId: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
+  pastContext: PastContextSchema,
 });
 
 /**
@@ -66,7 +80,7 @@ export async function POST(req: NextRequest) {
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive } = parsed.data;
+    const { files, clientId, clientCode, saveToDrive, pastContext } = parsed.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -74,7 +88,7 @@ export async function POST(req: NextRequest) {
     if (!isModuleActive('landlord')) return moduleNotActive('landlord');
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
-    const prompt = buildLandlordPrompt();
+    const prompt = buildLandlordPrompt(pastContext as LandlordPastContext | null | undefined);
 
     const fileContent = files.map(f => {
       if (f.mimeType === 'application/pdf') {
@@ -140,7 +154,8 @@ export async function POST(req: NextRequest) {
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'landlord_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'landlord_analysis', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'landlord_analysis' });
+      // No auto-save to outputs — saving now happens via /api/outputs/landlord
+      // when the user clicks Save Analysis in SaveLandlordModal.
     }
 
     return NextResponse.json(result);

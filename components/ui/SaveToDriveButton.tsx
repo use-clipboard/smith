@@ -9,9 +9,13 @@ interface SaveToDriveButtonProps {
   feature: string;
   clientId?: string | null;
   initialClientCode?: string;
+  /** Optional side-effect fired after a successful upload (or after the user
+   *  declines the upload but submits the modal). Used to persist a history
+   *  record alongside the Drive save. */
+  onAfterSave?: () => void;
 }
 
-export default function SaveToDriveButton({ files, feature, clientId, initialClientCode = '' }: SaveToDriveButtonProps) {
+export default function SaveToDriveButton({ files, feature, clientId, initialClientCode = '', onAfterSave }: SaveToDriveButtonProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -25,11 +29,12 @@ export default function SaveToDriveButton({ files, feature, clientId, initialCli
       const res = await fetch('/api/documents/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: encodedFiles, clientId: clientId ?? null, clientCode, feature }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Upload failed'); }
       setStatus('saved');
+      try { onAfterSave?.(); } catch {/* swallow */}
     } catch (err) {
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : 'Upload failed');
     }
-  }, [files, clientId, feature]);
+  }, [files, clientId, feature, onAfterSave]);
 
   if (status === 'saved') {
     return (

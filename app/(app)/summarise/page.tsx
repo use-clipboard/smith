@@ -6,10 +6,12 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import ScanResultsView from '@/components/ui/ScanResultsView';
 import SaveSummariseModal from '@/components/features/summarise/SaveSummariseModal';
+import SummariseHistory, { type SummariseSeed } from '@/components/features/summarise/SummariseHistory';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
+import Tooltip from '@/components/ui/Tooltip';
 import { consumePendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
-import { FileText, Download, Layers, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Download, Layers, ChevronDown, ChevronRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { OutOfRangeDocument, DocumentScanResult } from '@/types';
 
@@ -46,7 +48,44 @@ function fmt(n: number) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function SummarisePage() {
+  const [view, setView] = useState<'history' | 'tool'>('history');
+  const [seed, setSeed] = useState<SummariseSeed | null>(null);
+  const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
+
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
+      .catch(() => {/* ignore */});
+  }, []);
+
+  return view === 'history' ? (
+    <SummariseHistory
+      currentUserId={me.userId}
+      isAdmin={me.userRole === 'admin'}
+      onNew={() => { setSeed(null); setView('tool'); }}
+      onOpen={s => { setSeed(s); setView('tool'); }}
+    />
+  ) : (
+    <SummariseTool seed={seed} onBack={() => { setSeed(null); setView('history'); }} />
+  );
+}
+
+function BackToHistory({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: () => void }) {
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/summarise', appState);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +112,57 @@ export default function SummarisePage() {
     if (groupByOpen) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [groupByOpen]);
+
+  // ── Auto client-context: pulls past Summarise runs for this client and
+  // feeds them to the AI for entity/category consistency.
+  type PastDoc = { detectedDate: string; entityName: string; detailedCategory: string; totalGrossAmount: number };
+  const [pastDocs, setPastDocs]              = useState<PastDoc[]>([]);
+  const [pastCtxAnalyses, setPastCtxAnalyses]= useState(0);
+  const [pastCtxLoading, setPastCtxLoading]  = useState(false);
+  const [usePastContext, setUsePastContext]  = useState(true);
+
+  useEffect(() => {
+    if (!selectedClient?.id) {
+      setPastDocs([]); setPastCtxAnalyses(0);
+      return;
+    }
+    let cancelled = false;
+    setPastCtxLoading(true);
+    fetch(`/api/summarise/client-context?clientId=${selectedClient.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d) return;
+        setPastDocs(d.pastDocuments ?? []);
+        setPastCtxAnalyses(d.analysisCount ?? 0);
+      })
+      .catch(() => {/* silent */})
+      .finally(() => { if (!cancelled) setPastCtxLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedClient?.id]);
+
+  // ── Seed loader: when opened from history dashboard, hydrate the success view
+  const seedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!seed || seedLoadedRef.current) return;
+    seedLoadedRef.current = true;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+      setClientName(seed.client.name);
+      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
+    }
+    setResults(seed.documents ?? []);
+    setGroupBy(seed.groupBy ?? 'none');
+    setDateFrom(seed.dateFrom ?? '');
+    setDateTo(seed.dateTo ?? '');
+    setAppState('success');
+  }, [seed]);
 
   // ── Quick Launch: pre-fill client from client detail page ──────────────────
   useEffect(() => {
@@ -106,6 +196,7 @@ export default function SummarisePage() {
     clientId: string | null,
   ): Promise<DocumentScanResult[]> => {
     const docResults: DocumentScanResult[] = [];
+    const effectivePastDocs = (usePastContext && pastDocs.length > 0) ? pastDocs : null;
 
     for (let i = 0; i < filesToScan.length; i++) {
       const file = filesToScan[i];
@@ -119,6 +210,7 @@ export default function SummarisePage() {
           body: JSON.stringify({
             files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
             clientId,
+            pastDocuments: effectivePastDocs,
           }),
         });
 
@@ -160,7 +252,7 @@ export default function SummarisePage() {
     }
 
     return docResults;
-  }, []);
+  }, [usePastContext, pastDocs]);
 
   const applyAndProceed = useCallback((allScanResults: DocumentScanResult[]) => {
     const docs = allScanResults
@@ -250,12 +342,14 @@ export default function SummarisePage() {
 
   if (appState === 'error') return (
     <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569">
+      <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
 
   if (appState === 'scan_results') return (
     <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569">
+      <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
         fileRefs={fileRefs.current}
@@ -279,8 +373,40 @@ export default function SummarisePage() {
 
   return (
     <ToolLayout title="Summarise Documents" description="Summarise out-of-date-range documents for file note purposes." icon={FileText} iconColor="#475569">
+      <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
+          {/* Auto-context pill — visible when this client has past summaries */}
+          {selectedClient && (pastCtxLoading || pastDocs.length > 0) && (
+            <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+              usePastContext
+                ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+                : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+            }`}>
+              <Sparkles size={13} className="shrink-0" />
+              <div className="flex-1 leading-snug">
+                {pastCtxLoading ? (
+                  <span>Looking for past summaries for this client…</span>
+                ) : usePastContext ? (
+                  <>
+                    Using <span className="font-semibold">{pastDocs.length}</span> past document entries from
+                    {' '}<span className="font-semibold">{pastCtxAnalyses}</span> previous {pastCtxAnalyses === 1 ? 'summary' : 'summaries'} to keep entity names and categories consistent.
+                  </>
+                ) : (
+                  <>Past-summary learning is off — entity / category consistency may be lower.</>
+                )}
+              </div>
+              <Tooltip label={usePastContext ? 'Turn off learning from past summaries' : 'Turn learning back on'}>
+                <button
+                  onClick={() => setUsePastContext(v => !v)}
+                  aria-label="Toggle past-summary learning"
+                  className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${usePastContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${usePastContext ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              </Tooltip>
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div className="glass-solid rounded-xl p-5 space-y-4">
               <div>
@@ -388,6 +514,8 @@ export default function SummarisePage() {
             documentFiles={documentFiles}
             initialClient={selectedClient}
             groupBy={groupBy}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
             onClose={() => setSaveModalOpen(false)}
           />
 

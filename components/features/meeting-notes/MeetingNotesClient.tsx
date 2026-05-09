@@ -130,7 +130,32 @@ function TabPill({ label, icon, active, onClick }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function MeetingNotesClient() {
+// History-dashboard seed: lets the page wrapper hand a saved row back to the
+// tool so the user can edit & re-save without re-recording / re-uploading.
+export interface MeetingNotesSeed {
+  id: string;
+  client: { id: string; name: string; client_ref: string | null; vat_number?: string | null; business_type?: string | null } | null;
+  meetingTitle: string;
+  meetingDate: string;
+  meetingTime: string;
+  durationSeconds: number | null;
+  location: string;
+  meetingOrigin: 'recorded' | 'virtual' | 'in_person' | 'phone' | string;
+  attendees: string[];
+  transcript: string;
+  summary: string;
+  keyPoints: string[];
+  actionItems: ActionItem[];
+  decisions: string[];
+  formalMinutes: string;
+  nextMeeting: string;
+}
+
+interface MeetingNotesClientProps {
+  seed?: MeetingNotesSeed | null;
+}
+
+export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {}) {
   const { isModuleActive } = useModules();
   const tasksModuleActive = isModuleActive('tasks');
 
@@ -228,6 +253,48 @@ export default function MeetingNotesClient() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunks  = useRef<Blob[]>([]);
   const screenStreamRef  = useRef<MediaStream | null>(null);
+
+  // ── Seed loader: when opened from the history dashboard, hydrate the review
+  // screen with the saved meeting so the user can edit & re-save. Runs once.
+  useEffect(() => {
+    if (!seed) return;
+    if (seed.client) {
+      setSelectedClient({
+        id: seed.client.id,
+        name: seed.client.name,
+        client_ref: seed.client.client_ref,
+        business_type: seed.client.business_type ?? null,
+        vat_number: seed.client.vat_number ?? null,
+        status: 'active',
+      });
+    }
+    setMeetingTitle(seed.meetingTitle ?? '');
+    setMeetingDate(seed.meetingDate ?? '');
+    setMeetingTime(seed.meetingTime ?? '');
+    setLocation(seed.location ?? '');
+    setAttendees(seed.attendees ?? []);
+    if (seed.meetingOrigin) setMeetingOrigin(seed.meetingOrigin as MeetingOrigin);
+    if (typeof seed.durationSeconds === 'number') setDuration(seed.durationSeconds);
+    setTranscript(seed.transcript ?? '');
+    // Hydrate the editable review fields and the canonical notes object
+    setEditSummary(seed.summary ?? '');
+    setEditKeyPoints(seed.keyPoints ?? []);
+    setEditActions(seed.actionItems ?? []);
+    setEditDecisions(seed.decisions ?? []);
+    setEditMinutes(seed.formalMinutes ?? '');
+    setEditNext(seed.nextMeeting ?? '');
+    setNotes({
+      summary: seed.summary ?? '',
+      keyPoints: seed.keyPoints ?? [],
+      actionItems: seed.actionItems ?? [],
+      decisions: seed.decisions ?? [],
+      formalMinutes: seed.formalMinutes ?? '',
+      nextMeeting: seed.nextMeeting ?? '',
+    });
+    setPhase('review');
+    // run only on first mount with seed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Pending client (Quick Launch) ──────────────────────────────────────────
 
@@ -695,6 +762,32 @@ export default function MeetingNotesClient() {
           }),
         );
       }
+
+      // 4. Persist to outputs history (fire-and-forget — must not block the user)
+      tasks.push(
+        fetch('/api/outputs/meeting-notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientId: selectedClient?.id ?? null,
+            clientName: selectedClient?.name ?? null,
+            meetingTitle: meetingTitle || 'Untitled Meeting',
+            meetingDate,
+            meetingTime,
+            durationSeconds: duration || null,
+            location: location || '',
+            meetingOrigin,
+            attendees,
+            summary: editSummary,
+            keyPoints: editKeyPoints,
+            actionItems: editActions,
+            decisions: editDecisions,
+            formalMinutes: editMinutes,
+            nextMeeting: editNext,
+            transcript: transcript || '',
+          }),
+        }).catch(err => console.error('[MeetingNotes] history save failed:', err))
+      );
 
       await Promise.all(tasks);
       setPhase('saved');

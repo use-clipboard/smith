@@ -1,18 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
-import { buildSummarisePrompt } from '@/prompts/summarise';
+import { buildSummarisePrompt, type SummarisePastDoc } from '@/prompts/summarise';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { uploadDocumentsToDrive, logAiUsage, saveOutput, saveDocumentsToVault } from '@/lib/driveUpload';
+import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
+
+const PastDocSchema = z.object({
+  detectedDate: z.string(),
+  entityName: z.string(),
+  detailedCategory: z.string(),
+  totalGrossAmount: z.number(),
+});
 
 const RequestSchema = z.object({
   files: z.array(FileSchema),
   clientId: z.string().nullable().optional(),
   clientCode: z.string().optional(),
   saveToDrive: z.boolean().optional(),
+  pastDocuments: z.array(PastDocSchema).optional().nullable(),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,7 +29,7 @@ export async function POST(req: NextRequest) {
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive } = parsed.data;
+    const { files, clientId, clientCode, saveToDrive, pastDocuments } = parsed.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -29,7 +37,7 @@ export async function POST(req: NextRequest) {
     if (!isModuleActive('summarise')) return moduleNotActive('summarise');
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
-    const prompt = buildSummarisePrompt();
+    const prompt = buildSummarisePrompt((pastDocuments ?? null) as SummarisePastDoc[] | null);
 
     const fileContent = files.map(f => {
       if (f.mimeType === 'application/pdf') {
@@ -58,7 +66,8 @@ export async function POST(req: NextRequest) {
         void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'summarise', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'summarise', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-      void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'summarise' });
+      // No auto-save to outputs — saving happens via /api/outputs/summarise
+      // when the user clicks Save in SaveSummariseModal.
     }
 
     return NextResponse.json(JSON.parse(jsonText));
