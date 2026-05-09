@@ -137,15 +137,15 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
               {isOpen && (
                 <div className="border-t border-gray-100">
                   {viewMode === 'list' ? (
-                    <table className="w-full text-left">
+                    <table className="w-full text-left table-fixed">
                       <thead className="sticky top-[94px] z-10">
                         <tr className="bg-gray-50 border-b border-gray-100">
                           <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                          <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                          <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
-                          <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Assignees</th>
+                          <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-48" />
+                          <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-32" />
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">Progress</th>
+                          <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-28" />
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Assignees</th>
                         </tr>
                       </thead>
                       <tbody>

@@ -132,16 +132,16 @@ export default function MyTasksView({ tasks, currentUserId, search, onSearchChan
         </div>
       ) : viewMode === 'list' ? (
         /* ── List view ── */
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <table className="w-full text-left">
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-left table-fixed">
             <thead className="sticky top-[50px] z-10">
               <tr className="border-b border-gray-100 bg-gray-50">
                 <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="rounded-tl-xl" />
-                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
-                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tr-xl">Assignees</th>
+                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-48" />
+                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-32" />
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">Progress</th>
+                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-28" />
+                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tr-xl w-32">Assignees</th>
               </tr>
             </thead>
             <tbody>

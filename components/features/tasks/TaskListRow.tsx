@@ -268,15 +268,17 @@ export default function TaskListRow({
               </button>
             )}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center gap-1.5 min-w-0">
                 {isRecurring && (
                   <Tooltip label={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} className="flex-shrink-0">
                     <RefreshCw className="h-3 w-3 text-indigo-400" />
                   </Tooltip>
                 )}
-                <button onClick={onClick} className="text-sm font-medium text-gray-900 truncate text-left hover:text-indigo-700 transition-colors">
-                  {task.title}
-                </button>
+                <Tooltip label={task.title} className="min-w-0 flex-1">
+                  <button onClick={onClick} className="text-sm font-medium text-gray-900 truncate text-left hover:text-indigo-700 transition-colors w-full">
+                    {task.title}
+                  </button>
+                </Tooltip>
               </div>
               {/* Next repeat date — visible to all users */}
               {isRecurring && nextDueStr && (
