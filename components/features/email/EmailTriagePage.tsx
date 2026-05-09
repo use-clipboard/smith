@@ -66,21 +66,51 @@ export default function EmailTriagePage() {
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
 
   // Track which inbox threads have been forwarded (persisted locally)
-  const [forwardedThreadIds, setForwardedThreadIds] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
+  const [forwardedThreadIds, setForwardedThreadIds] = useState<Map<string, string>>(() => {
+    if (typeof window === 'undefined') return new Map();
     try {
       const stored = localStorage.getItem('email-forwarded-ids');
-      return stored ? new Set<string>(JSON.parse(stored) as string[]) : new Set<string>();
-    } catch { return new Set<string>(); }
+      if (!stored) return new Map();
+      const parsed = JSON.parse(stored) as unknown;
+      if (Array.isArray(parsed)) {
+        return new Map(
+          parsed.map(entry =>
+            typeof entry === 'string'
+              ? [entry, ''] as const
+              : Array.isArray(entry)
+                ? [entry[0] as string, (entry[1] as string) ?? ''] as const
+                : ['', ''] as const,
+          ).filter(([id]) => id),
+        );
+      }
+      return new Map();
+    } catch { return new Map(); }
   });
 
   // Track which inbox threads have been replied to (persisted locally)
-  const [repliedThreadIds, setRepliedThreadIds] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set();
+  // Persisted as [id, isoDate][] tuples so we can show "Replied · 9 May" right
+  // after sending — without waiting for the next inbox poll to fetch the SENT
+  // message back from Gmail. Backwards-compatible with the old Set<string>
+  // format (just an array of IDs without dates).
+  const [repliedThreadIds, setRepliedThreadIds] = useState<Map<string, string>>(() => {
+    if (typeof window === 'undefined') return new Map();
     try {
       const stored = localStorage.getItem('email-replied-ids');
-      return stored ? new Set<string>(JSON.parse(stored) as string[]) : new Set<string>();
-    } catch { return new Set<string>(); }
+      if (!stored) return new Map();
+      const parsed = JSON.parse(stored) as unknown;
+      if (Array.isArray(parsed)) {
+        return new Map(
+          parsed.map(entry =>
+            typeof entry === 'string'
+              ? [entry, ''] as const           // legacy format — no date
+              : Array.isArray(entry)            // new format — [id, date]
+                ? [entry[0] as string, (entry[1] as string) ?? ''] as const
+                : ['', ''] as const,
+          ).filter(([id]) => id),
+        );
+      }
+      return new Map();
+    } catch { return new Map(); }
   });
 
   // Email rules
@@ -459,13 +489,15 @@ export default function EmailTriagePage() {
       const res = await fetch(`/api/email/thread/${detailId}`);
       const data = await res.json() as ThreadDetail;
       setThreadDetail(data);
-      // Detect replied / forwarded from the full thread messages
+      // Detect replied / forwarded from the full thread messages.
+      // Gmail uses "Fwd:" prefix; Outlook uses "FW:" — match both.
+      const FORWARD_PREFIX = /^(fwd|fw):/i;
       const sentMsgs = data.messages.filter((m: { labelIds?: string[] }) => m.labelIds?.includes('SENT'));
       const hasInbound = data.messages.some((m: { labelIds?: string[] }) => !m.labelIds?.includes('SENT'));
       // isReplied: there are received messages AND at least one sent message that is not a forward
       const isReplied = hasInbound && sentMsgs.length > 0
-        && sentMsgs.some((m: { subject?: string }) => !/^fwd:/i.test(m.subject ?? ''));
-      const isForwarded = sentMsgs.some((m: { subject?: string }) => /^fwd:/i.test(m.subject ?? ''))
+        && sentMsgs.some((m: { subject?: string }) => !FORWARD_PREFIX.test(m.subject ?? ''));
+      const isForwarded = sentMsgs.some((m: { subject?: string }) => FORWARD_PREFIX.test(m.subject ?? ''))
         || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id);
       setThreadMeta(prev => ({
         ...prev,
@@ -478,20 +510,36 @@ export default function EmailTriagePage() {
       }));
       // Persist detected reply/forward status to localStorage so it survives page refreshes
       const realId = thread.gmailThreadId ?? thread.id;
+      // Pick the most recent matching SENT message's date so the chip can read
+      // a real timestamp (vs the stale "" placeholder).
+      function pickLatest(msgs: { subject?: string; date?: string }[], wantForward: boolean): string {
+        const matches = msgs.filter(m =>
+          wantForward
+            ?  FORWARD_PREFIX.test(m.subject ?? '')
+            : !FORWARD_PREFIX.test(m.subject ?? ''),
+        );
+        if (matches.length === 0) return '';
+        const latest = matches.reduce((acc, m) =>
+          (new Date(m.date ?? '').getTime() || 0) > (new Date(acc.date ?? '').getTime() || 0) ? m : acc
+        );
+        return latest.date ?? '';
+      }
       if (isReplied) {
+        const date = pickLatest(sentMsgs, false);
         setRepliedThreadIds(prev => {
-          if (prev.has(realId)) return prev;
-          const next = new Set(prev);
-          next.add(realId);
+          if (prev.get(realId) === date) return prev;
+          const next = new Map(prev);
+          next.set(realId, date);
           try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
       }
       if (isForwarded) {
+        const date = pickLatest(sentMsgs, true);
         setForwardedThreadIds(prev => {
-          if (prev.has(realId)) return prev;
-          const next = new Set(prev);
-          next.add(realId);
+          if (prev.get(realId) === date) return prev;
+          const next = new Map(prev);
+          next.set(realId, date);
           try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
@@ -716,9 +764,10 @@ export default function EmailTriagePage() {
         [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isForwarded: true },
       }));
     }
+    const sentAt = new Date().toISOString();
     setForwardedThreadIds(prev => {
-      const next = new Set(prev);
-      next.add(originalThreadId);
+      const next = new Map(prev);
+      next.set(originalThreadId, sentAt);
       try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
@@ -742,9 +791,10 @@ export default function EmailTriagePage() {
         [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isReplied: true },
       }));
     }
+    const sentAt = new Date().toISOString();
     setRepliedThreadIds(prev => {
-      const next = new Set(prev);
-      next.add(originalThreadId);
+      const next = new Map(prev);
+      next.set(originalThreadId, sentAt);
       try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });

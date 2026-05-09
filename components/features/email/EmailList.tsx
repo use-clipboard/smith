@@ -39,8 +39,9 @@ interface Props {
   loadingMore: boolean;
   pinnedIds?: Set<string>;
   onPin?: (threadId: string, pin: boolean) => void;
-  forwardedThreadIds?: Set<string>;
-  repliedThreadIds?: Set<string>;
+  /** Map of thread ID -> ISO date the user last forwarded/replied. */
+  forwardedThreadIds?: Map<string, string>;
+  repliedThreadIds?: Map<string, string>;
   onBulkDelete?: (ids: string[]) => void;
   onBulkMarkRead?: (ids: string[]) => void;
   /** Controlled: true = only unread emails are fetched server-side */
@@ -350,8 +351,9 @@ export default function EmailList({
         </div>
       )}
 
-      {/* Thread list */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Thread list — small padding on all sides so the active row's drop-shadow
+          has breathing room and isn't clipped at the panel edges (incl. top/bottom). */}
+      <div className="flex-1 overflow-y-auto p-2">
         {error ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4 gap-3">
             <AlertTriangle size={20} className="text-amber-500 shrink-0" />
@@ -403,24 +405,45 @@ export default function EmailList({
               const isReplied = (meta?.isReplied ?? false)
                 || (repliedThreadIds?.has(realThreadId) ?? false)
                 || (hasInboundMsg && sentMessages.some(m => /^re:/i.test(m.subject)));
+              // Match both Gmail-style "Fwd:" and Outlook-style "FW:" forward prefixes.
+              const FORWARD_PREFIX = /^(fwd|fw):/i;
               const isForwarded = (meta?.isForwarded ?? false)
                 || (forwardedThreadIds?.has(realThreadId) ?? false)
-                || sentMessages.some(m => /^fwd:/i.test(m.subject));
+                || sentMessages.some(m => FORWARD_PREFIX.test(m.subject));
+
+              // Find the most recent reply / forward in this thread so we can show "Replied 9 May" etc.
+              // Falls back to undefined when the thread isn't loaded with messages yet (e.g. when
+              // isReplied came from persisted localStorage); in that case we just show the bare chip.
+              function pickLatestSent(predicate: (subject: string) => boolean): string | undefined {
+                const matches = sentMessages.filter(m => predicate(m.subject ?? ''));
+                if (matches.length === 0) return undefined;
+                const latest = matches.reduce((acc, m) =>
+                  (new Date(m.date).getTime() || 0) > (new Date(acc.date).getTime() || 0) ? m : acc
+                );
+                return latest.date || undefined;
+              }
+              // Prefer the date from a real SENT message in the thread; fall back
+              // to the persisted timestamp captured when the user sent through the app
+              // (covers the window before the next inbox poll picks up the reply).
+              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedThreadIds?.get(realThreadId)   || undefined) : undefined;
+              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedThreadIds?.get(realThreadId) || undefined) : undefined;
 
               return (
                 <div
                   key={thread.id}
-                  className={`w-full text-left border-b border-[var(--border)] transition-colors relative group flex items-stretch
+                  className={`w-full text-left border-b border-[var(--border)] transition-all duration-150 relative group flex items-stretch
                     ${isSelected
                       ? 'bg-[var(--accent-light)]'
                       : isActive
-                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-card-solid)]'
+                        // Active row: elevated card look — soft indigo-tinted shadow,
+                        // subtle ring, and z-10 so the shadow isn't clipped by neighbours.
+                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-card-solid)] shadow-[0_4px_16px_rgba(99,102,241,0.25)] ring-1 ring-indigo-300/60 dark:ring-indigo-500/40 z-10'
                         : !thread.isRead
-                          ? 'bg-[var(--accent-light)] hover:bg-[var(--accent-light)]'
+                          ? 'bg-indigo-100 dark:bg-indigo-900/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
                           : 'hover:bg-[var(--bg-nav-hover)]'
                     }`}
                 >
-                  {/* Status edge bars — green on the left edge when allocated to a client, blue on the right edge when task-linked. Stack both when both apply. */}
+                  {/* Status edge bars — green on the left edge when allocated to a client, blue on the right edge when task-linked. Stack both when both apply. The active-row indication is now the lift/glow on the row itself, no left bar. */}
                   {meta?.hasAllocation && (
                     <span
                       aria-hidden
@@ -431,15 +454,6 @@ export default function EmailList({
                     <span
                       aria-hidden
                       className="absolute inset-y-0 right-0 w-1 pointer-events-none bg-blue-500"
-                    />
-                  )}
-                  {/* Active (currently-viewed) indicator — sits on top of the allocation bar
-                      so the active state is unmistakable while still showing the right-edge
-                      task bar untouched. Uses the same light-blue as unread email rows. */}
-                  {isActive && (
-                    <span
-                      aria-hidden
-                      className="absolute inset-y-0 left-0 w-1 pointer-events-none bg-indigo-500"
                     />
                   )}
                   {/* Checkbox column */}
@@ -462,11 +476,6 @@ export default function EmailList({
                     onClick={() => onSelect(thread)}
                     className="flex-1 text-left px-3 py-3 min-w-0"
                   >
-                    {/* Unread indicator dot */}
-                    {!thread.isRead && (
-                      <span className="absolute left-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[var(--accent)]" />
-                    )}
-
                     <div className="flex items-start justify-between gap-2">
                       <span className={`text-sm truncate flex-1 ${!thread.isRead ? 'font-semibold text-[var(--text-primary)]' : 'font-normal text-[var(--text-secondary)]'}`}>
                         {(() => {
@@ -557,12 +566,12 @@ export default function EmailList({
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                         {isReplied && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
-                            <Reply size={9} /> Replied
+                            <Reply size={9} /> Replied{repliedAt && ` · ${formatDate(repliedAt)}`}
                           </span>
                         )}
                         {isForwarded && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
-                            <Forward size={9} /> Forwarded
+                            <Forward size={9} /> Forwarded{forwardedAt && ` · ${formatDate(forwardedAt)}`}
                           </span>
                         )}
                         {meta?.reactions && meta.reactions.length > 0 && (
