@@ -41,6 +41,9 @@ interface HrSettings {
   afternoon_end: string;
   push_to_calendar_default: boolean;
   confidential_recipient_user_id: string | null;
+  bank_holidays_enabled: boolean;
+  bank_holidays_region: 'england-and-wales' | 'scotland' | 'northern-ireland';
+  bank_holidays_last_synced_at: string | null;
 }
 
 type Section = 'departments' | 'team' | 'holiday' | 'confidential';
@@ -95,6 +98,97 @@ export default function HrSettingsTab({ isAdmin }: Props) {
       {section === 'team'         && <TeamSection isAdmin={isAdmin} />}
       {section === 'holiday'      && <HolidayConfigSection isAdmin={isAdmin} />}
       {section === 'confidential' && <ConfidentialChannelSection isAdmin={isAdmin} />}
+    </div>
+  );
+}
+
+// ── Bank holidays card (lives inside the Holiday config section) ──────────
+function BankHolidaysCard({
+  isAdmin, settings, update,
+}: {
+  isAdmin: boolean;
+  settings: HrSettings;
+  update: <K extends keyof HrSettings>(k: K, v: HrSettings[K]) => void;
+}) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ inserted: number; total_holidays: number; users: number } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  async function handleSync() {
+    setSyncing(true); setSyncError(null); setSyncResult(null);
+    try {
+      const res = await fetch('/api/hr/bank-holidays/sync', { method: 'POST' });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Sync failed');
+      setSyncResult(await res.json());
+    } catch (e) { setSyncError(e instanceof Error ? e.message : 'Sync failed'); }
+    finally { setSyncing(false); }
+  }
+
+  const lastSynced = settings.bank_holidays_last_synced_at
+    ? new Date(settings.bank_holidays_last_synced_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  return (
+    <div className="glass-solid rounded-xl p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">UK bank holidays</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-1 flex items-start gap-1.5">
+          <Info size={12} className="shrink-0 mt-0.5" />
+          When enabled, every team member gets approved holiday entries auto-created for upcoming UK bank holidays. New joiners are caught automatically the first time they open HR. Click Sync now to materialise the next 2 years for the whole team straight away.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between p-3 bg-[var(--bg-nav-hover)] rounded-xl border border-[var(--border)]">
+        <span className="text-sm text-[var(--text-primary)]">Treat UK bank holidays as firm holidays</span>
+        <button
+          type="button"
+          disabled={!isAdmin}
+          onClick={() => update('bank_holidays_enabled', !settings.bank_holidays_enabled)}
+          className={`relative inline-flex h-6 w-11 rounded-full transition-colors ${settings.bank_holidays_enabled ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'} disabled:opacity-50`}
+        >
+          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${settings.bank_holidays_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+        </button>
+      </div>
+
+      {settings.bank_holidays_enabled && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Region</label>
+            <select
+              disabled={!isAdmin}
+              value={settings.bank_holidays_region}
+              onChange={e => update('bank_holidays_region', e.target.value as HrSettings['bank_holidays_region'])}
+              className="input-base text-sm w-full sm:w-1/2"
+            >
+              <option value="england-and-wales">England &amp; Wales</option>
+              <option value="scotland">Scotland</option>
+              <option value="northern-ireland">Northern Ireland</option>
+            </select>
+            <p className="text-[11px] text-[var(--text-muted)] mt-1">UK bank holidays differ by region. Source: gov.uk/bank-holidays.json — always current.</p>
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-[var(--border)]">
+            <div className="text-xs text-[var(--text-secondary)]">
+              {lastSynced ? <>Last synced: <strong className="text-[var(--text-primary)]">{lastSynced}</strong></> : <>Not yet synced.</>}
+              {syncResult && (
+                <span className="ml-2 text-emerald-600">
+                  ✓ {syncResult.inserted} row{syncResult.inserted === 1 ? '' : 's'} added ({syncResult.total_holidays} bank holiday{syncResult.total_holidays === 1 ? '' : 's'} × {syncResult.users} user{syncResult.users === 1 ? '' : 's'})
+                </span>
+              )}
+            </div>
+            <button onClick={() => void handleSync()} disabled={!isAdmin || syncing} className="btn-secondary text-xs disabled:opacity-50 inline-flex items-center gap-1.5">
+              {syncing ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Sync now
+            </button>
+          </div>
+
+          {syncError && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-400">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />{syncError}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -546,6 +640,8 @@ function HolidayConfigSection({ isAdmin }: { isAdmin: boolean }) {
           afternoon_start: trimTime(settings.afternoon_start),
           afternoon_end: trimTime(settings.afternoon_end),
           push_to_calendar_default: settings.push_to_calendar_default,
+          bank_holidays_enabled: settings.bank_holidays_enabled,
+          bank_holidays_region: settings.bank_holidays_region,
         }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed');
@@ -627,6 +723,8 @@ function HolidayConfigSection({ isAdmin }: { isAdmin: boolean }) {
           </button>
         </div>
       </div>
+
+      <BankHolidaysCard isAdmin={isAdmin} settings={settings} update={update} />
 
       {error && (
         <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-400">

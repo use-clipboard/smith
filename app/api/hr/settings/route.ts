@@ -14,6 +14,9 @@ const PatchSchema = z.object({
   push_to_calendar_default: z.boolean().optional(),
   // Phase 2b: who receives confidential disclosures routed to "Confidential HR Recipient"
   confidential_recipient_user_id: z.string().uuid().nullable().optional(),
+  // Bank holidays — auto-create UK bank holiday entries for everyone
+  bank_holidays_enabled: z.boolean().optional(),
+  bank_holidays_region: z.enum(['england-and-wales', 'scotland', 'northern-ireland']).optional(),
 });
 
 const DEFAULTS = {

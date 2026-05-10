@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { holidayYearWindow, toIsoDate } from '@/lib/hrHolidays';
+import { ensureBankHolidaysForUser } from '@/lib/hrBankHolidays';
 
 // GET /api/hr/holidays/balance?userId=...
 // Returns the holiday-year balance for one user (defaults to caller).
@@ -26,6 +27,10 @@ export async function GET(req: NextRequest) {
   const isManager = target.manager_id === ctx.userId;
   const isAdmin = ctx.userRole === 'admin';
   if (!isSelf && !isManager && !isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+  // Lazy bank-holiday sync — catches new joiners without an explicit admin sync.
+  // Fire-and-forget; if it fails the balance still returns.
+  void ensureBankHolidaysForUser({ userId, firmId: ctx.firmId }).catch(() => {/* swallow */});
 
   // Firm holiday-year settings
   const { data: settings } = await supabase
