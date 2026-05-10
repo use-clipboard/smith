@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Building2, UsersRound, CalendarClock, Loader2, Plus, Trash2, Edit3, Check, X, AlertTriangle, Info,
+  Building2, UsersRound, CalendarClock, Loader2, Plus, Trash2, Edit3, Check, X, AlertTriangle, Info, ShieldAlert,
 } from 'lucide-react';
 
 interface Props {
@@ -40,9 +40,10 @@ interface HrSettings {
   afternoon_start: string;
   afternoon_end: string;
   push_to_calendar_default: boolean;
+  confidential_recipient_user_id: string | null;
 }
 
-type Section = 'departments' | 'team' | 'holiday';
+type Section = 'departments' | 'team' | 'holiday' | 'confidential';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -73,6 +74,7 @@ export default function HrSettingsTab({ isAdmin }: Props) {
           { id: 'departments' as Section, label: 'Departments', icon: Building2 },
           { id: 'team' as Section,        label: 'Team & Roles', icon: UsersRound },
           { id: 'holiday' as Section,     label: 'Holiday config', icon: CalendarClock },
+          { id: 'confidential' as Section, label: 'Confidential channel', icon: ShieldAlert },
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -89,9 +91,102 @@ export default function HrSettingsTab({ isAdmin }: Props) {
         ))}
       </div>
 
-      {section === 'departments' && <DepartmentsSection isAdmin={isAdmin} />}
-      {section === 'team'        && <TeamSection isAdmin={isAdmin} />}
-      {section === 'holiday'     && <HolidayConfigSection isAdmin={isAdmin} />}
+      {section === 'departments'  && <DepartmentsSection isAdmin={isAdmin} />}
+      {section === 'team'         && <TeamSection isAdmin={isAdmin} />}
+      {section === 'holiday'      && <HolidayConfigSection isAdmin={isAdmin} />}
+      {section === 'confidential' && <ConfidentialChannelSection isAdmin={isAdmin} />}
+    </div>
+  );
+}
+
+// ── Confidential channel ──────────────────────────────────────────────────
+function ConfidentialChannelSection({ isAdmin }: { isAdmin: boolean }) {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [recipientId, setRecipientId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [tRes, sRes] = await Promise.all([
+        fetch('/api/hr/team'),
+        fetch('/api/hr/settings'),
+      ]);
+      if (tRes.ok) setMembers((await tRes.json()).members ?? []);
+      if (sRes.ok) {
+        const s = (await sRes.json()).settings;
+        setRecipientId(s?.confidential_recipient_user_id ?? null);
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load'); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function handleSave() {
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch('/api/hr/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confidential_recipient_user_id: recipientId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Save failed'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="glass-solid rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Confidential HR Recipient</h3>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Designate the person who receives confidential disclosures when a team member chooses the &ldquo;Confidential HR Recipient&rdquo; option (typically the senior partner or HR lead). This is the safe alternative when the issue might involve a manager.</p>
+        </div>
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+          <Info size={13} className="shrink-0 mt-0.5" />
+          <div>
+            Only the designated recipient sees disclosures sent to them. Firm admins do <strong>not</strong> get an override on confidential disclosures — that&apos;s deliberate, so the channel can be trusted even if the issue involves senior management. Pick someone who staff would feel safe approaching.
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-sm text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin inline mr-1.5" />Loading…</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Recipient</label>
+              <select disabled={!isAdmin} value={recipientId ?? ''} onChange={e => setRecipientId(e.target.value || null)} className="input-base text-sm w-full">
+                <option value="">— Not set —</option>
+                {members.map(m => <option key={m.id} value={m.id}>{m.full_name ?? m.email}{m.role === 'admin' ? ' (admin)' : ''}</option>)}
+              </select>
+              {!recipientId && (
+                <p className="text-[11px] text-amber-700 mt-1">Until set, the &ldquo;Confidential HR Recipient&rdquo; option won&apos;t be available to staff.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 text-xs text-red-700 dark:text-red-400">
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" />{error}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="flex items-center justify-end gap-3">
+            {saved && <span className="text-xs text-emerald-600 inline-flex items-center gap-1"><Check size={13} />Saved</span>}
+            <button onClick={() => void handleSave()} disabled={saving} className="btn-primary disabled:opacity-50">
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              Save
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

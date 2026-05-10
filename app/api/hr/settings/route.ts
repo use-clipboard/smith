@@ -12,6 +12,8 @@ const PatchSchema = z.object({
   afternoon_start: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
   afternoon_end: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
   push_to_calendar_default: z.boolean().optional(),
+  // Phase 2b: who receives confidential disclosures routed to "Confidential HR Recipient"
+  confidential_recipient_user_id: z.string().uuid().nullable().optional(),
 });
 
 const DEFAULTS = {
