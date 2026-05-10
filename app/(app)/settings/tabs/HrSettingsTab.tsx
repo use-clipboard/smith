@@ -117,6 +117,18 @@ function BankHolidaysCard({
   async function handleSync() {
     setSyncing(true); setSyncError(null); setSyncResult(null);
     try {
+      // The toggle + region live in client state until "Save settings" is clicked.
+      // Persist them first so the sync endpoint reads the right values.
+      const saveRes = await fetch('/api/hr/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bank_holidays_enabled: settings.bank_holidays_enabled,
+          bank_holidays_region: settings.bank_holidays_region,
+        }),
+      });
+      if (!saveRes.ok) throw new Error((await saveRes.json()).error ?? 'Could not save bank-holiday settings before sync');
+
       const res = await fetch('/api/hr/bank-holidays/sync', { method: 'POST' });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Sync failed');
       setSyncResult(await res.json());
