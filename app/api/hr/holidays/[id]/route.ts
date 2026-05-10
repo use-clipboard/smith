@@ -182,8 +182,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
-  if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 });
   const supabase = createClient();
+  // Manager-of-target or admin can delete. Look up the row first to authorise.
+  const { data: row } = await supabase
+    .from('hr_holiday_requests')
+    .select('id, firm_id, manager_id')
+    .eq('id', params.id)
+    .maybeSingle();
+  if (!row || row.firm_id !== ctx.firmId) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const isManager = row.manager_id === ctx.userId;
+  const isAdmin = ctx.userRole === 'admin';
+  if (!isManager && !isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const { error } = await supabase.from('hr_holiday_requests').delete().eq('id', params.id).eq('firm_id', ctx.firmId);
   if (error) return NextResponse.json({ error: 'Delete failed' }, { status: 500 });
   return NextResponse.json({ ok: true });

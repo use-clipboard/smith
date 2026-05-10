@@ -6,6 +6,7 @@
  * user × per bank holiday in the configured horizon. Idempotent.
  */
 import { createServiceClient } from '@/lib/supabase-server';
+import { addCalendarEventForUser } from '@/lib/hrCalendarPush';
 
 interface GovUkEvent {
   title: string;
@@ -56,7 +57,7 @@ export async function syncBankHolidaysForFirm({
   // Postgres error so callers can tell "migration not run" from "toggle off".
   const { data: settings, error: settingsErr } = await service
     .from('firm_hr_settings')
-    .select('bank_holidays_enabled, bank_holidays_region')
+    .select('bank_holidays_enabled, bank_holidays_region, push_to_calendar_default')
     .eq('firm_id', firmId)
     .maybeSingle();
   if (settingsErr) {
@@ -140,20 +141,63 @@ export async function syncBankHolidaysForFirm({
     return { inserted: 0, total_holidays: upcoming.length, users: userIds.length };
   }
 
-  // Insert in batches of 500 to avoid Postgres row-limit hiccups
+  // Insert in batches of 500 to avoid Postgres row-limit hiccups. Use .select()
+  // so we get back the inserted rows for the Google Calendar push step.
   let inserted = 0;
+  const insertedRows: Array<{ id: string; user_id: string; start_date: string; end_date: string; bank_holiday_title: string | null }> = [];
   for (let i = 0; i < rows.length; i += 500) {
     const batch = rows.slice(i, i + 500);
-    const { error, count } = await service.from('hr_holiday_requests').insert(batch, { count: 'exact' });
+    const { data, error, count } = await service
+      .from('hr_holiday_requests')
+      .insert(batch, { count: 'exact' })
+      .select('id, user_id, start_date, end_date, bank_holiday_title');
     if (error) {
       console.error('[syncBankHolidaysForFirm] batch insert failed:', error);
       throw error;
     }
     inserted += count ?? batch.length;
+    if (data) insertedRows.push(...data);
+  }
+
+  // Push to Google Calendar (best-effort, per user). Only when the firm has the
+  // push toggle on. addCalendarEventForUser returns null when the user hasn't
+  // connected their Google Calendar — that's fine, we just skip.
+  if (settings.push_to_calendar_default && insertedRows.length > 0) {
+    await pushBankHolidayRowsToCalendar(firmId, insertedRows);
   }
 
   await service.from('firm_hr_settings').update({ bank_holidays_last_synced_at: new Date().toISOString() }).eq('firm_id', firmId);
   return { inserted, total_holidays: upcoming.length, users: userIds.length };
+}
+
+/** Best-effort Google Calendar push for newly-inserted bank-holiday rows. */
+async function pushBankHolidayRowsToCalendar(
+  firmId: string,
+  rows: Array<{ id: string; user_id: string; start_date: string; end_date: string; bank_holiday_title: string | null }>,
+) {
+  const service = createServiceClient();
+  for (const r of rows) {
+    try {
+      const eventId = await addCalendarEventForUser({
+        userId: r.user_id,
+        firmId,
+        startDate: r.start_date,
+        startHalf: 'full',
+        endDate: r.end_date,
+        endHalf: 'full',
+        summary: r.bank_holiday_title ?? 'Bank holiday',
+      });
+      if (eventId) {
+        await service
+          .from('hr_holiday_requests')
+          .update({ pushed_to_calendar: true, google_calendar_event_id: eventId })
+          .eq('id', r.id);
+      }
+    } catch (e) {
+      // Don't fail the whole sync for one user's calendar error
+      console.error('[bank holidays] calendar push failed for', r.user_id, e);
+    }
+  }
 }
 
 /**
@@ -173,7 +217,7 @@ export async function ensureBankHolidaysForUser({
   const service = createServiceClient();
   const { data: settings } = await service
     .from('firm_hr_settings')
-    .select('bank_holidays_enabled, bank_holidays_region')
+    .select('bank_holidays_enabled, bank_holidays_region, push_to_calendar_default')
     .eq('firm_id', firmId)
     .maybeSingle();
   if (!settings?.bank_holidays_enabled) return 0;
@@ -218,10 +262,16 @@ export async function ensureBankHolidaysForUser({
     }));
 
   if (rows.length === 0) return 0;
-  const { error, count } = await service.from('hr_holiday_requests').insert(rows, { count: 'exact' });
+  const { data, error, count } = await service
+    .from('hr_holiday_requests')
+    .insert(rows, { count: 'exact' })
+    .select('id, user_id, start_date, end_date, bank_holiday_title');
   if (error) {
     console.error('[ensureBankHolidaysForUser] insert failed:', error);
     return 0;
+  }
+  if (settings.push_to_calendar_default && data && data.length > 0) {
+    await pushBankHolidayRowsToCalendar(firmId, data);
   }
   return count ?? rows.length;
 }

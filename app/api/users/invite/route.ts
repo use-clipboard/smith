@@ -80,5 +80,5 @@ export async function POST(request: NextRequest) {
       .eq('id', createdUserId);
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, user_id: createdUserId });
 }

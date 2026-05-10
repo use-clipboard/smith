@@ -34,6 +34,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [todayEventCount, setTodayEventCount] = useState(0);
   const [emailUnreadCount, setEmailUnreadCount] = useState(0);
   const [myTaskCount, setMyTaskCount] = useState(0);
+  const [hrBadgeCount, setHrBadgeCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
@@ -80,6 +81,21 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     fetchTaskCount();
     // Re-fetch every 2 minutes so the count stays fresh
     const id = setInterval(fetchTaskCount, 2 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [isModuleActive]);
+
+  // Fetch HR badge count (pending approvals + unread hr_* notifications)
+  useEffect(() => {
+    const hrActive = isModuleActive('hr');
+    if (!hrActive) return;
+    function fetchHr() {
+      fetch('/api/hr/badge-counts')
+        .then(r => r.ok ? r.json() : { total: 0 })
+        .then(d => setHrBadgeCount(d.total ?? 0))
+        .catch(() => {});
+    }
+    fetchHr();
+    const id = setInterval(fetchHr, 2 * 60 * 1000);
     return () => clearInterval(id);
   }, [isModuleActive]);
 
@@ -194,11 +210,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const taskBadge  = isTasks && myTaskCount > 0;
     const taskLabel  = myTaskCount > 99 ? '99+' : String(myTaskCount);
 
+    const isHr       = item.moduleId === 'hr';
+    const hrBadge    = isHr && hrBadgeCount > 0;
+    const hrLabel    = hrBadgeCount > 99 ? '99+' : String(hrBadgeCount);
+
     if (collapsed) {
       const collapsedLabel =
         calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
         : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
         : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
+        : hrBadge    ? `${item.label} · ${hrBadgeCount} item${hrBadgeCount !== 1 ? 's' : ''} needing attention`
         : item.label;
       return (
         <div key={item.href} className="relative">
@@ -230,6 +251,13 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
                              ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
               {taskLabel}
+            </span>
+          )}
+          {hrBadge && (
+            <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
+                             text-[9px] font-bold flex items-center justify-center pointer-events-none
+                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+              {hrLabel}
             </span>
           )}
         </div>
@@ -307,6 +335,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                            flex items-center justify-center mr-2
                            ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
             {taskLabel}
+          </span>
+        )}
+
+        {hrBadge && (
+          <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
+                           flex items-center justify-center mr-2
+                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+            {hrLabel}
           </span>
         )}
       </div>

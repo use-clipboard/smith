@@ -145,3 +145,41 @@ export async function sendClientStepCompleteEmail(opts: ClientStepCompleteEmailO
 
   if (error) throw new Error(`Failed to send client-complete email: ${error.message}`);
 }
+
+// ─── Manager briefing notification ───────────────────────────────────────────
+export interface ManagerBriefingEmailOptions {
+  to: string;
+  briefingId: string;
+  fromAddress?: string;
+}
+
+export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions) {
+  const resend = getResend();
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const link = `${baseUrl}/hr?tab=resources`;
+
+  const html = `
+    <div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+      <div style="background:#4F46E5;color:#fff;padding:20px 24px;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">New manager briefing</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="margin:0 0 12px;font-size:14px;color:#374151;line-height:1.6;">A fresh quarterly briefing on UK employment-law changes and training tips for managers is now available in SMITH.</p>
+        <p style="margin:0 0 16px;font-size:13px;color:#6b7280;line-height:1.5;">It's reading material drawn from gov.uk, ACAS, CIPD and other UK authoritative sources — verify with a qualified adviser before acting on anything specific.</p>
+        <a href="${link}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">Read the briefing</a>
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">You received this because you manage staff or are an admin in your firm. Admins can opt out at Settings → HR → Holiday config.</p>
+      </div>
+    </div>
+  `;
+
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: opts.to,
+    subject: '[SMITH] New manager briefing — UK employment law update',
+    html,
+  });
+  if (error) throw new Error(`Failed to send briefing email: ${error.message}`);
+}

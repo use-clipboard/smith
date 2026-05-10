@@ -24,13 +24,14 @@ const CreateSchema = z.object({
 // GET /api/hr/holidays?scope=mine|team|all
 //   mine = the requester's own
 //   team = those where the caller is the manager
-//   all  = admin-only — entire firm
+//   firm = firm-wide approved holidays (everyone can see — for the shared calendar)
+//   all  = admin-only — entire firm regardless of status
 export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   const url = new URL(req.url);
-  const scope = (url.searchParams.get('scope') ?? 'mine') as 'mine' | 'team' | 'all';
+  const scope = (url.searchParams.get('scope') ?? 'mine') as 'mine' | 'team' | 'firm' | 'all';
   const status = url.searchParams.get('status'); // optional filter
 
   const supabase = createClient();
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
     .select(`
       id, firm_id, user_id, manager_id, start_date, start_half, end_date, end_half,
       total_days, reason, status, source, decided_by, decided_at, rejection_reason,
-      pushed_to_calendar, google_calendar_event_id, created_at,
+      pushed_to_calendar, google_calendar_event_id, is_bank_holiday, bank_holiday_title, created_at,
       requester:users!user_id ( id, full_name, email ),
       manager:users!manager_id ( id, full_name, email )
     `)
@@ -49,10 +50,15 @@ export async function GET(req: NextRequest) {
     query = query.eq('user_id', ctx.userId);
   } else if (scope === 'team') {
     query = query.eq('manager_id', ctx.userId);
+  } else if (scope === 'firm') {
+    // Shared calendar view: every firm user can see approved entries (incl. bank
+    // holidays, which have no manager). RLS already restricts to status=approved
+    // for non-managers/admins, but we also enforce it here for clarity.
+    query = query.eq('status', 'approved');
   } else if (scope === 'all') {
     if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 });
   }
-  if (status) query = query.eq('status', status);
+  if (status && scope !== 'firm') query = query.eq('status', status);
 
   query = query.order('start_date', { ascending: false });
 

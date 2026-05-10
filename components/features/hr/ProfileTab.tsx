@@ -1156,7 +1156,12 @@ function LeaverSection({ userId, isAdmin }: { userId: string; isAdmin: boolean }
             <span>{row.equipment_returned ? '✓' : '○'} equipment</span>
             <span>{row.systems_offboarded ? '✓' : '○'} systems</span>
           </p>
-          {isAdmin && <button onClick={() => setEditing(true)} className="btn-secondary text-xs mt-2"><Edit3 size={11} className="inline mr-1" />Update</button>}
+          {isAdmin && (
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button onClick={() => setEditing(true)} className="btn-secondary text-xs"><Edit3 size={11} className="inline mr-1" />Update</button>
+              <DeactivateLoginButton userId={userId} />
+            </div>
+          )}
         </div>
       ) : (
         <div>
@@ -1165,5 +1170,49 @@ function LeaverSection({ userId, isAdmin }: { userId: string; isAdmin: boolean }
         </div>
       )}
     </Section>
+  );
+}
+
+
+// Toggleable deactivate-login button. Tracks state locally — re-enable is also
+// available so an admin can undo a click. Server-side enforces admin + same firm.
+function DeactivateLoginButton({ userId }: { userId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [deactivated, setDeactivated] = useState(false);
+
+  async function deactivate() {
+    if (!confirm("Disable this person's login? They will no longer be able to sign in. Their HR records and history are preserved. You can re-enable later.")) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/users/${userId}/deactivate`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      setDeactivated(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to deactivate login");
+    } finally { setBusy(false); }
+  }
+
+  async function reactivate() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/users/${userId}/deactivate`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed");
+      setDeactivated(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to re-enable login");
+    } finally { setBusy(false); }
+  }
+
+  if (deactivated) {
+    return (
+      <button onClick={() => void reactivate()} disabled={busy} className="btn-secondary text-xs inline-flex items-center gap-1 disabled:opacity-50">
+        {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}Re-enable login
+      </button>
+    );
+  }
+  return (
+    <button onClick={() => void deactivate()} disabled={busy} className="btn-secondary text-xs inline-flex items-center gap-1 text-red-700 border-red-200 hover:bg-red-50 disabled:opacity-50">
+      {busy ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}Deactivate login
+    </button>
   );
 }

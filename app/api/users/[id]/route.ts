@@ -6,6 +6,15 @@ const patchSchema = z.object({
   role: z.enum(['admin', 'staff']).optional(),
   full_name: z.string().min(1).optional(),
   email: z.string().email().optional(),
+  // HR fields — admin can set on any firm user
+  department_id: z.string().uuid().nullable().optional(),
+  manager_id: z.string().uuid().nullable().optional(),
+  job_title: z.string().nullable().optional(),
+  job_description: z.string().nullable().optional(),
+  employment_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  holiday_entitlement_days_override: z.number().min(0).max(366).nullable().optional(),
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  show_birthday_to_team: z.boolean().optional(),
 });
 
 async function getAdminProfile() {
@@ -59,11 +68,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const supabase = createClient();
   const service = createServiceClient();
 
-  // Update public users table fields
-  const publicUpdate: Record<string, string> = {};
+  // Update public users table fields (auth + HR)
+  const publicUpdate: Record<string, unknown> = {};
   if (parsed.data.role) publicUpdate.role = parsed.data.role;
   if (parsed.data.full_name) publicUpdate.full_name = parsed.data.full_name;
   if (parsed.data.email) publicUpdate.email = parsed.data.email;
+  if ('department_id' in parsed.data) publicUpdate.department_id = parsed.data.department_id;
+  if ('manager_id' in parsed.data) publicUpdate.manager_id = parsed.data.manager_id;
+  if ('job_title' in parsed.data) publicUpdate.job_title = parsed.data.job_title;
+  if ('job_description' in parsed.data) publicUpdate.job_description = parsed.data.job_description;
+  if ('employment_start_date' in parsed.data) publicUpdate.employment_start_date = parsed.data.employment_start_date;
+  if ('holiday_entitlement_days_override' in parsed.data) publicUpdate.holiday_entitlement_days_override = parsed.data.holiday_entitlement_days_override;
+  if ('date_of_birth' in parsed.data) publicUpdate.date_of_birth = parsed.data.date_of_birth;
+  if ('show_birthday_to_team' in parsed.data) publicUpdate.show_birthday_to_team = parsed.data.show_birthday_to_team;
 
   if (Object.keys(publicUpdate).length > 0) {
     const { error: updateError } = await supabase

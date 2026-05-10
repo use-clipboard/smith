@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   HeartHandshake, Calendar as CalIcon, Inbox, Network, Plus, Loader2,
-  Check, X, AlertTriangle, ChevronRight, Users as UsersIcon, Filter, Activity, Sparkles, ShieldAlert, BookOpen, User as UserIcon, Users2,
+  Check, X, AlertTriangle, ChevronRight, ChevronDown, Users as UsersIcon, Filter, Activity, Sparkles, ShieldAlert, BookOpen, User as UserIcon, Users2, LayoutDashboard, BookOpenCheck, Edit3, Trash2, UserPlus,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -18,8 +18,16 @@ import ConfidentialTab from './ConfidentialTab';
 import EmploymentRightsTab from './EmploymentRightsTab';
 import ProfileTab from './ProfileTab';
 import TeamProfilesTab from './TeamProfilesTab';
+import OverviewTab from './OverviewTab';
+import HolidayCalendarView from './HolidayCalendarView';
+import HolidayTrackerView from './HolidayTrackerView';
+import JoinerWizardModal from './JoinerWizardModal';
+import ManagerBriefingsTab from './ManagerBriefingsTab';
 
-type Tab = 'mine' | 'approvals' | 'team' | 'absence' | 'advice' | 'confidential' | 'rights' | 'orgchart' | 'profile' | 'team-profiles';
+type TopTab = 'overview' | 'holidays' | 'people' | 'resources';
+type HolidaysSub = 'mine' | 'calendar' | 'tracker' | 'approvals' | 'team' | 'absence';
+type PeopleSub = 'profile' | 'team-profiles' | 'orgchart';
+type ResourcesSub = 'advice' | 'briefings' | 'confidential' | 'rights';
 
 export interface TeamMember {
   id: string;
@@ -59,6 +67,8 @@ export interface HolidayRow {
   source: 'request' | 'direct';
   rejection_reason: string | null;
   pushed_to_calendar: boolean;
+  is_bank_holiday: boolean;
+  bank_holiday_title: string | null;
   decided_at: string | null;
   created_at: string;
   requester: { id: string; full_name: string | null; email: string } | null;
@@ -100,13 +110,71 @@ const STATUS_BADGE: Record<HolidayRow['status'], string> = {
 
 export default function HrClient() {
   const params = useSearchParams();
-  const initialTab = (params.get('tab') as Tab) || 'mine';
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const initialTopTab = (params.get('tab') as TopTab) || 'overview';
+  const [topTab, setTopTab] = useState<TopTab>(initialTopTab);
+  const [holidaysSub, setHolidaysSub] = useState<HolidaysSub>('mine');
+  const [peopleSub, setPeopleSub] = useState<PeopleSub>('profile');
+  const [resourcesSub, setResourcesSub] = useState<ResourcesSub>('advice');
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(true);
   const [userId, setUserId] = useState<string>('');
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
+  const [quickRequestOpen, setQuickRequestOpen] = useState(false);
+  const [joinerWizardOpen, setJoinerWizardOpen] = useState(false);
+  const [badges, setBadges] = useState<{
+    pendingApprovals: number;
+    holidayDecisions: number;
+    newBriefings: number;
+    newDisclosures: number;
+  }>({ pendingApprovals: 0, holidayDecisions: 0, newBriefings: 0, newDisclosures: 0 });
+
+  const refreshBadges = useCallback(() => {
+    fetch('/api/hr/badge-counts')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        setBadges({
+          pendingApprovals: d.pendingApprovals ?? 0,
+          holidayDecisions: d.holidayDecisions ?? 0,
+          newBriefings: d.newBriefings ?? 0,
+          newDisclosures: d.newDisclosures ?? 0,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshBadges();
+    const id = setInterval(refreshBadges, 2 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [refreshBadges]);
+
+  // Mark relevant notifications as read when the user opens the sub-tab that surfaces them
+  useEffect(() => {
+    if (topTab !== 'holidays' || holidaysSub !== 'mine') return;
+    fetch('/api/notifications?types=hr_holiday_decided,hr_holiday_cancelled', { method: 'PATCH' })
+      .finally(refreshBadges);
+  }, [topTab, holidaysSub, refreshBadges]);
+  useEffect(() => {
+    if (topTab !== 'resources' || resourcesSub !== 'briefings') return;
+    fetch('/api/notifications?types=hr_briefing_published', { method: 'PATCH' })
+      .finally(refreshBadges);
+  }, [topTab, resourcesSub, refreshBadges]);
+  useEffect(() => {
+    if (topTab !== 'resources' || resourcesSub !== 'confidential') return;
+    fetch('/api/notifications?types=hr_disclosure_filed,hr_disclosure_replied', { method: 'PATCH' })
+      .finally(refreshBadges);
+  }, [topTab, resourcesSub, refreshBadges]);
+
+  const reloadTeam = useCallback(async () => {
+    const [tRes, dRes] = await Promise.all([
+      fetch('/api/hr/team').then(r => r.ok ? r.json() : { members: [] }),
+      fetch('/api/hr/departments').then(r => r.ok ? r.json() : { departments: [] }),
+    ]);
+    setTeam(tRes.members ?? []);
+    setDepartments(dRes.departments ?? []);
+  }, []);
 
   // Determine if the current user manages anyone, so we can show the Approvals tab.
   const isManagerOfSomeone = useMemo(
@@ -132,6 +200,74 @@ export default function HrClient() {
     return () => { cancelled = true; };
   }, []);
 
+  const showManagerActions = isManagerOfSomeone || userRole === 'admin';
+  const headerPill = (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 glass-solid rounded-full border border-[var(--border)] px-2 py-1 shadow-sm">
+        <Tooltip label="Calendar view">
+          <button
+            onClick={() => { setTopTab('holidays'); setHolidaysSub('calendar'); }}
+            aria-label="Calendar view"
+            className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+          >
+            <CalIcon size={15} />
+          </button>
+        </Tooltip>
+        {showManagerActions && (
+          <Tooltip label="Holiday approvals">
+            <button
+              onClick={() => { setTopTab('holidays'); setHolidaysSub('approvals'); }}
+              aria-label="Holiday approvals"
+              className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+            >
+              <Inbox size={15} />
+            </button>
+          </Tooltip>
+        )}
+        {showManagerActions && (
+          <Tooltip label="Record absence">
+            <button
+              onClick={() => { setTopTab('holidays'); setHolidaysSub('absence'); }}
+              aria-label="Record absence"
+              className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+            >
+              <Activity size={15} />
+            </button>
+          </Tooltip>
+        )}
+        <Tooltip label="Team holidays">
+          <button
+            onClick={() => { setTopTab('holidays'); setHolidaysSub(showManagerActions ? 'team' : 'mine'); }}
+            aria-label="Team holidays"
+            className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+          >
+            <UsersIcon size={15} />
+          </button>
+        </Tooltip>
+        {userRole === 'admin' && (
+          <Tooltip label="Add a new joiner">
+            <button
+              onClick={() => setJoinerWizardOpen(true)}
+              aria-label="Add a new joiner"
+              className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+            >
+              <UserPlus size={15} />
+            </button>
+          </Tooltip>
+        )}
+      </div>
+      <Tooltip label="Request holiday">
+        <button
+          onClick={() => setQuickRequestOpen(true)}
+          aria-label="Request holiday"
+          className="p-2.5 rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-sm"
+        >
+          <Plus size={16} />
+        </button>
+      </Tooltip>
+    </div>
+  );
+
   return (
     <ToolLayout
       title="HR"
@@ -139,44 +275,135 @@ export default function HrClient() {
       icon={HeartHandshake}
       iconColor="#9333EA"
       wide
+      headerRight={userId ? headerPill : null}
     >
-      {/* Sub-tabs */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        <TabBtn active={tab === 'mine'}     onClick={() => setTab('mine')}     icon={CalIcon}  label="My Holidays" />
-        <TabBtn active={tab === 'profile'}  onClick={() => setTab('profile')}  icon={UserIcon} label="My Profile" />
-        {(isManagerOfSomeone || userRole === 'admin') && (
-          <TabBtn active={tab === 'approvals'} onClick={() => setTab('approvals')} icon={Inbox} label="Approvals" />
-        )}
-        {(isManagerOfSomeone || userRole === 'admin') && (
-          <TabBtn active={tab === 'team'} onClick={() => setTab('team')} icon={UsersIcon} label="Team Holidays" />
-        )}
-        {(isManagerOfSomeone || userRole === 'admin') && (
-          <TabBtn active={tab === 'team-profiles'} onClick={() => setTab('team-profiles')} icon={Users2} label="Team Profiles" />
-        )}
-        <TabBtn active={tab === 'absence'}     onClick={() => setTab('absence')}     icon={Activity}    label="Absence" />
-        <TabBtn active={tab === 'advice'}      onClick={() => setTab('advice')}      icon={Sparkles}    label="AI HR Advice" />
-        <TabBtn active={tab === 'confidential'} onClick={() => setTab('confidential')} icon={ShieldAlert} label="Confidential" />
-        <TabBtn active={tab === 'rights'}      onClick={() => setTab('rights')}      icon={BookOpen}    label="Employment Rights" />
-        <TabBtn active={tab === 'orgchart'}    onClick={() => setTab('orgchart')}    icon={Network}     label="Org Chart" />
+      {/* Top-level tabs */}
+      <div className="flex flex-wrap gap-2 mb-4 border-b border-[var(--border)] pb-3">
+        <TabBtn active={topTab === 'overview'}  onClick={() => setTopTab('overview')}  icon={LayoutDashboard} label="Overview" />
+        <TabBtn active={topTab === 'holidays'}  onClick={() => setTopTab('holidays')}  icon={CalIcon}         label="Holidays & Absence" badge={badges.pendingApprovals + badges.holidayDecisions} />
+        <TabBtn active={topTab === 'people'}    onClick={() => setTopTab('people')}    icon={UsersIcon}       label="People" />
+        <TabBtn active={topTab === 'resources'} onClick={() => setTopTab('resources')} icon={BookOpenCheck}   label="Resources" badge={badges.newBriefings + badges.newDisclosures} />
       </div>
 
-      {/* Wait for /api/users/me to resolve before mounting tabs that need userId */}
-      {!userId && tab !== 'orgchart' && tab !== 'advice' && tab !== 'rights' && <Loader />}{/* rights/advice/orgchart don't need userId */}
-      {userId && tab === 'mine'      && <MyHolidaysTab userId={userId} />}
-      {userId && tab === 'profile'   && <ProfileTab userId={userId} viewerId={userId} viewerRole={userRole} team={team} />}
-      {userId && tab === 'team-profiles' && <TeamProfilesTab viewerId={userId} viewerRole={userRole} team={team} />}
-      {userId && tab === 'approvals' && <ApprovalsTab userId={userId} />}
-      {userId && tab === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
-      {userId && tab === 'absence'      && <AbsenceTab userId={userId} userRole={userRole} team={team} />}
-      {tab === 'advice'                  && <AiAdviceTab />}
-      {userId && tab === 'confidential' && <ConfidentialTab userId={userId} team={team} />}
-      {tab === 'rights'                  && <EmploymentRightsTab />}
-      {tab === 'orgchart'                && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
+      {/* Sub-tabs */}
+      {topTab === 'holidays' && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          <SubTabBtn active={holidaysSub === 'mine'}     onClick={() => setHolidaysSub('mine')}     icon={CalIcon}  label="My Holidays" badge={badges.holidayDecisions} />
+          <SubTabBtn active={holidaysSub === 'calendar'} onClick={() => setHolidaysSub('calendar')} icon={CalIcon}  label="Calendar" />
+          <SubTabBtn active={holidaysSub === 'tracker'}  onClick={() => setHolidaysSub('tracker')}  icon={LayoutDashboard} label="Tracker" />
+          {(isManagerOfSomeone || userRole === 'admin') && (
+            <SubTabBtn active={holidaysSub === 'approvals'} onClick={() => setHolidaysSub('approvals')} icon={Inbox} label="Approvals" badge={badges.pendingApprovals} />
+          )}
+          {(isManagerOfSomeone || userRole === 'admin') && (
+            <SubTabBtn active={holidaysSub === 'team'} onClick={() => setHolidaysSub('team')} icon={UsersIcon} label="Team Holidays" />
+          )}
+          <SubTabBtn active={holidaysSub === 'absence'} onClick={() => setHolidaysSub('absence')} icon={Activity} label="Absence" />
+        </div>
+      )}
+      {topTab === 'people' && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          <SubTabBtn active={peopleSub === 'profile'} onClick={() => setPeopleSub('profile')} icon={UserIcon} label="My Profile" />
+          {(isManagerOfSomeone || userRole === 'admin') && (
+            <SubTabBtn active={peopleSub === 'team-profiles'} onClick={() => setPeopleSub('team-profiles')} icon={Users2} label="Team Profiles" />
+          )}
+          <SubTabBtn active={peopleSub === 'orgchart'} onClick={() => setPeopleSub('orgchart')} icon={Network} label="Org Chart" />
+        </div>
+      )}
+      {topTab === 'resources' && (
+        <div className="flex flex-wrap gap-2 mb-5">
+          <SubTabBtn active={resourcesSub === 'advice'}       onClick={() => setResourcesSub('advice')}       icon={Sparkles}    label="AI HR Advice" />
+          <SubTabBtn active={resourcesSub === 'briefings'}    onClick={() => setResourcesSub('briefings')}    icon={BookOpenCheck} label="Manager Briefings" badge={badges.newBriefings} />
+          <SubTabBtn active={resourcesSub === 'confidential'} onClick={() => setResourcesSub('confidential')} icon={ShieldAlert} label="Confidential" badge={badges.newDisclosures} />
+          <SubTabBtn active={resourcesSub === 'rights'}       onClick={() => setResourcesSub('rights')}       icon={BookOpen}    label="Employment Rights" />
+        </div>
+      )}
+
+      {/* Content */}
+      {!userId && topTab !== 'resources' && <Loader />}
+
+      {topTab === 'overview' && userId && (
+        <OverviewTab
+          userId={userId}
+          userRole={userRole}
+          team={team}
+          isManagerOfSomeone={isManagerOfSomeone}
+          onJumpTo={(top, sub) => {
+            setTopTab(top);
+            if (top === 'holidays' && sub) setHolidaysSub(sub as HolidaysSub);
+            if (top === 'people' && sub) setPeopleSub(sub as PeopleSub);
+          }}
+        />
+      )}
+
+      {topTab === 'holidays' && userId && (
+        <>
+          {holidaysSub === 'mine'      && <MyHolidaysTab userId={userId} />}
+          {holidaysSub === 'calendar'  && <HolidayCalendarView team={team} userId={userId} userRole={userRole} />}
+          {holidaysSub === 'tracker'   && <HolidayTrackerView team={team} departments={departments} userId={userId} userRole={userRole} />}
+          {holidaysSub === 'approvals' && <ApprovalsTab userId={userId} />}
+          {holidaysSub === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
+          {holidaysSub === 'absence'   && <AbsenceTab userId={userId} userRole={userRole} team={team} />}
+        </>
+      )}
+
+      {topTab === 'people' && userId && (
+        <>
+          {peopleSub === 'profile'       && <ProfileTab userId={userId} viewerId={userId} viewerRole={userRole} team={team} />}
+          {peopleSub === 'team-profiles' && <TeamProfilesTab viewerId={userId} viewerRole={userRole} team={team} />}
+          {peopleSub === 'orgchart'      && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
+        </>
+      )}
+
+      {topTab === 'resources' && (
+        <>
+          {resourcesSub === 'advice'       && <AiAdviceTab />}
+          {resourcesSub === 'briefings'    && <ManagerBriefingsTab isAdmin={userRole === 'admin'} />}
+          {resourcesSub === 'confidential' && userId && <ConfidentialTab userId={userId} team={team} />}
+          {resourcesSub === 'rights'       && <EmploymentRightsTab />}
+        </>
+      )}
+
+      <HolidayRequestModal
+        isOpen={quickRequestOpen}
+        onClose={() => setQuickRequestOpen(false)}
+        onSaved={() => { setQuickRequestOpen(false); setTopTab('holidays'); setHolidaysSub('mine'); }}
+      />
+
+      <JoinerWizardModal
+        isOpen={joinerWizardOpen}
+        onClose={() => setJoinerWizardOpen(false)}
+        onCreated={() => { setJoinerWizardOpen(false); void reloadTeam(); setTopTab('people'); setPeopleSub('team-profiles'); }}
+        team={team}
+        departments={departments}
+      />
     </ToolLayout>
   );
 }
 
-function TabBtn({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string }) {
+function SubTabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string; badge?: number }) {
+  const badgeLabel = badge != null && badge > 99 ? '99+' : String(badge ?? 0);
+  return (
+    <button
+      onClick={onClick}
+      className={`relative inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+        active
+          ? 'bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30'
+          : 'bg-white border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+      }`}
+    >
+      <Icon size={12} />
+      {label}
+      {badge != null && badge > 0 && (
+        <span className={`ml-1 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center ${active ? 'bg-[var(--accent)] text-white' : 'bg-[var(--accent)] text-white'}`}>
+          {badgeLabel}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string; badge?: number }) {
+  const badgeLabel = badge != null && badge > 99 ? '99+' : String(badge ?? 0);
   return (
     <button
       onClick={onClick}
@@ -188,6 +415,11 @@ function TabBtn({ active, onClick, icon: Icon, label }: { active: boolean; onCli
     >
       <Icon size={13} />
       {label}
+      {badge != null && badge > 0 && (
+        <span className={`ml-1 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center ${active ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+          {badgeLabel}
+        </span>
+      )}
     </button>
   );
 }
@@ -270,12 +502,11 @@ function MyHolidaysTab({ userId }: { userId: string }) {
 
       {error && <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700"><AlertTriangle size={13} className="shrink-0 mt-0.5" />{error}</div>}
 
-      {/* List */}
-      <HolidayList
+      {/* List — current year, then collapsible out-of-year */}
+      <MyHolidaysList
         holidays={holidays}
+        balance={balance}
         loading={loading}
-        emptyText="No holidays booked yet."
-        showRequester={false}
         renderActions={h => (
           (h.status === 'pending' || h.status === 'approved') ? (
             <button onClick={() => void handleCancel(h.id)} disabled={busyId === h.id} className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50">
@@ -290,6 +521,60 @@ function MyHolidaysTab({ userId }: { userId: string }) {
         onClose={() => setRequestOpen(false)}
         onSaved={() => { setRequestOpen(false); void load(); }}
       />
+    </div>
+  );
+}
+
+function MyHolidaysList({ holidays, balance, loading, renderActions }: {
+  holidays: HolidayRow[];
+  balance: BalanceInfo | null;
+  loading: boolean;
+  renderActions?: (h: HolidayRow) => React.ReactNode;
+}) {
+  const [showOther, setShowOther] = useState(false);
+  // year.end is exclusive (next year's start). A holiday belongs to the current year
+  // if its date range overlaps [year.start, year.end).
+  const currentYear = balance?.year;
+  const inYear = useMemo(() => holidays.filter(h =>
+    !currentYear || (h.end_date >= currentYear.start && h.start_date < currentYear.end)
+  ), [holidays, currentYear]);
+  const otherYear = useMemo(() => holidays.filter(h =>
+    currentYear && !(h.end_date >= currentYear.start && h.start_date < currentYear.end)
+  ), [holidays, currentYear]);
+
+  return (
+    <div className="space-y-3">
+      <HolidayList
+        holidays={inYear}
+        loading={loading}
+        emptyText="No holidays booked in the current holiday year."
+        showRequester={false}
+        renderActions={renderActions}
+      />
+      {otherYear.length > 0 && (
+        <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+          <button
+            onClick={() => setShowOther(o => !o)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-[var(--bg-nav-hover)] transition-colors"
+          >
+            {showOther ? <ChevronDown size={13} className="text-[var(--accent)]" /> : <ChevronRight size={13} className="text-gray-400" />}
+            <span className="text-xs font-medium text-[var(--text-secondary)]">
+              {otherYear.length} holiday{otherYear.length === 1 ? '' : 's'} from other holiday years
+            </span>
+          </button>
+          {showOther && (
+            <div className="border-t border-gray-100">
+              <HolidayList
+                holidays={otherYear}
+                loading={false}
+                emptyText=""
+                showRequester={false}
+                renderActions={renderActions}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -461,6 +746,8 @@ function TeamHolidaysTab({ userId, userRole, team }: { userId: string; userRole:
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | HolidayRow['status']>('all');
   const [directOpen, setDirectOpen] = useState(false);
+  const [editing, setEditing] = useState<HolidayRow | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -478,6 +765,23 @@ function TeamHolidaysTab({ userId, userRole, team }: { userId: string; userRole:
     if (userRole === 'admin') return team.filter(m => m.id !== userId);
     return team.filter(m => m.manager_id === userId);
   }, [team, userId, userRole]);
+
+  function canManage(h: HolidayRow): boolean {
+    return userRole === 'admin' || h.manager?.id === userId;
+  }
+
+  async function handleDelete(h: HolidayRow) {
+    const who = h.requester?.full_name ?? h.requester?.email ?? 'this person';
+    if (!confirm(`Delete ${who}'s holiday on ${h.start_date}? This removes it permanently.`)) return;
+    setBusyId(h.id);
+    try {
+      const res = await fetch(`/api/hr/holidays/${h.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Delete failed');
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Delete failed');
+    } finally { setBusyId(null); }
+  }
 
   return (
     <div className="space-y-4">
@@ -499,7 +803,36 @@ function TeamHolidaysTab({ userId, userRole, team }: { userId: string; userRole:
         )}
       </div>
 
-      <HolidayList holidays={holidays} loading={loading} emptyText="No holidays in this view yet." showRequester />
+      <HolidayList
+        holidays={holidays}
+        loading={loading}
+        emptyText="No holidays in this view yet."
+        showRequester
+        renderActions={h => canManage(h) ? (
+          <div className="flex items-center gap-1">
+            <Tooltip label="Edit dates / reason">
+              <button
+                onClick={() => setEditing(h)}
+                disabled={busyId === h.id}
+                aria-label="Edit"
+                className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+              >
+                <Edit3 size={13} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Delete this holiday">
+              <button
+                onClick={() => void handleDelete(h)}
+                disabled={busyId === h.id}
+                aria-label="Delete"
+                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                {busyId === h.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              </button>
+            </Tooltip>
+          </div>
+        ) : null}
+      />
 
       <HolidayDirectEntryModal
         isOpen={directOpen}
@@ -507,6 +840,14 @@ function TeamHolidaysTab({ userId, userRole, team }: { userId: string; userRole:
         onSaved={() => { setDirectOpen(false); void load(); }}
         candidates={directCandidates}
       />
+
+      {editing && (
+        <EditHolidayModal
+          holiday={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); void load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -549,8 +890,13 @@ function HolidayList({
               <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${STATUS_BADGE[h.status]}`}>
                 {h.status}
               </span>
-              {h.source === 'direct' && <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">recorded</span>}
-              {h.pushed_to_calendar && <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">on calendar</span>}
+              {h.source === 'direct' && !h.is_bank_holiday && <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">recorded</span>}
+              {h.is_bank_holiday && (
+                <Tooltip label={h.bank_holiday_title ?? 'Bank holiday'}>
+                  <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">Bank holiday</span>
+                </Tooltip>
+              )}
+              {h.pushed_to_calendar && !h.is_bank_holiday && <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">on calendar</span>}
             </div>
             <p className="text-sm text-[var(--text-secondary)] mt-0.5">{fmtSpan(h)} · <span className="font-medium">{h.total_days}</span> day{h.total_days === 1 ? '' : 's'}</p>
             {h.reason && <p className="text-xs text-[var(--text-muted)] mt-0.5 italic truncate">&ldquo;{h.reason}&rdquo;</p>}
@@ -559,6 +905,95 @@ function HolidayList({
           {renderActions && <div className="shrink-0">{renderActions(h)}</div>}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Edit holiday (manager / admin) ─────────────────────────────────────
+function EditHolidayModal({ holiday, onClose, onSaved }: {
+  holiday: HolidayRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [startDate, setStartDate] = useState(holiday.start_date);
+  const [startHalf, setStartHalf] = useState<'full' | 'morning' | 'afternoon'>(holiday.start_half);
+  const [endDate, setEndDate] = useState(holiday.end_date);
+  const [endHalf, setEndHalf] = useState<'full' | 'morning' | 'afternoon'>(holiday.end_half);
+  const [reason, setReason] = useState(holiday.reason ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch(`/api/hr/holidays/${holiday.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_date: startDate,
+          start_half: startHalf,
+          end_date: endDate,
+          end_half: endHalf,
+          reason: reason.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed');
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+    } finally { setSaving(false); }
+  }
+
+  const who = holiday.requester?.full_name ?? holiday.requester?.email ?? 'Team member';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold">Edit holiday — {who}</h3>
+          <button onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-[var(--bg-nav-hover)]"><X size={14} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">Start date</span>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-base text-sm w-full" />
+            </label>
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">Start half</span>
+              <select value={startHalf} onChange={e => setStartHalf(e.target.value as 'full' | 'morning' | 'afternoon')} className="input-base text-sm w-full">
+                <option value="full">Full day</option>
+                <option value="morning">From morning</option>
+                <option value="afternoon">From afternoon</option>
+              </select>
+            </label>
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">End date</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="input-base text-sm w-full" />
+            </label>
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">End half</span>
+              <select value={endHalf} onChange={e => setEndHalf(e.target.value as 'full' | 'morning' | 'afternoon')} className="input-base text-sm w-full">
+                <option value="full">Full day</option>
+                <option value="morning">To morning</option>
+                <option value="afternoon">To afternoon</option>
+              </select>
+            </label>
+          </div>
+          <label className="text-xs block">
+            <span className="block mb-1 text-[var(--text-muted)]">Reason</span>
+            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2} className="input-base text-sm w-full" />
+          </label>
+          {error && (
+            <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />{error}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} disabled={saving} className="btn-secondary text-sm disabled:opacity-50">Cancel</button>
+            <button onClick={() => void save()} disabled={saving} className="btn-primary text-sm disabled:opacity-50 inline-flex items-center gap-1.5">
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}Save changes
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

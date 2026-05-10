@@ -19,17 +19,25 @@ export async function GET() {
   return NextResponse.json({ notifications: notifications ?? [], unreadCount });
 }
 
-/** PATCH /api/notifications — mark all notifications as read */
-export async function PATCH() {
+/** PATCH /api/notifications — mark notifications as read.
+ *  Optional ?types=hr_holiday_decided,hr_briefing_published narrows to those types.
+ *  With no query param, marks ALL of this user's notifications as read.
+ */
+export async function PATCH(request: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
+  const typesParam = new URL(request.url).searchParams.get('types');
+  const types = typesParam ? typesParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+
   const supabase = createClient();
-  await supabase
+  let query = supabase
     .from('notifications')
     .update({ read: true })
     .eq('user_id', ctx.userId)
     .eq('read', false);
+  if (types && types.length > 0) query = query.in('type', types);
+  await query;
 
   return NextResponse.json({ success: true });
 }

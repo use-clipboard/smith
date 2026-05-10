@@ -4,6 +4,7 @@ import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, Puzzle, Plus,
+  HeartHandshake,
 } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
@@ -13,7 +14,7 @@ import { MODULES, type ModuleConfig } from '@/config/modules.config';
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  CalendarDays, MicVocal, UserPlus, CheckSquare, Mail,
+  CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
