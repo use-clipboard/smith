@@ -52,14 +52,27 @@ export async function syncBankHolidaysForFirm({
 }): Promise<{ inserted: number; total_holidays: number; users: number }> {
   const service = createServiceClient();
 
-  // Read settings — bail if disabled
-  const { data: settings } = await service
+  // Read settings — bail if disabled. We deliberately surface the real
+  // Postgres error so callers can tell "migration not run" from "toggle off".
+  const { data: settings, error: settingsErr } = await service
     .from('firm_hr_settings')
     .select('bank_holidays_enabled, bank_holidays_region')
     .eq('firm_id', firmId)
     .maybeSingle();
-  if (!settings?.bank_holidays_enabled) {
-    return { inserted: 0, total_holidays: 0, users: 0 };
+  if (settingsErr) {
+    const msg = settingsErr.message ?? '';
+    if (msg.includes('column') && msg.includes('does not exist')) {
+      throw new Error(
+        'Bank-holiday columns are missing on firm_hr_settings. The 20260510_hr_bank_holidays migration has not been applied to this Supabase project.'
+      );
+    }
+    throw new Error(`Could not read firm_hr_settings: ${msg}`);
+  }
+  if (!settings) {
+    throw new Error('No firm_hr_settings row found for this firm. Save HR settings once first, then try again.');
+  }
+  if (!settings.bank_holidays_enabled) {
+    throw new Error('Bank holidays toggle is currently OFF in the database. Toggle it on, then click Sync now (the button auto-saves before syncing).');
   }
 
   const region = (settings.bank_holidays_region ?? 'england-and-wales') as BankHolidayRegion;
@@ -78,12 +91,15 @@ export async function syncBankHolidaysForFirm({
   }
 
   // Active users in the firm
-  const { data: users } = await service
+  const { data: users, error: usersErr } = await service
     .from('users')
     .select('id')
     .eq('firm_id', firmId);
+  if (usersErr) throw new Error(`Could not load users for firm: ${usersErr.message}`);
   const userIds = (users ?? []).map(u => u.id);
-  if (userIds.length === 0) return { inserted: 0, total_holidays: upcoming.length, users: 0 };
+  if (userIds.length === 0) {
+    throw new Error('Sync ran but found 0 users in this firm. Check that users.firm_id is set correctly.');
+  }
 
   // Existing bank-holiday rows so we don't duplicate
   const { data: existing } = await service
