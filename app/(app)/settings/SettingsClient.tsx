@@ -172,35 +172,43 @@ export default function SettingsClient({
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6">
       {/* Page header */}
-      <div>
+      <div className="mb-6">
         <h2 className="text-xl font-semibold text-[var(--text-primary)]">Settings</h2>
         <p className="text-sm text-[var(--text-muted)] mt-0.5">Manage your firm, tools, profile, and preferences.</p>
       </div>
 
-      {/* Tab strip */}
-      <div className="flex gap-1 border-b border-[var(--border)]">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          const isLocked = tab.id === 'account' && !isAdmin;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all duration-150 -mb-px whitespace-nowrap
-                ${activeTab === tab.id
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                }`}
-            >
-              <Icon size={15} />
-              {tab.label}
-              {isLocked && <Lock size={11} className="opacity-40" />}
-            </button>
-          );
-        })}
-      </div>
+      {/* Two-column layout: vertical tabs on the left, content on the right */}
+      <div className="flex gap-6 items-start">
+        {/* Tab rail */}
+        <nav className="w-56 shrink-0 sticky top-6">
+          <ul className="space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1 scrollbar-thin">
+            {TABS.map(tab => {
+              const Icon = tab.icon;
+              const isLocked = tab.id === 'account' && !isAdmin;
+              return (
+                <li key={tab.id}>
+                  <button
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left
+                      ${activeTab === tab.id
+                        ? 'bg-[var(--accent-light)] text-[var(--accent)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+                      }`}
+                  >
+                    <Icon size={15} className="shrink-0" />
+                    <span className="flex-1 truncate">{tab.label}</span>
+                    {isLocked && <Lock size={11} className="opacity-40 shrink-0" />}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+
+        {/* Content column */}
+        <div className="flex-1 min-w-0 space-y-6">
 
       {/* Preferences tab */}
       {activeTab === 'preferences' && <PreferencesTab />}
@@ -388,6 +396,9 @@ export default function SettingsClient({
       {activeTab === 'hr' && hrModuleActive && (
         <HrSettingsTab isAdmin={isAdmin} />
       )}
+
+        </div>
+      </div>
     </div>
   );
 }

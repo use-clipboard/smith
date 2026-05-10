@@ -13,11 +13,6 @@ import HrOrgChart from './HrOrgChart';
 import HolidayRequestModal from './HolidayRequestModal';
 import HolidayDirectEntryModal from './HolidayDirectEntryModal';
 
-interface Props {
-  userId: string;
-  userRole: 'admin' | 'staff';
-}
-
 type Tab = 'mine' | 'approvals' | 'team' | 'orgchart';
 
 export interface TeamMember {
@@ -95,27 +90,34 @@ const STATUS_BADGE: Record<HolidayRow['status'], string> = {
   cancelled: 'bg-gray-100 text-gray-500',
 };
 
-export default function HrClient({ userId, userRole }: Props) {
+export default function HrClient() {
   const params = useSearchParams();
   const initialTab = (params.get('tab') as Tab) || 'mine';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(true);
+  const [userId, setUserId] = useState<string>('');
+  const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
 
   // Determine if the current user manages anyone, so we can show the Approvals tab.
   const isManagerOfSomeone = useMemo(
-    () => team.some(m => m.manager_id === userId),
+    () => !!userId && team.some(m => m.manager_id === userId),
     [team, userId],
   );
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
+      fetch('/api/users/me').then(r => r.ok ? r.json() : null),
       fetch('/api/hr/team').then(r => r.ok ? r.json() : { members: [] }),
       fetch('/api/hr/departments').then(r => r.ok ? r.json() : { departments: [] }),
-    ]).then(([t, d]) => {
+    ]).then(([me, t, d]) => {
       if (cancelled) return;
+      if (me) {
+        setUserId(me.userId ?? '');
+        setUserRole(me.userRole === 'admin' ? 'admin' : 'staff');
+      }
       setTeam(t.members ?? []);
       setDepartments(d.departments ?? []);
     }).finally(() => { if (!cancelled) setLoadingTeam(false); });
@@ -142,8 +144,10 @@ export default function HrClient({ userId, userRole }: Props) {
         <TabBtn active={tab === 'orgchart'} onClick={() => setTab('orgchart')} icon={Network} label="Org Chart" />
       </div>
 
-      {tab === 'mine'      && <MyHolidaysTab userId={userId} />}
-      {tab === 'approvals' && <ApprovalsTab userId={userId} />}
+      {/* Wait for /api/users/me to resolve before mounting tabs that need userId */}
+      {!userId && tab !== 'orgchart' && <Loader />}
+      {userId && tab === 'mine'      && <MyHolidaysTab userId={userId} />}
+      {userId && tab === 'approvals' && <ApprovalsTab userId={userId} />}
       {tab === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
       {tab === 'orgchart'  && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
     </ToolLayout>

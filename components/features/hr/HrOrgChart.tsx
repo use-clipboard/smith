@@ -6,12 +6,104 @@ import {
   type Node, type Edge, Handle, Position, type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import dagre from 'dagre';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import type { TeamMember, Department } from './HrClient';
 
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 84;
+const H_GAP = 32;       // horizontal gap between sibling subtrees
+const V_GAP = 80;       // vertical gap between layers
+
+// Lightweight top-down tree layout. Each forest root is laid out independently
+// then placed side-by-side, so multiple "roots" (e.g. CEO + an unmanaged contractor)
+// don't overlap. Subtree widths are computed bottom-up; nodes are then placed by
+// centring each parent over the span of its children.
+interface LayoutResult { positions: Map<string, { x: number; y: number }> }
+
+function layoutTree(team: TeamMember[]): LayoutResult {
+  const positions = new Map<string, { x: number; y: number }>();
+  if (team.length === 0) return { positions };
+
+  const idSet = new Set(team.map(m => m.id));
+  // Children-of map: parent_id → child[]
+  const children = new Map<string, string[]>();
+  for (const m of team) {
+    if (m.manager_id && idSet.has(m.manager_id)) {
+      const arr = children.get(m.manager_id) ?? [];
+      arr.push(m.id);
+      children.set(m.manager_id, arr);
+    }
+  }
+  // Roots: users whose manager isn't in the team (or is null)
+  const roots = team
+    .filter(m => !m.manager_id || !idSet.has(m.manager_id))
+    .map(m => m.id);
+  // Cycle-safety: visited set
+  const visited = new Set<string>();
+
+  // Compute subtree width (in node-widths) for layout
+  const subtreeWidth = new Map<string, number>();
+  function computeWidth(id: string): number {
+    if (subtreeWidth.has(id)) return subtreeWidth.get(id)!;
+    if (visited.has(id)) { subtreeWidth.set(id, 1); return 1; } // cycle guard
+    visited.add(id);
+    const kids = children.get(id) ?? [];
+    if (kids.length === 0) { subtreeWidth.set(id, 1); return 1; }
+    const total = kids.reduce((acc, c) => acc + computeWidth(c), 0);
+    const w = Math.max(1, total);
+    subtreeWidth.set(id, w);
+    return w;
+  }
+  roots.forEach(r => computeWidth(r));
+
+  // Place: each root takes a slot of its subtreeWidth * (NODE_WIDTH + H_GAP)
+  function place(id: string, leftPx: number, depth: number, placedSet: Set<string>): number {
+    if (placedSet.has(id)) return leftPx;
+    placedSet.add(id);
+    const kids = children.get(id) ?? [];
+    const myWidth = subtreeWidth.get(id) ?? 1;
+    const myWidthPx = myWidth * NODE_WIDTH + Math.max(0, myWidth - 1) * H_GAP;
+    if (kids.length > 0) {
+      let cursor = leftPx;
+      const childCenters: number[] = [];
+      for (const c of kids) {
+        const childWidth = subtreeWidth.get(c) ?? 1;
+        const childWidthPx = childWidth * NODE_WIDTH + Math.max(0, childWidth - 1) * H_GAP;
+        const childCenter = cursor + childWidthPx / 2;
+        childCenters.push(childCenter);
+        place(c, cursor, depth + 1, placedSet);
+        cursor += childWidthPx + H_GAP;
+      }
+      // Centre this node over its children
+      const cx = (childCenters[0] + childCenters[childCenters.length - 1]) / 2;
+      positions.set(id, { x: cx - NODE_WIDTH / 2, y: depth * (NODE_HEIGHT + V_GAP) });
+    } else {
+      positions.set(id, { x: leftPx + (myWidthPx - NODE_WIDTH) / 2, y: depth * (NODE_HEIGHT + V_GAP) });
+    }
+    return leftPx + myWidthPx;
+  }
+
+  let cursor = 0;
+  const placed = new Set<string>();
+  for (const r of roots) {
+    const w = subtreeWidth.get(r) ?? 1;
+    place(r, cursor, 0, placed);
+    cursor += w * NODE_WIDTH + Math.max(0, w - 1) * H_GAP + H_GAP * 2;
+  }
+
+  // Stragglers: anyone not yet placed (cycles, or orphans we missed). Drop them
+  // on a separate row at the bottom so the chart still renders something.
+  const maxDepth = Math.max(0, ...Array.from(positions.values()).map(p => Math.floor(p.y / (NODE_HEIGHT + V_GAP))));
+  let strayCursor = 0;
+  for (const m of team) {
+    if (!positions.has(m.id)) {
+      positions.set(m.id, { x: strayCursor, y: (maxDepth + 1) * (NODE_HEIGHT + V_GAP) });
+      strayCursor += NODE_WIDTH + H_GAP;
+    }
+  }
+
+  return { positions };
+}
 
 interface PersonNodeData extends Record<string, unknown> {
   name: string;
@@ -105,18 +197,11 @@ export default function HrOrgChart({ team, departments }: Props) {
         animated: false,
       }));
 
-    // Dagre layout — top-down
-    const g = new dagre.graphlib.Graph();
-    g.setDefaultEdgeLabel(() => ({}));
-    g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 80 });
-    nodes.forEach(n => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
-    edges.forEach(e => g.setEdge(e.source, e.target));
-    dagre.layout(g);
+    // DIY top-down tree layout (avoids the dagre dependency)
+    const { positions } = layoutTree(team);
     nodes.forEach(n => {
-      const layout = g.node(n.id);
-      if (layout) {
-        n.position = { x: layout.x - NODE_WIDTH / 2, y: layout.y - NODE_HEIGHT / 2 };
-      }
+      const p = positions.get(n.id);
+      if (p) n.position = p;
     });
     return { nodes, edges };
   }, [team, departmentMap, highlightedDept]);
