@@ -13,7 +13,7 @@ export async function GET() {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('users')
-    .select('id, full_name, email, role, avatar_url, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override')
+    .select('id, full_name, email, role, avatar_url, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override, date_of_birth, show_birthday_to_team')
     .eq('firm_id', ctx.firmId)
     .order('full_name', { ascending: true });
 
@@ -25,11 +25,17 @@ export async function GET() {
   // Mask sensitive fields for non-admin / non-self viewers.
   const isAdmin = ctx.userRole === 'admin';
   const masked = (data ?? []).map(u => {
-    if (isAdmin || u.id === ctx.userId) return u;
+    const isSelf = u.id === ctx.userId;
+    if (isAdmin || isSelf) return u;
     return {
       ...u,
       employment_start_date: null,
       holiday_entitlement_days_override: null,
+      // Hide DOB unless the person opted to share it. When shared, only
+      // expose month/day so age can't be inferred.
+      date_of_birth: u.show_birthday_to_team && u.date_of_birth
+        ? `1900-${String(u.date_of_birth).slice(5)}`
+        : null,
     };
   });
 

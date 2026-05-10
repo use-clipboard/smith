@@ -114,6 +114,38 @@ interface PersonNodeData extends Record<string, unknown> {
   highlighted: boolean;
   dimmed: boolean;
   userId: string;
+  /** Number of completed years of service today (0 if started <1 year ago, null if unknown). */
+  yearsOfService: number | null;
+  /** Whether today is the work anniversary (within ±1 day). */
+  isAnniversaryThisWeek: boolean;
+  /** Whether today is the birthday (within ±3 days) — only if shared. */
+  isBirthdayThisWeek: boolean;
+}
+
+// Returns true if the iso date's month/day falls within `days` of today.
+function isWithinDays(iso: string | null, days: number): boolean {
+  if (!iso) return false;
+  const today = new Date();
+  const d = new Date(iso + 'T12:00:00Z');
+  const thisYearAnniv = new Date(today.getFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diff = Math.abs((thisYearAnniv.getTime() - today.getTime()) / 86_400_000);
+  // Also handle year-boundary
+  const lastYear = new Date(today.getFullYear() - 1, d.getUTCMonth(), d.getUTCDate());
+  const nextYear = new Date(today.getFullYear() + 1, d.getUTCMonth(), d.getUTCDate());
+  return diff <= days
+    || Math.abs((lastYear.getTime() - today.getTime()) / 86_400_000) <= days
+    || Math.abs((nextYear.getTime() - today.getTime()) / 86_400_000) <= days;
+}
+
+function yearsOfServiceFor(startIso: string | null): number | null {
+  if (!startIso) return null;
+  const start = new Date(startIso + 'T12:00:00Z');
+  const now = new Date();
+  let years = now.getFullYear() - start.getUTCFullYear();
+  const beforeAnniv = (now.getMonth() < start.getUTCMonth()) ||
+    (now.getMonth() === start.getUTCMonth() && now.getDate() < start.getUTCDate());
+  if (beforeAnniv) years -= 1;
+  return Math.max(0, years);
 }
 
 function PersonNode({ data }: NodeProps) {
@@ -141,6 +173,16 @@ function PersonNode({ data }: NodeProps) {
           </span>
         )}
       </div>
+      {(d.isBirthdayThisWeek || d.isAnniversaryThisWeek) && (
+        <div className="absolute -top-2 -right-2 flex gap-1">
+          {d.isBirthdayThisWeek && (
+            <span title="Birthday this week" className="text-[10px] bg-pink-500 text-white px-1.5 py-0.5 rounded-full font-bold shadow">🎂</span>
+          )}
+          {d.isAnniversaryThisWeek && d.yearsOfService != null && d.yearsOfService > 0 && (
+            <span title={`${d.yearsOfService}-year work anniversary`} className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold shadow">🎉 {d.yearsOfService}y</span>
+          )}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} className="!bg-gray-400 !border-0 !w-2 !h-2" />
     </div>
   );
@@ -179,6 +221,9 @@ export default function HrOrgChart({ team, departments }: Props) {
           highlighted,
           dimmed,
           userId: m.id,
+          yearsOfService: yearsOfServiceFor(m.employment_start_date),
+          isAnniversaryThisWeek: isWithinDays(m.employment_start_date, 3),
+          isBirthdayThisWeek: m.show_birthday_to_team && isWithinDays(m.date_of_birth, 3),
         } as PersonNodeData,
       };
     });

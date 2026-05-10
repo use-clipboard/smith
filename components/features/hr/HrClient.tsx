@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   HeartHandshake, Calendar as CalIcon, Inbox, Network, Plus, Loader2,
-  Check, X, AlertTriangle, ChevronRight, Users as UsersIcon, Filter, Activity, Sparkles, ShieldAlert,
+  Check, X, AlertTriangle, ChevronRight, Users as UsersIcon, Filter, Activity, Sparkles, ShieldAlert, BookOpen, User as UserIcon, Users2,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -15,8 +15,11 @@ import HolidayDirectEntryModal from './HolidayDirectEntryModal';
 import AbsenceTab from './AbsenceTab';
 import AiAdviceTab from './AiAdviceTab';
 import ConfidentialTab from './ConfidentialTab';
+import EmploymentRightsTab from './EmploymentRightsTab';
+import ProfileTab from './ProfileTab';
+import TeamProfilesTab from './TeamProfilesTab';
 
-type Tab = 'mine' | 'approvals' | 'team' | 'absence' | 'advice' | 'confidential' | 'orgchart';
+type Tab = 'mine' | 'approvals' | 'team' | 'absence' | 'advice' | 'confidential' | 'rights' | 'orgchart' | 'profile' | 'team-profiles';
 
 export interface TeamMember {
   id: string;
@@ -29,6 +32,8 @@ export interface TeamMember {
   job_description: string | null;
   employment_start_date: string | null;
   holiday_entitlement_days_override: number | null;
+  date_of_birth: string | null;
+  show_birthday_to_team: boolean;
 }
 
 export interface Department {
@@ -138,26 +143,34 @@ export default function HrClient() {
       {/* Sub-tabs */}
       <div className="flex flex-wrap gap-2 mb-5">
         <TabBtn active={tab === 'mine'}     onClick={() => setTab('mine')}     icon={CalIcon}  label="My Holidays" />
+        <TabBtn active={tab === 'profile'}  onClick={() => setTab('profile')}  icon={UserIcon} label="My Profile" />
         {(isManagerOfSomeone || userRole === 'admin') && (
           <TabBtn active={tab === 'approvals'} onClick={() => setTab('approvals')} icon={Inbox} label="Approvals" />
         )}
         {(isManagerOfSomeone || userRole === 'admin') && (
           <TabBtn active={tab === 'team'} onClick={() => setTab('team')} icon={UsersIcon} label="Team Holidays" />
         )}
+        {(isManagerOfSomeone || userRole === 'admin') && (
+          <TabBtn active={tab === 'team-profiles'} onClick={() => setTab('team-profiles')} icon={Users2} label="Team Profiles" />
+        )}
         <TabBtn active={tab === 'absence'}     onClick={() => setTab('absence')}     icon={Activity}    label="Absence" />
         <TabBtn active={tab === 'advice'}      onClick={() => setTab('advice')}      icon={Sparkles}    label="AI HR Advice" />
         <TabBtn active={tab === 'confidential'} onClick={() => setTab('confidential')} icon={ShieldAlert} label="Confidential" />
+        <TabBtn active={tab === 'rights'}      onClick={() => setTab('rights')}      icon={BookOpen}    label="Employment Rights" />
         <TabBtn active={tab === 'orgchart'}    onClick={() => setTab('orgchart')}    icon={Network}     label="Org Chart" />
       </div>
 
       {/* Wait for /api/users/me to resolve before mounting tabs that need userId */}
-      {!userId && tab !== 'orgchart' && tab !== 'advice' && <Loader />}{/* confidential needs userId so loader handles it */}
+      {!userId && tab !== 'orgchart' && tab !== 'advice' && tab !== 'rights' && <Loader />}{/* rights/advice/orgchart don't need userId */}
       {userId && tab === 'mine'      && <MyHolidaysTab userId={userId} />}
+      {userId && tab === 'profile'   && <ProfileTab userId={userId} viewerId={userId} viewerRole={userRole} team={team} />}
+      {userId && tab === 'team-profiles' && <TeamProfilesTab viewerId={userId} viewerRole={userRole} team={team} />}
       {userId && tab === 'approvals' && <ApprovalsTab userId={userId} />}
       {userId && tab === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
       {userId && tab === 'absence'      && <AbsenceTab userId={userId} userRole={userRole} team={team} />}
       {tab === 'advice'                  && <AiAdviceTab />}
       {userId && tab === 'confidential' && <ConfidentialTab userId={userId} team={team} />}
+      {tab === 'rights'                  && <EmploymentRightsTab />}
       {tab === 'orgchart'                && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
     </ToolLayout>
   );
@@ -187,6 +200,7 @@ function Loader() {
 function MyHolidaysTab({ userId }: { userId: string }) {
   const [holidays, setHolidays] = useState<HolidayRow[]>([]);
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
+  const [toilBalance, setToilBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [requestOpen, setRequestOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -195,12 +209,21 @@ function MyHolidaysTab({ userId }: { userId: string }) {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [hRes, bRes] = await Promise.all([
+      const [hRes, bRes, tRes] = await Promise.all([
         fetch(`/api/hr/holidays?scope=mine`),
         fetch(`/api/hr/holidays/balance?userId=${userId}`),
+        fetch(`/api/hr/personnel/toil?userId=${userId}`),
       ]);
       setHolidays((await hRes.json()).holidays ?? []);
       setBalance(await bRes.json());
+      // TOIL is optional — if the table doesn't exist yet (migration not run),
+      // hide the card rather than failing the whole page.
+      if (tRes.ok) {
+        const t = await tRes.json();
+        setToilBalance(typeof t.balance === 'number' ? t.balance : 0);
+      } else {
+        setToilBalance(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally { setLoading(false); }
@@ -227,11 +250,12 @@ function MyHolidaysTab({ userId }: { userId: string }) {
     <div className="space-y-5">
       {/* Balance strip */}
       {balance && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={`grid grid-cols-2 ${toilBalance != null ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3`}>
           <BalanceCard label="Entitlement" value={balance.entitlement} suffix="days" tone="accent" />
           <BalanceCard label="Used" value={balance.used} suffix="days" tone="emerald" />
           <BalanceCard label="Pending" value={balance.pending} suffix="days" tone="amber" />
           <BalanceCard label="Remaining" value={balance.remaining} suffix="days" tone="bold" />
+          {toilBalance != null && <BalanceCard label="TOIL" value={toilBalance} suffix="hours" tone="purple" />}
         </div>
       )}
 
@@ -276,12 +300,13 @@ function formatYearWindow(year: { start: string; end: string }): string {
   return `${fmt(year.start)} – ${endIncl.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
 
-function BalanceCard({ label, value, suffix, tone }: { label: string; value: number; suffix?: string; tone: 'accent' | 'emerald' | 'amber' | 'bold' }) {
+function BalanceCard({ label, value, suffix, tone }: { label: string; value: number; suffix?: string; tone: 'accent' | 'emerald' | 'amber' | 'bold' | 'purple' }) {
   const map: Record<typeof tone, string> = {
     accent:  'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/20',
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     amber:   'bg-amber-50 text-amber-700 border-amber-200',
     bold:    'bg-gray-900 text-white border-gray-900',
+    purple:  'bg-purple-50 text-purple-700 border-purple-200',
   };
   return (
     <div className={`rounded-xl border p-3 ${map[tone]}`}>

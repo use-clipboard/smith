@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Building2, UsersRound, CalendarClock, Loader2, Plus, Trash2, Edit3, Check, X, AlertTriangle, Info, ShieldAlert,
+  Building2, UsersRound, CalendarClock, Loader2, Plus, Trash2, Edit3, Check, X, AlertTriangle, Info, ShieldAlert, ClipboardList,
 } from 'lucide-react';
 
 interface Props {
@@ -46,7 +46,7 @@ interface HrSettings {
   bank_holidays_last_synced_at: string | null;
 }
 
-type Section = 'departments' | 'team' | 'holiday' | 'confidential';
+type Section = 'departments' | 'team' | 'holiday' | 'confidential' | 'onboarding';
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -78,6 +78,7 @@ export default function HrSettingsTab({ isAdmin }: Props) {
           { id: 'team' as Section,        label: 'Team & Roles', icon: UsersRound },
           { id: 'holiday' as Section,     label: 'Holiday config', icon: CalendarClock },
           { id: 'confidential' as Section, label: 'Confidential channel', icon: ShieldAlert },
+          { id: 'onboarding' as Section,  label: 'Onboarding template', icon: ClipboardList },
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -98,6 +99,178 @@ export default function HrSettingsTab({ isAdmin }: Props) {
       {section === 'team'         && <TeamSection isAdmin={isAdmin} />}
       {section === 'holiday'      && <HolidayConfigSection isAdmin={isAdmin} />}
       {section === 'confidential' && <ConfidentialChannelSection isAdmin={isAdmin} />}
+      {section === 'onboarding'  && <OnboardingTemplateSection isAdmin={isAdmin} />}
+    </div>
+  );
+}
+
+// ── Onboarding template ──────────────────────────────────────────────────
+interface OnboardingTemplateItem {
+  id: string;
+  title: string;
+  description: string | null;
+  default_assignee_role: 'admin' | 'manager' | 'staff' | null;
+  due_days_after_start: number;
+  display_order: number;
+}
+
+function OnboardingTemplateSection({ isAdmin }: { isAdmin: boolean }) {
+  const [items, setItems] = useState<OnboardingTemplateItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ title: '', description: '', default_assignee_role: 'manager', due_days_after_start: '7', display_order: '0' });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch('/api/hr/onboarding/template');
+    setItems((await res.json()).items ?? []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  function startEdit(item: OnboardingTemplateItem) {
+    setEditingId(item.id);
+    setDraft({
+      title: item.title,
+      description: item.description ?? '',
+      default_assignee_role: item.default_assignee_role ?? 'manager',
+      due_days_after_start: String(item.due_days_after_start),
+      display_order: String(item.display_order),
+    });
+  }
+
+  function resetDraft() {
+    setDraft({ title: '', description: '', default_assignee_role: 'manager', due_days_after_start: '7', display_order: '0' });
+  }
+
+  async function add() {
+    if (!draft.title.trim()) return;
+    await fetch('/api/hr/onboarding/template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: draft.title,
+        description: draft.description || null,
+        default_assignee_role: draft.default_assignee_role,
+        due_days_after_start: Number(draft.due_days_after_start) || 0,
+        display_order: Number(draft.display_order) || 0,
+      }),
+    });
+    resetDraft();
+    setAdding(false);
+    void load();
+  }
+
+  async function saveEdit(id: string) {
+    await fetch(`/api/hr/onboarding/template/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: draft.title,
+        description: draft.description || null,
+        default_assignee_role: draft.default_assignee_role,
+        due_days_after_start: Number(draft.due_days_after_start) || 0,
+        display_order: Number(draft.display_order) || 0,
+      }),
+    });
+    setEditingId(null);
+    void load();
+  }
+
+  async function remove(id: string) {
+    if (!confirm('Delete this template item?')) return;
+    await fetch(`/api/hr/onboarding/template/${id}`, { method: 'DELETE' });
+    void load();
+  }
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="flex items-start gap-3 p-3 rounded-xl bg-[var(--accent-light)] border border-[var(--accent)]/20 text-xs text-[var(--accent)]">
+        <Info size={14} className="shrink-0 mt-0.5" />
+        <p>These items become the default checklist for every new joiner. From Team Profiles, click <strong>Apply firm template</strong> on a new starter to materialise the list against their start date.</p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-sm text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin inline mr-1.5" />Loading…</div>
+      ) : (
+        <div className="bg-white border border-[var(--border)] rounded-xl divide-y divide-gray-100">
+          {items.length === 0 && (
+            <p className="text-xs text-[var(--text-muted)] italic px-4 py-6 text-center">No template items yet.</p>
+          )}
+          {items.map(item => {
+            const isEditing = editingId === item.id;
+            return (
+              <div key={item.id} className="px-4 py-3">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} className="input-base text-sm w-full" placeholder="Title" />
+                    <textarea value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={2} className="input-base text-sm w-full" placeholder="Description (optional)" />
+                    <div className="grid grid-cols-3 gap-2">
+                      <select value={draft.default_assignee_role} onChange={e => setDraft({ ...draft, default_assignee_role: e.target.value })} className="input-base text-sm">
+                        <option value="admin">Admin</option>
+                        <option value="manager">Line manager</option>
+                        <option value="staff">Joiner themselves</option>
+                      </select>
+                      <input type="number" value={draft.due_days_after_start} onChange={e => setDraft({ ...draft, due_days_after_start: e.target.value })} className="input-base text-sm" placeholder="Due days after start" />
+                      <input type="number" value={draft.display_order} onChange={e => setDraft({ ...draft, display_order: e.target.value })} className="input-base text-sm" placeholder="Order" />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setEditingId(null)} className="btn-secondary text-sm">Cancel</button>
+                      <button onClick={() => void saveEdit(item.id)} className="btn-primary text-sm">Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{item.title}</p>
+                      {item.description && <p className="text-xs text-[var(--text-muted)] mt-0.5">{item.description}</p>}
+                      <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                        Due day +{item.due_days_after_start}{item.default_assignee_role ? ` · Assignee: ${item.default_assignee_role}` : ''} · Order {item.display_order}
+                      </p>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => startEdit(item)} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Edit3 size={13} /></button>
+                        <button onClick={() => void remove(item.id)} className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"><Trash2 size={13} /></button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {isAdmin && !adding && (
+        <button onClick={() => setAdding(true)} className="btn-secondary text-sm inline-flex items-center gap-1.5"><Plus size={13} />Add item</button>
+      )}
+      {isAdmin && adding && (
+        <div className="border border-[var(--border)] rounded-xl p-4 space-y-2 bg-white">
+          <input value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} className="input-base text-sm w-full" placeholder="Title (e.g. Issue laptop and access cards)" />
+          <textarea value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} rows={2} className="input-base text-sm w-full" placeholder="Description (optional)" />
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">Default assignee</span>
+              <select value={draft.default_assignee_role} onChange={e => setDraft({ ...draft, default_assignee_role: e.target.value })} className="input-base text-sm w-full">
+                <option value="admin">Admin</option>
+                <option value="manager">Line manager</option>
+                <option value="staff">Joiner themselves</option>
+              </select>
+            </label>
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">Due (days after start)</span>
+              <input type="number" min={0} value={draft.due_days_after_start} onChange={e => setDraft({ ...draft, due_days_after_start: e.target.value })} className="input-base text-sm w-full" />
+            </label>
+            <label className="text-xs"><span className="block mb-1 text-[var(--text-muted)]">Display order</span>
+              <input type="number" value={draft.display_order} onChange={e => setDraft({ ...draft, display_order: e.target.value })} className="input-base text-sm w-full" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setAdding(false); resetDraft(); }} className="btn-secondary text-sm">Cancel</button>
+            <button onClick={() => void add()} className="btn-primary text-sm">Save</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
