@@ -202,6 +202,18 @@ export const MODULES: ModuleConfig[] = [
     category: 'tool',
   },
 
+  {
+    id: 'hr',
+    name: 'HR',
+    description: 'Internal team-management for the firm itself — departments, managers, org chart, holiday requests with manager approval, sickness/absence tracking, AI HR advice, confidential disclosures, and a UK Employment Rights Bill knowledge base.',
+    iconName: 'UsersRound',
+    route: '/hr',
+    alwaysOn: false,
+    enhancedBy: ['google-calendar'],
+    monthlyPricePence: 1900,
+    category: 'tool',
+  },
+
   // ─── Integrations ─────────────────────────────────────────────────────────
   {
     id: 'google-drive',
