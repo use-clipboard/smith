@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   HeartHandshake, Calendar as CalIcon, Inbox, Network, Plus, Loader2,
-  Check, X, AlertTriangle, ChevronRight, Users as UsersIcon, Filter,
+  Check, X, AlertTriangle, ChevronRight, Users as UsersIcon, Filter, Activity, Sparkles,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -12,8 +12,10 @@ import { initials, avatarColour } from '@/components/features/tasks/StepComments
 import HrOrgChart from './HrOrgChart';
 import HolidayRequestModal from './HolidayRequestModal';
 import HolidayDirectEntryModal from './HolidayDirectEntryModal';
+import AbsenceTab from './AbsenceTab';
+import AiAdviceTab from './AiAdviceTab';
 
-type Tab = 'mine' | 'approvals' | 'team' | 'orgchart';
+type Tab = 'mine' | 'approvals' | 'team' | 'absence' | 'advice' | 'orgchart';
 
 export interface TeamMember {
   id: string;
@@ -141,14 +143,18 @@ export default function HrClient() {
         {(isManagerOfSomeone || userRole === 'admin') && (
           <TabBtn active={tab === 'team'} onClick={() => setTab('team')} icon={UsersIcon} label="Team Holidays" />
         )}
-        <TabBtn active={tab === 'orgchart'} onClick={() => setTab('orgchart')} icon={Network} label="Org Chart" />
+        <TabBtn active={tab === 'absence'}  onClick={() => setTab('absence')}  icon={Activity} label="Absence" />
+        <TabBtn active={tab === 'advice'}   onClick={() => setTab('advice')}   icon={Sparkles} label="AI HR Advice" />
+        <TabBtn active={tab === 'orgchart'} onClick={() => setTab('orgchart')} icon={Network}  label="Org Chart" />
       </div>
 
       {/* Wait for /api/users/me to resolve before mounting tabs that need userId */}
-      {!userId && tab !== 'orgchart' && <Loader />}
+      {!userId && tab !== 'orgchart' && tab !== 'advice' && <Loader />}
       {userId && tab === 'mine'      && <MyHolidaysTab userId={userId} />}
       {userId && tab === 'approvals' && <ApprovalsTab userId={userId} />}
-      {tab === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
+      {userId && tab === 'team'      && <TeamHolidaysTab userId={userId} userRole={userRole} team={team} />}
+      {userId && tab === 'absence'   && <AbsenceTab userId={userId} userRole={userRole} team={team} />}
+      {tab === 'advice'    && <AiAdviceTab />}
       {tab === 'orgchart'  && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
     </ToolLayout>
   );
