@@ -8,6 +8,19 @@ SMITH is a web-based tool for accountants, bookkeepers, and accounting staff. It
 
 ## Features & How to Use Them
 
+### History dashboards (every AI tool)
+Most AI tools — **Full Analysis, Bank to CSV, Landlord, Accounts Review, Performance Analysis, P32 Summary, Risk Assessment, Summarise, and Meeting Notes** — open onto a **history dashboard** by default rather than a blank input form. The history dashboard lists every previous job your firm has run for that tool, with:
+- The client name (or "—" for client-less jobs), the user who ran it, the date, and a quick summary (e.g. transaction count or period covered)
+- A search box and sortable columns
+- Filters by client and by team member
+- Click any row to open that job's full saved result — you can re-export the CSV / report, copy outputs again, or use it as a seed for a new run
+- A **"+ New …"** button (top-right) to start a fresh job — that's what opens the input form / wizard
+- Bulk delete via row-selection checkboxes (admin / owner only)
+
+So when a user says "where did I save that bank statement analysis?" or "how do I get back to a Full Analysis I ran last week?", the answer is: open the tool from the sidebar and it lands on the history dashboard with every past run listed. They don't need to remember which client — they can search or filter.
+
+---
+
 ### Dashboard (left nav → Dashboard / home screen)
 The dashboard is the home screen. It includes:
 - **Quick Launch grid** — a card for every active tool; click any card to open the tool directly
@@ -340,6 +353,77 @@ An AI-powered recruitment tool for writing job postings, evaluating applicants, 
 - You can re-evaluate an applicant after uploading updated documents
 - Scorecards can be saved in progress and completed after the interview
 - The job posting is stored permanently — you can return to copy it at any time
+
+---
+
+### 21. HR (left nav → HR)
+A complete in-house HR module for the firm itself — not for clients. Holiday and absence management, the team org chart, personnel files, AI HR advice, confidential disclosures, and auto-generated quarterly manager reading on UK employment law. Activated per-firm in Settings → Modules.
+
+**Top-level tabs (four):**
+1. **Overview** — the default landing dashboard. Shows: holiday balance + TOIL strip; upcoming holidays (with year, and a "Bank holiday" pill for any synced from gov.uk); "Who's out" today and the next 7 days, firm-wide; upcoming birthdays and work anniversaries in the next 14 days; for managers and admins: pending-approvals counter, and an action-items card listing probation periods ending or right-to-work documents expiring in the next 60 days.
+2. **Holidays & Absence** — sub-tabs: My Holidays, Calendar, Tracker, Approvals, Team Holidays, Absence.
+3. **People** — sub-tabs: My Profile, Team Profiles, Org Chart.
+4. **Resources** — sub-tabs: AI HR Advice, Manager Briefings, Confidential, Employment Rights.
+
+**Header quick-actions pill (top-right of HR page):** Calendar, Approvals, Record absence, Team holidays, Add a new joiner (admin), and a primary **+ Request holiday** button.
+
+**Holiday calendar view:** month grid, firm-wide. Coloured avatar dots — green Holiday, amber Bank holiday, red Sickness, sky Medical, plus Compassionate / Jury duty / Unpaid / Other. AM half-day = top half of the dot, PM half-day = bottom half. Click any day with events to see who and why.
+
+**Holiday tracker view:** spreadsheet-style. Rows are team members grouped under their Department headers; columns are days of the month. Coloured dots show the category. Vertical lines per day with row + column + intersection highlighting on hover. Right-hand columns: Hol (mo) plus Entitlement (the person's annual allowance — per-user override falling back to firm default). Hovering the Hol cell shows "this month: X · YTD: Y of Z". A **Totals toggle** at the top right swaps the day grid for a per-category Month + YTD totals table.
+
+**Holiday requests:** click "+ Request holiday" or the primary header button. Pick dates, half-days, reason, and submit. Pending requests fire a notification to the assigned manager. Managers approve / reject from the Approvals sub-tab and can optionally push approved holidays to the staff member's Google Calendar.
+
+**Absence:** managers / admins record sickness, unpaid leave, compassionate, jury duty, medical appointments, or other. Includes return-to-work tracking.
+
+**Bank holidays:** auto-sync from the gov.uk feed when enabled in Settings → HR → Holiday config. Region-aware (England & Wales / Scotland / Northern Ireland). Each user gets an approved 1-day holiday per bank holiday, materialised up to ~2 years ahead. If the firm has "push to Google Calendar by default" enabled and a user has Google Calendar connected, bank holidays are pushed onto their personal calendar too.
+
+**My Profile (and Team Profiles for managers / admins):** collapsible sections for:
+- Birthday and the "Show my birthday to team" opt-in
+- Emergency contacts
+- Right-to-work documentation (admin-only edit)
+- Probation period (active/passed/failed/extended/cancelled)
+- Onboarding checklist — applied from the firm's onboarding template; admins manage the template at Settings → HR → Onboarding template
+- Training & CPD records, with per-CPD-year hour totals
+- 1:1 meetings (bilateral — both staff and manager can see and add notes)
+- Performance appraisals — state machine: draft → submitted → acknowledged
+- DSE assessment (UK Display Screen Equipment requirement)
+- TOIL ledger — positive earned, negative used, with a running balance shown alongside the holiday balance on My Holidays
+- Salary records — admin-only, every read by a non-self viewer is audit-logged
+- Leaver record — notice / last working day / exit interview / equipment / systems
+
+**Org Chart:** xyflow tree of the team grouped by reporting line. Birthday and work-anniversary pills appear on a person's card within ±3 days of the event. Birthdays are only shown if the person opted in. Department highlighting at the top right.
+
+**Joiner wizard (admin):** click the UserPlus icon in the HR header pill. Three steps: identity (email, name, role, invite link or initial password), job details (title, department, manager, start date, holiday override, DOB), and first-day setup (optional probation period + apply firm onboarding template). On submit, the wizard creates the auth user, sets all HR fields, optionally creates the probation row, and materialises onboarding items dated from the start date.
+
+**Leaver workflow (admin):** open the leaver record on a Team Profile. Set notice + last working day + reason, then tick off exit interview / equipment returned / systems offboarded. A **Deactivate login** button bans the auth user without deleting their HR history (a "Re-enable login" toggle reverses it).
+
+**AI HR Advice (Resources):** Sonnet-powered chat with two modes — Educational (explains UK employment law concepts) and Drafting (helps a manager write a difficult message or letter).
+
+**Manager Briefings (Resources):** auto-generated quarterly briefing on UK employment-law changes and training tips. Generated on the 1st of January, April, July and October via Vercel cron, using Claude's web-search tool restricted to UK authoritative sources (gov.uk, ACAS, CIPD, HMRC, legislation.gov.uk, Commons Library). Every claim cites its source URL. Admins can trigger a fresh generation with the "Generate now" button. Managers and admins receive an in-app notification + email on publish.
+
+**Confidential disclosures (Resources):** file a confidential concern that's routed to a configured firm recipient (Settings → HR → Confidential channel). Anonymity is enforced server-side — even an admin viewing the channel sees a masked reporter when the user filed anonymously.
+
+**Employment Rights (Resources):** static reference for the UK Employment Rights Bill 2026 — 16 topics with disclaimers, search, audience tags (for-all-staff / for-managers), and gov.uk source links.
+
+**Notifications:**
+- New requests, decisions, cancellations, disclosures, briefings, and assignments all fire in-app notifications visible in the **bell** in the main header
+- The **HR sidebar icon** shows a numeric badge for unread HR notifications + your pending approvals
+- Inside HR, the top tabs **Holidays & Absence** and **Resources** plus the sub-tabs **My Holidays / Approvals / Manager Briefings / Confidential** each carry their own count
+- Most badges auto-clear when you open the relevant sub-tab; pending approvals stay until you actually decide them
+
+**Settings → HR (admin only):**
+- **Departments** — create, colour-code, and order the firm's departments
+- **Team & Roles** — set each user's department, manager, job title, start date, and holiday override
+- **Holiday config** — holiday-year reset date, firm-wide default entitlement, half-day boundaries (morning/afternoon start/end times), "push approved holidays to calendar" default
+- **Confidential channel** — choose which user receives confidential disclosures
+- **Onboarding template** — manage the per-firm onboarding checklist applied to new joiners
+- **Bank holidays** — toggle on/off + select region; manual Sync now button
+
+**Privacy notes:**
+- DOB is hidden from non-admin / non-self viewers unless the person opts in to share, and even then only month/day is exposed
+- Salary records are admin-only with mandatory audit logging on every cross-user read
+- Confidential disclosures are server-side anonymised when filed anonymously
+- 1:1 notes are visible only to the two parties (and admins via standard firm read)
 
 ---
 

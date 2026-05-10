@@ -6,6 +6,7 @@ import {
   ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
   ExternalLink, CalendarDays, MicVocal, UserPlus, Mail, ListChecks,
+  HeartHandshake,
 } from 'lucide-react';
 
 type Section = 'getting-started' | 'tools' | 'api-key' | 'team' | 'billing' | 'faq';
@@ -179,6 +180,34 @@ const FAQS: FAQ[] = [
     q: 'What is Bulk Tasks?',
     a: 'Bulk Tasks lets you create multiple tasks at once by applying a workflow template across a list of clients in a single operation. This is useful at the start of a period (e.g. year-end) when you need to create the same job for dozens of clients. Click the "Bulk Tasks" button at the top of the Tasks sidebar to open the bulk creation modal.',
   },
+  {
+    q: 'How do I get back to a job I ran in Full Analysis / Bank to CSV / Landlord / etc?',
+    a: 'Every AI tool opens onto a history dashboard listing every previous job your firm has run. Search by client, sort by date, or filter by team member. Click any row to reopen the saved result — you can re-export the CSV, copy outputs again, or use it as a seed for a new run. The "+ New …" button (top-right of the history page) is what opens the input form for a fresh job.',
+  },
+  {
+    q: 'How do I request a holiday?',
+    a: 'Open the HR tool and click the purple "+" button in the top-right of the header (it shows "Request holiday" on hover), or go to Holidays & Absence → My Holidays and click the Request holiday button. Choose your dates, half-day options, a reason, and submit. Your assigned manager will be notified and can approve or reject from their Approvals tab.',
+  },
+  {
+    q: 'Why don\'t bank holidays show up on the firm calendar?',
+    a: 'Two reasons. First, the Phase 1 + bank-holiday migrations need to be applied to Supabase — see Settings → HR → Holiday config and use the Sync now button. Second, bank holidays are auto-created as "approved" holidays for every firm user via the gov.uk feed. If Sync now reports 0 inserted, check the region setting (England & Wales / Scotland / Northern Ireland) is right, and that the bank-holidays-enabled toggle is on.',
+  },
+  {
+    q: 'How do I onboard a new team member in HR?',
+    a: 'Open the HR tool and click the UserPlus icon in the top-right header pill (admin only). The three-step wizard creates the auth user (with either an email invite link or an initial password), captures their job title, department, manager, start date, holiday entitlement, and optional DOB, then optionally starts a probation period and applies the firm onboarding checklist. You can manage the onboarding checklist template at Settings → HR → Onboarding template.',
+  },
+  {
+    q: 'How do I offboard someone when they leave?',
+    a: 'Open the HR tool → People → Team Profiles → click the leaver → Leaver record → "Begin leaver process". Set the notice date, last working day and reason, then tick off exit interview, equipment returned, and systems offboarded as each happens. Once they\'re gone, click "Deactivate login" to ban their auth account — their HR records and history are preserved for audit. You can re-enable login later from the same panel if needed.',
+  },
+  {
+    q: 'What are the quarterly Manager Briefings?',
+    a: 'On the 1st of January, April, July and October, SMITH automatically generates a UK employment-law briefing for managers in each firm with HR active. Claude searches gov.uk, ACAS, CIPD, HMRC, legislation.gov.uk and the House of Commons Library to summarise what\'s changed in the past quarter, plus action items and training tips. Every claim is sourced. Managers and admins get an in-app notification + email. Admins can also click "Generate now" at HR → Resources → Manager Briefings to trigger one manually. It\'s reading material, not legal advice.',
+  },
+  {
+    q: 'Why does the HR tool icon in the sidebar have a number badge?',
+    a: 'The HR badge counts pending holiday approvals where you\'re the assigned manager, plus your unread HR notifications (decisions, cancellations, new briefings, new disclosures). Opening the relevant sub-tab inside HR clears that part of the count automatically. Pending approvals stay until you actually decide them.',
+  },
 ];
 
 const TOOLS = [
@@ -197,6 +226,7 @@ const TOOLS = [
   { icon: UserPlus, name: 'Staff Hire', desc: 'AI-powered recruitment tool. Write professional job postings in a guided step-by-step wizard, upload CVs and cover letters for AI evaluation, generate tailored interview questions, build and complete scorecards during interviews, and rank all applicants with a final AI hiring recommendation. Access is controlled per-user by admins in Settings → Staff Hire.' },
   { icon: Mail, name: 'Email Triage', desc: 'A full Gmail-connected email client built into SMITH. Read, send, reply, reply all, and forward emails. Allocate emails to client timelines and tasks. AI features include Suggest Reply, Rewrite, and AI Draft Reply. BCC support, file attachments, label management, and an in-app signature editor that syncs directly to Gmail. Each team member connects their own Gmail account.' },
   { icon: ListChecks, name: 'Tasks', desc: 'A full workflow and task management tool. Create tasks from templates, assign steps to team members, track progress with a live flowchart and checklist, log time, and leave step-level notes visible to the whole team. Includes personal views (My Tasks, My Week, My Month) and firm-wide views (All Tasks, By Client, By Team, By Type). A "Records Here" status lets the team instantly see which jobs are ready to start.' },
+  { icon: HeartHandshake, name: 'HR', desc: 'In-house HR module for the firm: holiday requests with manager approval, a shared firm holiday calendar, spreadsheet-style absence tracker, sickness/absence recording with return-to-work, org chart with birthday and work-anniversary markers, personnel files (right-to-work, probation, training/CPD, 1:1s, appraisals, DSE, TOIL, salary, leaver workflow), AI HR adviser, confidential disclosures with anonymity, auto-generated quarterly UK employment-law briefings for managers, and a guided joiner wizard. Bank holidays auto-sync from gov.uk and optionally push to each user\'s Google Calendar.' },
 ];
 
 function FAQItem({ q, a }: { q: string; a: React.ReactNode }) {

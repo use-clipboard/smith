@@ -425,24 +425,20 @@ function TotalsTable({
       <table className="text-xs border-collapse w-full">
         <thead>
           <tr className="bg-gray-50">
-            <th rowSpan={2} className="sticky top-0 left-0 z-30 bg-gray-50 px-3 py-2 text-left font-semibold text-[10px] uppercase tracking-wide text-[var(--text-muted)] min-w-[180px] border-r border-b border-gray-200 align-bottom">Employee</th>
+            <th className="sticky top-0 left-0 z-30 bg-gray-50 px-3 py-2 text-left font-semibold text-[10px] uppercase tracking-wide text-[var(--text-muted)] min-w-[180px] border-r border-b border-gray-200">Employee</th>
             {TOTAL_CATEGORIES.map(k => (
-              <th key={k} colSpan={2} className="sticky top-0 z-20 bg-gray-50 px-2 py-1.5 text-center font-semibold text-[10px] uppercase border-r border-b border-gray-200" style={{ color: KIND_STYLE[k].bg }}>
+              <th key={k} colSpan={2} className="sticky top-0 z-20 bg-gray-50 px-0 pt-1.5 pb-0 text-center font-semibold text-[10px] uppercase border-r border-b border-gray-200" style={{ color: KIND_STYLE[k].bg }}>
                 <span className="inline-flex items-center gap-1 justify-center">
                   <span style={{ width: 8, height: 8, borderRadius: 9999, background: KIND_STYLE[k].bg, display: 'inline-block' }} />
                   {KIND_STYLE[k].label}
                 </span>
+                <div className="grid grid-cols-2 mt-1 border-t border-gray-200" title={monthLabel}>
+                  <span className="py-0.5 text-[8px] font-medium uppercase text-[var(--text-muted)] border-r border-gray-200">Month</span>
+                  <span className="py-0.5 text-[8px] font-medium uppercase text-[var(--text-muted)]">YTD</span>
+                </div>
               </th>
             ))}
-            <th rowSpan={2} className="sticky top-0 z-20 px-2 py-2 text-center font-semibold text-[9px] uppercase text-[var(--text-muted)] bg-gray-50 align-bottom border-l border-b border-gray-200">Entitlement</th>
-          </tr>
-          <tr className="bg-gray-50">
-            {TOTAL_CATEGORIES.map(k => (
-              <Fragment key={k}>
-                <th className="sticky z-20 bg-gray-50 px-1.5 py-1 text-center font-medium text-[8px] uppercase text-[var(--text-muted)] border-b border-gray-200" style={{ top: 34 }} title={monthLabel}>Month</th>
-                <th className="sticky z-20 bg-gray-50 px-1.5 py-1 text-center font-medium text-[8px] uppercase text-[var(--text-muted)] border-r border-b border-gray-200" style={{ top: 34 }}>YTD</th>
-              </Fragment>
-            ))}
+            <th className="sticky top-0 z-20 px-2 py-2 text-center font-semibold text-[9px] uppercase text-[var(--text-muted)] bg-gray-50 border-l border-b border-gray-200">Entitlement</th>
           </tr>
         </thead>
         <tbody>
