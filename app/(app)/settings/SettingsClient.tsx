@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -15,9 +15,10 @@ import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
+import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals';
 
 interface Props {
   userId: string;
@@ -36,6 +37,7 @@ interface Props {
   tasksModuleActive?: boolean;
   emailTriageModuleActive?: boolean;
   hrModuleActive?: boolean;
+  proposalsModuleActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -50,7 +52,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -89,6 +91,7 @@ export default function SettingsClient({
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare, adminOnly: true,  hidden: !tasksModuleActive },
     { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,        adminOnly: false, hidden: !emailTriageModuleActive },
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive },
+    { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
@@ -395,6 +398,11 @@ export default function SettingsClient({
       {/* HR tab — admin only, shown when HR module is active */}
       {activeTab === 'hr' && hrModuleActive && (
         <HrSettingsTab isAdmin={isAdmin} />
+      )}
+
+      {/* Proposals tab — admin only, shown when Proposals module is active */}
+      {activeTab === 'proposals' && proposalsModuleActive && (
+        <ProposalsSettingsTab isAdmin={isAdmin} tasksModuleActive={!!tasksModuleActive} />
       )}
 
         </div>

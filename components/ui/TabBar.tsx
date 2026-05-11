@@ -16,9 +16,14 @@ export default function TabBar() {
   function handleTabClick(tabId: string, route: string) {
     setActiveTabId(tabId);
     resetIfDone(route);
-    // Tool tabs are rendered by TabPanels — update the URL without a Next.js navigation
-    // so the mounted component is never destroyed
-    window.history.replaceState(null, '', route);
+    if (TOOL_ROUTES.has(route)) {
+      // Tool tab — TabPanels handles rendering. Just update the URL bar.
+      window.history.replaceState(null, '', route);
+    } else {
+      // Workspace / settings / help — these are rendered through Next.js {children}.
+      // `replaceState` would leave Next.js unaware so the previous page would linger.
+      router.push(route);
+    }
   }
 
   function handleCloseTab(e: React.MouseEvent, tabId: string) {

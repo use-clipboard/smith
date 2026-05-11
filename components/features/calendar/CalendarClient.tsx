@@ -740,7 +740,7 @@ function MonthView({
             <div
               key={i}
               onClick={() => onDayClick(date)}
-              className={`border-b border-r border-[var(--border)] p-1 min-h-[90px] cursor-pointer transition-colors
+              className={`border-b border-r border-[var(--border)] p-1 min-h-[90px] min-w-0 overflow-hidden cursor-pointer transition-colors
                 ${isCurrentMonth ? 'bg-[var(--bg-content)]' : 'bg-[var(--bg-nav-hover)]'}
                 hover:bg-[var(--accent-light)]`}
             >
@@ -749,25 +749,25 @@ function MonthView({
               >
                 {date.getDate()}
               </div>
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 min-w-0">
                 {dayEvents.slice(0, 3).map(ev => {
                   const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                   return isMasked ? (
                     <Tooltip key={ev.id} label={`${ev.ownerName ?? 'Team member'} is busy`} side="top">
                     <div
                       onClick={e => onEventClick(e, ev)}
-                      className="text-[11px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer hover:opacity-70 flex items-center gap-0.5 opacity-40"
+                      className="text-[11px] leading-tight px-1.5 py-0.5 rounded cursor-pointer hover:opacity-70 flex items-center gap-0.5 opacity-40 overflow-hidden"
                       style={{ backgroundColor: '#9ca3af33', color: '#6b7280' }}
                     >
                       <Lock size={9} className="shrink-0" />
-                      <span className="truncate italic">Hidden</span>
+                      <span className="truncate italic min-w-0 flex-1">Hidden</span>
                     </div>
                     </Tooltip>
                   ) : (
                     <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
                     <div
                       onClick={e => onEventClick(e, ev)}
-                      className="text-[11px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer hover:opacity-80 flex items-center gap-0.5"
+                      className="text-[11px] leading-tight px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 flex items-center gap-0.5 overflow-hidden"
                       style={{ backgroundColor: (ev.ownerColor ?? '#3b82f6') + '33', color: ev.ownerColor ?? '#3b82f6' }}
                     >
                       {ev.isHidden && <Lock size={9} className="shrink-0 opacity-70" />}
@@ -775,7 +775,7 @@ function MonthView({
                         ? <span className="opacity-70 shrink-0">{formatTime(ev.start)} </span>
                         : <span className="opacity-60 shrink-0">All day </span>
                       }
-                      <span className="truncate">{ev.title}</span>
+                      <span className="truncate min-w-0 flex-1">{ev.title}</span>
                     </div>
                     </Tooltip>
                   );
@@ -821,7 +821,7 @@ function WeekView({
         return (
           <div
             key={i}
-            className="border-b border-r border-[var(--border)] min-h-[200px] cursor-pointer hover:bg-[var(--accent-light)] transition-colors"
+            className="border-b border-r border-[var(--border)] min-h-[200px] min-w-0 overflow-hidden cursor-pointer hover:bg-[var(--accent-light)] transition-colors"
             onClick={() => onDayClick(day)}
           >
             <div className={`text-center py-2 border-b border-[var(--border)] text-xs font-medium
@@ -832,20 +832,20 @@ function WeekView({
                 {day.getDate()}
               </div>
             </div>
-            <div className="p-1 space-y-0.5">
+            <div className="p-1 space-y-0.5 min-w-0">
               {dayEvents.map(ev => {
                 const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                 return isMasked ? (
                   <Tooltip key={ev.id} label={`${ev.ownerName ?? 'Team member'} is busy`} side="top">
                   <div
                     onClick={e => onEventClick(e, ev)}
-                    className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-70 opacity-40"
+                    className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-70 opacity-40 overflow-hidden"
                     style={{ backgroundColor: '#9ca3af33', color: '#6b7280' }}
                   >
                     {ev.start.includes('T') && <span className="block text-[10px]">{formatTime(ev.start)}</span>}
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-0.5 min-w-0">
                       <Lock size={9} className="shrink-0" />
-                      <span className="truncate italic">Hidden</span>
+                      <span className="truncate italic min-w-0 flex-1">Hidden</span>
                     </span>
                   </div>
                   </Tooltip>
@@ -853,16 +853,16 @@ function WeekView({
                   <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
                   <div
                     onClick={e => onEventClick(e, ev)}
-                    className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-80"
+                    className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-80 overflow-hidden"
                     style={{ backgroundColor: (ev.ownerColor ?? '#3b82f6') + '33', color: ev.ownerColor ?? '#3b82f6' }}
                   >
                     {ev.start.includes('T')
-                      ? <span className="block text-[10px] opacity-70">{formatTime(ev.start)}</span>
-                      : <span className="block text-[10px] opacity-60">All day</span>
+                      ? <span className="block text-[10px] opacity-70 truncate">{formatTime(ev.start)}</span>
+                      : <span className="block text-[10px] opacity-60 truncate">All day</span>
                     }
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-0.5 min-w-0">
                       {ev.isHidden && <Lock size={9} className="shrink-0 opacity-70" />}
-                      <span className="truncate">{ev.title}</span>
+                      <span className="truncate min-w-0 flex-1">{ev.title}</span>
                     </span>
                   </div>
                   </Tooltip>

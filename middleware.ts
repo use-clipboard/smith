@@ -32,7 +32,12 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/signup');
 
-  if (!user && !isAuthRoute) {
+  // Public-by-token routes (proposal accept page + its API). No auth required.
+  const isPublicProposal =
+    request.nextUrl.pathname.startsWith('/p/') ||
+    request.nextUrl.pathname.startsWith('/api/p/');
+
+  if (!user && !isAuthRoute && !isPublicProposal) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

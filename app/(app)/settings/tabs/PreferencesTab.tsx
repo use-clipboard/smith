@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { useTheme } from '@/components/ui/ThemeProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
@@ -103,18 +103,53 @@ export default function PreferencesTab() {
     updateFavourites(activeFavourites.map(i => i.moduleId).filter(id => id !== moduleId));
   }
 
-  function moveUp(index: number) {
-    if (index === 0) return;
+  // ── Drag-to-reorder state ────────────────────────────────────────────
+  // Insertion-line UX: dropping on the top half of a row inserts ABOVE it,
+  // bottom half inserts BELOW. This matches what the user sees and avoids
+  // the swap-like asymmetry between upward and downward drags.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverPos, setDragOverPos] = useState<'before' | 'after'>('before');
+
+  function onDragStart(e: React.DragEvent<HTMLDivElement>, moduleId: string) {
+    setDraggingId(moduleId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', moduleId);
+  }
+
+  function onDragOver(e: React.DragEvent<HTMLDivElement>, overId: string) {
+    if (!draggingId || draggingId === overId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos: 'before' | 'after' = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    if (dragOverId !== overId) setDragOverId(overId);
+    if (dragOverPos !== pos) setDragOverPos(pos);
+  }
+
+  function onDrop(e: React.DragEvent<HTMLDivElement>, overId: string) {
+    e.preventDefault();
+    const fromId = draggingId ?? e.dataTransfer.getData('text/plain');
+    const pos = dragOverPos;
+    setDraggingId(null);
+    setDragOverId(null);
+    if (!fromId || fromId === overId) return;
     const ids = activeFavourites.map(i => i.moduleId);
-    [ids[index - 1], ids[index]] = [ids[index], ids[index - 1]];
+    const fromIdx = ids.indexOf(fromId);
+    const overIdx = ids.indexOf(overId);
+    if (fromIdx < 0 || overIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    // Insertion target index accounting for both the removal and before/after intent
+    const insertIdx = (pos === 'before')
+      ? (fromIdx < overIdx ? overIdx - 1 : overIdx)
+      : (fromIdx < overIdx ? overIdx : overIdx + 1);
+    ids.splice(insertIdx, 0, fromId);
     updateFavourites(ids);
   }
 
-  function moveDown(index: number) {
-    if (index === activeFavourites.length - 1) return;
-    const ids = activeFavourites.map(i => i.moduleId);
-    [ids[index], ids[index + 1]] = [ids[index + 1], ids[index]];
-    updateFavourites(ids);
+  function onDragEnd() {
+    setDraggingId(null);
+    setDragOverId(null);
   }
 
   return (
@@ -262,49 +297,43 @@ export default function PreferencesTab() {
             <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-2">
               Pinned — drag to reorder
             </p>
-            {activeFavourites.map((item, index) => {
+            {activeFavourites.map(item => {
               const Icon = item.icon;
+              const isDragging = draggingId === item.moduleId;
+              const showLineAbove = dragOverId === item.moduleId && dragOverPos === 'before' && draggingId !== item.moduleId;
+              const showLineBelow = dragOverId === item.moduleId && dragOverPos === 'after' && draggingId !== item.moduleId;
               return (
-                <div
-                  key={item.moduleId}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--accent-light)] border border-[var(--accent)]/20"
-                >
-                  <Star size={13} className="text-[var(--accent)] shrink-0" fill="currentColor" />
-                  <Icon size={15} className="text-[var(--accent)] shrink-0" />
-                  <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{item.label}</span>
-                  {/* Reorder */}
-                  <div className="flex items-center gap-0.5">
-                    <Tooltip label="Move up">
+                <div key={item.moduleId} className="relative">
+                  {/* Insertion indicator above */}
+                  <div className={`absolute left-2 right-2 -top-[3px] h-[3px] rounded-full bg-[var(--accent)] transition-opacity duration-100 pointer-events-none ${showLineAbove ? 'opacity-100' : 'opacity-0'}`} />
+                  <div
+                    draggable
+                    onDragStart={e => onDragStart(e, item.moduleId)}
+                    onDragOver={e => onDragOver(e, item.moduleId)}
+                    onDrop={e => onDrop(e, item.moduleId)}
+                    onDragEnd={onDragEnd}
+                    onDragLeave={() => { if (dragOverId === item.moduleId) setDragOverId(null); }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--accent-light)] border border-[var(--accent)]/20 cursor-grab active:cursor-grabbing select-none transition-all duration-150
+                      ${isDragging ? 'opacity-60 scale-[1.02] shadow-xl ring-2 ring-[var(--accent)]/40 rotate-[0.5deg]' : 'shadow-sm hover:shadow-md'}
+                    `}
+                  >
+                    <GripVertical size={14} className="text-[var(--text-muted)] shrink-0" aria-hidden />
+                    <Star size={13} className="text-[var(--accent)] shrink-0" fill="currentColor" />
+                    <Icon size={15} className="text-[var(--accent)] shrink-0" />
+                    <span className="text-sm font-medium text-[var(--text-primary)] flex-1">{item.label}</span>
+                    <Tooltip label="Remove from favourites">
                       <button
-                        onClick={() => moveUp(index)}
-                        disabled={index === 0}
-                        aria-label="Move up"
-                        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={() => removeFavourite(item.moduleId)}
+                        aria-label="Remove from favourites"
+                        className="p-1 rounded hover:bg-[var(--danger)]/10 transition-colors"
                       >
-                        <ChevronUp size={13} className="text-[var(--text-muted)]" />
-                      </button>
-                    </Tooltip>
-                    <Tooltip label="Move down">
-                      <button
-                        onClick={() => moveDown(index)}
-                        disabled={index === activeFavourites.length - 1}
-                        aria-label="Move down"
-                        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] disabled:opacity-30 transition-colors"
-                      >
-                        <ChevronDown size={13} className="text-[var(--text-muted)]" />
+                        <X size={13} className="text-[var(--text-muted)] hover:text-[var(--danger)]" />
                       </button>
                     </Tooltip>
                   </div>
-                  {/* Remove */}
-                  <Tooltip label="Remove from favourites">
-                    <button
-                      onClick={() => removeFavourite(item.moduleId)}
-                      aria-label="Remove from favourites"
-                      className="p-1 rounded hover:bg-[var(--danger)]/10 transition-colors"
-                    >
-                      <X size={13} className="text-[var(--text-muted)] hover:text-[var(--danger)]" />
-                    </button>
-                  </Tooltip>
+                  {/* Insertion indicator below */}
+                  <div className={`absolute left-2 right-2 -bottom-[3px] h-[3px] rounded-full bg-[var(--accent)] transition-opacity duration-100 pointer-events-none ${showLineBelow ? 'opacity-100' : 'opacity-0'}`} />
                 </div>
               );
             })}

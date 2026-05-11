@@ -7,6 +7,7 @@ import {
   TrendingUp, Receipt, ShieldAlert, FileText, BookOpen,
   Users, Activity, Wifi, ExternalLink, Archive, Building2,
   CalendarDays, MicVocal, UserPlus, CheckSquare, X, MessageSquare,
+  HeartHandshake, FileSignature,
 } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import Tooltip from '@/components/ui/Tooltip';
@@ -32,6 +33,8 @@ const ALL_TOOLS = [
   { moduleId: 'meeting-notes',   href: '/meeting-notes',  label: 'Meeting Notes',      desc: 'Record, transcribe and summarise meetings',   icon: MicVocal,       color: '#7C3AED' },
   { moduleId: 'staff-hire',      href: '/staff-hire',     label: 'Staff Hire',         desc: 'AI-powered recruitment and applicant review',  icon: UserPlus,       color: '#7C3AED' },
   { moduleId: 'tasks',           href: '/tasks',          label: 'Tasks',              desc: 'Manage client and internal tasks with workflows', icon: CheckSquare,    color: '#4F46E5' },
+  { moduleId: 'hr',              href: '/hr',             label: 'HR',                 desc: 'Holidays, team org chart, personnel files & briefings', icon: HeartHandshake, color: '#9333EA' },
+  { moduleId: 'proposals',       href: '/proposals',      label: 'Proposals',          desc: 'Send proposals to prospects, accept & onboard',          icon: FileSignature,  color: '#0EA5E9' },
 ];
 
 const FEATURE_LABELS: Record<string, string> = {

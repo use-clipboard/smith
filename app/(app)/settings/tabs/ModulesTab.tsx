@@ -5,14 +5,16 @@ import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   Check, Loader2, AlertTriangle, Puzzle, Info, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
+  HeartHandshake, FileSignature,
 } from 'lucide-react';
-import { MODULES, type ModuleConfig } from '@/config/modules.config';
+import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
 
 // Map iconName strings to lucide components
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
+  HeartHandshake, FileSignature,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -123,8 +125,11 @@ export default function ModulesTab({ initialActiveModules }: Props) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const optionalModules = MODULES.filter(m => !m.alwaysOn);
-  const toolModules = optionalModules.filter(m => m.category === 'tool');
-  const integrationModules = optionalModules.filter(m => m.category === 'integration');
+  // Group modules by their functional group, preserving MODULE_GROUPS order.
+  const groupedModules: { group: typeof MODULE_GROUPS[number]; modules: ModuleConfig[] }[] = MODULE_GROUPS
+    .map(group => ({ group, modules: optionalModules.filter(m => m.group === group.id) }))
+    .filter(g => g.modules.length > 0);
+  const ungrouped = optionalModules.filter(m => !m.group);
 
   async function handleToggle(moduleId: string, shouldBeActive: boolean) {
     const next = shouldBeActive
@@ -191,41 +196,48 @@ export default function ModulesTab({ initialActiveModules }: Props) {
         )}
       </div>
 
-      {/* Tools */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
-          Tools
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {toolModules.map(module => (
-            <ModuleCard
-              key={module.id}
-              module={module}
-              isActive={activeModules.includes(module.id)}
-              onToggle={handleToggle}
-              saving={saving}
-            />
-          ))}
+      {/* Grouped modules — one section per functional group */}
+      {groupedModules.map(({ group, modules }) => (
+        <div key={group.id}>
+          <div className="mb-3 px-1">
+            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              {group.label}
+            </p>
+            <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{group.description}</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {modules.map(module => (
+              <ModuleCard
+                key={module.id}
+                module={module}
+                isActive={activeModules.includes(module.id)}
+                onToggle={handleToggle}
+                saving={saving}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ))}
 
-      {/* Integrations */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
-          Integrations
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {integrationModules.map(module => (
-            <ModuleCard
-              key={module.id}
-              module={module}
-              isActive={activeModules.includes(module.id)}
-              onToggle={handleToggle}
-              saving={saving}
-            />
-          ))}
+      {/* Fallback for any module that hasn't been assigned a group yet */}
+      {ungrouped.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
+            Other
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {ungrouped.map(module => (
+              <ModuleCard
+                key={module.id}
+                module={module}
+                isActive={activeModules.includes(module.id)}
+                onToggle={handleToggle}
+                saving={saving}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
     </div>
   );
