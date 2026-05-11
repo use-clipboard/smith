@@ -4,17 +4,17 @@ import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, Puzzle, Plus,
-  HeartHandshake,
+  HeartHandshake, FileSignature,
 } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
 import { useTabActivityContext } from '@/components/ui/TabActivityContext';
-import { MODULES, type ModuleConfig } from '@/config/modules.config';
+import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake,
+  CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -111,14 +111,31 @@ export default function NewTabPage() {
         </div>
       </div>
 
-      {/* Tools section */}
-      {hasTools && (
+      {/* Tools — split by functional group so the user can scan to find one. */}
+      {hasTools && MODULE_GROUPS.map(group => {
+        const inGroup = tools.filter(t => t.group === group.id);
+        if (inGroup.length === 0) return null;
+        return (
+          <div key={group.id} className="mb-8">
+            <div className="mb-3 px-1">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+                {group.label}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {inGroup.map(m => <ToolCard key={m.id} module={m} />)}
+            </div>
+          </div>
+        );
+      })}
+      {/* Anything not yet grouped */}
+      {hasTools && tools.some(t => !t.group) && (
         <div className="mb-8">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
-            Tools
+            Other
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {tools.map(m => <ToolCard key={m.id} module={m} />)}
+            {tools.filter(t => !t.group).map(m => <ToolCard key={m.id} module={m} />)}
           </div>
         </div>
       )}

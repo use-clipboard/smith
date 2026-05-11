@@ -1,5 +1,7 @@
 import { Resend } from 'resend';
 import { resolveMergeTags, type MergeTagContext } from './emailMergeTags';
+import { createServiceClient } from './supabase-server';
+import { getRefreshedGmailClient, buildRawMessage } from './gmail';
 
 // Only instantiate if the key exists — avoids build-time crash when RESEND_API_KEY is not set yet.
 let _resend: Resend | null = null;
@@ -182,4 +184,230 @@ export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions
     html,
   });
   if (error) throw new Error(`Failed to send briefing email: ${error.message}`);
+}
+
+// ─── Proposal delivery email ─────────────────────────────────────────────────
+export interface ProposalEmailOptions {
+  firmId: string;
+  to: string;
+  proposalTitle: string;
+  prospectName: string;
+  firmName: string;
+  senderName: string | null;
+  intro: string | null;
+  acceptUrl: string;
+}
+
+export async function sendProposalEmail(opts: ProposalEmailOptions) {
+  const color = await getBrandColor(opts.firmId, '#0ea5e9');
+  const introBlock = opts.intro
+    ? `<p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.intro)}</p>`
+    : '';
+  const html = `
+    <div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+      <div style="background:${color};color:#fff;padding:20px 24px;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">A proposal from ${escapeHtml(opts.firmName)}</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;">Hi ${escapeHtml(opts.prospectName.split(' ')[0])},</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;">${opts.senderName ? `${escapeHtml(opts.senderName)} at ${escapeHtml(opts.firmName)}` : escapeHtml(opts.firmName)} has prepared a proposal for you: <strong>${escapeHtml(opts.proposalTitle)}</strong>.</p>
+        ${introBlock}
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">Click below to review the proposal and let us know if you would like to proceed. There is a signature box on the page if you choose to accept.</p>
+        <a href="${opts.acceptUrl}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600;">View proposal</a>
+        <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">Or paste this link into your browser: <span style="word-break:break-all;">${opts.acceptUrl}</span></p>
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">Sent by SMITH on behalf of ${escapeHtml(opts.firmName)}.</p>
+      </div>
+    </div>
+  `;
+  const subject = resolveProposalSubject(
+    await getProposalSubject(opts.firmId, 'proposal'),
+    `Proposal from {firm} — {proposal}`,
+    { firm_name: opts.firmName, prospect_name: opts.prospectName, proposal_title: opts.proposalTitle },
+  );
+  await dispatchProposalEmail({ firmId: opts.firmId, to: opts.to, subject, html });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+// ─── Proposal email dispatcher ───────────────────────────────────────────────
+// Sends a proposal-related email either via the firm's linked Gmail (when an
+// email_connections row is wired up to firm_proposal_settings.proposal_email_sender_user_id)
+// or via Resend as a fallback. Used by all three proposal email senders below.
+interface ProposalDispatch {
+  firmId: string;
+  to: string;
+  subject: string;
+  html: string;
+  fromAddressOverride?: string | null;  // explicit firm_proposal_settings.email_from_address override
+}
+
+async function dispatchProposalEmail(opts: ProposalDispatch): Promise<{ via: 'gmail' | 'resend'; senderEmail: string }> {
+  const service = createServiceClient();
+  const { data: settings } = await service
+    .from('firm_proposal_settings')
+    .select('proposal_email_sender_connection_id, email_from_address')
+    .eq('firm_id', opts.firmId)
+    .maybeSingle();
+
+  const connectionId = (settings as { proposal_email_sender_connection_id?: string | null } | null)?.proposal_email_sender_connection_id ?? null;
+  const overrideFrom = opts.fromAddressOverride ?? (settings?.email_from_address ?? null);
+
+  // ── Try the dedicated proposals Gmail connection if configured ───────
+  if (connectionId) {
+    const { data: conn } = await service
+      .from('proposal_email_connections')
+      .select('id, refresh_token, google_email')
+      .eq('id', connectionId)
+      .maybeSingle();
+    if (conn?.refresh_token && conn.google_email) {
+      try {
+        const { gmail, accessToken } = await getRefreshedGmailClient(conn.refresh_token);
+        const raw = buildRawMessage({
+          from: conn.google_email,
+          to: [opts.to],
+          subject: opts.subject,
+          htmlBody: opts.html,
+        });
+        await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+        await service
+          .from('proposal_email_connections')
+          .update({ access_token: accessToken, updated_at: new Date().toISOString() })
+          .eq('id', conn.id);
+        return { via: 'gmail', senderEmail: conn.google_email };
+      } catch (e) {
+        console.error('[proposals/dispatchEmail] Gmail send failed, falling back to Resend:', e);
+        // fall through to Resend
+      }
+    }
+  }
+
+  // ── Resend fallback ──────────────────────────────────────────────────
+  const resend = getResend();
+  const fromAddress = overrideFrom ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: opts.to,
+    subject: opts.subject,
+    html: opts.html,
+  });
+  if (error) throw new Error(`Failed to send email: ${error.message}`);
+  return { via: 'resend', senderEmail: fromAddress };
+}
+
+/** Resolve merge tags in a subject template. Supports {firm}, {firm_name}, {prospect}, {prospect_name}, {proposal}, {proposal_title}. */
+export function resolveProposalSubject(
+  template: string | null | undefined,
+  fallback: string,
+  vars: { firm_name: string; prospect_name: string; proposal_title: string },
+): string {
+  const t = (template && template.trim()) ? template : fallback;
+  return t
+    .replace(/\{\{?\s*firm(?:_name)?\s*\}?\}/gi, vars.firm_name)
+    .replace(/\{\{?\s*prospect(?:_name)?\s*\}?\}/gi, vars.prospect_name)
+    .replace(/\{\{?\s*proposal(?:_title)?\s*\}?\}/gi, vars.proposal_title);
+}
+
+async function getProposalSubject(firmId: string, kind: 'proposal' | 'reminder' | 'onboarding'): Promise<string | null> {
+  const service = createServiceClient();
+  const col = kind === 'proposal' ? 'subject_proposal' : kind === 'reminder' ? 'subject_reminder' : 'subject_onboarding';
+  const { data } = await service.from('firm_proposal_settings').select(col).eq('firm_id', firmId).maybeSingle();
+  return (data as Record<string, string | null> | null)?.[col] ?? null;
+}
+
+async function getProposalBody(firmId: string, kind: 'reminder' | 'onboarding'): Promise<string | null> {
+  const service = createServiceClient();
+  const col = kind === 'reminder' ? 'body_reminder' : 'body_onboarding';
+  const { data } = await service.from('firm_proposal_settings').select(col).eq('firm_id', firmId).maybeSingle();
+  return (data as Record<string, string | null> | null)?.[col] ?? null;
+}
+
+async function getBrandColor(firmId: string, fallback: string): Promise<string> {
+  const service = createServiceClient();
+  const { data } = await service.from('firm_proposal_settings').select('brand_primary_color').eq('firm_id', firmId).maybeSingle();
+  const c = (data as { brand_primary_color?: string | null } | null)?.brand_primary_color ?? null;
+  return c && /^#[0-9a-fA-F]{6}$/.test(c) ? c : fallback;
+}
+
+// ─── Post-acceptance onboarding-link email ───────────────────────────────────
+export interface ProposalOnboardingEmailOptions {
+  firmId: string;
+  to: string;
+  prospectName: string;
+  firmName: string;
+  onboardingUrl: string;
+}
+
+export async function sendProposalOnboardingEmail(opts: ProposalOnboardingEmailOptions) {
+  const body = (await getProposalBody(opts.firmId, 'onboarding'))
+    ?? 'Thanks for accepting our proposal. To get you set up properly, please fill in our short onboarding form using the link below. It collects the details we need to start the engagement.';
+  const color = await getBrandColor(opts.firmId, '#10b981');
+  const html = `
+    <div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+      <div style="background:${color};color:#fff;padding:20px 24px;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">Welcome aboard — one last form</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;">Hi ${escapeHtml(opts.prospectName.split(' ')[0])},</p>
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${escapeHtml(body)}</p>
+        <a href="${opts.onboardingUrl}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600;">Open onboarding form</a>
+        <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">Or paste this link into your browser: <span style="word-break:break-all;">${opts.onboardingUrl}</span></p>
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">Sent by SMITH on behalf of ${escapeHtml(opts.firmName)}.</p>
+      </div>
+    </div>
+  `;
+  const subject = resolveProposalSubject(
+    await getProposalSubject(opts.firmId, 'onboarding'),
+    `Welcome to {firm} — onboarding form`,
+    { firm_name: opts.firmName, prospect_name: opts.prospectName, proposal_title: '' },
+  );
+  await dispatchProposalEmail({ firmId: opts.firmId, to: opts.to, subject, html });
+}
+
+// ─── Proposal reminder email ─────────────────────────────────────────────────
+export interface ProposalReminderEmailOptions {
+  firmId: string;
+  to: string;
+  proposalTitle: string;
+  prospectName: string;
+  firmName: string;
+  senderName: string | null;
+  acceptUrl: string;
+  customMessage: string | null;
+}
+
+export async function sendProposalReminderEmail(opts: ProposalReminderEmailOptions) {
+  const firmDefault = await getProposalBody(opts.firmId, 'reminder');
+  const messageText = opts.customMessage
+    ?? firmDefault
+    ?? "Just a quick nudge in case our earlier email got buried — the proposal is still open and we'd love your decision when you've had a chance to review it.";
+  const messageBlock = `<p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${escapeHtml(messageText)}</p>`;
+  const color = await getBrandColor(opts.firmId, '#0ea5e9');
+  const html = `
+    <div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">
+      <div style="background:${color};color:#fff;padding:20px 24px;">
+        <h1 style="margin:0;font-size:18px;font-weight:600;">A quick reminder from ${escapeHtml(opts.firmName)}</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;">Hi ${escapeHtml(opts.prospectName.split(' ')[0])},</p>
+        ${messageBlock}
+        <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">Your proposal — <strong>${escapeHtml(opts.proposalTitle)}</strong> — is still available below.</p>
+        <a href="${opts.acceptUrl}" style="display:inline-block;background:${color};color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:600;">View proposal</a>
+      </div>
+      <div style="padding:14px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">Sent by SMITH on behalf of ${escapeHtml(opts.firmName)}${opts.senderName ? ` · ${escapeHtml(opts.senderName)}` : ''}.</p>
+      </div>
+    </div>
+  `;
+  const subject = resolveProposalSubject(
+    await getProposalSubject(opts.firmId, 'reminder'),
+    `Reminder: {proposal}`,
+    { firm_name: opts.firmName, prospect_name: opts.prospectName, proposal_title: opts.proposalTitle },
+  );
+  await dispatchProposalEmail({ firmId: opts.firmId, to: opts.to, subject, html });
 }

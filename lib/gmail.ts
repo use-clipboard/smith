@@ -8,7 +8,7 @@ export function getGmailOAuthClient() {
   );
 }
 
-export function getGmailAuthUrl() {
+export function getGmailAuthUrl(state?: string) {
   const client = getGmailOAuthClient();
   return client.generateAuthUrl({
     access_type: 'offline',
@@ -19,6 +19,7 @@ export function getGmailAuthUrl() {
       'https://www.googleapis.com/auth/gmail.settings.basic',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
+    ...(state ? { state } : {}),
   });
 }
 

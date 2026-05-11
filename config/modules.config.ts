@@ -2,6 +2,30 @@
 // This is the single source of truth for all available modules.
 // Import this in both server and client code — no React imports here.
 
+export type ModuleGroupId =
+  | 'bookkeeping'
+  | 'accounts_compliance'
+  | 'reporting'
+  | 'client_engagement'
+  | 'practice_ops'
+  | 'integrations';
+
+export interface ModuleGroup {
+  id: ModuleGroupId;
+  label: string;
+  description: string;
+}
+
+/** Display order + labels for tool groupings. Used by Settings → Tools and the New-Tab launcher. */
+export const MODULE_GROUPS: ModuleGroup[] = [
+  { id: 'bookkeeping',        label: 'Bookkeeping & data extraction', description: 'Process invoices, receipts and bank statements into clean bookkeeping entries.' },
+  { id: 'accounts_compliance', label: 'Accounts & compliance',         description: 'Review final accounts, AML risk, Companies House filings and firm policies.' },
+  { id: 'reporting',          label: 'Reporting & analysis',           description: 'Management accounts, KPI analysis and client-ready summaries.' },
+  { id: 'client_engagement',  label: 'Client engagement',              description: 'Proposals, email, and meeting notes — how you talk to clients.' },
+  { id: 'practice_ops',       label: 'Practice operations',            description: 'Run the firm itself — tasks, HR and recruitment.' },
+  { id: 'integrations',       label: 'Integrations',                   description: 'Connect SMITH to Google and other external services.' },
+];
+
 export interface ModuleConfig {
   id: string;
   name: string;
@@ -16,6 +40,8 @@ export interface ModuleConfig {
   /** Monthly price in pence (GBP). 0 = included in base plan */
   monthlyPricePence: number;
   category: 'core' | 'tool' | 'integration';
+  /** Functional grouping for the Tools settings + new-tab launcher. Core modules don't need one. */
+  group?: ModuleGroupId;
 }
 
 /** All modules — core and optional */
@@ -53,6 +79,7 @@ export const MODULES: ModuleConfig[] = [
     enhancedBy: ['document-vault', 'google-drive'],
     monthlyPricePence: 2900,
     category: 'tool',
+    group: 'bookkeeping',
   },
   {
     id: 'bank-to-csv',
@@ -63,6 +90,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'bookkeeping',
   },
   {
     id: 'landlord',
@@ -73,6 +101,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'bookkeeping',
   },
   {
     id: 'final-accounts',
@@ -83,6 +112,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 2900,
     category: 'tool',
+    group: 'accounts_compliance',
   },
   {
     id: 'performance',
@@ -93,6 +123,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 2900,
     category: 'tool',
+    group: 'reporting',
   },
   {
     id: 'p32',
@@ -103,6 +134,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 900,
     category: 'tool',
+    group: 'reporting',
   },
   {
     id: 'risk-assessment',
@@ -113,6 +145,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'accounts_compliance',
   },
   {
     id: 'summarise',
@@ -123,6 +156,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'bookkeeping',
   },
   {
     id: 'document-vault',
@@ -134,6 +168,7 @@ export const MODULES: ModuleConfig[] = [
     enhancedBy: ['google-drive'],
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'bookkeeping',
   },
   {
     id: 'policies',
@@ -144,6 +179,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 900,
     category: 'tool',
+    group: 'accounts_compliance',
   },
 
   {
@@ -156,6 +192,7 @@ export const MODULES: ModuleConfig[] = [
     enhancedBy: ['google-drive', 'google-calendar'],
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'client_engagement',
   },
 
   {
@@ -167,6 +204,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'practice_ops',
   },
 
   {
@@ -178,6 +216,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 9900,
     category: 'tool',
+    group: 'practice_ops',
   },
 
   {
@@ -189,6 +228,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'accounts_compliance',
   },
 
   {
@@ -198,8 +238,10 @@ export const MODULES: ModuleConfig[] = [
     iconName: 'Mail',
     route: '/email',
     alwaysOn: false,
+    enhancedBy: ['tasks'],
     monthlyPricePence: 9900,
     category: 'tool',
+    group: 'client_engagement',
   },
 
   {
@@ -212,6 +254,20 @@ export const MODULES: ModuleConfig[] = [
     enhancedBy: ['google-calendar'],
     monthlyPricePence: 1900,
     category: 'tool',
+    group: 'practice_ops',
+  },
+
+  {
+    id: 'proposals',
+    name: 'Proposals',
+    description: 'Prepare and send proposals to prospective clients with a firm-wide service catalogue, package bundles (Bronze/Silver/Gold) and per-service tiers. Prospects accept via a public web link, after which auto-onboarding can graduate them to a client, create an AML record, spin up tasks, and generate a Letter of Engagement.',
+    iconName: 'FileSignature',
+    route: '/proposals',
+    alwaysOn: false,
+    enhancedBy: ['tasks'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'client_engagement',
   },
 
   // ─── Integrations ─────────────────────────────────────────────────────────
@@ -224,6 +280,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 900,
     category: 'integration',
+    group: 'integrations',
   },
   {
     id: 'google-calendar',
@@ -234,6 +291,7 @@ export const MODULES: ModuleConfig[] = [
     alwaysOn: false,
     monthlyPricePence: 900,
     category: 'integration',
+    group: 'integrations',
   },
 ];
 

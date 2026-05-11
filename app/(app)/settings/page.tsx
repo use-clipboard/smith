@@ -77,6 +77,7 @@ export default async function SettingsPage() {
       tasksModuleActive={activeModules.includes('tasks')}
       emailTriageModuleActive={activeModules.includes('email-triage')}
       hrModuleActive={activeModules.includes('hr')}
+      proposalsModuleActive={activeModules.includes('proposals')}
       emailSenderName={emailSenderName}
       emailSenderAddress={emailSenderAddress}
     />

@@ -99,7 +99,23 @@
       "Bash(dir \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\" /s /b)",
       "Bash(findstr /I \"faq\\\\|help\")",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\\\\\" -Recurse -Directory -Filter \"*settings*\" | Select-Object -ExpandProperty FullName)",
-      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\" -Recurse -Directory | Where-Object { $_.Name -match \"settings|tasks\" } | Select-Object -ExpandProperty FullName)"
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\admiring-swanson-be9638\" -Recurse -Directory | Where-Object { $_.Name -match \"settings|tasks\" } | Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\blissful-torvalds-15159c\" -Recurse -Filter \"*.tsx\" -o silent)",
+      "Bash(Select-Object -First 20)",
+      "PowerShell(cmd /c mklink /J \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\blissful-torvalds-15159c\\\\node_modules\" \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\node_modules\")",
+      "Bash(awk 'NR<=10 {print; next} NR==11 {print; print \"import { generateRiskReportHtml } from '\"'\"'@/utils/riskAssessmentReport'\"'\"';\"; print \"import RiskAssessmentHistory, { type RiskAssessmentSeed } from '\"'\"'@/components/features/risk-assessment/RiskAssessmentHistory'\"'\"';\"; next} NR>=39 && NR<=97 {next} {print}' \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\blissful-torvalds-15159c\\\\app\\\\\\(app\\)\\\\risk-assessment\\\\page.tsx\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\blissful-torvalds-15159c\" -Recurse -Filter \"*meeting*notes*\" -ErrorAction SilentlyContinue)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\" -Recurse -Filter \"*summarise*\" -Name)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\chris\\\\Desktop\\\\Claude\\\\agent-smith\\\\.claude\\\\worktrees\\\\blissful-torvalds-15159c\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(until grep *)",
+      "Bash(tee build.log)",
+      "Bash(tee build2.log)",
+      "Bash(PORT=3001 npx next start)",
+      "Bash(tee start.log)",
+      "Bash(time curl -s -o /dev/null -w \"HTTP %{http_code} | total %{time_total}s | TTFB %{time_starttransfer}s\\\\n\" http://localhost:3001/login)",
+      "Bash(time curl -s -o /dev/null -w \"HTTP %{http_code} | total %{time_total}s | TTFB %{time_starttransfer}s\\\\n\" http://localhost:3001/dashboard)",
+      "Bash(curl -s -o /dev/null -w \"Direct curl: HTTP %{http_code} | %{time_total}s\\\\n\" http://localhost:3001/login)"
     ]
   }
 }

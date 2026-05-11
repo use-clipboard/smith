@@ -8,6 +8,7 @@ import {
   LogOut, Puzzle, Loader2, Check, Plus, Star,
 } from 'lucide-react';
 import { useTabActivityContext } from './TabActivityContext';
+import { TOOL_ROUTES } from './TabPanels';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
 import { useTabContext, Tab } from './TabContext';
@@ -129,6 +130,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     router.refresh();
   }
 
+  // Use replaceState for tool tabs (kept mounted by TabPanels) and router.push for
+  // workspace / settings / help / non-tool routes so Next.js actually renders them.
+  function navigateTo(route: string) {
+    if (TOOL_ROUTES.has(route)) {
+      window.history.replaceState(null, '', route);
+    } else {
+      router.push(route);
+    }
+  }
+
   function handleNavClick(item: NavItem) {
     if (item.href === '/dashboard') { setActiveTabId(null); return; }
     const IconComponent = item.icon as Tab['icon'];
@@ -140,18 +151,18 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       if (!openNew) return;
       openInNewTab({ id: item.moduleId, title: item.label, route: item.href, icon: IconComponent });
       resetIfDone(item.href);
-      window.history.replaceState(null, '', item.href);
+      navigateTo(item.href);
       return;
     }
     openTab({ id: item.moduleId, title: item.label, route: item.href, icon: IconComponent });
     resetIfDone(item.href);
-    window.history.replaceState(null, '', item.href);
+    navigateTo(item.href);
   }
 
   function handleOpenInNewTab(item: NavItem) {
     openInNewTab({ id: item.moduleId, title: item.label, route: item.href, icon: item.icon as Tab['icon'] });
     resetIfDone(item.href);
-    window.history.replaceState(null, '', item.href);
+    navigateTo(item.href);
   }
 
   // ── Computed sets ──────────────────────────────────────────────────────────
