@@ -8,6 +8,7 @@ import TabPanels, { TOOL_ROUTES } from './TabPanels';
 import AskSmithBubble from './AskSmithBubble';
 import Tooltip from './Tooltip';
 import OnboardingModal from './OnboardingModal';
+import EmailToastNotifier from './EmailToastNotifier';
 import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
 import TabProvider, { useTabContext } from './TabContext';
@@ -170,6 +171,7 @@ export default function AppShell({
             <AskSmithBubble />
             <ConversationWindows />
             <UnreadMessageChips />
+            <EmailToastNotifier />
             {onboardingVisible && (
               <OnboardingModal onDismiss={handleDismissOnboarding} />
             )}

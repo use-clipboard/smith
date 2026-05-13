@@ -44,6 +44,9 @@ const UpdateTemplateSchema = z.object({
     source_handle: z.string().optional().nullable(),
     target_handle: z.string().optional().nullable(),
   })).optional(),
+  // When 'existing', merge the new step set into every active task linked to
+  // this template. When 'new' (default), only future instantiations are affected.
+  propagateTo: z.enum(['new', 'existing']).optional(),
 });
 
 // GET /api/tasks/templates/[id]
@@ -67,6 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Only admins can edit task templates.' }, { status: 403 });
 
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
@@ -76,7 +80,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const supabase = createClient();
 
-  const { steps, edges, ...tplData } = parsed.data;
+  const { steps, edges, propagateTo, ...tplData } = parsed.data;
 
   const { data: template, error } = await supabase
     .from('task_templates')
@@ -134,13 +138,133 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
   }
 
-  return NextResponse.json({ template });
+  // ── Optional: propagate the new step set to existing active tasks ────────
+  let propagation: { updatedTasks: number; addedSteps: number; updatedSteps: number } | null = null;
+  if (propagateTo === 'existing' && steps !== undefined) {
+    propagation = { updatedTasks: 0, addedSteps: 0, updatedSteps: 0 };
+
+    // Re-load freshly-saved template steps (with their generated IDs)
+    const { data: freshSteps } = await supabase
+      .from('task_template_steps')
+      .select('id, step_key, title, description, assignee_role, default_assignee_id, tool_module_id, email_reminder_enabled, email_reminder_config, email_reminder_subject, email_reminder_message, client_instructions, client_can_upload, time_estimate_minutes, position_x, position_y, step_type, start_trigger_config, end_config')
+      .eq('template_id', params.id);
+    const templateStepsById = new Map<string, NonNullable<typeof freshSteps>[number]>();
+    const templateStepsByKey = new Map<string, NonNullable<typeof freshSteps>[number]>();
+    for (const s of freshSteps ?? []) {
+      templateStepsById.set(s.id, s);
+      templateStepsByKey.set(s.step_key, s);
+    }
+
+    // Active task instances linked to this template
+    const { data: activeTasks } = await supabase
+      .from('tasks')
+      .select('id')
+      .eq('firm_id', ctx.firmId)
+      .eq('template_id', params.id)
+      .is('deleted_at', null)
+      .not('status', 'in', '("complete","draft")');
+
+    const taskIds = (activeTasks ?? []).map(t => t.id as string);
+
+    if (taskIds.length > 0) {
+      // Existing steps on every active task, batched to stay under URL length
+      const BATCH = 100;
+      const existingByTask = new Map<string, Array<{ id: string; step_key: string; template_step_id: string | null }>>();
+      for (let i = 0; i < taskIds.length; i += BATCH) {
+        const slice = taskIds.slice(i, i + BATCH);
+        const { data: existing } = await supabase
+          .from('task_steps')
+          .select('id, task_id, step_key, template_step_id')
+          .in('task_id', slice);
+        for (const r of existing ?? []) {
+          const arr = existingByTask.get(r.task_id) ?? [];
+          arr.push({ id: r.id, step_key: r.step_key, template_step_id: r.template_step_id });
+          existingByTask.set(r.task_id, arr);
+        }
+      }
+
+      // For each task: update matching steps, add missing ones, never delete
+      const insertRows: Array<Record<string, unknown>> = [];
+      for (const taskId of taskIds) {
+        const taskSteps = existingByTask.get(taskId) ?? [];
+        const matchedTemplateStepIds = new Set<string>();
+
+        for (const ts of taskSteps) {
+          // Match by template_step_id first (most reliable), then fall back to step_key
+          let tpl = ts.template_step_id ? templateStepsById.get(ts.template_step_id) : undefined;
+          if (!tpl) tpl = templateStepsByKey.get(ts.step_key);
+          if (!tpl) continue; // task has a custom step the template doesn't know about — leave alone
+          matchedTemplateStepIds.add(tpl.id);
+          await supabase.from('task_steps').update({
+            title: tpl.title,
+            description: tpl.description,
+            tool_module_id: tpl.tool_module_id,
+            email_reminder_enabled: tpl.email_reminder_enabled,
+            email_reminder_config: tpl.email_reminder_config,
+            email_reminder_subject: tpl.email_reminder_subject,
+            email_reminder_message: tpl.email_reminder_message,
+            client_instructions: tpl.client_instructions,
+            client_can_upload: tpl.client_can_upload,
+            template_step_id: tpl.id,
+            updated_at: new Date().toISOString(),
+          }).eq('id', ts.id);
+          propagation.updatedSteps++;
+        }
+
+        // Any template step not matched yet → add it to this task
+        const existingKeys = new Set(taskSteps.map(s => s.step_key));
+        for (const tpl of (freshSteps ?? [])) {
+          if (matchedTemplateStepIds.has(tpl.id)) continue;
+          // Ensure unique key on this task
+          let key = tpl.step_key;
+          let suffix = 2;
+          while (existingKeys.has(key)) { key = `${tpl.step_key}_${suffix++}`; }
+          existingKeys.add(key);
+          insertRows.push({
+            task_id: taskId,
+            template_step_id: tpl.id,
+            step_key: key,
+            title: tpl.title,
+            description: tpl.description,
+            assignee_id: tpl.default_assignee_id,
+            is_client_step: tpl.assignee_role === 'client',
+            tool_module_id: tpl.tool_module_id,
+            email_reminder_enabled: tpl.email_reminder_enabled,
+            email_reminder_config: tpl.email_reminder_config,
+            email_reminder_subject: tpl.email_reminder_subject,
+            email_reminder_message: tpl.email_reminder_message,
+            client_instructions: tpl.client_instructions,
+            client_can_upload: tpl.client_can_upload,
+            position_x: tpl.position_x,
+            position_y: tpl.position_y,
+            step_type: tpl.step_type ?? 'regular',
+            start_trigger_config: tpl.start_trigger_config,
+            end_config: tpl.end_config,
+            status: 'not_started',
+          });
+        }
+
+        propagation.updatedTasks++;
+      }
+
+      if (insertRows.length > 0) {
+        // Insert in chunks of 500 to avoid payload bloat
+        for (let i = 0; i < insertRows.length; i += 500) {
+          await supabase.from('task_steps').insert(insertRows.slice(i, i + 500));
+        }
+        propagation.addedSteps = insertRows.length;
+      }
+    }
+  }
+
+  return NextResponse.json({ template, propagation });
 }
 
 // DELETE /api/tasks/templates/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Only admins can delete task templates.' }, { status: 403 });
 
   const supabase = createClient();
   const { error } = await supabase.from('task_templates').delete().eq('id', params.id).eq('firm_id', ctx.firmId);

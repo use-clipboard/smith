@@ -382,6 +382,42 @@ export default function TaskListRow({
                       </button>
                     </Tooltip>
                   )}
+                  {!isRecurring && onTaskUpdate && (
+                    <Tooltip label="Set recurrence">
+                      <select
+                        value=""
+                        onClick={e => e.stopPropagation()}
+                        onChange={async e => {
+                          e.stopPropagation();
+                          const value = e.target.value;
+                          if (!value) return;
+                          let recurrence_type: RecurrenceType;
+                          let recurrence_interval_days: number | null = null;
+                          if (value === 'custom') {
+                            const days = window.prompt('Repeat every how many days?', '30');
+                            const parsed = days ? parseInt(days, 10) : NaN;
+                            if (!parsed || parsed < 1) { e.target.value = ''; return; }
+                            recurrence_type = 'custom';
+                            recurrence_interval_days = parsed;
+                          } else {
+                            recurrence_type = value as RecurrenceType;
+                          }
+                          await onTaskUpdate(task.id, { recurrence_type, recurrence_interval_days });
+                          e.target.value = '';
+                        }}
+                        aria-label="Set recurrence"
+                        className="p-1 rounded-lg text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-xs cursor-pointer bg-transparent border-0"
+                      >
+                        <option value="" disabled>↻</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="bi-weekly">Bi-weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annually">Annually</option>
+                        <option value="custom">Custom interval…</option>
+                      </select>
+                    </Tooltip>
+                  )}
                   {onDelete && (
                     <Tooltip label="Delete task">
                       <button

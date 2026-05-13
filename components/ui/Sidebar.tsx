@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Settings, HelpCircle, ChevronLeft, ChevronRight,
-  LogOut, Puzzle, Loader2, Check, Plus, Star,
+  LogOut, Puzzle, Loader2, Check, Plus, Star, AlertCircle,
 } from 'lucide-react';
 import { useTabActivityContext } from './TabActivityContext';
 import { TOOL_ROUTES } from './TabPanels';
@@ -35,6 +35,8 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [todayEventCount, setTodayEventCount] = useState(0);
   const [emailUnreadCount, setEmailUnreadCount] = useState(0);
   const [myTaskCount, setMyTaskCount] = useState(0);
+  const [myTaskOverdueCount, setMyTaskOverdueCount] = useState(0);
+  const [myTaskDueSoonCount, setMyTaskDueSoonCount] = useState(0);
   const [hrBadgeCount, setHrBadgeCount] = useState(0);
   const pathname = usePathname();
   const router = useRouter();
@@ -75,8 +77,12 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     if (!tasksActive) return;
     function fetchTaskCount() {
       fetch('/api/tasks/my-count')
-        .then(r => r.ok ? r.json() : { count: 0 })
-        .then(d => setMyTaskCount(d.count ?? 0))
+        .then(r => r.ok ? r.json() : { count: 0, overdue: 0, dueWithin7: 0 })
+        .then(d => {
+          setMyTaskCount(d.count ?? 0);
+          setMyTaskOverdueCount(d.overdue ?? 0);
+          setMyTaskDueSoonCount(d.dueWithin7 ?? 0);
+        })
         .catch(() => {});
     }
     fetchTaskCount();
@@ -211,19 +217,21 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
     const isCalendar = item.moduleId === 'google-calendar';
     const calBadge   = isCalendar && todayEventCount > 0;
-    const calLabel   = todayEventCount > 99 ? '99+' : String(todayEventCount);
+    const calLabel   = String(todayEventCount);
 
     const isEmail    = item.moduleId === 'email-triage';
     const emailBadge = isEmail && emailUnreadCount > 0;
-    const emailLabel = emailUnreadCount > 99 ? '99+' : String(emailUnreadCount);
+    const emailLabel = String(emailUnreadCount);
 
     const isTasks    = item.moduleId === 'tasks';
     const taskBadge  = isTasks && myTaskCount > 0;
-    const taskLabel  = myTaskCount > 99 ? '99+' : String(myTaskCount);
+    const taskLabel  = String(myTaskCount);
+    const showOverdueAlert = isTasks && myTaskOverdueCount > 0;
+    const showDueSoonAlert = isTasks && myTaskDueSoonCount > 0;
 
     const isHr       = item.moduleId === 'hr';
     const hrBadge    = isHr && hrBadgeCount > 0;
-    const hrLabel    = hrBadgeCount > 99 ? '99+' : String(hrBadgeCount);
+    const hrLabel    = String(hrBadgeCount);
 
     if (collapsed) {
       const collapsedLabel =
@@ -263,6 +271,20 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
                              ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
               {taskLabel}
             </span>
+          )}
+          {showOverdueAlert && (
+            <Tooltip label={`${myTaskOverdueCount} overdue task${myTaskOverdueCount !== 1 ? 's' : ''}`} side="right">
+              <span className="absolute bottom-1 right-1 pointer-events-auto">
+                <AlertCircle size={11} className="text-red-500 fill-white" strokeWidth={2.5} />
+              </span>
+            </Tooltip>
+          )}
+          {!showOverdueAlert && showDueSoonAlert && (
+            <Tooltip label={`${myTaskDueSoonCount} task${myTaskDueSoonCount !== 1 ? 's' : ''} due in the next 7 days`} side="right">
+              <span className="absolute bottom-1 right-1 pointer-events-auto">
+                <AlertCircle size={11} className="text-amber-500 fill-white" strokeWidth={2.5} />
+              </span>
+            </Tooltip>
           )}
           {hrBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
@@ -321,7 +343,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
         {item.moduleId === 'document-vault' && untaggedCount > 0 && (
           <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-white text-[10px] font-bold flex items-center justify-center mr-2">
-            {untaggedCount > 99 ? '99+' : untaggedCount}
+            {untaggedCount}
           </span>
         )}
 
@@ -341,6 +363,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           </span>
         )}
 
+        {showOverdueAlert && (
+          <Tooltip label={`${myTaskOverdueCount} overdue task${myTaskOverdueCount !== 1 ? 's' : ''}`}>
+            <span className="shrink-0 mr-1 inline-flex items-center"><AlertCircle size={13} className="text-red-500 fill-white" strokeWidth={2.5} /></span>
+          </Tooltip>
+        )}
+        {showDueSoonAlert && (
+          <Tooltip label={`${myTaskDueSoonCount} task${myTaskDueSoonCount !== 1 ? 's' : ''} due in the next 7 days`}>
+            <span className="shrink-0 mr-1 inline-flex items-center"><AlertCircle size={13} className="text-amber-500 fill-white" strokeWidth={2.5} /></span>
+          </Tooltip>
+        )}
         {taskBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2

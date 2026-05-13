@@ -57,15 +57,23 @@ interface Props {
   existingTemplates?: { id: string; name: string }[]; // for duplicate-name detection
   onSave: (data: TemplateData) => Promise<void>;
   onClose: () => void;
-  /** When set, the builder operates in task-creation mode instead of template-saving mode */
-  mode?: 'template' | 'task';
+  /** Which save flow to use:
+   *   'template'  — saves to task_templates (default)
+   *   'task'      — creates a new task instance
+   *   'edit-task' — edits an existing task's workflow only (this client only) */
+  mode?: 'template' | 'task' | 'edit-task';
   /** Client list — only used in task mode for the client selector */
   clients?: { id: string; name: string; client_ref?: string }[];
   /** Called instead of onSave when mode === 'task' */
   onCreateTask?: (data: TaskCreationOutput, saveAsTemplate: boolean, templateData: TemplateData) => Promise<void>;
+  /** Called instead of onSave when mode === 'edit-task'. Receives the new
+   *  step + edge graph; the parent persists it via PUT /api/tasks/[id]/workflow. */
+  onEditTask?: (steps: TaskCreationOutput['steps'], edges: TaskCreationOutput['edges']) => Promise<void>;
   /** Pre-populate client when launched from a client context */
   defaultClientId?: string;
   defaultClientName?: string;
+  /** Pre-populated client name to display read-only in edit-task header */
+  editTaskClientName?: string;
 }
 
 export interface TemplateData {
@@ -78,6 +86,10 @@ export interface TemplateData {
   estimated_duration_days?: number | null;
   steps: TemplateStepData[];
   edges: TemplateEdgeData[];
+  /** When editing a template that already has active task instances, this
+   *  tells the API whether to merge the changes into those existing tasks
+   *  ('existing') or only affect future instantiations ('new'). */
+  propagateTo?: 'new' | 'existing';
 }
 
 export interface TemplateStepData {
@@ -571,8 +583,9 @@ function ConditionModal({ fromTitle, toTitle, currentType, currentConfig, onSave
 let _keyCounter = 0;
 function newStepKey() { return `step_${Date.now()}_${++_keyCounter}`; }
 
-export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose, mode = 'template', clients = [], onCreateTask, defaultClientId, defaultClientName }: Props) {
+export default function TemplateBuilder({ template, initialData, teamMembers, existingTemplates, onSave, onClose, mode = 'template', clients = [], onCreateTask, onEditTask, defaultClientId, defaultClientName, editTaskClientName }: Props) {
   const isTaskMode = mode === 'task';
+  const isEditTaskMode = mode === 'edit-task';
   // Meta — initialData (from AI builder) takes precedence over blank, template takes precedence over both
   const [name, setName] = useState(template?.name ?? initialData?.name ?? '');
   const [description, setDescription] = useState(template?.description ?? initialData?.description ?? '');
@@ -620,6 +633,9 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Propagation modal — shown when saving an edit to a template that has
+  // active task instances. The user picks "new only" or "merge into existing".
+  const [propagationModal, setPropagationModal] = useState<{ activeCount: number; resolve: (choice: 'new' | 'existing' | null) => void } | null>(null);
 
   // ── Task-mode only state ────────────────────────────────────────────────────
   const [taskClientId, setTaskClientId]       = useState(defaultClientId ?? '');
@@ -874,10 +890,11 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   }
 
   async function handleSave() {
-    if (!name.trim()) { setError(isTaskMode ? 'Task title is required.' : 'Template name is required.'); return; }
+    // edit-task mode skips name validation (the task title isn't being changed here)
+    if (!isEditTaskMode && !name.trim()) { setError(isTaskMode ? 'Task title is required.' : 'Template name is required.'); return; }
 
     // Duplicate-name check only applies in template mode (or when saving as template)
-    if (!isTaskMode || taskSaveAsTemplate) {
+    if (!isTaskMode && !isEditTaskMode || taskSaveAsTemplate) {
       const duplicate = existingTemplates?.find(
         t => t.name.toLowerCase() === name.trim().toLowerCase() && t.id !== template?.id
       );
@@ -904,6 +921,25 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
       steps,
       edges: edgesData,
     };
+
+    // If editing a template (not creating, not task-mode, not edit-task), check whether
+    // it has live task instances and prompt for propagation.
+    if (template && !isTaskMode && !isEditTaskMode) {
+      try {
+        const r = await fetch(`/api/tasks/templates/${template.id}/usage`);
+        if (r.ok) {
+          const { activeCount } = await r.json() as { activeCount: number };
+          if (activeCount > 0) {
+            const choice = await new Promise<'new' | 'existing' | null>(resolve => {
+              setPropagationModal({ activeCount, resolve });
+            });
+            setPropagationModal(null);
+            if (choice === null) { setSaving(false); return; }
+            templateData.propagateTo = choice;
+          }
+        }
+      } catch { /* non-fatal — fall through with default 'new only' */ }
+    }
 
     try {
       if (isTaskMode && onCreateTask) {
@@ -942,12 +978,38 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
           steps:                    taskSteps,
           edges:                    taskEdges,
         }, taskSaveAsTemplate, templateData);
+      } else if (isEditTaskMode && onEditTask) {
+        // Reuse the task-mode mapping for steps/edges so shapes match the API
+        const taskSteps = steps.map(s => ({
+          step_key:               s.step_key,
+          title:                  s.title,
+          description:            s.description ?? null,
+          assignee_id:            s.default_assignee_id ?? null,
+          is_client_step:         s.assignee_role === 'client',
+          tool_module_id:         s.tool_module_id ?? null,
+          email_reminder_enabled: s.email_reminder_enabled,
+          email_reminder_config:  s.email_reminder_config as { recipients: string[]; timing: string },
+          position_x:             s.position_x,
+          position_y:             s.position_y,
+          step_type:              s.step_type,
+          start_trigger_config:   s.start_trigger_config ?? null,
+          end_config:             s.end_config ?? null,
+        }));
+        const taskEdges = edgesData.map(e => ({
+          from_step_key:  e.from_step_key,
+          to_step_key:    e.to_step_key,
+          label:          e.label ?? null,
+          condition_type: e.condition_type,
+          source_handle:  e.source_handle,
+          target_handle:  e.target_handle,
+        }));
+        await onEditTask(taskSteps, taskEdges);
       } else {
         await onSave(templateData);
       }
       onClose();
     } catch {
-      setError(isTaskMode ? 'Failed to create task. Please try again.' : 'Failed to save template. Please try again.');
+      setError(isEditTaskMode ? 'Failed to save workflow. Please try again.' : isTaskMode ? 'Failed to create task. Please try again.' : 'Failed to save template. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -961,12 +1023,21 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 flex-shrink-0 bg-gray-50">
           <div className="flex items-center gap-4 flex-1 min-w-0">
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder={isTaskMode ? 'Task title…' : 'Template name…'}
-              className="text-lg font-bold text-gray-900 border-0 bg-transparent focus:outline-none focus:ring-0 min-w-0 flex-1 placeholder-gray-300"
-            />
+            {isEditTaskMode ? (
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold text-gray-900 truncate">{name || 'Edit task workflow'}</h2>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Editing this client&apos;s task only — the template is unchanged. {editTaskClientName ? `Client: ${editTaskClientName}` : ''}
+                </p>
+              </div>
+            ) : (
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder={isTaskMode ? 'Task title…' : 'Template name…'}
+                className="text-lg font-bold text-gray-900 border-0 bg-transparent focus:outline-none focus:ring-0 min-w-0 flex-1 placeholder-gray-300"
+              />
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             {error && <span className="text-xs text-red-600">{error}</span>}
@@ -1026,7 +1097,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
               className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {isTaskMode ? 'Create Task' : 'Save'}
+              {isTaskMode ? 'Create Task' : isEditTaskMode ? 'Save Workflow' : 'Save'}
             </button>
             <button onClick={onClose} className="p-1.5 rounded hover:bg-gray-200 text-gray-400"><X className="h-5 w-5" /></button>
           </div>
@@ -1034,7 +1105,13 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
 
         {/* Sub-header — template settings / task details */}
         <div className="flex items-center gap-4 px-6 py-2 border-b border-gray-100 flex-shrink-0 flex-wrap">
-          {isTaskMode ? (
+          {isEditTaskMode ? (
+            /* edit-task mode: read-only meta. The task title / client / due-date / recurrence
+               are managed elsewhere; this builder only edits the step + edge graph. */
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+              Workflow editor · client task only
+            </span>
+          ) : isTaskMode ? (
             /* Task mode: client + due date */
             <>
               <div className="flex items-center gap-2">
@@ -1933,6 +2010,46 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
         />
       );
     })()}
+
+    {/* Propagation choice modal — shown when saving edits to a template with active tasks */}
+    {propagationModal && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6">
+          <h3 className="text-base font-bold text-gray-900">Apply changes to existing tasks?</h3>
+          <p className="text-sm text-gray-600 mt-1.5">
+            <strong>{propagationModal.activeCount}</strong> active task{propagationModal.activeCount !== 1 ? 's are' : ' is'} currently using this template.
+            How would you like to handle them?
+          </p>
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => propagationModal.resolve('new')}
+              className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <p className="text-sm font-semibold text-gray-900">Only future tasks</p>
+              <p className="text-xs text-gray-500 mt-0.5">Existing tasks keep their current setup. The new template applies only to tasks created from now on.</p>
+            </button>
+            <button
+              onClick={() => propagationModal.resolve('existing')}
+              className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <p className="text-sm font-semibold text-gray-900">Merge into existing tasks too</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Updates titles/descriptions on matching steps, adds any new template steps that are missing,
+                and leaves per-client custom steps and any removed-template steps in place.
+              </p>
+            </button>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => propagationModal.resolve(null)}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

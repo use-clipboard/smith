@@ -114,6 +114,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string; stepId: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Only admins can delete a step.' }, { status: 403 });
 
   const supabase = createClient();
   const { error } = await supabase.from('task_steps').delete().eq('id', params.stepId).eq('task_id', params.id);

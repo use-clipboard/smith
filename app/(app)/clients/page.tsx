@@ -1,11 +1,24 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2 } from 'lucide-react';
+import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2, Filter, User, Users as UsersIcon, Building2, Shield, HandHeart, Home, UserCircle } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
+
+// Business-type metadata for the inline expandable filter pill.
+// Keeping label + icon together makes adding new types a one-line edit.
+const CLIENT_TYPE_OPTIONS: Array<{ value: string; label: string; Icon: React.ComponentType<{ size?: number; className?: string }> }> = [
+  { value: 'sole_trader',     label: 'Sole Trader',     Icon: User },
+  { value: 'partnership',     label: 'Partnership',     Icon: UsersIcon },
+  { value: 'limited_company', label: 'Limited Company', Icon: Building2 },
+  { value: 'llp',             label: 'LLP',             Icon: Building2 },
+  { value: 'individual',      label: 'Individual',      Icon: UserCircle },
+  { value: 'trust',           label: 'Trust',           Icon: Shield },
+  { value: 'charity',         label: 'Charity',         Icon: HandHeart },
+  { value: 'rental_landlord', label: 'Rental Landlord', Icon: Home },
+];
 
 type ClientStatus = 'active' | 'hold' | 'inactive';
 
@@ -145,6 +158,19 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState('');
+  // Expand state for the inline type-filter pill.
+  const [typeFilterOpen, setTypeFilterOpen] = useState(false);
+  const typeFilterRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!typeFilterOpen) return;
+    function onDown(e: MouseEvent) {
+      if (typeFilterRef.current && !typeFilterRef.current.contains(e.target as Node)) {
+        setTypeFilterOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [typeFilterOpen]);
   const [sort, setSort] = useState<SortConfig>({ key: 'name', dir: 'asc' });
   const [visibleCols, setVisibleCols] = useState<Set<string>>(DEFAULT_VISIBLE);
   const [showColPicker, setShowColPicker] = useState(false);
@@ -396,18 +422,73 @@ export default function ClientsPage() {
                 {label}
               </button>
             ))}
+
+            {/* Divider between status filter and type filter */}
+            <span className="w-px h-5 bg-[var(--border)] mx-1" aria-hidden />
+
+            {/* Inline expandable type-filter pill */}
+            <div ref={typeFilterRef} className="flex items-center">
+              {(() => {
+                const selected = CLIENT_TYPE_OPTIONS.find(o => o.value === typeFilter);
+                const SelectedIcon = selected?.Icon ?? Filter;
+                if (!typeFilterOpen) {
+                  return (
+                    <button
+                      onClick={() => setTypeFilterOpen(true)}
+                      aria-label="Filter by type"
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
+                        ${selected
+                          ? 'bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                    >
+                      <SelectedIcon size={12} />
+                      {selected ? selected.label : 'All Types'}
+                      <ChevronDown size={11} className="opacity-70" />
+                    </button>
+                  );
+                }
+                // Expanded — show all type options inline
+                return (
+                  <div className="flex items-center gap-0.5 animate-in fade-in duration-150">
+                    <button
+                      onClick={() => { setTypeFilter(''); setTypeFilterOpen(false); }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors
+                        ${!typeFilter
+                          ? 'bg-[var(--accent)] text-white'
+                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+                    >
+                      <Filter size={11} /> All
+                    </button>
+                    {CLIENT_TYPE_OPTIONS.map(({ value, label, Icon }) => {
+                      const active = typeFilter === value;
+                      return (
+                        <Tooltip key={value} label={label}>
+                          <button
+                            onClick={() => { setTypeFilter(value); setTypeFilterOpen(false); }}
+                            aria-label={label}
+                            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors
+                              ${active
+                                ? 'bg-[var(--accent)] text-white'
+                                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+                          >
+                            <Icon size={12} />
+                            <span className="hidden xl:inline">{label}</span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })}
+                    <button
+                      onClick={() => setTypeFilterOpen(false)}
+                      aria-label="Close"
+                      className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-            className={`input-base text-xs py-1.5 ${typeFilter ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}>
-            <option value="">All Types</option>
-            <option value="sole_trader">Sole Trader</option>
-            <option value="partnership">Partnership</option>
-            <option value="limited_company">Limited Company</option>
-            <option value="individual">Individual</option>
-            <option value="trust">Trust</option>
-            <option value="charity">Charity</option>
-            <option value="rental_landlord">Rental Landlord</option>
-          </select>
           {hasActiveFilters && (
             <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-2 py-1.5">
               <X size={12} />Clear filters

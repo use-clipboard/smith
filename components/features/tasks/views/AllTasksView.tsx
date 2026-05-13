@@ -92,21 +92,22 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
 
   return (
     <div>
-      <div className="sticky top-0 z-20 bg-gray-50 flex items-center justify-between flex-wrap gap-2 pb-3">
-        <TaskFilters
-          search={search} onSearchChange={onSearchChange}
-          statusFilter={statusFilter} onStatusChange={onStatusChange}
-          clientFilter={clientFilter} onClientChange={onClientChange}
-          assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
-          clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
-        />
-        <div className="flex items-center gap-2">
-          <p className="text-xs text-gray-400">{sortedTasks.length} of {filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
-          <ExportTasksButton tasks={sortedTasks} filename="all-tasks" />
+      <div className="sticky top-0 z-30 bg-gray-50 pb-3">
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
+          <TaskFilters
+            search={search} onSearchChange={onSearchChange}
+            statusFilter={statusFilter} onStatusChange={onStatusChange}
+            clientFilter={clientFilter} onClientChange={onClientChange}
+            assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
+            clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
+          />
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-gray-400">{sortedTasks.length} of {filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
+            <ExportTasksButton tasks={sortedTasks} filename="all-tasks" />
+          </div>
         </div>
+        <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} />
       </div>
-
-      <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} className="mb-4" />
 
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks found.</p></div>
@@ -114,16 +115,16 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks match the current filters.</p></div>
       ) : viewMode === 'list' ? (
         /* ── List view ── */
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-xl">
           <table className="w-full text-left table-fixed">
-            <thead className="sticky top-[50px] z-10">
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="rounded-tl-xl" />
-                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-48" />
-                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-32" />
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide w-36">Progress</th>
-                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-28" />
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tr-xl w-32">Assignees</th>
+            <thead>
+              <tr className="border-b border-gray-100">
+                <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 rounded-tl-xl border-b border-gray-100" />
+                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-48 border-b border-gray-100" />
+                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-32 border-b border-gray-100" />
+                <th className="sticky top-[88px] z-10 px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 w-36 border-b border-gray-100">Progress</th>
+                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-28 border-b border-gray-100" />
+                <th className="sticky top-[88px] z-10 px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 rounded-tr-xl w-32 border-b border-gray-100">Assignees</th>
               </tr>
             </thead>
             <tbody>

@@ -14,9 +14,12 @@ interface Props {
   onCreateAI: () => void;
   onDelete: (id: string) => Promise<void>;
   onCopy: (t: TaskTemplate, newName: string) => Promise<void>;
+  /** When false, hides Edit/Delete/Copy/Create affordances. Non-admins can
+   *  still browse the library but not change anything. */
+  isAdmin?: boolean;
 }
 
-export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onCreateAI, onDelete, onCopy }: Props) {
+export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, onEdit, onCreateBlank, onCreateAI, onDelete, onCopy, isAdmin = true }: Props) {
   const [importing, setImporting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [copying, setCopying] = useState<string | null>(null);
@@ -125,12 +128,14 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
           onChange={e => setSearch(e.target.value)}
           className="text-sm border border-gray-200 rounded-lg px-3 py-2 w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
-        <button
-          onClick={() => setShowChoice(true)}
-          className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium"
-        >
-          <Plus className="h-4 w-4" /> New Template
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setShowChoice(true)}
+            className="flex items-center gap-2 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700 font-medium"
+          >
+            <Plus className="h-4 w-4" /> New Template
+          </button>
+        )}
       </div>
 
       {/* Firm templates */}
@@ -156,33 +161,35 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
                     <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors">
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-semibold text-sm text-gray-900">{t.name}</h4>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <Tooltip label="Edit">
-                            <button onClick={() => onEdit(t)} aria-label="Edit" className="p-1 text-gray-400 hover:text-indigo-600 rounded">
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="Copy">
-                            <button
-                              onClick={() => openCopyModal(t)}
-                              disabled={copying === t.id}
-                              aria-label="Copy"
-                              className="p-1 text-gray-400 hover:text-indigo-600 rounded"
-                            >
-                              {copying === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="Delete">
-                            <button
-                              onClick={() => handleDelete(t.id)}
-                              disabled={deleting === t.id}
-                              aria-label="Delete"
-                              className="p-1 text-gray-400 hover:text-red-500 rounded"
-                            >
-                              {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                            </button>
-                          </Tooltip>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Tooltip label="Edit">
+                              <button onClick={() => onEdit(t)} aria-label="Edit" className="p-1 text-gray-400 hover:text-indigo-600 rounded">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Copy">
+                              <button
+                                onClick={() => openCopyModal(t)}
+                                disabled={copying === t.id}
+                                aria-label="Copy"
+                                className="p-1 text-gray-400 hover:text-indigo-600 rounded"
+                              >
+                                {copying === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Copy className="h-3.5 w-3.5" />}
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Delete">
+                              <button
+                                onClick={() => handleDelete(t.id)}
+                                disabled={deleting === t.id}
+                                aria-label="Delete"
+                                className="p-1 text-gray-400 hover:text-red-500 rounded"
+                              >
+                                {deleting === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                              </button>
+                            </Tooltip>
+                          </div>
+                        )}
                       </div>
                       {t.description && <p className="text-xs text-gray-500 mb-2">{t.description}</p>}
                       <div className="flex items-center gap-2 flex-wrap">
@@ -223,17 +230,19 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
                   <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-sm text-gray-800">{t.name}</h4>
-                      <Tooltip label="Import to your library" className="flex-shrink-0">
-                        <button
-                          onClick={() => handleImport(t)}
-                          disabled={importing === t.id}
-                          aria-label="Import to your library"
-                          className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-50"
-                        >
-                          {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                          Import
-                        </button>
-                      </Tooltip>
+                      {isAdmin && (
+                        <Tooltip label="Import to your library" className="flex-shrink-0">
+                          <button
+                            onClick={() => handleImport(t)}
+                            disabled={importing === t.id}
+                            aria-label="Import to your library"
+                            className="flex items-center gap-1 text-xs bg-white border border-gray-300 text-gray-600 hover:border-indigo-400 hover:text-indigo-700 px-2 py-1 rounded disabled:opacity-50"
+                          >
+                            {importing === t.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                            Import
+                          </button>
+                        </Tooltip>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mb-2">{t.description}</p>
                     <div className="flex items-center gap-2 flex-wrap">

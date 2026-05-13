@@ -54,6 +54,9 @@ export async function instantiateTaskFromTemplate(opts: InstantiateOptions): Pro
   if (steps.length > 0) {
     const stepRows = steps.map(s => ({
       task_id: task.id,
+      // Remember which template step this came from so future template edits
+      // can match (and so the UI doesn't flag everything as "Custom")
+      template_step_id: (s.id as string | null) ?? null,
       step_key: s.step_key as string,
       title: s.title as string,
       description: (s.description as string | null) ?? null,

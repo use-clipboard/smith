@@ -16,9 +16,11 @@ import TasksSettingsTab from './tabs/TasksSettingsTab';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
+import AgentSmithSettingsTab from './tabs/AgentSmithSettingsTab';
+import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'agent-smith';
 
 interface Props {
   userId: string;
@@ -92,6 +94,7 @@ export default function SettingsClient({
     { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,        adminOnly: false, hidden: !emailTriageModuleActive },
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive },
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive },
+    { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
@@ -403,6 +406,11 @@ export default function SettingsClient({
       {/* Proposals tab — admin only, shown when Proposals module is active */}
       {activeTab === 'proposals' && proposalsModuleActive && (
         <ProposalsSettingsTab isAdmin={isAdmin} tasksModuleActive={!!tasksModuleActive} />
+      )}
+
+      {/* Agent Smith tab — admin only */}
+      {activeTab === 'agent-smith' && isAdmin && (
+        <AgentSmithSettingsTab />
       )}
 
         </div>

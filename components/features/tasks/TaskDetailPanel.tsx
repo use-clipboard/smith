@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import {
   X, Calendar, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
   Play, Pause, Plus, Trash2, ExternalLink, Loader2, AlertCircle, Puzzle,
-  XCircle, Users, UserCheck, Check,
+  XCircle, Users, UserCheck, Check, GripVertical, Sparkles, Pencil,
 } from 'lucide-react';
 import { TaskStatusBadge, StepStatusBadge } from './TaskStatusBadge';
 import Tooltip from '@/components/ui/Tooltip';
@@ -12,6 +12,7 @@ import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker, { type TeamMember } from './AssigneePicker';
+import TemplateBuilder from './TemplateBuilder';
 import { MODULES } from '@/config/modules.config';
 import type { Task, TaskStatus, StepStatus, TaskStep, RecurrenceType } from '@/types';
 
@@ -26,6 +27,9 @@ interface Props {
   isAdmin?: boolean;
   teamMembers?: TeamMember[];
   onStopRecurrence?: (taskId: string) => Promise<void>;
+  /** Triggers the parent to re-fetch the single task so step-list edits show
+   *  in the panel without closing it. Optional; falls back to a full reload. */
+  onTaskRefetch?: (taskId: string) => Promise<void>;
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -251,7 +255,7 @@ function TimeTracker({ task, steps, onLogTime }: {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate, onStepUpdate, onLogTime, onDelete, isAdmin = false, teamMembers = [], onStopRecurrence }: Props) {
+export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate, onStepUpdate, onLogTime, onDelete, isAdmin = false, teamMembers = [], onStopRecurrence, onTaskRefetch }: Props) {
   const [activeTab, setActiveTab]             = useState<Tab>('workflow');
   const [selectedStepId, setSelectedStepId]   = useState<string | null>(null);
   const [updatingStep, setUpdatingStep]       = useState<string | null>(null);
@@ -264,6 +268,18 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
   const [selectedStepIds, setSelectedStepIds] = useState<Set<string>>(new Set());
   const [batchTarget, setBatchTarget]         = useState('');
   const [applying, setApplying]               = useState(false);
+
+  // Per-task step customisation
+  const [addingStep, setAddingStep]           = useState(false);
+  const [newStepTitle, setNewStepTitle]       = useState('');
+  // Visual workflow editor (admin only) — opens TemplateBuilder in edit-task mode
+  const [showWorkflowEditor, setShowWorkflowEditor] = useState(false);
+  const [submittingNewStep, setSubmittingNewStep] = useState(false);
+  const [deletingStepId, setDeletingStepId]   = useState<string | null>(null);
+  // Drag-to-reorder
+  const [draggingStepId, setDraggingStepId]   = useState<string | null>(null);
+  const [dragOverStepId, setDragOverStepId]   = useState<string | null>(null);
+  const [reordering, setReordering]           = useState(false);
 
   function exitReassign() {
     setReassignMode(false);
@@ -308,10 +324,102 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
     finally { setStoppingRec(false); }
   }
 
+  async function handleSetRecurrence(value: string) {
+    if (!value) return;
+    let recurrence_type: RecurrenceType;
+    let recurrence_interval_days: number | null = null;
+    if (value === 'custom') {
+      const days = window.prompt('Repeat every how many days?', '30');
+      const parsed = days ? parseInt(days, 10) : NaN;
+      if (!parsed || parsed < 1) return;
+      recurrence_type = 'custom';
+      recurrence_interval_days = parsed;
+    } else {
+      recurrence_type = value as RecurrenceType;
+    }
+    setUpdatingTask(true);
+    try { await onUpdate(task.id, { recurrence_type, recurrence_interval_days }); }
+    finally { setUpdatingTask(false); }
+  }
+
   async function handleInlineAssign(stepId: string, memberId: string | null) {
     setUpdatingStep(stepId);
     try { await onStepUpdate(task.id, stepId, { assignee_id: memberId } as Partial<TaskStep>); }
     finally { setUpdatingStep(null); }
+  }
+
+  async function handleAddStep() {
+    const title = newStepTitle.trim();
+    if (!title) return;
+    setSubmittingNewStep(true);
+    try {
+      const r = await fetch(`/api/tasks/${task.id}/steps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step_key: `custom_${Date.now().toString(36)}`,
+          title,
+          // Place after the current last step in flat ordering
+          position_y: (Math.max(0, ...(task.steps ?? []).map(s => s.position_y ?? 0)) + 100),
+        }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        alert(data.error ?? 'Failed to add step');
+        return;
+      }
+      setNewStepTitle('');
+      setAddingStep(false);
+      await onTaskRefetch?.(task.id);
+    } finally { setSubmittingNewStep(false); }
+  }
+
+  async function handleDeleteStep(stepId: string) {
+    if (!confirm('Delete this step? This only affects this client\'s task — the template is unchanged.')) return;
+    setDeletingStepId(stepId);
+    try {
+      const r = await fetch(`/api/tasks/${task.id}/steps/${stepId}`, { method: 'DELETE' });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        alert(data.error ?? 'Failed to delete step');
+        return;
+      }
+      await onTaskRefetch?.(task.id);
+    } finally { setDeletingStepId(null); }
+  }
+
+  async function commitReorder(orderedStepIds: string[]) {
+    setReordering(true);
+    try {
+      await fetch(`/api/tasks/${task.id}/steps/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedStepIds }),
+      });
+      await onTaskRefetch?.(task.id);
+    } finally { setReordering(false); }
+  }
+
+  function handleStepDragStart(e: React.DragEvent, stepId: string) {
+    setDraggingStepId(stepId);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function handleStepDragOver(e: React.DragEvent, overId: string) {
+    if (!draggingStepId || draggingStepId === overId) return;
+    e.preventDefault();
+    setDragOverStepId(overId);
+  }
+  function handleStepDrop(overId: string) {
+    if (!draggingStepId || draggingStepId === overId) { setDraggingStepId(null); setDragOverStepId(null); return; }
+    const ids = workSteps.map(s => s.id);
+    const fromIdx = ids.indexOf(draggingStepId);
+    const overIdx = ids.indexOf(overId);
+    if (fromIdx < 0 || overIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    ids.splice(overIdx, 0, draggingStepId);
+    setDraggingStepId(null);
+    setDragOverStepId(null);
+    void commitReorder(ids);
   }
 
   async function handleApplyBatch() {
@@ -330,8 +438,15 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
     setSelectedStepIds(prev => { const n = new Set(prev); n.has(stepId) ? n.delete(stepId) : n.add(stepId); return n; });
   }
 
-  // 'start' steps are workflow entry markers, not actionable work items — exclude from counts and the checklist
-  const workSteps = steps.filter(s => s.step_type !== 'start');
+  // 'start' steps are workflow entry markers, not actionable work items — exclude from counts and the checklist.
+  // Sort by position_y so per-task drag-to-reorder is honoured here; 'end' always goes last.
+  const workSteps = steps
+    .filter(s => s.step_type !== 'start')
+    .sort((a, b) => {
+      if (a.step_type === 'end' && b.step_type !== 'end') return 1;
+      if (a.step_type !== 'end' && b.step_type === 'end') return -1;
+      return (a.position_y ?? 0) - (b.position_y ?? 0);
+    });
   const completedCount = workSteps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
   const progressPct = workSteps.length > 0 ? Math.round((completedCount / workSteps.length) * 100) : 0;
 
@@ -339,6 +454,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
   const nextStep = workSteps.find(s => s.status !== 'complete' && s.status !== 'skipped') ?? null;
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white w-full max-w-5xl h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden">
 
@@ -357,6 +473,14 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                   </span>
                 );
               })()}
+              {/* "Customised" badge — any step without template_step_id means this task diverges from its template */}
+              {task.template_id && (task.steps ?? []).some(s => !s.template_step_id) && (
+                <Tooltip label="This task has steps that aren't in its template. Edits to the template won't overwrite them.">
+                  <span className="inline-flex items-center gap-1 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                    <Sparkles className="h-2.5 w-2.5" /> Customised
+                  </span>
+                </Tooltip>
+              )}
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {task.client ? (
@@ -393,6 +517,26 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
               </button>
               </Tooltip>
             )}
+            {/* Set recurrence — admin only, shown when task currently has no recurrence */}
+            {isAdmin && (!task.recurrence_type || task.recurrence_type === 'once') && (
+              <Tooltip label="Set a recurrence — this task will repeat on the chosen schedule">
+                <select
+                  value=""
+                  onChange={e => void handleSetRecurrence(e.target.value)}
+                  disabled={updatingTask}
+                  aria-label="Set recurrence"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 border border-indigo-200 bg-indigo-50 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  <option value="" disabled>↻ Set recurrence…</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="bi-weekly">Bi-weekly (fortnightly)</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                  <option value="custom">Custom interval…</option>
+                </select>
+              </Tooltip>
+            )}
             <select
               value={task.status}
               onChange={e => handleTaskStatus(e.target.value as TaskStatus)}
@@ -420,7 +564,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 px-6 flex-shrink-0">
+        <div className="flex border-b border-gray-200 px-6 flex-shrink-0 items-center">
           {([['workflow', 'Workflow'], ['time', 'Time'], ['details', 'Details']] as [Tab, string][]).map(([t, label]) => (
             <button
               key={t}
@@ -432,6 +576,15 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
               {label}
             </button>
           ))}
+          {/* Edit workflow — admin only, on Workflow tab */}
+          {isAdmin && activeTab === 'workflow' && (
+            <button
+              onClick={() => setShowWorkflowEditor(true)}
+              className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg my-1.5 transition-colors"
+            >
+              <Pencil className="h-3 w-3" /> Edit workflow
+            </button>
+          )}
         </div>
 
         {/* Body */}
@@ -604,13 +757,31 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                     : isEndStep  ? 'bg-indigo-50/30'
                                     : '';
 
+                        const isCustom = !s.template_step_id && task.template_id;
+                        const isDragging = draggingStepId === s.id;
+                        const isDragOver = dragOverStepId === s.id && draggingStepId !== s.id;
                         return (
                           <div
                             key={s.id}
+                            draggable={isAdmin && !reassignMode && !isEndStep}
+                            onDragStart={e => handleStepDragStart(e, s.id)}
+                            onDragOver={e => handleStepDragOver(e, s.id)}
+                            onDrop={() => handleStepDrop(s.id)}
+                            onDragEnd={() => { setDraggingStepId(null); setDragOverStepId(null); }}
                             className={`group flex items-start gap-2.5 px-4 py-2.5 transition-colors
                               ${isDone ? 'bg-green-50/60' : selectedStepIds.has(s.id) ? 'bg-indigo-50/60' : isProgress ? 'bg-indigo-50/40' : isWaiting ? 'bg-amber-50/40' : isEndStep ? 'bg-indigo-50/30' : 'hover:bg-gray-50'}
-                              ${selectedStepIds.has(s.id) ? 'border-l-2 border-indigo-500' : isNextUp ? 'border-l-2 border-indigo-400' : 'border-l-2 border-transparent'}`}
+                              ${selectedStepIds.has(s.id) ? 'border-l-2 border-indigo-500' : isNextUp ? 'border-l-2 border-indigo-400' : 'border-l-2 border-transparent'}
+                              ${isDragging ? 'opacity-50' : ''}
+                              ${isDragOver ? 'ring-2 ring-indigo-300 ring-inset' : ''}`}
                           >
+                            {/* Drag handle — admin only, not on end step */}
+                            {isAdmin && !reassignMode && !isEndStep && (
+                              <Tooltip label="Drag to reorder">
+                                <span className="mt-1 flex-shrink-0 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <GripVertical className="h-3.5 w-3.5" />
+                                </span>
+                              </Tooltip>
+                            )}
                             {/* Reassign checkbox */}
                             {reassignMode && (
                               <button
@@ -706,6 +877,28 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                   {s.is_client_step && (
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200 font-medium">Client</span>
                                   )}
+                                  {isCustom && (
+                                    <Tooltip label="Custom step — only on this client's task, not on the template">
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium inline-flex items-center gap-0.5">
+                                        <Sparkles className="h-2.5 w-2.5" /> Custom
+                                      </span>
+                                    </Tooltip>
+                                  )}
+                                  {/* Delete — admin only, not on end step */}
+                                  {isAdmin && !isEndStep && !reassignMode && (
+                                    <Tooltip label="Delete this step from this task only">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); void handleDeleteStep(s.id); }}
+                                        disabled={deletingStepId === s.id}
+                                        aria-label="Delete step"
+                                        className="ml-auto p-1 rounded-md text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        {deletingStepId === s.id
+                                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                                          : <Trash2 className="h-3 w-3" />}
+                                      </button>
+                                    </Tooltip>
+                                  )}
                                 </div>
                               )}
 
@@ -719,6 +912,58 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                           </div>
                         );
                       })}
+
+                      {/* + Add custom step — admin only, hidden during reassign mode */}
+                      {isAdmin && !reassignMode && (
+                        <div className="px-4 py-2 border-t border-gray-100 mt-1">
+                          {addingStep ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                autoFocus
+                                value={newStepTitle}
+                                onChange={e => setNewStepTitle(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') { e.preventDefault(); void handleAddStep(); }
+                                  if (e.key === 'Escape') { setAddingStep(false); setNewStepTitle(''); }
+                                }}
+                                placeholder="New step title…"
+                                disabled={submittingNewStep}
+                                className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              />
+                              <button
+                                onClick={() => void handleAddStep()}
+                                disabled={!newStepTitle.trim() || submittingNewStep}
+                                className="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                              >
+                                {submittingNewStep ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Add'}
+                              </button>
+                              <button
+                                onClick={() => { setAddingStep(false); setNewStepTitle(''); }}
+                                disabled={submittingNewStep}
+                                className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setAddingStep(true)}
+                              className="inline-flex items-center gap-1.5 text-xs text-indigo-600 font-medium hover:text-indigo-700 hover:bg-indigo-50 px-2 py-1 rounded-md transition-colors"
+                            >
+                              <Plus className="h-3 w-3" /> Add custom step
+                            </button>
+                          )}
+                          <p className="text-[10px] text-gray-400 mt-1">
+                            Custom steps stay on this client&apos;s task and recur with future cycles, but won&apos;t be added to the template.
+                          </p>
+                        </div>
+                      )}
+                      {reordering && (
+                        <div className="px-4 py-1 text-[11px] text-gray-400 flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Saving order…
+                        </div>
+                      )}
                     </div>
 
                     {/* Batch reassign bar */}
@@ -822,5 +1067,68 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
         </div>
       </div>
     </div>
+
+    {/* Workflow editor — admin only */}
+    {showWorkflowEditor && (
+      <TemplateBuilder
+        template={null}
+        initialData={{
+          name: task.title,
+          description: task.description ?? null,
+          is_firm_wide: true,
+          category: 'general',
+          recurrence_type: null,
+          recurrence_interval_days: null,
+          steps: (task.steps ?? []).map(s => ({
+            step_key: s.step_key,
+            title: s.title,
+            description: s.description ?? null,
+            assignee_role: s.is_client_step ? 'client' : 'team_member',
+            default_assignee_id: s.assignee_id ?? null,
+            tool_module_id: s.tool_module_id ?? null,
+            email_reminder_enabled: s.email_reminder_enabled ?? false,
+            email_reminder_config: s.email_reminder_config ?? { recipients: [], timing: 'on_assign' },
+            email_reminder_subject: null,
+            email_reminder_message: null,
+            client_instructions: s.client_instructions ?? null,
+            client_can_upload: s.client_can_upload ?? false,
+            time_estimate_minutes: null,
+            position_x: s.position_x ?? 200,
+            position_y: s.position_y ?? 0,
+            step_type: (s.step_type as 'regular' | 'start' | 'end') ?? 'regular',
+            start_trigger_config: null,
+            end_config: null,
+          })),
+          edges: (task.edges ?? []).map(e => ({
+            from_step_key: e.from_step_key,
+            to_step_key:   e.to_step_key,
+            label:         e.label ?? null,
+            condition_type: e.condition_type ?? null,
+            condition_config: e.condition_config ?? null,
+            source_handle: e.source_handle ?? null,
+            target_handle: e.target_handle ?? null,
+          })),
+        }}
+        teamMembers={teamMembers}
+        existingTemplates={[]}
+        onSave={async () => { /* not used in edit-task mode */ }}
+        onEditTask={async (steps, edges) => {
+          const r = await fetch(`/api/tasks/${task.id}/workflow`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps, edges }),
+          });
+          if (!r.ok) {
+            const data = await r.json().catch(() => ({}));
+            throw new Error(data.error ?? 'Failed to save workflow');
+          }
+          await onTaskRefetch?.(task.id);
+        }}
+        mode="edit-task"
+        editTaskClientName={task.client?.name ?? undefined}
+        onClose={() => setShowWorkflowEditor(false)}
+      />
+    )}
+    </>
   );
 }

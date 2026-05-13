@@ -74,6 +74,7 @@ export async function GET(_req: NextRequest) {
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Only admins can create task templates.' }, { status: 403 });
 
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }

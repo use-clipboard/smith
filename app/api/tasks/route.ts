@@ -55,32 +55,130 @@ export async function GET(req: NextRequest) {
   const assigneeId = url.searchParams.get('assignee_id');
   const search = url.searchParams.get('search') ?? '';
 
-  let query = supabase
-    .from('tasks')
-    .select(`
-      *,
-      client:clients(id, name, client_ref, contact_email, status),
-      created_by_user:users!tasks_created_by_fkey(id, full_name, email),
-      steps:task_steps(*, assignee:users(id, full_name, email)),
-      edges:task_step_edges(*),
-      time_entries:task_time_entries(*)
-    `)
-    .eq('firm_id', ctx.firmId)
-    .order('created_at', { ascending: false });
+  // Strategy: fetch task headers (small, fast) in a single paginated pass,
+  // then fetch related rows (steps / edges / client / creator) in *separate*
+  // batched queries and merge client-side. This avoids the Postgres
+  // statement-timeout that a single mega-join hits once a firm has > ~1k tasks.
+  const PAGE_SIZE = 1000;
 
-  if (status) query = query.eq('status', status);
-  if (clientId) query = query.eq('client_id', clientId);
-  if (search) query = query.ilike('title', `%${search}%`);
+  const tasks: Record<string, unknown>[] = [];
+  for (let page = 0; ; page++) {
+    let q = supabase
+      .from('tasks')
+      .select('*')
+      .eq('firm_id', ctx.firmId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    if (status) q = q.eq('status', status);
+    if (clientId) q = q.eq('client_id', clientId);
+    if (search) q = q.ilike('title', `%${search}%`);
+    const { data, error } = await q;
+    if (error) {
+      console.error('GET /api/tasks (headers)', error);
+      return NextResponse.json({ error: 'Failed to load tasks' }, { status: 500 });
+    }
+    if (!data || data.length === 0) break;
+    tasks.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
 
-  const { data: tasks, error } = await query;
-  if (error) {
-    console.error('GET /api/tasks', error);
-    return NextResponse.json({ error: 'Failed to load tasks' }, { status: 500 });
+  if (tasks.length > 0) {
+    const taskIds = tasks.map(t => t.id as string);
+    const clientIds = [...new Set(tasks.map(t => t.client_id).filter(Boolean) as string[])];
+    const creatorIds = [...new Set(tasks.map(t => t.created_by).filter(Boolean) as string[])];
+
+    // Fan out four lighter queries in parallel. Each one stays well within timeout.
+    // BATCH must keep the request URL under the gateway's URL-length limit
+    // (UUIDs are 36 chars + comma; ~100 ids per batch ≈ 3.7 KB which is safe).
+    const BATCH = 100;
+    async function fetchAllSteps() {
+      const all: Record<string, unknown>[] = [];
+      for (let i = 0; i < taskIds.length; i += BATCH) {
+        const slice = taskIds.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .from('task_steps')
+          .select('*, assignee:users(id, full_name, email)')
+          .in('task_id', slice);
+        if (error) console.error(`[GET /api/tasks] steps batch ${i} failed:`, error.message);
+        if (data) all.push(...data);
+      }
+      return all;
+    }
+    async function fetchAllEdges() {
+      const all: Record<string, unknown>[] = [];
+      for (let i = 0; i < taskIds.length; i += BATCH) {
+        const slice = taskIds.slice(i, i + BATCH);
+        const { data, error } = await supabase.from('task_step_edges').select('*').in('task_id', slice);
+        if (error) console.error(`[GET /api/tasks] edges batch ${i} failed:`, error.message);
+        if (data) all.push(...data);
+      }
+      return all;
+    }
+    async function fetchClients() {
+      const all: Record<string, unknown>[] = [];
+      for (let i = 0; i < clientIds.length; i += BATCH) {
+        const slice = clientIds.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .from('clients')
+          .select('id, name, client_ref, contact_email, status')
+          .in('id', slice);
+        if (error) console.error(`[GET /api/tasks] clients batch ${i} failed:`, error.message);
+        if (data) all.push(...data);
+      }
+      return all;
+    }
+    async function fetchCreators() {
+      const all: Record<string, unknown>[] = [];
+      for (let i = 0; i < creatorIds.length; i += BATCH) {
+        const slice = creatorIds.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, full_name, email')
+          .in('id', slice);
+        if (error) console.error(`[GET /api/tasks] creators batch ${i} failed:`, error.message);
+        if (data) all.push(...data);
+      }
+      return all;
+    }
+
+    const [allSteps, allEdges, clientRows, creatorRows] = await Promise.all([
+      fetchAllSteps(), fetchAllEdges(), fetchClients(), fetchCreators(),
+    ]);
+
+    const clientById = new Map(clientRows.map(c => [c.id as string, c]));
+    const creatorById = new Map(creatorRows.map(u => [u.id as string, u]));
+    const stepsByTask = new Map<string, Record<string, unknown>[]>();
+    for (const s of allSteps) {
+      const tid = s.task_id as string;
+      const arr = stepsByTask.get(tid) ?? [];
+      arr.push(s);
+      stepsByTask.set(tid, arr);
+    }
+    const edgesByTask = new Map<string, Record<string, unknown>[]>();
+    for (const e of allEdges) {
+      const tid = e.task_id as string;
+      const arr = edgesByTask.get(tid) ?? [];
+      arr.push(e);
+      edgesByTask.set(tid, arr);
+    }
+
+    for (const t of tasks) {
+      const id = t.id as string;
+      (t as { client?: unknown }).client = clientById.get((t.client_id as string) ?? '') ?? null;
+      (t as { created_by_user?: unknown }).created_by_user = creatorById.get((t.created_by as string) ?? '') ?? null;
+      (t as { steps?: unknown }).steps = stepsByTask.get(id) ?? [];
+      (t as { edges?: unknown }).edges = edgesByTask.get(id) ?? [];
+      // time_entries left omitted — TaskDetailPanel fetches them per task on open.
+      (t as { time_entries?: unknown }).time_entries = [];
+    }
   }
 
   // Filter by assignee after the fact (any step assigned to this user)
+  // Using `any` here because tasks is built as Record<string,unknown>[] for typing flexibility above
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filtered = assigneeId
-    ? tasks?.filter(t => t.steps?.some((s: { assignee_id: string | null }) => s.assignee_id === assigneeId))
+    ? (tasks as any[]).filter((t: { steps?: { assignee_id: string | null }[] }) => t.steps?.some(s => s.assignee_id === assigneeId))
     : tasks;
 
   return NextResponse.json({ tasks: filtered ?? [] });
@@ -125,9 +223,22 @@ export async function POST(req: NextRequest) {
 
   // Insert steps
   if (steps && steps.length > 0) {
+    // If this task is linked to a template, look up the matching template
+    // step ids by step_key so we can stamp `template_step_id` on each row.
+    // Without this every newly created task shows as "Customised" in the UI.
+    let templateStepsByKey: Map<string, string> = new Map();
+    if (taskData.template_id) {
+      const { data: tplSteps } = await supabase
+        .from('task_template_steps')
+        .select('id, step_key')
+        .eq('template_id', taskData.template_id);
+      templateStepsByKey = new Map((tplSteps ?? []).map(r => [r.step_key as string, r.id as string]));
+    }
+
     const { data: insertedSteps, error: stepsError } = await supabase.from('task_steps').insert(
       steps.map(s => ({
         task_id: task.id,
+        template_step_id: templateStepsByKey.get(s.step_key) ?? null,
         step_key: s.step_key,
         title: s.title,
         description: s.description ?? null,

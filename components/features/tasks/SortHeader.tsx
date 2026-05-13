@@ -17,7 +17,7 @@ interface Props<F extends string> {
 export default function SortHeader<F extends string>({ field, label, activeField, activeDir, onToggle, thClassName = '' }: Props<F>) {
   const isActive = activeField === field;
   return (
-    <th className={`px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide ${thClassName}`}>
+    <th className={`px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 ${thClassName}`}>
       <button
         onClick={() => onToggle(field)}
         className={`inline-flex items-center gap-1 hover:text-gray-700 transition-colors ${isActive ? 'text-gray-700' : ''}`}

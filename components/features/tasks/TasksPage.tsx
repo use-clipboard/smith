@@ -4,9 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   CheckSquare, Plus, ListTodo, Users, Building2, LayoutGrid, Layers,
   BookTemplate, Loader2, RefreshCw, FileStack, PlayCircle, List,
-  CalendarDays, CalendarRange,
+  CalendarDays, CalendarRange, History, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import MyTasksView from './views/MyTasksView';
+import HistoryView from './views/HistoryView';
+import DepartmentView from './views/DepartmentView';
+import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import MyWeekView from './views/MyWeekView';
 import MyMonthView from './views/MyMonthView';
 import AllTasksView from './views/AllTasksView';
@@ -26,7 +29,7 @@ import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
 
-type ViewId = 'my' | 'my-week' | 'my-month' | 'all' | 'by-client' | 'by-team' | 'by-type' | 'templates' | 'drafts';
+type ViewId = 'my' | 'my-week' | 'my-month' | 'all' | 'by-client' | 'by-team' | 'by-type' | 'history' | 'department' | 'templates' | 'drafts';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
 interface ClientRef  { id: string; name: string; client_ref: string; business_type?: string | null; status?: string | null; }
@@ -42,10 +45,31 @@ const FIRM_NAV_ITEMS: { id: ViewId; label: string; icon: React.ElementType }[] =
   { id: 'by-client', label: 'By Client',  icon: Building2 },
   { id: 'by-team',   label: 'By Team',    icon: Users },
   { id: 'by-type',   label: 'By Type',    icon: Layers },
+  { id: 'history',   label: 'History',    icon: History },
 ];
 
 export default function TasksPage() {
   const [view, setView] = useState<ViewId>('my');
+  const [activeDepartment, setActiveDepartment] = useState<string | null>(null);
+  const [departments, setDepartments] = useState<{ category: string; count: number }[]>([]);
+
+  // Collapsible sidebar sections — persisted per browser.
+  // Start empty so SSR + first client render match, then hydrate from localStorage
+  // in an effect to avoid a Next.js hydration mismatch.
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('smith:tasks_sidebar_collapsed');
+      if (raw) setCollapsedSections(JSON.parse(raw));
+    } catch { /* ignore corrupt JSON */ }
+  }, []);
+  function toggleSection(key: string) {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (typeof window !== 'undefined') localStorage.setItem('smith:tasks_sidebar_collapsed', JSON.stringify(next));
+      return next;
+    });
+  }
   const [tasks, setTasks] = useState<Task[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -116,12 +140,13 @@ export default function TasksPage() {
     setLoading(true);
     try {
       // Use allSettled so one failing route doesn't crash the whole page
-      const [tasksRes, templatesRes, teamRes, clientsRes, profileRes] = await Promise.allSettled([
+      const [tasksRes, templatesRes, teamRes, clientsRes, profileRes, deptRes] = await Promise.allSettled([
         fetch('/api/tasks'),
         fetch('/api/tasks/templates'),
         fetch('/api/users/team'),
         fetch('/api/clients'),
         fetch('/api/users/me'),
+        fetch('/api/tasks/departments'),
       ]);
 
       if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
@@ -135,6 +160,9 @@ export default function TasksPage() {
       }
       if (clientsRes.status === 'fulfilled' && clientsRes.value.ok) {
         const d = await clientsRes.value.json(); setClients(d.clients ?? []);
+      }
+      if (deptRes.status === 'fulfilled' && deptRes.value.ok) {
+        const d = await deptRes.value.json(); setDepartments(d.departments ?? []);
       }
       if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
         const d = await profileRes.value.json();
@@ -153,6 +181,11 @@ export default function TasksPage() {
   async function refreshTasks() {
     const r = await fetch('/api/tasks');
     if (r.ok) { const d = await r.json(); setTasks(d.tasks ?? []); }
+    // Refresh department counts in the background — non-blocking
+    fetch('/api/tasks/departments')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setDepartments(d.departments ?? []); })
+      .catch(() => { /* non-critical */ });
   }
 
   async function refreshTemplates() {
@@ -241,10 +274,17 @@ export default function TasksPage() {
   }
 
   async function handleStopRecurrence(taskId: string) {
+    const task = tasks.find(t => t.id === taskId);
+    const label = task?.recurrence_type ? task.recurrence_type.replace(/-/g, ' ') : 'recurring';
+    const title = task?.title ?? 'this task';
+    const ok = window.confirm(
+      `Stop the ${label} recurrence for "${title}"?\n\nThis task will no longer repeat after the current occurrence. You can turn it back on at any time from the task detail panel.`
+    );
+    if (!ok) return;
     const r = await fetch(`/api/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recurrence_type: null }),
+      body: JSON.stringify({ recurrence_type: null, recurrence_interval_days: null }),
     });
     if (!r.ok) throw new Error('Failed to stop recurrence');
     await refreshTasks();
@@ -435,12 +475,19 @@ export default function TasksPage() {
 
         <nav className="flex-1 py-2 overflow-y-auto">
           {/* Personal group */}
-          <div className="px-4 pt-3 pb-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate">
+          <button
+            onClick={() => toggleSection('personal')}
+            className="w-full px-4 pt-3 pb-1 flex items-center gap-1 text-left group"
+            aria-expanded={!collapsedSections.personal}
+          >
+            {collapsedSections.personal
+              ? <ChevronRight size={10} className="text-gray-400" />
+              : <ChevronDown  size={10} className="text-gray-400" />}
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">
               {currentUserName || 'My Work'}
             </p>
-          </div>
-          {MY_NAV_ITEMS.map(item => {
+          </button>
+          {!collapsedSections.personal && MY_NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const isActive = view === item.id;
             return (
@@ -455,7 +502,7 @@ export default function TasksPage() {
                 <span className="truncate">{item.label}</span>
                 {item.id === 'my' && myTaskCount > 0 && (
                   <span className="ml-auto text-xs bg-indigo-500 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                    {myTaskCount > 99 ? '99+' : myTaskCount}
+                    {myTaskCount}
                   </span>
                 )}
               </button>
@@ -463,12 +510,19 @@ export default function TasksPage() {
           })}
 
           {/* Firm group */}
-          <div className="px-4 pt-4 pb-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate">
+          <button
+            onClick={() => toggleSection('firm')}
+            className="w-full px-4 pt-4 pb-1 flex items-center gap-1 text-left group"
+            aria-expanded={!collapsedSections.firm}
+          >
+            {collapsedSections.firm
+              ? <ChevronRight size={10} className="text-gray-400" />
+              : <ChevronDown  size={10} className="text-gray-400" />}
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">
               {firmName || 'My Firm'}
             </p>
-          </div>
-          {FIRM_NAV_ITEMS.map(item => {
+          </button>
+          {!collapsedSections.firm && FIRM_NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const isActive = view === item.id;
             return (
@@ -484,6 +538,39 @@ export default function TasksPage() {
               </button>
             );
           })}
+
+          {/* Departments — listed only if they have active tasks */}
+          {departments.length > 0 && (
+            <>
+              <button
+                onClick={() => toggleSection('departments')}
+                className="w-full px-4 pt-4 pb-1 flex items-center gap-1 text-left group"
+                aria-expanded={!collapsedSections.departments}
+              >
+                {collapsedSections.departments
+                  ? <ChevronRight size={10} className="text-gray-400" />
+                  : <ChevronDown  size={10} className="text-gray-400" />}
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 truncate group-hover:text-gray-600 transition-colors">Departments</p>
+              </button>
+              {!collapsedSections.departments && departments.map(dept => {
+                const isActive = view === 'department' && activeDepartment === dept.category;
+                const label = TEMPLATE_CATEGORY_LABELS[dept.category] ?? dept.category;
+                return (
+                  <button
+                    key={dept.category}
+                    onClick={() => { setActiveDepartment(dept.category); setView('department'); }}
+                    className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+                      isActive ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-500' : 'text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${isActive ? 'bg-indigo-500' : 'bg-gray-300'}`} />
+                    <span className="truncate">{label}</span>
+                    <span className="ml-auto text-[10px] text-gray-400">{dept.count}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </nav>
 
         <div className="border-t border-gray-100 py-2">
@@ -498,7 +585,7 @@ export default function TasksPage() {
               <span>Drafts</span>
               {draftCount > 0 && (
                 <span className="ml-auto text-xs bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
-                  {draftCount > 99 ? '99+' : draftCount}
+                  {draftCount}
                 </span>
               )}
             </button>
@@ -525,7 +612,7 @@ export default function TasksPage() {
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Fixed top bar: grid/list toggle — never scrolls */}
-        {!loading && !['templates', 'drafts'].includes(view) && (
+        {!loading && !['templates', 'drafts', 'history', 'department'].includes(view) && (
           <div className="flex-shrink-0 flex justify-end px-6 pt-5 pb-3 bg-gray-50">
             <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
               <Tooltip label="Card view">
@@ -573,6 +660,23 @@ export default function TasksPage() {
             {view === 'by-client' && <ByClientView   {...viewProps} />}
             {view === 'by-team'   && <ByTeamView     {...viewProps} />}
             {view === 'by-type'   && <ByTypeView     {...viewProps} />}
+            {view === 'history'   && <HistoryView />}
+            {view === 'department' && activeDepartment && (
+              <DepartmentView
+                category={activeDepartment}
+                tasks={tasks}
+                templates={templates}
+                clients={clients}
+                teamMembers={teamMembers}
+                currentUserId={currentUserId}
+                isAdmin={isAdmin}
+                onTaskClick={setSelectedTask}
+                onStepUpdate={handleStepUpdate}
+                onTaskUpdate={handleUpdate}
+                onDelete={handleDelete}
+                onStopRecurrence={handleStopRecurrence}
+              />
+            )}
             {view === 'drafts'    && (
               <div className="pt-5">
                 <DraftsView
@@ -600,6 +704,7 @@ export default function TasksPage() {
                   onCreateAI={() => setShowAIBuilder(true)}
                   onDelete={handleDeleteTemplate}
                   onCopy={handleCopyTemplate}
+                  isAdmin={isAdmin}
                 />
               </div>
             )}
@@ -621,6 +726,15 @@ export default function TasksPage() {
           isAdmin={isAdmin}
           teamMembers={teamMembers}
           onStopRecurrence={handleStopRecurrence}
+          onTaskRefetch={async (taskId: string) => {
+            // Refetch just this task so the open detail panel reflects step list edits
+            const r = await fetch(`/api/tasks/${taskId}`);
+            if (r.ok) {
+              const d = await r.json();
+              setSelectedTask(d.task);
+              setTasks(prev => prev.map(t => t.id === taskId ? d.task : t));
+            }
+          }}
         />
       )}
 

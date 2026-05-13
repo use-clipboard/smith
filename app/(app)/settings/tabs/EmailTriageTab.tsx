@@ -22,6 +22,21 @@ export default function EmailTriageTab() {
   const [showAsThreads, setShowAsThreads] = useState(false);
   const [inboxLabel, setInboxLabel] = useState('INBOX');
   const [labels, setLabels] = useState<{ id: string; name: string }[]>([]);
+  const [desktopNotifs, setDesktopNotifs] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const v = localStorage.getItem('smith:email_desktop_notifications');
+    setDesktopNotifs(v === null ? true : v === 'true');
+  }, []);
+
+  function toggleDesktopNotifs() {
+    const next = !desktopNotifs;
+    setDesktopNotifs(next);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('smith:email_desktop_notifications', String(next));
+    }
+  }
 
   const [signature, setSignature] = useState<string | null>(null);
   const [loadingSig, setLoadingSig] = useState(false);
@@ -244,6 +259,23 @@ export default function EmailTriageTab() {
             >
               <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5
                 ${showAsThreads ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          {/* Desktop notification toggle (saved per device in localStorage) */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">New email notifications</p>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">Slide-in toast in the bottom-right when a new email arrives, visible from any tool. Saved per device.</p>
+            </div>
+            <button
+              onClick={toggleDesktopNotifs}
+              className={`relative inline-flex h-5 w-9 rounded-full transition-colors
+                ${desktopNotifs ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+              aria-label="Toggle new email notifications"
+            >
+              <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5
+                ${desktopNotifs ? 'translate-x-4' : 'translate-x-0'}`} />
             </button>
           </div>
 

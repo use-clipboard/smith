@@ -115,12 +115,24 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // DELETE /api/tasks/[id]
+// Soft-delete: marks the task as deleted but preserves the row (and all
+// associated steps, edges, time entries, comments) for the History view.
+// To permanently purge a task, an admin-level SQL operation is required.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   const supabase = createClient();
-  const { error } = await supabase.from('tasks').delete().eq('id', params.id).eq('firm_id', ctx.firmId);
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: ctx.userId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .is('deleted_at', null);
   if (error) {
     console.error('DELETE /api/tasks/[id]', error);
     return NextResponse.json({ error: 'Failed to delete task' }, { status: 500 });
@@ -169,6 +181,8 @@ async function spawnNextRecurrence(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       completed.steps.map((s: any) => ({
         task_id: newTask.id,
+        // Carry template lineage forward so the "Custom" badge stays accurate
+        template_step_id: s.template_step_id ?? null,
         step_key: s.step_key,
         title: s.title,
         description: s.description,
