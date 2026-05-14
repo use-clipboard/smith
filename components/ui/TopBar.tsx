@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
+import StickyNotesHeaderButton from './StickyNotes/StickyNotesHeaderButton';
 import { useChatContext } from '@/components/chat/ChatProvider';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
@@ -374,6 +375,9 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           </Tooltip>
           {isPanelOpen && <ChatPanel />}
         </div>
+
+        {/* Sticky Notes (personal, private — sit on top of every page) */}
+        <StickyNotesHeaderButton />
 
         {/* Notifications */}
         <div className="relative" ref={notifRef}>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments } from '@/lib/notifications';
+import { logTaskCreated } from '@/lib/taskAudit';
 import type { TaskStatus, RecurrenceType } from '@/types';
 
 const CreateTaskSchema = z.object({
@@ -220,6 +221,15 @@ export async function POST(req: NextRequest) {
     console.error('POST /api/tasks', error);
     return NextResponse.json({ error: 'Failed to create task' }, { status: 500 });
   }
+
+  // Audit: record task creation. Fire-and-forget — must not block the response.
+  logTaskCreated(supabase, {
+    taskId:    task.id,
+    firmId:    ctx.firmId,
+    clientId:  (task.client_id as string | null) ?? null,
+    userId:    ctx.userId,
+    taskTitle: (task.title as string) ?? '',
+  }).catch(err => console.error('logTaskCreated failed', err));
 
   // Insert steps
   if (steps && steps.length > 0) {

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { consumePendingClient } from '@/lib/pendingClient';
+import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
@@ -16,7 +16,10 @@ type AppState = 'idle' | 'loading' | 'success' | 'error';
 
 // ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function P32Page() {
-  const [view, setView] = useState<'history' | 'tool'>('history');
+  // Skip the history view when arriving via a Quick Launch pill (pending client present).
+  const [view, setView] = useState<'history' | 'tool'>(
+    () => peekPendingClient('/p32') ? 'tool' : 'history',
+  );
   const [seed, setSeed] = useState<P32Seed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
 
@@ -25,6 +28,17 @@ export default function P32Page() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
       .catch(() => {/* ignore */});
+  }, []);
+
+  // Subsequent pill clicks while the tab is already open
+  useEffect(() => {
+    function onPending(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/p32') return;
+      setSeed(null);
+      setView('tool');
+    }
+    window.addEventListener('smith:pending-client', onPending);
+    return () => window.removeEventListener('smith:pending-client', onPending);
   }, []);
 
   return view === 'history' ? (

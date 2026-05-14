@@ -9,7 +9,7 @@ import SaveSummariseModal from '@/components/features/summarise/SaveSummariseMod
 import SummariseHistory, { type SummariseSeed } from '@/components/features/summarise/SummariseHistory';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import Tooltip from '@/components/ui/Tooltip';
-import { consumePendingClient } from '@/lib/pendingClient';
+import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { FileText, Download, Layers, ChevronDown, ChevronRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
@@ -50,7 +50,10 @@ function fmt(n: number) {
 
 // ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function SummarisePage() {
-  const [view, setView] = useState<'history' | 'tool'>('history');
+  // Skip the history view when arriving via a Quick Launch pill (pending client present).
+  const [view, setView] = useState<'history' | 'tool'>(
+    () => peekPendingClient('/summarise') ? 'tool' : 'history',
+  );
   const [seed, setSeed] = useState<SummariseSeed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
 
@@ -59,6 +62,17 @@ export default function SummarisePage() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
       .catch(() => {/* ignore */});
+  }, []);
+
+  // Subsequent pill clicks while the tab is already open
+  useEffect(() => {
+    function onPending(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/summarise') return;
+      setSeed(null);
+      setView('tool');
+    }
+    window.addEventListener('smith:pending-client', onPending);
+    return () => window.removeEventListener('smith:pending-client', onPending);
   }, []);
 
   return view === 'history' ? (

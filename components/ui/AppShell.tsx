@@ -11,6 +11,11 @@ import OnboardingModal from './OnboardingModal';
 import EmailToastNotifier from './EmailToastNotifier';
 import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
+import StickyNotesProvider from './StickyNotes/StickyNotesProvider';
+import StickyNotesLayer from './StickyNotes/StickyNotesLayer';
+import ComposeWindowProvider from '@/components/features/email/ComposeWindowProvider';
+import GlobalComposeWindow from '@/components/features/email/GlobalComposeWindow';
+import MinimisedComposeChip from '@/components/features/email/MinimisedComposeChip';
 import TabProvider, { useTabContext } from './TabContext';
 import { TabActivityProvider } from './TabActivityContext';
 import { ModulesProvider } from './ModulesProvider';
@@ -157,24 +162,31 @@ export default function AppShell({
       <ChatProvider userId={userId} firmId={firmId}>
         <TabProvider>
           <TabActivityProvider>
-            <AppShellInner
-              userName={userName}
-              userEmail={userEmail}
-              userRole={userRole}
-              avatarUrl={avatarUrl}
-              hasApiKey={hasApiKey ?? true}
-              userId={userId}
-            >
-              {children}
-            </AppShellInner>
-            {/* Floating overlays — outside AppShellInner but still inside all providers */}
-            <AskSmithBubble />
-            <ConversationWindows />
-            <UnreadMessageChips />
-            <EmailToastNotifier />
-            {onboardingVisible && (
-              <OnboardingModal onDismiss={handleDismissOnboarding} />
-            )}
+            <StickyNotesProvider userId={userId}>
+              <ComposeWindowProvider userName={userName}>
+                <AppShellInner
+                  userName={userName}
+                  userEmail={userEmail}
+                  userRole={userRole}
+                  avatarUrl={avatarUrl}
+                  hasApiKey={hasApiKey ?? true}
+                  userId={userId}
+                >
+                  {children}
+                </AppShellInner>
+                {/* Floating overlays — outside AppShellInner but still inside all providers */}
+                <AskSmithBubble />
+                <ConversationWindows />
+                <UnreadMessageChips />
+                <EmailToastNotifier />
+                <StickyNotesLayer />
+                <GlobalComposeWindow />
+                <MinimisedComposeChip />
+                {onboardingVisible && (
+                  <OnboardingModal onDismiss={handleDismissOnboarding} />
+                )}
+              </ComposeWindowProvider>
+            </StickyNotesProvider>
           </TabActivityProvider>
         </TabProvider>
       </ChatProvider>

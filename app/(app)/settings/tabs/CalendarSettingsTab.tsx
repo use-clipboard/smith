@@ -8,6 +8,10 @@ import {
 import {
   REMINDER_PREF_KEY,
   REMINDER_UPDATE_EVENT,
+  PERSONAL_REMINDER_PREF_KEY,
+  PERSONAL_REMINDER_UPDATE_EVENT,
+  PERSONAL_ALLDAY_REMINDER_PREF_KEY,
+  PERSONAL_ALLDAY_REMINDER_UPDATE_EVENT,
 } from '@/components/ui/CalendarReminderBanner';
 
 interface MemberSetting {
@@ -35,6 +39,22 @@ const REMINDER_OPTIONS: { label: string; value: number | null }[] = [
   { label: '1 hour',       value: 60   },
 ];
 
+const PERSONAL_LEAD_OPTIONS: { label: string; value: number }[] = [
+  { label: 'At time',    value: 0    },
+  { label: '5 minutes',  value: 5    },
+  { label: '15 minutes', value: 15   },
+  { label: '30 minutes', value: 30   },
+  { label: '1 hour',     value: 60   },
+  { label: '1 day',      value: 1440 },
+];
+
+const PERSONAL_ALLDAY_LEAD_OPTIONS: { label: string; value: number }[] = [
+  { label: 'On the day (9am)', value: 0     },
+  { label: '1 day before',     value: 1440  },
+  { label: '2 days before',    value: 2880  },
+  { label: '1 week before',    value: 10080 },
+];
+
 interface UpcomingEvent { id: string; title: string; start: string }
 
 export default function CalendarSettingsTab({ isAdmin, currentUserId }: Props) {
@@ -46,6 +66,10 @@ export default function CalendarSettingsTab({ isAdmin, currentUserId }: Props) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [reminderMinutes, setReminderMinutes] = useState<number | null>(null);
   const [reminderSaved, setReminderSaved] = useState(false);
+  const [personalDefaultMinutes, setPersonalDefaultMinutes] = useState<number>(5);
+  const [personalSaved, setPersonalSaved] = useState(false);
+  const [personalAllDayDefaultMinutes, setPersonalAllDayDefaultMinutes] = useState<number>(0);
+  const [personalAllDaySaved, setPersonalAllDaySaved] = useState(false);
   // Upcoming events preview — fetched when reminders section is shown
   const [upcomingEvents,     setUpcomingEvents]     = useState<UpcomingEvent[]>([]);
   const [upcomingLoading,    setUpcomingLoading]    = useState(false);
@@ -71,6 +95,20 @@ export default function CalendarSettingsTab({ isAdmin, currentUserId }: Props) {
     try {
       const raw = localStorage.getItem(REMINDER_PREF_KEY);
       if (raw !== null) setReminderMinutes(JSON.parse(raw));
+    } catch { /* ignore */ }
+    try {
+      const raw = localStorage.getItem(PERSONAL_REMINDER_PREF_KEY);
+      if (raw !== null) {
+        const v = JSON.parse(raw);
+        if (typeof v === 'number') setPersonalDefaultMinutes(v);
+      }
+    } catch { /* ignore */ }
+    try {
+      const raw = localStorage.getItem(PERSONAL_ALLDAY_REMINDER_PREF_KEY);
+      if (raw !== null) {
+        const v = JSON.parse(raw);
+        if (typeof v === 'number') setPersonalAllDayDefaultMinutes(v);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -143,6 +181,30 @@ export default function CalendarSettingsTab({ isAdmin, currentUserId }: Props) {
     );
     setReminderSaved(true);
     setTimeout(() => setReminderSaved(false), 2000);
+  }
+
+  function handlePersonalDefaultChange(minutes: number) {
+    setPersonalDefaultMinutes(minutes);
+    try {
+      localStorage.setItem(PERSONAL_REMINDER_PREF_KEY, JSON.stringify(minutes));
+    } catch { /* ignore */ }
+    window.dispatchEvent(
+      new CustomEvent(PERSONAL_REMINDER_UPDATE_EVENT, { detail: { minutes } })
+    );
+    setPersonalSaved(true);
+    setTimeout(() => setPersonalSaved(false), 2000);
+  }
+
+  function handlePersonalAllDayDefaultChange(minutes: number) {
+    setPersonalAllDayDefaultMinutes(minutes);
+    try {
+      localStorage.setItem(PERSONAL_ALLDAY_REMINDER_PREF_KEY, JSON.stringify(minutes));
+    } catch { /* ignore */ }
+    window.dispatchEvent(
+      new CustomEvent(PERSONAL_ALLDAY_REMINDER_UPDATE_EVENT, { detail: { minutes } })
+    );
+    setPersonalAllDaySaved(true);
+    setTimeout(() => setPersonalAllDaySaved(false), 2000);
   }
 
   if (loading) {
@@ -339,6 +401,93 @@ export default function CalendarSettingsTab({ isAdmin, currentUserId }: Props) {
               })}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Personal Reminders — default lead times */}
+      <div className="glass-solid rounded-xl p-5 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+            <Bell size={16} className="text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Personal Reminders</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
+              Default lead times for reminders you create on the calendar. Each reminder
+              can override these. Reminders are private — never visible to other team members.
+            </p>
+          </div>
+        </div>
+
+        {/* Timed default */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+              Timed reminders
+            </p>
+            {personalSaved && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                <Check size={11} /> Saved
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PERSONAL_LEAD_OPTIONS.map(opt => {
+              const active = personalDefaultMinutes === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handlePersonalDefaultChange(opt.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                    ${active
+                      ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                      : 'border-[var(--border)] text-[var(--text-secondary)] bg-[var(--bg-content)] hover:border-amber-400 hover:text-amber-600 dark:hover:text-amber-400'
+                    }`}
+                >
+                  <Bell size={10} className="inline mr-1 mb-0.5" />
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* All-day default */}
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">
+              All-day reminders
+            </p>
+            {personalAllDaySaved && (
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                <Check size={11} /> Saved
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PERSONAL_ALLDAY_LEAD_OPTIONS.map(opt => {
+              const active = personalAllDayDefaultMinutes === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handlePersonalAllDayDefaultChange(opt.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                    ${active
+                      ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                      : 'border-[var(--border)] text-[var(--text-secondary)] bg-[var(--bg-content)] hover:border-amber-400 hover:text-amber-600 dark:hover:text-amber-400'
+                    }`}
+                >
+                  <Bell size={10} className="inline mr-1 mb-0.5" />
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
+            All-day reminder banners fire at 9am local time on the chosen day.
+          </p>
         </div>
       </div>
 

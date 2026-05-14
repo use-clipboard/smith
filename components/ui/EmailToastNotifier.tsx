@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Mail, X } from 'lucide-react';
 import { useModules } from './ModulesProvider';
+import { useTabContext } from './TabContext';
 
 interface RecentEmail {
   id: string;
@@ -37,6 +38,7 @@ function notificationsEnabled(): boolean {
 export default function EmailToastNotifier() {
   const router = useRouter();
   const { isModuleActive } = useModules();
+  const { openTab } = useTabContext();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const initialisedRef = useRef(false);
@@ -45,10 +47,15 @@ export default function EmailToastNotifier() {
     setToasts(prev => prev.filter(t => t.key !== key));
   }, []);
 
+  // The app uses a custom tabbed-tool system that overlays Next.js routing —
+  // when a tool tab is active, navigating via router.push alone changes the URL
+  // but the tab system keeps showing the previously active tool. We need to
+  // both open the email tab *and* push the URL.
   const openEmailTool = useCallback((key: string) => {
     dismiss(key);
-    router.push('/email-triage');
-  }, [dismiss, router]);
+    openTab({ id: 'email-triage', title: 'Email Triage', route: '/email', icon: Mail });
+    router.push('/email');
+  }, [dismiss, openTab, router]);
 
   useEffect(() => {
     if (!isModuleActive('email-triage')) return;
@@ -117,36 +124,43 @@ export default function EmailToastNotifier() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 max-w-sm pointer-events-none">
+    <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-3 pointer-events-none">
       {toasts.map(t => (
         <button
           key={t.key}
           onClick={() => openEmailTool(t.key)}
-          className="pointer-events-auto w-80 text-left rounded-xl bg-white shadow-2xl border border-gray-200 p-3 flex items-start gap-3 hover:shadow-xl hover:border-[var(--accent)]/30 transition-all animate-[slide-in-right_0.25s_ease-out]"
-          style={{ animation: 'slideInRight 0.25s ease-out' }}
+          className="pointer-events-auto w-[26rem] text-left rounded-xl bg-violet-50 dark:bg-violet-950/60 text-[var(--text-primary)] shadow-2xl ring-1 ring-violet-300/70 dark:ring-violet-700/60 p-4 flex items-start gap-3 hover:bg-violet-100 dark:hover:bg-violet-900/60 hover:ring-violet-400 transition-all"
+          style={{ animation: 'emailToastIn 0.3s ease-out' }}
         >
-          <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center shrink-0">
-            <Mail size={14} className="text-[var(--accent)]" />
+          <div className="w-10 h-10 rounded-xl bg-violet-200 dark:bg-violet-800/70 flex items-center justify-center shrink-0">
+            {t.count > 1 ? (
+              <span className="text-sm font-bold text-violet-700 dark:text-violet-200">{t.count}</span>
+            ) : (
+              <Mail size={18} className="text-violet-600 dark:text-violet-300" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-gray-900 truncate">{t.fromName}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-violet-700 dark:text-violet-300">
+                {t.count > 1 ? 'New emails' : 'New email'}
+              </p>
               <span
                 onClick={e => { e.stopPropagation(); dismiss(t.key); }}
-                className="shrink-0 p-0.5 rounded hover:bg-gray-100 cursor-pointer"
+                className="shrink-0 p-1 -m-1 rounded hover:bg-violet-200/60 dark:hover:bg-violet-800/60 cursor-pointer"
                 role="button"
                 aria-label="Dismiss"
               >
-                <X size={12} className="text-gray-400" />
+                <X size={14} className="text-violet-700/70 dark:text-violet-300/70" />
               </span>
             </div>
-            <p className="text-xs font-medium text-gray-700 truncate mt-0.5">{t.subject}</p>
-            <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{t.snippet}</p>
+            <p className="text-sm font-semibold text-[var(--text-primary)] truncate mt-0.5">{t.fromName}</p>
+            <p className="text-sm font-medium text-[var(--text-secondary)] truncate">{t.subject}</p>
+            <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-2">{t.snippet}</p>
           </div>
         </button>
       ))}
       <style jsx>{`
-        @keyframes slideInRight {
+        @keyframes emailToastIn {
           from { transform: translateX(120%); opacity: 0; }
           to   { transform: translateX(0);     opacity: 1; }
         }

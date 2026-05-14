@@ -54,3 +54,12 @@ export function consumePendingClient(route: string): PendingClientData | null {
   }
   return null;
 }
+
+/**
+ * Non-mutating check — used by tool wrapper pages to decide whether to skip
+ * their history-dashboard view and land directly on the new-analysis form.
+ * The tool's inner component still calls consumePendingClient() to read it.
+ */
+export function peekPendingClient(route: string): boolean {
+  return _pending?.route === route;
+}

@@ -8,6 +8,7 @@ import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
   BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
+  MessagesSquare,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -46,9 +47,11 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
 
 /** Workspace nav items (always visible, no module gate). */
 export const WORKSPACE_NAV_ITEMS: NavItem[] = [
-  { moduleId: 'clients',  href: '/clients',  label: 'Clients',  icon: Users },
-  { moduleId: 'help',     href: '/help',     label: 'Help',     icon: HelpCircle },
-  { moduleId: 'settings', href: '/settings', label: 'Settings', icon: Settings },
+  { moduleId: 'clients',   href: '/clients',   label: 'Clients',   icon: Users },
+  { moduleId: 'help',      href: '/help',      label: 'Help',      icon: HelpCircle },
+  // Cross-firm discussion board — sits between Help and Settings.
+  { moduleId: 'community', href: '/community', label: 'Community', icon: MessagesSquare },
+  { moduleId: 'settings',  href: '/settings',  label: 'Settings',  icon: Settings },
 ];
 
 /**

@@ -28,6 +28,7 @@ interface Client {
   client_ref: string | null;
   business_type: string | null;
   contact_email: string | null;
+  contact_number: string | null;
   risk_rating: string | null;
   status: ClientStatus;
   created_at: string;
@@ -39,6 +40,12 @@ interface Client {
   vat_number: string | null;
   companies_house_auth_code: string | null;
   date_of_birth: string | null;
+  paye_reference: string | null;
+  paye_accounts_office_reference: string | null;
+  vat_submit_type: string | null;
+  vat_scheme: string | null;
+  year_end: string | null;
+  mtd_it: boolean | null;
 }
 
 const STATUS_CONFIG: Record<ClientStatus, { dot: string; label: string }> = {
@@ -100,12 +107,64 @@ const COLUMNS: ColDef[] = [
     ) : <span className="text-[var(--text-muted)]">—</span>,
   },
   {
+    key: 'contact_number', label: 'Phone', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.contact_number ?? '—'}</span>,
+  },
+  {
+    key: 'address', label: 'Address', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] text-xs truncate block max-w-[18rem]" title={c.address ?? ''}>{c.address ?? '—'}</span>,
+  },
+  {
     key: 'utr_number', label: 'UTR', defaultHidden: true,
     render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.utr_number ?? '—'}</span>,
   },
   {
+    key: 'national_insurance_number', label: 'NI No.', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.national_insurance_number ?? '—'}</span>,
+  },
+  {
+    key: 'date_of_birth', label: 'Date of Birth', sortKey: 'date_of_birth', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] text-xs">{c.date_of_birth ? new Date(c.date_of_birth).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span>,
+  },
+  {
+    key: 'registration_number', label: 'Reg. Number', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.registration_number ?? '—'}</span>,
+  },
+  {
+    key: 'companies_house_id', label: 'CH ID', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.companies_house_id ?? '—'}</span>,
+  },
+  {
+    key: 'companies_house_auth_code', label: 'CH Auth Code', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.companies_house_auth_code ?? '—'}</span>,
+  },
+  {
     key: 'vat_number', label: 'VAT No.', defaultHidden: true,
     render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.vat_number ?? '—'}</span>,
+  },
+  {
+    key: 'vat_scheme', label: 'VAT Scheme', sortKey: 'vat_scheme', defaultHidden: true,
+    render: c => <span className="text-[var(--text-secondary)] text-xs">{c.vat_scheme ?? '—'}</span>,
+  },
+  {
+    key: 'vat_submit_type', label: 'VAT Basis', sortKey: 'vat_submit_type', defaultHidden: true,
+    render: c => <span className="text-[var(--text-secondary)] text-xs">{c.vat_submit_type ?? '—'}</span>,
+  },
+  {
+    key: 'year_end', label: 'Year End', sortKey: 'year_end', defaultHidden: true,
+    render: c => <span className="text-[var(--text-secondary)] text-xs font-mono">{c.year_end ?? '—'}</span>,
+  },
+  {
+    key: 'paye_reference', label: 'PAYE Ref', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.paye_reference ?? '—'}</span>,
+  },
+  {
+    key: 'paye_accounts_office_reference', label: 'PAYE A/O Ref', defaultHidden: true,
+    render: c => <span className="text-[var(--text-muted)] font-mono text-xs">{c.paye_accounts_office_reference ?? '—'}</span>,
+  },
+  {
+    key: 'mtd_it', label: 'MTD IT', defaultHidden: true,
+    render: c => <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${c.mtd_it ? 'bg-emerald-100 text-emerald-700' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>{c.mtd_it ? 'Yes' : 'No'}</span>,
   },
   {
     key: 'created_at', label: 'Created', sortKey: 'created_at', defaultHidden: true,
@@ -126,16 +185,22 @@ function sortClients(clients: Client[], sort: SortConfig): Client[] {
 
 function exportToCsv(clients: Client[]) {
   const headers = [
-    'Name', 'Client Ref', 'Type', 'Email', 'Status', 'Risk Rating', 'Address',
-    'UTR Number', 'Registration Number', 'National Insurance Number',
-    'Companies House ID', 'VAT Number', 'Companies House Auth Code', 'Date of Birth', 'Created',
+    'Name', 'Client Ref', 'Type', 'Email', 'Phone', 'Status', 'Risk Rating', 'Address',
+    'UTR Number', 'NI Number', 'Date of Birth',
+    'Registration Number', 'Companies House ID', 'Companies House Auth Code',
+    'VAT Number', 'VAT Scheme', 'VAT Basis', 'Year End',
+    'PAYE Reference', 'PAYE Accounts Office Reference',
+    'MTD IT', 'Created',
   ];
   const rows = clients.map(c => [
     c.name, c.client_ref ?? '', c.business_type ? (CLIENT_TYPE_LABELS[c.business_type] ?? c.business_type) : '',
-    c.contact_email ?? '', (STATUS_CONFIG[c.status] ?? STATUS_CONFIG.inactive).label, c.risk_rating ?? '',
-    c.address ?? '', c.utr_number ?? '', c.registration_number ?? '',
-    c.national_insurance_number ?? '', c.companies_house_id ?? '',
-    c.vat_number ?? '', c.companies_house_auth_code ?? '', c.date_of_birth ?? '',
+    c.contact_email ?? '', c.contact_number ?? '',
+    (STATUS_CONFIG[c.status] ?? STATUS_CONFIG.inactive).label, c.risk_rating ?? '',
+    c.address ?? '', c.utr_number ?? '', c.national_insurance_number ?? '', c.date_of_birth ?? '',
+    c.registration_number ?? '', c.companies_house_id ?? '', c.companies_house_auth_code ?? '',
+    c.vat_number ?? '', c.vat_scheme ?? '', c.vat_submit_type ?? '', c.year_end ?? '',
+    c.paye_reference ?? '', c.paye_accounts_office_reference ?? '',
+    c.mtd_it ? 'Yes' : 'No',
     new Date(c.created_at).toLocaleDateString('en-GB'),
   ]);
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');

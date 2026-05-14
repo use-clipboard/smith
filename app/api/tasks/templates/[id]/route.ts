@@ -94,10 +94,29 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   // Replace steps and edges entirely if provided
   if (steps !== undefined) {
+    // Defensive: the UI occasionally produces duplicate step_keys (e.g. when
+    // a step is duplicated in the builder). The unique constraint on
+    // (template_id, step_key) would otherwise hard-fail the whole save and
+    // leave the template with NO steps (because the delete above already ran).
+    // Rewrite collisions with a numeric suffix so the insert always succeeds.
+    const seenKeys = new Set<string>();
+    const dedupedSteps = steps.map(s => {
+      let key = s.step_key;
+      let suffix = 2;
+      while (seenKeys.has(key)) { key = `${s.step_key}_${suffix++}`; }
+      seenKeys.add(key);
+      if (key !== s.step_key) {
+        console.warn(
+          `PUT /api/tasks/templates/${params.id}: duplicate step_key "${s.step_key}" → renamed to "${key}"`
+        );
+      }
+      return { ...s, step_key: key };
+    });
+
     await supabase.from('task_template_steps').delete().eq('template_id', params.id);
-    if (steps.length > 0) {
+    if (dedupedSteps.length > 0) {
       const { error: stepsInsertError } = await supabase.from('task_template_steps').insert(
-        steps.map(s => ({
+        dedupedSteps.map(s => ({
           template_id: params.id,
           step_key: s.step_key,
           title: s.title,

@@ -2,8 +2,17 @@
 
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, Lock, Sparkles } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
+import { SmithLogoLoader } from '@/components/ui/SmithLogoLoader';
+
+// Race a promise against a timeout so a slow/hung call can't block the UI.
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    p.catch(() => null),
+    new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
+  ]);
+}
 
 type Mode = 'password' | 'magic-link';
 
@@ -26,9 +35,13 @@ function LoginContent() {
     setLoading(true); setError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError('Invalid email or password. Please try again.'); setLoading(false); return; }
-    // End all other active sessions and register this as the sole valid session
-    await supabase.auth.signOut({ scope: 'others' });
-    await fetch('/api/auth/session-checkin', { method: 'POST' });
+    // End all other active sessions and register this as the sole valid session.
+    // Race against a short timeout so a slow Supabase response or cold serverless
+    // function can't leave the user stuck on "Please wait…" indefinitely.
+    await Promise.all([
+      withTimeout(supabase.auth.signOut({ scope: 'others' }), 2500),
+      withTimeout(fetch('/api/auth/session-checkin', { method: 'POST' }), 2500),
+    ]);
     router.push('/dashboard'); router.refresh();
   }
 
@@ -132,8 +145,14 @@ function LoginContent() {
           )}
 
           <button type="submit" disabled={loading} className="btn-primary w-full justify-center py-2.5">
-            <Sparkles size={15} />
-            {loading ? 'Please wait…' : mode === 'password' ? 'Sign in' : 'Send magic link'}
+            {loading ? (
+              <>
+                <SmithLogoLoader size={18} className="text-white" />
+                Signing you in…
+              </>
+            ) : (
+              mode === 'password' ? 'Sign in' : 'Send magic link'
+            )}
           </button>
         </form>
 

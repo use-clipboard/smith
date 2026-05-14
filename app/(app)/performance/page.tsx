@@ -6,7 +6,7 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
-import { consumePendingClient } from '@/lib/pendingClient';
+import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import PerformanceEditor, { getThemeColor } from '@/components/features/performance/PerformanceEditor';
 import PerformanceHistory, { type PerformanceSeed } from '@/components/features/performance/PerformanceHistory';
@@ -200,7 +200,10 @@ type SectionId = typeof PERFORMANCE_SECTIONS[number]['id'];
 
 // ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function PerformancePage() {
-  const [view, setView] = useState<'history' | 'tool'>('history');
+  // Skip the history view when arriving via a Quick Launch pill (pending client present).
+  const [view, setView] = useState<'history' | 'tool'>(
+    () => peekPendingClient('/performance') ? 'tool' : 'history',
+  );
   const [seed, setSeed] = useState<PerformanceSeed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
 
@@ -209,6 +212,17 @@ export default function PerformancePage() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
       .catch(() => {/* ignore */});
+  }, []);
+
+  // Subsequent pill clicks while the tab is already open
+  useEffect(() => {
+    function onPending(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/performance') return;
+      setSeed(null);
+      setView('tool');
+    }
+    window.addEventListener('smith:pending-client', onPending);
+    return () => window.removeEventListener('smith:pending-client', onPending);
   }, []);
 
   return view === 'history' ? (

@@ -16,6 +16,7 @@
     "@tiptap/extension-font-family": "^3.22.1",
     "@tiptap/extension-highlight": "^3.20.4",
     "@tiptap/extension-link": "^3.20.4",
+    "@tiptap/extension-list": "^3.23.4",
     "@tiptap/extension-table": "^3.22.1",
     "@tiptap/extension-table-cell": "^3.22.1",
     "@tiptap/extension-table-header": "^3.22.1",

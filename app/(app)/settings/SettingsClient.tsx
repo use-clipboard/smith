@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -17,10 +17,11 @@ import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
 import AgentSmithSettingsTab from './tabs/AgentSmithSettingsTab';
+import CommunityTab from './tabs/CommunityTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'agent-smith';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'agent-smith' | 'community';
 
 interface Props {
   userId: string;
@@ -80,25 +81,58 @@ export default function SettingsClient({
   const [firmNameSaved, setFirmNameSaved] = useState(false);
   const supabase = createClient();
 
+  type TabGroup = 'general' | 'tools';
   const ALL_TABS = [
-    { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false, hidden: false },
-    { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false, hidden: false },
-    { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false, hidden: false },
-    { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false },
-    { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true,  hidden: false },
-    { id: 'modules' as Tab,     label: 'Tools',       icon: Puzzle,            adminOnly: true,  hidden: false },
-    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false },
-    { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive },
-    { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive },
-    { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare, adminOnly: true,  hidden: !tasksModuleActive },
-    { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,        adminOnly: false, hidden: !emailTriageModuleActive },
-    { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive },
-    { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive },
-    { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false },
+    { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false, hidden: false, group: 'general' as TabGroup },
+    { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false, hidden: false, group: 'general' as TabGroup },
+    { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false, hidden: false, group: 'general' as TabGroup },
+    { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'modules' as Tab,     label: 'Tool Enabling', icon: Puzzle,          adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
+    { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
+    { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },
+    { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
+    { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
+    { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
+    { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
+    // Community is cross-firm and always available — sits in General, not Tools.
+    { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
   ];
 
   // Non-admins see all tabs but account/modules/billing show a lock; hidden tabs are never shown
   const TABS = ALL_TABS.filter(t => !t.hidden && (!t.adminOnly || isAdmin));
+  const generalTabs = TABS.filter(t => t.group === 'general');
+  const toolsTabs   = TABS.filter(t => t.group === 'tools');
+
+  // Tools group is collapsible — persist state in localStorage, but auto-expand
+  // when the user is currently on a tool tab so it doesn't appear empty.
+  const TOOLS_OPEN_KEY = 'smith_settings_tools_open';
+  const activeTabIsTool = toolsTabs.some(t => t.id === activeTab);
+  const [toolsOpen, setToolsOpen] = useState<boolean>(true);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TOOLS_OPEN_KEY);
+      const stored = raw === null ? true : JSON.parse(raw) === true;
+      setToolsOpen(stored || activeTabIsTool);
+    } catch {
+      setToolsOpen(true);
+    }
+    // intentionally only on mount — toggling later is handled by the user
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // If the user navigates to a tool tab via deep link or menu, force-expand.
+  useEffect(() => {
+    if (activeTabIsTool) setToolsOpen(true);
+  }, [activeTabIsTool]);
+  function toggleTools() {
+    setToolsOpen(v => {
+      const next = !v;
+      try { localStorage.setItem(TOOLS_OPEN_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   async function handleSaveProfile() {
     setSavingProfile(true);
@@ -190,7 +224,7 @@ export default function SettingsClient({
         {/* Tab rail */}
         <nav className="w-56 shrink-0 sticky top-6">
           <ul className="space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto pr-1 scrollbar-thin">
-            {TABS.map(tab => {
+            {generalTabs.map(tab => {
               const Icon = tab.icon;
               const isLocked = tab.id === 'account' && !isAdmin;
               return (
@@ -210,6 +244,49 @@ export default function SettingsClient({
                 </li>
               );
             })}
+
+            {/* Tool Settings — collapsible group of per-tool settings tabs */}
+            {toolsTabs.length > 0 && (
+              <li className="pt-2">
+                <button
+                  onClick={toggleTools}
+                  aria-expanded={toolsOpen}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+                >
+                  <Wrench size={12} className="shrink-0" />
+                  <span className="flex-1 text-left">Tool Settings</span>
+                  <span className="opacity-60 normal-case tracking-normal text-[10px] font-medium">
+                    {toolsTabs.length}
+                  </span>
+                  <ChevronDown
+                    size={13}
+                    className={`shrink-0 transition-transform ${toolsOpen ? '' : '-rotate-90'}`}
+                  />
+                </button>
+                {toolsOpen && (
+                  <ul className="mt-1 space-y-1">
+                    {toolsTabs.map(tab => {
+                      const Icon = tab.icon;
+                      return (
+                        <li key={tab.id}>
+                          <button
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left
+                              ${activeTab === tab.id
+                                ? 'bg-[var(--accent-light)] text-[var(--accent)]'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+                              }`}
+                          >
+                            <Icon size={15} className="shrink-0" />
+                            <span className="flex-1 truncate">{tab.label}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            )}
           </ul>
         </nav>
 
@@ -411,6 +488,11 @@ export default function SettingsClient({
       {/* Agent Smith tab — admin only */}
       {activeTab === 'agent-smith' && isAdmin && (
         <AgentSmithSettingsTab />
+      )}
+
+      {/* Community tab — all users */}
+      {activeTab === 'community' && (
+        <CommunityTab />
       )}
 
         </div>

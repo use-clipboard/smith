@@ -23,7 +23,7 @@ import TaskTypeSelector from '@/components/features/tasks/TaskTypeSelector';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import CreateTaskModal, { type CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from '@/components/features/tasks/TemplateBuilder';
-import ComposeModal from '@/components/features/email/ComposeModal';
+import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
 import type { TaskTemplate } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -766,12 +766,9 @@ export default function ClientDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [showScheduleMeeting, setShowScheduleMeeting] = useState(false);
 
-  // Email compose (launched from header button)
-  const [showCompose, setShowCompose]           = useState(false);
-  const [emailGoogleEmail, setEmailGoogleEmail] = useState('');
-  const [emailSignature, setEmailSignature]     = useState<string | null>(null);
-  const [emailDisplayName, setEmailDisplayName] = useState('');
-  const [emailDataLoaded, setEmailDataLoaded]   = useState(false);
+  // Email compose now goes through the global compose window (lives at AppShell
+  // level so the modal is minimisable and survives navigation between tools).
+  const composeWindow = useComposeWindow();
 
   // Task creation flow (launched from header button)
   const [showTaskTypeSelector, setShowTaskTypeSelector] = useState(false);
@@ -845,28 +842,23 @@ export default function ClientDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
-  /** Lazy-load Gmail status + signature on first "Email" click */
-  async function ensureEmailData() {
-    if (emailDataLoaded) return;
-    const [statusRes, sigRes] = await Promise.allSettled([
-      fetch('/api/email/status'),
-      fetch('/api/email/signature'),
-    ]);
-    if (statusRes.status === 'fulfilled' && statusRes.value.ok) {
-      const d = await statusRes.value.json() as { googleEmail?: string };
-      setEmailGoogleEmail(d.googleEmail ?? '');
-    }
-    if (sigRes.status === 'fulfilled' && sigRes.value.ok) {
-      const d = await sigRes.value.json() as { signature?: string | null; displayName?: string | null };
-      setEmailSignature(d.signature ?? null);
-      setEmailDisplayName(d.displayName ?? '');
-    }
-    setEmailDataLoaded(true);
-  }
-
+  /** Open the global compose window pre-filled with this client's email
+   *  and the client allocation tag. The provider handles signature/identity
+   *  loading lazily on first open. */
   function openCompose() {
-    void ensureEmailData();
-    setShowCompose(true);
+    if (!client) return;
+    composeWindow.open({
+      defaultTo: client.contact_email
+        ? [{ name: client.name, email: client.contact_email }]
+        : [],
+      defaultClients: [{
+        id:            client.id,
+        name:          client.name,
+        client_ref:    client.client_ref ?? '',
+        contact_email: client.contact_email,
+        risk_rating:   client.risk_rating,
+      }],
+    });
   }
 
   /** Lazy-load team members + firm templates on first "Create Task" click */
@@ -1893,19 +1885,8 @@ export default function ClientDetailPage() {
         />
       )}
 
-      {/* ── Email compose ─────────────────────────────────────────────────────── */}
-      {client && (
-        <ComposeModal
-          open={showCompose}
-          onClose={() => setShowCompose(false)}
-          googleEmail={emailGoogleEmail}
-          signature={emailSignature}
-          displayName={emailDisplayName}
-          defaultTo={client.contact_email ? [{ name: client.name, email: client.contact_email }] : []}
-          defaultClients={[{ id: client.id, name: client.name, client_ref: client.client_ref ?? '', contact_email: client.contact_email, risk_rating: client.risk_rating }]}
-          tasksModuleActive={isModuleActive('tasks')}
-        />
-      )}
+      {/* Email compose is mounted globally at AppShell level (see GlobalComposeWindow).
+          openCompose() above pre-fills the To field and client allocation. */}
 
       {/* ── Task creation flow ─────────────────────────────────────────────────── */}
 

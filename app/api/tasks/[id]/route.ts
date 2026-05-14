@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { createNotification } from '@/lib/notifications';
+import { logTaskUpdate, logTaskDeleted } from '@/lib/taskAudit';
 import type { RecurrenceType } from '@/types';
 
 function formatStatusLabel(status: string): string {
@@ -57,8 +58,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const supabase = createClient();
 
-  // Verify ownership
-  const { data: existing } = await supabase.from('tasks').select('id, status, recurrence_type, recurrence_interval_days, template_id, client_id, title').eq('id', params.id).eq('firm_id', ctx.firmId).single();
+  // Verify ownership and snapshot the fields we audit
+  const { data: existing } = await supabase
+    .from('tasks')
+    .select('id, status, recurrence_type, recurrence_interval_days, template_id, client_id, title, description, due_date, is_internal')
+    .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .single();
   if (!existing) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
   const updates: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
@@ -69,6 +75,21 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     console.error('PUT /api/tasks/[id]', error);
     return NextResponse.json({ error: 'Failed to update task' }, { status: 500 });
   }
+
+  // Write audit rows for any tracked field that actually changed.
+  // Don't await — failure to audit must never break the user's update.
+  logTaskUpdate(
+    supabase,
+    {
+      taskId:    params.id,
+      firmId:    ctx.firmId,
+      clientId:  (existing.client_id as string | null) ?? null,
+      userId:    ctx.userId,
+      taskTitle: (existing.title as string) ?? '',
+    },
+    existing as Record<string, unknown>,
+    parsed.data as Record<string, unknown>,
+  ).catch(err => console.error('logTaskUpdate failed', err));
 
   // Notify step assignees when task status changes
   if (parsed.data.status && parsed.data.status !== existing.status) {
@@ -123,6 +144,15 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   const supabase = createClient();
+
+  // Snapshot title/client for the audit row before we mark the task deleted
+  const { data: existing } = await supabase
+    .from('tasks')
+    .select('id, title, client_id')
+    .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .single();
+
   const { error } = await supabase
     .from('tasks')
     .update({
@@ -137,6 +167,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     console.error('DELETE /api/tasks/[id]', error);
     return NextResponse.json({ error: 'Failed to delete task' }, { status: 500 });
   }
+
+  if (existing) {
+    logTaskDeleted(supabase, {
+      taskId:    params.id,
+      firmId:    ctx.firmId,
+      clientId:  (existing.client_id as string | null) ?? null,
+      userId:    ctx.userId,
+      taskTitle: (existing.title as string) ?? '',
+    }).catch(err => console.error('logTaskDeleted failed', err));
+  }
+
   return NextResponse.json({ success: true });
 }
 

@@ -4,11 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  ChevronDown, ChevronUp, Smile,
+  ChevronDown, ChevronUp, Smile, Minus,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
 import Tooltip from '@/components/ui/Tooltip';
+import type { ComposeSnapshot } from './ComposeWindowProvider';
 
 interface RecipientResult {
   type: 'client' | 'team';
@@ -56,6 +57,12 @@ interface Props {
   onReplySent?: (originalThreadId: string) => void;
   /** Called after a successful send when the user ticked "Create Task" */
   onCreateTaskFromSent?: (emailData: { subject: string; plainBody: string; toEmail: string; toName: string }) => void;
+  /** When set, called instead of onClose when the user clicks the minimise button.
+   *  The handler receives a snapshot of the current draft for later restoration. */
+  onMinimise?: (snap: ComposeSnapshot) => void;
+  /** When provided alongside open=true, the modal restores the snapshot instead
+   *  of rebuilding the body from replyTo/forwardOf. Cleared on the next open. */
+  initialSnapshot?: ComposeSnapshot | null;
 }
 
 const RECIPIENT_STATUS_COLOURS: Record<string, string> = {
@@ -211,6 +218,7 @@ function FmtBtn({ title, onActivate, children }: {
 export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
   threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
+  onMinimise, initialSnapshot,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
@@ -306,6 +314,23 @@ export default function ComposeModal({
 
   useEffect(() => {
     if (!open) return;
+    // Restore from a minimised snapshot — skip the rebuild-from-context path
+    if (initialSnapshot) {
+      setTo(initialSnapshot.to);
+      setCc(initialSnapshot.cc);
+      setBcc(initialSnapshot.bcc);
+      setShowCc(initialSnapshot.showCc);
+      setShowBcc(initialSnapshot.showBcc);
+      setSubject(initialSnapshot.subject);
+      setAttachedFiles(initialSnapshot.attachedFiles);
+      setSelectedClients(initialSnapshot.selectedClients);
+      setCreateTaskEnabled(initialSnapshot.createTaskEnabled);
+      setShowThread(false);
+      requestAnimationFrame(() => {
+        if (bodyRef.current) bodyRef.current.innerHTML = initialSnapshot.bodyHtml;
+      });
+      return;
+    }
     if (forwardOf) {
       setTo([]); setCc([]); setShowCc(false);
       setSubject(forwardOf.subject.startsWith('Fwd:') ? forwardOf.subject : `Fwd: ${forwardOf.subject}`);
@@ -536,9 +561,30 @@ export default function ComposeModal({
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">
               {forwardOf ? 'Forward' : replyTo ? (replyAllRecipients ? 'Reply All' : 'Reply') : 'New Message'}
             </h3>
-            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors">
-              <X size={16} className="text-[var(--text-muted)]" />
-            </button>
+            <div className="flex items-center gap-0.5">
+              {onMinimise && (
+                <Tooltip label="Minimise">
+                  <button
+                    onClick={() => {
+                      onMinimise({
+                        to, cc, bcc, showCc, showBcc, subject,
+                        bodyHtml: bodyRef.current?.innerHTML ?? '',
+                        attachedFiles, selectedClients, createTaskEnabled,
+                      });
+                    }}
+                    aria-label="Minimise"
+                    className="p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors"
+                  >
+                    <Minus size={16} className="text-[var(--text-muted)]" />
+                  </button>
+                </Tooltip>
+              )}
+              <Tooltip label="Close">
+                <button onClick={onClose} aria-label="Close" className="p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <X size={16} className="text-[var(--text-muted)]" />
+                </button>
+              </Tooltip>
+            </div>
           </div>
 
           {/* Recipients */}

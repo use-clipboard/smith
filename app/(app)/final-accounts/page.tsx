@@ -6,7 +6,7 @@ import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingVie
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
-import { consumePendingClient } from '@/lib/pendingClient';
+import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { ClipboardCheck, FileText, Download, Undo2, Redo2, ArrowLeft } from 'lucide-react';
@@ -20,7 +20,10 @@ type AppState = 'idle' | 'loading' | 'success' | 'error';
 
 // ── Page wrapper: history dashboard or tool ─────────────────────────────────
 export default function FinalAccountsPage() {
-  const [view, setView] = useState<'history' | 'tool'>('history');
+  // Skip the history view when arriving via a Quick Launch pill (pending client present).
+  const [view, setView] = useState<'history' | 'tool'>(
+    () => peekPendingClient('/final-accounts') ? 'tool' : 'history',
+  );
   const [seed, setSeed] = useState<FinalAccountsSeed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
 
@@ -29,6 +32,17 @@ export default function FinalAccountsPage() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setMe({ userId: d.userId ?? '', userRole: d.userRole === 'admin' ? 'admin' : 'staff' }); })
       .catch(() => {/* ignore */});
+  }, []);
+
+  // Subsequent pill clicks while the tab is already open
+  useEffect(() => {
+    function onPending(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/final-accounts') return;
+      setSeed(null);
+      setView('tool');
+    }
+    window.addEventListener('smith:pending-client', onPending);
+    return () => window.removeEventListener('smith:pending-client', onPending);
   }, []);
 
   return view === 'history' ? (

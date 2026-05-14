@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, Calendar, RefreshCw,
-  CalendarDays, List, WifiOff, Trash2, Loader2, Pencil, EyeOff, Eye, Lock, Check,
+  CalendarDays, List, WifiOff, Trash2, Loader2, Pencil, EyeOff, Eye, Lock, Check, Bell, ChevronDown,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import CreateEventModal from './CreateEventModal';
 import EditEventModal from './EditEventModal';
+import ReminderModal, { PersonalReminder } from './ReminderModal';
 import { createClient } from '@/lib/supabase';
 import { dispatchCalendarChanged } from '@/lib/calendarBus';
 
@@ -68,6 +69,10 @@ function parseEventDate(iso: string): Date {
   return new Date(iso);
 }
 
+function getRemindersForDay(reminders: PersonalReminder[], day: Date) {
+  return reminders.filter(r => isSameDay(new Date(r.remindAt), day));
+}
+
 function getEventsForDay(events: CalendarEvent[], day: Date) {
   return events.filter(e => {
     const start = parseEventDate(e.start);
@@ -106,6 +111,11 @@ export default function CalendarClient() {
   const [togglingVisibility, setTogglingVisibility] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  // Personal reminders
+  const [reminders, setReminders] = useState<PersonalReminder[]>([]);
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [editingReminder, setEditingReminder] = useState<PersonalReminder | null>(null);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -128,11 +138,13 @@ export default function CalendarClient() {
         end.setDate(end.getDate() + 30);
       }
 
-      const res = await fetch(
-        `/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`
-      );
-      if (res.ok) {
-        const data = await res.json();
+      const [eventsRes, remindersRes] = await Promise.all([
+        fetch(`/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`),
+        fetch(`/api/calendar/personal-reminders?start=${start.toISOString()}&end=${end.toISOString()}`),
+      ]);
+
+      if (eventsRes.ok) {
+        const data = await eventsRes.json();
         setEvents(data.events ?? []);
         setMembers(data.members ?? []);
         // Surface any per-member fetch errors (e.g. invalid token, bad Google creds)
@@ -143,6 +155,11 @@ export default function CalendarClient() {
         }
       } else {
         setFetchError('Failed to load calendar events. Please try refreshing.');
+      }
+
+      if (remindersRes.ok) {
+        const data = await remindersRes.json();
+        setReminders(data.reminders ?? []);
       }
     } finally {
       setLoading(false);
@@ -343,12 +360,43 @@ export default function CalendarClient() {
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          <button
-            onClick={() => { setSelectedDate(new Date()); setShowCreateModal(true); }}
-            className="btn-primary flex items-center gap-1.5 text-sm"
-          >
-            <Plus size={14} /> New Event
-          </button>
+          <div className="relative">
+            <div className="flex items-stretch rounded-lg overflow-hidden">
+              <button
+                onClick={() => { setSelectedDate(new Date()); setShowCreateModal(true); setShowCreateMenu(false); }}
+                className="btn-primary flex items-center gap-1.5 text-sm rounded-r-none"
+              >
+                <Plus size={14} /> New Event
+              </button>
+              <button
+                onClick={() => setShowCreateMenu(v => !v)}
+                aria-label="More create options"
+                className="btn-primary text-sm px-1.5 rounded-l-none border-l border-white/30"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+            {showCreateMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowCreateMenu(false)} />
+                <div className="absolute right-0 mt-1 z-50 w-48 rounded-lg glass-solid border border-[var(--border)] shadow-xl overflow-hidden">
+                  <button
+                    onClick={() => { setSelectedDate(new Date()); setShowCreateModal(true); setShowCreateMenu(false); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-[var(--bg-nav-hover)]"
+                  >
+                    <Calendar size={13} className="text-[var(--accent)]" /> New event
+                  </button>
+                  <button
+                    onClick={() => { setSelectedDate(new Date()); setEditingReminder(null); setShowReminderModal(true); setShowCreateMenu(false); }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-[var(--bg-nav-hover)]"
+                  >
+                    <Bell size={13} className="text-amber-500" /> New reminder
+                    <span className="ml-auto text-[10px] text-[var(--text-muted)]">Private</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
@@ -422,8 +470,10 @@ export default function CalendarClient() {
               <MonthView
                 currentDate={currentDate}
                 events={visibleEvents}
+                reminders={reminders}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
+                onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
               />
             )}
@@ -431,8 +481,10 @@ export default function CalendarClient() {
               <WeekView
                 currentDate={currentDate}
                 events={visibleEvents}
+                reminders={reminders}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
+                onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
               />
             )}
@@ -440,7 +492,9 @@ export default function CalendarClient() {
               <AgendaView
                 currentDate={currentDate}
                 events={visibleEvents}
+                reminders={reminders}
                 onEventClick={handleEventClick}
+                onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
               />
             )}
@@ -492,6 +546,16 @@ export default function CalendarClient() {
           onSaved={fetchEvents}
           isAdmin={isAdmin}
           currentUserId={userId}
+        />
+      )}
+
+      {/* Personal reminder modal — create or edit */}
+      {showReminderModal && (
+        <ReminderModal
+          defaultDate={selectedDate ?? new Date()}
+          existing={editingReminder ?? undefined}
+          onClose={() => { setShowReminderModal(false); setEditingReminder(null); }}
+          onSaved={fetchEvents}
         />
       )}
 
@@ -688,12 +752,14 @@ export default function CalendarClient() {
 // ── Month View ────────────────────────────────────────────────────────────────
 
 function MonthView({
-  currentDate, events, onDayClick, onEventClick, currentUserId,
+  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  reminders: PersonalReminder[];
   onDayClick: (d: Date) => void;
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
+  onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
 }) {
   const today = new Date();
@@ -735,7 +801,9 @@ function MonthView({
       <div className="grid grid-cols-7 flex-1 border-t border-l border-[var(--border)]">
         {cells.map(({ date, isCurrentMonth }, i) => {
           const dayEvents = getEventsForDay(events, date);
+          const dayReminders = getRemindersForDay(reminders, date);
           const isToday = isSameDay(date, today);
+          const eventCap = Math.max(0, 3 - dayReminders.length);
           return (
             <div
               key={i}
@@ -750,7 +818,22 @@ function MonthView({
                 {date.getDate()}
               </div>
               <div className="space-y-0.5 min-w-0">
-                {dayEvents.slice(0, 3).map(ev => {
+                {/* Personal reminders — bell icon, amber, owner-only */}
+                {dayReminders.slice(0, 3).map(r => (
+                  <Tooltip key={r.id} label={`Reminder · ${r.title}`} side="top">
+                    <div
+                      onClick={e => onReminderClick(e, r)}
+                      className="text-[11px] leading-tight px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 flex items-center gap-0.5 overflow-hidden bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/60"
+                    >
+                      <Bell size={9} className="shrink-0" />
+                      <span className="opacity-70 shrink-0">
+                        {r.isAllDay ? 'All day ' : `${formatTime(r.remindAt)} `}
+                      </span>
+                      <span className="truncate min-w-0 flex-1">{r.title}</span>
+                    </div>
+                  </Tooltip>
+                ))}
+                {dayEvents.slice(0, eventCap).map(ev => {
                   const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                   return isMasked ? (
                     <Tooltip key={ev.id} label={`${ev.ownerName ?? 'Team member'} is busy`} side="top">
@@ -780,8 +863,10 @@ function MonthView({
                     </Tooltip>
                   );
                 })}
-                {dayEvents.length > 3 && (
-                  <p className="text-[10px] text-[var(--text-muted)] px-1">+{dayEvents.length - 3} more</p>
+                {(dayEvents.length + dayReminders.length) > 3 && (
+                  <p className="text-[10px] text-[var(--text-muted)] px-1">
+                    +{(dayEvents.length + dayReminders.length) - 3} more
+                  </p>
                 )}
               </div>
             </div>
@@ -795,12 +880,14 @@ function MonthView({
 // ── Week View ─────────────────────────────────────────────────────────────────
 
 function WeekView({
-  currentDate, events, onDayClick, onEventClick, currentUserId,
+  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  reminders: PersonalReminder[];
   onDayClick: (d: Date) => void;
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
+  onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
 }) {
   const today = new Date();
@@ -817,6 +904,7 @@ function WeekView({
     <div className="grid grid-cols-7 border-t border-l border-[var(--border)]">
       {days.map((day, i) => {
         const dayEvents = getEventsForDay(events, day);
+        const dayReminders = getRemindersForDay(reminders, day);
         const isToday = isSameDay(day, today);
         return (
           <div
@@ -833,6 +921,22 @@ function WeekView({
               </div>
             </div>
             <div className="p-1 space-y-0.5 min-w-0">
+              {dayReminders.map(r => (
+                <Tooltip key={r.id} label={`Reminder · ${r.title}`} side="top">
+                  <div
+                    onClick={e => onReminderClick(e, r)}
+                    className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-80 overflow-hidden bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/60"
+                  >
+                    <span className="block text-[10px] opacity-70 truncate">
+                      {r.isAllDay ? 'All day' : formatTime(r.remindAt)}
+                    </span>
+                    <span className="flex items-center gap-0.5 min-w-0">
+                      <Bell size={9} className="shrink-0 opacity-80" />
+                      <span className="truncate min-w-0 flex-1 font-medium">{r.title}</span>
+                    </span>
+                  </div>
+                </Tooltip>
+              ))}
               {dayEvents.map(ev => {
                 const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
                 return isMasked ? (
@@ -879,49 +983,71 @@ function WeekView({
 // ── Agenda View ───────────────────────────────────────────────────────────────
 
 function AgendaView({
-  currentDate, events, onEventClick, currentUserId,
+  currentDate, events, reminders, onEventClick, onReminderClick, currentUserId,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
+  reminders: PersonalReminder[];
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
+  onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
 }) {
-  // Group events by date
-  const groups: { label: string; date: Date; events: CalendarEvent[] }[] = [];
+  // Group events + reminders by date
+  const groups: { label: string; date: Date; events: CalendarEvent[]; reminders: PersonalReminder[] }[] = [];
   const today = new Date();
 
   for (let i = 0; i < 30; i++) {
     const d = new Date(currentDate);
     d.setDate(d.getDate() + i);
     const dayEvents = getEventsForDay(events, d);
-    if (dayEvents.length > 0 || i === 0) {
+    const dayReminders = getRemindersForDay(reminders, d);
+    if (dayEvents.length > 0 || dayReminders.length > 0 || i === 0) {
       groups.push({
         label: isSameDay(d, today)
           ? 'Today'
           : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }),
         date: d,
         events: dayEvents,
+        reminders: dayReminders,
       });
     }
   }
 
-  if (groups.every(g => g.events.length === 0)) {
+  if (groups.every(g => g.events.length === 0 && g.reminders.length === 0)) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-16">
         <Calendar size={32} className="text-[var(--text-muted)] mb-3" />
-        <p className="text-sm text-[var(--text-muted)]">No events in the next 30 days</p>
+        <p className="text-sm text-[var(--text-muted)]">No events or reminders in the next 30 days</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {groups.filter(g => g.events.length > 0).map((group, i) => (
+      {groups.filter(g => g.events.length > 0 || g.reminders.length > 0).map((group, i) => (
         <div key={i}>
           <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-widest mb-2 px-1">
             {group.label}
           </div>
           <div className="space-y-1.5">
+            {group.reminders.map(r => (
+              <div
+                key={r.id}
+                onClick={e => onReminderClick(e, r)}
+                className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/70 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 cursor-pointer hover:border-amber-400 transition-colors"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+                  <Bell size={14} className="text-amber-600 dark:text-amber-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate text-amber-800 dark:text-amber-200">{r.title}</p>
+                  <p className="text-xs text-amber-700/70 dark:text-amber-300/70 mt-0.5">
+                    Reminder · {r.isAllDay ? 'All day' : formatTime(r.remindAt)}
+                    {r.notes && ` · ${r.notes.slice(0, 60)}${r.notes.length > 60 ? '…' : ''}`}
+                  </p>
+                </div>
+              </div>
+            ))}
             {group.events.map(ev => {
               const isMasked = !!ev.isHidden && ev.ownerUserId !== currentUserId;
               return (

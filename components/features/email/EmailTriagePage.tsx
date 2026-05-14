@@ -5,7 +5,8 @@ import { Mail, PenSquare, Loader2, Settings, Settings2, X } from 'lucide-react';
 import EmailSidebar from './EmailSidebar';
 import EmailList from './EmailList';
 import EmailThread from './EmailThread';
-import ComposeModal from './ComposeModal';
+import { useComposeWindow } from './ComposeWindowProvider';
+import { EMAIL_SENT_EVENT } from './GlobalComposeWindow';
 import AllocateModal from './AllocateModal';
 import EmailRulesModal from './EmailRulesModal';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
@@ -124,13 +125,10 @@ export default function EmailTriagePage() {
   const [signature, setSignature] = useState<string | null>(null);
   const [signatureDisplayName, setSignatureDisplayName] = useState('');
 
-  const [composeOpen, setComposeOpen] = useState(false);
-  const [replyTo, setReplyTo] = useState<EmailMessage | null>(null);
-  const [replyAllRecipients, setReplyAllRecipients] = useState<{ to: { name: string; email: string }[]; cc: { name: string; email: string }[] } | null>(null);
-  const [forwardOf, setForwardOf] = useState<EmailMessage | null>(null);
-  const [prefilledBody, setPrefilledBody] = useState<string | null>(null);
+  // Compose window now lives at AppShell level so the modal survives navigation.
+  // EmailTriagePage just opens it via context.
+  const composeWindow = useComposeWindow();
   const [draftingAIReply, setDraftingAIReply] = useState(false);
-  const [defaultClients, setDefaultClients] = useState<Client[] | null>(null);
   const [allocateOpen, setAllocateOpen] = useState(false);
 
   // Task creation from email
@@ -313,9 +311,53 @@ export default function EmailTriagePage() {
       .then((data: { signature: string | null; displayName: string | null }) => {
         setSignature(data.signature ?? null);
         setSignatureDisplayName(data.displayName ?? userName);
+        // Push the latest identity into the global compose context too,
+        // so a compose opened from anywhere uses the up-to-date signature.
+        composeWindow.setIdentity({
+          signature: data.signature ?? null,
+          displayName: data.displayName ?? userName,
+        });
       })
       .catch(() => {});
+  // composeWindow.setIdentity is stable from useCallback in the provider
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, userName]);
+
+  // Mirror googleEmail into the compose context once we know it
+  useEffect(() => {
+    if (googleEmail) composeWindow.setIdentity({ googleEmail });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleEmail]);
+
+  // Listen for sends originating from anywhere in the app — refresh threads
+  // and apply the appropriate replied/forwarded mark to the active thread.
+  useEffect(() => {
+    function onSent(e: Event) {
+      const detail = (e as CustomEvent<{ threadId: string; originalThreadId: string | null; kind: 'fresh' | 'reply' | 'forward' }>).detail;
+      fetchThreads(activeLabel);
+      if (detail.kind === 'reply' && detail.originalThreadId) {
+        handleReplySent(detail.originalThreadId);
+      } else if (detail.kind === 'forward' && detail.originalThreadId) {
+        handleForwardSent(detail.originalThreadId);
+      }
+    }
+    window.addEventListener(EMAIL_SENT_EVENT, onSent);
+    return () => window.removeEventListener(EMAIL_SENT_EVENT, onSent);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLabel]);
+
+  // When a "Create Task" send fires, the global mount stashes the payload
+  // in sessionStorage and dispatches an event. If the email page is mounted,
+  // pick it up and open the QuickTaskModal flow.
+  useEffect(() => {
+    function onCreateTask(e: Event) {
+      const data = (e as CustomEvent<{ subject: string; plainBody: string; toEmail: string; toName: string }>).detail;
+      handleCreateTaskFromSent(data);
+    }
+    window.addEventListener('smith:email-create-task', onCreateTask);
+    return () => window.removeEventListener('smith:email-create-task', onCreateTask);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function matchesRule(thread: EmailThreadType, rule: EmailRule): boolean {
     if (!rule.is_active) return false;
@@ -571,43 +613,39 @@ export default function EmailTriagePage() {
   }
 
   function handleReply(message: EmailMessage) {
-    setPrefilledBody(null);
-    setReplyAllRecipients(null);
-    setForwardOf(null);
-    setDefaultClients(getAllocatedClients());
-    setReplyTo(message);
-    setComposeOpen(true);
+    composeWindow.open({
+      replyTo: message,
+      defaultClients: getAllocatedClients(),
+      threadMessages: activeThread?.messages ?? threadDetail?.messages ?? null,
+    });
   }
 
   function handleReplyAll(message: EmailMessage) {
-    setPrefilledBody(null);
-    setForwardOf(null);
     // Build To: original sender (excluding self)
     const replyTo_list = [message.from]
       .concat(message.to.filter(a => a.email.toLowerCase() !== googleEmail.toLowerCase()))
       .filter((a, i, arr) => arr.findIndex(x => x.email === a.email) === i);
     // Build CC: original CC (excluding self)
     const replyCC = message.cc.filter(a => a.email.toLowerCase() !== googleEmail.toLowerCase());
-    setReplyAllRecipients({ to: replyTo_list, cc: replyCC });
-    setDefaultClients(getAllocatedClients());
-    setReplyTo(message);
-    setComposeOpen(true);
+    composeWindow.open({
+      replyTo: message,
+      replyAllRecipients: { to: replyTo_list, cc: replyCC },
+      defaultClients: getAllocatedClients(),
+      threadMessages: activeThread?.messages ?? threadDetail?.messages ?? null,
+    });
   }
 
   function handleForward(message: EmailMessage) {
-    setReplyTo(null);
-    setReplyAllRecipients(null);
-    setPrefilledBody(null);
-    setDefaultClients(getAllocatedClients());
-    setForwardOf(message);
-    setComposeOpen(true);
+    composeWindow.open({
+      forwardOf: message,
+      defaultClients: getAllocatedClients(),
+      threadMessages: activeThread?.messages ?? threadDetail?.messages ?? null,
+    });
   }
 
   async function handleAIDraftReply(message: EmailMessage) {
-    setReplyAllRecipients(null);
-    setForwardOf(null);
-    setDefaultClients(getAllocatedClients());
     setDraftingAIReply(true);
+    let prefilled: string | null = null;
     try {
       const threadSummary = message.body.replace(/<[^>]+>/g, ' ').slice(0, 2000);
       const res = await fetch('/api/email/rewrite', {
@@ -621,13 +659,17 @@ export default function EmailTriagePage() {
         }),
       });
       const data = await res.json() as { result?: string };
-      setPrefilledBody(data.result ?? null);
+      prefilled = data.result ?? null;
     } catch {
-      setPrefilledBody(null);
+      prefilled = null;
     } finally {
       setDraftingAIReply(false);
-      setReplyTo(message);
-      setComposeOpen(true);
+      composeWindow.open({
+        replyTo: message,
+        defaultClients: getAllocatedClients(),
+        prefilledBody: prefilled,
+        threadMessages: activeThread?.messages ?? threadDetail?.messages ?? null,
+      });
     }
   }
 
@@ -1087,7 +1129,7 @@ export default function EmailTriagePage() {
       <div style={{ width: sidebarWidth }} className="shrink-0 overflow-y-auto bg-[var(--bg-card-solid)]">
         <div className="p-3 border-b border-[var(--border)] space-y-2">
           <button
-            onClick={() => { setReplyTo(null); setComposeOpen(true); }}
+            onClick={() => composeWindow.open()}
             className="btn-primary w-full text-sm flex items-center justify-center gap-2"
           >
             <PenSquare size={14} /> Compose
@@ -1205,24 +1247,10 @@ export default function EmailTriagePage() {
       </div>
 
       {/* Modals */}
-      <ComposeModal
-        open={composeOpen}
-        onClose={() => { setComposeOpen(false); setReplyTo(null); setReplyAllRecipients(null); setForwardOf(null); setPrefilledBody(null); setDefaultClients(null); }}
-        replyTo={replyTo}
-        replyAllRecipients={replyAllRecipients}
-        forwardOf={forwardOf}
-        defaultClients={defaultClients}
-        prefilledBody={prefilledBody}
-        threadMessages={replyTo || forwardOf ? (activeThread?.messages ?? threadDetail?.messages ?? null) : null}
-        signature={signature}
-        googleEmail={googleEmail}
-        displayName={signatureDisplayName || userName}
-        tasksModuleActive={tasksModuleActive}
-        onSent={() => fetchThreads(activeLabel)}
-        onForwardSent={handleForwardSent}
-        onReplySent={handleReplySent}
-        onCreateTaskFromSent={handleCreateTaskFromSent}
-      />
+      {/* ComposeModal is mounted globally at AppShell level so it survives
+          navigation between tools (see GlobalComposeWindow). EmailTriagePage
+          listens to the EMAIL_SENT_EVENT below to refresh its thread list and
+          mark replied/forwarded threads when sends originate from anywhere. */}
 
       <AllocateModal
         open={allocateOpen}

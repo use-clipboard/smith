@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar, Activity, Layers } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Task, TaskStep } from '@/types';
+import ChangesView, { type ChangesViewHandle } from './ChangesView';
 
 interface HistoryTask extends Task {
   deleted_at?: string | null;
@@ -14,12 +16,13 @@ interface HistoryTask extends Task {
   time_entries?: { id: string; step_id: string | null; started_at: string; ended_at: string; notes: string | null; user?: { full_name: string | null; email: string } | null }[];
 }
 
-type FilterId = 'all' | 'completed' | 'deleted';
+type FilterId = 'all' | 'completed' | 'deleted' | 'audit';
 
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: 'all',       label: 'All' },
-  { id: 'completed', label: 'Completed' },
-  { id: 'deleted',   label: 'Deleted' },
+const FILTERS: { id: FilterId; label: string; icon: LucideIcon }[] = [
+  { id: 'all',       label: 'All',       icon: Layers },
+  { id: 'completed', label: 'Completed', icon: CheckCircle2 },
+  { id: 'deleted',   label: 'Deleted',   icon: Trash2 },
+  { id: 'audit',     label: 'Audit Log', icon: Activity },
 ];
 
 function fmtDateTime(iso: string | null | undefined): string {
@@ -48,11 +51,19 @@ export default function HistoryView() {
   const [tasks, setTasks] = useState<HistoryTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const auditRef = useRef<ChangesViewHandle>(null);
+  const isAudit = filter === 'audit';
 
   async function load() {
+    if (isAudit) {
+      auditRef.current?.reload();
+      return;
+    }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ filter, ...(search ? { q: search } : {}) });
+      // Search is applied client-side (over title, client name, client code) so
+      // we always pull the full filter set and let the input refine the view.
+      const params = new URLSearchParams({ filter });
       const r = await fetch(`/api/tasks/history?${params}`);
       if (r.ok) {
         const d = await r.json() as { tasks: HistoryTask[] };
@@ -65,11 +76,11 @@ export default function HistoryView() {
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter]);
   useEffect(() => {
-    const id = setTimeout(load, 300);
-    return () => clearTimeout(id);
-  /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search]);
+    if (isAudit) return; // audit data is fetched by ChangesView itself
+    load();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [filter]);
 
   function toggle(id: string) {
     setExpanded(prev => {
@@ -79,41 +90,58 @@ export default function HistoryView() {
     });
   }
 
+  // Client-side filter — task title, client name, client code (case-insensitive)
+  const visibleTasks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return tasks;
+    return tasks.filter(t =>
+      (t.title ?? '').toLowerCase().includes(q) ||
+      (t.client?.name ?? '').toLowerCase().includes(q) ||
+      (t.client?.client_ref ?? '').toLowerCase().includes(q)
+    );
+  }, [tasks, search]);
+
   const counts = useMemo(() => ({
-    completed: tasks.filter(t => t.status === 'complete' && !t.deleted_at).length,
-    deleted:   tasks.filter(t => !!t.deleted_at).length,
-    total:     tasks.length,
-  }), [tasks]);
+    completed: visibleTasks.filter(t => t.status === 'complete' && !t.deleted_at).length,
+    deleted:   visibleTasks.filter(t => !!t.deleted_at).length,
+    total:     visibleTasks.length,
+  }), [visibleTasks]);
 
   return (
     <div>
       {/* Sticky header */}
-      <div className="sticky top-0 z-30 bg-gray-50 pb-3">
+      <div className="sticky top-0 z-30 bg-gray-50 pt-5 pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <input
               type="text"
-              placeholder="Search history…"
+              placeholder={isAudit
+                ? 'Search audit by task, client, code, or user…'
+                : 'Search by task, client name, or code…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-64"
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-80"
             />
-            {FILTERS.map(f => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  filter === f.id
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'
-                }`}
-              >
-                {f.label}
-                {f.id === 'completed' && <span className="ml-1.5 opacity-70">{counts.completed}</span>}
-                {f.id === 'deleted'   && <span className="ml-1.5 opacity-70">{counts.deleted}</span>}
-                {f.id === 'all'       && <span className="ml-1.5 opacity-70">{counts.total}</span>}
-              </button>
-            ))}
+            {FILTERS.map(f => {
+              const Icon = f.icon;
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                    filter === f.id
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  <Icon size={11} />
+                  {f.label}
+                  {!isAudit && f.id === 'completed' && <span className="ml-0.5 opacity-70">{counts.completed}</span>}
+                  {!isAudit && f.id === 'deleted'   && <span className="ml-0.5 opacity-70">{counts.deleted}</span>}
+                  {!isAudit && f.id === 'all'       && <span className="ml-0.5 opacity-70">{counts.total}</span>}
+                </button>
+              );
+            })}
           </div>
           <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700">
             <RefreshCw size={12} /> Refresh
@@ -121,15 +149,19 @@ export default function HistoryView() {
         </div>
       </div>
 
-      {loading ? (
+      {isAudit ? (
+        <ChangesView ref={auditRef} externalSearch={search} hideHeader />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
         </div>
-      ) : tasks.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">No history yet.</div>
+      ) : visibleTasks.length === 0 ? (
+        <div className="text-center py-16 text-gray-400 text-sm">
+          {search ? 'No results match your search.' : 'No history yet.'}
+        </div>
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-          {tasks.map(t => {
+          {visibleTasks.map(t => {
             const isOpen = expanded.has(t.id);
             const isDeleted = !!t.deleted_at;
             const isComplete = t.status === 'complete' && !isDeleted;
@@ -163,7 +195,16 @@ export default function HistoryView() {
                       )}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-3 flex-wrap">
-                      {t.client?.name && <span>{t.client.name}</span>}
+                      {t.client?.name && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span>{t.client.name}</span>
+                          {t.client.client_ref && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600 text-[10px] font-semibold tracking-wide uppercase">
+                              {t.client.client_ref}
+                            </span>
+                          )}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1"><UserIcon size={11} /> Created by {userDisplay(t.created_by_user)}</span>
                       <span className="flex items-center gap-1"><Calendar size={11} /> {fmtDateTime(t.created_at)}</span>
                       {isComplete && t.completed_at && (
