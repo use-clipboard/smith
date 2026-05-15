@@ -813,3 +813,68 @@ export interface DefaultTemplate {
     target_handle?: string | null;
   }[];
 }
+
+// ─── MTD IT (Making Tax Digital for Income Tax) ─────────────────────────────
+
+export type MtdItStream = 'sole' | 'uk_rental' | 'foreign_rental';
+export type MtdItQuarterType = 'calendar' | 'standard';
+export type MtdItQuarterStatus = 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+
+export interface MtdItStreams {
+  sole: boolean;
+  uk_rental: boolean;
+  foreign_rental: boolean;
+}
+
+export interface MtdItQuarter {
+  id: string;
+  client_id: string;
+  tax_year: number;        // starting year, e.g. 2026 for 2026/27
+  quarter: 1 | 2 | 3 | 4;
+  streams_snapshot: MtdItStreams;
+  consolidated: boolean;
+  fx_rates: Record<string, number>;
+  status: MtdItQuarterStatus;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MtdItClientRow {
+  id: string;
+  name: string;
+  client_ref: string | null;
+  status: 'active' | 'hold' | 'inactive';
+  address: string | null;
+  utr_number: string | null;
+  national_insurance_number: string | null;
+  date_of_birth: string | null;
+  contact_email: string | null;
+  mtd_it_quarter_type: MtdItQuarterType;
+  mtd_it_streams: MtdItStreams;
+  mtd_it_prior_year_income: number | null;
+  /** Per-quarter status for the currently-selected tax year. Keyed by quarter (1..4). */
+  quarters: Partial<Record<1 | 2 | 3 | 4, MtdItQuarterStatus>>;
+}
+
+export interface MtdItTrade {
+  id: string;
+  client_id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface MtdItProperty {
+  id: string;
+  client_id: string;
+  address: string;
+  country: string | null;
+  currency: string;
+  ownership_pct: number;
+  property_type: 'uk' | 'foreign';
+  active: boolean;
+  created_at: string;
+}

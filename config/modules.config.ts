@@ -220,6 +220,19 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
+    id: 'mtd-it',
+    name: 'MTD IT',
+    description: 'Making Tax Digital for Income Tax — quarterly self-assessment prep. Analyse sole-trader, UK rental and foreign rental income/expenses per quarter, produce a client approval pack and export to spreadsheet.',
+    iconName: 'CalendarCheck',
+    route: '/mtd-it',
+    alwaysOn: false,
+    enhancedBy: ['google-drive', 'document-vault'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'accounts_compliance',
+  },
+
+  {
     id: 'ch-secretarial',
     name: 'CH Secretarial Link',
     description: 'Live Companies House data for all your limited company clients — accounts due dates, confirmation statements, officer and PSC IDV deadlines, all in one place.',
