@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
   BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
-  MessagesSquare,
+  MessagesSquare, CalendarCheck,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -28,6 +28,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'full-analysis',   href: '/full-analysis',  label: 'Full Analysis',   icon: FileSearch },
   { moduleId: 'bank-to-csv',     href: '/bank-to-csv',    label: 'Bank to CSV',     icon: ArrowLeftRight },
   { moduleId: 'landlord',        href: '/landlord',       label: 'Landlord',        icon: House },
+  { moduleId: 'mtd-it',          href: '/mtd-it',         label: 'MTD IT',          icon: CalendarCheck },
   { moduleId: 'final-accounts',  href: '/final-accounts', label: 'Accounts Review', icon: ClipboardCheck },
   { moduleId: 'performance',     href: '/performance',    label: 'Performance',     icon: TrendingUp },
   { moduleId: 'p32',             href: '/p32',            label: 'P32 Summary',     icon: Receipt },

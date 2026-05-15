@@ -854,6 +854,7 @@ export interface MtdItClientRow {
   mtd_it_quarter_type: MtdItQuarterType;
   mtd_it_streams: MtdItStreams;
   mtd_it_prior_year_income: number | null;
+  mtd_it_notes: string | null;
   /** Per-quarter status for the currently-selected tax year. Keyed by quarter (1..4). */
   quarters: Partial<Record<1 | 2 | 3 | 4, MtdItQuarterStatus>>;
 }

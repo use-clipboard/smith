@@ -1,0 +1,233 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
+import type { MtdItProperty } from '@/types';
+
+interface Props {
+  clientId: string;
+  /** When set, filter to just UK or foreign properties — leave undefined to show both */
+  filter?: 'uk' | 'foreign';
+  onChange?: (props: MtdItProperty[]) => void;
+}
+
+export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Props) {
+  const [items, setItems]     = useState<MtdItProperty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId,  setBusyId]  = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+  const [adding,  setAdding]  = useState<'uk' | 'foreign' | null>(null);
+
+  // Draft inputs for the add row
+  const [draftAddress, setDraftAddress]   = useState('');
+  const [draftCountry, setDraftCountry]   = useState('');
+  const [draftCurrency, setDraftCurrency] = useState('GBP');
+  const [draftPct,     setDraftPct]       = useState(100);
+
+  async function refresh() {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`/api/mtd-it/properties?client_id=${clientId}`);
+      if (!res.ok) throw new Error('Failed to load properties');
+      const data = await res.json();
+      const list = (data.properties ?? []) as MtdItProperty[];
+      setItems(list);
+      onChange?.(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load properties');
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [clientId]);
+
+  const visible = filter ? items.filter(p => p.property_type === filter) : items;
+
+  async function addProperty(type: 'uk' | 'foreign') {
+    if (!draftAddress.trim()) return;
+    setBusyId('__add__');
+    try {
+      const res = await fetch('/api/mtd-it/properties', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id:     clientId,
+          address:       draftAddress.trim(),
+          country:       type === 'foreign' ? (draftCountry.trim() || null) : null,
+          currency:      type === 'foreign' ? (draftCurrency.toUpperCase() || 'EUR') : 'GBP',
+          ownership_pct: Math.max(0, Math.min(100, draftPct)),
+          property_type: type,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? 'Failed to add property');
+      }
+      setDraftAddress(''); setDraftCountry(''); setDraftCurrency(type === 'foreign' ? 'EUR' : 'GBP'); setDraftPct(100); setAdding(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add property');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function patchProperty(id: string, patch: Partial<MtdItProperty>) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/mtd-it/properties?id=${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removeProperty(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/mtd-it/properties?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to remove');
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading) return <div className="text-xs text-gray-500 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Loading properties…</div>;
+
+  return (
+    <div className="space-y-2">
+      {visible.length === 0 && (
+        <p className="text-xs text-gray-500 italic">No properties yet — add one to tag rental rows against.</p>
+      )}
+
+      {visible.map(p => (
+        <div key={p.id} className="flex items-center gap-2 px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm">
+          {p.property_type === 'uk' ? <House size={14} className="text-gray-500 shrink-0" /> : <Globe2 size={14} className="text-gray-500 shrink-0" />}
+          <input
+            defaultValue={p.address}
+            onBlur={e => { if (e.target.value !== p.address) void patchProperty(p.id, { address: e.target.value }); }}
+            className="flex-1 min-w-0 px-1.5 py-0.5 text-sm bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+          />
+          {p.property_type === 'foreign' && (
+            <>
+              <input
+                defaultValue={p.country ?? ''}
+                placeholder="Country"
+                onBlur={e => { if ((e.target.value || null) !== p.country) void patchProperty(p.id, { country: e.target.value || null }); }}
+                className="w-24 px-1.5 py-0.5 text-xs bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+              />
+              <input
+                defaultValue={p.currency}
+                maxLength={3}
+                onBlur={e => { const v = e.target.value.toUpperCase().slice(0, 3); if (v && v !== p.currency) void patchProperty(p.id, { currency: v }); }}
+                className="w-14 px-1.5 py-0.5 text-xs font-mono bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+              />
+            </>
+          )}
+          <Tooltip label="Ownership %">
+            <input
+              type="number"
+              min={0} max={100} step={1}
+              defaultValue={p.ownership_pct}
+              onBlur={e => {
+                const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                if (v !== p.ownership_pct) void patchProperty(p.id, { ownership_pct: v });
+              }}
+              className="w-14 px-1.5 py-0.5 text-xs text-right bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+              aria-label="Ownership %"
+            />
+          </Tooltip>
+          <span className="text-[10px] text-gray-400">%</span>
+          <Tooltip label="Remove property">
+            <button
+              onClick={() => removeProperty(p.id)}
+              disabled={busyId === p.id}
+              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50"
+              aria-label="Remove property"
+            >
+              {busyId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+            </button>
+          </Tooltip>
+        </div>
+      ))}
+
+      {/* Add row */}
+      {adding === filter || (adding && !filter) ? (
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-purple-50 border border-purple-200 rounded-lg text-sm">
+          {adding === 'uk' ? <House size={14} className="text-purple-700 shrink-0" /> : <Globe2 size={14} className="text-purple-700 shrink-0" />}
+          <input
+            value={draftAddress}
+            onChange={e => setDraftAddress(e.target.value)}
+            placeholder="Address"
+            autoFocus
+            className="flex-1 min-w-0 px-1.5 py-0.5 text-sm bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+          />
+          {adding === 'foreign' && (
+            <>
+              <input
+                value={draftCountry}
+                onChange={e => setDraftCountry(e.target.value)}
+                placeholder="Country"
+                className="w-24 px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+              />
+              <input
+                value={draftCurrency}
+                onChange={e => setDraftCurrency(e.target.value.toUpperCase().slice(0, 3))}
+                placeholder="CCY"
+                maxLength={3}
+                className="w-14 px-1.5 py-0.5 text-xs font-mono bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+              />
+            </>
+          )}
+          <input
+            type="number" min={0} max={100} step={1}
+            value={draftPct}
+            onChange={e => setDraftPct(Number(e.target.value))}
+            className="w-14 px-1.5 py-0.5 text-xs text-right bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+            aria-label="Ownership %"
+          />
+          <span className="text-[10px] text-gray-500">%</span>
+          <button
+            onClick={() => addProperty(adding!)}
+            disabled={busyId === '__add__' || !draftAddress.trim()}
+            className="px-2 py-1 text-xs bg-[var(--accent)] text-white rounded hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1"
+          >
+            {busyId === '__add__' && <Loader2 size={10} className="animate-spin" />}
+            Add
+          </button>
+          <button onClick={() => setAdding(null)} className="text-xs text-gray-500 hover:underline">Cancel</button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          {(filter === undefined || filter === 'uk') && (
+            <button
+              onClick={() => { setAdding('uk'); setDraftCurrency('GBP'); }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent-light)] rounded-lg"
+            ><Plus size={12} /> Add UK property</button>
+          )}
+          {(filter === undefined || filter === 'foreign') && (
+            <button
+              onClick={() => { setAdding('foreign'); setDraftCurrency('EUR'); }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent-light)] rounded-lg"
+            ><Plus size={12} /> Add foreign property</button>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={11} /> {error}</p>
+      )}
+    </div>
+  );
+}

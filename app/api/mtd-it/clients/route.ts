@@ -9,6 +9,7 @@ const SELECT_COLS = [
   'utr_number', 'national_insurance_number', 'date_of_birth',
   'contact_email',
   'mtd_it', 'mtd_it_quarter_type', 'mtd_it_streams', 'mtd_it_prior_year_income',
+  'mtd_it_notes',
 ].join(', ');
 
 const DEFAULT_STREAMS: MtdItStreams = { sole: false, uk_rental: false, foreign_rental: false };
@@ -27,6 +28,7 @@ interface ClientRowDB {
   mtd_it_quarter_type: 'calendar' | 'standard' | null;
   mtd_it_streams: MtdItStreams | null;
   mtd_it_prior_year_income: number | null;
+  mtd_it_notes: string | null;
 }
 
 interface QuarterRow {
@@ -110,6 +112,7 @@ export async function GET(req: NextRequest) {
     mtd_it_quarter_type: c.mtd_it_quarter_type ?? 'calendar',
     mtd_it_streams: (c.mtd_it_streams ?? DEFAULT_STREAMS) as MtdItStreams,
     mtd_it_prior_year_income: c.mtd_it_prior_year_income,
+    mtd_it_notes: c.mtd_it_notes,
     quarters: quartersByClient.get(c.id) ?? {},
   }));
 

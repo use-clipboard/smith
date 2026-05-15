@@ -84,38 +84,59 @@ export function useTabContext() {
 const MAX_TABS = 8;
 
 export default function TabProvider({ children }: { children: ReactNode }) {
-  // Lazy initial state: restore from localStorage on the very first render so
-  // the tab bar appears immediately after refresh without a flash of "empty".
-  const initial = typeof window !== 'undefined' ? loadPersisted() : null;
-  const [tabs, setTabs] = useState<Tab[]>(initial?.tabs ?? []);
-  const [activeTabId, setActiveTabId] = useState<string | null>(initial?.activeTabId ?? null);
+  // Start empty so the first client render matches the server's HTML (which
+  // has no localStorage). Then hydrate from localStorage in an effect — this
+  // adds at most one frame of "empty tab bar" but avoids the React hydration
+  // mismatch error you'd otherwise get whenever the user has persisted tabs.
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const restored = loadPersisted();
+    if (restored?.tabs?.length) {
+      setTabs(restored.tabs);
+      if (restored.activeTabId) setActiveTabId(restored.activeTabId);
+    }
+  }, []);
   const pathname = usePathname();
 
-  // Reconcile saved state with the URL on mount: if the user refreshed at
-  // /email but the saved active tab is /tasks, switch to whatever the URL
-  // says (the URL is the source of truth post-refresh).
+  // Reconcile saved state with the URL. Runs on every pathname change so that
+  // when a sub-route loads (e.g. /mtd-it/abc/2026/1) we activate the parent
+  // tool's tab (/mtd-it) instead of falling back to Dashboard. Tab CREATION
+  // (auto-opening a tab the user has never opened) still only happens once at
+  // mount via the reconciledRef guard — we don't want spurious tab creation
+  // later in the session.
   const reconciledRef = useRef(false);
   useEffect(() => {
-    if (reconciledRef.current) return;
-    reconciledRef.current = true;
     if (!pathname) return;
-    const nav = ROUTE_TO_NAV.get(pathname);
-    if (!nav) return; // pathname isn't a tool/tab route — let it be (e.g. /settings)
-    // Try to find an existing tab for this route
-    const existing = tabs.find(t => t.route === pathname);
+
+    // Find an existing tab whose route matches the current URL. Try exact
+    // first (cheap, common case), then prefix — so /mtd-it/abc/2026/1 still
+    // matches the /mtd-it tab.
+    const existing =
+      tabs.find(t => t.route === pathname) ??
+      tabs.find(t => t.route !== '/' && pathname.startsWith(t.route + '/'));
+
     if (existing) {
       if (activeTabId !== existing.id) setActiveTabId(existing.id);
+      reconciledRef.current = true;
       return;
     }
-    // No tab for the URL — create one and make it active
+
+    // No matching tab. On first mount only, try to create one from the
+    // canonical nav map (exact match — sub-routes won't auto-open a tab
+    // because the user has to visit the parent first).
+    if (reconciledRef.current) return;
+    reconciledRef.current = true;
+    const nav = ROUTE_TO_NAV.get(pathname);
+    if (!nav) return; // pathname isn't a tool/tab route — let it be
     const newId = `tab-${Date.now()}`;
     setTabs(prev => [...prev, { id: newId, title: nav.label, route: pathname, icon: nav.icon }]);
     setActiveTabId(newId);
-  // Intentionally only on mount — tabs/activeTabId are restored from storage
-  // before this runs, and we never want to reset the active tab on later
-  // pathname changes (the tab system itself drives those).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+  }, [pathname, tabs.length]);
 
   // Persist on every change
   useEffect(() => { persist(tabs, activeTabId); }, [tabs, activeTabId]);

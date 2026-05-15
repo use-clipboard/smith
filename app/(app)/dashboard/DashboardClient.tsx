@@ -118,7 +118,13 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
   const { openTab } = useTabContext();
   const { isModuleActive } = useModules();
   const { openConversationWith } = useChatContext();
-  const hour = new Date().getHours();
+
+  // Greeting + today's date are time-dependent — defer until after mount so
+  // server-rendered HTML matches the first client paint (otherwise React throws
+  // a hydration mismatch when the server and client straddle a minute/day boundary).
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => { setNow(new Date()); }, []);
+  const hour = now?.getHours() ?? 0;
 
   // ── Real-time presence ────────────────────────────────────────────────────
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set([currentUserId]));
@@ -174,10 +180,10 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
   // Dashboard panel: show 4 (online-priority already sorted above)
   const panelTeam = sortedTeam.slice(0, 4);
 
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-  const today = new Date().toLocaleDateString('en-GB', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
+  const greeting = !now ? '' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const today = now
+    ? now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : '';
 
   const activeTools = ALL_TOOLS.filter(tool => isModuleActive(tool.moduleId));
 
