@@ -13,8 +13,8 @@ const STEPS: StepDef[] = [
   { key: 'setup',    label: 'Set up',          sub: 'Streams, properties, trades, files',  Icon: Upload         },
   { key: 'analyse',  label: 'Analyse',          sub: 'AI scans each document',              Icon: Sparkles       },
   { key: 'review',   label: 'Review & adjust',  sub: 'Edit entries, flag, categorise',      Icon: ClipboardList  },
-  { key: 'save',     label: 'Save quarter',     sub: 'Draft or mark complete',              Icon: Save           },
   { key: 'send',     label: 'Send to client',   sub: 'PDF approval pack + email',           Icon: Mail           },
+  { key: 'save',     label: 'Save quarter',     sub: 'Draft or mark complete',              Icon: Save           },
   { key: 'submit',   label: 'Submit to HMRC',   sub: 'Via MTD API (coming later)',          Icon: ShieldCheck    },
 ];
 

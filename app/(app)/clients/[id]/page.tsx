@@ -6,7 +6,7 @@ import {
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
-  Archive, CalendarDays, MicVocal, Network, Sparkles, Info,
+  Archive, CalendarDays, MicVocal, Network, Sparkles, Info, CalendarCheck,
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
@@ -1129,6 +1129,9 @@ export default function ClientDetailPage() {
             { moduleId: 'summarise',       label: 'Summarise',        icon: FileText,       route: '/summarise',       color: '#6B7280', hoverBg: 'hover:bg-gray-100',   hoverText: 'hover:text-gray-700',   show: true },
             { moduleId: 'document-vault',  label: 'Document Vault',   icon: Archive,        route: '/vault',           color: '#0F766E', hoverBg: 'hover:bg-teal-50',    hoverText: 'hover:text-teal-600',   show: true },
             { moduleId: 'meeting-notes',   label: 'Meeting Notes',    icon: MicVocal,       route: '/meeting-notes',   color: '#6D28D9', hoverBg: 'hover:bg-purple-50',  hoverText: 'hover:text-purple-600', show: true },
+            // MTD IT — only relevant for clients flagged as MTD IT enabled.
+            // Route carries ?expand= so the dashboard auto-opens the row.
+            { moduleId: 'mtd-it',          label: 'MTD IT',           icon: CalendarCheck,  route: `/mtd-it?expand=${client.id}`, color: '#8B85CF', hoverBg: 'hover:bg-[var(--accent-light)]', hoverText: 'hover:text-[var(--accent)]', show: !!client.mtd_it },
           ];
           const activeTools = quickTools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
 

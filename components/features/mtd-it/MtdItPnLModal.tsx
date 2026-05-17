@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { buildPnL, fmtMoneyGbp, type PnLBucket, type PnLForStream, type PnLSection } from '@/lib/mtdIt/pnl';
 import { exportPnLPdf, exportPnLXlsx, type ExportContext } from '@/lib/mtdIt/pnlExport';
+import { fetchBrandPdfBundle, type BrandPdfBundle } from '@/lib/mtdIt/fetchBrandPdfBundle';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import type { EditorEntry } from './MtdItStreamColumn';
 import type { MtdItStream, MtdItStreams, MtdItProperty, MtdItTrade } from '@/types';
@@ -17,8 +18,11 @@ interface Props {
   properties: MtdItProperty[];
   fxRates: Record<string, number>;
   consolidated: boolean;
+  clientId: string;
   clientName: string;
   clientRef: string | null;
+  taxYear: number;               // 2026
+  quarter: 1 | 2 | 3 | 4;
   quarterLabel: string;          // "Q1"
   taxYearLabel: string;          // "2026/27"
   rangeFrom: string;             // ISO
@@ -38,7 +42,7 @@ const STREAM_TINT: Record<MtdItStream, string> = {
 };
 
 export default function MtdItPnLModal(props: Props) {
-  const { entries, streams, trades, properties, fxRates, consolidated, clientName, clientRef, quarterLabel, taxYearLabel, rangeFrom, rangeTo, onClose } = props;
+  const { entries, streams, trades, properties, fxRates, consolidated, clientId, clientName, clientRef, taxYear, quarterLabel, taxYearLabel, rangeFrom, rangeTo, onClose } = props;
 
   const activeStreams: MtdItStream[] = (['sole', 'uk_rental', 'foreign_rental'] as const).filter(s => streams[s]);
 
@@ -61,6 +65,15 @@ export default function MtdItPnLModal(props: Props) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Branding + content toggles + comparison data come from the firm
+  // settings — fetched on mount so the Download PDF button is instant.
+  const [bundle, setBundle] = useState<BrandPdfBundle | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchBrandPdfBundle({ clientId, taxYear }).then(b => { if (!cancelled) setBundle(b); });
+    return () => { cancelled = true; };
+  }, [clientId, taxYear]);
+
   const ctx: ExportContext = {
     clientName,
     clientRef,
@@ -69,6 +82,12 @@ export default function MtdItPnLModal(props: Props) {
     rangeFrom,
     rangeTo,
     consolidated,
+    // Pass raw entries so the PDF can render transaction-detail pages.
+    entries,
+    brandPrimaryColor: bundle?.brandPrimaryColor ?? null,
+    logoDataUrl:       bundle?.logoDataUrl       ?? null,
+    pdfInclude:        bundle?.pdfInclude,
+    comparison:        bundle?.comparison ?? [],
   };
 
   return (

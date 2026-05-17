@@ -57,6 +57,7 @@ export default function SettingsHosted() {
       emailTriageModuleActive={data.activeModules.includes('email-triage')}
       hrModuleActive={data.activeModules.includes('hr')}
       proposalsModuleActive={data.activeModules.includes('proposals')}
+      mtdItModuleActive={data.activeModules.includes('mtd-it')}
       emailSenderName={data.emailSenderName}
       emailSenderAddress={data.emailSenderAddress}
     />

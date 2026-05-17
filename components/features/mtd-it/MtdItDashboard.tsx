@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon,
+  Users as UsersIcon, Calculator,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -89,6 +89,11 @@ const INITIAL_TAX_YEARS = [2026, 2027, 2028, 2029, 2030];
 
 export default function MtdItDashboard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link from a client page: /mtd-it?expand={clientId}. The matching
+  // row mounts expanded and scrolls into view. The id is consumed once and
+  // then nulled so a re-expand isn't triggered on subsequent re-renders.
+  const expandClientId = searchParams?.get('expand') ?? null;
   const [taxYears, setTaxYears] = useState<number[]>(INITIAL_TAX_YEARS);
   const [taxYear,  setTaxYear]  = useState<number>(INITIAL_TAX_YEAR);
   useEffect(() => {
@@ -174,6 +179,26 @@ export default function MtdItDashboard() {
   }, []);
 
   useEffect(() => { void load(taxYear); }, [taxYear, load]);
+
+  // ── Unread approval notifications, grouped by client + quarter ──────
+  // Drives the "NEW APPROVAL" badge on each row and (via the same API) the
+  // sidebar dot in AppShell. Polled on mount; refreshed when the user
+  // navigates back from a quarter page (the focus listener picks it up).
+  const [unreadByClient, setUnreadByClient] = useState<Record<string, number>>({});
+  const loadUnread = useCallback(async () => {
+    try {
+      const res = await fetch('/api/mtd-it/approvals/unread');
+      if (!res.ok) return;
+      const j = await res.json();
+      setUnreadByClient((j.by_client ?? {}) as Record<string, number>);
+    } catch { /* non-fatal */ }
+  }, []);
+  useEffect(() => {
+    void loadUnread();
+    function onFocus() { void loadUnread(); }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [loadUnread]);
 
   // Close any open dropdown / popover on outside click
   useEffect(() => {
@@ -440,6 +465,18 @@ export default function MtdItDashboard() {
             {taxYears.map(y => <option key={y} value={y}>{taxYearLabel(y)}</option>)}
           </select>
 
+          {/* Calculator & Demo pills — quick-access utilities that sit
+              alongside Add client rather than inside the dashboard table.
+              Calculator opens an in-memory P&L calculator; Demo spins up
+              a sandboxed client with sample data the user can play with. */}
+          <Tooltip label="Run a quick MTD IT P&L calculation without saving anything — optionally load a real quarter's data and see how changes would affect it.">
+            <button
+              onClick={() => router.push('/mtd-it/calculator')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 shadow-sm"
+            >
+              <Calculator size={14} /> Calculator
+            </button>
+          </Tooltip>
           {/* Add + bulk actions */}
           <div className="relative" ref={actionsRef}>
             <div className="flex items-stretch">
@@ -543,12 +580,14 @@ export default function MtdItDashboard() {
                     taxYear={taxYear}
                     visibleCols={visibleCols}
                     totalCols={totalCols}
+                    unreadApprovals={unreadByClient[c.id] ?? 0}
                     onOpenQuarter={openQuarter}
                     onEdit={(id) => setEditingClientId(id)}
                     onRemove={handleRemove}
                     onNotesSaved={(id, notes) =>
                       setClients(prev => prev.map(x => x.id === id ? { ...x, mtd_it_notes: notes } : x))
                     }
+                    forceExpand={c.id === expandClientId}
                   />
                 ))
               )}

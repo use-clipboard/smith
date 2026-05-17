@@ -6,7 +6,7 @@ import {
   CalendarCheck, ArrowLeft, Briefcase, House, Globe2, Pencil, Sparkles,
   AlertTriangle, Loader2, CheckCircle2, X, Upload, FileText, RefreshCw,
   User, Hash, FileBadge, IdCard, Cake, AtSign, MapPin, Check, FastForward,
-  FilePlus2,
+  FilePlus2, MoreVertical, Trash2, Users,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -18,6 +18,9 @@ import MtdItPropertiesEditor from './MtdItPropertiesEditor';
 import MtdItTradesEditor from './MtdItTradesEditor';
 import MtdItWizardStepper, { type WizardStep } from './MtdItWizardStepper';
 import MtdItReviewPhase from './MtdItReviewPhase';
+import MtdItDeleteQuarterModal from './MtdItDeleteQuarterModal';
+import ClientEmailLink from './ClientEmailLink';
+import MtdItCoOwnerImportModal, { type ImportableSource } from './MtdItCoOwnerImportModal';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import type { MtdItClientRow as Row, MtdItStream, MtdItStreams, MtdItProperty } from '@/types';
@@ -54,6 +57,47 @@ interface PendingFile {
 
 type Phase = 'setup' | 'analysing' | 'partial' | 'done';
 
+// ── Per-stream summary used by the SetupPhase header chip ───────────────
+// Only counts CLEAN (non-flagged) entries so the headline numbers match
+// what the review editor shows post-Save.
+interface StreamSummary { income: number; expense: number; count: number; }
+function emptyStreamSummary(): StreamSummary { return { income: 0, expense: 0, count: 0 }; }
+
+// Minimal raw-entry shape returned by /api/mtd-it/entries (only the fields
+// we need for the summary calculation).
+interface RawEntry {
+  stream: MtdItStream;
+  entry_type: 'income' | 'expense';
+  gross_amount: number;
+  net_amount: number | null;
+  vat_amount: number | null;
+  currency: string;
+  fx_rate: number | null;
+  gbp_amount: number | null;
+  flagged_reason: string | null;
+  flag_dismissed: boolean | null;
+}
+
+// GBP equivalent for a single entry, applying its fx_rate (or the quarter-
+// level fallback for foreign rows). Mirrors the logic in lib/mtdIt/pnl.ts.
+function toGbp(e: RawEntry, fxRates: Record<string, number>): number {
+  const gross = e.gross_amount || 0;
+  if (e.currency === 'GBP') return gross;
+  if (typeof e.gbp_amount === 'number') return e.gbp_amount;
+  const rate = e.fx_rate ?? fxRates[e.currency];
+  if (!rate || !Number.isFinite(rate)) return 0;
+  return gross * rate;
+}
+
+function fmtMoneyGbp(amount: number): string {
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency', currency: 'GBP',
+      minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(amount);
+  } catch { return `£${amount.toFixed(2)}`; }
+}
+
 // ── Stream metadata for headings/icons ────────────────────────────────────
 const STREAM_META: Record<MtdItStream, { label: string; Icon: typeof Briefcase; colour: string }> = {
   sole:           { label: 'Sole Trader',     Icon: Briefcase, colour: 'text-orange-700 bg-orange-50 border-orange-200' },
@@ -78,8 +122,14 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
   // Load client + quarter
   const [client,  setClient]  = useState<Row | null>(null);
   const [qrow,    setQrow]    = useState<QuarterRow | null>(null);
+  // Importable co-owner sources for the setup-phase banner. Populated when
+  // the quarter loads — empty = no banner shown.
+  const [coOwnerSources, setCoOwnerSources] = useState<ImportableSource[]>([]);
+  const [coOwnerImportOpen, setCoOwnerImportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  // Caller's role — used to gate the admin-only Delete action in the header.
+  const [userRole, setUserRole] = useState<'admin' | 'staff' | null>(null);
 
   const reloadClient = useCallback(async () => {
     const res = await fetch(`/api/mtd-it/clients?tax_year=${taxYear}`);
@@ -106,6 +156,23 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         if (!target) throw new Error('Client not found or not marked as MTD IT');
         setClient(target);
         setQrow(qJson.quarter as QuarterRow);
+        setUserRole((listJson.user_role as 'admin' | 'staff') ?? 'staff');
+
+        // Look up co-owner imports for this quarter — if any linked
+        // properties already have clean entries on another MTD IT client
+        // for the same period, the banner offers a one-click import.
+        void fetch(`/api/mtd-it/quarters/${qJson.quarter.id}/co-owner-import`)
+          .then(r => r.ok ? r.json() : null)
+          .then(j => { if (j && Array.isArray(j.sources)) setCoOwnerSources(j.sources as ImportableSource[]); })
+          .catch(() => {});
+
+        // Clear any unread approval notifications for this quarter as soon
+        // as the preparer opens it. Best-effort — non-fatal if it fails.
+        void fetch('/api/mtd-it/approvals/mark-read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quarter_id: (qJson.quarter as { id?: string })?.id }),
+        });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load');
       } finally {
@@ -118,6 +185,21 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
 
   // ── Editor: client info ────────────────────────────────────────────────
   const [editing, setEditing] = useState(false);
+
+  // ── Header overflow menu (⋮) + Delete-quarter modal ───────────────────
+  // The menu houses admin-only actions like "Delete quarter". Closes on
+  // outside click via a ref the menu listens to.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [menuOpen]);
 
   // ── Phase state machine ────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>('setup');
@@ -160,6 +242,45 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
     () => Array.from(new Set(foreignProperties.map(p => p.currency).filter(c => c && c !== 'GBP'))),
     [foreignProperties],
   );
+
+  // ── Existing-entries summary per stream ─────────────────────────────
+  // Drives the totals chip in each StreamPanel header on the setup screen.
+  // Excludes flagged (non-dismissed) entries so the headline numbers match
+  // what the review editor shows after Save.
+  const [streamSummary, setStreamSummary] = useState<Record<MtdItStream, StreamSummary>>({
+    sole:           emptyStreamSummary(),
+    uk_rental:      emptyStreamSummary(),
+    foreign_rental: emptyStreamSummary(),
+  });
+  const loadStreamSummary = useCallback(async (quarterId: string, fxRates: Record<string, number>) => {
+    try {
+      const res = await fetch(`/api/mtd-it/entries?quarter_id=${quarterId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const next: Record<MtdItStream, StreamSummary> = {
+        sole:           emptyStreamSummary(),
+        uk_rental:      emptyStreamSummary(),
+        foreign_rental: emptyStreamSummary(),
+      };
+      for (const e of (data.entries ?? []) as RawEntry[]) {
+        // Exclude flagged-and-not-dismissed entries so the header total
+        // mirrors the editor's "clean" totals.
+        if (e.flagged_reason && !e.flag_dismissed) continue;
+        const s = e.stream as MtdItStream;
+        if (!next[s]) continue;
+        const gbp = toGbp(e, fxRates);
+        if (e.entry_type === 'income')  next[s].income  += gbp;
+        if (e.entry_type === 'expense') next[s].expense += gbp;
+        next[s].count += 1;
+      }
+      setStreamSummary(next);
+    } catch { /* non-fatal — header just shows zeros */ }
+  }, []);
+  // Refresh whenever the quarter loads or the user comes back into Setup
+  // from any later phase (Save in the review editor changes the entries).
+  useEffect(() => {
+    if (qrow && phase === 'setup') void loadStreamSummary(qrow.id, qrow.fx_rates ?? {});
+  }, [qrow, phase, loadStreamSummary]);
 
   // ── Stream toggle (writes back to quarter row) ─────────────────────────
   async function toggleStream(s: MtdItStream) {
@@ -321,10 +442,37 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
       iconColor="#2563eb"
       wide
       headerRight={
-        <button
-          onClick={() => router.push('/mtd-it')}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-        ><ArrowLeft size={14} /> Back to dashboard</button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => router.push('/mtd-it')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+          ><ArrowLeft size={14} /> Back to dashboard</button>
+          {/* Admin-only overflow menu — Delete quarter (and future admin
+              actions) live here. Non-admins don't see the button at all. */}
+          {userRole === 'admin' && (
+            <div className="relative" ref={menuRef}>
+              <Tooltip label="Quarter actions">
+                <button
+                  onClick={() => setMenuOpen(o => !o)}
+                  aria-label="Quarter actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg"
+                ><MoreVertical size={16} /></button>
+              </Tooltip>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                  <button
+                    onClick={() => { setMenuOpen(false); setShowDeleteModal(true); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-700 hover:bg-red-50 text-left"
+                  >
+                    <Trash2 size={14} /> Delete quarter…
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       }
     >
       {/* ── Client details + wizard, in one card ──────────────────────────
@@ -352,7 +500,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
             <Cell icon={FileBadge} label="UTR"      value={client.utr_number} />
             <Cell icon={IdCard}   label="NI Number" value={client.national_insurance_number} />
             <Cell icon={Cake}     label="DOB"       value={formatDateUk(client.date_of_birth, '')} />
-            <Cell icon={AtSign}   label="Email"     value={client.contact_email} email cols={2} />
+            <Cell icon={AtSign}   label="Email"     value={client.contact_email} emailClient={client} cols={2} />
             <Cell icon={MapPin}   label="Address"   value={client.address} cols={3} />
           </div>
           <Tooltip label="Edit client details">
@@ -376,7 +524,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
               phase === 'partial'   ? 'analyse' :
               /* done */              'review'   // ← Stage C makes the review editor live
             ) as WizardStep}
-            notYetAvailable={['send', 'submit']}
+            notYetAvailable={['submit']}
             navigable={['setup', 'analyse', 'review']}
             onStepClick={(step) => {
               // Step navigation — covers Stages A/B/C.
@@ -398,6 +546,40 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         </div>
       </div>
 
+      {/* Co-owner import banner — only on setup phase, only when we found
+          importable sources, and only before the user has started analysing.
+          The banner sits above the setup card so it's the first thing they
+          see when opening a shared-property client. */}
+      {phase === 'setup' && coOwnerSources.length > 0 && (
+        <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-[var(--accent-light)] border border-[var(--accent)]/30 rounded-xl">
+          <div className="w-8 h-8 rounded-full bg-white text-[var(--accent)] flex items-center justify-center shrink-0">
+            <Users size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-900">
+              Co-owner data available for import
+            </div>
+            <div className="text-xs text-gray-700 mt-0.5">
+              {coOwnerSources.length} shared propert{coOwnerSources.length !== 1 ? 'ies' : 'y'} already analysed for this quarter by{' '}
+              {Array.from(new Set(coOwnerSources.map(s => s.source_client_name))).slice(0, 2).join(', ')}
+              {Array.from(new Set(coOwnerSources.map(s => s.source_client_name))).length > 2 && ' + others'}
+              . Skip rescanning — pull their clean entries across with one click.
+            </div>
+          </div>
+          <button
+            onClick={() => setCoOwnerImportOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white rounded-lg hover:opacity-90 shrink-0"
+          >
+            Review import
+          </button>
+          <button
+            onClick={() => setCoOwnerSources([])}
+            className="text-xs text-gray-500 hover:text-gray-700 shrink-0"
+            aria-label="Dismiss"
+          >Dismiss</button>
+        </div>
+      )}
+
       {phase === 'setup' && (
         <SetupPhase
           qrow={qrow}
@@ -405,6 +587,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           activeStreams={activeStreams}
           filesByStream={filesByStream}
           detectedCurrencies={detectedCurrencies}
+          streamSummary={streamSummary}
           onToggleStream={toggleStream}
           onFxChange={setFxRate}
           onAddFiles={addFiles}
@@ -444,8 +627,12 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           initialConsolidated={qrow.consolidated}
           clientName={client.name}
           clientRef={client.client_ref}
+          clientEmail={client.contact_email}
           quarterLabel={`Q${quarter}`}
           taxYearLabel={taxYearLabel(taxYear)}
+          quarter={quarter}
+          taxYear={taxYear}
+          quarterStatus={qrow.status}
           onBackToSetup={() => setPhase('setup')}
           onFinished={() => { router.push('/mtd-it'); }}
         />
@@ -459,6 +646,39 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           onSaved={() => { void reloadClient(); }}
         />
       )}
+
+      {/* Co-owner import modal — opened from the setup-phase banner. After
+          a successful import we refresh the stream summary so the "already
+          saved" totals reflect the new entries, and clear the sources so
+          the banner doesn't keep nudging the user. */}
+      {coOwnerImportOpen && qrow && (
+        <MtdItCoOwnerImportModal
+          quarterId={qrow.id}
+          sources={coOwnerSources}
+          quarterLabel={`Q${quarter}`}
+          taxYearLabel={taxYearLabel(taxYear)}
+          onClose={() => setCoOwnerImportOpen(false)}
+          onImported={() => {
+            setCoOwnerSources([]);
+            if (qrow) void loadStreamSummary(qrow.id, qrow.fx_rates ?? {});
+          }}
+        />
+      )}
+
+      {/* ── Delete quarter (admin only) ─────────────────────────────────
+          Server enforces the admin check as well; this UI gate is just to
+          keep the option hidden for staff users. */}
+      {showDeleteModal && qrow && (
+        <MtdItDeleteQuarterModal
+          quarterId={qrow.id}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            // Quarter gone — return to the dashboard so the user can't keep
+            // poking at a now-invalid record.
+            router.push('/mtd-it');
+          }}
+        />
+      )}
     </ToolLayout>
   );
 }
@@ -467,7 +687,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
 // Each cell renders a tiny lucide icon next to its label so the strip reads
 // at a glance. The icon prop is optional so existing call sites without an
 // icon still work.
-function Cell({ icon: Icon, label, value, mono, fullSpan, cols, email }: { icon?: LucideIcon; label: string; value: string | null; mono?: boolean; fullSpan?: boolean; cols?: 2 | 3 | 4; email?: boolean }) {
+function Cell({ icon: Icon, label, value, mono, fullSpan, cols, emailClient }: { icon?: LucideIcon; label: string; value: string | null; mono?: boolean; fullSpan?: boolean; cols?: 2 | 3 | 4; emailClient?: { id: string; name: string; client_ref: string | null; contact_email: string | null } }) {
   const spanCls = fullSpan
     ? 'col-span-2 md:col-span-5'
     : cols === 4 ? 'col-span-2 md:col-span-4'
@@ -482,8 +702,8 @@ function Cell({ icon: Icon, label, value, mono, fullSpan, cols, email }: { icon?
       </div>
       <div className={`text-sm text-gray-800 truncate mt-0.5 ${mono ? 'font-mono' : ''}`}>
         {value
-          ? (email
-              ? <a href={`mailto:${value}`} className="hover:underline text-[var(--accent)]">{value}</a>
+          ? (emailClient
+              ? <ClientEmailLink email={value} client={emailClient} className="hover:underline text-[var(--accent)] text-left truncate max-w-full" />
               : value)
           : <span className="text-gray-300">—</span>}
       </div>
@@ -507,6 +727,10 @@ function SetupPhase(props: {
   activeStreams: MtdItStream[];
   filesByStream: Record<MtdItStream, PendingFile[]>;
   detectedCurrencies: string[];
+  /** Per-stream clean-entries summary (income, expense, count). Surfaces in
+   *  the StreamPanel header so the user can tell at a glance that work has
+   *  already been done on this quarter. */
+  streamSummary: Record<MtdItStream, StreamSummary>;
   onToggleStream: (s: MtdItStream) => void;
   onFxChange: (currency: string, rate: number) => void;
   onAddFiles: (s: MtdItStream, files: FileList | null) => void;
@@ -515,7 +739,7 @@ function SetupPhase(props: {
   onAnalyse: () => void;
   onSkip: () => void;
 }) {
-  const { qrow, clientId, activeStreams, filesByStream, detectedCurrencies, onToggleStream, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onAnalyse, onSkip } = props;
+  const { qrow, clientId, activeStreams, filesByStream, detectedCurrencies, streamSummary, onToggleStream, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onAnalyse, onSkip } = props;
   const totalActiveFiles = activeStreams.reduce((acc, s) => acc + filesByStream[s].length, 0);
   const canAnalyse = activeStreams.length > 0 && totalActiveFiles > 0;
 
@@ -577,6 +801,7 @@ function SetupPhase(props: {
               qrow={qrow}
               clientId={clientId}
               files={filesByStream[s]}
+              summary={streamSummary[s]}
               detectedCurrencies={detectedCurrencies}
               onFxChange={onFxChange}
               onAddFiles={onAddFiles}
@@ -666,29 +891,80 @@ function StreamPanel(props: {
   qrow: QuarterRow;
   clientId: string;
   files: PendingFile[];
+  /** Clean (non-flagged) entry totals already saved on the quarter. Empty
+   *  zeros when there are no existing entries — header just shows file count. */
+  summary: StreamSummary;
   detectedCurrencies: string[];
   onFxChange: (currency: string, rate: number) => void;
   onAddFiles: (s: MtdItStream, files: FileList | null) => void;
   onRemoveFile: (id: string) => void;
   onForeignPropertiesChange: (props: MtdItProperty[]) => void;
 }) {
-  const { stream, qrow, clientId, files, detectedCurrencies, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange } = props;
+  const { stream, qrow, clientId, files, summary, detectedCurrencies, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange } = props;
   const M = STREAM_META[stream];
+  const net = summary.income - summary.expense;
+  const hasEntries = summary.count > 0;
 
   return (
     <section className={`bg-white border-2 ${STREAM_BORDER[stream]} rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200`}>
       {/* Panel header — full coloured stripe so each stream's section reads
-          as a distinct visual zone, not just another white card. */}
+          as a distinct visual zone, not just another white card. When the
+          stream already has entries saved on it, we add an inline totals
+          strip so the user sees at a glance that work has been done. */}
       <header className={`flex items-center gap-2.5 px-4 py-2.5 ${M.colour}`}>
-        <div className="w-8 h-8 rounded-lg bg-white/80 flex items-center justify-center shadow-sm">
+        <div className="w-8 h-8 rounded-lg bg-white/80 flex items-center justify-center shadow-sm shrink-0">
           <M.Icon size={16} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-sm font-semibold">{M.label}</div>
           <div className="text-[11px] opacity-70">{STREAM_DESCRIPTION[stream]}</div>
         </div>
-        <div className="text-[11px] font-medium opacity-80 px-2 py-0.5 bg-white/60 rounded-full">{files.length} file{files.length === 1 ? '' : 's'}</div>
+        {hasEntries && (
+          <Tooltip label="These are the totals from entries already analysed or manually added on this quarter — not the files queued below.">
+            <div className="hidden md:flex items-stretch gap-3 mr-2 cursor-help">
+              {/* Small chip prefixing the totals so the user knows these are
+                  figures from work already on the quarter, not the queued
+                  uploads waiting to be analysed. */}
+              <span className="self-center text-[9px] font-semibold uppercase tracking-wider bg-white/80 text-gray-700 px-2 py-1 rounded-full">
+                Already saved
+              </span>
+              <SummaryStat label="Income"  value={fmtMoneyGbp(summary.income)}  tone="text-green-700" />
+              <span aria-hidden className="w-px bg-white/50 self-stretch" />
+              <SummaryStat label="Expense" value={fmtMoneyGbp(summary.expense)} tone="text-red-700" />
+              <span aria-hidden className="w-px bg-white/50 self-stretch" />
+              <SummaryStat label="Net"     value={fmtMoneyGbp(net)}              tone={net >= 0 ? '' : 'text-red-700'} />
+            </div>
+          </Tooltip>
+        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {hasEntries && (
+            <Tooltip label="Transactions already saved on this quarter (analysed or added manually)">
+              <div className="text-[11px] font-medium opacity-80 px-2 py-0.5 bg-white/60 rounded-full cursor-help">
+                {summary.count} saved
+              </div>
+            </Tooltip>
+          )}
+          <Tooltip label="Files queued for the next Analyse run (not yet scanned)">
+            <div className="text-[11px] font-medium opacity-80 px-2 py-0.5 bg-white/60 rounded-full cursor-help">
+              {files.length} queued
+            </div>
+          </Tooltip>
+        </div>
       </header>
+
+      {/* When the stream has saved entries, also surface a compact mobile-friendly
+          totals row below the header (since the inline strip above is hidden on
+          narrow widths). */}
+      {hasEntries && (
+        <div className="md:hidden px-4 py-2 border-b border-gray-100 bg-white">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 mb-1">Already saved on this quarter</div>
+          <div className="grid grid-cols-3 gap-2">
+            <SummaryStat label="Income"  value={fmtMoneyGbp(summary.income)}  tone="text-green-700" centered />
+            <SummaryStat label="Expense" value={fmtMoneyGbp(summary.expense)} tone="text-red-700"   centered />
+            <SummaryStat label="Net"     value={fmtMoneyGbp(net)}              tone={net >= 0 ? '' : 'text-red-700'} centered />
+          </div>
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         {/* Trades / Properties */}
@@ -823,6 +1099,18 @@ function SubSection({ title, hint, children }: { title: string; hint?: string; c
         {hint && <p className="text-[11px] text-gray-500 mt-0.5">{hint}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// Small stat block used in the StreamPanel header to surface income/expense/net
+// totals when the stream already has saved entries. `centered` swaps to a
+// stacked, text-centred layout for the mobile fallback row below the header.
+function SummaryStat({ label, value, tone, centered }: { label: string; value: string; tone?: string; centered?: boolean }) {
+  return (
+    <div className={`flex ${centered ? 'flex-col items-center' : 'flex-col items-start'} justify-center leading-tight`}>
+      <span className="text-[9px] uppercase tracking-wide opacity-70">{label}</span>
+      <span className={`text-xs font-semibold tabular-nums ${tone ?? ''}`}>{value}</span>
     </div>
   );
 }

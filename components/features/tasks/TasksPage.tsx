@@ -17,6 +17,7 @@ import ByClientView from './views/ByClientView';
 import ByTeamView from './views/ByTeamView';
 import ByTypeView from './views/ByTypeView';
 import TemplateLibrary from './TemplateLibrary';
+import DueDatePill from './DueDatePill';
 import TaskDetailPanel from './TaskDetailPanel';
 import CreateTaskModal, { type CreateTaskData } from './CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from './TemplateBuilder';
@@ -909,8 +910,8 @@ function DraftsView({ tasks, clients, onActivate, onDelete }: DraftsViewProps) {
                       <span className="text-gray-400 italic">No client</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-500">
-                    {task.due_date ? new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : <span className="text-gray-400">—</span>}
+                  <td className="px-4 py-3">
+                    <DueDatePill dueDate={task.due_date} status={task.status} />
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">{task.steps?.length ?? 0} step{(task.steps?.length ?? 0) !== 1 ? 's' : ''}</td>
                   <td className="px-4 py-3">

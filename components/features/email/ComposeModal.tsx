@@ -44,6 +44,10 @@ interface Props {
   defaultClients?: Client[] | null;
   /** Pre-populate the To field (e.g. when composing from a client page) */
   defaultTo?: { name: string; email: string }[] | null;
+  /** Pre-populate the Subject line on a fresh compose (ignored on reply/forward). */
+  defaultSubject?: string | null;
+  /** Pre-attach files on a fresh compose (e.g. an MTD IT approval-pack PDF). */
+  defaultAttachments?: File[] | null;
   /** Full thread messages for the "show quoted thread" panel (reply mode only) */
   threadMessages?: EmailMessage[] | null;
   signature: string | null;
@@ -217,6 +221,7 @@ function FmtBtn({ title, onActivate, children }: {
 
 export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
+  defaultSubject, defaultAttachments,
   threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
   onMinimise, initialSnapshot,
 }: Props) {
@@ -365,8 +370,9 @@ export default function ComposeModal({
       setCc([]); setShowCc(false);
       setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
     } else {
-      setTo(defaultTo ?? []); setCc([]); setShowCc(false); setSubject('');
-      setAttachedFiles([]);
+      setTo(defaultTo ?? []); setCc([]); setShowCc(false);
+      setSubject(defaultSubject ?? '');
+      setAttachedFiles(defaultAttachments ?? []);
     }
     setBcc([]); setShowBcc(false);
     setSelectedClients(defaultClients ?? []);
@@ -715,14 +721,19 @@ export default function ComposeModal({
             </div>
           </div>
 
-          {/* Body */}
-          <div className="flex-1 overflow-hidden relative bg-[var(--bg-page)]">
+          {/* Body — the modal itself sizes to its content (capped at 85vh)
+              rather than always being 85vh tall, so flex-1 on this wrapper
+              alone won't give the editor a bounded height to scroll within.
+              We pin a real max-height on the contentEditable so it always
+              scrolls once the email body grows past ~50vh, regardless of
+              the modal's outer size. */}
+          <div className="flex-1 min-h-0 overflow-hidden relative bg-[var(--bg-page)]">
             <div
               ref={bodyRef}
               contentEditable
               suppressContentEditableWarning
-              className="w-full h-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm"
-              style={{ minHeight: 160 }}
+              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm"
+              style={{ minHeight: 160, maxHeight: '50vh' }}
             />
           </div>
 
@@ -772,9 +783,17 @@ export default function ComposeModal({
               {attachedFiles.map((f, i) => (
                 <span key={i} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg text-xs bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] border border-[var(--border)]">
                   <Paperclip size={10} />
-                  <span className="max-w-[140px] truncate">{f.name}</span>
+                  <Tooltip label="Open attachment in a new tab">
+                    <button
+                      type="button"
+                      onClick={() => previewAttachment(f)}
+                      className="max-w-[140px] truncate text-left hover:text-[var(--accent)] hover:underline"
+                    >
+                      {f.name}
+                    </button>
+                  </Tooltip>
                   <span className="text-[var(--text-muted)] shrink-0">({Math.round(f.size / 1024)}KB)</span>
-                  <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 ml-0.5">
+                  <button onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))} className="hover:text-red-500 ml-0.5" aria-label="Remove attachment">
                     <X size={10} />
                   </button>
                 </span>
@@ -902,4 +921,29 @@ export default function ComposeModal({
       />
     </>
   );
+}
+
+/**
+ * Opens a draft attachment in a new browser tab so the user can eyeball the
+ * file before they hit Send. We use a blob: URL because the File only exists
+ * in memory at this point — nothing has been uploaded yet. The URL is
+ * revoked shortly after to free memory; 60s is plenty for the browser to
+ * load the resource and discard the reference.
+ */
+function previewAttachment(file: File) {
+  try {
+    const url = URL.createObjectURL(file);
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    // Some browsers refuse to render certain MIME types inline (e.g. .csv,
+    // .xlsx) — fall back to a download in that case.
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e) {
+    console.error('previewAttachment', e);
+  }
 }

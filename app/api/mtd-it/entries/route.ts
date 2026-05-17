@@ -182,6 +182,30 @@ export async function PUT(req: NextRequest) {
     }
   }
 
+  // Flag the active approval as "edited since approved" if any changes
+  // were applied AND the quarter is currently approved. Non-fatal if it
+  // fails — the entries were already written.
+  if (creates.length + updates.length + deletes.length > 0) {
+    try {
+      const { data: qStatus } = await supabase
+        .from('mtd_it_quarters')
+        .select('status')
+        .eq('id', quarter_id)
+        .maybeSingle();
+      if (qStatus && (qStatus as { status: string }).status === 'approved') {
+        await supabase
+          .from('mtd_it_quarter_approvals')
+          .update({ edited_since_approved_at: new Date().toISOString() })
+          .eq('quarter_id', quarter_id)
+          .not('approved_at', 'is', null)
+          .is('voided_at', null)
+          .is('edited_since_approved_at', null);
+      }
+    } catch (e) {
+      console.warn('PUT /api/mtd-it/entries edited_since_approved bump failed (non-fatal):', e);
+    }
+  }
+
   return NextResponse.json({
     created: createdRows.length,
     updated: updates.length,

@@ -63,6 +63,22 @@ export async function GET(req: NextRequest) {
 
   // Create the row, copying the client's default streams
   const defaultStreams = (clientRow as { mtd_it_streams: MtdItStreams | null }).mtd_it_streams ?? DEFAULT_STREAMS;
+
+  // Carry the consolidated-reporting preference forward from the most
+  // recent prior quarter for this client (any year / quarter). Firms tend
+  // to use the same reporting style quarter to quarter, so making them
+  // re-toggle every time is friction. The user can still flip it on the
+  // review screen once the quarter loads.
+  const { data: lastQuarter } = await supabase
+    .from('mtd_it_quarters')
+    .select('consolidated')
+    .eq('client_id', client_id)
+    .order('tax_year', { ascending: false })
+    .order('quarter', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const inheritedConsolidated = (lastQuarter as { consolidated?: boolean } | null)?.consolidated ?? false;
+
   const { data: created, error: insErr } = await supabase
     .from('mtd_it_quarters')
     .insert({
@@ -70,7 +86,8 @@ export async function GET(req: NextRequest) {
       tax_year,
       quarter,
       streams_snapshot: defaultStreams,
-      created_by: ctx.userId,
+      consolidated:     inheritedConsolidated,
+      created_by:       ctx.userId,
     })
     .select('*')
     .single();

@@ -857,6 +857,9 @@ export interface MtdItClientRow {
   mtd_it_notes: string | null;
   /** Per-quarter status for the currently-selected tax year. Keyed by quarter (1..4). */
   quarters: Partial<Record<1 | 2 | 3 | 4, MtdItQuarterStatus>>;
+  /** Quarters that were approved by the client but have since been edited.
+   *  Drives a warning indicator on the dashboard's quarter squares. */
+  quarters_edited_after_approval?: Partial<Record<1 | 2 | 3 | 4, true>>;
 }
 
 export interface MtdItTrade {
@@ -878,4 +881,12 @@ export interface MtdItProperty {
   property_type: 'uk' | 'foreign';
   active: boolean;
   created_at: string;
+  /** Other MTD IT clients in the firm that share this property. Populated by
+   *  the properties GET endpoint via mtd_it_property_links. */
+  co_owners?: Array<{
+    co_owner_client_id: string;
+    co_owner_share_pct: number;
+    co_owner_name:      string;
+    co_owner_ref:       string | null;
+  }>;
 }

@@ -26,7 +26,8 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
         statusNotIn: { type: 'array', items: { type: 'string' }, description: 'Exclude these statuses.' },
         client_id: { type: 'string', description: 'Restrict to one client.' },
         client_business_type: { type: 'string', enum: ['sole_trader', 'partnership', 'limited_company', 'llp', 'trust', 'charity', 'rental_landlord', 'individual'] },
-        template_category: { type: 'string', description: 'e.g. self_assessment, vat, year_end' },
+        template_name_contains: { type: 'string', description: 'Case-insensitive partial match on the task template NAME the user sees in the UI (e.g. "Self Assessment Return - BASIC", "MTD IT Quarterly"). Prefer this over template_category whenever the user names a template.' },
+        template_category: { type: 'string', description: 'Internal slug fallback (e.g. self_assessment, vat, year_end). Only use this when the user explicitly mentions the category slug — for everything else, use template_name_contains.' },
         assignee_id: { type: 'string', description: 'User id assigned to a step.' },
         due_before: { type: 'string', description: 'ISO date — due_date < this' },
         due_after:  { type: 'string', description: 'ISO date — due_date > this' },
@@ -60,7 +61,7 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
     input_schema: {
       type: 'object' as const,
       properties: {
-        groupBy: { type: 'string', enum: ['status', 'template_category', 'client_business_type', 'assignee', 'overdue', 'due_window'] },
+        groupBy: { type: 'string', enum: ['status', 'template_name', 'template_category', 'client_business_type', 'assignee', 'overdue', 'due_window'] },
         filter:  { type: 'object', description: 'Same shape as search_tasks filters.' },
         metric:  { type: 'string', enum: ['count', 'pct_completed_within_due', 'avg_days_to_complete'], description: 'Default count.' },
       },
@@ -126,6 +127,51 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
+    name: 'search_mtd_it_clients',
+    description: 'Find clients flagged as MTD IT (Making Tax Digital for Income Tax). Read-only. Use this for reports + reference like "list every MTD IT client with prior-year income above £50k".',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        status:            { type: 'string', enum: ['active', 'hold', 'inactive'] },
+        name_contains:     { type: 'string' },
+        client_ref_contains: { type: 'string' },
+        streams_any_of:    { type: 'array', items: { type: 'string', enum: ['sole', 'uk_rental', 'foreign_rental'] }, description: 'Only clients with at least one of these MTD IT income streams switched on.' },
+        prior_income_above: { type: 'number', description: 'Filter by mtd_it_prior_year_income > N (useful for threshold reports).' },
+        prior_income_below: { type: 'number' },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Default 100.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_mtd_it_quarters',
+    description: 'Find MTD IT quarter rows across the firm. Use this for "which quarters are still in draft for Q1 2026/27?" type questions. Read-only.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        tax_year:   { type: 'integer', description: 'e.g. 2026 for 2026/27.' },
+        quarter:    { type: 'integer', enum: [1, 2, 3, 4] },
+        status:     { type: 'string', enum: ['draft', 'complete', 'sent', 'approved', 'submitted'] },
+        statusNotIn: { type: 'array', items: { type: 'string' } },
+        client_name_contains: { type: 'string' },
+        limit:      { type: 'integer', minimum: 1, maximum: 200, description: 'Default 100.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'aggregate_mtd_it_quarters',
+    description: 'Group MTD IT quarter rows for reports like "approval status breakdown for Q1 2026/27" or "how many sent vs draft across the year".',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        filter:  { type: 'object', description: 'Same shape as search_mtd_it_quarters.' },
+        groupBy: { type: 'string', enum: ['status', 'quarter', 'tax_year'] },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'render_report',
     description: 'Render a report to the preview pane. Use this when the user asks for a report or analytics — provide a title, a short paragraph summary, optional table rows, and optional chart series for a bar chart.',
     input_schema: {
@@ -162,6 +208,7 @@ const TaskFilterSchema = z.object({
   statusNotIn: z.array(z.string()).optional(),
   client_id: z.string().optional(),
   client_business_type: z.string().optional(),
+  template_name_contains: z.string().optional(),
   template_category: z.string().optional(),
   assignee_id: z.string().optional(),
   due_before: z.string().optional(),
@@ -271,12 +318,16 @@ async function expandTaskIdsForJoinFilters(
 ): Promise<string[] | null> {
   const restrictSets: string[][] = [];
 
-  if (filter.template_category) {
-    const { data: tpls } = await ctx.supabase
+  if (filter.template_category || filter.template_name_contains) {
+    // Either filter narrows to a set of template ids, then we resolve
+    // tasks tagged to those templates. If both are passed, intersect.
+    let tplQuery = ctx.supabase
       .from('task_templates')
       .select('id')
-      .eq('firm_id', ctx.firmId)
-      .eq('category', filter.template_category);
+      .eq('firm_id', ctx.firmId);
+    if (filter.template_category)      tplQuery = tplQuery.eq('category', filter.template_category);
+    if (filter.template_name_contains) tplQuery = tplQuery.ilike('name', `%${filter.template_name_contains}%`);
+    const { data: tpls } = await tplQuery;
     if (!tpls?.length) return [];
     const tplIds = tpls.map(t => t.id);
     const { data: rows } = await ctx.supabase
@@ -399,7 +450,26 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       q = q.limit(filter.limit ?? 100);
       const { data, count, error } = await q;
       if (error) return { forModel: { error: error.message } };
-      return { forModel: { tasks: data ?? [], total: count ?? 0 } };
+      // Enrich with template + client names so the model can refer to
+      // tasks by user-visible labels (e.g. "Self Assessment Return - BASIC
+      // for Mark Barbieri") rather than UUIDs the user can't recognise.
+      const rows = data ?? [];
+      const tplIds = [...new Set(rows.map(r => r.template_id as string | null).filter(Boolean) as string[])];
+      const cliIds = [...new Set(rows.map(r => r.client_id  as string | null).filter(Boolean) as string[])];
+      const [tplsRes, clisRes] = await Promise.all([
+        tplIds.length ? ctx.supabase.from('task_templates').select('id, name, category').in('id', tplIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; category: string }> }),
+        cliIds.length ? ctx.supabase.from('clients').select('id, name, client_ref').in('id', cliIds) : Promise.resolve({ data: [] as Array<{ id: string; name: string; client_ref: string | null }> }),
+      ]);
+      const tplMap = Object.fromEntries((tplsRes.data ?? []).map(t => [t.id, t]));
+      const cliMap = Object.fromEntries((clisRes.data ?? []).map(c => [c.id, c]));
+      const enriched = rows.map(r => ({
+        ...r,
+        template_name:    r.template_id ? tplMap[r.template_id as string]?.name     ?? null : null,
+        template_category:r.template_id ? tplMap[r.template_id as string]?.category ?? null : null,
+        client_name:      r.client_id   ? cliMap[r.client_id   as string]?.name     ?? null : null,
+        client_ref:       r.client_id   ? cliMap[r.client_id   as string]?.client_ref ?? null : null,
+      }));
+      return { forModel: { tasks: enriched, total: count ?? 0 } };
     }
 
     case 'search_clients': {
@@ -430,13 +500,13 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       const taskRows = tasks ?? [];
 
       // Join helpers
-      let templates: Record<string, { category: string | null }> = {};
+      let templates: Record<string, { category: string | null; name: string | null }> = {};
       let clients: Record<string, { business_type: string | null }> = {};
       const tplIds = [...new Set(taskRows.map(t => t.template_id).filter(Boolean) as string[])];
       const cliIds = [...new Set(taskRows.map(t => t.client_id).filter(Boolean) as string[])];
       if (tplIds.length) {
-        const { data } = await ctx.supabase.from('task_templates').select('id, category').in('id', tplIds);
-        templates = Object.fromEntries((data ?? []).map(r => [r.id, { category: r.category }]));
+        const { data } = await ctx.supabase.from('task_templates').select('id, name, category').in('id', tplIds);
+        templates = Object.fromEntries((data ?? []).map(r => [r.id, { category: r.category, name: r.name }]));
       }
       if (cliIds.length) {
         const { data } = await ctx.supabase.from('clients').select('id, business_type').in('id', cliIds);
@@ -446,6 +516,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       function bucketKey(t: typeof taskRows[number]): string {
         const groupBy = (input.groupBy as string) ?? 'status';
         if (groupBy === 'status') return t.status ?? 'unknown';
+        if (groupBy === 'template_name')     return (t.template_id && templates[t.template_id]?.name)     || 'no template';
         if (groupBy === 'template_category') return (t.template_id && templates[t.template_id]?.category) || 'uncategorised';
         if (groupBy === 'client_business_type') return (t.client_id && clients[t.client_id]?.business_type) || 'unknown';
         if (groupBy === 'overdue') {
@@ -549,6 +620,89 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         forModel: { proposalId: proposal.id, affectedCount: ids.length, sample: sample ?? [], summary },
         uiUpdate: { kind: 'proposal', proposal, sample: sample ?? [] },
       };
+    }
+
+    case 'search_mtd_it_clients': {
+      const limit = Math.min(Math.max(Number(input.limit ?? 100), 1), 200);
+      let q = ctx.supabase.from('clients')
+        .select('id, name, client_ref, status, mtd_it_streams, mtd_it_prior_year_income, mtd_it_quarter_type, mtd_it_notes', { count: 'exact' })
+        .eq('firm_id', ctx.firmId)
+        .eq('mtd_it', true);
+      if (input.status) q = q.eq('status', input.status as string);
+      if (input.name_contains)        q = q.ilike('name',       `%${input.name_contains}%`);
+      if (input.client_ref_contains)  q = q.ilike('client_ref', `%${input.client_ref_contains}%`);
+      if (typeof input.prior_income_above === 'number') q = q.gt('mtd_it_prior_year_income', input.prior_income_above as number);
+      if (typeof input.prior_income_below === 'number') q = q.lt('mtd_it_prior_year_income', input.prior_income_below as number);
+      q = q.limit(limit);
+      const { data, count, error } = await q;
+      if (error) return { forModel: { error: error.message } };
+      let rows = data ?? [];
+      // streams_any_of filter runs in JS because mtd_it_streams is jsonb.
+      const wanted = (input.streams_any_of as string[] | undefined) ?? null;
+      if (wanted && wanted.length > 0) {
+        rows = rows.filter(r => {
+          const s = (r.mtd_it_streams ?? {}) as Record<string, boolean>;
+          return wanted.some(k => !!s[k]);
+        });
+      }
+      return { forModel: { clients: rows, total: count ?? rows.length } };
+    }
+
+    case 'search_mtd_it_quarters': {
+      const limit = Math.min(Math.max(Number(input.limit ?? 100), 1), 200);
+      // Pull quarter rows + the joined client name so the agent can refer
+      // to "Mark Barbieri Q1 2026/27" instead of opaque uuids.
+      let q = ctx.supabase.from('mtd_it_quarters')
+        .select('id, client_id, tax_year, quarter, status, consolidated, updated_at, clients!inner(id, name, client_ref, firm_id)', { count: 'exact' })
+        .eq('clients.firm_id', ctx.firmId);
+      if (typeof input.tax_year === 'number') q = q.eq('tax_year', input.tax_year as number);
+      if (typeof input.quarter  === 'number') q = q.eq('quarter',  input.quarter  as number);
+      if (input.status)                       q = q.eq('status',   input.status   as string);
+      if (Array.isArray(input.statusNotIn) && (input.statusNotIn as string[]).length) {
+        q = q.not('status', 'in', `(${(input.statusNotIn as string[]).map(s => `"${s}"`).join(',')})`);
+      }
+      if (input.client_name_contains) q = q.ilike('clients.name', `%${input.client_name_contains}%`);
+      q = q.limit(limit);
+      const { data, count, error } = await q;
+      if (error) return { forModel: { error: error.message } };
+      const rows = (data ?? []).map(r => {
+        const c = (r as unknown as { clients?: { name?: string; client_ref?: string | null } }).clients;
+        return {
+          id:           r.id,
+          client_id:    r.client_id,
+          client_name:  c?.name ?? null,
+          client_ref:   c?.client_ref ?? null,
+          tax_year:     r.tax_year,
+          quarter:      r.quarter,
+          status:       r.status,
+          consolidated: r.consolidated,
+          updated_at:   r.updated_at,
+        };
+      });
+      return { forModel: { quarters: rows, total: count ?? rows.length } };
+    }
+
+    case 'aggregate_mtd_it_quarters': {
+      const filter  = (input.filter ?? {}) as Record<string, unknown>;
+      const groupBy = (input.groupBy as string) ?? 'status';
+      let q = ctx.supabase.from('mtd_it_quarters')
+        .select('id, tax_year, quarter, status, clients!inner(firm_id)')
+        .eq('clients.firm_id', ctx.firmId);
+      if (typeof filter.tax_year === 'number') q = q.eq('tax_year', filter.tax_year as number);
+      if (typeof filter.quarter  === 'number') q = q.eq('quarter',  filter.quarter  as number);
+      if (filter.status) q = q.eq('status', filter.status as string);
+      const { data, error } = await q;
+      if (error) return { forModel: { error: error.message } };
+      const buckets = new Map<string, number>();
+      for (const r of data ?? []) {
+        const key = groupBy === 'status'   ? String(r.status)
+                  : groupBy === 'quarter'  ? `Q${r.quarter}`
+                  : groupBy === 'tax_year' ? `${r.tax_year}/${String((Number(r.tax_year) + 1) % 100).padStart(2, '0')}`
+                  :                          'all';
+        buckets.set(key, (buckets.get(key) ?? 0) + 1);
+      }
+      const groups = [...buckets.entries()].map(([key, value]) => ({ key, value, count: value })).sort((a, b) => b.value - a.value);
+      return { forModel: { groups, total: (data ?? []).length, metric: 'count' } };
     }
 
     case 'render_report': {

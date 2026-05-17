@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle, Users } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import MtdItPropertyCoOwnersModal from './MtdItPropertyCoOwnersModal';
 import type { MtdItProperty } from '@/types';
 
 interface Props {
@@ -18,6 +19,7 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
   const [busyId,  setBusyId]  = useState<string | null>(null);
   const [error,   setError]   = useState<string | null>(null);
   const [adding,  setAdding]  = useState<'uk' | 'foreign' | null>(null);
+  const [coOwnersOpen, setCoOwnersOpen] = useState<MtdItProperty | null>(null);
 
   // Draft inputs for the add row
   const [draftAddress, setDraftAddress]   = useState('');
@@ -149,6 +151,21 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
             />
           </Tooltip>
           <span className="text-[10px] text-gray-400">%</span>
+          {/* Co-owners button — shows count if any are already linked. Husband/
+              wife co-owned portfolios use this to share entries during the
+              import-from-co-owner flow. */}
+          <Tooltip label={(p.co_owners && p.co_owners.length > 0) ? `${p.co_owners.length} co-owner${p.co_owners.length !== 1 ? 's' : ''}` : 'Link a co-owner client (e.g. spouse)'}>
+            <button
+              onClick={() => setCoOwnersOpen(p)}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${p.co_owners && p.co_owners.length > 0
+                ? 'bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30'
+                : 'text-gray-400 hover:text-[var(--accent)] hover:bg-[var(--accent-light)]'}`}
+              aria-label="Manage co-owners"
+            >
+              <Users size={11} />
+              {p.co_owners && p.co_owners.length > 0 ? p.co_owners.length : ''}
+            </button>
+          </Tooltip>
           <Tooltip label="Remove property">
             <button
               onClick={() => removeProperty(p.id)}
@@ -161,6 +178,18 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
           </Tooltip>
         </div>
       ))}
+
+      {coOwnersOpen && (
+        <MtdItPropertyCoOwnersModal
+          property={coOwnersOpen}
+          onClose={() => setCoOwnersOpen(null)}
+          onChanged={() => { void refresh().then(() => {
+            // Keep the modal in sync with the latest co-owner list after add/remove.
+            // We re-find the property by id from the freshly-loaded list.
+            setCoOwnersOpen(prev => prev ? (items.find(x => x.id === prev.id) ?? null) : prev);
+          }); }}
+        />
+      )}
 
       {/* Add row */}
       {adding === filter || (adding && !filter) ? (

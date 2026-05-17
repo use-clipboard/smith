@@ -36,6 +36,13 @@ export interface ComposeOpenContext {
   defaultClients?:     Client[] | null;
   defaultTo?:          { name: string; email: string }[] | null;
   prefilledBody?:      string | null;
+  /** Pre-fill the Subject line on a fresh compose (ignored on reply/forward
+   *  which derive subject from the source message). */
+  defaultSubject?:     string | null;
+  /** Pre-attach files to a fresh compose. Use this when something upstream
+   *  already produced a PDF the user is expected to send as-is (e.g. the
+   *  MTD IT approval pack). */
+  defaultAttachments?: File[] | null;
   threadMessages?:     EmailMessage[] | null;
 }
 

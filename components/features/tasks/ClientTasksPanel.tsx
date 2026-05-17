@@ -5,6 +5,7 @@ import {
   RefreshCw, Loader2, ChevronRight, Trash2, XCircle,
   UserCheck, Check, Users,
 } from 'lucide-react';
+import DueDatePill from './DueDatePill';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
@@ -113,13 +114,6 @@ function ClientTaskRow({
     .filter((a, i, arr) => arr.findIndex(x => x.id === a.id) === i)
     .slice(0, 4);
 
-  const isOverdue = task.due_date && task.status !== 'complete'
-    ? new Date(task.due_date) < new Date()
-    : false;
-
-  const dueDateStr = task.due_date
-    ? new Date(task.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '—';
   const nextDueStr = nextDueDate
     ? new Date(nextDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
@@ -240,7 +234,7 @@ function ClientTaskRow({
           <p className="text-sm font-medium text-[var(--text-primary)] truncate">{task.title}</p>
           {isRecurring && nextDueStr && (
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Next due: <span className="font-medium text-indigo-600">{nextDueStr}</span>
+              Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
             </p>
           )}
         </div>
@@ -282,10 +276,9 @@ function ClientTaskRow({
           )}
         </div>
 
-        {/* Due date */}
-        <span className={`text-xs flex-shrink-0 tabular-nums ${isOverdue ? 'text-red-500 font-semibold' : 'text-[var(--text-muted)]'}`}>
-          {dueDateStr}
-        </span>
+        {/* Due date pill — colour-coded by proximity. Reused across
+            every task list / view so the visual language is consistent. */}
+        <DueDatePill dueDate={task.due_date} status={task.status} />
 
         {/* Admin actions — appear on hover */}
         {isAdmin && !confirmDelete && (

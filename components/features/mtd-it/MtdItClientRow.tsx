@@ -9,6 +9,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import { getQuartersForYear, type QuarterRange } from '@/lib/mtdIt/quarters';
 import { evaluateThreshold } from '@/lib/mtdIt/thresholds';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
+import ClientEmailLink from './ClientEmailLink';
 import type { MtdItClientRow as Row, MtdItQuarterStatus, MtdItQuarterType } from '@/types';
 
 // Module-level set so expanded state survives parent re-renders / prop updates.
@@ -25,11 +26,18 @@ interface Props {
   visibleCols: Set<MtdItColumnKey>;
   /** Total visible cells (used to colSpan empty / expanded rows) */
   totalCols: number;
+  /** Unread approval-notification count for this client. Drives the
+   *  "NEW APPROVAL" row badge. */
+  unreadApprovals?: number;
   onOpenQuarter: (clientId: string, quarter: 1 | 2 | 3 | 4) => void;
   onEdit:   (clientId: string) => void;
   onRemove: (clientId: string) => Promise<void>;
   /** Push the latest notes value back up so the dashboard's state stays in sync. */
   onNotesSaved: (clientId: string, notes: string | null) => void;
+  /** When true, the row mounts expanded and scrolls into view. Used by the
+   *  client → MTD IT deep-link so the user lands directly on the right
+   *  expanded panel without scrolling + clicking. */
+  forceExpand?: boolean;
 }
 
 const STATUS_STYLES: Record<NonNullable<Row['status']>, { pill: string; label: string; dot: string }> = {
@@ -44,7 +52,7 @@ function formatDob(iso: string | null): string {
 }
 
 // ── Mini quarter square (status indicator inline on the row) ───────────────
-function MiniSquare({ status }: { status: MtdItQuarterStatus | undefined }) {
+function MiniSquare({ status, editedAfterApproval }: { status: MtdItQuarterStatus | undefined; editedAfterApproval?: boolean }) {
   if (!status) {
     return <span className="block w-3 h-3 rounded-sm border border-gray-300 bg-white" aria-label="Not started" />;
   }
@@ -56,10 +64,14 @@ function MiniSquare({ status }: { status: MtdItQuarterStatus | undefined }) {
     submitted: { bg: 'bg-gray-200 border-gray-400',    icon: <Lock className="w-2 h-2 text-gray-700" strokeWidth={3} />,     label: 'Submitted' },
   };
   const s = map[status];
+  const tooltipLabel = editedAfterApproval ? `${s.label} — edited since approval (consider re-sending)` : s.label;
   return (
-    <Tooltip label={s.label}>
-      <span className={`flex w-3 h-3 rounded-sm border items-center justify-center ${s.bg}`} aria-label={s.label}>
+    <Tooltip label={tooltipLabel}>
+      <span className={`relative flex w-3 h-3 rounded-sm border items-center justify-center ${s.bg}`} aria-label={tooltipLabel}>
         {s.icon}
+        {editedAfterApproval && (
+          <span aria-hidden className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-amber-500 rounded-full ring-1 ring-white" />
+        )}
       </span>
     </Tooltip>
   );
@@ -67,10 +79,11 @@ function MiniSquare({ status }: { status: MtdItQuarterStatus | undefined }) {
 
 // ── Big quarter square (in the expanded panel) ─────────────────────────────
 function BigSquare({
-  range, status, onClick,
+  range, status, editedAfterApproval, onClick,
 }: {
   range: QuarterRange;
   status: MtdItQuarterStatus | undefined;
+  editedAfterApproval?: boolean;
   onClick: () => void;
 }) {
   const colour: Record<MtdItQuarterStatus | 'empty', { bg: string; border: string; icon: React.ReactNode; ring: string }> = {
@@ -86,20 +99,40 @@ function BigSquare({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex-1 flex flex-col items-center justify-center rounded-lg border ${c.border} ${c.bg} ${c.ring} transition px-2 py-1.5 min-h-[58px] max-w-[180px]`}
+      className={`group relative flex-1 flex flex-col items-center justify-center rounded-lg border ${c.border} ${c.bg} ${c.ring} transition px-2 py-1.5 min-h-[58px] max-w-[180px]`}
     >
       <div className="text-[10px] font-semibold text-gray-500 leading-none mb-0.5">Q{range.quarter}</div>
       <div className="flex items-center justify-center h-5">
         {c.icon ?? <span className="text-base font-light text-gray-300 group-hover:text-gray-400 leading-none">+</span>}
       </div>
       <div className="text-[10px] text-gray-500 leading-none mt-0.5">{range.monthsLabel}</div>
+      {editedAfterApproval && (
+        <Tooltip label="Approved but edited since — consider re-sending for approval">
+          <span aria-hidden className="absolute top-1 right-1 inline-flex items-center justify-center w-4 h-4 bg-amber-500 text-white rounded-full ring-2 ring-white shadow-sm">
+            <AlertTriangle size={9} strokeWidth={3} />
+          </span>
+        </Tooltip>
+      )}
     </button>
   );
 }
 
 // ── Main row ───────────────────────────────────────────────────────────────
-export default function MtdItClientRow({ client, taxYear, fallbackType = 'calendar', visibleCols, totalCols, onOpenQuarter, onEdit, onRemove, onNotesSaved }: Props) {
-  const [expanded, setExpanded] = useState(() => expandedIds.has(client.id));
+export default function MtdItClientRow({ client, taxYear, fallbackType = 'calendar', visibleCols, totalCols, unreadApprovals = 0, onOpenQuarter, onEdit, onRemove, onNotesSaved, forceExpand }: Props) {
+  const [expanded, setExpanded] = useState(() => expandedIds.has(client.id) || !!forceExpand);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  // Honour forceExpand on first mount and any time it flips true. Also
+  // scroll the row into view so the user sees the deep-linked client
+  // without having to hunt for it in a long list.
+  useEffect(() => {
+    if (forceExpand) {
+      expandedIds.add(client.id);
+      setExpanded(true);
+      rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forceExpand]);
   const [removing, setRemoving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
 
@@ -158,6 +191,7 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
   return (
     <>
       <tr
+        ref={rowRef}
         onClick={toggle}
         className="border-b border-gray-100 hover:bg-gray-50/70 cursor-pointer"
       >
@@ -167,7 +201,18 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
             className={`text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
           />
         </td>
-        <td className="px-3 py-2.5 font-medium text-gray-900 max-w-[240px] truncate">{client.name}</td>
+        <td className="px-3 py-2.5 font-medium text-gray-900 max-w-[260px]">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate">{client.name}</span>
+            {unreadApprovals > 0 && (
+              <Tooltip label={`${unreadApprovals} new approval${unreadApprovals === 1 ? '' : 's'} — open the quarter to clear`}>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-[var(--accent)] text-white shrink-0 animate-pulse">
+                  NEW
+                </span>
+              </Tooltip>
+            )}
+          </div>
+        </td>
         {visibleCols.has('client_ref') && (
           <td className="px-3 py-2.5 text-gray-600 text-xs font-mono">{client.client_ref ?? '—'}</td>
         )}
@@ -194,13 +239,19 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
         {visibleCols.has('contact_email') && (
           <td className="px-3 py-2.5 text-gray-600 text-xs max-w-[220px] truncate">
             {client.contact_email
-              ? <a href={`mailto:${client.contact_email}`} onClick={e => e.stopPropagation()} className="hover:underline text-[var(--accent)]">{client.contact_email}</a>
+              ? <ClientEmailLink email={client.contact_email} client={client} className="hover:underline text-[var(--accent)] text-left truncate max-w-full" />
               : '—'}
           </td>
         )}
         <td className="px-3 py-2.5">
           <div className="flex items-center gap-1">
-            {([1,2,3,4] as const).map(q => <MiniSquare key={q} status={client.quarters[q]} />)}
+            {([1,2,3,4] as const).map(q => (
+              <MiniSquare
+                key={q}
+                status={client.quarters[q]}
+                editedAfterApproval={client.quarters_edited_after_approval?.[q] ?? false}
+              />
+            ))}
           </div>
         </td>
         <td className="px-3 py-2.5">
@@ -261,6 +312,7 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                       key={r.quarter}
                       range={r}
                       status={client.quarters[r.quarter]}
+                      editedAfterApproval={client.quarters_edited_after_approval?.[r.quarter] ?? false}
                       onClick={() => onOpenQuarter(client.id, r.quarter)}
                     />
                   ))}

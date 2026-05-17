@@ -17,6 +17,10 @@ interface UploadOptions {
   userId: string;
   firmId: string;
   feature: string;
+  /** When set, files land directly in this folder (no client / tool / date
+   *  sub-folders). The folder must belong to the same Drive account the
+   *  firm is connected to. */
+  customFolderId?: string | null;
 }
 
 // Map internal feature slugs to human-readable folder names
@@ -34,6 +38,8 @@ const FEATURE_FOLDER_NAMES: Record<string, string> = {
   'p32_summary':           'P32 Summary',
   'risk_assessment':       'Risk Assessment',
   'summarise':             'Summarise',
+  'mtd_it':                'MTD IT',
+  'mtd-it':                'MTD IT',
 };
 
 function featureFolderName(feature: string): string {
@@ -86,6 +92,7 @@ export async function uploadDocumentsToDrive({
   userId,
   firmId,
   feature,
+  customFolderId,
 }: UploadOptions): Promise<{ name: string; driveUrl: string; driveFileId: string }[]> {
   if (!files.length) return [];
   const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = [];
@@ -130,24 +137,46 @@ export async function uploadDocumentsToDrive({
 
   let targetFolderId = rootFolderId;
 
-  // Build folder hierarchy: root / ClientCode / ToolName / DD MMM YYYY
-  try {
-    // Level 1 — client code folder (skip if no client code)
-    let level1Id = rootFolderId;
-    if (clientCode) {
-      level1Id = await getOrCreateFolder(drive, clientCode, rootFolderId);
+  if (customFolderId) {
+    // User picked a destination explicitly — verify it exists + isn't
+    // trashed before dropping files into it. If the verification fails we
+    // fall back to the firm root rather than crashing, mirroring how the
+    // missing-root case is handled below.
+    try {
+      const check = await drive.files.get({
+        fileId: customFolderId,
+        fields: 'id,trashed,mimeType',
+        supportsAllDrives: true,
+      });
+      if (check.data.trashed || check.data.mimeType !== 'application/vnd.google-apps.folder') {
+        throw new Error('Custom folder unusable');
+      }
+      targetFolderId = customFolderId;
+    } catch (err) {
+      console.warn('[driveUpload] Custom folder check failed, falling back to default hierarchy:', err);
     }
+  }
 
-    // Level 2 — tool name folder
-    const toolFolderName = featureFolderName(feature);
-    const level2Id = await getOrCreateFolder(drive, toolFolderName, level1Id);
+  // If no custom folder, build the standard hierarchy: root / ClientCode / ToolName / DD MMM YYYY
+  if (targetFolderId === rootFolderId) {
+    try {
+      // Level 1 — client code folder (skip if no client code)
+      let level1Id = rootFolderId;
+      if (clientCode) {
+        level1Id = await getOrCreateFolder(drive, clientCode, rootFolderId);
+      }
 
-    // Level 3 — date folder (today, so all uploads on the same day share one folder)
-    const dateFolderName = todayFolderName();
-    targetFolderId = await getOrCreateFolder(drive, dateFolderName, level2Id);
-  } catch (err) {
-    console.error('[driveUpload] Failed to resolve folder hierarchy, falling back to root folder:', err);
-    targetFolderId = rootFolderId;
+      // Level 2 — tool name folder
+      const toolFolderName = featureFolderName(feature);
+      const level2Id = await getOrCreateFolder(drive, toolFolderName, level1Id);
+
+      // Level 3 — date folder (today, so all uploads on the same day share one folder)
+      const dateFolderName = todayFolderName();
+      targetFolderId = await getOrCreateFolder(drive, dateFolderName, level2Id);
+    } catch (err) {
+      console.error('[driveUpload] Failed to resolve folder hierarchy, falling back to root folder:', err);
+      targetFolderId = rootFolderId;
+    }
   }
 
   for (const file of files) {

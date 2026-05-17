@@ -77,17 +77,17 @@ export async function GET(req: NextRequest) {
 
   // Fetch quarter statuses for the requested tax year in a single query
   const clientIds = allClients.map(c => c.id);
-  let quarterRows: QuarterRow[] = [];
+  let quarterRows: Array<QuarterRow & { id?: string }> = [];
   if (clientIds.length > 0) {
     const { data: qData, error: qErr } = await supabase
       .from('mtd_it_quarters')
-      .select('client_id, quarter, status')
+      .select('id, client_id, quarter, status')
       .in('client_id', clientIds)
       .eq('tax_year', taxYear);
     if (qErr) {
       console.error('GET /api/mtd-it/clients quarters', qErr);
     } else if (qData) {
-      quarterRows = qData as QuarterRow[];
+      quarterRows = qData as Array<QuarterRow & { id?: string }>;
     }
   }
 
@@ -97,6 +97,33 @@ export async function GET(req: NextRequest) {
     const existing = quartersByClient.get(row.client_id) ?? {};
     existing[row.quarter] = row.status;
     quartersByClient.set(row.client_id, existing);
+  }
+
+  // Look up which approved quarters have been edited since approval.
+  // We pull active approval rows (approved_at non-null + voided_at null +
+  // edited_since_approved_at non-null) and build a Map<quarter_id, true>
+  // that the row component can use to render a warning chip.
+  const quarterIds = quarterRows.map(r => r.id).filter((id): id is string => !!id);
+  const editedAfterApproval = new Set<string>();
+  if (quarterIds.length > 0) {
+    const { data: approvals } = await supabase
+      .from('mtd_it_quarter_approvals')
+      .select('quarter_id')
+      .in('quarter_id', quarterIds)
+      .not('approved_at', 'is', null)
+      .is('voided_at', null)
+      .not('edited_since_approved_at', 'is', null);
+    for (const a of (approvals ?? []) as Array<{ quarter_id: string }>) {
+      editedAfterApproval.add(a.quarter_id);
+    }
+  }
+  // Convert quarter_id → "{client_id}|{quarter_num}" mapping for the row payload.
+  const editedFlags = new Map<string, Partial<Record<1|2|3|4, true>>>();
+  for (const row of quarterRows) {
+    if (!row.id || !editedAfterApproval.has(row.id)) continue;
+    const m = editedFlags.get(row.client_id) ?? {};
+    m[row.quarter] = true;
+    editedFlags.set(row.client_id, m);
   }
 
   const clients = allClients.map(c => ({
@@ -114,9 +141,10 @@ export async function GET(req: NextRequest) {
     mtd_it_prior_year_income: c.mtd_it_prior_year_income,
     mtd_it_notes: c.mtd_it_notes,
     quarters: quartersByClient.get(c.id) ?? {},
+    quarters_edited_after_approval: editedFlags.get(c.id) ?? {},
   }));
 
-  return NextResponse.json({ clients, tax_year: taxYear });
+  return NextResponse.json({ clients, tax_year: taxYear, user_role: ctx.userRole });
 }
 
 // POST /api/mtd-it/clients  { client_id }

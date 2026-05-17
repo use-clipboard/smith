@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { RefreshCw, ChevronRight, Loader2, Trash2, XCircle, Users, UserCheck, Check } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
+import DueDatePill from './DueDatePill';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker, { type TeamMember } from './AssigneePicker';
@@ -133,14 +134,6 @@ export default function TaskListRow({
     .map(s => s.assignee!)
     .filter((a, i, arr) => arr.findIndex(x => x.id === a.id) === i)
     .slice(0, 4);
-
-  const dueDateStr = task.due_date
-    ? new Date(task.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '—';
-
-  const isOverdue = task.due_date && task.status !== 'complete'
-    ? new Date(task.due_date) < new Date()
-    : false;
 
   const isRecurring  = task.recurrence_type && task.recurrence_type !== 'once';
   const nextDueDate  = isRecurring
@@ -284,7 +277,7 @@ export default function TaskListRow({
               {isRecurring && nextDueStr && (
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                   <span className="text-indigo-500 font-medium">{recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}</span>
-                  {' · '}Next: <span className="font-medium text-indigo-600">{nextDueStr}</span>
+                  {' · '}Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
                 </p>
               )}
             </div>
@@ -329,7 +322,7 @@ export default function TaskListRow({
         </td>
 
         <td className="px-4 py-3 whitespace-nowrap cursor-pointer" onClick={onClick}>
-          <span className={`text-sm ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-500'}`}>{dueDateStr}</span>
+          <DueDatePill dueDate={task.due_date} status={task.status} />
         </td>
 
         {/* Assignees + admin actions */}

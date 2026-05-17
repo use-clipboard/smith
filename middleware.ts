@@ -37,7 +37,13 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/p/') ||
     request.nextUrl.pathname.startsWith('/api/p/');
 
-  if (!user && !isAuthRoute && !isPublicProposal) {
+  // Public-by-token MTD IT client approval page + its API. The token in the
+  // URL is the only credential — no Supabase session required.
+  const isPublicMtdItApprove =
+    request.nextUrl.pathname.startsWith('/mtd-it/approve/') ||
+    request.nextUrl.pathname.startsWith('/api/mtd-it/approve/');
+
+  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

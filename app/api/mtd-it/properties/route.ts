@@ -15,6 +15,10 @@ async function clientBelongsToFirm(clientId: string, firmId: string): Promise<bo
 }
 
 // GET /api/mtd-it/properties?client_id=...
+//
+// Returns the client's properties + any co-owner links attached to each one.
+// Co-owners are listed with their client name + reference + share %, so the
+// editor can render them as chips without a second round-trip.
 export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
@@ -23,13 +27,35 @@ export async function GET(req: NextRequest) {
   if (!(await clientBelongsToFirm(clientId, ctx.firmId))) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
   const supabase = createClient();
-  const { data, error } = await supabase
+  const { data: properties, error } = await supabase
     .from('mtd_it_properties')
     .select('id, client_id, address, country, currency, ownership_pct, property_type, active, created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: true });
   if (error) return NextResponse.json({ error: 'Failed to load properties' }, { status: 500 });
-  return NextResponse.json({ properties: data ?? [] });
+
+  // Co-owner links for all of this client's properties in one query.
+  const ids = (properties ?? []).map(p => p.id as string);
+  let linksByProperty: Record<string, Array<{ co_owner_client_id: string; co_owner_share_pct: number; co_owner_name: string; co_owner_ref: string | null }>> = {};
+  if (ids.length > 0) {
+    const { data: links } = await supabase
+      .from('mtd_it_property_links')
+      .select('property_id, co_owner_client_id, co_owner_share_pct, clients!mtd_it_property_links_co_owner_client_id_fkey(name, client_ref)')
+      .in('property_id', ids);
+    for (const l of (links ?? []) as Array<{ property_id: string; co_owner_client_id: string; co_owner_share_pct: number; clients?: { name?: string; client_ref?: string | null } }>) {
+      const arr = linksByProperty[l.property_id] ?? [];
+      arr.push({
+        co_owner_client_id: l.co_owner_client_id,
+        co_owner_share_pct: Number(l.co_owner_share_pct),
+        co_owner_name:      l.clients?.name ?? '',
+        co_owner_ref:       l.clients?.client_ref ?? null,
+      });
+      linksByProperty[l.property_id] = arr;
+    }
+  }
+
+  const withLinks = (properties ?? []).map(p => ({ ...p, co_owners: linksByProperty[p.id as string] ?? [] }));
+  return NextResponse.json({ properties: withLinks });
 }
 
 const CreateSchema = z.object({

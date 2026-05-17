@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, MessageSquare, Sparkles, Paperclip, FileText, Image, Undo2, Loader2, Check } from 'lucide-react';
+import { X, Send, MessageSquare, Sparkles, Paperclip, FileText, Image, Undo2, Loader2, Check, Minus, ChevronUp } from 'lucide-react';
 import Tooltip from './Tooltip';
 import AgentHatIcon from './AgentHatIcon';
 import AgentPreview, { MarkdownText, type AgentProposal, type AgentReport } from './AgentPreview';
@@ -20,6 +20,10 @@ interface Message {
 
 export default function AskSmithBubble() {
   const [open, setOpen] = useState(false);
+  // Minimised = chat window collapsed to a compact header bar so the user
+  // can poke around the rest of the app while keeping the conversation
+  // alive. Clicking the bar re-expands without losing any state.
+  const [minimised, setMinimised] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -290,7 +294,28 @@ export default function AskSmithBubble() {
 
   return (
     <>
-      {open && (
+      {/* Minimised state — a compact header bar pinned bottom-right that
+          keeps the conversation alive. Clicking it re-expands the full
+          chat window. */}
+      {open && minimised && (
+        <button
+          onClick={() => setMinimised(false)}
+          className={`fixed bottom-24 right-6 z-50 flex items-center gap-2 pl-4 pr-3 py-2.5 rounded-full shadow-dropdown border border-[var(--border-card)] animate-slide-up ${isAgent ? 'bg-gray-900 text-white' : 'bg-[var(--accent)] text-white'}`}
+          aria-label="Restore chat"
+        >
+          {isAgent
+            ? <AgentHatIcon size={16} className="text-white" />
+            : <Sparkles size={14} className="text-white" />}
+          <span className="text-sm font-semibold">{isAgent ? 'Agent Smith' : 'Ask Smith'}</span>
+          {messages.length > 0 && (
+            <span className="text-[10px] font-medium bg-white/20 px-1.5 py-0.5 rounded-full">
+              {messages.length} msg{messages.length !== 1 ? 's' : ''}
+            </span>
+          )}
+          <ChevronUp size={14} className="text-white/80" />
+        </button>
+      )}
+      {open && !minimised && (
         <div className={windowCls}>
           {/* Chat column */}
           <div className={`flex flex-col min-h-0 ${isAgent ? 'w-[400px] border-r border-[var(--border)]' : 'flex-1'}`}>
@@ -317,7 +342,16 @@ export default function AskSmithBubble() {
                     </button>
                   </Tooltip>
                 )}
-                <button onClick={() => setOpen(false)} className="text-white/70 hover:text-white transition-colors">
+                <Tooltip label="Minimise — keeps the conversation, lets you click around the app" side="bottom">
+                  <button
+                    onClick={() => setMinimised(true)}
+                    aria-label="Minimise chat"
+                    className="text-white/70 hover:text-white transition-colors"
+                  >
+                    <Minus size={16} />
+                  </button>
+                </Tooltip>
+                <button onClick={() => setOpen(false)} aria-label="Close chat" className="text-white/70 hover:text-white transition-colors">
                   <X size={16} />
                 </button>
               </div>

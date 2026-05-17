@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -13,6 +13,7 @@ import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
 import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
+import MtdItSettingsTab from './tabs/MtdItSettingsTab';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
@@ -21,7 +22,7 @@ import CommunityTab from './tabs/CommunityTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'agent-smith' | 'community';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community';
 
 interface Props {
   userId: string;
@@ -41,6 +42,7 @@ interface Props {
   emailTriageModuleActive?: boolean;
   hrModuleActive?: boolean;
   proposalsModuleActive?: boolean;
+  mtdItModuleActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -55,7 +57,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -96,6 +98,7 @@ export default function SettingsClient({
     { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
+    { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
@@ -483,6 +486,11 @@ export default function SettingsClient({
       {/* Proposals tab — admin only, shown when Proposals module is active */}
       {activeTab === 'proposals' && proposalsModuleActive && (
         <ProposalsSettingsTab isAdmin={isAdmin} tasksModuleActive={!!tasksModuleActive} />
+      )}
+
+      {/* MTD IT tab — admin only, shown when MTD IT module is active */}
+      {activeTab === 'mtd-it' && isAdmin && mtdItModuleActive && (
+        <MtdItSettingsTab />
       )}
 
       {/* Agent Smith tab — admin only */}

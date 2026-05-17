@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Trash2, Flag, FlagOff, ChevronDown, ChevronRight,
-  FileText, Briefcase, House, Globe2, Layers, Eye,
+  FileText, Briefcase, House, Globe2, Layers, Eye, ExternalLink,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import {
@@ -603,6 +603,22 @@ function EntryRow(props: {
               aria-label="View source document"
               className="p-1 rounded text-gray-400 hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors shrink-0"
             ><Eye size={12} /></button>
+          </Tooltip>
+        )}
+
+        {/* Open in Google Drive — set after a successful Save to records.
+            Lets the user jump straight to the invoice without having to
+            grep through their Drive folder. */}
+        {e.drive_link && (
+          <Tooltip label="Open the source document in Google Drive">
+            <a
+              href={e.drive_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open in Google Drive"
+              className="p-1 rounded text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors shrink-0"
+              onClick={ev => ev.stopPropagation()}
+            ><ExternalLink size={12} /></a>
           </Tooltip>
         )}
 

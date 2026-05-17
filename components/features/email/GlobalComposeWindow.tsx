@@ -52,6 +52,8 @@ export default function GlobalComposeWindow() {
       defaultClients={cw.ctx?.defaultClients ?? null}
       defaultTo={cw.ctx?.defaultTo ?? null}
       prefilledBody={cw.ctx?.prefilledBody ?? null}
+      defaultSubject={cw.ctx?.defaultSubject ?? null}
+      defaultAttachments={cw.ctx?.defaultAttachments ?? null}
       threadMessages={cw.ctx?.threadMessages ?? null}
       signature={cw.signature}
       googleEmail={cw.googleEmail}

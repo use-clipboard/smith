@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 'lucide-react';
+import { Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
+import DueDatePill from './DueDatePill';
 import type { Task, RecurrenceType } from '@/types';
 
 interface TaskCardProps {
@@ -18,11 +19,6 @@ interface TaskCardProps {
 function formatDate(d: string | null) {
   if (!d) return null;
   return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function isOverdue(due: string | null, status: string) {
-  if (!due || status === 'complete') return false;
-  return new Date(due) < new Date();
 }
 
 function totalMinutes(entries: Task['time_entries']) {
@@ -69,7 +65,6 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
   const totalSteps   = steps.length;
   const completedSteps = steps.filter(s => s.status === 'complete' || s.status === 'skipped').length;
   const progressPct  = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
-  const overdue      = isOverdue(task.due_date, task.status);
   const timeLogged   = totalMinutes(task.time_entries);
 
   const isRecurring  = task.recurrence_type && task.recurrence_type !== 'once';
@@ -190,7 +185,7 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
           <RefreshCw className="h-3 w-3 text-indigo-500 flex-shrink-0" />
           <span className="text-xs text-indigo-600">
             <span className="font-medium">{recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}</span>
-            {' · '}Next: <span className="font-semibold">{nextDueStr}</span>
+            {' · '}Deadline on next cycle: <span className="font-semibold">{nextDueStr}</span>
           </span>
         </div>
       )}
@@ -218,10 +213,7 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {task.due_date && (
-            <span className={`flex items-center gap-1 text-xs ${overdue ? 'text-red-600 font-medium' : 'text-gray-400'}`}>
-              <Calendar className="h-3.5 w-3.5" />
-              {overdue ? 'Overdue · ' : ''}{formatDate(task.due_date)}
-            </span>
+            <DueDatePill dueDate={task.due_date} status={task.status} size="sm" />
           )}
           {timeLogged > 0 && (
             <span className="flex items-center gap-1 text-xs text-gray-400">

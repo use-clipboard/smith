@@ -2,11 +2,12 @@
 
 import { useState, useCallback } from 'react';
 import {
-  X, Calendar, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
+  X, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
   Play, Pause, Plus, Trash2, ExternalLink, Loader2, AlertCircle, Puzzle,
   XCircle, Users, UserCheck, Check, GripVertical, Sparkles, Pencil,
 } from 'lucide-react';
 import { TaskStatusBadge, StepStatusBadge } from './TaskStatusBadge';
+import DueDatePill from './DueDatePill';
 import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import { TaskViewFlowChart } from './TaskFlowChart';
@@ -469,7 +470,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                   <span className="inline-flex items-center gap-1.5 text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 px-2.5 py-0.5 rounded-full font-medium">
                     <RefreshCw className="h-3 w-3" />
                     {recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}
-                    {nextDue && <span className="text-indigo-400 font-normal">· Next: {formatShortDate(nextDue)}</span>}
+                    {nextDue && <span className="text-indigo-400 font-normal">· Deadline on next cycle: {formatShortDate(nextDue)}</span>}
                   </span>
                 );
               })()}
@@ -489,10 +490,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                 <span className="text-sm text-gray-400 italic">Internal</span>
               )}
               {task.due_date && (
-                <span className="flex items-center gap-1 text-xs text-gray-400">
-                  <Calendar className="h-3.5 w-3.5" />
-                  Due {formatDate(task.due_date)}
-                </span>
+                <DueDatePill dueDate={task.due_date} status={task.status} size="sm" />
               )}
               {workSteps.length > 0 && (
                 <span className="flex items-center gap-1 text-xs text-gray-400">
