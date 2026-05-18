@@ -526,6 +526,59 @@ export default function EmailTriagePage() {
 
   // Load thread detail
   async function openThread(thread: EmailThreadType) {
+    // Drafts get a different treatment: instead of opening the read-only
+    // thread view, we hand the saved draft contents to the compose window so
+    // the user can edit and send. Detected either by being inside the Drafts
+    // label or by the thread itself carrying the DRAFT system label.
+    const isDraft = activeLabel === 'DRAFT' || thread.labelIds?.includes('DRAFT');
+    if (isDraft) {
+      const detailId = thread.gmailThreadId ?? thread.id;
+      try {
+        const dres = await fetch(`/api/email/draft?threadId=${encodeURIComponent(detailId)}`);
+        const dj   = await dres.json() as {
+          draft: null | {
+            draftId:  string;
+            subject:  string;
+            to:       Array<{ name: string; email: string }>;
+            cc:       Array<{ name: string; email: string }>;
+            bcc:      Array<{ name: string; email: string }>;
+            htmlBody: string;
+            attachments: Array<{ messageId: string; attachmentId: string; filename: string; mimeType: string; size: number }>;
+          };
+        };
+        const draft = dj.draft;
+        if (draft) {
+          // Pull the attachments down as File objects so they ride along
+          // when the user re-saves or sends from compose. Best-effort —
+          // a missing attachment is non-fatal, the user can re-add it.
+          const files = await Promise.all(
+            draft.attachments.map(async att => {
+              try {
+                const url = `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`;
+                const ar  = await fetch(url);
+                const blob = await ar.blob();
+                return new File([blob], att.filename, { type: att.mimeType || 'application/octet-stream' });
+              } catch {
+                return null;
+              }
+            })
+          );
+          composeWindow.open({
+            defaultDraftId:   draft.draftId,
+            defaultTo:        draft.to,
+            defaultBcc:       draft.bcc,
+            defaultSubject:   draft.subject,
+            defaultHtmlBody:  draft.htmlBody,
+            defaultAttachments: files.filter((f): f is File => f !== null),
+          });
+          return;
+        }
+        // Draft lookup failed (no matching draft on the thread, transient
+        // error, etc.) — fall through to the normal read-only view so the
+        // user still sees *something*.
+      } catch { /* fall through */ }
+    }
+
     setActiveThread(thread);
     setThreadDetail(null);
     setLoadingDetail(true);
@@ -1187,6 +1240,23 @@ export default function EmailTriagePage() {
           activeLabel={activeLabel}
           onBulkDelete={handleBulkDelete}
           onBulkMarkRead={handleBulkMarkRead}
+          onBulkForward={async (ids, to, cc, note) => {
+            // ids are EmailList's internal thread IDs; the server needs the
+            // real Gmail thread IDs (non-threaded view uses message IDs as
+            // the list key, so we resolve via the threads array first).
+            const gmailIds = ids.map(id => threads.find(t => t.id === id)?.gmailThreadId ?? id);
+            const res = await fetch('/api/email/bulk-forward', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ threadIds: gmailIds, toEmails: to, ccEmails: cc, note }),
+            });
+            if (!res.ok) {
+              const j = await res.json().catch(() => ({}));
+              throw new Error(j.error ?? 'Bulk forward failed');
+            }
+            const out = await res.json() as { success: number; failed: number };
+            return { success: out.success, failed: out.failed };
+          }}
         />
       </div>
 

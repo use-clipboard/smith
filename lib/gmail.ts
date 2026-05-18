@@ -185,6 +185,39 @@ export function parseGmailMessage(
   };
 }
 
+/**
+ * RFC 2047 "encoded-word" for non-ASCII header values. RFC 2822 headers are
+ * 7-bit ASCII; raw 8-bit characters get reinterpreted as Latin-1 by many
+ * mail servers, which is how subjects like `Re: foo '25-'26` (smart quotes)
+ * morph into mojibake (`ÃƒÂ¢Ã¢â€š¬Ã¢â€žÂ¢`) and keep growing on every reply.
+ *
+ * We base64-encode the entire value if it contains any non-ASCII byte —
+ * pure ASCII subjects pass through untouched so the simple case is normal
+ * to read on the wire.
+ */
+function encodeHeaderValue(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  const hasNonAscii = /[^\x00-\x7F]/.test(value);
+  if (!hasNonAscii) return value;
+  const b64 = Buffer.from(value, 'utf8').toString('base64');
+  return `=?UTF-8?B?${b64}?=`;
+}
+
+/**
+ * Encode any non-ASCII display name in an address line. Accepts entries
+ * in either `local@host` or `"Display Name" <local@host>` / `Name <addr>`
+ * form; only the display-name portion needs encoding — the addr-spec must
+ * stay 7-bit ASCII per RFC 5321.
+ */
+function encodeAddressLine(addr: string): string {
+  // Match an optional display name followed by an angle-addr.
+  const m = addr.match(/^(.+?)\s*<([^>]+)>\s*$/);
+  if (!m) return addr; // bare address — already ASCII-safe
+  const rawName = m[1].trim().replace(/^"|"$/g, '');
+  const email   = m[2].trim();
+  return `${encodeHeaderValue(rawName)} <${email}>`;
+}
+
 /** Build a raw RFC 2822 email message as base64url, with optional MIME attachments */
 export function buildRawMessage(opts: {
   from: string;
@@ -197,9 +230,11 @@ export function buildRawMessage(opts: {
   threadId?: string;
   attachments?: Array<{ filename: string; mimeType: string; data: Buffer }>;
 }): string {
-  const toLine = opts.to.join(', ');
-  const ccLine = opts.cc?.length ? `Cc: ${opts.cc.join(', ')}\r\n` : '';
-  const bccLine = opts.bcc?.length ? `Bcc: ${opts.bcc.join(', ')}\r\n` : '';
+  const fromLine = encodeAddressLine(opts.from);
+  const toLine   = opts.to.map(encodeAddressLine).join(', ');
+  const ccLine   = opts.cc?.length  ? `Cc: ${opts.cc.map(encodeAddressLine).join(', ')}\r\n`   : '';
+  const bccLine  = opts.bcc?.length ? `Bcc: ${opts.bcc.map(encodeAddressLine).join(', ')}\r\n` : '';
+  const subjectEncoded = encodeHeaderValue(opts.subject);
   const refLine = opts.replyToMessageId
     ? `In-Reply-To: ${opts.replyToMessageId}\r\nReferences: ${opts.replyToMessageId}\r\n`
     : '';
@@ -210,11 +245,11 @@ export function buildRawMessage(opts: {
 
   if (!opts.attachments?.length) {
     const raw =
-      `From: ${opts.from}\r\n` +
+      `From: ${fromLine}\r\n` +
       `To: ${toLine}\r\n` +
       ccLine +
       bccLine +
-      `Subject: ${opts.subject}\r\n` +
+      `Subject: ${subjectEncoded}\r\n` +
       refLine +
       `MIME-Version: 1.0\r\n` +
       `Content-Type: text/html; charset=UTF-8\r\n` +
@@ -247,11 +282,11 @@ export function buildRawMessage(opts: {
   parts += `--${boundary}--`;
 
   const raw =
-    `From: ${opts.from}\r\n` +
+    `From: ${fromLine}\r\n` +
     `To: ${toLine}\r\n` +
     ccLine +
     bccLine +
-    `Subject: ${opts.subject}\r\n` +
+    `Subject: ${subjectEncoded}\r\n` +
     refLine +
     `MIME-Version: 1.0\r\n` +
     `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` +

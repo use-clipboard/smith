@@ -1,9 +1,35 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 
-// Re-use the same CH fetch logic as the main endpoint
+// ─── Resumable cron architecture ──────────────────────────────────────────────
+// The Companies House refresh used to fetch every company for every firm in a
+// single function invocation. Vercel's 5-minute function cap killed it on any
+// firm > ~200 companies, and a single CH 429 (5m10s cool-off) killed it
+// immediately. The result was that scheduled refreshes silently never landed.
+//
+// Now the cron is split across ticks:
+//   - Tick fires every 30 minutes (configured in vercel.json).
+//   - For each firm with a CH key + schedule:
+//       * If there's already a running job for that firm, RESUME it.
+//       * Otherwise, if the schedule says "due now", START a fresh job by
+//         loading the company list and parking it in remaining_numbers.
+//       * Otherwise, skip.
+//   - Process companies one at a time, persisting progress after each.
+//   - Stop after PROCESS_BUDGET_MS so the function exits well before the
+//     hard 5-minute Vercel limit. The next tick (in 30 min) picks up.
+//   - When remaining_numbers empties, flush the accumulated results into
+//     ch_cache and mark the job idle.
+//
+// From the user's perspective: the refresh "starts at the scheduled time and
+// takes as long as it takes" — they just don't see the multi-tick mechanics.
+// Worst-case for a 500-company firm with rate limiting: ~3 ticks = 90 min.
+
 const CH_BASE = 'https://api.company-information.service.gov.uk';
 const INTRA_DELAY = 200;
+// How long a single cron invocation is allowed to spend processing before it
+// saves state and bails. 4 minutes leaves a comfortable margin under Vercel's
+// 5-minute hard cap for the final upsert + response.
+const PROCESS_BUDGET_MS = 4 * 60 * 1000;
 
 function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 
@@ -12,8 +38,6 @@ function sleep(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 function isAuthorisedCron(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
-    // CRON_SECRET not configured — Vercel auto-sets this in production.
-    // Log and allow through so the schedule isn't silently blocked during setup.
     console.warn('[CH Cron] CRON_SECRET env var not set — allowing request. Set it in Vercel env vars to secure this endpoint.');
     return true;
   }
@@ -115,119 +139,146 @@ async function chFetch(path: string, apiKey: string): Promise<unknown> {
   return res.json();
 }
 
+// Fetch ONE company's profile + officers + PSCs. On rate-limit, this now
+// PROPAGATES the RateLimitError up to the caller instead of sleeping 5m10s
+// internally — that internal sleep guaranteed we'd blow the Vercel budget.
+// The cron loop catches the error, leaves the number in remaining_numbers,
+// and exits the tick. The next tick (~30 min later) is well past CH's
+// 5-minute rate-limit window so the retry just works.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchCompanyWithRetry(number: string, apiKey: string): Promise<any> {
+async function fetchCompany(number: string, apiKey: string): Promise<any> {
   const n = number.trim().toUpperCase().padStart(8, '0');
   const chUrl = `https://find-and-update.company-information.service.gov.uk/company/${n}`;
-  let retryDelay = 310_000; // 5m10s in ms
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const profile = await chFetch(`/company/${n}`, apiKey) as any;
-      await sleep(INTRA_DELAY);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const officersData = await chFetch(`/company/${n}/officers?items_per_page=100`, apiKey).catch(e => {
-        if (e instanceof RateLimitError) throw e;
-        return { items: [] };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any;
-      await sleep(INTRA_DELAY);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pscData = await chFetch(`/company/${n}/persons-with-significant-control?items_per_page=100`, apiKey).catch(e => {
-        if (e instanceof RateLimitError) throw e;
-        return { items: [] };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      }) as any;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const profile = await chFetch(`/company/${n}`, apiKey) as any;
+    await sleep(INTRA_DELAY);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const officersData = await chFetch(`/company/${n}/officers?items_per_page=100`, apiKey).catch(e => {
+      if (e instanceof RateLimitError) throw e;
+      return { items: [] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any;
+    await sleep(INTRA_DELAY);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pscData = await chFetch(`/company/${n}/persons-with-significant-control?items_per_page=100`, apiKey).catch(e => {
+      if (e instanceof RateLimitError) throw e;
+      return { items: [] };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any;
 
-      const SECRETARY_ROLES = new Set(['secretary', 'corporate-secretary', 'nominee-secretary']);
+    const SECRETARY_ROLES = new Set(['secretary', 'corporate-secretary', 'nominee-secretary']);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const activeOfficers = (officersData.items ?? []).filter((o: any) => !o.resigned_on).map((o: any) => {
-        const isSecretary = SECRETARY_ROLES.has((o.officer_role ?? '').toLowerCase());
-        if (isSecretary) {
-          return {
-            name: o.name ?? '', role: o.officer_role ?? '', appointedOn: o.appointed_on ?? '',
-            dateOfBirth: o.date_of_birth ? { month: o.date_of_birth.month, year: o.date_of_birth.year } : undefined,
-            address: parseAddress(o.address), idvDueDate: null,
-            idvOverdue: false, idvVerified: false, idvExempt: true,
-          };
-        }
-        const idvDueDate = getIdvDueDate(o, o.appointed_on);
-        const idvVerified = hasVerification(o);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activeOfficers = (officersData.items ?? []).filter((o: any) => !o.resigned_on).map((o: any) => {
+      const isSecretary = SECRETARY_ROLES.has((o.officer_role ?? '').toLowerCase());
+      if (isSecretary) {
         return {
           name: o.name ?? '', role: o.officer_role ?? '', appointedOn: o.appointed_on ?? '',
           dateOfBirth: o.date_of_birth ? { month: o.date_of_birth.month, year: o.date_of_birth.year } : undefined,
-          address: parseAddress(o.address), idvDueDate,
-          idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified, idvExempt: false,
+          address: parseAddress(o.address), idvDueDate: null,
+          idvOverdue: false, idvVerified: false, idvExempt: true,
         };
-      });
+      }
+      const idvDueDate = getIdvDueDate(o, o.appointed_on);
+      const idvVerified = hasVerification(o);
+      return {
+        name: o.name ?? '', role: o.officer_role ?? '', appointedOn: o.appointed_on ?? '',
+        dateOfBirth: o.date_of_birth ? { month: o.date_of_birth.month, year: o.date_of_birth.year } : undefined,
+        address: parseAddress(o.address), idvDueDate,
+        idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified, idvExempt: false,
+      };
+    });
 
-      const CORPORATE_PSC_KINDS = new Set([
-        'corporate-entity-person-with-significant-control',
-        'legal-person-with-significant-control',
-      ]);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const activePscs = (pscData.items ?? []).filter((p: any) => !p.ceased_on).map((p: any) => {
-        const kind = p.kind ?? '';
-        const idvExempt = CORPORATE_PSC_KINDS.has(kind);
-        if (idvExempt) {
-          return {
-            name: p.name ?? p.description ?? '', kind, notifiedOn: p.notified_on ?? '',
-            naturesOfControl: p.natures_of_control ?? [], address: parseAddress(p.address),
-            dateOfBirth: undefined, idvDueDate: null, idvOverdue: false, idvVerified: false, idvExempt: true,
-          };
-        }
-        const idvDueDate = getIdvDueDate(p, p.notified_on);
-        const idvVerified = hasVerification(p);
+    const CORPORATE_PSC_KINDS = new Set([
+      'corporate-entity-person-with-significant-control',
+      'legal-person-with-significant-control',
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activePscs = (pscData.items ?? []).filter((p: any) => !p.ceased_on).map((p: any) => {
+      const kind = p.kind ?? '';
+      const idvExempt = CORPORATE_PSC_KINDS.has(kind);
+      if (idvExempt) {
         return {
           name: p.name ?? p.description ?? '', kind, notifiedOn: p.notified_on ?? '',
           naturesOfControl: p.natures_of_control ?? [], address: parseAddress(p.address),
-          dateOfBirth: p.date_of_birth ? { month: p.date_of_birth.month, year: p.date_of_birth.year } : undefined,
-          idvDueDate, idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified, idvExempt: false,
+          dateOfBirth: undefined, idvDueDate: null, idvOverdue: false, idvVerified: false, idvExempt: true,
         };
-      });
-
-      const officerIdvDates = activeOfficers.filter((o: { idvVerified: boolean; idvExempt: boolean }) => !o.idvExempt && !o.idvVerified).map((o: { idvDueDate: string | null }) => o.idvDueDate);
-      const pscIdvDates = activePscs.filter((p: { idvExempt: boolean; idvVerified: boolean }) => !p.idvExempt && !p.idvVerified).map((p: { idvDueDate: string | null }) => p.idvDueDate);
-
-      return {
-        companyNumber: profile.company_number ?? n,
-        companyName: profile.company_name ?? '',
-        status: profile.company_status ?? 'unknown',
-        incorporationDate: profile.date_of_creation ?? '',
-        type: profile.type ?? '',
-        sicCodes: profile.sic_codes ?? [],
-        registeredOffice: parseAddress(profile.registered_office_address),
-        accountsNextDue: profile.accounts?.next_due ?? null,
-        accountsOverdue: profile.accounts?.overdue ?? false,
-        csNextDue: profile.confirmation_statement?.next_due ?? null,
-        csOverdue: profile.confirmation_statement?.overdue ?? false,
-        nearestOfficerIdvDue: nearestDate(officerIdvDates),
-        officersIdvOverdueCount: activeOfficers.filter((o: { idvOverdue: boolean }) => o.idvOverdue).length,
-        nearestPscIdvDue: nearestDate(pscIdvDates),
-        pscIdvOverdueCount: activePscs.filter((p: { idvOverdue: boolean }) => p.idvOverdue).length,
-        activeOfficerCount: activeOfficers.length, activePscCount: activePscs.length,
-        officers: activeOfficers, pscs: activePscs, chUrl,
-        fetchedAt: new Date().toISOString(),
-      };
-    } catch (err) {
-      if (err instanceof RateLimitError) {
-        console.log(`[CH Cron] Rate limited — waiting ${retryDelay / 1000}s`);
-        await sleep(retryDelay);
-        continue;
       }
+      const idvDueDate = getIdvDueDate(p, p.notified_on);
+      const idvVerified = hasVerification(p);
       return {
-        companyNumber: n, companyName: '', status: 'error', incorporationDate: '', type: '',
-        sicCodes: [], registeredOffice: {}, accountsNextDue: null, accountsOverdue: false,
-        csNextDue: null, csOverdue: false, nearestOfficerIdvDue: null, officersIdvOverdueCount: 0,
-        nearestPscIdvDue: null, pscIdvOverdueCount: 0, activeOfficerCount: 0, activePscCount: 0,
-        officers: [], pscs: [], chUrl, fetchedAt: new Date().toISOString(),
-        error: err instanceof Error ? err.message : 'Fetch failed',
+        name: p.name ?? p.description ?? '', kind, notifiedOn: p.notified_on ?? '',
+        naturesOfControl: p.natures_of_control ?? [], address: parseAddress(p.address),
+        dateOfBirth: p.date_of_birth ? { month: p.date_of_birth.month, year: p.date_of_birth.year } : undefined,
+        idvDueDate, idvOverdue: !idvVerified && isIdvOverdue(idvDueDate), idvVerified, idvExempt: false,
       };
+    });
+
+    const officerIdvDates = activeOfficers.filter((o: { idvVerified: boolean; idvExempt: boolean }) => !o.idvExempt && !o.idvVerified).map((o: { idvDueDate: string | null }) => o.idvDueDate);
+    const pscIdvDates = activePscs.filter((p: { idvExempt: boolean; idvVerified: boolean }) => !p.idvExempt && !p.idvVerified).map((p: { idvDueDate: string | null }) => p.idvDueDate);
+
+    return {
+      companyNumber: profile.company_number ?? n,
+      companyName: profile.company_name ?? '',
+      status: profile.company_status ?? 'unknown',
+      incorporationDate: profile.date_of_creation ?? '',
+      type: profile.type ?? '',
+      sicCodes: profile.sic_codes ?? [],
+      registeredOffice: parseAddress(profile.registered_office_address),
+      accountsNextDue: profile.accounts?.next_due ?? null,
+      accountsOverdue: profile.accounts?.overdue ?? false,
+      csNextDue: profile.confirmation_statement?.next_due ?? null,
+      csOverdue: profile.confirmation_statement?.overdue ?? false,
+      nearestOfficerIdvDue: nearestDate(officerIdvDates),
+      officersIdvOverdueCount: activeOfficers.filter((o: { idvOverdue: boolean }) => o.idvOverdue).length,
+      nearestPscIdvDue: nearestDate(pscIdvDates),
+      pscIdvOverdueCount: activePscs.filter((p: { idvOverdue: boolean }) => p.idvOverdue).length,
+      activeOfficerCount: activeOfficers.length, activePscCount: activePscs.length,
+      officers: activeOfficers, pscs: activePscs, chUrl,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      // Re-throw so the cron loop pauses for this tick.
+      throw err;
     }
+    // Non-429 error: persist a stub row so it's visible in the UI and the
+    // company doesn't get retried forever. The user can manually re-run if
+    // needed.
+    return {
+      companyNumber: n, companyName: '', status: 'error', incorporationDate: '', type: '',
+      sicCodes: [], registeredOffice: {}, accountsNextDue: null, accountsOverdue: false,
+      csNextDue: null, csOverdue: false, nearestOfficerIdvDue: null, officersIdvOverdueCount: 0,
+      nearestPscIdvDue: null, pscIdvOverdueCount: 0, activeOfficerCount: 0, activePscCount: 0,
+      officers: [], pscs: [], chUrl, fetchedAt: new Date().toISOString(),
+      error: err instanceof Error ? err.message : 'Fetch failed',
+    };
   }
+}
+
+// ─── Job state types ──────────────────────────────────────────────────────────
+interface JobRow {
+  firm_id: string;
+  status: 'idle' | 'running';
+  refresh_type: 'scheduled' | 'manual' | null;
+  started_at: string | null;
+  last_tick_at: string | null;
+  remaining_numbers: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  processed_companies: any[];
+  error_count: number;
+  total_count: number;
+}
+
+function emptyJob(firmId: string): JobRow {
+  return {
+    firm_id: firmId, status: 'idle', refresh_type: null,
+    started_at: null, last_tick_at: null,
+    remaining_numbers: [], processed_companies: [],
+    error_count: 0, total_count: 0,
+  };
 }
 
 // ─── GET handler (called by Vercel cron every 30 minutes) ────────────────────
@@ -238,6 +289,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   }
 
+  const tickStartedAt = Date.now();
   const service = createServiceClient();
 
   // Get all firms that have a CH API key and scheduled times
@@ -251,7 +303,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'No firms with schedules' });
   }
 
-  const results: { firmId: string; status: string; count: number }[] = [];
+  const results: Array<{ firmId: string; action: string; processed: number; remaining: number }> = [];
 
   for (const firm of firms) {
     const f = firm as {
@@ -262,67 +314,148 @@ export async function GET(request: Request) {
       ch_refresh_list_type: string | null;
     };
 
-    if (!isDueNow(f.ch_refresh_times)) continue;
-
-    const listType = f.ch_refresh_list_type ?? 'client_list';
-    console.log(`[CH Cron] Refreshing firm ${f.id} — scheduled at ${f.ch_refresh_times.join(', ')} — list: ${listType}`);
-
-    let numbers: string[] = [];
-
-    if (listType === 'custom_list') {
-      // Use the firm's saved custom company number list
-      numbers = f.ch_company_numbers ?? [];
-      if (numbers.length === 0) {
-        console.log(`[CH Cron] Firm ${f.id} — custom list is empty, skipping`);
-        continue;
-      }
-    } else {
-      // Use companies_house_id from limited company clients
-      const { data: clients } = await service
-        .from('clients')
-        .select('companies_house_id, business_type')
-        .eq('firm_id', f.id)
-        .not('companies_house_id', 'is', null);
-
-      numbers = (clients ?? [])
-        .filter(c => {
-          const bt = (c.business_type ?? '').toLowerCase();
-          return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
-        })
-        .map(c => c.companies_house_id)
-        .filter(Boolean) as string[];
-    }
-
-    if (numbers.length === 0) {
-      console.log(`[CH Cron] Firm ${f.id} — no company numbers, skipping`);
+    // Bail early if this firm's tick budget has already been spent. Other
+    // firms in this list get picked up by future ticks.
+    if (Date.now() - tickStartedAt > PROCESS_BUDGET_MS) {
+      results.push({ firmId: f.id, action: 'skipped_budget', processed: 0, remaining: 0 });
       continue;
     }
 
-    const companies = [];
-    let errorCount = 0;
+    // Load existing job state (one row per firm). Missing row → implicit idle.
+    const { data: existing } = await service
+      .from('ch_refresh_jobs')
+      .select('*')
+      .eq('firm_id', f.id)
+      .maybeSingle();
+    let job: JobRow = (existing as JobRow | null) ?? emptyJob(f.id);
 
-    for (const n of numbers) {
-      const result = await fetchCompanyWithRetry(n, f.ch_api_key);
-      companies.push(result);
-      if (result.status === 'error') errorCount++;
+    // Decide whether to start a new run, resume an in-flight one, or skip.
+    if (job.status === 'running' && job.remaining_numbers.length > 0) {
+      // Resume — leave job state as-is.
+      console.log(`[CH Cron] Firm ${f.id} — resuming, ${job.remaining_numbers.length} remaining of ${job.total_count}`);
+    } else if (isDueNow(f.ch_refresh_times)) {
+      // Start a fresh run.
+      const listType = f.ch_refresh_list_type ?? 'client_list';
+      let numbers: string[] = [];
+      if (listType === 'custom_list') {
+        numbers = f.ch_company_numbers ?? [];
+      } else {
+        const { data: clients } = await service
+          .from('clients')
+          .select('companies_house_id, business_type')
+          .eq('firm_id', f.id)
+          .not('companies_house_id', 'is', null);
+        numbers = (clients ?? [])
+          .filter(c => {
+            const bt = (c.business_type ?? '').toLowerCase();
+            return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
+          })
+          .map(c => c.companies_house_id)
+          .filter(Boolean) as string[];
+      }
+      if (numbers.length === 0) {
+        console.log(`[CH Cron] Firm ${f.id} — no company numbers, skipping`);
+        results.push({ firmId: f.id, action: 'skipped_empty', processed: 0, remaining: 0 });
+        continue;
+      }
+      job = {
+        firm_id: f.id,
+        status: 'running',
+        refresh_type: 'scheduled',
+        started_at: new Date().toISOString(),
+        last_tick_at: new Date().toISOString(),
+        remaining_numbers: numbers,
+        processed_companies: [],
+        error_count: 0,
+        total_count: numbers.length,
+      };
+      console.log(`[CH Cron] Firm ${f.id} — starting fresh run, ${numbers.length} companies`);
+    } else {
+      // Not due, not in flight — skip this firm this tick.
+      continue;
     }
 
-    const status = errorCount === 0 ? 'success' : errorCount === numbers.length ? 'failed' : 'partial';
+    // Process companies one by one. Persist after each so a function
+    // termination (Vercel timeout, deploy, crash) never loses more than the
+    // company currently being fetched.
+    let processedThisTick = 0;
+    while (job.remaining_numbers.length > 0) {
+      if (Date.now() - tickStartedAt > PROCESS_BUDGET_MS) {
+        console.log(`[CH Cron] Firm ${f.id} — budget spent, parking with ${job.remaining_numbers.length} remaining`);
+        break;
+      }
+      const next = job.remaining_numbers[0];
+      try {
+        const result = await fetchCompany(next, f.ch_api_key);
+        job.remaining_numbers = job.remaining_numbers.slice(1);
+        job.processed_companies = [...job.processed_companies, result];
+        if (result.status === 'error') job.error_count += 1;
+        processedThisTick += 1;
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          // Don't consume the number — it'll be retried on the next tick
+          // (~30 min from now), which is well past CH's 5-minute rate-limit
+          // window. Save state and stop processing for this firm.
+          console.log(`[CH Cron] Firm ${f.id} — rate limited at ${next}, parking with ${job.remaining_numbers.length} remaining`);
+          break;
+        }
+        // Unexpected error — log, leave the number in place for retry.
+        console.error(`[CH Cron] Firm ${f.id} — unexpected error on ${next}`, err);
+        break;
+      }
+      // Persist after each company so we never lose more than the in-flight one.
+      job.last_tick_at = new Date().toISOString();
+      await service.from('ch_refresh_jobs').upsert({
+        firm_id:             job.firm_id,
+        status:              job.status,
+        refresh_type:        job.refresh_type,
+        started_at:          job.started_at,
+        last_tick_at:        job.last_tick_at,
+        remaining_numbers:   job.remaining_numbers,
+        processed_companies: job.processed_companies,
+        error_count:         job.error_count,
+        total_count:         job.total_count,
+        updated_at:          new Date().toISOString(),
+      }, { onConflict: 'firm_id' });
+    }
 
-    await service.from('ch_cache').upsert({
-      firm_id: f.id,
-      companies,
-      refreshed_at: new Date().toISOString(),
-      refresh_status: status,
-      refresh_type: 'scheduled',
-      refresh_error: errorCount > 0 ? `${errorCount} of ${numbers.length} companies failed` : null,
-      companies_fetched: companies.length - errorCount,
-      companies_total: numbers.length,
-    }, { onConflict: 'firm_id' });
+    // Flush + clear when this firm's run is complete.
+    if (job.remaining_numbers.length === 0 && job.processed_companies.length > 0) {
+      const total       = job.total_count;
+      const errors      = job.error_count;
+      const cacheStatus = errors === 0 ? 'success' : errors === total ? 'failed' : 'partial';
 
-    console.log(`[CH Cron] Firm ${f.id} — done. ${companies.length - errorCount}/${numbers.length} succeeded.`);
-    results.push({ firmId: f.id, status, count: companies.length });
+      await service.from('ch_cache').upsert({
+        firm_id:           f.id,
+        companies:         job.processed_companies,
+        refreshed_at:      new Date().toISOString(),
+        refresh_status:    cacheStatus,
+        refresh_type:      job.refresh_type ?? 'scheduled',
+        refresh_error:     errors > 0 ? `${errors} of ${total} companies failed` : null,
+        companies_fetched: job.processed_companies.length - errors,
+        companies_total:   total,
+      }, { onConflict: 'firm_id' });
+
+      // Clear the job back to idle so the next scheduled tick can start fresh.
+      await service.from('ch_refresh_jobs').upsert({
+        firm_id:             f.id,
+        status:              'idle',
+        refresh_type:        null,
+        started_at:          null,
+        last_tick_at:        new Date().toISOString(),
+        remaining_numbers:   [],
+        processed_companies: [],
+        error_count:         0,
+        total_count:         0,
+        updated_at:          new Date().toISOString(),
+      }, { onConflict: 'firm_id' });
+
+      console.log(`[CH Cron] Firm ${f.id} — completed. ${job.processed_companies.length - errors}/${total} succeeded.`);
+      results.push({ firmId: f.id, action: 'completed', processed: processedThisTick, remaining: 0 });
+    } else {
+      results.push({ firmId: f.id, action: 'progress_saved', processed: processedThisTick, remaining: job.remaining_numbers.length });
+    }
   }
 
-  return NextResponse.json({ refreshed: results.length, results });
+  return NextResponse.json({ tickMs: Date.now() - tickStartedAt, firms: results });
 }

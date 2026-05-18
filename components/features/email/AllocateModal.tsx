@@ -173,6 +173,10 @@ export default function AllocateModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           threadId: thread.gmailThreadId ?? thread.id,
+          // Tag the allocation against the latest message in the thread so
+          // each new arrival gets its own timeline note instead of being
+          // swallowed by the thread-level dedupe.
+          messageId: lastMsg?.id,
           subject: thread.subject,
           snippet: thread.snippet,
           date: lastMsg?.date ?? '',

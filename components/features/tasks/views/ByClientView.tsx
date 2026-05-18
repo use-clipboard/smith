@@ -64,7 +64,11 @@ export default function ByClientView({ tasks, currentUserId, search, onSearchCha
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'due', dir: 'asc' });
 
   const filtered = useMemo(() => tasks.filter(t => {
-    if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const needle = search.toLowerCase();
+      const hay = `${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (assigneeFilter && !t.steps?.some(s => s.assignee_id === assigneeFilter)) return false;
     return true;

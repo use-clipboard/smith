@@ -55,7 +55,16 @@ interface PendingFile {
   entryCount?: number;
 }
 
-type Phase = 'setup' | 'analysing' | 'partial' | 'done';
+// Phase names match the wizard stepper one-to-one once we cross into the
+// review editor:
+//   'done'  → stage 3 "Review & adjust" (legacy name kept for backwards-compat
+//              across older imports / callbacks)
+//   'send'  → stage 4 "Send to client"
+//   'save'  → stage 5 "Save quarter"
+// 'send' and 'save' all render the same MtdItReviewPhase component with a
+// different `view` prop — keeps the loaded-once entries/trades/properties
+// data centralised so each stage has the figures it needs without re-fetching.
+type Phase = 'setup' | 'analysing' | 'partial' | 'done' | 'send' | 'save';
 
 // ── Per-stream summary used by the SetupPhase header chip ───────────────
 // Only counts CLEAN (non-flagged) entries so the headline numbers match
@@ -211,7 +220,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
   const routeKey = `/mtd-it/${clientId}/${taxYear}/${quarter}`;
   const appState =
     phase === 'analysing' ? 'loading' :
-    phase === 'done'      ? 'success' :
+    (phase === 'done' || phase === 'send' || phase === 'save') ? 'success' :
     'idle';
   useTabActivitySync(routeKey, appState);
 
@@ -522,17 +531,21 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
               phase === 'setup'     ? 'setup'   :
               phase === 'analysing' ? 'analyse' :
               phase === 'partial'   ? 'analyse' :
-              /* done */              'review'   // ← Stage C makes the review editor live
+              phase === 'send'      ? 'send'    :
+              phase === 'save'      ? 'save'    :
+              /* done */              'review'
             ) as WizardStep}
             notYetAvailable={['submit']}
-            navigable={['setup', 'analyse', 'review']}
+            navigable={['setup', 'analyse', 'review', 'send', 'save']}
             onStepClick={(step) => {
-              // Step navigation — covers Stages A/B/C.
+              // Step navigation — covers Stages A/B/C/D/E.
               //   setup   → setPhase('setup')
               //   analyse → kicks off a scan if anything's queued, else
               //             drops to setup so the user can add files
               //   review  → jumps to the review editor (phase 'done')
-              // 'send' / 'submit' stay locked.
+              //   send    → jumps to the send-to-client preview
+              //   save    → jumps to the final save / complete stage
+              // 'submit' stays locked.
               if (step === 'setup') {
                 setPhase('setup');
               } else if (step === 'analyse') {
@@ -540,6 +553,10 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
                 else setPhase('setup');
               } else if (step === 'review') {
                 setPhase('done');
+              } else if (step === 'send') {
+                setPhase('send');
+              } else if (step === 'save') {
+                setPhase('save');
               }
             }}
           />
@@ -615,8 +632,11 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         />
       )}
 
-      {/* Stage C: full review editor replaces the old "done" success panel */}
-      {phase === 'done' && (
+      {/* Stages C / D / E: review editor + send-to-client preview + save
+          quarter. All three render the same MtdItReviewPhase component with
+          a `view` prop so the underlying entries/trades/properties stay
+          loaded once and the user can hop between them via the wizard. */}
+      {(phase === 'done' || phase === 'send' || phase === 'save') && (
         <MtdItReviewPhase
           quarterId={qrow.id}
           clientId={clientId}
@@ -633,6 +653,11 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           quarter={quarter}
           taxYear={taxYear}
           quarterStatus={qrow.status}
+          view={phase === 'send' ? 'send' : phase === 'save' ? 'save' : 'edit'}
+          onProceedToSend={() => setPhase('send')}
+          onProceedToSave={() => setPhase('save')}
+          onBackToReview={() => setPhase('done')}
+          onBackToSend={() => setPhase('send')}
           onBackToSetup={() => setPhase('setup')}
           onFinished={() => { router.push('/mtd-it'); }}
         />
@@ -720,7 +745,7 @@ function Cell({ icon: Icon, label, value, mono, fullSpan, cols, emailClient }: {
 //      everything relevant to that stream: trades (sole) or properties (UK /
 //      foreign), FX rates (foreign), and the file uploader.
 //   3. Sticky action bar at the bottom with the primary Analyse CTA and a
-//      secondary "Skip to manual entry" link for empty / manual quarters.
+//      secondary "Skip to review & adjust" link for empty / manual quarters.
 function SetupPhase(props: {
   qrow: QuarterRow;
   clientId: string;
@@ -854,13 +879,13 @@ function SetupPhase(props: {
               lives inside the expanding span so it collapses with it. */}
           <button
             onClick={onSkip}
-            aria-label="Skip to manual entry"
-            title="Skip to manual entry"
+            aria-label="Skip to review & adjust"
+            title="Skip to review & adjust"
             className="group inline-flex items-center h-9 pl-2.5 pr-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-full hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shrink-0 overflow-hidden whitespace-nowrap"
           >
             <FastForward size={14} className="shrink-0" />
             <span className="max-w-0 group-hover:max-w-[10rem] group-focus-visible:max-w-[10rem] overflow-hidden transition-[max-width] duration-200 ease-out">
-              <span className="pl-2 pr-1">Skip to manual entry</span>
+              <span className="pl-2 pr-1">Skip to review & adjust</span>
             </span>
           </button>
         </div>

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
-  Sparkles, ArrowLeft, BarChart3, Mail, Archive,
+  Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
@@ -12,6 +12,7 @@ import MtdItPnLModal from './MtdItPnLModal';
 import MtdItSendApprovalModal from './MtdItSendApprovalModal';
 import MtdItSaveToRecordsModal from './MtdItSaveToRecordsModal';
 import { applyAutoFlags } from '@/lib/mtdIt/flags';
+import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import { CONSOLIDATED_REPORTING_LIMIT } from '@/lib/mtdIt/categories';
 import { buildPnL, fmtMoneyGbp } from '@/lib/mtdIt/pnl';
 import { renderApprovalPdf, blobToBase64 } from '@/lib/mtdIt/approvalPdf';
@@ -42,8 +43,17 @@ interface Props {
   quarter:  1 | 2 | 3 | 4;
   taxYear:  number;
   /** Current quarter status — drives whether Send-for-approval is enabled. */
-  quarterStatus: 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
-  onBackToSetup: () => void;
+  quarterStatus: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  /** Which sub-stage of the post-analysis workflow we're rendering. The
+   *  component owns all three because the entries / properties / trades data
+   *  is heavy and we don't want to re-fetch on every wizard hop. */
+  view: 'edit' | 'send' | 'save';
+  /** Stage transitions, all driven by the parent's wizard state. */
+  onProceedToSend: () => void;
+  onProceedToSave: () => void;
+  onBackToReview: () => void;
+  onBackToSend:   () => void;
+  onBackToSetup:  () => void;
   /** Called when the user successfully saves & finishes. Parent navigates
    *  back to the dashboard. */
   onFinished: (status: 'draft' | 'complete') => void;
@@ -112,7 +122,8 @@ export default function MtdItReviewPhase({
   quarterId, clientId, rangeFrom, rangeTo, streams, fxRates,
   initialConsolidated, clientName, clientRef, clientEmail, quarterLabel, taxYearLabel,
   quarter, taxYear,
-  quarterStatus, onBackToSetup, onFinished,
+  quarterStatus, view, onProceedToSend, onProceedToSave,
+  onBackToReview, onBackToSend, onBackToSetup, onFinished,
 }: Props) {
   // ── Loading entries / properties / trades ───────────────────────────
   const [entries, setEntries] = useState<EditorEntry[]>([]);
@@ -126,6 +137,62 @@ export default function MtdItReviewPhase({
   // reload. The user keeps any unsaved edits because applyAutoFlags is
   // idempotent — only existing rows get their drive_link refreshed.
   const [refreshTick, setRefreshTick] = useState(0);
+
+  // Latest active approval (non-voided) — drives the "Sent by … on …" /
+  // "Approved on …" status banner. Refetched whenever the quarter status
+  // flips (e.g. after a Send-for-approval click) or refreshTick bumps.
+  interface LatestApproval {
+    id: string;
+    sent_at: string;
+    sent_by: string | null;
+    recipient_email: string | null;
+    approved_at: string | null;
+    changes_requested_at: string | null;
+    expires_at: string | null;
+    edited_since_approved_at: string | null;
+    sender: { full_name: string | null; email: string } | null;
+  }
+  const [approvalInfo, setApprovalInfo] = useState<LatestApproval | null>(null);
+
+  // Whether to attach the approval-pack PDF when handing off to compose. The
+  // toggle lives on the Send-to-client stage but the state owns it here so
+  // sendViaCompose can read it without prop drilling. Default true — the PDF
+  // is the whole point of the approval email in the normal flow.
+  const [attachPdf, setAttachPdf] = useState(true);
+
+  // Firm-level reminder settings (reminder_enabled + reminder_days). Drives
+  // the "Reminder scheduled for …" hint on the send screen. Fetched once.
+  // NOTE: as of this writing the cron worker that actually sends the
+  // reminder email isn't wired up — this UI only surfaces what the firm has
+  // *configured* so the preparer knows what's coming.
+  const [reminderSettings, setReminderSettings] = useState<{ enabled: boolean; days: number } | null>(null);
+  useEffect(() => {
+    if (view !== 'send') return;
+    let aborted = false;
+    void fetch('/api/mtd-it/firm-settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (aborted || !j?.settings) return;
+        setReminderSettings({
+          enabled: !!j.settings.reminder_enabled,
+          days:     Number(j.settings.reminder_days ?? 7),
+        });
+      })
+      .catch(() => { /* non-fatal */ });
+    return () => { aborted = true; };
+  }, [view]);
+  useEffect(() => {
+    if (quarterStatus !== 'sent' && quarterStatus !== 'approved' && quarterStatus !== 'submitted') {
+      setApprovalInfo(null);
+      return;
+    }
+    let aborted = false;
+    void fetch(`/api/mtd-it/quarters/${quarterId}/approvals/latest`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!aborted) setApprovalInfo((j?.approval ?? null) as LatestApproval | null); })
+      .catch(() => { /* non-fatal — banner just hides */ });
+    return () => { aborted = true; };
+  }, [quarterId, quarterStatus, refreshTick]);
 
   useEffect(() => {
     (async () => {
@@ -314,7 +381,9 @@ export default function MtdItReviewPhase({
         defaultTo:          [{ name: clientName, email: clientEmail ?? '' }],
         defaultSubject:     (j.subject as string) ?? '',
         prefilledBody:      (j.html_body as string) ?? '',
-        defaultAttachments: [pdfFile],
+        // Respect the user's "attach PDF" toggle on the Send-to-client stage.
+        // Off → drop the attachment entirely; the email is sent without it.
+        defaultAttachments: attachPdf ? [pdfFile] : [],
         defaultClients:     [{
           id:            clientId,
           name:          clientName,
@@ -334,7 +403,49 @@ export default function MtdItReviewPhase({
     } finally {
       setPreparingSend(false);
     }
-  }, [preparingSend, streams, entries, trades, properties, fxRates, clientName, clientRef, clientEmail, clientId, quarterId, quarterLabel, taxYearLabel, rangeFrom, rangeTo, consolidated, compose]);
+  }, [preparingSend, streams, entries, trades, properties, fxRates, clientName, clientRef, clientEmail, clientId, quarterId, quarterLabel, taxYearLabel, rangeFrom, rangeTo, consolidated, compose, attachPdf]);
+
+  // ── View PDF (read-only preview) ────────────────────────────────────────
+  // Builds the same approval-pack PDF that would be attached to the email
+  // and opens it in a new browser tab. Used by the "View PDF" button on the
+  // Send-to-client stage so the preparer can sanity-check the document
+  // without having to fire the compose flow.
+  const [viewingPdf, setViewingPdf] = useState(false);
+  const viewPdf = useCallback(async () => {
+    if (viewingPdf) return;
+    setViewingPdf(true);
+    try {
+      const activeStreams: MtdItStream[] = (['sole','uk_rental','foreign_rental'] as const).filter(s => streams[s]);
+      const pnls = activeStreams.map(s => buildPnL({
+        stream:  s,
+        entries: entries.filter(e => e.stream === s),
+        trades, properties, fxRates,
+      }));
+      if (pnls.length === 0) {
+        setSentToast({ recipient: 'No income streams are active — nothing to preview.', viaCompose: false });
+        return;
+      }
+      const bundle = await fetchBrandPdfBundle({ clientId, taxYear });
+      const pdfBlob = await renderApprovalPdf({
+        pnls, clientName, clientRef, quarterLabel, taxYearLabel,
+        rangeFrom, rangeTo, consolidated, entries,
+        brandPrimaryColor: bundle.brandPrimaryColor,
+        logoDataUrl:       bundle.logoDataUrl,
+        pdfInclude:        bundle.pdfInclude,
+        comparison:        bundle.comparison,
+      });
+      const url = URL.createObjectURL(pdfBlob);
+      // Open in a new tab. The blob URL is revoked after a short delay so
+      // the new tab has finished navigating to it before we drop the ref.
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      console.error('viewPdf', e);
+      setSentToast({ recipient: e instanceof Error ? e.message : 'Failed to render PDF', viaCompose: false });
+    } finally {
+      setViewingPdf(false);
+    }
+  }, [viewingPdf, streams, entries, trades, properties, fxRates, clientName, clientRef, clientId, quarterLabel, taxYearLabel, rangeFrom, rangeTo, consolidated, taxYear]);
 
   // ── Consolidated reporting ───────────────────────────────────────────
   const totalIncomeAllStreams = entries
@@ -378,7 +489,7 @@ export default function MtdItReviewPhase({
 
   // ── Save (bulk creates / updates / deletes) ──────────────────────────
   const [saving, setSaving] = useState<null | 'draft' | 'complete'>(null);
-  async function save(target: 'draft' | 'complete') {
+  async function save(target: 'draft' | 'complete', opts?: { skipNav?: boolean }) {
     setSaving(target); setError(null);
     try {
       // Split the editor state into a bulk-save payload. Manual rules:
@@ -419,7 +530,7 @@ export default function MtdItReviewPhase({
       if (target === 'complete' && (driveActiveForSave || vaultActiveForSave)) {
         setSaveRecordsOpen(true);
         setPendingFinishedStatus(target);
-      } else {
+      } else if (!opts?.skipNav) {
         onFinished(target);
       }
     } catch (e) {
@@ -445,9 +556,11 @@ export default function MtdItReviewPhase({
 
   return (
     <div className="space-y-4">
-      {/* Toolbar — three separate pills: Consolidated toggle, optional
-          over-threshold warning, and Undo/Redo. Each lives in its own pill
-          so they read as independent controls. */}
+      {/* Toolbar — only rendered on the edit view. Send and save views are
+          read-only previews of what's already been entered, so the editor
+          controls (consolidated toggle, P&L view, undo/redo, save-to-records)
+          aren't useful there. */}
+      {view === 'edit' && (
       <div className="flex flex-wrap items-center gap-2">
         {/* Consolidated reporting — pill button with explainer tooltip.
             Fills with accent when on. */}
@@ -537,8 +650,58 @@ export default function MtdItReviewPhase({
           </Tooltip>
         </div>
       </div>
+      )}
 
-      {/* Columns */}
+      {/* Approval status banner — moved out of the edit view. It only makes
+          sense once we're in the Send-to-client / Save-quarter stages where
+          the user has actually pushed (or is about to push) the approval. */}
+      {(view === 'send' || view === 'save') && approvalInfo && (
+        <ApprovalStatusBanner info={approvalInfo} status={quarterStatus} />
+      )}
+
+      {/* Send view — read-only preview of the approval email + status panel.
+          The Compose Email button in the sticky bar opens the in-app compose
+          window with subject/body/recipient/PDF pre-filled. */}
+      {view === 'send' && (
+        <MtdItSendPreview
+          quarterId={quarterId}
+          clientId={clientId}
+          clientName={clientName}
+          clientRef={clientRef}
+          clientEmail={clientEmail}
+          taxYear={taxYear}
+          quarter={quarter}
+          taxYearLabel={taxYearLabel}
+          quarterLabel={quarterLabel}
+          quarterStatus={quarterStatus}
+          attachPdf={attachPdf}
+          onAttachPdfChange={setAttachPdf}
+          onViewPdf={viewPdf}
+          viewingPdf={viewingPdf}
+          reminderSettings={reminderSettings}
+          approvalSentAt={approvalInfo?.sent_at ?? null}
+        />
+      )}
+
+      {/* Save view — read-only summary of what's about to be saved as the
+          final quarter. The actual save action lives in the sticky bar. */}
+      {view === 'save' && (
+        <MtdItSaveSummary
+          quarterStatus={quarterStatus}
+          consolidated={consolidated}
+          entries={entries.filter(e => !e._deleted)}
+          streams={streams}
+          trades={trades}
+          properties={properties}
+          fxRates={fxRates}
+          dirty={dirty}
+        />
+      )}
+
+      {/* Columns — only rendered in the edit view. Send/Save use read-only
+          summaries above so the figures can't drift after the user has been
+          shown them. */}
+      {view === 'edit' && (
       <div className={`grid grid-cols-1 ${colsClass} gap-4`}>
         {activeStreams.map(s => (
           <MtdItStreamColumn
@@ -562,6 +725,7 @@ export default function MtdItReviewPhase({
           />
         ))}
       </div>
+      )}
 
       {/* Inline error from save */}
       {error && (
@@ -570,59 +734,97 @@ export default function MtdItReviewPhase({
         </div>
       )}
 
-      {/* Sticky save bar */}
+      {/* Sticky action bar — content varies by stage. Edit owns Save as draft
+          and Proceed to send; Send owns Compose email + step nav; Save owns
+          Save as draft / Save & complete. The save logic is shared across
+          stages so a status PATCH from any of them keeps things consistent. */}
       <div className="sticky bottom-0 z-10 -mx-6 px-6 py-3 mt-6 pointer-events-none">
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(720px,calc(100%-9rem))] mr-auto">
+        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(820px,calc(100%-9rem))] mr-auto">
           <button
-            onClick={onBackToSetup}
+            onClick={view === 'edit' ? onBackToSetup : view === 'send' ? onBackToReview : onBackToSend}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
           >
-            <ArrowLeft size={14} /> Back to setup
+            <ArrowLeft size={14} />
+            {view === 'edit' ? 'Back to setup' : view === 'send' ? 'Back to review' : 'Back to send'}
           </button>
           <div className="text-xs text-gray-500 hidden sm:block">
             {dirty
               ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Unsaved changes</span>
               : <span className="text-green-700">All saved</span>}
           </div>
-          <button
-            onClick={() => save('draft')}
-            disabled={saving !== null}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[var(--accent)] bg-[var(--accent-light)] hover:opacity-90 rounded-lg disabled:opacity-50"
-          >
-            {saving === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-            Save as draft
-          </button>
-          <button
-            onClick={() => save('complete')}
-            disabled={saving !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg disabled:opacity-50"
-          >
-            {saving === 'complete' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Save &amp; complete
-          </button>
-          {/* Send for approval — only enabled once the quarter has been
-              saved at least once. Save-while-dirty would change the figures
-              without the client seeing them. */}
-          <Tooltip
-            label={
-              dirty
-                ? 'Save your changes first so the client sees the final figures.'
-                : quarterStatus === 'approved'
-                  ? 'This quarter is already approved — re-sending will start a fresh approval cycle.'
-                  : 'Send the quarter to the client for approval.'
-            }
-          >
-            <button
-              onClick={() => triageActive ? void sendViaCompose() : setSendOpen(true)}
-              disabled={dirty || saving !== null || preparingSend}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white text-[var(--accent)] border border-[var(--accent)]/40 hover:bg-[var(--accent-light)] rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {preparingSend
-                ? <Loader2 size={14} className="animate-spin" />
-                : <Mail size={14} />}
-              {quarterStatus === 'sent' ? 'Re-send for approval' : quarterStatus === 'approved' ? 'Re-send (new cycle)' : 'Send for approval'}
-            </button>
-          </Tooltip>
+
+          {view === 'edit' && (
+            <>
+              <button
+                onClick={() => save('draft')}
+                disabled={saving !== null}
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[var(--accent)] bg-[var(--accent-light)] hover:opacity-90 rounded-lg disabled:opacity-50"
+              >
+                {saving === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save as draft
+              </button>
+              <Tooltip label="Save the current entries as a draft and continue to the Send to client stage. You'll preview the email there before anything goes out.">
+                <button
+                  onClick={async () => { if (dirty) await save('draft', { skipNav: true }); onProceedToSend(); }}
+                  disabled={saving !== null}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg disabled:opacity-50"
+                >
+                  {saving === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                  Continue to Send to Client
+                </button>
+              </Tooltip>
+            </>
+          )}
+
+          {view === 'send' && (
+            <>
+              <Tooltip label="Open the in-app compose window with the approval email template pre-filled, the client added as the recipient, and the approval-pack PDF attached.">
+                <button
+                  onClick={() => void sendViaCompose()}
+                  disabled={preparingSend}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg disabled:opacity-50"
+                >
+                  {preparingSend ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                  {quarterStatus === 'sent' || quarterStatus === 'approved' ? 'Compose new email' : 'Compose email'}
+                </button>
+              </Tooltip>
+              {/* Skip — matches the setup-phase fast-forward affordance:
+                  icon sits in a near-circle at rest, label slides out from
+                  the right on hover/focus. */}
+              <button
+                onClick={onProceedToSave}
+                aria-label="Skip to Save quarter"
+                title="Skip to Save quarter"
+                className="group inline-flex items-center h-9 pl-2.5 pr-2.5 text-sm text-gray-600 bg-white border border-gray-200 rounded-full hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shrink-0 overflow-hidden whitespace-nowrap"
+              >
+                <FastForward size={14} className="shrink-0" />
+                <span className="max-w-0 group-hover:max-w-[10rem] group-focus-visible:max-w-[10rem] overflow-hidden transition-[max-width] duration-200 ease-out">
+                  <span className="pl-2 pr-1">Skip to Save quarter</span>
+                </span>
+              </button>
+            </>
+          )}
+
+          {view === 'save' && (
+            <>
+              <button
+                onClick={() => save('draft')}
+                disabled={saving !== null}
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-[var(--accent)] bg-[var(--accent-light)] hover:opacity-90 rounded-lg disabled:opacity-50"
+              >
+                {saving === 'draft' ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save as draft
+              </button>
+              <button
+                onClick={() => save('complete')}
+                disabled={saving !== null}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg disabled:opacity-50"
+              >
+                {saving === 'complete' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                Save &amp; complete
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -740,6 +942,306 @@ export default function MtdItReviewPhase({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Approval status banner ────────────────────────────────────────────────
+// Small info card that appears on the review screen once an approval has
+// been sent. Surfaces who in the firm sent the email, when, the recipient,
+// and the client's response (approved / changes requested / outstanding).
+function ApprovalStatusBanner({
+  info, status,
+}: {
+  info: {
+    sent_at: string;
+    recipient_email: string | null;
+    approved_at: string | null;
+    changes_requested_at: string | null;
+    edited_since_approved_at: string | null;
+    sender: { full_name: string | null; email: string } | null;
+  };
+  status: 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+}) {
+  const sentBy   = info.sender?.full_name?.trim() || info.sender?.email || 'a team member';
+  const sentDate = formatDateTimeUk(info.sent_at);
+
+  // Tone shifts depending on where the approval is in its lifecycle.
+  // Tone palette intentionally mirrors the dashboard donut/status swatches so
+  // sky=Sent, violet=Approved, amber=needs-attention. Keep these in sync if
+  // those swatches ever shift.
+  const tone =
+    info.changes_requested_at      ? 'amber'  :
+    info.edited_since_approved_at  ? 'amber'  :
+    info.approved_at               ? 'violet' :
+                                     'sky';
+  const toneClass = {
+    sky:    'bg-sky-50 border-sky-200 text-sky-800',
+    violet: 'bg-violet-50 border-violet-200 text-violet-800',
+    amber:  'bg-amber-50 border-amber-200 text-amber-800',
+  }[tone];
+  const IconEl =
+    info.changes_requested_at     ? AlertTriangle :
+    info.edited_since_approved_at ? AlertTriangle :
+    info.approved_at              ? CheckCircle2  :
+                                    Mail;
+
+  let headline: React.ReactNode;
+  if (info.changes_requested_at) {
+    headline = <>Client requested changes on <strong>{formatDateTimeUk(info.changes_requested_at)}</strong></>;
+  } else if (info.approved_at) {
+    headline = <>Client approved on <strong>{formatDateTimeUk(info.approved_at)}</strong></>;
+  } else {
+    headline = <>Sent for approval on <strong>{sentDate}</strong></>;
+  }
+
+  return (
+    <div className={`flex items-start gap-2 px-3 py-2 rounded-lg border text-xs ${toneClass}`}>
+      <IconEl size={14} className="shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div>{headline}</div>
+        <div className="opacity-80 mt-0.5">
+          Sent by <strong>{sentBy}</strong>
+          {info.recipient_email && <> to <strong>{info.recipient_email}</strong></>}
+          {/* If this banner is showing the "approved" state, still show
+              the original send timestamp for full audit context. */}
+          {info.approved_at && info.sent_at !== info.approved_at && (
+            <> · originally sent {sentDate}</>
+          )}
+          {info.edited_since_approved_at && status === 'approved' && (
+            <> · <strong>edited since approval</strong> — consider re-sending</>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// dd-mm-yyyy HH:mm — used by the approval banner. Wraps the existing date
+// helper but tacks on the time portion since "sent at 14:32" is genuinely
+// more useful than just the calendar day for approval audit.
+function formatDateTimeUk(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return formatDateUk(iso);
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = String(d.getMonth() + 1).padStart(2, '0');
+  const yr  = d.getFullYear();
+  const hh  = String(d.getHours()).padStart(2, '0');
+  const mm  = String(d.getMinutes()).padStart(2, '0');
+  return `${day}-${mon}-${yr} ${hh}:${mm}`;
+}
+
+// ── Stage 4: Send-to-client preview ─────────────────────────────────────
+// Static landing card for the Send stage. The actual email contents are
+// previewable + editable in the compose window that opens when the user
+// hits the "Compose email" sticky-bar button — replicating exactly the
+// pre-existing send flow, just gated to its own wizard stage.
+function MtdItSendPreview({
+  clientEmail, clientName, clientRef, quarterStatus, quarterLabel, taxYearLabel,
+  attachPdf, onAttachPdfChange, onViewPdf, viewingPdf,
+  reminderSettings, approvalSentAt,
+}: {
+  quarterId: string;
+  clientId: string;
+  clientName: string;
+  clientRef: string | null;
+  clientEmail: string | null;
+  taxYear: number;
+  quarter: 1 | 2 | 3 | 4;
+  taxYearLabel: string;
+  quarterLabel: string;
+  quarterStatus: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  attachPdf: boolean;
+  onAttachPdfChange: (next: boolean) => void;
+  onViewPdf: () => void;
+  viewingPdf: boolean;
+  reminderSettings: { enabled: boolean; days: number } | null;
+  approvalSentAt: string | null;
+}) {
+  const alreadySent = quarterStatus === 'sent' || quarterStatus === 'approved' || quarterStatus === 'submitted';
+
+  // When did / will the reminder be sent? sent_at + reminder_days. Only
+  // meaningful while the quarter is still awaiting client response — once
+  // approved or changes have been requested the reminder cycle is over.
+  let reminderDateIso: string | null = null;
+  if (reminderSettings?.enabled && approvalSentAt && quarterStatus === 'sent') {
+    const sent = new Date(approvalSentAt);
+    if (!Number.isNaN(sent.getTime())) {
+      sent.setDate(sent.getDate() + reminderSettings.days);
+      reminderDateIso = sent.toISOString();
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2 flex items-center gap-1.5">
+          <Mail size={11} /> Approval email
+        </div>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6 text-sm">
+          <div>
+            <dt className="text-[11px] text-gray-500 uppercase tracking-wide">Recipient</dt>
+            <dd className="text-gray-900 mt-0.5">
+              {clientEmail
+                ? <>{clientName} &lt;<span className="font-mono">{clientEmail}</span>&gt;</>
+                : <span className="text-amber-700 inline-flex items-center gap-1"><AlertTriangle size={12} /> No email on file — add one on the client record first.</span>}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-gray-500 uppercase tracking-wide">Reference</dt>
+            <dd className="text-gray-900 mt-0.5">
+              {clientRef && <span className="font-mono mr-2">{clientRef}</span>}
+              {taxYearLabel} · {quarterLabel}
+            </dd>
+          </div>
+        </dl>
+
+        {/* Attachment controls — preview + toggle. The toggle defaults to on
+            so the typical case (send with PDF attached) is one click; flip
+            off if the firm doesn't want the PDF in this particular email. */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={onViewPdf}
+              disabled={viewingPdf}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--accent)] bg-[var(--accent-light)] hover:opacity-90 rounded-lg disabled:opacity-50"
+            >
+              {viewingPdf ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {viewingPdf ? 'Rendering…' : 'View PDF'}
+            </button>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={attachPdf}
+                onChange={e => onAttachPdfChange(e.target.checked)}
+                className="w-4 h-4 rounded accent-[var(--accent)]"
+              />
+              Attach approval-pack PDF to the email
+            </label>
+          </div>
+        </div>
+
+        <p className="mt-3 text-xs text-gray-600 leading-relaxed">
+          Clicking <strong>{alreadySent ? 'Compose new email' : 'Compose email'}</strong> opens the in-app
+          compose window with the firm&apos;s approval template pre-filled, the client
+          added as the recipient and to the email timeline
+          {attachPdf ? ', and the approval-pack PDF attached' : ' (no PDF will be attached)'}
+          . You can edit the subject and body before hitting <strong>Send</strong>.
+        </p>
+      </div>
+
+      {/* Reminder schedule — surfaced once the approval is out and the firm
+          has reminders enabled in settings. Honest: the cron worker that
+          actually sends the reminder isn't wired up yet, so this shows the
+          intended schedule rather than a confirmed delivery. */}
+      {reminderDateIso && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 flex items-start gap-2">
+          <Mail size={14} className="shrink-0 mt-0.5" />
+          <div>
+            <div>
+              Reminder scheduled for <strong>{formatDateTimeUk(reminderDateIso)}</strong>
+              {reminderSettings && <> ({reminderSettings.days} day{reminderSettings.days === 1 ? '' : 's'} after the initial email)</>}
+              .
+            </div>
+            <div className="text-[11px] opacity-80 mt-0.5">
+              If the client approves or requests changes before then, the reminder is cancelled automatically.
+            </div>
+          </div>
+        </div>
+      )}
+      {reminderSettings && !reminderSettings.enabled && quarterStatus === 'sent' && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-600">
+          Automatic reminders are disabled in firm settings — no follow-up email will go out.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Stage 5: Save quarter summary ───────────────────────────────────────
+// Read-only headline figures the user can sanity-check before committing
+// the quarter as a draft or marking it complete. Mirrors the totals shown
+// inside the per-stream column headers so the numbers match.
+function MtdItSaveSummary({
+  entries, streams, trades: _trades, properties: _properties, fxRates, consolidated, quarterStatus, dirty,
+}: {
+  quarterStatus: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  consolidated: boolean;
+  entries: EditorEntry[];
+  streams: MtdItStreams;
+  trades: MtdItTrade[];
+  properties: MtdItProperty[];
+  fxRates: Record<string, number>;
+  dirty: boolean;
+}) {
+  // GBP-equivalent total for an entry, mirroring the logic in MtdItQuarterPage
+  // / lib/mtdIt/pnl (we re-implement to avoid the heavier buildPnL dep here).
+  function toGbp(e: EditorEntry): number {
+    const gross = e.gross_amount || 0;
+    if (e.currency === 'GBP') return gross;
+    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
+    const rate = e.fx_rate ?? fxRates[e.currency];
+    return rate ? gross * rate : 0;
+  }
+  const active = (['sole','uk_rental','foreign_rental'] as const).filter(s => streams[s]);
+  const STREAM_LABEL: Record<MtdItStream, string> = { sole: 'Sole Trader', uk_rental: 'UK Rental', foreign_rental: 'Foreign Rental' };
+  const totals = active.map(s => {
+    const slice = entries.filter(e => e.stream === s);
+    const income  = slice.filter(e => e.entry_type === 'income').reduce((a, e) => a + toGbp(e), 0);
+    const expense = slice.filter(e => e.entry_type === 'expense').reduce((a, e) => a + toGbp(e), 0);
+    return { stream: s, income, expense, net: income - expense, count: slice.length };
+  });
+  const grossIncome  = totals.reduce((a, t) => a + t.income, 0);
+  const grossExpense = totals.reduce((a, t) => a + t.expense, 0);
+
+  return (
+    <div className="space-y-3">
+      {dirty && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg border bg-amber-50 border-amber-200 text-amber-800 text-xs">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          You have unsaved edits in Review. Save as draft to lock those changes in before completing the quarter.
+        </div>
+      )}
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Quarter summary</div>
+          <div className="text-[11px] text-gray-500">
+            Status: <span className="font-semibold text-gray-700">{quarterStatus.replace('_', ' ')}</span>
+            {consolidated && <span className="ml-3">· Consolidated reporting</span>}
+          </div>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
+              <th className="py-2 font-medium">Stream</th>
+              <th className="py-2 font-medium text-right">Entries</th>
+              <th className="py-2 font-medium text-right">Income</th>
+              <th className="py-2 font-medium text-right">Expense</th>
+              <th className="py-2 font-medium text-right">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {totals.map(t => (
+              <tr key={t.stream} className="border-b border-gray-50">
+                <td className="py-2 text-gray-900">{STREAM_LABEL[t.stream]}</td>
+                <td className="py-2 text-right text-gray-600">{t.count}</td>
+                <td className="py-2 text-right text-gray-900">{fmtMoneyGbp(t.income)}</td>
+                <td className="py-2 text-right text-gray-900">{fmtMoneyGbp(t.expense)}</td>
+                <td className="py-2 text-right font-medium text-gray-900">{fmtMoneyGbp(t.net)}</td>
+              </tr>
+            ))}
+            <tr>
+              <td className="py-2 font-semibold text-gray-900">Total</td>
+              <td className="py-2 text-right text-gray-600">{entries.length}</td>
+              <td className="py-2 text-right font-semibold text-gray-900">{fmtMoneyGbp(grossIncome)}</td>
+              <td className="py-2 text-right font-semibold text-gray-900">{fmtMoneyGbp(grossExpense)}</td>
+              <td className="py-2 text-right font-semibold text-gray-900">{fmtMoneyGbp(grossIncome - grossExpense)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

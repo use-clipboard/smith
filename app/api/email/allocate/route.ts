@@ -6,6 +6,11 @@ import { getRefreshedGmailClient, parseGmailMessage } from '@/lib/gmail';
 
 const AllocateSchema = z.object({
   threadId: z.string().min(1),
+  /** Gmail message id of the specific message being allocated. When set, the
+   *  allocation is recorded per-message so follow-up messages on an already-
+   *  allocated thread each get their own timeline entry. When absent, we
+   *  fall back to thread-level dedupe for backwards compatibility. */
+  messageId: z.string().optional(),
   subject: z.string(),
   snippet: z.string().optional().default(''),
   date: z.string().optional().default(''),
@@ -56,7 +61,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { threadId, subject, snippet, date, fromName, fromEmail, clientIds } = parsed.data;
+  const { threadId, messageId, subject, snippet, date, fromName, fromEmail, clientIds } = parsed.data;
   const supabase = createClient();
 
   // Fetch full thread from Gmail to get body, attachments, and addressing
@@ -108,14 +113,22 @@ export async function POST(req: NextRequest) {
   const results: { clientId: string; timelineEntryId: string }[] = [];
 
   for (const clientId of clientIds) {
-    // Check it isn't already allocated to this client
-    const { data: existing } = await supabase
+    // Dedupe scope: when a specific message_id is provided we only skip if
+    // *that exact message* has already been allocated to this client. That
+    // way a follow-up message on an already-allocated thread still creates
+    // its own timeline entry. When the caller didn't supply a message_id
+    // we keep the legacy thread-level behaviour to avoid creating an
+    // unbounded number of duplicates on re-allocate clicks.
+    let existingQuery = supabase
       .from('email_allocations')
       .select('id, timeline_entry_id')
       .eq('thread_id', threadId)
       .eq('client_id', clientId)
-      .eq('firm_id', ctx.firmId)
-      .single();
+      .eq('firm_id', ctx.firmId);
+    existingQuery = messageId
+      ? existingQuery.eq('message_id', messageId)
+      : existingQuery.is('message_id', null);
+    const { data: existing } = await existingQuery.maybeSingle();
 
     if (existing) {
       results.push({ clientId, timelineEntryId: existing.timeline_entry_id });
@@ -160,11 +173,13 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Store allocation record
+    // Store allocation record (per-message when caller supplied a messageId,
+    // otherwise a legacy thread-level row with message_id=NULL).
     await supabase.from('email_allocations').insert({
       firm_id: ctx.firmId,
       user_id: ctx.userId,
       thread_id: threadId,
+      message_id: messageId ?? null,
       client_id: clientId,
       timeline_entry_id: note.id,
       subject,
@@ -192,20 +207,24 @@ export async function DELETE(req: NextRequest) {
 
   const supabase = createClient();
 
-  // Delete timeline entry too
-  const { data: alloc } = await supabase
+  // Unallocate the whole thread+client pair: per-message rows mean there
+  // can be multiple timeline notes attached, so we have to clean up all of
+  // them rather than the single row the legacy code assumed.
+  const { data: allocs } = await supabase
     .from('email_allocations')
     .select('timeline_entry_id')
     .eq('thread_id', parsed.data.threadId)
     .eq('client_id', parsed.data.clientId)
-    .eq('firm_id', ctx.firmId)
-    .single();
+    .eq('firm_id', ctx.firmId);
 
-  if (alloc?.timeline_entry_id) {
+  const timelineIds = (allocs ?? [])
+    .map(a => a.timeline_entry_id)
+    .filter((id): id is string => !!id);
+  if (timelineIds.length > 0) {
     await supabase
       .from('client_timeline_notes')
       .delete()
-      .eq('id', alloc.timeline_entry_id);
+      .in('id', timelineIds);
   }
 
   await supabase

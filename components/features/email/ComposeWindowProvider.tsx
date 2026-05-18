@@ -44,6 +44,14 @@ export interface ComposeOpenContext {
    *  MTD IT approval pack). */
   defaultAttachments?: File[] | null;
   threadMessages?:     EmailMessage[] | null;
+  /** Resume editing an existing Gmail draft. When set, the compose modal
+   *  updates this draft on Save and deletes it after a successful Send. */
+  defaultDraftId?:     string | null;
+  /** Pre-fill BCC (used when opening a saved draft that had BCC recipients). */
+  defaultBcc?:         { name: string; email: string }[] | null;
+  /** Pre-fill the body HTML directly. Used when resuming a saved draft so we
+   *  bypass the reply/forward body builders entirely. */
+  defaultHtmlBody?:    string | null;
 }
 
 type Mode = 'closed' | 'open' | 'minimised';

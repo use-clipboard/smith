@@ -31,7 +31,7 @@ const BUCKET_STYLE: Record<Bucket, { label: string; fill: string; chip: string }
   draft:       { label: 'Draft',       fill: '#fcd34d', chip: 'bg-amber-300' },   // amber-300
   complete:    { label: 'Complete',    fill: '#86efac', chip: 'bg-green-300' },   // green-300
   sent:        { label: 'Sent',        fill: '#7dd3fc', chip: 'bg-sky-300'   },   // sky-300
-  approved:    { label: 'Approved',    fill: '#93c5fd', chip: 'bg-blue-300'  },   // blue-300
+  approved:    { label: 'Approved',    fill: '#c4b5fd', chip: 'bg-violet-300' },  // violet-300 — distinct from sky 'Sent'
   submitted:   { label: 'Submitted',   fill: '#9ca3af', chip: 'bg-gray-400' },    // gray-400
 };
 

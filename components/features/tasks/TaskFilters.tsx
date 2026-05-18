@@ -123,7 +123,7 @@ export default function TaskFilters({
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
         <input
           type="text"
-          placeholder="Search tasks…"
+          placeholder="Search task, client, or code…"
           value={search}
           onChange={e => onSearchChange(e.target.value)}
           className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md w-52 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"

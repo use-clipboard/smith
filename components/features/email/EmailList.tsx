@@ -44,6 +44,9 @@ interface Props {
   repliedThreadIds?: Map<string, string>;
   onBulkDelete?: (ids: string[]) => void;
   onBulkMarkRead?: (ids: string[]) => void;
+  /** Forward each selected thread as its own email (one Send call per thread,
+   *  attachments preserved). Returns success/failure totals for toast UX. */
+  onBulkForward?: (ids: string[], to: string[], cc: string[], note: string) => Promise<{ success: number; failed: number } | void>;
   /** Controlled: true = only unread emails are fetched server-side */
   unreadOnly: boolean;
   onUnreadOnlyChange: (v: boolean) => void;
@@ -60,7 +63,7 @@ interface Props {
 export default function EmailList({
   threads, activeThreadId, loading, error, threadMeta, searchQuery, onSearch,
   onSelect, onRefresh, onStar, onDelete, onMarkRead, hasNextPage, onLoadMore, loadingMore,
-  pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead,
+  pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead, onBulkForward,
   unreadOnly, onUnreadOnlyChange,
   taskLinkedOnly, onTaskLinkedOnlyChange,
   allocatedOnly, onAllocatedOnlyChange,
@@ -130,6 +133,51 @@ export default function EmailList({
     const ids = [...selectedIds];
     onBulkMarkRead?.(ids);
     clearSelection();
+  }
+
+  // Bulk-forward state: simple inline modal asking for recipient + optional
+  // note. On submit we hit /api/email/bulk-forward (one HTTP call, server
+  // fans out one send per thread) and surface a tiny success toast.
+  const [bulkForwardOpen, setBulkForwardOpen]   = useState(false);
+  const [forwardTo, setForwardTo]               = useState('');
+  const [forwardCc, setForwardCc]               = useState('');
+  const [forwardNote, setForwardNote]           = useState('');
+  const [forwarding, setForwarding]             = useState(false);
+  const [forwardError, setForwardError]         = useState<string | null>(null);
+  const [forwardToast, setForwardToast]         = useState<{ success: number; failed: number } | null>(null);
+  useEffect(() => {
+    if (!forwardToast) return;
+    const t = window.setTimeout(() => setForwardToast(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [forwardToast]);
+
+  async function handleBulkForward() {
+    setForwardError(null);
+    const to = forwardTo.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    const cc = forwardCc.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    if (to.length === 0) {
+      setForwardError('Enter at least one recipient email.');
+      return;
+    }
+    if (!onBulkForward) {
+      setForwardError('Forwarding is not available.');
+      return;
+    }
+    setForwarding(true);
+    try {
+      const ids = [...selectedIds];
+      const out = await onBulkForward(ids, to, cc, forwardNote);
+      if (out) setForwardToast(out);
+      setBulkForwardOpen(false);
+      setForwardTo('');
+      setForwardCc('');
+      setForwardNote('');
+      clearSelection();
+    } catch (e) {
+      setForwardError(e instanceof Error ? e.message : 'Forward failed');
+    } finally {
+      setForwarding(false);
+    }
   }
 
   return (
@@ -330,6 +378,17 @@ export default function EmailList({
               <MailOpen size={13} />
             </button>
           </Tooltip>
+          {onBulkForward && (
+            <Tooltip label="Forward each as a separate email">
+              <button
+                onClick={() => setBulkForwardOpen(true)}
+                aria-label="Forward selected"
+                className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+              >
+                <Forward size={13} />
+              </button>
+            </Tooltip>
+          )}
           <Tooltip label="Delete selected">
             <button
               onClick={handleBulkDelete}
@@ -609,6 +668,99 @@ export default function EmailList({
           </>
         )}
       </div>
+
+      {/* Bulk-forward modal — recipient + optional note. Forwards each
+          selected thread as its own separate email with attachments. */}
+      {bulkForwardOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !forwarding && setBulkForwardOpen(false)}>
+          <div className="bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-[var(--border)] flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                  Forward {selectedIds.size} email{selectedIds.size === 1 ? '' : 's'}
+                </h3>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Each selected email is sent as its own forwarded message with all attachments.
+                </p>
+              </div>
+              <button
+                onClick={() => !forwarding && setBulkForwardOpen(false)}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-[var(--text-muted)] mb-1">To</label>
+                <input
+                  type="text"
+                  value={forwardTo}
+                  onChange={e => setForwardTo(e.target.value)}
+                  placeholder="name@example.com (comma-separated for multiple)"
+                  className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-[var(--bg-page)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-[var(--text-muted)] mb-1">CC (optional)</label>
+                <input
+                  type="text"
+                  value={forwardCc}
+                  onChange={e => setForwardCc(e.target.value)}
+                  placeholder="cc@example.com"
+                  className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-[var(--bg-page)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] uppercase tracking-wide text-[var(--text-muted)] mb-1">Note (optional)</label>
+                <textarea
+                  value={forwardNote}
+                  onChange={e => setForwardNote(e.target.value)}
+                  placeholder="Prepended to each forwarded email."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-[var(--border)] rounded-lg bg-[var(--bg-page)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30 resize-none"
+                />
+              </div>
+              {forwardError && (
+                <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={11} /> {forwardError}</p>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-[var(--border)] flex justify-end gap-2 bg-[var(--bg-page)]">
+              <button
+                onClick={() => !forwarding && setBulkForwardOpen(false)}
+                disabled={forwarding}
+                className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] rounded-lg disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkForward}
+                disabled={forwarding}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-[var(--accent)] text-white rounded-lg hover:opacity-90 disabled:opacity-60"
+              >
+                {forwarding ? <Loader2 size={12} className="animate-spin" /> : <Forward size={12} />}
+                Forward {selectedIds.size}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post-forward toast */}
+      {forwardToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg px-4 py-3 flex items-center gap-2 max-w-sm">
+          <Forward size={16} className={forwardToast.failed > 0 ? 'text-amber-500' : 'text-emerald-500'} />
+          <div className="text-sm text-[var(--text-primary)]">
+            {forwardToast.success > 0 && (
+              <>Forwarded <strong>{forwardToast.success}</strong> email{forwardToast.success === 1 ? '' : 's'}</>
+            )}
+            {forwardToast.failed > 0 && (
+              <span className="text-amber-700"> · {forwardToast.failed} failed</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

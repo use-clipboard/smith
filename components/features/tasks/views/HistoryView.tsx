@@ -117,7 +117,7 @@ export default function HistoryView() {
               type="text"
               placeholder={isAudit
                 ? 'Search audit by task, client, code, or user…'
-                : 'Search by task, client name, or code…'}
+                : 'Search task, client, or code…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-80"

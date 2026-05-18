@@ -46,7 +46,11 @@ export default function MyTasksView({ tasks, currentUserId, search, onSearchChan
     return tasks.filter(t => {
       const isMine = t.created_by === currentUserId || t.steps?.some(s => s.assignee_id === currentUserId);
       if (!isMine) return false;
-      if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
+      if (search) {
+        const needle = search.toLowerCase();
+        const hay = `${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (clientFilter === 'internal' && !t.is_internal) return false;
       if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;

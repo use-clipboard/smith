@@ -9,6 +9,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/cron/mtd-it-reminders",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/cron/timeout-conditions",
       "schedule": "0 9 * * *"
     },

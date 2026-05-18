@@ -194,7 +194,10 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     .map(id => NAV_ITEM_BY_ID.get(id))
     .filter((item): item is NavItem => {
       if (!item) return false;
-      if (item.moduleId === 'dashboard' || item.moduleId === 'settings' || item.moduleId === 'help') return false;
+      // Dashboard/Settings/Help/Community are workspace utilities — they
+      // always live in their fixed workspace slot, not the favourites list,
+      // so the relative order Help → Community → Settings stays predictable.
+      if (item.moduleId === 'dashboard' || item.moduleId === 'settings' || item.moduleId === 'help' || item.moduleId === 'community') return false;
       if (WORKSPACE_MODULE_IDS.has(item.moduleId)) return true; // clients etc. always active
       return isModuleActive(item.moduleId);
     });
@@ -442,17 +445,24 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
     const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`;
 
     if (collapsed) {
+      // Wrap in a block-level div so the workspace icons stack vertically.
+      // Tooltip's outer element is inline-flex, so without this wrapper two
+      // narrow icons (Help + Community) flow side-by-side in the 64px nav
+      // rather than each taking its own row — matches what renderToolItem
+      // already does for tool icons.
       return (
-        <Tooltip key={item.href} label={item.label} side="right">
-          <Link
-            href={item.href}
-            onClick={() => handleNavClick(item)}
-            aria-label={item.label}
-            className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
-          >
-            <Icon size={18} className={iconClass} />
-          </Link>
-        </Tooltip>
+        <div key={item.href}>
+          <Tooltip label={item.label} side="right">
+            <Link
+              href={item.href}
+              onClick={() => handleNavClick(item)}
+              aria-label={item.label}
+              className={`flex items-center justify-center w-full h-11 rounded-lg transition-all duration-150 group ${colorClass}`}
+            >
+              <Icon size={18} className={iconClass} />
+            </Link>
+          </Tooltip>
+        </div>
       );
     }
 

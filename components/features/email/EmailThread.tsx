@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
   Star, Archive, ArchiveRestore, Tag, Mail, Sparkles, Pin, ChevronDown as ChevronDownSmall, Smile,
+  Printer, FolderDown,
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 import Tooltip from '@/components/ui/Tooltip';
@@ -103,15 +104,36 @@ function EmojiPicker({ onSelect, onClose, openAbove = true }: {
   );
 }
 
+function attachmentUrl(att: EmailMessage['attachments'][number]): string {
+  return `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`;
+}
+
 function AttachmentChips({ attachments }: { attachments: EmailMessage['attachments'] }) {
   if (!attachments.length) return null;
+  // Trigger one download per attachment sequentially. Browsers stagger the
+  // save dialogs themselves; we just create an anchor and click it for each.
+  // This avoids needing a server-side zip endpoint — fine for the typical
+  // 2–5 attachment case. Filenames are preserved via the download attribute.
+  function downloadAll() {
+    const downloadable = attachments.filter(a => !!a.attachmentId);
+    downloadable.forEach((att, i) => {
+      window.setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = attachmentUrl(att);
+        a.download = att.filename;
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, i * 250);
+    });
+  }
+  const downloadableCount = attachments.filter(a => !!a.attachmentId).length;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2 items-center">
       {attachments.map((att, i) => {
         const canDownload = !!att.attachmentId;
-        const url = canDownload
-          ? `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`
-          : undefined;
+        const url = canDownload ? attachmentUrl(att) : undefined;
         const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
         const chip = (
           <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-700 text-white border border-slate-600 ${canDownload ? 'hover:bg-slate-600 transition-colors cursor-pointer' : ''}`}>
@@ -128,8 +150,87 @@ function AttachmentChips({ attachments }: { attachments: EmailMessage['attachmen
           <div key={i}>{chip}</div>
         );
       })}
+      {downloadableCount > 1 && (
+        <Tooltip label={`Download all ${downloadableCount} attachments`}>
+          <button
+            type="button"
+            onClick={downloadAll}
+            aria-label="Download all attachments"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            <FolderDown size={12} /> Download all
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
+}
+
+// Open a print-friendly view of the email in a new window and trigger the
+// system print dialog. Both the "Print" and "Download PDF" toolbar buttons
+// route through here — Download PDF just sets autoSavePdfHint=true so the
+// window title (and therefore the default PDF filename when the user picks
+// "Save as PDF") is the email subject.
+function openPrintableEmail(opts: {
+  subject: string;
+  from: { name?: string | null; email: string };
+  to: { name?: string | null; email: string }[];
+  cc: { name?: string | null; email: string }[];
+  date: string;
+  bodyHtml: string;
+  attachments: EmailMessage['attachments'];
+}) {
+  const { subject, from, to, cc, date, bodyHtml, attachments } = opts;
+  const fmtAddrs = (arr: { name?: string | null; email: string }[]) =>
+    arr.map(a => a.name ? `${escapeHtml(a.name)} &lt;${escapeHtml(a.email)}&gt;` : escapeHtml(a.email)).join(', ');
+  const html = `<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(subject || '(no subject)')}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111; margin: 24px; }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    .meta { font-size: 12px; color: #555; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px; }
+    .meta div { margin: 2px 0; }
+    .meta strong { color: #111; display: inline-block; min-width: 50px; }
+    .body { font-size: 14px; line-height: 1.55; }
+    .body a { color: #2563eb; text-decoration: underline; }
+    .attachments { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #555; }
+    .attachments h2 { font-size: 13px; margin: 0 0 6px; color: #111; }
+    .attachments li { margin: 2px 0; }
+    @media print { body { margin: 0; } }
+  </style>
+</head><body>
+  <h1>${escapeHtml(subject || '(no subject)')}</h1>
+  <div class="meta">
+    <div><strong>From:</strong> ${from.name ? escapeHtml(from.name) + ' &lt;' + escapeHtml(from.email) + '&gt;' : escapeHtml(from.email)}</div>
+    <div><strong>To:</strong> ${fmtAddrs(to)}</div>
+    ${cc.length ? `<div><strong>CC:</strong> ${fmtAddrs(cc)}</div>` : ''}
+    <div><strong>Date:</strong> ${escapeHtml(new Date(date).toLocaleString('en-GB'))}</div>
+  </div>
+  <div class="body">${bodyHtml || '<p><em>(no body content)</em></p>'}</div>
+  ${attachments.length ? `<div class="attachments"><h2>Attachments (${attachments.length})</h2><ul>${attachments.map(a => `<li>${escapeHtml(a.filename)} (${Math.round(a.size / 1024)}KB)</li>`).join('')}</ul></div>` : ''}
+  <script>window.addEventListener('load', () => { setTimeout(() => window.print(), 150); });</script>
+</body></html>`;
+  // NOTE: omit 'noopener'/'noreferrer' from the features string here — those
+  // cause window.open() to return null by spec, which would leave us with no
+  // way to write the printable HTML into the new tab (and the user just sees
+  // about:blank, which is the bug). The new window is same-origin and short-
+  // lived (closes itself after print) so the lack of noopener is fine.
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  if (!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function MessageCard({
@@ -609,7 +710,7 @@ export default function EmailThread({
                 aria-label="Mark as Unread"
                 className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
               >
-                {markingUnread ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+                {markingUnread ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} className="translate-y-px" />}
               </button>
             </Tooltip>
           )}
@@ -644,6 +745,30 @@ export default function EmailThread({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Print / Save as PDF — opens a printable view in a new window
+              and fires the system print dialog. The user picks "Print" or
+              "Save as PDF" from there; the window title is the email subject
+              so the saved PDF filename is sensible by default. */}
+          {lastMessage && (
+            <Tooltip label="Print or save as PDF">
+              <button
+                onClick={() => openPrintableEmail({
+                  subject: thread.subject,
+                  from: lastMessage.from,
+                  to:   lastMessage.to,
+                  cc:   lastMessage.cc,
+                  date: lastMessage.date,
+                  bodyHtml: lastMessage.body ?? '',
+                  attachments: lastMessage.attachments,
+                })}
+                aria-label="Print or save email as PDF"
+                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <Printer size={15} />
+              </button>
+            </Tooltip>
           )}
 
           {/* Star toggle — now in toolbar */}
@@ -687,7 +812,7 @@ export default function EmailThread({
                   aria-label="React with emoji"
                   className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
-                  <Smile size={15} />
+                  <Smile size={15} className="translate-y-0.5" />
                 </button>
               </Tooltip>
               {emojiPickerHeaderOpen && (

@@ -60,7 +60,7 @@ function MiniSquare({ status, editedAfterApproval }: { status: MtdItQuarterStatu
     draft:     { bg: 'bg-amber-100 border-amber-300',  icon: <Pencil className="w-2 h-2 text-amber-600" strokeWidth={3} />, label: 'Draft' },
     complete:  { bg: 'bg-green-100 border-green-300',  icon: <Check className="w-2 h-2 text-green-700" strokeWidth={4} />,   label: 'Complete' },
     sent:      { bg: 'bg-sky-100 border-sky-300',      icon: <Mail className="w-2 h-2 text-sky-700" strokeWidth={3} />,      label: 'Sent to client' },
-    approved:  { bg: 'bg-blue-100 border-blue-300',    icon: <CheckCircle2 className="w-2 h-2 text-blue-700" strokeWidth={3} />, label: 'Approved' },
+    approved:  { bg: 'bg-violet-100 border-violet-300', icon: <CheckCircle2 className="w-2 h-2 text-violet-700" strokeWidth={3} />, label: 'Approved' },
     submitted: { bg: 'bg-gray-200 border-gray-400',    icon: <Lock className="w-2 h-2 text-gray-700" strokeWidth={3} />,     label: 'Submitted' },
   };
   const s = map[status];
@@ -91,7 +91,7 @@ function BigSquare({
     draft:     { bg: 'bg-amber-50',      border: 'border-amber-300', icon: <Pencil className="w-4 h-4 text-amber-600" />,                       ring: 'hover:ring-2 hover:ring-amber-300' },
     complete:  { bg: 'bg-green-50',      border: 'border-green-300', icon: <Check className="w-5 h-5 text-green-700" strokeWidth={3} />,        ring: 'hover:ring-2 hover:ring-green-300' },
     sent:      { bg: 'bg-sky-50',        border: 'border-sky-300',   icon: <Mail className="w-4 h-4 text-sky-700" />,                           ring: 'hover:ring-2 hover:ring-sky-300' },
-    approved:  { bg: 'bg-blue-50',       border: 'border-blue-300',  icon: <CheckCircle2 className="w-5 h-5 text-blue-700" strokeWidth={2.5} />, ring: 'hover:ring-2 hover:ring-blue-300' },
+    approved:  { bg: 'bg-violet-50',     border: 'border-violet-300', icon: <CheckCircle2 className="w-5 h-5 text-violet-700" strokeWidth={2.5} />, ring: 'hover:ring-2 hover:ring-violet-300' },
     submitted: { bg: 'bg-gray-100',      border: 'border-gray-400',  icon: <Lock className="w-4 h-4 text-gray-700" />,                          ring: 'hover:ring-2 hover:ring-gray-300' },
   };
   const key: Exclude<MtdItQuarterStatus, 'not_started'> | 'empty' = (!status || status === 'not_started') ? 'empty' : status;

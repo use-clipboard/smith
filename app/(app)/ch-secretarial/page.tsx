@@ -122,6 +122,17 @@ export default function CHSecretarialPage() {
   const [sortField, setSortField] = useState<CHSortField>('companyName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [search, setSearch] = useState('');
+  // Status-band filter — null = no filter. Cycling the same value off via the
+  // panel click toggles it back to null. Keyed on `${metric}_${band}` so each
+  // panel maps to a single filter token.
+  type MetricFilter =
+    | null
+    | 'accounts_overdue' | 'accounts_soon'
+    | 'cs_overdue'       | 'cs_soon'
+    | 'officer_idv_overdue' | 'officer_idv_soon'
+    | 'psc_idv_overdue'  | 'psc_idv_soon';
+  const [metricFilter, setMetricFilter] = useState<MetricFilter>(null);
+  const [statsCollapsed, setStatsCollapsed] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<CHSortField>>(
     new Set(CH_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
   );
@@ -452,7 +463,9 @@ export default function CHSecretarialPage() {
     }).catch(() => {});
   }, [sourceMode, clientNumbers, customNumbers]);
 
-  // Derived: filter + sort
+  // Derived: filter + sort. metricFilter narrows to a specific status band
+  // (overdue vs due-soon) for one of the four headline metrics so the user
+  // can click a stat panel and instantly see only the matching companies.
   const filteredCompanies = useMemo(() => {
     let list = companies;
     if (search.trim()) {
@@ -462,8 +475,25 @@ export default function CHSecretarialPage() {
         c.companyNumber.toLowerCase().includes(q)
       );
     }
+    if (metricFilter) {
+      const soon = (date: string | null, overdue: boolean) => {
+        if (overdue) return false;
+        const d = daysUntil(date);
+        return d !== null && d >= 0 && d <= 31;
+      };
+      switch (metricFilter) {
+        case 'accounts_overdue':     list = list.filter(c => c.accountsOverdue); break;
+        case 'accounts_soon':        list = list.filter(c => soon(c.accountsNextDue, c.accountsOverdue)); break;
+        case 'cs_overdue':           list = list.filter(c => c.csOverdue); break;
+        case 'cs_soon':              list = list.filter(c => soon(c.csNextDue, c.csOverdue)); break;
+        case 'officer_idv_overdue':  list = list.filter(c => c.officersIdvOverdueCount > 0); break;
+        case 'officer_idv_soon':     list = list.filter(c => c.officersIdvOverdueCount === 0 && soon(c.nearestOfficerIdvDue, false)); break;
+        case 'psc_idv_overdue':      list = list.filter(c => c.pscIdvOverdueCount > 0); break;
+        case 'psc_idv_soon':         list = list.filter(c => c.pscIdvOverdueCount === 0 && soon(c.nearestPscIdvDue, false)); break;
+      }
+    }
     return sortCompanies(list, sortField, sortDir);
-  }, [companies, search, sortField, sortDir]);
+  }, [companies, search, metricFilter, sortField, sortDir]);
 
   function toggleSort(field: CHSortField) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -489,11 +519,23 @@ export default function CHSecretarialPage() {
   const activeCols = CH_COLUMNS.filter(c => visibleCols.has(c.key));
   const activeNumbers = sourceMode === 'clients' ? clientNumbers : customNumbers;
 
-  // Summary counts
-  const overdueAccounts = companies.filter(c => c.accountsOverdue).length;
-  const overdueCS = companies.filter(c => c.csOverdue).length;
-  const overdueOfficerIdv = companies.filter(c => c.officersIdvOverdueCount > 0).length;
-  const overduePscIdv = companies.filter(c => c.pscIdvOverdueCount > 0).length;
+  // Summary counts. "Soon" means due within 31 days AND not already overdue
+  // — matches the amber band used by DueDateCell so the panel counts line up
+  // visually with the table badges.
+  const SOON_DAYS = 31;
+  function withinSoon(dateStr: string | null, overdue: boolean): boolean {
+    if (overdue) return false;
+    const d = daysUntil(dateStr);
+    return d !== null && d >= 0 && d <= SOON_DAYS;
+  }
+  const overdueAccounts    = companies.filter(c => c.accountsOverdue).length;
+  const overdueCS          = companies.filter(c => c.csOverdue).length;
+  const overdueOfficerIdv  = companies.filter(c => c.officersIdvOverdueCount > 0).length;
+  const overduePscIdv      = companies.filter(c => c.pscIdvOverdueCount > 0).length;
+  const soonAccounts       = companies.filter(c => withinSoon(c.accountsNextDue, c.accountsOverdue)).length;
+  const soonCS             = companies.filter(c => withinSoon(c.csNextDue, c.csOverdue)).length;
+  const soonOfficerIdv     = companies.filter(c => c.officersIdvOverdueCount === 0 && withinSoon(c.nearestOfficerIdvDue, false)).length;
+  const soonPscIdv         = companies.filter(c => c.pscIdvOverdueCount === 0 && withinSoon(c.nearestPscIdvDue, false)).length;
 
   return (
     <ToolLayout
@@ -810,20 +852,107 @@ export default function CHSecretarialPage() {
           </div>
         )}
 
-        {/* Summary stats */}
+        {/* Summary stats — collapsible. Two rows: red (overdue) and amber
+            (due within 31 days). Each panel is a button that toggles the
+            metricFilter to its bucket; clicking the active panel again
+            clears the filter. */}
         {companies.length > 0 && !loading && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: 'Accounts Overdue', count: overdueAccounts, color: overdueAccounts > 0 ? 'red' : 'green' },
-              { label: 'CS Overdue', count: overdueCS, color: overdueCS > 0 ? 'red' : 'green' },
-              { label: 'Officers IDV Overdue', count: overdueOfficerIdv, color: overdueOfficerIdv > 0 ? 'red' : 'green' },
-              { label: 'PSCs IDV Overdue', count: overduePscIdv, color: overduePscIdv > 0 ? 'red' : 'green' },
-            ].map(({ label, count, color }) => (
-              <div key={label} className={`rounded-xl border p-3 text-center ${color === 'red' ? 'border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800' : 'border-emerald-200 bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-800'}`}>
-                <p className={`text-2xl font-bold ${color === 'red' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{count}</p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">{label}</p>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setStatsCollapsed(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--bg-nav-hover)] transition-colors"
+              aria-expanded={!statsCollapsed}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)]">
+                Status overview
+                {metricFilter && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide bg-[var(--accent-light)] text-[var(--accent)]">
+                    Filter active
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={e => { e.stopPropagation(); setMetricFilter(null); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setMetricFilter(null); } }}
+                      className="ml-0.5 hover:text-[var(--text-primary)] cursor-pointer"
+                      aria-label="Clear filter"
+                    >
+                      <X size={10} />
+                    </span>
+                  </span>
+                )}
               </div>
-            ))}
+              <ChevronDown
+                size={16}
+                className={`text-[var(--text-muted)] transition-transform ${statsCollapsed ? '' : 'rotate-180'}`}
+              />
+            </button>
+            {!statsCollapsed && (
+              <div className="px-4 pb-4 pt-1 border-t border-[var(--border)] space-y-3">
+                {/* Row 1 — overdue (red) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {([
+                    { label: 'Accounts Overdue',      count: overdueAccounts,   filter: 'accounts_overdue'    },
+                    { label: 'CS Overdue',            count: overdueCS,         filter: 'cs_overdue'          },
+                    { label: 'Officers IDV Overdue',  count: overdueOfficerIdv, filter: 'officer_idv_overdue' },
+                    { label: 'PSCs IDV Overdue',      count: overduePscIdv,     filter: 'psc_idv_overdue'     },
+                  ] as { label: string; count: number; filter: MetricFilter }[]).map(({ label, count, filter }) => {
+                    const isActive = metricFilter === filter;
+                    const hasItems = count > 0;
+                    // Empty panels stay green; non-empty panels read red, with
+                    // an extra accent ring when they're the active filter.
+                    const tone = hasItems
+                      ? 'border-red-200 bg-red-50 hover:bg-red-100/70 dark:bg-red-900/10 dark:border-red-800'
+                      : 'border-emerald-200 bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-800';
+                    const ring = isActive ? 'ring-2 ring-[var(--accent)]' : '';
+                    const numCol = hasItems ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400';
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        disabled={!hasItems}
+                        onClick={() => setMetricFilter(prev => prev === filter ? null : filter)}
+                        aria-pressed={isActive}
+                        className={`rounded-xl border p-3 text-center transition-all ${tone} ${ring} ${hasItems ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
+                      >
+                        <p className={`text-2xl font-bold ${numCol}`}>{count}</p>
+                        <p className="text-xs text-[var(--text-muted)] mt-0.5">{label}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Row 2 — due within 31 days (amber) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {([
+                    { label: 'Accounts Due ≤ 31d',     count: soonAccounts,   filter: 'accounts_soon'     },
+                    { label: 'CS Due ≤ 31d',           count: soonCS,         filter: 'cs_soon'           },
+                    { label: 'Officers IDV ≤ 31d',     count: soonOfficerIdv, filter: 'officer_idv_soon'  },
+                    { label: 'PSCs IDV ≤ 31d',         count: soonPscIdv,     filter: 'psc_idv_soon'      },
+                  ] as { label: string; count: number; filter: MetricFilter }[]).map(({ label, count, filter }) => {
+                    const isActive = metricFilter === filter;
+                    const hasItems = count > 0;
+                    const tone = hasItems
+                      ? 'border-amber-200 bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-900/10 dark:border-amber-800'
+                      : 'border-[var(--border)] bg-[var(--bg-page)]';
+                    const ring = isActive ? 'ring-2 ring-[var(--accent)]' : '';
+                    const numCol = hasItems ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--text-muted)]';
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        disabled={!hasItems}
+                        onClick={() => setMetricFilter(prev => prev === filter ? null : filter)}
+                        aria-pressed={isActive}
+                        className={`rounded-xl border p-3 text-center transition-all ${tone} ${ring} ${hasItems ? 'cursor-pointer' : 'cursor-default opacity-90'}`}
+                      >
+                        <p className={`text-2xl font-bold ${numCol}`}>{count}</p>
+                        <p className="text-xs text-[var(--text-muted)] mt-0.5">{label}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

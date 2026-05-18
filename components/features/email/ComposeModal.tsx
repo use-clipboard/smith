@@ -48,6 +48,14 @@ interface Props {
   defaultSubject?: string | null;
   /** Pre-attach files on a fresh compose (e.g. an MTD IT approval-pack PDF). */
   defaultAttachments?: File[] | null;
+  /** Resume editing a saved Gmail draft — the modal updates this draft on
+   *  Save Draft and deletes it after a successful Send. */
+  defaultDraftId?:     string | null;
+  /** Pre-fill BCC (e.g. when resuming a saved draft with BCC recipients). */
+  defaultBcc?:         { name: string; email: string }[] | null;
+  /** Pre-fill the body HTML verbatim — used when resuming a draft so we
+   *  skip the reply/forward body builders that would otherwise overwrite it. */
+  defaultHtmlBody?:    string | null;
   /** Full thread messages for the "show quoted thread" panel (reply mode only) */
   threadMessages?: EmailMessage[] | null;
   signature: string | null;
@@ -201,6 +209,104 @@ function RecipientInput({
   );
 }
 
+// ── Tiny inline auto-correct ────────────────────────────────────────────────
+// Fires on each keystroke in the body editor. When the user types a word-
+// boundary character (space, punctuation, newline) we look at the word that
+// just terminated and, if it matches a rule, swap it in-place. The selection
+// is restored afterwards so the cursor doesn't jump.
+//
+// Deliberately conservative: only the "i / I" capitalisation and the safe
+// contractions where the apostrophe-less form is essentially always wrong
+// (dont, youre, im, etc.). Ambiguous words like "its" / "well" / "were" /
+// "hes" are NOT in the list because they have valid non-contracted meanings.
+const AUTOCORRECT_RULES: Record<string, string> = {
+  i:           'I',
+  im:          "I'm",
+  ive:         "I've",
+  ill:         "I'll",
+  id:          "I'd",
+  youre:       "you're",
+  youve:       "you've",
+  youll:       "you'll",
+  youd:        "you'd",
+  weve:        "we've",
+  well:        "we'll", // intentionally NOT mapped — "well" has other meanings
+  theyre:      "they're",
+  theyve:      "they've",
+  theyll:      "they'll",
+  theyd:       "they'd",
+  dont:        "don't",
+  doesnt:      "doesn't",
+  didnt:       "didn't",
+  wont:        "won't",
+  cant:        "can't",
+  isnt:        "isn't",
+  arent:       "aren't",
+  wasnt:       "wasn't",
+  werent:      "weren't",
+  hasnt:       "hasn't",
+  havent:      "haven't",
+  hadnt:       "hadn't",
+  wouldnt:     "wouldn't",
+  couldnt:     "couldn't",
+  shouldnt:    "shouldn't",
+  mustnt:      "mustn't",
+  thats:       "that's",
+  whats:       "what's",
+  wheres:      "where's",
+  whens:       "when's",
+  hows:        "how's",
+  whos:        "who's",
+  lets:        "let's",
+};
+// Remove the ambiguous "well" entry from the rule set on load — kept above
+// only as a breadcrumb so future me doesn't re-add it without thinking.
+delete AUTOCORRECT_RULES.well;
+
+function applyAutoCorrectRule(matched: string): string | null {
+  const rule = AUTOCORRECT_RULES[matched.toLowerCase()];
+  if (!rule) return null;
+  // Rules starting uppercase (the I-words) are used verbatim regardless of
+  // how the user typed it — "im", "Im", "IM" all become "I'm".
+  if (/^[A-Z]/.test(rule)) return rule;
+  // Otherwise preserve the casing of the first letter the user typed.
+  if (/^[A-Z]/.test(matched)) return rule.charAt(0).toUpperCase() + rule.slice(1);
+  return rule;
+}
+
+function runAutoCorrect(root: HTMLElement): void {
+  const sel = root.ownerDocument.defaultView?.getSelection?.();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
+  const range  = sel.getRangeAt(0);
+  const node   = range.startContainer;
+  // We only operate on text nodes that live inside the editor.
+  if (node.nodeType !== Node.TEXT_NODE || !root.contains(node)) return;
+  const text   = node.textContent ?? '';
+  const caret  = range.startOffset;
+  if (caret < 2) return;
+  // The character immediately before the caret should be the word delimiter
+  // that *just* got inserted. We don't want to autocorrect mid-word.
+  const delim  = text[caret - 1];
+  if (!/[\s.,!?;:)\]"]/.test(delim)) return;
+  // Walk back from the delimiter to find the start of the preceding word.
+  let wordEnd   = caret - 1;
+  let wordStart = wordEnd;
+  while (wordStart > 0 && /[A-Za-z]/.test(text[wordStart - 1])) wordStart--;
+  if (wordStart === wordEnd) return;
+  const word        = text.slice(wordStart, wordEnd);
+  const replacement = applyAutoCorrectRule(word);
+  if (!replacement || replacement === word) return;
+  node.textContent = text.slice(0, wordStart) + replacement + text.slice(wordEnd);
+  // Restore the caret to the same logical position (after the delimiter).
+  const delta     = replacement.length - word.length;
+  const newOffset = caret + delta;
+  const newRange  = root.ownerDocument.createRange();
+  newRange.setStart(node, Math.min(newOffset, node.textContent.length));
+  newRange.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(newRange);
+}
+
 function FmtBtn({ title, onActivate, children }: {
   title: string;
   onActivate: () => void;
@@ -222,6 +328,7 @@ function FmtBtn({ title, onActivate, children }: {
 export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
   defaultSubject, defaultAttachments,
+  defaultDraftId, defaultBcc, defaultHtmlBody,
   threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
   onMinimise, initialSnapshot,
 }: Props) {
@@ -234,6 +341,10 @@ export default function ComposeModal({
   const [sending, setSending] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
+  // Tracks the Gmail draft id when this compose window is editing a saved
+  // draft (or after the user hits Save Draft once). Resaves update the same
+  // draft instead of creating duplicates; Send deletes it on success.
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [suggestingReply, setSuggestingReply] = useState(false);
   const [rewriting, setRewriting] = useState(false);
@@ -242,6 +353,10 @@ export default function ComposeModal({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [fetchingAttachments, setFetchingAttachments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Drag-over UI state. Tracked as a counter rather than a boolean because
+  // dragenter/dragleave fire for every child element the cursor crosses, so
+  // a naive boolean would flicker as the user moves over the editor / inputs.
+  const [dragDepth, setDragDepth] = useState(0);
 
   // Formatting colour picker
   const [colorOpen, setColorOpen] = useState(false);
@@ -286,8 +401,14 @@ export default function ComposeModal({
   }, [emojiPickerOpen]);
 
   function fmt(command: string, value?: string) {
-    document.execCommand(command, false, value);
+    // execCommand operates on the active selection — so the editor must have
+    // focus BEFORE the command runs. Toolbar buttons use onMouseDown +
+    // preventDefault to avoid stealing focus, but on the very first click
+    // (before the user has placed a caret in the body) there's no selection
+    // at all and commands like insertUnorderedList silently no-op. Focusing
+    // first guarantees there's a caret to operate on.
     bodyRef.current?.focus();
+    document.execCommand(command, false, value);
   }
 
   function buildInitialBody(replyMsg: typeof replyTo, aiBody?: string | null, fwdMsg?: typeof forwardOf): string {
@@ -374,15 +495,27 @@ export default function ComposeModal({
       setSubject(defaultSubject ?? '');
       setAttachedFiles(defaultAttachments ?? []);
     }
-    setBcc([]); setShowBcc(false);
+    setBcc(defaultBcc ?? []); setShowBcc((defaultBcc?.length ?? 0) > 0);
     setSelectedClients(defaultClients ?? []);
     setCreateTaskEnabled(false);
     setShowThread(false);
+    // Resuming a saved draft: stash the draft id so subsequent saves update
+    // the same Gmail draft. Bumps the "draft saved" indicator off — that's
+    // a transient confirmation, not the resume state.
+    setDraftId(defaultDraftId ?? null);
+    setDraftSaved(false);
     requestAnimationFrame(() => {
-      if (bodyRef.current) bodyRef.current.innerHTML = buildInitialBody(replyTo, prefilledBody, forwardOf);
+      if (bodyRef.current) {
+        // When resuming a draft we want the exact body the user previously
+        // typed, not the reply/forward template. defaultHtmlBody wins over
+        // buildInitialBody for that reason.
+        bodyRef.current.innerHTML = defaultHtmlBody && defaultHtmlBody.length > 0
+          ? defaultHtmlBody
+          : buildInitialBody(replyTo, prefilledBody, forwardOf);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, replyTo, replyAllRecipients, forwardOf, prefilledBody, signature]);
+  }, [open, replyTo, replyAllRecipients, forwardOf, prefilledBody, signature, defaultDraftId, defaultBcc, defaultHtmlBody]);
 
   async function handleSend() {
     if (to.length === 0) return;
@@ -405,8 +538,17 @@ export default function ComposeModal({
         const errData = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(errData.error ?? `Send failed (${res.status})`);
       }
-      const data = await res.json() as { threadId?: string };
+      const data = await res.json() as { threadId?: string; messageId?: string };
       const sentThreadId = data.threadId ?? '';
+      const sentMessageId = data.messageId ?? '';
+
+      // If this compose was editing a saved draft, discard the Gmail draft
+      // now that the email has actually gone out — otherwise the draft sits
+      // in the user's Drafts folder forever alongside the real sent message.
+      if (draftId) {
+        void fetch(`/api/email/draft?draftId=${encodeURIComponent(draftId)}`, { method: 'DELETE' })
+          .catch(() => { /* non-fatal — manual cleanup at worst */ });
+      }
 
       const jobs: Promise<unknown>[] = [];
       if (selectedClients.length > 0 && sentThreadId) {
@@ -415,6 +557,10 @@ export default function ComposeModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             threadId: sentThreadId,
+            // Tag the allocation with the Gmail id of the message we just
+            // sent so it lands as its own row on the client timeline,
+            // even when replying on a thread that's already allocated.
+            messageId: sentMessageId || undefined,
             subject: subject || '(no subject)',
             snippet: '', date: new Date().toISOString(),
             fromName: displayName, fromEmail: googleEmail,
@@ -461,10 +607,14 @@ export default function ComposeModal({
     setError(null);
     try {
       const htmlBody = bodyRef.current?.innerHTML ?? '';
-      await fetch('/api/email/draft', {
+      const res = await fetch('/api/email/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // When draftId is set the server updates this existing Gmail draft
+          // instead of creating a new one — that's what keeps "Save → close
+          // → open again from Drafts" round-tripping the same draft.
+          draftId: draftId ?? undefined,
           to: to.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
           cc: cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
           bcc: bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
@@ -476,6 +626,12 @@ export default function ComposeModal({
           fromName: displayName,
         }),
       });
+      if (res.ok) {
+        const j = await res.json().catch(() => ({})) as { draftId?: string };
+        // Remember the draft id for subsequent saves so we keep editing the
+        // same draft rather than spawning a fresh one each time.
+        if (j.draftId) setDraftId(j.draftId);
+      }
       setDraftSaved(true);
       setTimeout(() => setDraftSaved(false), 2500);
     } catch {
@@ -559,9 +715,38 @@ export default function ComposeModal({
     <>
       <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none">
         <div
-          className="w-full max-w-2xl bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] pointer-events-auto flex flex-col"
+          className="relative w-full max-w-2xl bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] pointer-events-auto flex flex-col"
           style={{ maxHeight: '85vh' }}
+          onDragEnter={e => {
+            // Only react when the drag carries actual files — ignore the
+            // user dragging selected text from the body editor, etc.
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            setDragDepth(d => d + 1);
+          }}
+          onDragOver={e => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+          }}
+          onDragLeave={e => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            setDragDepth(d => Math.max(0, d - 1));
+          }}
+          onDrop={e => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            setDragDepth(0);
+            handleFiles(e.dataTransfer.files);
+          }}
         >
+          {dragDepth > 0 && (
+            <div className="absolute inset-0 z-50 rounded-xl bg-[var(--accent-light)]/70 border-2 border-dashed border-[var(--accent)] flex items-center justify-center pointer-events-none">
+              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--bg-card-solid)] shadow-md text-sm font-medium text-[var(--accent)]">
+                <Paperclip size={14} /> Drop to attach
+              </div>
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] shrink-0 bg-[var(--bg-nav)] rounded-t-xl">
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">
@@ -656,7 +841,7 @@ export default function ComposeModal({
                   onMouseDown={e => { e.preventDefault(); setColorOpen(o => !o); }}
                   className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 >
-                  <Palette size={13} />
+                  <Palette size={13} className="translate-y-0.5" />
                 </button>
               </Tooltip>
               {colorOpen && (
@@ -694,7 +879,7 @@ export default function ComposeModal({
                   onMouseDown={e => { e.preventDefault(); setEmojiPickerOpen(o => !o); }}
                   className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                 >
-                  <Smile size={13} />
+                  <Smile size={13} className="translate-y-0.5" />
                 </button>
               </Tooltip>
               {emojiPickerOpen && (
@@ -732,7 +917,14 @@ export default function ComposeModal({
               ref={bodyRef}
               contentEditable
               suppressContentEditableWarning
-              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm"
+              onInput={e => {
+                // Skip while an IME composition is in flight — running mid-
+                // composition would clobber the partial input.
+                const ne = e.nativeEvent as InputEvent;
+                if (ne.isComposing) return;
+                runAutoCorrect(e.currentTarget);
+              }}
+              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1"
               style={{ minHeight: 160, maxHeight: '50vh' }}
             />
           </div>
