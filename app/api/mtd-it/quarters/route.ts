@@ -87,6 +87,10 @@ export async function GET(req: NextRequest) {
       quarter,
       streams_snapshot: defaultStreams,
       consolidated:     inheritedConsolidated,
+      // Stays 'not_started' until the user does something meaningful (analyse
+      // a file, edit an entry, or explicitly save-as-draft). Promoted to
+      // 'draft' server-side from those endpoints.
+      status:           'not_started',
       created_by:       ctx.userId,
     })
     .select('*')

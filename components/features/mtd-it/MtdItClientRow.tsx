@@ -53,10 +53,10 @@ function formatDob(iso: string | null): string {
 
 // ── Mini quarter square (status indicator inline on the row) ───────────────
 function MiniSquare({ status, editedAfterApproval }: { status: MtdItQuarterStatus | undefined; editedAfterApproval?: boolean }) {
-  if (!status) {
+  if (!status || status === 'not_started') {
     return <span className="block w-3 h-3 rounded-sm border border-gray-300 bg-white" aria-label="Not started" />;
   }
-  const map: Record<MtdItQuarterStatus, { bg: string; icon: React.ReactNode; label: string }> = {
+  const map: Record<Exclude<MtdItQuarterStatus, 'not_started'>, { bg: string; icon: React.ReactNode; label: string }> = {
     draft:     { bg: 'bg-amber-100 border-amber-300',  icon: <Pencil className="w-2 h-2 text-amber-600" strokeWidth={3} />, label: 'Draft' },
     complete:  { bg: 'bg-green-100 border-green-300',  icon: <Check className="w-2 h-2 text-green-700" strokeWidth={4} />,   label: 'Complete' },
     sent:      { bg: 'bg-sky-100 border-sky-300',      icon: <Mail className="w-2 h-2 text-sky-700" strokeWidth={3} />,      label: 'Sent to client' },
@@ -86,7 +86,7 @@ function BigSquare({
   editedAfterApproval?: boolean;
   onClick: () => void;
 }) {
-  const colour: Record<MtdItQuarterStatus | 'empty', { bg: string; border: string; icon: React.ReactNode; ring: string }> = {
+  const colour: Record<Exclude<MtdItQuarterStatus, 'not_started'> | 'empty', { bg: string; border: string; icon: React.ReactNode; ring: string }> = {
     empty:     { bg: 'bg-white',         border: 'border-gray-200',  icon: null,                                                                ring: 'hover:ring-2 hover:ring-[var(--accent)]/30' },
     draft:     { bg: 'bg-amber-50',      border: 'border-amber-300', icon: <Pencil className="w-4 h-4 text-amber-600" />,                       ring: 'hover:ring-2 hover:ring-amber-300' },
     complete:  { bg: 'bg-green-50',      border: 'border-green-300', icon: <Check className="w-5 h-5 text-green-700" strokeWidth={3} />,        ring: 'hover:ring-2 hover:ring-green-300' },
@@ -94,7 +94,8 @@ function BigSquare({
     approved:  { bg: 'bg-blue-50',       border: 'border-blue-300',  icon: <CheckCircle2 className="w-5 h-5 text-blue-700" strokeWidth={2.5} />, ring: 'hover:ring-2 hover:ring-blue-300' },
     submitted: { bg: 'bg-gray-100',      border: 'border-gray-400',  icon: <Lock className="w-4 h-4 text-gray-700" />,                          ring: 'hover:ring-2 hover:ring-gray-300' },
   };
-  const c = colour[status ?? 'empty'];
+  const key: Exclude<MtdItQuarterStatus, 'not_started'> | 'empty' = (!status || status === 'not_started') ? 'empty' : status;
+  const c = colour[key];
   return (
     <button
       type="button"

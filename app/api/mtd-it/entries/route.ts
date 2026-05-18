@@ -106,6 +106,12 @@ export async function POST(req: NextRequest) {
     console.error('POST /api/mtd-it/entries', error);
     return NextResponse.json({ error: 'Failed to create entry' }, { status: 500 });
   }
+  // First real entry promotes the quarter out of 'not_started'.
+  await supabase
+    .from('mtd_it_quarters')
+    .update({ status: 'draft' })
+    .eq('id', parsed.data.quarter_id)
+    .eq('status', 'not_started');
   return NextResponse.json({ entry: data }, { status: 201 });
 }
 
@@ -180,6 +186,16 @@ export async function PUT(req: NextRequest) {
       // can highlight just the rows that didn't save.
       return NextResponse.json({ error: 'Failed to update one or more entries', failed_id: id }, { status: 500 });
     }
+  }
+
+  // Any change promotes the quarter out of 'not_started'. Only bumps the
+  // not-started case so draft/complete/sent/approved survive untouched.
+  if (creates.length + updates.length + deletes.length > 0) {
+    await supabase
+      .from('mtd_it_quarters')
+      .update({ status: 'draft' })
+      .eq('id', quarter_id)
+      .eq('status', 'not_started');
   }
 
   // Flag the active approval as "edited since approved" if any changes

@@ -40,7 +40,7 @@ interface QuarterRow {
   streams_snapshot: MtdItStreams;
   consolidated: boolean;
   fx_rates: Record<string, number>;
-  status: 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  status: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
   notes: string | null;
 }
 

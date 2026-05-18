@@ -818,7 +818,7 @@ export interface DefaultTemplate {
 
 export type MtdItStream = 'sole' | 'uk_rental' | 'foreign_rental';
 export type MtdItQuarterType = 'calendar' | 'standard';
-export type MtdItQuarterStatus = 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+export type MtdItQuarterStatus = 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
 
 export interface MtdItStreams {
   sole: boolean;

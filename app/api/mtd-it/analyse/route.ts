@@ -243,6 +243,13 @@ export async function POST(req: NextRequest) {
       await supabase.from('mtd_it_documents').update({ status: 'failed', error_message: 'Failed to save entries' }).eq('id', doc.id);
       return NextResponse.json({ error: 'Failed to save entries', document_id: doc.id }, { status: 500 });
     }
+    // Promote the quarter out of 'not_started' once real entries land. Only
+    // bumps the not-started case — leaves draft/complete/sent/approved alone.
+    await supabase
+      .from('mtd_it_quarters')
+      .update({ status: 'draft' })
+      .eq('id', quarter_id)
+      .eq('status', 'not_started');
   }
 
   await supabase.from('mtd_it_documents').update({ status: 'scanned' }).eq('id', doc.id);

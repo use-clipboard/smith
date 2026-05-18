@@ -25,6 +25,7 @@ function TrafficLight({ size = 15 }: { size?: number }) {
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItClientRow, { type MtdItColumnKey } from './MtdItClientRow';
+import MtdItQuarterStats from './MtdItQuarterStats';
 import AddMtdClientModal from './AddMtdClientModal';
 import BulkImportMtdModal from './BulkImportMtdModal';
 import EditMtdClientModal from './EditMtdClientModal';
@@ -58,7 +59,7 @@ const COLUMN_PREF_KEY = 'smith.mtd_it.dashboard.columns';
 
 const STATUS_LABEL: Record<string, string> = { active: 'Active', hold: 'On Hold', inactive: 'Inactive' };
 const QUARTER_STATUS_LABEL: Record<string, string> = {
-  draft: 'Draft', complete: 'Complete', sent: 'Sent', approved: 'Approved', submitted: 'Submitted',
+  not_started: 'Not started', draft: 'Draft', complete: 'Complete', sent: 'Sent', approved: 'Approved', submitted: 'Submitted',
 };
 
 function csvEscape(value: unknown): string {
@@ -507,6 +508,9 @@ export default function MtdItDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Quarter status donuts ────────────────────────────────────────── */}
+      <MtdItQuarterStats clients={clients} taxYear={taxYear} />
 
       {/* ── Threshold notice ─────────────────────────────────────────────── */}
       {flaggedCount > 0 && thresholdFilter === 'all' && (
