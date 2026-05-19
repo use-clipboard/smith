@@ -5,6 +5,10 @@ import {
   Loader2, Plus, Trash2, Send, Save, AlertTriangle, Check, Copy, Eye, Package as PackageIcon, X,
   Ban, Bell, Clock, Sparkles, Wand2, CopyPlus,
 } from 'lucide-react';
+import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
+import { EMAIL_SENT_EVENT } from '@/components/features/email/GlobalComposeWindow';
+import { useModules } from '@/components/ui/ModulesProvider';
+import ProposalPreviewModal from './ProposalPreviewModal';
 
 type Frequency = 'one_off' | 'monthly' | 'quarterly' | 'annual';
 type VatTreatment = 'inclusive' | 'exclusive' | 'exempt';
@@ -53,6 +57,7 @@ interface ProposalRow {
   vat_mode: 'inclusive' | 'exclusive';
   vat_rate: number;
   discount_amount: number;
+  discount_type: 'amount' | 'percent';
   discount_label: string | null;
   status: 'draft' | 'sent' | 'viewed' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
   public_token: string | null;
@@ -86,6 +91,19 @@ export default function ProposalBuilder({ proposalId }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  // Tracks whether we've handed a proposal off to the Compose window and
+  // are still waiting on the user to either send or cancel. Used to scope
+  // the EMAIL_SENT_EVENT listener so unrelated email sends elsewhere in
+  // the app don't accidentally flip THIS proposal to "sent".
+  const [awaitingCompose, setAwaitingCompose] = useState(false);
+  const compose = useComposeWindow();
+  const { isModuleActive } = useModules();
+  // Compose-based send is only available when the firm has Email Triage
+  // enabled — that's where the linked Gmail account lives. Without it we
+  // can't open the compose window, so the button stays disabled rather
+  // than silently sending via Resend behind the user's back.
+  const emailTriageActive = isModuleActive('email-triage');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +122,24 @@ export default function ProposalBuilder({ proposalId }: Props) {
     setLoading(false);
   }, [proposalId]);
   useEffect(() => { void load(); }, [load]);
+
+  // Listen for a successful send from the Compose window. The browser
+  // dispatches `smith:email-sent` on the window object whenever Compose
+  // dispatches a fresh email. When that fires while we're waiting on the
+  // user to send, mark the proposal as 'sent' and reload to pick up the
+  // new status. If Compose is closed without a send, the listener simply
+  // never fires and the proposal stays in draft state.
+  useEffect(() => {
+    if (!awaitingCompose) return;
+    function onSent() {
+      setAwaitingCompose(false);
+      void fetch(`/api/proposals/${proposalId}/mark-sent`, { method: 'POST' })
+        .then(() => load())
+        .catch(err => console.error('[proposals] mark-sent failed', err));
+    }
+    window.addEventListener(EMAIL_SENT_EVENT, onSent);
+    return () => window.removeEventListener(EMAIL_SENT_EVENT, onSent);
+  }, [awaitingCompose, proposalId, load]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function update<K extends keyof ProposalRow>(k: K, v: ProposalRow[K]) {
@@ -163,16 +199,18 @@ export default function ProposalBuilder({ proposalId }: Props) {
 
   // ── Totals (per package + grand) ───────────────────────────────────────
   const totals = useMemo(() => {
+    // Per-frequency subtotals — each frequency is tracked separately so
+    // the display can show only the ones with non-zero items.
     const calc = (ls: LineItem[]) => {
-      let one_off = 0, monthly = 0, annual = 0;
+      let one_off = 0, monthly = 0, quarterly = 0, annual = 0;
       for (const li of ls) {
         const sub = Number(li.unit_price) * Number(li.quantity);
-        if (li.frequency === 'one_off') one_off += sub;
-        else if (li.frequency === 'monthly') monthly += sub;
-        else if (li.frequency === 'quarterly') monthly += sub / 3;
-        else if (li.frequency === 'annual') annual += sub;
+        if (li.frequency === 'one_off')        one_off   += sub;
+        else if (li.frequency === 'monthly')   monthly   += sub;
+        else if (li.frequency === 'quarterly') quarterly += sub;
+        else if (li.frequency === 'annual')    annual    += sub;
       }
-      return { one_off, monthly, annual };
+      return { one_off, monthly, quarterly, annual };
     };
     const perPackage = new Map<string, ReturnType<typeof calc>>();
     for (const pk of packages) {
@@ -194,6 +232,7 @@ export default function ProposalBuilder({ proposalId }: Props) {
         vat_mode: proposal.vat_mode,
         vat_rate: Number(proposal.vat_rate),
         discount_amount: Number(proposal.discount_amount ?? 0),
+        discount_type:   proposal.discount_type ?? 'amount',
         discount_label: proposal.discount_label,
         expires_at: proposal.expires_at,
         packages: packages.map((p, i) => ({
@@ -230,15 +269,38 @@ export default function ProposalBuilder({ proposalId }: Props) {
 
   async function handleSend() {
     if (!proposal) return;
-    // Save first
+    // Save first so the draft on disk matches what the prospect will see.
     await handleSave({ silent: true });
     setSending(true); setError(null);
     try {
-      const res = await fetch(`/api/proposals/${proposalId}/send`, { method: 'POST' });
+      // prepare_only: true commits status / totals / token server-side
+      // but returns the rendered email body so we can hand it to the
+      // in-app Compose window. The user does the actual send via their
+      // own Gmail, mirroring the MTD IT approval flow.
+      const res = await fetch(`/api/proposals/${proposalId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prepare_only: true }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Send failed');
-      alert(`Proposal sent to ${proposal.prospect.email}. Public link:\n\n${data.link}${data.warning ? `\n\n⚠ ${data.warning}` : ''}`);
-      await load();
+      const prepared = data.prepared as { to_email: string; to_name: string; subject: string; html_body: string } | undefined;
+      if (!prepared) throw new Error('Backend did not return prepared email payload.');
+
+      // Open Compose pre-filled. Prospects aren't clients yet so we pass
+      // no defaultClients — Compose is happy with a recipient-only send.
+      // We DON'T flip the local proposal status yet; the EMAIL_SENT_EVENT
+      // listener above handles that once Compose actually dispatches the
+      // email. This way a user who opens Compose then cancels leaves the
+      // proposal as a draft (with a token + computed totals, ready for a
+      // retry). The token is committed server-side either way so the
+      // "View proposal" link in the Compose body is live.
+      setAwaitingCompose(true);
+      compose.open({
+        defaultTo:      [{ name: prepared.to_name, email: prepared.to_email }],
+        defaultSubject: prepared.subject,
+        prefilledBody:  prepared.html_body,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Send failed');
     } finally { setSending(false); }
@@ -320,11 +382,19 @@ export default function ProposalBuilder({ proposalId }: Props) {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <StatusPill status={proposal.status} />
+            {/* Live preview — works at any point (including drafts), uses
+                the in-memory form state so changes show up immediately. */}
+            <button
+              onClick={() => setShowPreview(true)}
+              className="btn-secondary text-xs inline-flex items-center gap-1"
+            >
+              <Eye size={11} />Preview proposal
+            </button>
             {proposal.public_token && (
               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/p/${proposal.public_token}`)} className="btn-secondary text-xs inline-flex items-center gap-1"><Copy size={11} />Copy link</button>
             )}
             {proposal.public_token && (
-              <a href={`/p/${proposal.public_token}`} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs inline-flex items-center gap-1"><Eye size={11} />Preview</a>
+              <a href={`/p/${proposal.public_token}`} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs inline-flex items-center gap-1"><Eye size={11} />Open public link</a>
             )}
             {isLive && (
               <button onClick={() => void handleRemind()} className="btn-secondary text-xs inline-flex items-center gap-1"><Bell size={11} />Send reminder</button>
@@ -404,7 +474,30 @@ export default function ProposalBuilder({ proposalId }: Props) {
             </select>
           </Field>
           <Field label="VAT rate %"><input type="number" step="0.01" value={proposal.vat_rate} onChange={e => update('vat_rate', Number(e.target.value))} disabled={readonly} className="input-base text-sm w-full" /></Field>
-          <Field label="Discount £ (off the total)"><input type="number" step="0.01" value={proposal.discount_amount} onChange={e => update('discount_amount', Number(e.target.value))} disabled={readonly} className="input-base text-sm w-full" /></Field>
+          <Field label={proposal.discount_type === 'percent' ? 'Discount % (off the first-year total)' : 'Discount £ (off the first-year total)'}>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                step={proposal.discount_type === 'percent' ? '0.1' : '0.01'}
+                min={0}
+                max={proposal.discount_type === 'percent' ? 100 : undefined}
+                value={proposal.discount_amount}
+                onChange={e => update('discount_amount', Number(e.target.value))}
+                disabled={readonly}
+                className="input-base text-sm flex-1"
+              />
+              <select
+                value={proposal.discount_type ?? 'amount'}
+                onChange={e => update('discount_type', e.target.value as 'amount' | 'percent')}
+                disabled={readonly}
+                className="input-base text-sm w-20"
+                aria-label="Discount type"
+              >
+                <option value="amount">£</option>
+                <option value="percent">%</option>
+              </select>
+            </div>
+          </Field>
           <Field label="Discount label"><input value={proposal.discount_label ?? ''} onChange={e => update('discount_label', e.target.value || null)} disabled={readonly} className="input-base text-sm w-full" placeholder="e.g. First-year welcome" /></Field>
           <Field label="Expires (optional)"><input type="date" value={proposal.expires_at ? proposal.expires_at.slice(0, 10) : ''} onChange={e => update('expires_at', e.target.value || null)} disabled={readonly} className="input-base text-sm w-full" /></Field>
         </div>
@@ -469,14 +562,55 @@ export default function ProposalBuilder({ proposalId }: Props) {
               <button onClick={() => void handleSave()} disabled={saving || sending} className="btn-secondary text-sm inline-flex items-center gap-1.5">
                 {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}Save draft
               </button>
-              <button onClick={() => void handleSend()} disabled={saving || sending} className="btn-primary text-sm inline-flex items-center gap-1.5">
+              <button
+                onClick={() => void handleSend()}
+                disabled={saving || sending || !emailTriageActive}
+                title={!emailTriageActive
+                  ? 'Enable the Email Triage tool in Settings → Tool Enabling to compose proposal emails from your linked Gmail.'
+                  : 'Opens the compose window pre-filled with the proposal email. Edit if needed, then send from your linked email.'}
+                className="btn-primary text-sm inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                {proposal.status === 'sent' || proposal.status === 'viewed' ? 'Resend' : 'Send to prospect'}
+                Compose email
               </button>
             </>
           )}
         </div>
       </div>
+
+      {/* Live preview modal — driven by in-memory form state so the
+          preparer sees changes the moment they make them, no save needed. */}
+      <ProposalPreviewModal
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        proposal={{
+          id:              proposal.id,
+          title:           proposal.title,
+          intro:           proposal.intro,
+          terms:           proposal.terms,
+          vat_mode:        proposal.vat_mode,
+          vat_rate:        proposal.vat_rate,
+          discount_amount: proposal.discount_amount,
+          discount_type:   proposal.discount_type ?? 'amount',
+          discount_label:  proposal.discount_label,
+          status:          proposal.status,
+          sent_at:         proposal.sent_at,
+          expires_at:      proposal.expires_at,
+          prospect:        proposal.prospect,
+        }}
+        packages={packages.map(p => ({ id: p.id, name: p.name, description: p.description }))}
+        items={items.map(li => ({
+          id:                 li.id,
+          offered_package_id: li.offered_package_id,
+          service_name:       li.service_name,
+          description:        li.description,
+          tier_label:         li.tier_label,
+          frequency:          li.frequency,
+          unit_price:         li.unit_price,
+          quantity:           li.quantity,
+          vat_treatment:      li.vat_treatment,
+        }))}
+      />
     </div>
   );
 }

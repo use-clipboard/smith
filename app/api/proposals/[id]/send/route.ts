@@ -2,15 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { sendProposalEmail } from '@/lib/email';
+import { sendProposalEmail, renderProposalEmail } from '@/lib/email';
 
 // POST /api/proposals/[id]/send
 // Generates a public token (if missing), updates status to 'sent', recomputes
-// totals from line items, and fires the Resend email to the prospect.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+// totals from line items, and fires the email.
+//
+// When the request body has `prepare_only: true`, the route still commits the
+// status change + token + totals (same audit trail as a real send) but returns
+// the rendered email subject/HTML/recipient instead of dispatching it. The
+// caller then hands those to the in-app Compose window so the user can review
+// and send from their own Gmail. Mirrors the MTD IT approval flow.
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   const supabase = createClient();
+
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const prepareOnly = body?.prepare_only === true;
 
   const { data: proposal } = await supabase
     .from('proposals')
@@ -41,17 +50,25 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 
   const token = (proposal.public_token as string | null) ?? crypto.randomBytes(24).toString('hex');
+  // The token + totals always commit so the email body's "View proposal"
+  // link is live. Status / sent_at only flip when we're actually sending
+  // the email from the server. The prepare_only path leaves status alone —
+  // the caller is responsible for flipping it via /mark-sent after the
+  // Compose window successfully dispatches.
+  const updatePayload: Record<string, unknown> = {
+    public_token: token,
+    total_one_off: totals.one_off,
+    total_monthly: totals.monthly,
+    total_annual: totals.annual,
+    updated_at: new Date().toISOString(),
+  };
+  if (!prepareOnly) {
+    updatePayload.status  = 'sent';
+    updatePayload.sent_at = new Date().toISOString();
+  }
   const { error: updErr } = await supabase
     .from('proposals')
-    .update({
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-      public_token: token,
-      total_one_off: totals.one_off,
-      total_monthly: totals.monthly,
-      total_annual: totals.annual,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', params.id);
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
 
@@ -62,6 +79,32 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   // Build the public link
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
   const link = `${baseUrl}/p/${token}`;
+
+  // prepare_only path — render the email body + subject and hand the bytes
+  // back to the caller. No Resend / Gmail call; the Compose window in the
+  // browser does the actual send via the user's own Gmail.
+  if (prepareOnly) {
+    const rendered = await renderProposalEmail({
+      firmId: ctx.firmId,
+      to: proposal.prospect.email,
+      proposalTitle: proposal.title,
+      prospectName: proposal.prospect.contact_name,
+      firmName: firm?.name ?? 'your accountancy firm',
+      senderName: sender?.full_name ?? sender?.email ?? null,
+      intro: proposal.intro,
+      acceptUrl: link,
+    });
+    return NextResponse.json({
+      ok: true,
+      link,
+      prepared: {
+        to_email:  proposal.prospect.email,
+        to_name:   proposal.prospect.contact_name,
+        subject:   rendered.subject,
+        html_body: rendered.html,
+      },
+    });
+  }
 
   try {
     await sendProposalEmail({

@@ -72,7 +72,11 @@ export async function POST(req: NextRequest) {
   try {
     const message = await anthropic.messages.create({
       model:      'claude-sonnet-4-6',
-      max_tokens: 4096,
+      // 4096 was truncating the JSON mid-`formalMinutes` for longer
+      // transcripts — the response would end without a closing brace
+      // and JSON.parse would fail. 8192 matches the project's CLAUDE.md
+      // guidance for long-form features (working papers, formal minutes).
+      max_tokens: 8192,
       system:     MEETING_NOTES_SYSTEM_PROMPT,
       messages:   [{ role: 'user', content: userContent }],
     });
@@ -92,8 +96,29 @@ export async function POST(req: NextRequest) {
     try {
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);
       result = JSON.parse(jsonMatch?.[0] ?? rawText) as MeetingNotesResult;
-    } catch {
-      return NextResponse.json({ error: 'Failed to parse AI response. Please try again.' }, { status: 500 });
+    } catch (parseErr) {
+      // Log the prefix + suffix of the raw output so persistent parse
+      // failures can be diagnosed without storing the whole transcript.
+      // The most common failure mode is truncation at max_tokens — the
+      // suffix will end mid-string rather than with a closing brace.
+      const head = rawText.slice(0, 400);
+      const tail = rawText.length > 800 ? `…${rawText.slice(-400)}` : '';
+      console.error('[meeting-notes/summarise] JSON parse failed', {
+        stopReason:    message.stop_reason,
+        outputTokens:  message.usage.output_tokens,
+        rawLength:     rawText.length,
+        head, tail,
+        parseErr:      parseErr instanceof Error ? parseErr.message : String(parseErr),
+      });
+      // Surface a more useful hint to the user when the response was
+      // truncated (stop_reason === 'max_tokens') vs malformed for other
+      // reasons.
+      const truncated = message.stop_reason === 'max_tokens';
+      return NextResponse.json({
+        error: truncated
+          ? 'The meeting transcript was too long — the AI response was cut off. Try summarising a shorter section, or split the meeting into parts.'
+          : 'Failed to parse AI response. Please try again.',
+      }, { status: 500 });
     }
 
     // Log AI usage (best-effort)

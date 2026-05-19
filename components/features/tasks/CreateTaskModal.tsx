@@ -31,6 +31,15 @@ export interface CreateTaskData {
   is_internal: boolean;
   recurrence_type?: RecurrenceType | null;
   recurrence_interval_days?: number | null;
+  /** When set, the task is auto-linked to this CH deadline at creation
+   *  time. The caller passes through to /api/tasks; the link is created
+   *  server-side by the createChDeadlineLink helper. */
+  ch_deadline_type?: 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due' | null;
+  ch_offset_days?: number;
+  /** Optional source AI-output this task was spawned from (Meeting Notes
+   *  history, Full Analysis output, etc.). Drives the "task already
+   *  exists" marker on the source view. */
+  source_output_id?: string | null;
   steps: StepInput[];
   edges: EdgeInput[];
 }

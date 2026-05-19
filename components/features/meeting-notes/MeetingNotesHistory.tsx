@@ -9,6 +9,10 @@ import {
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
+import { useModules } from '@/components/ui/ModulesProvider';
+import { useRouter } from 'next/navigation';
+import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import type { MeetingNotesSeed } from './MeetingNotesClient';
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -43,6 +47,10 @@ export interface MeetingNotesHistoryRow {
   period_to: string | null;
   user: HistoryUser | null;
   client: HistoryClient | null;
+  /** Surfaced by /api/outputs — the first open task spawned from this
+   *  output row, if any. Drives the in-row "task already exists" marker
+   *  and the Create-Task action button's enabled state. */
+  linked_task: { id: string; title: string; status: string } | null;
 }
 
 interface Props {
@@ -85,6 +93,41 @@ function formatMeetingDate(iso: string | null | undefined): string {
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onOpen }: Props) {
+  // Tasks-tool gating + navigation for the new Create-Task and "task
+  // already exists" row actions. The Create-Task action only renders
+  // when the firm has the Tasks tool active — otherwise the icon hides.
+  const { isModuleActive } = useModules();
+  const tasksModuleActive = isModuleActive('tasks');
+  const router = useRouter();
+  // When set, the QuickTask modal is mounted for the row whose Create-Task
+  // action was clicked. Carries the resolved pre-populated defaults (title,
+  // steps from action items, earliest deadline) so the modal opens with
+  // exactly the same shape as the in-tool Create-Task flow inside the
+  // meeting review screen.
+  interface TaskSeed {
+    outputId:    string;
+    clientId:    string | null;
+    clientName:  string | null;
+    title:       string;
+    steps:       string[];
+    dueDate:     string;
+  }
+  const [taskSeed, setTaskSeed] = useState<null | TaskSeed>(null);
+  const [taskLoading, setTaskLoading] = useState<string | null>(null);
+  // Lightweight cache of team members for the modal's assignee picker.
+  // Lazily fetched the first time the user opens the modal.
+  interface TeamMember { id: string; full_name: string | null; email: string }
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  async function ensureTeamMembers() {
+    if (teamMembers.length > 0) return;
+    try {
+      const res = await fetch('/api/users/team');
+      if (!res.ok) return;
+      const j = await res.json() as { users?: TeamMember[] };
+      setTeamMembers(j.users ?? []);
+    } catch { /* non-fatal — modal still works without the list */ }
+  }
+
   const [rows, setRows]         = useState<MeetingNotesHistoryRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
@@ -275,6 +318,39 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  // Mirror of the in-tool MeetingNotesClient "Create Task" defaults so the
+  // history-page action behaves identically: title from meetingTitle,
+  // checklist steps from each action item, earliest parseable deadline as
+  // the default due date.
+  const handleCreateTaskFromRow = async (row: MeetingNotesHistoryRow) => {
+    setTaskLoading(row.id);
+    try {
+      await ensureTeamMembers();
+      const output = await fetchOutput(row.id);
+      const rd = output.result_data as Record<string, unknown>;
+      const actionItems = (rd.actionItems as Array<{ action?: string; owner?: string; deadline?: string }> | undefined) ?? [];
+      const steps = actionItems.map(a => a.action ?? '').filter(Boolean);
+      const dueDate = actionItems
+        .map(a => a.deadline ?? '')
+        .map(d => { try { const dt = new Date(d); return Number.isNaN(dt.getTime()) ? null : dt; } catch { return null; } })
+        .filter((d): d is Date => d !== null)
+        .sort((a, b) => a.getTime() - b.getTime())[0]
+        ?.toISOString().split('T')[0] ?? '';
+      setTaskSeed({
+        outputId:   row.id,
+        clientId:   row.client_id,
+        clientName: row.client?.name ?? row.client_name,
+        title:      String(rd.meetingTitle ?? row.client?.name ?? 'Meeting Action Items'),
+        steps,
+        dueDate,
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to load meeting notes');
+    } finally {
+      setTaskLoading(null);
     }
   };
 
@@ -716,6 +792,37 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
                                 {isBusy ? <Loader2 size={13} className="animate-spin" /> : <FolderOpen size={13} />}
                               </button>
                             </Tooltip>
+                            {/* Tasks-tool integrations — hidden entirely when
+                                the firm doesn't have Tasks active. When a
+                                task already exists for this row we swap the
+                                Create action for a "task already in play"
+                                marker that opens the Tasks tool. */}
+                            {tasksModuleActive && (
+                              row.linked_task ? (
+                                <Tooltip label={`Open linked task: ${row.linked_task.title}`}>
+                                  <button
+                                    onClick={() => router.push(`/tasks?taskId=${encodeURIComponent(row.linked_task!.id)}`)}
+                                    aria-label="Open linked task"
+                                    className="h-7 w-7 rounded-full inline-flex items-center justify-center text-[var(--accent)] bg-[var(--accent-light)] hover:opacity-80 transition-colors"
+                                  >
+                                    <CheckSquare size={13} />
+                                  </button>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip label="Create task from this meeting">
+                                  <button
+                                    onClick={() => void handleCreateTaskFromRow(row)}
+                                    disabled={taskLoading === row.id}
+                                    aria-label="Create task"
+                                    className="h-7 w-7 rounded-full inline-flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] disabled:opacity-50 transition-colors"
+                                  >
+                                    {taskLoading === row.id
+                                      ? <Loader2 size={13} className="animate-spin" />
+                                      : <CheckSquare size={13} />}
+                                  </button>
+                                </Tooltip>
+                              )
+                            )}
                             <Tooltip label="Download PDF">
                               <button onClick={() => void handleDownload(row.id)} disabled={isBusy} aria-label="Download PDF" className="h-7 w-7 rounded-full inline-flex items-center justify-center text-[var(--text-muted)] hover:text-emerald-600 hover:bg-emerald-50 disabled:opacity-50 transition-colors">
                                 {isBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
@@ -767,6 +874,42 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
           </table>
         </div>
       </div>
+
+      {/* QuickTask modal — opened from a row's "Create task" action. Pre-
+          populated the same way as the in-tool Create-Task button on the
+          meeting review screen: title from meetingTitle, steps from
+          actionItems, due date from the earliest parseable deadline. The
+          source_output_id stamp flips the row's marker to "linked" the
+          moment the task is saved. */}
+      {taskSeed && (
+        <QuickTaskModal
+          onClose={() => setTaskSeed(null)}
+          teamMembers={teamMembers}
+          defaultClientId={taskSeed.clientId ?? undefined}
+          defaultClientName={taskSeed.clientName ?? undefined}
+          defaultTitle={taskSeed.title}
+          defaultSteps={taskSeed.steps}
+          defaultDueDate={taskSeed.dueDate}
+          sourceOutputId={taskSeed.outputId}
+          onCreate={async (data: CreateTaskData) => {
+            const res = await fetch('/api/tasks', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify(data),
+            });
+            if (!res.ok) throw new Error('Failed to create task');
+            const j = await res.json() as { task?: { id: string } };
+            // Optimistic update — flip the row's marker right away so the
+            // user gets feedback without waiting for a refetch.
+            if (j.task) {
+              setRows(prev => prev.map(r => r.id === taskSeed.outputId
+                ? { ...r, linked_task: { id: j.task!.id, title: data.title, status: 'not_started' } }
+                : r,
+              ));
+            }
+          }}
+        />
+      )}
     </ToolLayout>
   );
 }

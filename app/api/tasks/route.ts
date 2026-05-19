@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments } from '@/lib/notifications';
 import { logTaskCreated } from '@/lib/taskAudit';
+import { autoCreateChDeadlineLink } from '@/lib/createChDeadlineLink';
 import type { TaskStatus, RecurrenceType } from '@/types';
 
 const CreateTaskSchema = z.object({
@@ -15,6 +16,11 @@ const CreateTaskSchema = z.object({
   is_internal: z.boolean().optional(),
   recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
+  /** Optional: link this task back to the outputs row it was spawned from
+   *  (Meeting Notes history "Create task", future "create task from
+   *  Full Analysis output", etc.). Drives the "task already exists" marker
+   *  on the source view. */
+  source_output_id: z.string().uuid().optional().nullable(),
   steps: z.array(z.object({
     step_key: z.string(),
     title: z.string().min(1),
@@ -92,27 +98,62 @@ export async function GET(req: NextRequest) {
     // Fan out four lighter queries in parallel. Each one stays well within timeout.
     // BATCH must keep the request URL under the gateway's URL-length limit
     // (UUIDs are 36 chars + comma; ~100 ids per batch ≈ 3.7 KB which is safe).
-    const BATCH = 100;
+    // CRUCIAL: each batch select must NEVER hit PostgREST's server-side max-rows
+    // cap (default 1000). At ~11 steps per task, 100 tasks → 1100 rows → over
+    // the cap → silent truncation → tasks at the end of the batch appear empty.
+    // We paginate each batch explicitly with .range() and loop until a short
+    // page comes back. Same pattern protects edges (1+ per task) too.
+    // BATCH shrunk from 100 → 40 as a belt-and-braces guard. Even a worst-
+    // case template with ~24 steps × 40 tasks = 960 rows stays under the
+    // 1000-row PostgREST cap WITHOUT relying on pagination. Pagination
+    // below still runs as defence-in-depth.
+    const BATCH = 40;
+    const STEP_PAGE = 1000;
+    const taskIdSet = new Set(taskIds);
+    async function fetchAllRowsByTaskIds(table: string, slice: string[], selectExpr: string): Promise<Record<string, unknown>[]> {
+      const out: Record<string, unknown>[] = [];
+      let from = 0;
+      for (let pages = 0; pages < 50; pages++) {
+        const { data, error } = await supabase
+          .from(table)
+          .select(selectExpr)
+          .in('task_id', slice)
+          .range(from, from + STEP_PAGE - 1);
+        if (error) {
+          console.error(`[GET /api/tasks] ${table} page ${pages} failed:`, error.message);
+          break;
+        }
+        const rows = (data ?? []) as unknown as Record<string, unknown>[];
+        out.push(...rows);
+        if (rows.length < STEP_PAGE) break;
+        from += STEP_PAGE;
+      }
+      return out;
+    }
     async function fetchAllSteps() {
       const all: Record<string, unknown>[] = [];
       for (let i = 0; i < taskIds.length; i += BATCH) {
         const slice = taskIds.slice(i, i + BATCH);
-        const { data, error } = await supabase
-          .from('task_steps')
-          .select('*, assignee:users(id, full_name, email)')
-          .in('task_id', slice);
-        if (error) console.error(`[GET /api/tasks] steps batch ${i} failed:`, error.message);
-        if (data) all.push(...data);
+        const rows = await fetchAllRowsByTaskIds('task_steps', slice, '*, assignee:users(id, full_name, email)');
+        all.push(...rows);
       }
+      // Diagnostic: count distinct task_ids that came back and compare to
+      // how many we asked for. Any drift here is the truncation we've
+      // been chasing — prints to the dev server terminal.
+      const distinctTaskIdsWithSteps = new Set(all.map(r => (r as { task_id: string }).task_id)).size;
+      const missing = taskIds.filter(id => !all.some(r => (r as { task_id: string }).task_id === id)).length;
+      console.log(`[GET /api/tasks] steps fetched=${all.length} distinct_tasks_with_steps=${distinctTaskIdsWithSteps} total_tasks=${taskIds.length} tasks_missing_steps=${missing}`);
+      void taskIdSet;
       return all;
     }
     async function fetchAllEdges() {
       const all: Record<string, unknown>[] = [];
       for (let i = 0; i < taskIds.length; i += BATCH) {
         const slice = taskIds.slice(i, i + BATCH);
-        const { data, error } = await supabase.from('task_step_edges').select('*').in('task_id', slice);
-        if (error) console.error(`[GET /api/tasks] edges batch ${i} failed:`, error.message);
-        if (data) all.push(...data);
+        // Same .range() loop as steps so a busy template (~10 edges/task)
+        // never trips the 1000-row PostgREST cap.
+        const rows = await fetchAllRowsByTaskIds('task_step_edges', slice, '*');
+        all.push(...rows);
       }
       return all;
     }
@@ -208,6 +249,7 @@ export async function POST(req: NextRequest) {
       description: taskData.description ?? null,
       client_id: taskData.client_id ?? null,
       template_id: taskData.template_id ?? null,
+      source_output_id: taskData.source_output_id ?? null,
       due_date: taskData.due_date ?? null,
       is_internal: taskData.is_internal ?? !taskData.client_id,
       recurrence_type: (taskData.recurrence_type as RecurrenceType | null) ?? null,
@@ -230,6 +272,18 @@ export async function POST(req: NextRequest) {
     userId:    ctx.userId,
     taskTitle: (task.title as string) ?? '',
   }).catch(err => console.error('logTaskCreated failed', err));
+
+  // Auto-link to a Companies House deadline when the task came from a
+  // CH-linked template (and has a client). Non-fatal — a task without a
+  // link is fine; the user can always create one manually later.
+  if (taskData.template_id && taskData.client_id) {
+    void autoCreateChDeadlineLink(supabase, {
+      firmId:     ctx.firmId,
+      taskId:     task.id as string,
+      clientId:   taskData.client_id,
+      templateId: taskData.template_id,
+    });
+  }
 
   // Insert steps
   if (steps && steps.length > 0) {

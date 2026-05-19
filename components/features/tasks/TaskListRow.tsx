@@ -1,13 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, ChevronRight, Loader2, Trash2, XCircle, Users, UserCheck, Check } from 'lucide-react';
+import { RefreshCw, ChevronRight, Loader2, Trash2, XCircle, Users, UserCheck, Check, Link2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import DueDatePill from './DueDatePill';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker, { type TeamMember } from './AssigneePicker';
+import TaskDeadlineLinkBadge from './TaskDeadlineLinkBadge';
+import { useTaskDeadlineLinks } from './TaskDeadlineLinksProvider';
+import { useTaskClientStatusPolicy } from './TaskClientStatusPolicyProvider';
 import type { Task, TaskStep, TaskStatus, StepStatus, RecurrenceType } from '@/types';
 
 // Module-level set so expanded state survives parent re-renders / task prop updates
@@ -20,6 +23,9 @@ interface Props {
   currentUserId: string;
   onClick: () => void;
   hideClient?: boolean;
+  /** When true, the dedicated actions column at the far right is omitted —
+   *  used by older callers that haven't migrated yet. */
+  hideActions?: boolean;
   isAdmin?: boolean;
   teamMembers?: TeamMember[];
   onStepUpdate?: (taskId: string, stepId: string, updates: Partial<TaskStep>) => Promise<void>;
@@ -42,6 +48,13 @@ const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
 const RECURRENCE_LABELS: Record<string, string> = {
   weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
   quarterly: 'Quarterly', annually: 'Annually',
+};
+
+const CH_DEADLINE_LABELS: Record<string, string> = {
+  accounts_due:    'Accounts Due',
+  cs_due:          'Confirmation Statement',
+  officer_idv_due: 'Officer IDV',
+  psc_idv_due:     'PSC IDV',
 };
 
 function recurrenceLabel(type: RecurrenceType | null, intervalDays: number | null): string {
@@ -99,10 +112,18 @@ function StepTooltip({ step }: { step: TaskStep }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function TaskListRow({
-  task, currentUserId, onClick, hideClient = false,
+  task, currentUserId, onClick, hideClient = false, hideActions = false,
   isAdmin = false, teamMembers = [],
   onStepUpdate, onTaskUpdate, onDelete, onStopRecurrence,
 }: Props) {
+  const deadlineLinks = useTaskDeadlineLinks(task.id);
+  const { policy: clientStatusPolicy } = useTaskClientStatusPolicy();
+  const clientStatus = (task.client as { status?: string | null } | null | undefined)?.status ?? null;
+  const isClientOnHold   = clientStatus === 'hold';
+  const isClientInactive = clientStatus === 'inactive';
+  // Apply the grey-out style when the firm's policy asks for it and the
+  // client is on hold. Inactive clients get the same de-emphasis.
+  const dimRow = (isClientOnHold && clientStatusPolicy.on_hold.grey_out_rows) || isClientInactive;
   const [expanded, setExpanded]               = useState(() => expandedIds.has(task.id));
   const [updatingStep, setUpdatingStep]       = useState<string | null>(null);
   const [updatingTask, setUpdatingTask]       = useState(false);
@@ -136,6 +157,7 @@ export default function TaskListRow({
     .slice(0, 4);
 
   const isRecurring  = task.recurrence_type && task.recurrence_type !== 'once';
+  const isChLinked   = deadlineLinks.length > 0;
   const nextDueDate  = isRecurring
     ? computeNextDue(task.due_date, task.recurrence_type, task.recurrence_interval_days)
     : null;
@@ -143,7 +165,10 @@ export default function TaskListRow({
     ? new Date(nextDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : null;
 
-  const colSpan        = hideClient ? 5 : 6;
+  // Column span for the expanded-steps row — depends on which optional columns
+  // the parent view is rendering. hideClient drops one column; hideActions
+  // drops the new dedicated actions column at the far right.
+  const colSpan        = (hideClient ? 5 : 6) + (hideActions ? 0 : 1);
   const canExpand      = !!onStepUpdate && workSteps.length > 0;
   const reassignable   = workSteps.filter(s => !s.is_client_step);
   const allRSelected   = reassignable.length > 0 && reassignable.every(s => selectedStepIds.has(s.id));
@@ -239,7 +264,7 @@ export default function TaskListRow({
   return (
     <>
       {/* ── Main task row ── */}
-      <tr className={`group hover:bg-indigo-50/40 transition-colors border-b border-gray-100 last:border-0 ${confirmDelete ? 'bg-red-50/30' : ''}`}>
+      <tr className={`group hover:bg-indigo-50/40 transition-colors border-b border-gray-100 last:border-0 ${confirmDelete ? 'bg-red-50/30' : ''} ${dimRow ? 'opacity-50 bg-gray-50/40' : ''}`}>
 
         {/* Task title + recurrence info */}
         <td className="px-4 py-3 min-w-0">
@@ -272,12 +297,29 @@ export default function TaskListRow({
                     {task.title}
                   </button>
                 </Tooltip>
+                <TaskDeadlineLinkBadge links={deadlineLinks} />
               </div>
               {/* Next repeat date — visible to all users */}
               {isRecurring && nextDueStr && (
                 <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
                   <span className="text-indigo-500 font-medium">{recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)}</span>
                   {' · '}Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
+                </p>
+              )}
+              {/* CH-linked meta line — only shown when not recurring (CH-linked tasks never have manual recurrence) */}
+              {isChLinked && !isRecurring && (
+                <p className="text-[11px] text-[var(--text-muted)] mt-0.5 flex items-center gap-1">
+                  <Link2 className="h-3 w-3 text-[var(--accent)]" />
+                  <span className="text-[var(--accent)] font-medium">CH Secretarial</span>
+                  {deadlineLinks[0] && (
+                    <>
+                      {' · '}
+                      <span>{CH_DEADLINE_LABELS[deadlineLinks[0].deadline_type] ?? deadlineLinks[0].deadline_type}</span>
+                      {deadlineLinks[0].offset_days !== 0 && (
+                        <span className="text-gray-400"> ({deadlineLinks[0].offset_days > 0 ? '+' : ''}{deadlineLinks[0].offset_days}d)</span>
+                      )}
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -325,108 +367,111 @@ export default function TaskListRow({
           <DueDatePill dueDate={task.due_date} status={task.status} />
         </td>
 
-        {/* Assignees + admin actions */}
-        <td className="px-4 py-3">
-          {confirmDelete ? (
-            /* Delete confirmation — replaces assignee cell */
-            <div className="flex items-center gap-1.5 justify-end">
-              <span className="text-xs text-red-600 font-medium whitespace-nowrap">Delete task?</span>
-              <button
-                onClick={() => void handleDelete()}
-                disabled={deleting}
-                className="px-2.5 py-1 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-              >
-                {deleting ? <Loader2 className="h-3 w-3 animate-spin inline" /> : 'Yes'}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="px-2.5 py-1 text-xs border border-gray-200 text-gray-500 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                No
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2">
-              {/* Assignee avatars */}
-              <div className="flex -space-x-1.5 cursor-pointer" onClick={onClick}>
-                {assignees.map(a => (
-                  <Tooltip key={a.id} label={a.full_name ?? a.email} side="top" className="flex-shrink-0">
-                    <div
-                      className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}>
-                      {initials(a.full_name, a.email)}
-                    </div>
-                  </Tooltip>
-                ))}
-                {assignees.length === 0 && <span className="text-xs text-gray-300">—</span>}
-              </div>
-
-              {/* Admin actions — hover-reveal */}
-              {isAdmin && (
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                  {isRecurring && onStopRecurrence && (
-                    <Tooltip label="Stop recurrence">
-                      <button
-                        onClick={e => { e.stopPropagation(); void handleStopRecurrence(); }}
-                        disabled={stoppingRec}
-                        aria-label="Stop recurrence"
-                        className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
-                      >
-                        {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-                      </button>
-                    </Tooltip>
-                  )}
-                  {!isRecurring && onTaskUpdate && (
-                    <Tooltip label="Set recurrence">
-                      <select
-                        value=""
-                        onClick={e => e.stopPropagation()}
-                        onChange={async e => {
-                          e.stopPropagation();
-                          const value = e.target.value;
-                          if (!value) return;
-                          let recurrence_type: RecurrenceType;
-                          let recurrence_interval_days: number | null = null;
-                          if (value === 'custom') {
-                            const days = window.prompt('Repeat every how many days?', '30');
-                            const parsed = days ? parseInt(days, 10) : NaN;
-                            if (!parsed || parsed < 1) { e.target.value = ''; return; }
-                            recurrence_type = 'custom';
-                            recurrence_interval_days = parsed;
-                          } else {
-                            recurrence_type = value as RecurrenceType;
-                          }
-                          await onTaskUpdate(task.id, { recurrence_type, recurrence_interval_days });
-                          e.target.value = '';
-                        }}
-                        aria-label="Set recurrence"
-                        className="p-1 rounded-lg text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-xs cursor-pointer bg-transparent border-0"
-                      >
-                        <option value="" disabled>↻</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="bi-weekly">Bi-weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annually">Annually</option>
-                        <option value="custom">Custom interval…</option>
-                      </select>
-                    </Tooltip>
-                  )}
-                  {onDelete && (
-                    <Tooltip label="Delete task">
-                      <button
-                        onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
-                        aria-label="Delete task"
-                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </Tooltip>
-                  )}
+        {/* Assignees — just the avatars now; all admin actions moved to the
+            dedicated Actions column on the far right. */}
+        <td className="px-4 py-3 cursor-pointer" onClick={onClick}>
+          <div className="flex -space-x-1.5">
+            {assignees.map(a => (
+              <Tooltip key={a.id} label={a.full_name ?? a.email} side="top" className="flex-shrink-0">
+                <div
+                  className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ring-2 ring-white ${a.id === currentUserId ? 'ring-indigo-400' : ''} ${avatarColour(a.id)}`}>
+                  {initials(a.full_name, a.email)}
                 </div>
-              )}
-            </div>
-          )}
+              </Tooltip>
+            ))}
+            {assignees.length === 0 && <span className="text-xs text-gray-300">—</span>}
+          </div>
         </td>
+
+        {/* Dedicated Actions column — always visible (no hover-reveal). Holds
+            set-recurrence, stop-recurrence and delete. Omitted entirely when
+            the parent view passes hideActions. */}
+        {!hideActions && (
+          <td className="px-2 py-3 whitespace-nowrap">
+            {confirmDelete ? (
+              <div className="flex items-center gap-1 justify-end">
+                <span className="text-[11px] text-red-600 font-medium whitespace-nowrap">Delete?</span>
+                <button
+                  onClick={() => void handleDelete()}
+                  disabled={deleting}
+                  className="px-2 py-0.5 text-[11px] bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {deleting ? <Loader2 className="h-3 w-3 animate-spin inline" /> : 'Yes'}
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2 py-0.5 text-[11px] border border-gray-200 text-gray-500 rounded hover:bg-gray-50 transition-colors"
+                >
+                  No
+                </button>
+              </div>
+            ) : isAdmin ? (
+              <div className="flex items-center gap-0.5 justify-end">
+                {isRecurring && onStopRecurrence && (
+                  <Tooltip label="Stop recurrence">
+                    <button
+                      onClick={e => { e.stopPropagation(); void handleStopRecurrence(); }}
+                      disabled={stoppingRec}
+                      aria-label="Stop recurrence"
+                      className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50 transition-colors"
+                    >
+                      {stoppingRec ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                    </button>
+                  </Tooltip>
+                )}
+                {!isRecurring && !isChLinked && onTaskUpdate && (
+                  <Tooltip label="Set recurrence">
+                    <select
+                      value=""
+                      onClick={e => e.stopPropagation()}
+                      onChange={async e => {
+                        e.stopPropagation();
+                        const value = e.target.value;
+                        if (!value) return;
+                        let recurrence_type: RecurrenceType;
+                        let recurrence_interval_days: number | null = null;
+                        if (value === 'custom') {
+                          const days = window.prompt('Repeat every how many days?', '30');
+                          const parsed = days ? parseInt(days, 10) : NaN;
+                          if (!parsed || parsed < 1) { e.target.value = ''; return; }
+                          recurrence_type = 'custom';
+                          recurrence_interval_days = parsed;
+                        } else {
+                          recurrence_type = value as RecurrenceType;
+                        }
+                        await onTaskUpdate(task.id, { recurrence_type, recurrence_interval_days });
+                        e.target.value = '';
+                      }}
+                      aria-label="Set recurrence"
+                      className="p-1 rounded-lg text-indigo-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors text-xs cursor-pointer bg-transparent border-0"
+                    >
+                      <option value="" disabled>↻</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="bi-weekly">Bi-weekly</option>
+                      <option value="monthly">Monthly</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="annually">Annually</option>
+                      <option value="custom">Custom interval…</option>
+                    </select>
+                  </Tooltip>
+                )}
+                {onDelete && (
+                  <Tooltip label="Delete task">
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
+                      aria-label="Delete task"
+                      className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs text-gray-300">—</span>
+            )}
+          </td>
+        )}
       </tr>
 
       {/* ── Expanded step panel ── */}

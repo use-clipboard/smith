@@ -23,6 +23,8 @@ import CreateTaskModal, { type CreateTaskData } from './CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from './TemplateBuilder';
 import AITemplateBuilder from './AITemplateBuilder';
 import BulkTaskModal from './BulkTaskModal';
+import TaskDeadlineLinksProvider, { triggerDeadlineLinksRefetch } from './TaskDeadlineLinksProvider';
+import TaskClientStatusPolicyProvider from './TaskClientStatusPolicyProvider';
 import TaskTypeSelector from './TaskTypeSelector';
 import QuickTaskModal from './QuickTaskModal';
 import Tooltip from '@/components/ui/Tooltip';
@@ -187,6 +189,10 @@ export default function TasksPage() {
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setDepartments(d.departments ?? []); })
       .catch(() => { /* non-critical */ });
+    // Newly-created tasks may carry CH-deadline links — tell the provider
+    // to reload its cache so the inline icon + meta line render straight
+    // away instead of waiting for a page refresh.
+    triggerDeadlineLinksRefetch();
   }
 
   async function refreshTemplates() {
@@ -450,6 +456,8 @@ export default function TasksPage() {
   };
 
   return (
+    <TaskDeadlineLinksProvider>
+    <TaskClientStatusPolicyProvider>
     <div className="flex h-full bg-gray-50">
       {/* Sidebar nav */}
       <aside className="w-52 border-r border-gray-200 bg-white flex flex-col flex-shrink-0">
@@ -820,7 +828,10 @@ export default function TasksPage() {
           onComplete={() => { setShowBulkTask(false); refreshTasks(); }}
         />
       )}
+
     </div>
+    </TaskClientStatusPolicyProvider>
+    </TaskDeadlineLinksProvider>
   );
 }
 

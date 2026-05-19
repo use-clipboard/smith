@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
+import { syncCHDeadlineLinks } from '@/lib/chDeadlineSync';
 
 async function getAuthFirmId() {
   const supabase = createClient();
@@ -72,6 +73,27 @@ export async function POST(request: NextRequest) {
   if (upsertError) {
     console.error('POST /api/ch-secretarial/cache', upsertError);
     return NextResponse.json({ error: 'Failed to save cache' }, { status: 500 });
+  }
+
+  // Slide / renew any task linked to one of these deadlines now the fresh
+  // data is in the cache. Non-fatal — failures get logged but the cache
+  // save itself has succeeded and the caller already has its new data.
+  try {
+    // The companies array is z.array(z.unknown()) at this point, but the
+    // sync only reads a known subset of string-or-null fields off each
+    // item — anything missing is treated as "skip this link". Safe to
+    // cast for the sync entry point.
+    const companies = parsed.data.companies as unknown as Array<{
+      companyNumber: string;
+      accountsNextDue: string | null;
+      csNextDue: string | null;
+      nearestOfficerIdvDue: string | null;
+      nearestPscIdvDue: string | null;
+    }>;
+    const summary = await syncCHDeadlineLinks(service, firmId!, companies);
+    console.log('[CH Cache POST] deadline-links sync', { firmId, ...summary });
+  } catch (e) {
+    console.error('[CH Cache POST] deadline-links sync failed', e);
   }
 
   return NextResponse.json({ success: true });

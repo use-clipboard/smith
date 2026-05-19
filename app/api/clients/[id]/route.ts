@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { applyClientStatusPolicy } from '@/lib/applyClientStatusPolicy';
 
 const CLIENT_TYPES = [
   'sole_trader', 'partnership', 'limited_company',
@@ -78,9 +79,12 @@ export async function PATCH(
 
   const supabase = createClient();
 
+  // Pull current status too — we need it to detect a status transition so
+  // we can fire the firm's task_client_status_policy side-effects below.
   const { data: existing } = await supabase
-    .from('clients').select('id').eq('id', params.id).eq('firm_id', ctx.firmId).single();
+    .from('clients').select('id, status').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!existing) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+  const previousStatus = (existing as { status: 'active' | 'hold' | 'inactive' | null }).status ?? null;
 
   const d = parsed.data;
   const updates: Record<string, unknown> = {};
@@ -114,7 +118,31 @@ export async function PATCH(
     return NextResponse.json({ error: 'Failed to update client' }, { status: 500 });
   }
 
-  return NextResponse.json({ client });
+  // ── Status-transition side-effects ────────────────────────────────────
+  // If this PATCH flipped the client's status (active ↔ hold ↔ inactive),
+  // apply the firm's task_client_status_policy. We use the service client
+  // here so the cancel-open-tasks / break-CH-links writes bypass RLS the
+  // same way the bulk and onboarding paths do. Failure is logged but
+  // doesn't fail the underlying client update — the user can fix data
+  // manually and still see their client update applied.
+  const newStatus = (client as { status: 'active' | 'hold' | 'inactive' | null }).status ?? null;
+  let policyApplied: Awaited<ReturnType<typeof applyClientStatusPolicy>> | null = null;
+  if (newStatus && newStatus !== previousStatus) {
+    try {
+      const service = createServiceClient();
+      policyApplied = await applyClientStatusPolicy(service, {
+        firmId:        ctx.firmId,
+        clientId:      params.id,
+        previousStatus,
+        newStatus,
+        actorUserId:   ctx.userId,
+      });
+    } catch (err) {
+      console.error('PATCH /api/clients/[id] — policy side-effect failed', err);
+    }
+  }
+
+  return NextResponse.json({ client, policyApplied });
 }
 
 // DELETE /api/clients/[id]

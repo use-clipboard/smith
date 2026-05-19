@@ -11,6 +11,11 @@ const CreateTemplateSchema = z.object({
   recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
   estimated_duration_days: z.number().int().positive().optional().nullable(),
+  // CH-deadline linking — when ch_deadline_type is set, the template is
+  // "CH-linked" and tasks created from it auto-attach to the chosen CH
+  // deadline on the client. recurrence_* are ignored in that mode.
+  ch_deadline_type: z.enum(['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due']).optional().nullable(),
+  ch_offset_days:   z.number().int().min(-365).max(365).optional().nullable(),
   steps: z.array(z.object({
     step_key: z.string(),
     title: z.string().min(1),
@@ -97,6 +102,8 @@ export async function POST(req: NextRequest) {
       recurrence_type: tplData.recurrence_type ?? null,
       recurrence_interval_days: tplData.recurrence_interval_days ?? null,
       estimated_duration_days: tplData.estimated_duration_days ?? null,
+      ch_deadline_type: tplData.ch_deadline_type ?? null,
+      ch_offset_days:   tplData.ch_offset_days ?? 0,
     })
     .select()
     .single();

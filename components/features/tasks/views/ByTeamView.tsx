@@ -6,7 +6,8 @@ import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
 import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
-import SortHeader, { type SortDir } from '../SortHeader';
+import { type SortDir } from '../SortHeader';
+import TaskTable, { type TaskColumn } from '../TaskTable';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
@@ -33,6 +34,16 @@ interface Props {
 
 const STATUS_ORDER: TaskStatus[] = ['in_progress', 'waiting_on_client', 'records_here', 'review', 'not_started', 'complete'];
 type SortField = 'task' | 'client' | 'status' | 'due';
+
+const BY_TEAM_COLUMNS: TaskColumn<SortField>[] = [
+  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200, sortField: 'task'   },
+  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120, sortField: 'client' },
+  { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90,  sortField: 'status' },
+  { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90                          },
+  { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110, sortField: 'due'    },
+  { id: 'assignees', label: 'Assignees', defaultWidth: 130, minWidth: 80                           },
+  { id: 'actions',   label: 'Actions',   defaultWidth: 130, minWidth: 110, fixed: true, align: 'right' },
+];
 
 export default function ByTeamView({ tasks, currentUserId, teamMembers, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const [dueFilter, setDueFilter] = useState<DueWindow>('all');
@@ -132,52 +143,67 @@ export default function ByTeamView({ tasks, currentUserId, teamMembers, search, 
 
       <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} className="mb-4" />
 
-      <div className="space-y-3">
-      {[...teamMembers, { id: '__unassigned__', full_name: 'Unassigned', email: '' }]
-      .filter(member => !assigneeFilter || member.id === assigneeFilter)
-      .map(member => {
-        const memberTasks = grouped.get(member.id) ?? [];
-        if (memberTasks.length === 0) return null;
-        const initials = (member.full_name ?? member.email).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-        const activeCount = activeCounts.get(member.id) ?? 0;
-
-        return (
-          <div key={member.id} className="bg-white border border-gray-200 rounded-lg">
-            <div className="sticky top-[50px] z-20 flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 rounded-t-lg">
-              <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-white">{initials}</span>
-              </div>
-              <div>
-                <p className="font-semibold text-sm text-gray-900">{member.full_name ?? member.email}</p>
-                <p className="text-xs text-gray-400">{activeCount} active · {memberTasks.length} total</p>
-              </div>
-            </div>
-
-            {viewMode === 'list' ? (
-              <table className="w-full text-left table-fixed">
-                <thead className="sticky top-[110px] z-10">
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} />
-                    <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-48" />
-                    <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-32" />
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-28">Progress</th>
-                    <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="w-48" />
-                    <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Assignees</th>
+      {viewMode === 'list' ? (
+        <TaskTable<SortField>
+          viewKey="byTeam"
+          columns={BY_TEAM_COLUMNS}
+          sortField={sort.field}
+          sortDir={sort.dir}
+          onToggleSort={toggleSort}
+        >
+          {[...teamMembers, { id: '__unassigned__', full_name: 'Unassigned', email: '' }]
+            .filter(member => !assigneeFilter || member.id === assigneeFilter)
+            .map(member => {
+              const memberTasks = grouped.get(member.id) ?? [];
+              if (memberTasks.length === 0) return null;
+              const initials = (member.full_name ?? member.email).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+              const activeCount = activeCounts.get(member.id) ?? 0;
+              return (
+                <tbody key={member.id} className="border-b border-gray-100 last:border-0">
+                  <tr className="bg-gray-50/60">
+                    <td colSpan={7} className="px-4 py-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-6 w-6 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                          <span className="text-[10px] font-bold text-white">{initials}</span>
+                        </div>
+                        <p className="font-semibold text-sm text-gray-900">{member.full_name ?? member.email}</p>
+                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{activeCount} active · {memberTasks.length} total</span>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
                   {memberTasks.map(t => <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
                 </tbody>
-              </table>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
-                {memberTasks.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      </div>
+              );
+            })}
+        </TaskTable>
+      ) : (
+        <div className="space-y-3">
+          {[...teamMembers, { id: '__unassigned__', full_name: 'Unassigned', email: '' }]
+            .filter(member => !assigneeFilter || member.id === assigneeFilter)
+            .map(member => {
+              const memberTasks = grouped.get(member.id) ?? [];
+              if (memberTasks.length === 0) return null;
+              const initials = (member.full_name ?? member.email).split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+              const activeCount = activeCounts.get(member.id) ?? 0;
+              return (
+                <div key={member.id} className="bg-white border border-gray-200 rounded-lg">
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 rounded-t-lg">
+                    <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-white">{initials}</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm text-gray-900">{member.full_name ?? member.email}</p>
+                      <p className="text-xs text-gray-400">{activeCount} active · {memberTasks.length} total</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+                    {memberTasks.map(t => <TaskCard key={t.id} task={t} onClick={() => onTaskClick(t)} currentUserId={currentUserId} isAdmin={isAdmin} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />)}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }

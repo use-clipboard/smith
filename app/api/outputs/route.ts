@@ -56,5 +56,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load outputs' }, { status: 500 });
   }
 
-  return NextResponse.json({ outputs: data ?? [] });
+  // Surface the first linked task per output so the history table can
+  // show a "task already exists" marker without a second round trip.
+  // Excludes complete/cancelled tasks so a long-finished task doesn't
+  // permanently grey out the Create-task action.
+  const outputIds = (data ?? []).map(o => (o as { id: string }).id);
+  const linkedTaskByOutput = new Map<string, { id: string; title: string; status: string }>();
+  if (outputIds.length > 0) {
+    const { data: tasks } = await supabase
+      .from('tasks')
+      .select('id, title, status, source_output_id')
+      .eq('firm_id', ctx.firmId)
+      .in('source_output_id', outputIds)
+      .not('status', 'in', '(complete,cancelled)');
+    for (const t of (tasks ?? []) as Array<{ id: string; title: string; status: string; source_output_id: string }>) {
+      // Keep the first task we encounter per output — if multiple exist
+      // the indicator still leads back to a real task.
+      if (!linkedTaskByOutput.has(t.source_output_id)) {
+        linkedTaskByOutput.set(t.source_output_id, { id: t.id, title: t.title, status: t.status });
+      }
+    }
+  }
+
+  const outputsWithTask = (data ?? []).map(o => ({
+    ...o,
+    linked_task: linkedTaskByOutput.get((o as { id: string }).id) ?? null,
+  }));
+
+  return NextResponse.json({ outputs: outputsWithTask });
 }

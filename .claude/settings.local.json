@@ -131,7 +131,21 @@
       "Bash(grep -v \"^$\")",
       "Bash(npx supabase *)",
       "Bash(grep -r \"smith_email\\\\|note_type.*email\\\\|EmailNote\\\\|timeline\" app/\\\\\\(app\\\\\\)/clients/\\\\[id\\\\]/page.tsx --include=\"*.tsx\" -l)",
-      "Bash(grep -r \"TimelineNote\\\\|client_timeline\\\\|note_type\" components/ --include=\"*.tsx\" -l)"
+      "Bash(grep -r \"TimelineNote\\\\|client_timeline\\\\|note_type\" components/ --include=\"*.tsx\" -l)",
+      "Bash(cp /c/Users/chris/Desktop/Claude/agent-smith/.env.local ./.env.local && ls -la .env.local)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/mtd-it)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(cd /c/Users/chris/Desktop/Claude/agent-smith && find . -type f -name \"*.ts\" -o -name \"*.js\" -o -name \"*.json\" | grep -E \"\\(cron|scheduled|refresh|secretarial|companies\\)\" | head -20)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -L http://localhost:3000/mtd-it)",
+      "Bash(cd /c/Users/chris/Desktop\\\\Claude\\\\agent-smith && grep -n \"onEdit\\\\|edit.*draft\\\\|Edit.*draft\" components/features/email/EmailThread.tsx)",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "Bash(curl -s -L https://smith-blush.vercel.app/ch-secretarial -o /tmp/ch.html -w \"%{http_code}\\\\n\" -A \"Mozilla/5.0\")",
+      "Read(//tmp/**)",
+      "Bash(grep -n \"^    </ToolLayout>\\\\|^  \\);$\\\\|^}$\" \"app/\\(app\\)/ch-secretarial/page.tsx\")",
+      "Bash(grep -n \"^    </div>\\\\|^  \\);$\\\\|^}$\" components/features/tasks/TasksPage.tsx)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -L http://localhost:3000/tasks)",
+      "Bash(Find /c/Users/chris/Desktop/Claude/agent-smith -type f -name \"*.ts\" -o -name \"*.tsx\")",
+      "Bash(grep -n \"^    </ToolLayout>\\\\|^}$\" components/features/meeting-notes/MeetingNotesHistory.tsx)"
     ]
   }
 }

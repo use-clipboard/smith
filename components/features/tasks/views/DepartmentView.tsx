@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Lock, Unlock, RefreshCw, Search, CalendarDays, ChevronDown, ChevronRight } from 'lucide-react';
 import TaskListRow from '../TaskListRow';
-import SortHeader, { type SortDir } from '../SortHeader';
+import TaskTable, { type TaskColumn } from '../TaskTable';
+import { type SortDir } from '../SortHeader';
+import { useTaskClientStatusPolicy } from '../TaskClientStatusPolicyProvider';
+import { isHiddenByClientStatus, isExcludedFromOverdueCounts, countsHiddenByClientStatus } from '../applyClientStatusVisibility';
 import Tooltip from '@/components/ui/Tooltip';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { Task, TaskStatus, TaskStep, TaskTemplate } from '@/types';
@@ -35,6 +38,18 @@ interface Props {
   onStopRecurrence: (taskId: string) => Promise<void>;
 }
 
+type DeptSortField = 'task' | 'client' | 'status' | 'due';
+
+const DEPARTMENT_COLUMNS: TaskColumn<DeptSortField>[] = [
+  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200, sortField: 'task'   },
+  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120, sortField: 'client' },
+  { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90,  sortField: 'status' },
+  { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90                          },
+  { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110, sortField: 'due'    },
+  { id: 'assignees', label: 'Assignees', defaultWidth: 130, minWidth: 80                           },
+  { id: 'actions',   label: 'Actions',   defaultWidth: 130, minWidth: 110, fixed: true, align: 'right' },
+];
+
 const STATUS_FILTERS: { id: TaskStatus | 'all' | 'open'; label: string }[] = [
   { id: 'open',              label: 'Open' },
   { id: 'all',               label: 'All' },
@@ -61,6 +76,7 @@ export default function DepartmentView({
   onTaskClick, onStepUpdate, onTaskUpdate, onDelete, onStopRecurrence,
 }: Props) {
   const label = TEMPLATE_CATEGORY_LABELS[category] ?? category;
+  const { policy: clientStatusPolicy, showOnHold, setShowOnHold, showInactive, setShowInactive } = useTaskClientStatusPolicy();
 
   // ── Filter state (firm-wide, persisted) ─────────────────────────────────────
   const [filter, setFilter] = useState<DeptFilter>({
@@ -159,6 +175,10 @@ export default function DepartmentView({
     return tasks.filter(t => {
       // Restrict to tasks attached to templates in this department
       if (!t.template_id || !templateIdsInCategory.has(t.template_id)) return false;
+      // Apply the firm's client-status policy. The grey-out + cancelled
+      // status badge are universal; this filter respects hide-from-default
+      // + the user's per-session "Show on-hold / Show inactive" toggles.
+      if (isHiddenByClientStatus(t, { policy: clientStatusPolicy, showOnHold, showInactive })) return false;
       if (search) {
         // Match task title OR client name OR client code (case-insensitive)
         const client = (t as unknown as { client?: { name?: string | null; client_ref?: string | null } | null }).client ?? null;
@@ -176,7 +196,7 @@ export default function DepartmentView({
       }
       return true;
     });
-  }, [tasks, templates, category, search, status, assignee, filter.date_from, filter.date_to]);
+  }, [tasks, templates, category, search, status, assignee, filter.date_from, filter.date_to, clientStatusPolicy, showOnHold, showInactive]);
 
   // ── Per-template counts for the tabs (NOT affected by active tab) ───────────
   const countsByTemplate = useMemo(() => {
@@ -204,16 +224,20 @@ export default function DepartmentView({
         const due = new Date(t.due_date);
         const days = daysBetween(today, due);
         totalDaysToGo += days;
-        if (t.status !== 'complete') {
+        // Exclude on-hold (when policy says so) and inactive clients from
+        // the Overdue / Due-in-7d / Next-due rollups — they're shown for
+        // context only, not active workload tracking.
+        const skipFromCounts = isExcludedFromOverdueCounts(t, clientStatusPolicy);
+        if (t.status !== 'complete' && !skipFromCounts) {
           if (days < 0) overdue++;
           else if (due <= weekEnd) dueThisWeek++;
         }
-        if (t.status !== 'complete' && days >= 0 && (!nextDue || due < nextDue)) nextDue = due;
+        if (t.status !== 'complete' && !skipFromCounts && days >= 0 && (!nextDue || due < nextDue)) nextDue = due;
       }
     }
     const avgDaysToGo = withDue ? Math.round(totalDaysToGo / withDue) : null;
     return { total: filteredTasks.length, completed, overdue, dueThisWeek, avgDaysToGo, nextDue };
-  }, [filteredTasks]);
+  }, [filteredTasks, clientStatusPolicy]);
 
   const clientNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -389,6 +413,50 @@ export default function DepartmentView({
               <RefreshCw size={11} /> Reset
             </button>
           )}
+
+          {/* Show-hidden toggles — surface only when the policy is actively
+              hiding tasks AND there are some to show, so the chip doesn't
+              clutter the bar otherwise. */}
+          {(() => {
+            // Counts based on the same template-in-category restriction as
+            // the main filter so we don't dangle "Show 12 on-hold" when none
+            // of the 12 belong to this department.
+            const templateIdsInCategory = new Set(
+              templates.filter(tpl => tpl.category === category).map(tpl => tpl.id)
+            );
+            const inDept = tasks.filter(t => t.template_id && templateIdsInCategory.has(t.template_id));
+            const hidden = countsHiddenByClientStatus(inDept, { policy: clientStatusPolicy, showOnHold, showInactive });
+            return (
+              <>
+                {(hidden.onHold > 0 || showOnHold) && (
+                  <button
+                    onClick={() => setShowOnHold(!showOnHold)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+                      showOnHold
+                        ? 'bg-amber-100 border-amber-300 text-amber-800'
+                        : 'bg-white border-amber-200 text-amber-700 hover:bg-amber-50'
+                    }`}
+                  >
+                    {showOnHold ? 'Hide' : 'Show'} on-hold
+                    {!showOnHold && hidden.onHold > 0 && <span className="font-semibold">({hidden.onHold})</span>}
+                  </button>
+                )}
+                {(hidden.inactive > 0 || showInactive) && (
+                  <button
+                    onClick={() => setShowInactive(!showInactive)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+                      showInactive
+                        ? 'bg-gray-200 border-gray-300 text-gray-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    {showInactive ? 'Hide' : 'Show'} inactive
+                    {!showInactive && hidden.inactive > 0 && <span className="font-semibold">({hidden.inactive})</span>}
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {dateLocked && (
@@ -450,44 +518,42 @@ export default function DepartmentView({
           })()}
         </div>
       ) : (
-        <div className="space-y-4 pt-4">
-          {tasksByTemplateForList.map(group => {
-            const groupKey = group.template?.id ?? 'unknown';
-            const isCollapsible = activeTemplateId === 'all';
-            const isCollapsed = isCollapsible && collapsedTemplates.has(groupKey);
-            return (
-            <div key={groupKey} className="bg-white border border-gray-200 rounded-xl">
-              {activeTemplateId === 'all' && (
-                <button
-                  onClick={() => toggleTemplate(groupKey)}
-                  aria-expanded={!isCollapsed}
-                  className="w-full px-4 py-2 border-b border-gray-100 flex items-center justify-between hover:bg-gray-50 transition-colors group"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isCollapsed
-                      ? <ChevronRight size={13} className="text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
-                      : <ChevronDown  size={13} className="text-gray-400 group-hover:text-gray-600 flex-shrink-0" />}
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate">
-                      {group.template?.name ?? '(deleted template)'}
-                    </p>
-                  </div>
-                  <p className="text-xs text-gray-400 flex-shrink-0 ml-2">{group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}</p>
-                </button>
-              )}
-              {!isCollapsed && (
-              <table className="w-full text-left table-fixed">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <SortHeader<typeof sort.field> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[200px] z-10 border-b border-gray-100" />
-                    <SortHeader<typeof sort.field> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[200px] z-10 w-48 border-b border-gray-100" />
-                    <SortHeader<typeof sort.field> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[200px] z-10 w-32 border-b border-gray-100" />
-                    <th className="sticky top-[200px] z-10 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 w-28 border-b border-gray-100">Progress</th>
-                    <SortHeader<typeof sort.field> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[200px] z-10 w-48 border-b border-gray-100" />
-                    <th className="sticky top-[200px] z-10 px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 w-32 border-b border-gray-100">Assignees</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.tasks.map(t => (
+        <div className="pt-4">
+          <TaskTable<typeof sort.field>
+            viewKey={`department.${category}`}
+            columns={DEPARTMENT_COLUMNS}
+            sortField={sort.field}
+            sortDir={sort.dir}
+            onToggleSort={toggleSort}
+          >
+            {tasksByTemplateForList.map(group => {
+              const groupKey = group.template?.id ?? 'unknown';
+              const isCollapsible = activeTemplateId === 'all';
+              const isCollapsed = isCollapsible && collapsedTemplates.has(groupKey);
+              return (
+                <tbody key={groupKey}>
+                  {activeTemplateId === 'all' && (
+                    <tr className="bg-gray-50/60">
+                      <td colSpan={7} className="px-0 py-0">
+                        <button
+                          onClick={() => toggleTemplate(groupKey)}
+                          aria-expanded={!isCollapsed}
+                          className="w-full px-4 py-2 border-y border-gray-100 flex items-center justify-between hover:bg-gray-100 transition-colors group"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {isCollapsed
+                              ? <ChevronRight size={13} className="text-gray-400 group-hover:text-gray-600 flex-shrink-0" />
+                              : <ChevronDown  size={13} className="text-gray-400 group-hover:text-gray-600 flex-shrink-0" />}
+                            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide truncate">
+                              {group.template?.name ?? '(deleted template)'}
+                            </p>
+                          </div>
+                          <p className="text-xs text-gray-400 flex-shrink-0 ml-2">{group.tasks.length} task{group.tasks.length !== 1 ? 's' : ''}</p>
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {!isCollapsed && group.tasks.map(t => (
                     <TaskListRow
                       key={t.id}
                       task={t}
@@ -502,11 +568,9 @@ export default function DepartmentView({
                     />
                   ))}
                 </tbody>
-              </table>
-              )}
-            </div>
-            );
-          })}
+              );
+            })}
+          </TaskTable>
         </div>
       )}
 

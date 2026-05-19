@@ -7,7 +7,8 @@ import TaskFilters from '../TaskFilters';
 import { TaskStatusBadge } from '../TaskStatusBadge';
 import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
-import SortHeader, { type SortDir } from '../SortHeader';
+import { type SortDir } from '../SortHeader';
+import TaskTable, { type TaskColumn } from '../TaskTable';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
@@ -33,6 +34,16 @@ interface Props {
 const STATUS_ORDER: TaskStatus[] = ['in_progress', 'waiting_on_client', 'records_here', 'review', 'not_started', 'complete'];
 
 type SortField = 'task' | 'client' | 'status' | 'due';
+
+const ALL_TASKS_COLUMNS: TaskColumn<SortField>[] = [
+  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200, sortField: 'task'   },
+  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120, sortField: 'client' },
+  { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90,  sortField: 'status' },
+  { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90                          },
+  { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110, sortField: 'due'    },
+  { id: 'assignees', label: 'Assignees', defaultWidth: 130, minWidth: 80                           },
+  { id: 'actions',   label: 'Actions',   defaultWidth: 130, minWidth: 110, fixed: true, align: 'right' },
+];
 
 export default function AllTasksView({ tasks, currentUserId, search, onSearchChange, statusFilter, onStatusChange, clientFilter, onClientChange, assigneeFilter, onAssigneeChange, clients, teamMembers, onClearFilters, onTaskClick, onStepUpdate, onTaskUpdate, viewMode, isAdmin = false, onDelete, onStopRecurrence }: Props) {
   const [dueFilter, setDueFilter] = useState<DueWindow>('all');
@@ -119,25 +130,19 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
         <div className="text-center py-16 text-gray-400"><p className="text-sm">No tasks match the current filters.</p></div>
       ) : viewMode === 'list' ? (
         /* ── List view ── */
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <table className="w-full text-left table-fixed">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <SortHeader<SortField> field="task"   label="Task"   activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 rounded-tl-xl border-b border-gray-100" />
-                <SortHeader<SortField> field="client" label="Client" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-48 border-b border-gray-100" />
-                <SortHeader<SortField> field="status" label="Status" activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-32 border-b border-gray-100" />
-                <th className="sticky top-[88px] z-10 px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 w-28 border-b border-gray-100">Progress</th>
-                <SortHeader<SortField> field="due"    label="Due"    activeField={sort.field} activeDir={sort.dir} onToggle={toggleSort} thClassName="sticky top-[88px] z-10 w-48 border-b border-gray-100" />
-                <th className="sticky top-[88px] z-10 px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 rounded-tr-xl w-32 border-b border-gray-100">Assignees</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedTasks.map(t => (
-                <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TaskTable<SortField>
+          viewKey="allTasks"
+          columns={ALL_TASKS_COLUMNS}
+          sortField={sort.field}
+          sortDir={sort.dir}
+          onToggleSort={toggleSort}
+        >
+          <tbody>
+            {sortedTasks.map(t => (
+              <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+            ))}
+          </tbody>
+        </TaskTable>
       ) : (
         /* ── Grid view ── */
         <div className="space-y-4">

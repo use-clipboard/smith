@@ -5,6 +5,8 @@ import { Clock, User, Users, RefreshCw, Puzzle, Trash2, XCircle, Loader2 } from 
 import Tooltip from '@/components/ui/Tooltip';
 import { TaskStatusBadge } from './TaskStatusBadge';
 import DueDatePill from './DueDatePill';
+import TaskDeadlineLinkBadge, { type TaskDeadlineLink } from './TaskDeadlineLinkBadge';
+import { useTaskDeadlineLinks } from './TaskDeadlineLinksProvider';
 import type { Task, RecurrenceType } from '@/types';
 
 interface TaskCardProps {
@@ -14,6 +16,9 @@ interface TaskCardProps {
   isAdmin?: boolean;
   onDelete?: (taskId: string) => Promise<void>;
   onStopRecurrence?: (taskId: string) => Promise<void>;
+  /** CH-deadline links attached to this task, if any. Drives the small
+   *  🔗 indicator next to the title with a hover tooltip. */
+  deadlineLinks?: TaskDeadlineLink[];
 }
 
 function formatDate(d: string | null) {
@@ -56,7 +61,12 @@ function computeNextDue(dueDate: string | null, recType: RecurrenceType | null, 
   return base.toISOString().split('T')[0];
 }
 
-export default function TaskCard({ task, onClick, currentUserId, isAdmin = false, onDelete, onStopRecurrence }: TaskCardProps) {
+export default function TaskCard({ task, onClick, currentUserId, isAdmin = false, onDelete, onStopRecurrence, deadlineLinks }: TaskCardProps) {
+  // Falls back to the provider when a parent doesn't pass links directly.
+  // Keeping the prop optional means callers that already have the data
+  // (avoiding an extra render cycle) can still pass it.
+  const fetchedLinks = useTaskDeadlineLinks(task.id);
+  const links = deadlineLinks ?? fetchedLinks;
   const [confirmDelete, setConfirmDelete]   = useState(false);
   const [deleting, setDeleting]             = useState(false);
   const [stoppingRec, setStoppingRec]       = useState(false);
@@ -154,6 +164,7 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
             <h3 className="text-sm font-semibold text-gray-900 truncate group-hover:text-indigo-700">
               {task.title}
             </h3>
+            <TaskDeadlineLinkBadge links={links} />
             {isRecurring && (
               <Tooltip label={recurrenceLabel(task.recurrence_type, task.recurrence_interval_days)} className="flex-shrink-0">
                 <RefreshCw className="h-3.5 w-3.5 text-indigo-400" />

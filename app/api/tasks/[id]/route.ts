@@ -68,7 +68,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!existing) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
 
   const updates: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
-  if (parsed.data.status === 'complete') updates.completed_at = new Date().toISOString();
+  // Stamp completion metadata only on the transition INTO 'complete' so we
+  // don't overwrite the original completer/timestamp if the task is edited
+  // later while already in the completed state.
+  if (parsed.data.status === 'complete' && existing.status !== 'complete') {
+    updates.completed_at = new Date().toISOString();
+    updates.completed_by = ctx.userId;
+  }
 
   const { data: task, error } = await supabase.from('tasks').update(updates).eq('id', params.id).select().single();
   if (error) {

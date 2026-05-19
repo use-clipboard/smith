@@ -581,7 +581,7 @@ export interface AppState2 {
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'records_here' | 'review' | 'complete' | 'draft';
+export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'records_here' | 'review' | 'complete' | 'draft' | 'cancelled';
 export type StepStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'complete' | 'skipped';
 export type StepType = 'regular' | 'start' | 'end';
 export type RecurrenceType = 'once' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly' | 'annually' | 'custom';
@@ -689,6 +689,11 @@ export interface TaskTemplate {
   recurrence_type: RecurrenceType | null;
   recurrence_interval_days: number | null;
   estimated_duration_days: number | null;
+  /** When set, tasks created from this template auto-link to this CH
+   *  deadline on the chosen client. Null = manual / non-CH template. */
+  ch_deadline_type: 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due' | null;
+  /** Days offset from the CH deadline. Negative = due before. */
+  ch_offset_days: number;
   created_at: string;
   updated_at: string;
   steps?: TaskTemplateStep[];

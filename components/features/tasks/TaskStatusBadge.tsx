@@ -10,6 +10,7 @@ const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; classes: string }>
   review:           { label: 'Review',             classes: 'bg-purple-100 text-purple-700' },
   complete:         { label: 'Complete',           classes: 'bg-green-100 text-green-700' },
   draft:            { label: 'Draft',              classes: 'bg-gray-100 text-gray-400' },
+  cancelled:        { label: 'Cancelled',          classes: 'bg-gray-100 text-gray-500 line-through' },
 };
 
 const STEP_STATUS_CONFIG: Record<StepStatus, { label: string; classes: string; dot: string }> = {

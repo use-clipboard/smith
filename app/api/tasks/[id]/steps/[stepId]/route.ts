@@ -105,7 +105,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
   }
 
   // Auto-update task status based on step statuses
-  await syncTaskStatus(supabase, params.id, ctx.firmId);
+  await syncTaskStatus(supabase, params.id, ctx.firmId, ctx.userId);
 
   return NextResponse.json({ step });
 }
@@ -127,7 +127,8 @@ async function syncTaskStatus(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   taskId: string,
-  firmId: string
+  firmId: string,
+  actorUserId: string | null,
 ) {
   const { data: steps } = await supabase.from('task_steps').select('status').eq('task_id', taskId);
   if (!steps || steps.length === 0) return;
@@ -144,7 +145,16 @@ async function syncTaskStatus(
   }
 
   const updates: Record<string, unknown> = { status: taskStatus, updated_at: new Date().toISOString() };
-  if (taskStatus === 'complete') updates.completed_at = new Date().toISOString();
+  if (taskStatus === 'complete') {
+    // Pull the task's current status so we only stamp completion metadata
+    // on the transition INTO 'complete' — re-saving an already-completed
+    // task (e.g. re-ticking a step) must not clobber the original actor.
+    const { data: cur } = await supabase.from('tasks').select('status').eq('id', taskId).maybeSingle();
+    if (cur?.status !== 'complete') {
+      updates.completed_at = new Date().toISOString();
+      if (actorUserId) updates.completed_by = actorUserId;
+    }
+  }
 
   await supabase.from('tasks').update(updates).eq('id', taskId).eq('firm_id', firmId);
 }

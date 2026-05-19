@@ -245,6 +245,12 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
   // Create Task from meeting notes
   const [showQuickTask, setShowQuickTask] = useState(false);
+  // outputs.id of the row this meeting was last saved to. Set when re-
+  // opened from history (seed.id) and refreshed every time the user saves
+  // a new history row. Used as source_output_id when the in-tool
+  // Create-Task button fires so the history screen's "task linked" marker
+  // picks up tasks created here too.
+  const [savedOutputId, setSavedOutputId] = useState<string | null>(seed?.id ?? null);
 
   // Refs
   const recogRef         = useRef<SpeechRecognitionInstance | null>(null);
@@ -763,7 +769,11 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
         );
       }
 
-      // 4. Persist to outputs history (fire-and-forget — must not block the user)
+      // 4. Persist to outputs history. We still don't block on this, but
+      //    we DO capture the returned outputs.id so the in-tool Create-Task
+      //    button can stamp source_output_id on the spawned task — that's
+      //    what lets the history screen's "task linked" marker pick up
+      //    tasks created here too.
       tasks.push(
         fetch('/api/outputs/meeting-notes', {
           method: 'POST',
@@ -786,7 +796,10 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
             nextMeeting: editNext,
             transcript: transcript || '',
           }),
-        }).catch(err => console.error('[MeetingNotes] history save failed:', err))
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then((j: { id?: string } | null) => { if (j?.id) setSavedOutputId(j.id); })
+          .catch(err => console.error('[MeetingNotes] history save failed:', err))
       );
 
       await Promise.all(tasks);
@@ -1222,6 +1235,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
               defaultDueDate={dueDate}
               defaultClientId={selectedClient?.id ?? ''}
               defaultClientName={selectedClient?.name ?? ''}
+              sourceOutputId={savedOutputId ?? undefined}
             />
           );
         })()}

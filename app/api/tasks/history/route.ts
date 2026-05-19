@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       client:clients(id, name, client_ref),
       created_by_user:users!tasks_created_by_fkey(id, full_name, email),
       deleted_by_user:users!tasks_deleted_by_fkey(id, full_name, email),
+      completed_by_user:users!tasks_completed_by_fkey(id, full_name, email),
       steps:task_steps(*, assignee:users(id, full_name, email)),
       edges:task_step_edges(*),
       time_entries:task_time_entries(*, user:users(id, full_name, email))

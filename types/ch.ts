@@ -72,7 +72,7 @@ export interface CHCompanyData {
 }
 
 export type CHSortField =
-  | 'companyNumber' | 'companyName' | 'status' | 'incorporationDate'
+  | 'companyNumber' | 'companyName' | 'clientCode' | 'status' | 'incorporationDate'
   | 'accountsNextDue' | 'accountsOverdue'
   | 'csNextDue' | 'csOverdue'
   | 'nearestOfficerIdvDue' | 'officersIdvOverdueCount'
@@ -87,6 +87,10 @@ export interface CHColumnDef {
 export const CH_COLUMNS: CHColumnDef[] = [
   { key: 'companyNumber',           label: 'Company No.',           defaultVisible: true },
   { key: 'companyName',             label: 'Company Name',          defaultVisible: true },
+  // Client code is only populated in the Client List view (looked up from
+  // the firm's clients table by Companies House id). In Custom List mode
+  // the column shows '—' for every row.
+  { key: 'clientCode',              label: 'Client Code',           defaultVisible: true },
   { key: 'status',                  label: 'Status',                defaultVisible: true },
   { key: 'incorporationDate',       label: 'Incorporated',          defaultVisible: true },
   { key: 'accountsNextDue',         label: 'Accounts Due',          defaultVisible: true },

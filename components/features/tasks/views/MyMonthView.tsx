@@ -4,7 +4,18 @@ import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import TaskCard from '../TaskCard';
 import TaskListRow from '../TaskListRow';
+import TaskTable, { type TaskColumn } from '../TaskTable';
 import ExportTasksButton from '../ExportTasksButton';
+
+const MY_MONTH_COLUMNS: TaskColumn[] = [
+  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200 },
+  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120 },
+  { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90  },
+  { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90  },
+  { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110 },
+  { id: 'assignees', label: 'Assignees', defaultWidth: 130, minWidth: 80  },
+  { id: 'actions',   label: 'Actions',   defaultWidth: 130, minWidth: 110, fixed: true, align: 'right' },
+];
 import type { Task, TaskStep } from '@/types';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
@@ -148,28 +159,16 @@ export default function MyMonthView({ tasks, currentUserId, onTaskClick, onStepU
           <p className="text-sm">No tasks due this month.</p>
         </div>
       ) : viewMode === 'list' ? (
-        <div className="bg-white border border-gray-200 rounded-xl">
-          <table className="w-full text-left">
-            <thead className="sticky top-[57px] z-10">
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tl-xl">Task</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Client</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Due</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-tr-xl">Assignees</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myTasks
-                .slice()
-                .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
-                .map(t => (
-                  <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
-                ))}
-            </tbody>
-          </table>
-        </div>
+        <TaskTable viewKey="myMonth" columns={MY_MONTH_COLUMNS}>
+          <tbody>
+            {myTasks
+              .slice()
+              .sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime())
+              .map(t => (
+                <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
+              ))}
+          </tbody>
+        </TaskTable>
       ) : (
         <div className="space-y-6">
           {weeks.map(({ weekStart, weekEnd, weekTasks }) => {

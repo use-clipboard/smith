@@ -3,6 +3,15 @@ import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments } from '@/lib/notifications';
+import { autoCreateChDeadlineLink, lookupCachedDeadline } from '@/lib/createChDeadlineLink';
+
+type DeadlineType = 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due';
+const CH_DEADLINE_LABELS: Record<DeadlineType, string> = {
+  accounts_due:    'Accounts due',
+  cs_due:          'Confirmation statement due',
+  officer_idv_due: 'Officer IDV due',
+  psc_idv_due:    'PSC IDV due',
+};
 
 const BulkRowSchema = z.object({
   template_id: z.string().uuid(),
@@ -86,6 +95,42 @@ export async function POST(req: NextRequest) {
     // Build label for result display
     const label = template.name + (row.client_id ? '' : ' (no client)');
 
+    // Templates marked CH-linked manage their own cadence + due date via
+    // the sync engine. Insert with due_date=null + no manual recurrence;
+    // autoCreateChDeadlineLink will look up the current CH deadline and
+    // set the initial due_date in the same transaction below.
+    const tplCh = (template as { ch_deadline_type?: string | null }).ch_deadline_type ?? null;
+    const isChLinkedTemplate = !!tplCh;
+
+    // For CH-linked templates, refuse to create a task if there is no
+    // current deadline cached for this client/type — otherwise we end up
+    // with a CH-linked task that has no due date until the next refresh,
+    // which the user finds confusing in bulk runs.
+    if (isChLinkedTemplate) {
+      const deadlineType = tplCh as DeadlineType;
+      const deadlineLabel = CH_DEADLINE_LABELS[deadlineType] ?? deadlineType;
+      if (!row.client_id) {
+        results.push({ label, success: false, error: `No task created — CH-linked templates require a client (${deadlineLabel})` });
+        continue;
+      }
+      const { data: clientRow } = await supabaseRead
+        .from('clients')
+        .select('companies_house_id')
+        .eq('id', row.client_id)
+        .maybeSingle();
+      const chNumber = (clientRow as { companies_house_id: string | null } | null)?.companies_house_id ?? null;
+      if (!chNumber) {
+        results.push({ label, success: false, error: `No task created — client has no Companies House number (${deadlineLabel})` });
+        continue;
+      }
+      const cached = await lookupCachedDeadline(supabase, ctx.firmId, chNumber, deadlineType);
+      // "9999-12-31" is the sentinel for IDV exemption — treat as no due date.
+      if (!cached || cached.startsWith('9999')) {
+        results.push({ label, success: false, error: `No task created — no due date on CH Sec tool (${deadlineLabel})` });
+        continue;
+      }
+    }
+
     try {
       // Create the task
       const { data: task, error: taskError } = await supabase
@@ -97,10 +142,10 @@ export async function POST(req: NextRequest) {
           description: template.description ?? null,
           client_id: row.client_id ?? null,
           template_id: template.id,
-          due_date: row.deadline ?? null,
+          due_date: isChLinkedTemplate ? null : (row.deadline ?? null),
           is_internal: !row.client_id,
-          recurrence_type: template.recurrence_type ?? null,
-          recurrence_interval_days: template.recurrence_interval_days ?? null,
+          recurrence_type: isChLinkedTemplate ? null : (template.recurrence_type ?? null),
+          recurrence_interval_days: isChLinkedTemplate ? null : (template.recurrence_interval_days ?? null),
           status,
         })
         .select('id')
@@ -227,6 +272,20 @@ export async function POST(req: NextRequest) {
             target_handle: e.target_handle ?? null,
           }))
         );
+      }
+
+      // CH-deadline auto-link when the template asked for one and we
+      // have a client to point at. Non-fatal — task is created either way.
+      if (isChLinkedTemplate && row.client_id) {
+        await autoCreateChDeadlineLink(supabase, {
+          firmId:   ctx.firmId,
+          taskId:   task.id as string,
+          clientId: row.client_id,
+          template: {
+            ch_deadline_type: (template as { ch_deadline_type?: 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due' | null }).ch_deadline_type ?? null,
+            ch_offset_days:   (template as { ch_offset_days?: number | null }).ch_offset_days ?? 0,
+          },
+        });
       }
 
       results.push({ label, success: true, task_id: task.id });

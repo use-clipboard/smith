@@ -198,7 +198,11 @@ export interface ProposalEmailOptions {
   acceptUrl: string;
 }
 
-export async function sendProposalEmail(opts: ProposalEmailOptions) {
+/** Render the proposal email body + subject without dispatching. The
+ *  prepare_only path in /api/proposals/[id]/send uses this so the in-app
+ *  Compose window can take the rendered email and send via the user's own
+ *  Gmail rather than going through Resend. */
+export async function renderProposalEmail(opts: ProposalEmailOptions): Promise<{ subject: string; html: string }> {
   const color = await getBrandColor(opts.firmId, '#0ea5e9');
   const introBlock = opts.intro
     ? `<p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.6;white-space:pre-wrap;">${escapeHtml(opts.intro)}</p>`
@@ -226,6 +230,11 @@ export async function sendProposalEmail(opts: ProposalEmailOptions) {
     `Proposal from {firm} — {proposal}`,
     { firm_name: opts.firmName, prospect_name: opts.prospectName, proposal_title: opts.proposalTitle },
   );
+  return { subject, html };
+}
+
+export async function sendProposalEmail(opts: ProposalEmailOptions) {
+  const { subject, html } = await renderProposalEmail(opts);
   await dispatchProposalEmail({ firmId: opts.firmId, to: opts.to, subject, html });
 }
 

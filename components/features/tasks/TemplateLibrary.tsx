@@ -1,10 +1,17 @@
 ﻿'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X, Copy, AlertCircle } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X, Copy, AlertCircle, Link2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, DefaultTemplate } from '@/types';
+
+const CH_DEADLINE_LABELS: Record<string, string> = {
+  accounts_due: 'Accounts Due',
+  cs_due: 'Confirmation Statement',
+  officer_idv_due: 'Officer IDV',
+  psc_idv_due: 'PSC IDV',
+};
 
 interface Props {
   firmTemplates: TaskTemplate[];
@@ -198,6 +205,13 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
                           <span className="flex items-center gap-1 text-xs text-gray-400">
                             <RefreshCw className="h-3 w-3" /> {t.recurrence_type}
                           </span>
+                        )}
+                        {(t as { ch_deadline_type?: string | null }).ch_deadline_type && (
+                          <Tooltip label="Linked to CH Secretarial — due date auto-syncs with Companies House">
+                            <span className="flex items-center gap-1 text-xs text-[var(--accent)]">
+                              <Link2 className="h-3 w-3" /> {CH_DEADLINE_LABELS[(t as { ch_deadline_type: string }).ch_deadline_type] ?? 'CH-linked'}
+                            </span>
+                          </Tooltip>
                         )}
                         {!t.is_firm_wide && (
                           <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">Personal</span>

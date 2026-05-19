@@ -42,6 +42,7 @@ interface PublicProposal {
   vat_mode: 'inclusive' | 'exclusive';
   vat_rate: number;
   discount_amount: number;
+  discount_type?: 'amount' | 'percent';
   discount_label: string | null;
   status: 'draft' | 'sent' | 'viewed' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
   sent_at: string | null;
@@ -66,13 +67,36 @@ const FONT_CSS: Record<string, string> = {
   rounded: '"Nunito",-apple-system,sans-serif',
 };
 
-export default function ProposalPublicView({ token }: { token: string }) {
-  const [proposal, setProposal] = useState<PublicProposal | null>(null);
-  const [loading, setLoading] = useState(true);
+/**
+ * Public proposal view.
+ *
+ * Two modes:
+ *   1. `{ token }` — production: loads the proposal from /api/p/[token],
+ *      handles accept / decline server calls. This is what real prospects see.
+ *   2. `{ previewData }` — in-app preview: skips the fetch and renders the
+ *      provided proposal data directly. Accept / decline form still renders
+ *      so the preparer sees the exact prospect layout, but the buttons are
+ *      no-ops and a "preview mode" notice is shown.
+ *
+ * Both modes share 100% of the JSX below so what you see in preview really
+ * is what the prospect gets.
+ */
+type ProposalPublicViewProps =
+  | { token: string; previewData?: undefined }
+  | { token?: undefined; previewData: PublicProposal };
+
+export default function ProposalPublicView(props: ProposalPublicViewProps) {
+  const token        = props.token;
+  const previewMode  = props.previewData !== undefined;
+  const [proposal, setProposal] = useState<PublicProposal | null>(previewMode ? props.previewData : null);
+  const [loading, setLoading] = useState(!previewMode);
   const [error, setError] = useState<string | null>(null);
-  const [chosenPackage, setChosenPackage] = useState<string | null>(null);
-  const [signerName, setSignerName] = useState('');
-  const [signerEmail, setSignerEmail] = useState('');
+  const [chosenPackage, setChosenPackage] = useState<string | null>(() => {
+    const pkgs = previewMode ? props.previewData.offered_packages : [];
+    return pkgs.length === 1 ? pkgs[0].id : null;
+  });
+  const [signerName, setSignerName] = useState(previewMode ? (props.previewData.prospect?.contact_name ?? '') : '');
+  const [signerEmail, setSignerEmail] = useState(previewMode ? (props.previewData.prospect?.email ?? '') : '');
   const [typedSig, setTypedSig] = useState('');
   const [accepting, setAccepting] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -80,7 +104,17 @@ export default function ProposalPublicView({ token }: { token: string }) {
   const [declineOpen, setDeclineOpen] = useState(false);
   const [done, setDone] = useState<'accepted' | 'declined' | null>(null);
 
+  // Keep state in sync when the parent updates previewData (live edit).
   useEffect(() => {
+    if (previewMode) {
+      setProposal(props.previewData);
+      if (props.previewData.offered_packages.length === 1) setChosenPackage(props.previewData.offered_packages[0].id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, props.previewData]);
+
+  useEffect(() => {
+    if (previewMode || !token) return;
     fetch(`/api/p/${token}`)
       .then(r => r.json().then(data => ({ ok: r.ok, data })))
       .then(({ ok, data }) => {
@@ -95,10 +129,11 @@ export default function ProposalPublicView({ token }: { token: string }) {
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, previewMode]);
 
   async function accept() {
     if (!proposal) return;
+    if (previewMode || !token) return; // preview can't accept
     if (proposal.offered_packages.length > 0 && !chosenPackage) {
       setError('Please choose a package.'); return;
     }
@@ -123,6 +158,7 @@ export default function ProposalPublicView({ token }: { token: string }) {
   }
 
   async function decline() {
+    if (previewMode || !token) return;
     setDeclining(true);
     try {
       const res = await fetch(`/api/p/${token}/decline`, {
@@ -232,13 +268,10 @@ export default function ProposalPublicView({ token }: { token: string }) {
           )}
         </div>
 
-        {/* Discount */}
-        {proposal.discount_amount > 0 && (
-          <div className="px-8 py-3 border-b border-gray-100 text-sm flex justify-between bg-emerald-50/40">
-            <span>{proposal.discount_label ?? 'Discount'}</span>
-            <span className="font-semibold text-emerald-700">− £{Number(proposal.discount_amount).toFixed(2)}</span>
-          </div>
-        )}
+        {/* Totals — per-frequency breakdown, only frequencies with non-zero
+            items are shown. Discount line and after-discount total appear
+            below when applicable. */}
+        <ProposalTotalsBlock proposal={proposal} />
 
         {/* Terms */}
         {proposal.terms && (
@@ -277,8 +310,8 @@ export default function ProposalPublicView({ token }: { token: string }) {
             </div>
             {error && <div className="mt-3 text-xs text-red-700 flex items-center gap-1.5"><AlertTriangle size={12} />{error}</div>}
             <div className="flex flex-wrap items-center justify-end gap-2 mt-4">
-              <button onClick={() => setDeclineOpen(true)} className="btn-secondary text-sm">Decline</button>
-              <button onClick={() => void accept()} disabled={accepting} className="text-sm inline-flex items-center gap-1.5 text-white px-4 py-2 rounded-md font-semibold disabled:opacity-50" style={{ background: brand.primary_color }}>
+              <button onClick={() => !previewMode && setDeclineOpen(true)} disabled={previewMode} className="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed">Decline</button>
+              <button onClick={() => void accept()} disabled={accepting || previewMode} className="text-sm inline-flex items-center gap-1.5 text-white px-4 py-2 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed" style={{ background: brand.primary_color }}>
                 {accepting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}Accept proposal
               </button>
             </div>
@@ -342,6 +375,83 @@ function ServicesTable({ items, vatMode, compact }: { items: LineItem[]; vatMode
         })}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Renders the totals breakdown shown above the Terms block. Sums all line
+ * items across packages and standalone, splits by frequency, and applies
+ * the discount (flat or percent) to the grand-first-year total.
+ *
+ * Rules:
+ *   - Only frequencies with a non-zero subtotal are shown.
+ *   - "First-year total" = one-off + monthly×12 + quarterly×4 + annual.
+ *   - Percent discount → discount value = pct/100 × first-year total.
+ *   - Flat discount   → discount value = the £ amount.
+ *   - "Total after discount" only appears when a discount > 0 is configured.
+ */
+function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
+  // Aggregate every line item — packaged and standalone alike — so the
+  // breakdown is a single answer to "what will this cost".
+  let one_off = 0, monthly = 0, quarterly = 0, annual = 0;
+  for (const li of proposal.line_items) {
+    const sub = Number(li.unit_price) * Number(li.quantity);
+    if (li.frequency === 'one_off')        one_off   += sub;
+    else if (li.frequency === 'monthly')   monthly   += sub;
+    else if (li.frequency === 'quarterly') quarterly += sub;
+    else if (li.frequency === 'annual')    annual    += sub;
+  }
+
+  const firstYearTotal = one_off + monthly * 12 + quarterly * 4 + annual;
+  const discountType   = proposal.discount_type ?? 'amount';
+  const discountRaw    = Number(proposal.discount_amount) || 0;
+  const discountValue  = discountType === 'percent'
+    ? Math.min(firstYearTotal, (discountRaw / 100) * firstYearTotal)
+    : Math.min(firstYearTotal, discountRaw);
+  const afterDiscount  = firstYearTotal - discountValue;
+  const showDiscount   = discountValue > 0;
+
+  const rows: Array<{ label: string; value: string }> = [];
+  if (one_off   > 0) rows.push({ label: 'One-off',           value: `£${one_off.toFixed(2)}` });
+  if (monthly   > 0) rows.push({ label: 'Monthly',           value: `£${monthly.toFixed(2)} /mo` });
+  if (quarterly > 0) rows.push({ label: 'Quarterly',         value: `£${quarterly.toFixed(2)} /qtr` });
+  if (annual    > 0) rows.push({ label: 'Annual',            value: `£${annual.toFixed(2)} /yr` });
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/60">
+      <p className="text-[11px] uppercase tracking-wide font-bold text-[var(--text-muted)] mb-3">Totals</p>
+      <div className="max-w-md ml-auto space-y-1.5 text-sm">
+        {rows.map(r => (
+          <div key={r.label} className="flex items-center justify-between text-gray-700">
+            <span>{r.label}</span>
+            <span className="tabular-nums">{r.value}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
+          <span>First-year total</span>
+          <span className="tabular-nums">£{firstYearTotal.toFixed(2)}</span>
+        </div>
+        {showDiscount && (
+          <>
+            <div className="flex items-center justify-between text-emerald-700">
+              <span>
+                {proposal.discount_label ?? 'Discount'}
+                {discountType === 'percent' && discountRaw > 0 && (
+                  <span className="text-xs text-[var(--text-muted)] ml-1">({discountRaw}% off)</span>
+                )}
+              </span>
+              <span className="font-semibold tabular-nums">− £{discountValue.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
+              <span>Total after discount</span>
+              <span className="tabular-nums">£{afterDiscount.toFixed(2)}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
+import { syncCHDeadlineLinks } from '@/lib/chDeadlineSync';
 
 // ─── Resumable cron architecture ──────────────────────────────────────────────
 // The Companies House refresh used to fetch every company for every firm in a
@@ -449,6 +450,16 @@ export async function GET(request: Request) {
         total_count:         0,
         updated_at:          new Date().toISOString(),
       }, { onConflict: 'firm_id' });
+
+      // Slide / renew any task linked to one of these deadlines now the
+      // fresh data is in the cache. Non-fatal — if this errors the cache
+      // upsert above has still completed and the user sees current data.
+      try {
+        const linkSummary = await syncCHDeadlineLinks(service, f.id, job.processed_companies);
+        console.log(`[CH Cron] Firm ${f.id} — deadline links sync:`, linkSummary);
+      } catch (e) {
+        console.error(`[CH Cron] Firm ${f.id} — deadline links sync failed`, e);
+      }
 
       console.log(`[CH Cron] Firm ${f.id} — completed. ${job.processed_companies.length - errors}/${total} succeeded.`);
       results.push({ firmId: f.id, action: 'completed', processed: processedThisTick, remaining: 0 });

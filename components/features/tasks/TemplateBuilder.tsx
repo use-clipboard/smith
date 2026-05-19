@@ -76,6 +76,8 @@ interface Props {
   editTaskClientName?: string;
 }
 
+export type ChDeadlineType = 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due';
+
 export interface TemplateData {
   name: string;
   description?: string | null;
@@ -84,6 +86,11 @@ export interface TemplateData {
   recurrence_type: RecurrenceType | null;
   recurrence_interval_days?: number | null;
   estimated_duration_days?: number | null;
+  /** When set, tasks created from this template are auto-linked to this
+   *  Companies House deadline on the chosen client. The manual recurrence
+   *  fields above are ignored in this mode — CH dictates the cadence. */
+  ch_deadline_type?: ChDeadlineType | null;
+  ch_offset_days?: number;
   steps: TemplateStepData[];
   edges: TemplateEdgeData[];
   /** When editing a template that already has active task instances, this
@@ -594,6 +601,17 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
   const [recurrence, setRecurrence] = useState<RecurrenceType | ''>(template?.recurrence_type ?? (initialData?.recurrence_type as RecurrenceType) ?? '');
   const [customInterval, setCustomInterval] = useState(String(template?.recurrence_interval_days ?? ''));
   const [estimatedDays, setEstimatedDays] = useState(String(template?.estimated_duration_days ?? initialData?.estimated_duration_days ?? ''));
+  // CH-deadline linking — when chDeadlineType is non-empty the template is
+  // "CH-linked": instantiated tasks attach a ch_deadline_task_links row
+  // pointing at this deadline on the chosen client. The recurrence picker
+  // above is disabled in this mode because CH dictates cadence.
+  const [chDeadlineType, setChDeadlineType] = useState<ChDeadlineType | ''>(
+    template?.ch_deadline_type ?? initialData?.ch_deadline_type ?? '',
+  );
+  const [chOffsetDays, setChOffsetDays] = useState<number>(
+    template?.ch_offset_days ?? initialData?.ch_offset_days ?? 0,
+  );
+  const isChLinked = chDeadlineType !== '';
 
   // Steps (local state — push to React Flow via useMemo)
   const [steps, setSteps] = useState<TemplateStepData[]>(() =>
@@ -915,8 +933,14 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
       description: description || null,
       is_firm_wide: isFirmWide,
       category,
-      recurrence_type: recurrence as RecurrenceType || null,
-      recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
+      // CH-linked templates ignore manual recurrence — the CH deadline +
+      // the sync engine's renewal logic dictate the cadence instead. We
+      // still persist the user's prior recurrence choice (in case they
+      // toggle back to manual later) but pass null to the API in CH mode.
+      recurrence_type: isChLinked ? null : (recurrence as RecurrenceType || null),
+      recurrence_interval_days: isChLinked ? null : (recurrence === 'custom' && customInterval ? parseInt(customInterval) : null),
+      ch_deadline_type: isChLinked ? (chDeadlineType as ChDeadlineType) : null,
+      ch_offset_days:   isChLinked ? chOffsetDays : 0,
       estimated_duration_days: estimatedDays ? parseInt(estimatedDays) : null,
       steps,
       edges: edgesData,
@@ -1171,21 +1195,66 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
               <select value={category} onChange={e => setCategory(e.target.value)} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                 {Object.entries(TEMPLATE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
-              <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="">No recurrence</option>
-                <option value="weekly">Weekly</option>
-                <option value="bi-weekly">Bi-weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="quarterly">Quarterly</option>
-                <option value="annually">Annually</option>
-                <option value="custom">Custom</option>
+              {/* Renewal source — Manual (recurrence below) or CH Deadline.
+                  When CH is picked the manual recurrence + custom-interval
+                  inputs are disabled and the CH controls take over. */}
+              <select
+                value={isChLinked ? 'ch' : 'manual'}
+                onChange={e => {
+                  if (e.target.value === 'manual') setChDeadlineType('');
+                  else setChDeadlineType('accounts_due');
+                }}
+                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="manual">Manual cadence</option>
+                <option value="ch">CH deadline-linked</option>
               </select>
-              {recurrence === 'custom' && (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-500">Every</span>
-                  <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-14 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                  <span className="text-xs text-gray-500">days</span>
-                </div>
+              {isChLinked ? (
+                <>
+                  <select
+                    value={chDeadlineType}
+                    onChange={e => setChDeadlineType(e.target.value as ChDeadlineType)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="accounts_due">Accounts Due</option>
+                    <option value="cs_due">CS Due</option>
+                    <option value="officer_idv_due">Officer IDV Due</option>
+                    <option value="psc_idv_due">PSC IDV Due</option>
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500">Offset</span>
+                    <input
+                      type="number"
+                      step={1}
+                      value={chOffsetDays}
+                      onChange={e => setChOffsetDays(Number.isFinite(parseInt(e.target.value, 10)) ? parseInt(e.target.value, 10) : 0)}
+                      className="w-16 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs text-gray-500">days</span>
+                  </div>
+                  <span className="text-[10px] text-gray-500 italic">
+                    Negative = before the deadline. Existing tasks aren&apos;t affected — only new ones get the link.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <option value="">No recurrence</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="bi-weekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="annually">Annually</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                  {recurrence === 'custom' && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-500">Every</span>
+                      <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-14 text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                      <span className="text-xs text-gray-500">days</span>
+                    </div>
+                  )}
+                </>
               )}
               <div className="flex items-center gap-1">
                 <span className="text-xs text-gray-500">Est.</span>

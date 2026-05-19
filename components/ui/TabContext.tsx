@@ -33,10 +33,17 @@ function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { tabs: SerialisedTab[]; activeTabId: string | null };
+    // Dedup by route as we go — older app versions had a race condition that
+    // could leave two tabs pointing at the same route (most commonly two
+    // Dashboard tabs). Keep the FIRST occurrence so the active tab id (which
+    // usually points at the older one) stays valid.
+    const seenRoutes = new Set<string>();
     const tabs: Tab[] = [];
     for (const t of parsed.tabs ?? []) {
       const nav = ROUTE_TO_NAV.get(t.route);
       if (!nav) continue; // unknown route — skip (probably an old/removed module)
+      if (seenRoutes.has(t.route)) continue; // collapse duplicates
+      seenRoutes.add(t.route);
       tabs.push({ id: t.id, title: t.title || nav.label, route: t.route, icon: nav.icon });
     }
     const activeTabId = parsed.activeTabId && tabs.some(t => t.id === parsed.activeTabId)
@@ -90,6 +97,13 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   // mismatch error you'd otherwise get whenever the user has persisted tabs.
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // Flips to `true` once we've finished pulling the persisted tab list out
+  // of localStorage. The reconcile effect below MUST wait for this — if it
+  // runs while `tabs` is still the initial empty array, it'd think there
+  // are no tabs and create a brand new Dashboard tab on top of whatever
+  // the user already had persisted, leading to duplicate Dashboard tabs
+  // appearing every time they log back in.
+  const [hydrated, setHydrated] = useState(false);
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
@@ -99,6 +113,7 @@ export default function TabProvider({ children }: { children: ReactNode }) {
       setTabs(restored.tabs);
       if (restored.activeTabId) setActiveTabId(restored.activeTabId);
     }
+    setHydrated(true);
   }, []);
   const pathname = usePathname();
 
@@ -111,6 +126,12 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   const reconciledRef = useRef(false);
   useEffect(() => {
     if (!pathname) return;
+    // Wait for the restore effect above to finish before trying to match
+    // the current pathname against persisted tabs. Without this, the very
+    // first render runs reconcile against an empty `tabs` state — which
+    // means we'd never see the persisted Dashboard tab and would create a
+    // duplicate on every fresh login. See `hydrated` declaration above.
+    if (!hydrated) return;
 
     // Find an existing tab whose route matches the current URL. Try exact
     // first (cheap, common case), then prefix — so /mtd-it/abc/2026/1 still
@@ -136,7 +157,7 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     setTabs(prev => [...prev, { id: newId, title: nav.label, route: pathname, icon: nav.icon }]);
     setActiveTabId(newId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, tabs.length]);
+  }, [pathname, tabs.length, hydrated]);
 
   // Persist on every change
   useEffect(() => { persist(tabs, activeTabId); }, [tabs, activeTabId]);

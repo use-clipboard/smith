@@ -32,6 +32,7 @@ const Patch = z.object({
   vat_mode: z.enum(['inclusive','exclusive']).optional(),
   vat_rate: z.number().optional(),
   discount_amount: z.number().optional(),
+  discount_type: z.enum(['amount', 'percent']).optional(),
   discount_label: z.string().nullable().optional(),
   expires_at: z.string().nullable().optional(),
   status: z.enum(['draft','sent','viewed','accepted','declined','expired','withdrawn']).optional(),

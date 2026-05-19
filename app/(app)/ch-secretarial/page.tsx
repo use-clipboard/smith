@@ -3,12 +3,14 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Building2, RefreshCw, Download, Upload, ChevronDown, ChevronUp,
   ChevronRight, AlertTriangle, CheckCircle, Search, SlidersHorizontal,
-  Eye, EyeOff, Users, List, X, Loader2, Info, Save, Trash2, Clock,
+  Eye, EyeOff, Users, List, X, Loader2, Info, Save, Trash2, Clock, Link2,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import { useModules } from '@/components/ui/ModulesProvider';
 import CHSettingsPanel from '@/components/features/ch-secretarial/CHSettingsPanel';
 import CHExpandedRow from '@/components/features/ch-secretarial/CHExpandedRow';
+import LinkDeadlineTaskModal, { type DeadlineType } from '@/components/features/ch-secretarial/LinkDeadlineTaskModal';
 import { exportCHWorkbook } from '@/utils/chExport';
 import { CH_COLUMNS } from '@/types/ch';
 import type { CHCompanyData, CHSortField } from '@/types/ch';
@@ -22,7 +24,10 @@ type MetricFilter =
   | 'accounts_overdue' | 'accounts_soon'
   | 'cs_overdue'       | 'cs_soon'
   | 'officer_idv_overdue' | 'officer_idv_soon'
-  | 'psc_idv_overdue'  | 'psc_idv_soon';
+  | 'psc_idv_overdue'  | 'psc_idv_soon'
+  // Task-link filters — gated on Tasks + CH Sec both being active. "linked"
+  // = company has at least one CH deadline link; "unlinked" = none.
+  | 'has_linked_task'  | 'no_linked_task';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,10 +113,26 @@ function timeAgo(isoStr: string | null): string {
   return `${days} day${days !== 1 ? 's' : ''} ago`;
 }
 
-function sortCompanies(companies: CHCompanyData[], field: CHSortField, dir: 'asc' | 'desc'): CHCompanyData[] {
+// CH normalises company numbers (8-char zero-padded upper-case) — the same
+// normalisation is applied when we populate clientCodeByCompanyNumber so the
+// two sides line up regardless of how the user typed the number in.
+function normaliseCompanyNumber(n: string): string {
+  return n.trim().toUpperCase().padStart(8, '0');
+}
+
+function sortCompanies(
+  companies: CHCompanyData[],
+  field: CHSortField,
+  dir: 'asc' | 'desc',
+  clientCodeByCompanyNumber?: Map<string, string>,
+): CHCompanyData[] {
   return [...companies].sort((a, b) => {
-    const av = a[field] ?? '';
-    const bv = b[field] ?? '';
+    const av: unknown = field === 'clientCode'
+      ? (clientCodeByCompanyNumber?.get(normaliseCompanyNumber(a.companyNumber)) ?? '')
+      : ((a as unknown as Record<string, unknown>)[field] ?? '');
+    const bv: unknown = field === 'clientCode'
+      ? (clientCodeByCompanyNumber?.get(normaliseCompanyNumber(b.companyNumber)) ?? '')
+      : ((b as unknown as Record<string, unknown>)[field] ?? '');
     let cmp = 0;
     if (typeof av === 'boolean' && typeof bv === 'boolean') cmp = Number(av) - Number(bv);
     else if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv;
@@ -123,6 +144,10 @@ function sortCompanies(companies: CHCompanyData[], field: CHSortField, dir: 'asc
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CHSecretarialPage() {
+  const { isModuleActive } = useModules();
+  // Show the "linked / not linked" panels only when both modules are on —
+  // there's no point counting linked tasks if the Tasks tool isn't in play.
+  const tasksModuleActive = isModuleActive('tasks');
   const [userRole, setUserRole] = useState<string>('staff');
 
   // Source mode
@@ -152,6 +177,36 @@ export default function CHSecretarialPage() {
   const [search, setSearch] = useState('');
   const [metricFilter, setMetricFilter] = useState<MetricFilter>(null);
   const [statsCollapsed, setStatsCollapsed] = useState(false);
+  // Which deadline cell the user clicked the link button on — drives the
+  // "Link task to deadline" modal. null when closed.
+  const [linkModal, setLinkModal] = useState<null | {
+    clientId: string;
+    clientName: string;
+    deadlineType: DeadlineType;
+    currentDeadline: string | null;
+  }>(null);
+
+  // Map of (client_id, deadline_type) → array of links so the table cell
+  // can show a small badge with the linked task count. Refetched on mount
+  // and after the user creates a new link via the modal.
+  const [deadlineLinksIndex, setDeadlineLinksIndex] = useState<Map<string, Array<{ id: string; status: 'active' | 'paused' | 'broken'; tasks: { id: string; title: string; status: string; due_date: string | null } | null }>>>(new Map());
+  const refetchDeadlineLinks = useCallback(() => {
+    void fetch('/api/ch-secretarial/deadline-links')
+      .then(r => r.ok ? r.json() : null)
+      .then((j: { links?: Array<{ id: string; client_id: string; deadline_type: string; status: 'active' | 'paused' | 'broken'; tasks: { id: string; title: string; status: string; due_date: string | null } | null }> } | null) => {
+        if (!j?.links) return;
+        const next = new Map<string, Array<{ id: string; status: 'active' | 'paused' | 'broken'; tasks: { id: string; title: string; status: string; due_date: string | null } | null }>>();
+        for (const l of j.links) {
+          const key = `${l.client_id}::${l.deadline_type}`;
+          const existing = next.get(key) ?? [];
+          existing.push({ id: l.id, status: l.status, tasks: l.tasks });
+          next.set(key, existing);
+        }
+        setDeadlineLinksIndex(next);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refetchDeadlineLinks(); }, [refetchDeadlineLinks]);
   const [visibleCols, setVisibleCols] = useState<Set<CHSortField>>(
     new Set(CH_COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
   );
@@ -241,8 +296,16 @@ export default function CHSecretarialPage() {
       .finally(() => setScheduleLoading(false));
   }, [userRole]);
 
-  // Load client company numbers from Supabase when in 'clients' mode
+  // Load client company numbers from Supabase when in 'clients' mode. We
+  // also keep a parallel map of companies_house_id → client_ref so the
+  // table can show the firm's internal client code next to each row and
+  // the search box can match on it. Custom List mode is fed by uploaded
+  // CSV numbers only — no client records there, so the map stays empty.
   const [clientNumbers, setClientNumbers] = useState<string[]>([]);
+  const [clientCodeByCompanyNumber, setClientCodeByCompanyNumber] = useState<Map<string, string>>(new Map());
+  // Same key (normalised CH number) → { id, name } so the "Link task" modal
+  // can be opened with the right client without an extra lookup.
+  const [clientByCompanyNumber, setClientByCompanyNumber] = useState<Map<string, { id: string; name: string }>>(new Map());
   useEffect(() => {
     if (sourceMode !== 'clients') return;
     const supabase = createClient();
@@ -252,19 +315,35 @@ export default function CHSecretarialPage() {
         if (!profile?.firm_id) return;
         supabase
           .from('clients')
-          .select('companies_house_id, business_type, name')
+          .select('id, companies_house_id, business_type, name, client_ref')
           .eq('firm_id', profile.firm_id)
           .limit(100000)
           .then(({ data: clients }) => {
             if (!clients) return;
-            const nums = clients
-              .filter(c => {
-                const bt = (c.business_type ?? '').toLowerCase();
-                return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
-              })
-              .map(c => c.companies_house_id)
-              .filter(Boolean) as string[];
+            const limited = clients.filter(c => {
+              const bt = (c.business_type ?? '').toLowerCase();
+              return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
+            });
+            const nums = limited.map(c => c.companies_house_id).filter(Boolean) as string[];
+            // CH normalises company numbers by upper-casing and zero-padding
+            // to 8 chars; we do the same here so the lookup matches whatever
+            // the refresh stored on each company row.
+            const norm = (n: string) => n.trim().toUpperCase().padStart(8, '0');
+            const codeMap   = new Map<string, string>();
+            const clientMap = new Map<string, { id: string; name: string }>();
+            for (const c of limited) {
+              const ch   = c.companies_house_id as string | null;
+              const ref  = c.client_ref         as string | null;
+              const id   = c.id                 as string | null;
+              const name = (c.name              as string | null) ?? '';
+              if (!ch) continue;
+              const key = norm(ch);
+              if (ref) codeMap.set(key, ref);
+              if (id)  clientMap.set(key, { id, name });
+            }
             setClientNumbers(nums);
+            setClientCodeByCompanyNumber(codeMap);
+            setClientByCompanyNumber(clientMap);
           });
       });
     });
@@ -489,10 +568,16 @@ export default function CHSecretarialPage() {
     let list = companies;
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(c =>
-        c.companyName.toLowerCase().includes(q) ||
-        c.companyNumber.toLowerCase().includes(q)
-      );
+      list = list.filter(c => {
+        // Also match the firm's internal client code when in Client List mode
+        // (the map is empty in Custom List mode, so this is a no-op there).
+        const code = clientCodeByCompanyNumber.get(normaliseCompanyNumber(c.companyNumber)) ?? '';
+        return (
+          c.companyName.toLowerCase().includes(q) ||
+          c.companyNumber.toLowerCase().includes(q) ||
+          code.toLowerCase().includes(q)
+        );
+      });
     }
     if (metricFilter) {
       const soon = (date: string | null, overdue: boolean) => {
@@ -509,10 +594,31 @@ export default function CHSecretarialPage() {
         case 'officer_idv_soon':     list = list.filter(c => c.officersIdvOverdueCount === 0 && soon(c.nearestOfficerIdvDue, false)); break;
         case 'psc_idv_overdue':      list = list.filter(c => c.pscIdvOverdueCount > 0); break;
         case 'psc_idv_soon':         list = list.filter(c => c.pscIdvOverdueCount === 0 && soon(c.nearestPscIdvDue, false)); break;
+        case 'has_linked_task': {
+          const linked = new Set<string>();
+          for (const k of deadlineLinksIndex.keys()) linked.add(k.split('::')[0]);
+          list = list.filter(c => {
+            const cl = clientByCompanyNumber.get(normaliseCompanyNumber(c.companyNumber));
+            return !!cl && linked.has(cl.id);
+          });
+          break;
+        }
+        case 'no_linked_task': {
+          const linked = new Set<string>();
+          for (const k of deadlineLinksIndex.keys()) linked.add(k.split('::')[0]);
+          list = list.filter(c => {
+            const cl = clientByCompanyNumber.get(normaliseCompanyNumber(c.companyNumber));
+            // Custom-List rows (no client record) can't be linked at all —
+            // show them in the "not linked" bucket so the filter accounts
+            // for the full list, not just client-mapped rows.
+            return !cl || !linked.has(cl.id);
+          });
+          break;
+        }
       }
     }
-    return sortCompanies(list, sortField, sortDir);
-  }, [companies, search, metricFilter, sortField, sortDir]);
+    return sortCompanies(list, sortField, sortDir, clientCodeByCompanyNumber);
+  }, [companies, search, metricFilter, sortField, sortDir, clientCodeByCompanyNumber, clientByCompanyNumber, deadlineLinksIndex]);
 
   function toggleSort(field: CHSortField) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -555,6 +661,29 @@ export default function CHSecretarialPage() {
   const soonCS             = companies.filter(c => withinSoon(c.csNextDue, c.csOverdue)).length;
   const soonOfficerIdv     = companies.filter(c => c.officersIdvOverdueCount === 0 && withinSoon(c.nearestOfficerIdvDue, false)).length;
   const soonPscIdv         = companies.filter(c => c.pscIdvOverdueCount === 0 && withinSoon(c.nearestPscIdvDue, false)).length;
+
+  // Per-company link state — a Set of client_ids that have at least one
+  // active or paused CH deadline link. Broken links count too (the link
+  // exists; the user just needs to fix it). Used by both the new status
+  // panels and the linkage filter.
+  const linkedClientIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const key of deadlineLinksIndex.keys()) {
+      const clientId = key.split('::')[0];
+      if (clientId) ids.add(clientId);
+    }
+    return ids;
+  }, [deadlineLinksIndex]);
+  // Helper — given a row, does its underlying client have any link?
+  function rowIsLinked(c: CHCompanyData): boolean {
+    const cl = clientByCompanyNumber.get(normaliseCompanyNumber(c.companyNumber));
+    return !!cl && linkedClientIds.has(cl.id);
+  }
+  // Only companies that have a client record in the firm count toward the
+  // linkage totals — Custom-List rows without a client can't be linked.
+  const companiesWithClient = companies.filter(c => !!clientByCompanyNumber.get(normaliseCompanyNumber(c.companyNumber)));
+  const linkedCompanies   = companiesWithClient.filter(rowIsLinked).length;
+  const unlinkedCompanies = companiesWithClient.length - linkedCompanies;
 
   return (
     <ToolLayout
@@ -970,6 +1099,38 @@ export default function CHSecretarialPage() {
                     );
                   })}
                 </div>
+                {/* Row 3 — task-link summary (only when Tasks is active too).
+                    Kept slim — single horizontal pill row instead of full
+                    panels so the overview stays compact. */}
+                {tasksModuleActive && sourceMode === 'clients' && companiesWithClient.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)] font-semibold">Task links</span>
+                    {([
+                      { label: 'Linked',     count: linkedCompanies,   filter: 'has_linked_task' as MetricFilter },
+                      { label: 'Not linked', count: unlinkedCompanies, filter: 'no_linked_task' as MetricFilter  },
+                    ]).map(({ label, count, filter }) => {
+                      const isActive = metricFilter === filter;
+                      const hasItems = count > 0;
+                      const tone = filter === 'has_linked_task'
+                        ? (hasItems ? 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/30' : 'bg-[var(--bg-page)] text-[var(--text-muted)] border-[var(--border)]')
+                        : (hasItems ? 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/10 dark:border-sky-800' : 'bg-[var(--bg-page)] text-[var(--text-muted)] border-[var(--border)]');
+                      const ring = isActive ? 'ring-2 ring-[var(--accent)]' : '';
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          disabled={!hasItems}
+                          onClick={() => setMetricFilter(prev => prev === filter ? null : filter)}
+                          aria-pressed={isActive}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all ${tone} ${ring} ${hasItems ? 'cursor-pointer hover:opacity-80' : 'cursor-default opacity-70'}`}
+                        >
+                          <span className="font-bold">{count}</span>
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -984,7 +1145,7 @@ export default function CHSecretarialPage() {
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search companies…"
+                placeholder={sourceMode === 'clients' ? 'Search by name, number, or client code…' : 'Search by name or number…'}
                 className="input-base w-full pl-9 text-sm"
               />
               {search && (
@@ -1079,15 +1240,72 @@ export default function CHSecretarialPage() {
                                   {company.companyName || <span className="text-red-500 text-xs italic">{errorToString(company.error) || 'Error'}</span>}
                                 </span>
                               )}
+                              {col.key === 'clientCode' && (() => {
+                                // Resolve the firm's internal client code from the
+                                // CH number we already fetched. Custom List mode has
+                                // no clients map, so this renders an em-dash.
+                                const code = clientCodeByCompanyNumber.get(normaliseCompanyNumber(company.companyNumber));
+                                return code
+                                  ? <span className="text-xs font-mono text-[var(--text-secondary)]">{code}</span>
+                                  : <span className="text-xs text-[var(--text-muted)]">—</span>;
+                              })()}
                               {col.key === 'status' && <StatusBadge status={company.status} />}
                               {col.key === 'incorporationDate' && <span className="text-xs text-[var(--text-secondary)] whitespace-nowrap">{company.incorporationDate || '—'}</span>}
-                              {col.key === 'accountsNextDue' && <DueDateCell dateStr={company.accountsNextDue} overdue={company.accountsOverdue} />}
+                              {col.key === 'accountsNextDue' && (() => {
+                                const cl = clientByCompanyNumber.get(normaliseCompanyNumber(company.companyNumber));
+                                return (
+                                  <DueWithLinkButton
+                                    dateStr={company.accountsNextDue}
+                                    overdue={company.accountsOverdue}
+                                    client={cl}
+                                    deadlineType="accounts_due"
+                                    links={cl ? (deadlineLinksIndex.get(`${cl.id}::accounts_due`) ?? []) : []}
+                                    onLink={setLinkModal}
+                                  />
+                                );
+                              })()}
                               {col.key === 'accountsOverdue' && <OverdueBadge overdue={company.accountsOverdue} />}
-                              {col.key === 'csNextDue' && <DueDateCell dateStr={company.csNextDue} overdue={company.csOverdue} />}
+                              {col.key === 'csNextDue' && (() => {
+                                const cl = clientByCompanyNumber.get(normaliseCompanyNumber(company.companyNumber));
+                                return (
+                                  <DueWithLinkButton
+                                    dateStr={company.csNextDue}
+                                    overdue={company.csOverdue}
+                                    client={cl}
+                                    deadlineType="cs_due"
+                                    links={cl ? (deadlineLinksIndex.get(`${cl.id}::cs_due`) ?? []) : []}
+                                    onLink={setLinkModal}
+                                  />
+                                );
+                              })()}
                               {col.key === 'csOverdue' && <OverdueBadge overdue={company.csOverdue} />}
-                              {col.key === 'nearestOfficerIdvDue' && <DueDateCell dateStr={company.nearestOfficerIdvDue} overdue={company.officersIdvOverdueCount > 0} />}
+                              {col.key === 'nearestOfficerIdvDue' && (() => {
+                                const cl = clientByCompanyNumber.get(normaliseCompanyNumber(company.companyNumber));
+                                return (
+                                  <DueWithLinkButton
+                                    dateStr={company.nearestOfficerIdvDue}
+                                    overdue={company.officersIdvOverdueCount > 0}
+                                    client={cl}
+                                    deadlineType="officer_idv_due"
+                                    links={cl ? (deadlineLinksIndex.get(`${cl.id}::officer_idv_due`) ?? []) : []}
+                                    onLink={setLinkModal}
+                                  />
+                                );
+                              })()}
                               {col.key === 'officersIdvOverdueCount' && <OverdueBadge count={company.officersIdvOverdueCount} />}
-                              {col.key === 'nearestPscIdvDue' && <DueDateCell dateStr={company.nearestPscIdvDue} overdue={company.pscIdvOverdueCount > 0} />}
+                              {col.key === 'nearestPscIdvDue' && (() => {
+                                const cl = clientByCompanyNumber.get(normaliseCompanyNumber(company.companyNumber));
+                                return (
+                                  <DueWithLinkButton
+                                    dateStr={company.nearestPscIdvDue}
+                                    overdue={company.pscIdvOverdueCount > 0}
+                                    client={cl}
+                                    deadlineType="psc_idv_due"
+                                    links={cl ? (deadlineLinksIndex.get(`${cl.id}::psc_idv_due`) ?? []) : []}
+                                    onLink={setLinkModal}
+                                  />
+                                );
+                              })()}
                               {col.key === 'pscIdvOverdueCount' && <OverdueBadge count={company.pscIdvOverdueCount} />}
                             </td>
                           ))}
@@ -1131,6 +1349,79 @@ export default function CHSecretarialPage() {
         )}
 
       </div>
+
+      {linkModal && (
+        <LinkDeadlineTaskModal
+          clientId={linkModal.clientId}
+          clientName={linkModal.clientName}
+          deadlineType={linkModal.deadlineType}
+          currentDeadline={linkModal.currentDeadline}
+          onClose={() => setLinkModal(null)}
+          onLinked={() => refetchDeadlineLinks()}
+        />
+      )}
     </ToolLayout>
+  );
+}
+
+// Deadline cell + an inline "Link task" button + a permanent badge showing
+// the number of tasks already linked to this deadline. The link-CREATE
+// button hides until hover so the table stays clean; the EXISTS badge is
+// always visible so the user knows at a glance which deadlines already
+// have tasks attached.
+function DueWithLinkButton({
+  dateStr, overdue, client, deadlineType, links, onLink,
+}: {
+  dateStr: string | null;
+  overdue: boolean;
+  client: { id: string; name: string } | undefined;
+  deadlineType: DeadlineType;
+  links: Array<{ id: string; status: 'active' | 'paused' | 'broken'; tasks: { id: string; title: string; status: string; due_date: string | null } | null }>;
+  onLink: (m: { clientId: string; clientName: string; deadlineType: DeadlineType; currentDeadline: string | null }) => void;
+}) {
+  const linkedCount = links.length;
+  const hasBroken   = links.some(l => l.status === 'broken');
+  const badgeColour =
+    hasBroken          ? 'bg-amber-100 text-amber-700 border-amber-200'
+    : linkedCount > 0  ? 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/30'
+    :                    '';
+  return (
+    <div className="flex items-center gap-1.5 group/cell">
+      <DueDateCell dateStr={dateStr} overdue={overdue} />
+      {linkedCount > 0 && (
+        <Tooltip
+          label={
+            <div className="space-y-1 text-left">
+              {links.map(l => (
+                <div key={l.id} className="text-[11px]">
+                  {l.tasks?.title ?? '(deleted task)'}
+                  {l.status !== 'active' && (
+                    <span className={`ml-1.5 ${l.status === 'broken' ? 'text-amber-300' : 'text-amber-200'}`}>
+                      {l.status === 'broken' ? '· broken' : '· paused'}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          }
+        >
+          <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded border text-[9px] font-semibold ${badgeColour}`}>
+            <Link2 size={9} />
+            {linkedCount}
+          </span>
+        </Tooltip>
+      )}
+      {client && (
+        <button
+          type="button"
+          onClick={() => onLink({ clientId: client.id, clientName: client.name, deadlineType, currentDeadline: dateStr })}
+          aria-label="Link task to this deadline"
+          title="Link task to this deadline"
+          className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-1 rounded text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)]"
+        >
+          <Link2 size={11} />
+        </button>
+      )}
+    </div>
   );
 }

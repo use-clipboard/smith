@@ -12,6 +12,7 @@ interface HistoryTask extends Task {
   client?: { id: string; name: string; client_ref: string } | null;
   created_by_user?: { id: string; full_name: string | null; email: string } | null;
   deleted_by_user?: { id: string; full_name: string | null; email: string } | null;
+  completed_by_user?: { id: string; full_name: string | null; email: string } | null;
   steps?: (TaskStep & { assignee?: { id: string; full_name: string | null; email: string } | null })[];
   time_entries?: { id: string; step_id: string | null; started_at: string; ended_at: string; notes: string | null; user?: { full_name: string | null; email: string } | null }[];
 }
@@ -208,7 +209,10 @@ export default function HistoryView() {
                       <span className="flex items-center gap-1"><UserIcon size={11} /> Created by {userDisplay(t.created_by_user)}</span>
                       <span className="flex items-center gap-1"><Calendar size={11} /> {fmtDateTime(t.created_at)}</span>
                       {isComplete && t.completed_at && (
-                        <span className="text-emerald-700">✓ Completed {fmtDateTime(t.completed_at)}</span>
+                        <span className="text-emerald-700">
+                          ✓ Completed {fmtDateTime(t.completed_at)}
+                          {t.completed_by_user && <> by {userDisplay(t.completed_by_user)}</>}
+                        </span>
                       )}
                       {isDeleted && (
                         <span className="text-red-600">

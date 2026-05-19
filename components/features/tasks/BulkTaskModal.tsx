@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import Tooltip from '@/components/ui/Tooltip';
+import { useModules } from '@/components/ui/ModulesProvider';
 import type { TaskTemplate, TaskTemplateStep } from '@/types';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 
@@ -19,6 +20,10 @@ interface Client    {
   client_ref: string;
   business_type?: string | null;
   status?: string | null;
+  // Companies House number — surfaced by /api/clients but optional on the
+  // type because legacy callers may not provide it. Used by the CH
+  // Secretarial Template Allocation mode to filter eligible clients.
+  companies_house_id?: string | null;
 }
 interface TeamMember { id: string; full_name: string | null; email: string; }
 
@@ -72,7 +77,7 @@ interface BulkResult {
 }
 
 type ModalStep = 'mode' | 'configure' | 'review' | 'results';
-type BulkMode  = 'onboarding' | 'mass_allocation';
+type BulkMode  = 'onboarding' | 'mass_allocation' | 'ch_template_allocation';
 
 interface Props {
   templates: TaskTemplate[];
@@ -153,6 +158,61 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
   const [step, setStep]   = useState<ModalStep>('mode');
   const [mode, setMode]   = useState<BulkMode | null>(null);
   const [configError, setConfigError] = useState('');
+
+  // ── CH Sec Template Allocation gating ──────────────────────────────────
+  // Mode card only enables when (a) the firm has CH Sec on, and (b) at
+  // least one template has CH-deadline linking configured. When (b) is
+  // missing the card stays clickable but lands on an empty-state pointing
+  // the user to the template builder.
+  const { isModuleActive } = useModules();
+  const chModuleActive = isModuleActive('ch-secretarial');
+  const chLinkedTemplates = useMemo(
+    () => templates.filter(t => !!(t as { ch_deadline_type?: string | null }).ch_deadline_type),
+    [templates],
+  );
+
+  // ── CH template allocation state ────────────────────────────────────────
+  // multi-template + multi-client; per-template assignees. Due dates come
+  // from the CH cache at task-create time so the modal doesn't carry any
+  // deadline fields here.
+  const [chSelectedTemplateIds, setChSelectedTemplateIds] = useState<Set<string>>(new Set());
+  const [chSelectedClientIds,   setChSelectedClientIds]   = useState<Set<string>>(new Set());
+  const [chSelectAllWithCh,     setChSelectAllWithCh]     = useState(false);
+  // step_assignees keyed by template_id → step_key → user_id | ''
+  const [chStepAssignees, setChStepAssignees] = useState<Record<string, Record<string, string>>>({});
+  // Clients that actually exist in ch_cache (have refreshed data). Derived
+  // by intersecting clients-with-a-CH-number with the cached company set
+  // so the bulk allocation flow only offers clients that can plausibly
+  // resolve a deadline today (avoids creating links that go broken on
+  // the very first sync). Null = not yet loaded; in that state we show
+  // every client with a CH number so the picker isn't empty during the
+  // brief cache fetch.
+  const [chCachedClientIds, setChCachedClientIds] = useState<Set<string> | null>(null);
+  async function loadChCachedClients() {
+    if (chCachedClientIds !== null) return;
+    try {
+      const res = await fetch('/api/ch-secretarial/cache');
+      if (!res.ok) { setChCachedClientIds(new Set()); return; }
+      const j = await res.json() as { companies?: Array<{ companyNumber?: string }> };
+      const cachedNums = new Set(
+        (j.companies ?? [])
+          .map(c => typeof c.companyNumber === 'string' ? c.companyNumber.trim().toUpperCase().padStart(8, '0') : '')
+          .filter(Boolean),
+      );
+      // The `clients` prop already carries companies_house_id (added to the
+      // Client type above) — no second round trip needed. Build the
+      // intersection straight off the in-memory list.
+      const ids = new Set<string>();
+      for (const c of clients) {
+        if (!c.companies_house_id) continue;
+        const n = c.companies_house_id.trim().toUpperCase().padStart(8, '0');
+        if (cachedNums.has(n)) ids.add(c.id);
+      }
+      setChCachedClientIds(ids);
+    } catch {
+      setChCachedClientIds(new Set());
+    }
+  }
 
   // ── Onboarding state ─────────────────────────────────────────────────────────
   const [obClientId, setObClientId]     = useState('');
@@ -492,6 +552,10 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
       if (maRows.length === 0) return 'Add at least one client row.';
       if (maRows.some(r => !r.clientId)) return 'Every row must have a client selected.';
     }
+    if (mode === 'ch_template_allocation') {
+      if (chSelectedTemplateIds.size === 0) return 'Pick at least one CH-linked template.';
+      if (chSelectedClientIds.size   === 0) return 'Pick at least one client.';
+    }
     return '';
   }
 
@@ -505,22 +569,38 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const rows = mode === 'onboarding'
-        ? obRows.map(r => ({
-            template_id: r.templateId,
-            client_id: obClientId,
-            deadline: r.deadline || null,
-            step_assignees: {},
-          }))
-        : maRows.map(r => ({
-            template_id: maTemplateId,
-            client_id: r.clientId,
-            deadline: r.deadline || null,
-            // Strip out any undefined/empty values so Zod validation passes
-            step_assignees: Object.fromEntries(
-              Object.entries(r.stepAssignees).filter(([, v]) => v !== undefined && v !== null)
-            ),
-          }));
+      let rows: Array<{ template_id: string; client_id: string | null; deadline: string | null; step_assignees: Record<string, string> }>;
+      if (mode === 'onboarding') {
+        rows = obRows.map(r => ({
+          template_id: r.templateId,
+          client_id: obClientId,
+          deadline: r.deadline || null,
+          step_assignees: {},
+        }));
+      } else if (mode === 'mass_allocation') {
+        rows = maRows.map(r => ({
+          template_id: maTemplateId,
+          client_id: r.clientId,
+          deadline: r.deadline || null,
+          step_assignees: Object.fromEntries(
+            Object.entries(r.stepAssignees).filter(([, v]) => v !== undefined && v !== null)
+          ),
+        }));
+      } else {
+        // CH template allocation: fan out templates × clients. No manual
+        // deadlines — the server resolves each from ch_cache via the
+        // autoCreateChDeadlineLink helper.
+        rows = [];
+        for (const templateId of chSelectedTemplateIds) {
+          const stepAssignees = chStepAssignees[templateId] ?? {};
+          const cleaned = Object.fromEntries(
+            Object.entries(stepAssignees).filter(([, v]) => v !== undefined && v !== '')
+          );
+          for (const clientId of chSelectedClientIds) {
+            rows.push({ template_id: templateId, client_id: clientId, deadline: null, step_assignees: cleaned });
+          }
+        }
+      }
 
       const res = await fetch('/api/tasks/bulk', {
         method: 'POST',
@@ -622,7 +702,7 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
             <div className="w-full max-w-2xl">
               <h2 className="text-xl font-bold text-gray-900 text-center mb-2">What would you like to do?</h2>
               <p className="text-sm text-gray-500 text-center mb-8">Choose a bulk operation type. Admin access required.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div className={`grid grid-cols-1 gap-5 ${chModuleActive ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                 {/* Onboarding */}
                 <button
                   onClick={() => { setMode('onboarding'); setStep('configure'); }}
@@ -655,6 +735,32 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
                     One template → Many clients <ChevronRight className="h-3.5 w-3.5" />
                   </div>
                 </button>
+                {/* CH Sec Template Allocation — only shown when the firm has
+                    Companies House Secretarial active. When the user has no
+                    CH-linked templates yet the card stays clickable but the
+                    configure screen replaces the picker with a friendly
+                    empty-state pointing them at the template builder. */}
+                {chModuleActive && (
+                  <button
+                    onClick={() => {
+                      setMode('ch_template_allocation');
+                      setStep('configure');
+                      void loadChCachedClients();
+                    }}
+                    className="group text-left border-2 border-gray-200 hover:border-amber-400 rounded-2xl p-6 transition-all"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-amber-50 group-hover:bg-amber-100 flex items-center justify-center mb-4 transition-colors">
+                      <Clock className="h-6 w-6 text-amber-600" />
+                    </div>
+                    <h3 className="font-bold text-gray-900 mb-1">CH Secretarial Template Allocation</h3>
+                    <p className="text-sm text-gray-500">
+                      Allocate templates linked to Companies House deadlines. Due dates and renewals come from CH automatically.
+                    </p>
+                    <div className="mt-4 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+                      Many CH templates → Many clients <ChevronRight className="h-3.5 w-3.5" />
+                    </div>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1169,6 +1275,225 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
           </div>
         )}
 
+        {/* ── SCREEN 2c: CH Template Allocation configure ───────────────────
+            Multi-template × multi-client picker. No due-date inputs —
+            Companies House dictates them via the sync engine. Per-template
+            assignee dropdowns mirror the per-step pattern from the mass
+            allocation flow. */}
+        {step === 'configure' && mode === 'ch_template_allocation' && (() => {
+          // No CH-linked templates? Replace the picker with a polite
+          // empty-state so the user knows where to go to fix it.
+          if (chLinkedTemplates.length === 0) {
+            return (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="max-w-md text-center">
+                  <div className="w-14 h-14 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
+                    <Info className="h-7 w-7 text-amber-500" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2">No CH-linked templates yet</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed mb-4">
+                    Templates need to be set to <strong>CH deadline-linked</strong> in the template builder before they can be used here. Open the builder, edit a template, and switch its Renewal Source to <em>CH deadline-linked</em>.
+                  </p>
+                  <button
+                    onClick={onClose}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                  >
+                    Got it — close
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // Helper — for a given template id, list step keys + team-member options
+          function templateById(id: string): TaskTemplate | undefined {
+            return chLinkedTemplates.find(t => t.id === id);
+          }
+
+          // The `clients` prop already carries companies_house_id (the
+          // /api/clients endpoint includes it), so eligibility is computable
+          // synchronously — no waiting on a separate fetch.
+          const clientsWithCh   = clients.filter(c => !!c.companies_house_id);
+          const eligibleClients = chCachedClientIds === null
+            ? clientsWithCh // ch_cache still loading — show every CH client
+            : clientsWithCh.filter(c => chCachedClientIds.has(c.id));
+
+          function toggleAllEligible() {
+            const next = !chSelectAllWithCh;
+            setChSelectAllWithCh(next);
+            if (next) setChSelectedClientIds(new Set(eligibleClients.map(c => c.id)));
+            else setChSelectedClientIds(new Set());
+          }
+
+          function toggleClient(id: string) {
+            setChSelectedClientIds(prev => {
+              const n = new Set(prev);
+              if (n.has(id)) n.delete(id); else n.add(id);
+              setChSelectAllWithCh(false);
+              return n;
+            });
+          }
+
+          function toggleTemplate(id: string) {
+            setChSelectedTemplateIds(prev => {
+              const n = new Set(prev);
+              if (n.has(id)) n.delete(id); else n.add(id);
+              return n;
+            });
+          }
+
+          const totalTasks = chSelectedTemplateIds.size * chSelectedClientIds.size;
+
+          return (
+            <div className="flex-1 flex flex-col min-h-0 p-6 gap-4 overflow-y-auto">
+              <div className="flex items-start gap-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
+                <div>
+                  Due dates are set by Companies House automatically — you don&apos;t need to enter one here. Each created task auto-renews when the linked deadline rolls forward.
+                </div>
+              </div>
+
+              {/* Templates */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Pick CH-linked templates</h3>
+                  <span className="text-xs text-gray-500">{chSelectedTemplateIds.size} of {chLinkedTemplates.length} selected</span>
+                </div>
+                <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                  {chLinkedTemplates.map(t => {
+                    const isSel = chSelectedTemplateIds.has(t.id);
+                    const tplCh = (t as { ch_deadline_type?: string | null }).ch_deadline_type ?? '';
+                    const tplOffset = (t as { ch_offset_days?: number | null }).ch_offset_days ?? 0;
+                    return (
+                      <label key={t.id} className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 ${isSel ? 'bg-amber-50/50' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={isSel}
+                          onChange={() => toggleTemplate(t.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900">{t.name}</div>
+                          <div className="text-[11px] text-gray-500">
+                            {tplCh === 'accounts_due' ? 'Accounts Due'
+                              : tplCh === 'cs_due' ? 'CS Due'
+                              : tplCh === 'officer_idv_due' ? 'Officer IDV Due'
+                              : 'PSC IDV Due'}
+                            {tplOffset !== 0 && <> · {tplOffset > 0 ? '+' : ''}{tplOffset}d offset</>}
+                            {(t.steps?.length ?? 0) > 0 && <> · {t.steps?.length} step{t.steps?.length === 1 ? '' : 's'}</>}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Per-template assignees */}
+              {chSelectedTemplateIds.size > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Step assignees (optional)</h3>
+                  <div className="border border-gray-200 rounded-xl divide-y divide-gray-100">
+                    {[...chSelectedTemplateIds].map(tid => {
+                      const t = templateById(tid);
+                      if (!t) return null;
+                      const steps = (t.steps ?? []) as TaskTemplateStep[];
+                      if (steps.length === 0) {
+                        return (
+                          <div key={tid} className="px-4 py-3 text-xs text-gray-500">
+                            <span className="font-medium text-gray-700">{t.name}:</span> no steps to assign.
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={tid} className="px-4 py-3">
+                          <div className="text-xs font-medium text-gray-700 mb-2">{t.name}</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {steps.map(s => (
+                              <div key={s.step_key} className="flex items-center gap-2 min-w-0">
+                                <span className="text-xs text-gray-500 truncate flex-1" title={s.title}>{s.title}</span>
+                                <select
+                                  value={chStepAssignees[tid]?.[s.step_key] ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setChStepAssignees(prev => ({
+                                      ...prev,
+                                      [tid]: { ...(prev[tid] ?? {}), [s.step_key]: val },
+                                    }));
+                                  }}
+                                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                                >
+                                  <option value="">Default</option>
+                                  {teamMembers.map(m => (
+                                    <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Clients */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Pick clients
+                    <span className="text-xs text-gray-500 font-normal ml-2">
+                      ({eligibleClients.length} with a CH number{chCachedClientIds !== null && ' in latest refresh'})
+                    </span>
+                  </h3>
+                  <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={chSelectAllWithCh}
+                      onChange={toggleAllEligible}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    Select all eligible
+                  </label>
+                </div>
+                <div className="border border-gray-200 rounded-xl max-h-72 overflow-y-auto">
+                  {eligibleClients.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-gray-500">
+                      No eligible clients — only clients with a Companies House number{chCachedClientIds !== null && ' present in the latest CH refresh'} can be selected.
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {eligibleClients.map(c => {
+                        const isSel = chSelectedClientIds.has(c.id);
+                        return (
+                          <li key={c.id}>
+                            <label className={`flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-gray-50 ${isSel ? 'bg-amber-50/50' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={isSel}
+                                onChange={() => toggleClient(c.id)}
+                                className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                              />
+                              <span className="text-sm text-gray-900 truncate flex-1">{c.name}</span>
+                              <span className="text-xs font-mono text-gray-500">{c.client_ref}</span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-600 border-t border-gray-100 pt-3">
+                Will create <strong>{totalTasks}</strong> task{totalTasks === 1 ? '' : 's'}
+                {' '}({chSelectedTemplateIds.size} template{chSelectedTemplateIds.size === 1 ? '' : 's'} × {chSelectedClientIds.size} client{chSelectedClientIds.size === 1 ? '' : 's'})
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── SCREEN 3: Review ─────────────────────────────────────────────── */}
         {step === 'review' && (
           <div className="flex-1 overflow-y-auto p-8">
@@ -1182,7 +1507,9 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-700">
-                    {mode === 'onboarding' ? 'Client Onboarding' : 'Mass Allocation'}
+                    {mode === 'onboarding' ? 'Client Onboarding'
+                      : mode === 'mass_allocation' ? 'Mass Allocation'
+                      : 'CH Secretarial Template Allocation'}
                   </h3>
                 </div>
                 <div className="p-4 space-y-3">
@@ -1232,6 +1559,26 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
                       </div>
                     </>
                   )}
+                  {mode === 'ch_template_allocation' && (
+                    <>
+                      <div className="flex gap-3 text-sm">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Templates</span>
+                        <span className="font-semibold text-gray-900">{chSelectedTemplateIds.size}</span>
+                      </div>
+                      <div className="flex gap-3 text-sm">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Clients</span>
+                        <span className="font-semibold text-gray-900">{chSelectedClientIds.size}</span>
+                      </div>
+                      <div className="flex gap-3 text-sm">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Will create</span>
+                        <span className="font-semibold text-gray-900">{chSelectedTemplateIds.size * chSelectedClientIds.size} task{chSelectedTemplateIds.size * chSelectedClientIds.size === 1 ? '' : 's'}</span>
+                      </div>
+                      <div className="flex gap-3 text-sm">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Due dates</span>
+                        <span className="text-gray-700">From Companies House (per linked deadline)</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1276,7 +1623,14 @@ export default function BulkTaskModal({ templates, clients, teamMembers, onClose
               >
                 {submitting
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating tasks…</>
-                  : <><Zap className="h-4 w-4" /> Create {mode === 'onboarding' ? obRows.length : maRows.length} task{(mode === 'onboarding' ? obRows.length : maRows.length) !== 1 ? 's' : ''}</>
+                  : (() => {
+                      const count =
+                        mode === 'onboarding'             ? obRows.length :
+                        mode === 'mass_allocation'        ? maRows.length :
+                        mode === 'ch_template_allocation' ? chSelectedTemplateIds.size * chSelectedClientIds.size :
+                                                            0;
+                      return <><Zap className="h-4 w-4" /> Create {count} task{count !== 1 ? 's' : ''}</>;
+                    })()
                 }
               </button>
             </div>

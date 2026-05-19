@@ -3,6 +3,7 @@
 // flow, and reusable from anywhere else that needs a one-shot instantiation.
 
 import { createServiceClient } from '@/lib/supabase-server';
+import { autoCreateChDeadlineLink, type DeadlineType } from '@/lib/createChDeadlineLink';
 
 export interface InstantiateOptions {
   firmId: string;
@@ -31,6 +32,14 @@ export async function instantiateTaskFromTemplate(opts: InstantiateOptions): Pro
   if (tplErr) return { taskId: null, error: tplErr.message };
   if (!template) return { taskId: null, error: 'Template not found' };
 
+  // CH-linked templates manage their own due date + cadence via the sync
+  // engine — explicitly null out the manual recurrence fields here so we
+  // don't end up with a CH-linked task that ALSO carries a stale manual
+  // recurrence setting from the template row.
+  const chDeadlineType = (template as { ch_deadline_type?: DeadlineType | null }).ch_deadline_type ?? null;
+  const chOffsetDays   = (template as { ch_offset_days?: number | null }).ch_offset_days ?? 0;
+  const isChLinkedTemplate = !!chDeadlineType;
+
   // Create the parent task
   const { data: task, error: taskErr } = await service
     .from('tasks')
@@ -41,8 +50,11 @@ export async function instantiateTaskFromTemplate(opts: InstantiateOptions): Pro
       template_id: template.id,
       title: opts.titleOverride ?? template.name,
       description: template.description ?? null,
-      recurrence_type: template.recurrence_type ?? null,
-      recurrence_interval_days: template.recurrence_interval_days ?? null,
+      // due_date stays null on insert. For CH-linked tasks the link helper
+      // populates it (when a cached deadline exists); for non-CH tasks the
+      // caller is expected to set it through a separate path if needed.
+      recurrence_type: isChLinkedTemplate ? null : (template.recurrence_type ?? null),
+      recurrence_interval_days: isChLinkedTemplate ? null : (template.recurrence_interval_days ?? null),
       status: 'not_started',
     })
     .select('id')
@@ -96,6 +108,21 @@ export async function instantiateTaskFromTemplate(opts: InstantiateOptions): Pro
     }));
     const { error: edgesErr } = await service.from('task_step_edges').insert(edgeRows);
     if (edgesErr) return { taskId: task.id, error: `Edges insert failed: ${edgesErr.message}` };
+  }
+
+  // CH-deadline auto-link via the shared helper. Failure is non-fatal —
+  // the task itself is fine and the user can manually link later from the
+  // CH Secretarial tool if they need to. When no cached CH deadline exists
+  // yet (e.g. a newly-onboarded client whose CH data hasn't been fetched),
+  // the link is still created with last_synced_deadline=null and the next
+  // sync run fills the due date in.
+  if (isChLinkedTemplate && opts.clientId) {
+    await autoCreateChDeadlineLink(service, {
+      firmId:   opts.firmId,
+      taskId:   task.id,
+      clientId: opts.clientId,
+      template: { ch_deadline_type: chDeadlineType, ch_offset_days: chOffsetDays },
+    });
   }
 
   return { taskId: task.id };

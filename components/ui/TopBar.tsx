@@ -286,7 +286,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           </Tooltip>
 
           {searchOpen && (
-            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-50">
+            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-[1000]">
               <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)]">
                 <Search size={14} className="text-[var(--text-muted)] shrink-0" />
                 <input
@@ -400,7 +400,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           </Tooltip>
 
           {notifOpen && (
-            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-50">
+            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-[1000]">
               {/* Panel header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Notifications</p>

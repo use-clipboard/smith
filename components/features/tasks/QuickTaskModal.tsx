@@ -6,6 +6,11 @@ import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import type { RecurrenceType } from '@/types';
 import type { CreateTaskData } from './CreateTaskModal';
 
+// Local helper type so the state declaration below stays readable rather
+// than carrying a five-arm union inline.
+type ChDeadlineSelection = '' | 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due';
+type ChDeadlineFilled    = Exclude<ChDeadlineSelection, ''>;
+
 interface TeamMember { id: string; full_name: string | null; email: string }
 
 interface Props {
@@ -19,6 +24,10 @@ interface Props {
   defaultTitle?: string;
   defaultSteps?: string[];
   defaultDueDate?: string;
+  /** Optional outputs.id link — when present, the created task gets
+   *  source_output_id set so the source view can show a "task already
+   *  exists" marker. */
+  sourceOutputId?: string;
 }
 
 const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
@@ -31,7 +40,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: 'custom', label: 'Custom interval…' },
 ];
 
-export default function QuickTaskModal({ onClose, onCreate, teamMembers, defaultClientId, defaultClientName, defaultTitle, defaultSteps, defaultDueDate }: Props) {
+export default function QuickTaskModal({ onClose, onCreate, teamMembers, defaultClientId, defaultClientName, defaultTitle, defaultSteps, defaultDueDate, sourceOutputId }: Props) {
   const [title, setTitle] = useState(defaultTitle ?? '');
   const [clientId, setClientId] = useState(defaultClientId ?? '');
   const [isInternal, setIsInternal] = useState(false);
@@ -41,6 +50,12 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
   const [showRepeat, setShowRepeat] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceType | ''>('');
   const [customInterval, setCustomInterval] = useState('');
+  // CH-deadline linking — when chDeadlineType is non-empty the task gets
+  // an auto-link at creation time; the manual due-date + recurrence inputs
+  // are disabled because the CH deadline dictates both.
+  const [chDeadlineType, setChDeadlineType] = useState<ChDeadlineSelection>('');
+  const [chOffsetDays, setChOffsetDays] = useState<number>(0);
+  const isChLinked = chDeadlineType !== '';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -78,10 +93,18 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
       await onCreate({
         title: title.trim(),
         client_id: isInternal ? null : (clientId || null),
-        due_date: dueDate || null,
+        // CH-linked tasks get their due_date from the CH deadline +
+        // offset, applied server-side. We don't send a manual due_date
+        // in that mode so a stale UI value can't sneak through.
+        due_date: isChLinked ? null : (dueDate || null),
         is_internal: isInternal || !clientId,
-        recurrence_type: (recurrence as RecurrenceType) || null,
-        recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
+        // Same story for recurrence — CH dictates cadence, manual fields
+        // are ignored. Send null to be explicit.
+        recurrence_type: isChLinked ? null : ((recurrence as RecurrenceType) || null),
+        recurrence_interval_days: isChLinked ? null : (recurrence === 'custom' && customInterval ? parseInt(customInterval) : null),
+        ch_deadline_type: isChLinked ? chDeadlineType : null,
+        ch_offset_days:   isChLinked ? chOffsetDays : 0,
+        source_output_id: sourceOutputId ?? null,
         steps: stepInputs,
         edges: [],
       });
@@ -163,12 +186,20 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
           {/* Due date + Assignee */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Due date</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Due date
+                {isChLinked && (
+                  <span className="ml-1.5 text-[10px] font-medium text-[var(--accent)] uppercase tracking-wide">
+                    · set by CH
+                  </span>
+                )}
+              </label>
               <input
                 type="date"
                 value={dueDate}
                 onChange={e => setDueDate(e.target.value)}
-                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                disabled={isChLinked}
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
               />
             </div>
             <div>
@@ -223,14 +254,17 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
             </button>
           </div>
 
-          {/* Repeat section — less prominent, collapsible */}
+          {/* Repeat / renewal source section */}
           <div className="border-t border-gray-100 pt-4">
             <button
               onClick={() => setShowRepeat(v => !v)}
               className="w-full flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 transition-colors"
             >
               <RefreshCw className="h-4 w-4 flex-shrink-0" />
-              <span className="flex-1 text-left">Repeat this task?</span>
+              <span className="flex-1 text-left">
+                Repeat this task?
+                {isChLinked && <span className="ml-1.5 text-[var(--accent)]">· linked to CH deadline</span>}
+              </span>
               {showRepeat
                 ? <ChevronUp className="h-4 w-4" />
                 : <ChevronDown className="h-4 w-4" />
@@ -239,6 +273,50 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
 
             {showRepeat && (
               <div className="mt-3 space-y-3 pl-6">
+                {/* Renewal source toggle — Manual vs CH deadline. Hidden when
+                    the user picked "Internal" task since CH links need a
+                    client to follow. */}
+                {!isInternal && clientId && (
+                  <select
+                    value={isChLinked ? 'ch' : 'manual'}
+                    onChange={e => {
+                      if (e.target.value === 'manual') setChDeadlineType('');
+                      else setChDeadlineType('accounts_due');
+                    }}
+                    className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="manual">Manual cadence</option>
+                    <option value="ch">CH deadline-linked (auto-renew via Companies House)</option>
+                  </select>
+                )}
+                {isChLinked ? (
+                  <>
+                    <select
+                      value={chDeadlineType}
+                      onChange={e => setChDeadlineType(e.target.value as ChDeadlineFilled)}
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="accounts_due">Accounts Due</option>
+                      <option value="cs_due">Confirmation Statement Due</option>
+                      <option value="officer_idv_due">Officer IDV Due</option>
+                      <option value="psc_idv_due">PSC IDV Due</option>
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Offset</span>
+                      <input
+                        type="number"
+                        step={1}
+                        value={chOffsetDays}
+                        onChange={e => setChOffsetDays(Number.isFinite(parseInt(e.target.value, 10)) ? parseInt(e.target.value, 10) : 0)}
+                        className="w-20 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <span className="text-sm text-gray-500">days (negative = before)</span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 italic">
+                      Due date is dictated by the chosen CH deadline + offset. The task auto-renews each cycle.
+                    </p>
+                  </>
+                ) : (
                 <select
                   value={recurrence}
                   onChange={e => setRecurrence(e.target.value as RecurrenceType | '')}
@@ -248,6 +326,10 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
+                )}
+                {/* Keep the existing custom-interval input below only in manual mode */}
+                {!isChLinked && (
+                <>
                 {recurrence === 'custom' && (
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-gray-500">Every</span>
@@ -265,6 +347,8 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                   <p className="text-xs text-gray-400">
                     For more control over recurring tasks (custom assignees per recurrence, conditional steps), use a Full Task instead.
                   </p>
+                )}
+                </>
                 )}
               </div>
             )}
