@@ -14,6 +14,16 @@ import { CH_COLUMNS } from '@/types/ch';
 import type { CHCompanyData, CHSortField } from '@/types/ch';
 import { createClient } from '@/lib/supabase';
 
+// Status-band filter token used by the stat-panel buttons. Declared at module
+// scope so SWC doesn't have to re-parse it on every render, and so any
+// component-internal reference resolves predictably.
+type MetricFilter =
+  | null
+  | 'accounts_overdue' | 'accounts_soon'
+  | 'cs_overdue'       | 'cs_soon'
+  | 'officer_idv_overdue' | 'officer_idv_soon'
+  | 'psc_idv_overdue'  | 'psc_idv_soon';
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function daysUntil(dateStr: string | null): number | null {
@@ -122,15 +132,6 @@ export default function CHSecretarialPage() {
   const [sortField, setSortField] = useState<CHSortField>('companyName');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [search, setSearch] = useState('');
-  // Status-band filter — null = no filter. Cycling the same value off via the
-  // panel click toggles it back to null. Keyed on `${metric}_${band}` so each
-  // panel maps to a single filter token.
-  type MetricFilter =
-    | null
-    | 'accounts_overdue' | 'accounts_soon'
-    | 'cs_overdue'       | 'cs_soon'
-    | 'officer_idv_overdue' | 'officer_idv_soon'
-    | 'psc_idv_overdue'  | 'psc_idv_soon';
   const [metricFilter, setMetricFilter] = useState<MetricFilter>(null);
   const [statsCollapsed, setStatsCollapsed] = useState(false);
   const [visibleCols, setVisibleCols] = useState<Set<CHSortField>>(
