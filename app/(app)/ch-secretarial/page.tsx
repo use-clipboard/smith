@@ -31,6 +31,24 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000);
 }
 
+// Safely coerce any error-like value into a string for rendering. Cached
+// company rows can carry `error` as an object (Postgrest / Gmail / Supabase
+// error shapes leak through if anything wrote one in) — and rendering an
+// object as a JSX child crashes React with "Objects are not valid as a React
+// child". Pull a useful message out where we can.
+function errorToString(err: unknown): string {
+  if (err === null || err === undefined) return '';
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object') {
+    const e = err as { message?: unknown; error?: unknown; code?: unknown };
+    if (typeof e.message === 'string') return e.message;
+    if (typeof e.error === 'string')   return e.error;
+    if (typeof e.code === 'string')    return e.code;
+    try { return JSON.stringify(err); } catch { return 'Error'; }
+  }
+  return String(err);
+}
+
 function DueDateCell({ dateStr, overdue }: { dateStr: string | null; overdue?: boolean }) {
   if (!dateStr) return <span className="text-xs text-[var(--text-muted)]">—</span>;
   const days = daysUntil(dateStr);
@@ -572,7 +590,7 @@ export default function CHSecretarialPage() {
                 <> · {cacheStatus.companiesFetched}/{cacheStatus.companiesTotal} companies</>
               )}
               {cacheStatus.status === 'partial' && cacheStatus.error && (
-                <> · {cacheStatus.error}</>
+                <> · {errorToString(cacheStatus.error)}</>
               )}
               {cacheStatus.status === 'failed' && (
                 <> · All companies failed — check your API key</>
@@ -849,7 +867,7 @@ export default function CHSecretarialPage() {
         {error && (
           <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-xl">
             <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
-            <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+            <p className="text-sm text-red-700 dark:text-red-400">{errorToString(error)}</p>
           </div>
         )}
 
@@ -1058,7 +1076,7 @@ export default function CHSecretarialPage() {
                               {col.key === 'companyNumber' && <span className="text-xs font-mono text-[var(--text-secondary)]">{company.companyNumber}</span>}
                               {col.key === 'companyName' && (
                                 <span className="font-medium text-[var(--text-primary)]">
-                                  {company.companyName || <span className="text-red-500 text-xs italic">{company.error ?? 'Error'}</span>}
+                                  {company.companyName || <span className="text-red-500 text-xs italic">{errorToString(company.error) || 'Error'}</span>}
                                 </span>
                               )}
                               {col.key === 'status' && <StatusBadge status={company.status} />}
