@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .from('tasks')
     .select(`
       *,
-      client:clients(id, name, client_ref, contact_email),
+      client:clients(id, name, client_ref, contact_email, status),
       created_by_user:users!tasks_created_by_fkey(id, full_name, email),
       steps:task_steps(*, assignee:users(id, full_name, email)),
       edges:task_step_edges(*),
