@@ -1053,26 +1053,39 @@ export default function ClientDetailPage() {
   async function handleSave() {
     setSaving(true); setEditError(null);
     try {
+      // Send empty strings rather than `undefined` for optional fields so
+      // clearing a value in the form actually writes null to the DB.
+      // `undefined` would drop the key from the JSON payload and the API
+      // would leave the existing value in place. `business_type` is the
+      // exception — its Zod schema rejects empty strings, so we keep
+      // `|| undefined` there (a client must always have a business type
+      // once one's been set).
       const res = await fetch(`/api/clients/${clientId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: editName, client_ref: editRef, business_type: editType || undefined,
-          contact_email: editEmail || undefined, risk_rating: editRisk || undefined, status: editStatus,
-          address: editAddress || undefined, utr_number: editUtr || undefined,
-          registration_number: editRegNo || undefined, national_insurance_number: editNI || undefined,
-          companies_house_id: editCHId || undefined, vat_number: editVat || undefined,
-          companies_house_auth_code: editCHAuth || undefined, date_of_birth: editDob || undefined,
-          contact_number: editContactNumber || undefined,
-          paye_reference: editPayeRef || undefined,
-          paye_accounts_office_reference: editPayeAOR || undefined,
-          // Send '' (not undefined) when cleared, so the API actually
-          // overwrites the existing value with null. `undefined` would
-          // make the field absent from the PATCH and leave the DB row
-          // unchanged.
+          name: editName,
+          client_ref: editRef,
+          business_type: editType || undefined,
+          contact_email: editEmail,
+          risk_rating: editRisk,
+          status: editStatus,
+          address: editAddress,
+          utr_number: editUtr,
+          registration_number: editRegNo,
+          national_insurance_number: editNI,
+          companies_house_id: editCHId,
+          vat_number: editVat,
+          companies_house_auth_code: editCHAuth,
+          date_of_birth: editDob,
+          contact_number: editContactNumber,
+          paye_reference: editPayeRef,
+          paye_accounts_office_reference: editPayeAOR,
           vat_submit_type: editVatSubmitType,
           vat_scheme: editVatScheme,
           vat_scheme_period_end_month: editVatPeriodEnd ? Number(editVatPeriodEnd) : null,
-          year_end: (editYearEndDay && editYearEndMonth) ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}` : undefined,
+          year_end: (editYearEndDay && editYearEndMonth)
+            ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}`
+            : '',
           mtd_it: editMtdIt,
         }),
       });
