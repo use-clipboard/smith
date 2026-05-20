@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
   const typeFilter = url.searchParams.get('type');
   const riskFilter = url.searchParams.get('risk');
 
-  const SELECT_COLS = 'id, name, client_ref, business_type, contact_email, contact_number, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth, paye_reference, paye_accounts_office_reference, vat_submit_type, vat_scheme, year_end, mtd_it';
+  const SELECT_COLS = 'id, name, client_ref, business_type, contact_email, contact_number, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth, paye_reference, paye_accounts_office_reference, vat_submit_type, vat_scheme, vat_scheme_period_end_month, year_end, mtd_it';
 
   // ── Paginated fetch ───────────────────────────────────────────────────────
   // Supabase PostgREST has a server-level max_rows cap (default 1000) that

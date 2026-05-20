@@ -36,6 +36,26 @@ const STATUS_CONFIG: Record<ClientStatus, { dot: string; bg: string; text: strin
   inactive: { dot: 'bg-gray-400',   bg: 'bg-gray-100',   text: 'text-gray-500',   label: 'Inactive'  },
 };
 
+// ── VAT scheme period-end helpers ────────────────────────────────────────────
+// Yearly schemes can end in any month (Jan–Dec).
+// Quarterly schemes follow HMRC's three stagger groups; we store the
+// representative month (1, 2, or 3) and display the full quarter pattern.
+const MONTHS_FULL = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+const QUARTERLY_STAGGERS: Record<number, string> = {
+  3: 'Mar / Jun / Sep / Dec',
+  1: 'Apr / Jul / Oct / Jan',
+  2: 'May / Aug / Nov / Feb',
+};
+function describeVatPeriodEnd(scheme: string | null, month: number | null): string | null {
+  if (!scheme || month == null) return null;
+  if (scheme === 'Yearly')    return `ends ${MONTHS_FULL[month - 1]}`;
+  if (scheme === 'Quarterly') return `quarter-ends ${QUARTERLY_STAGGERS[month] ?? '—'}`;
+  return null;
+}
+
 interface Client {
   id: string; name: string; client_ref: string | null; business_type: string | null;
   contact_email: string | null; risk_rating: string | null; status: ClientStatus; created_at: string;
@@ -47,6 +67,7 @@ interface Client {
   paye_accounts_office_reference: string | null;
   vat_submit_type: string | null;
   vat_scheme: string | null;
+  vat_scheme_period_end_month: number | null;
   year_end: string | null;
   mtd_it: boolean;
 }
@@ -757,6 +778,8 @@ export default function ClientDetailPage() {
   const [editPayeAOR, setEditPayeAOR] = useState('');
   const [editVatSubmitType, setEditVatSubmitType] = useState('');
   const [editVatScheme, setEditVatScheme] = useState('');
+  // Period-end month: '' when not set, otherwise '1'..'12' as a string for the <select>
+  const [editVatPeriodEnd, setEditVatPeriodEnd] = useState('');
   const [editYearEndDay, setEditYearEndDay] = useState('');
   const [editYearEndMonth, setEditYearEndMonth] = useState('');
   const [editMtdIt, setEditMtdIt] = useState(false);
@@ -1019,6 +1042,7 @@ export default function ClientDetailPage() {
     setEditPayeAOR(client.paye_accounts_office_reference ?? '');
     setEditVatSubmitType(client.vat_submit_type ?? '');
     setEditVatScheme(client.vat_scheme ?? '');
+    setEditVatPeriodEnd(client.vat_scheme_period_end_month != null ? String(client.vat_scheme_period_end_month) : '');
     // year_end stored as "31 MAR" — split into day and month for the editor
     const [yeDay = '', yeMonth = ''] = (client.year_end ?? '').split(' ');
     setEditYearEndDay(yeDay); setEditYearEndMonth(yeMonth);
@@ -1043,6 +1067,7 @@ export default function ClientDetailPage() {
           paye_accounts_office_reference: editPayeAOR || undefined,
           vat_submit_type: editVatSubmitType || undefined,
           vat_scheme: editVatScheme || undefined,
+          vat_scheme_period_end_month: editVatPeriodEnd ? Number(editVatPeriodEnd) : null,
           year_end: (editYearEndDay && editYearEndMonth) ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}` : undefined,
           mtd_it: editMtdIt,
         }),
@@ -1562,7 +1587,16 @@ export default function ClientDetailPage() {
               {showFor('paye_reference', type) && <InfoRow label="PAYE Reference" value={client.paye_reference} mono />}
               {showFor('paye_accounts_office_reference', type) && <InfoRow label="PAYE Accounts Office Reference" value={client.paye_accounts_office_reference} mono />}
               {showFor('vat_submit_type', type) && <InfoRow label="VAT Submit Type" value={client.vat_submit_type} />}
-              {showFor('vat_scheme', type) && <InfoRow label="VAT Scheme" value={client.vat_scheme} />}
+              {showFor('vat_scheme', type) && (
+                <InfoRow
+                  label="VAT Scheme"
+                  value={(() => {
+                    if (!client.vat_scheme) return null;
+                    const extra = describeVatPeriodEnd(client.vat_scheme, client.vat_scheme_period_end_month);
+                    return extra ? `${client.vat_scheme} · ${extra}` : client.vat_scheme;
+                  })()}
+                />
+              )}
               {showFor('year_end', type) && <InfoRow label="Year End" value={client.year_end} />}
             </dl>
           </div>
@@ -1812,11 +1846,49 @@ export default function ClientDetailPage() {
                 {showFor('vat_scheme', editType || null) && (
                   <div>
                     <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Scheme</label>
-                    <select value={editVatScheme} onChange={e => setEditVatScheme(e.target.value)} className="input-base w-full">
+                    <select
+                      value={editVatScheme}
+                      onChange={e => {
+                        const next = e.target.value;
+                        setEditVatScheme(next);
+                        // Clear the period-end month when the scheme changes
+                        // to anything that wouldn't accept the current value:
+                        //   • Monthly / unset → never has a month
+                        //   • Quarterly → only 1, 2, 3 are valid
+                        if (!next || next === 'Monthly') setEditVatPeriodEnd('');
+                        else if (next === 'Quarterly') {
+                          const n = editVatPeriodEnd ? Number(editVatPeriodEnd) : 0;
+                          if (n < 1 || n > 3) setEditVatPeriodEnd('');
+                        }
+                      }}
+                      className="input-base w-full"
+                    >
                       <option value="">— Not set —</option>
                       <option value="Monthly">Monthly</option>
                       <option value="Quarterly">Quarterly</option>
                       <option value="Yearly">Yearly</option>
+                    </select>
+                  </div>
+                )}
+                {showFor('vat_scheme', editType || null) && editVatScheme === 'Yearly' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Period End</label>
+                    <select value={editVatPeriodEnd} onChange={e => setEditVatPeriodEnd(e.target.value)} className="input-base w-full">
+                      <option value="">— Select month —</option>
+                      {MONTHS_FULL.map((m, i) => (
+                        <option key={m} value={i + 1}>{m}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {showFor('vat_scheme', editType || null) && editVatScheme === 'Quarterly' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Quarter Stagger</label>
+                    <select value={editVatPeriodEnd} onChange={e => setEditVatPeriodEnd(e.target.value)} className="input-base w-full">
+                      <option value="">— Select stagger —</option>
+                      <option value="3">Quarter-ends Mar / Jun / Sep / Dec</option>
+                      <option value="1">Quarter-ends Apr / Jul / Oct / Jan</option>
+                      <option value="2">Quarter-ends May / Aug / Nov / Feb</option>
                     </select>
                   </div>
                 )}

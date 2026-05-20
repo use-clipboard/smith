@@ -31,6 +31,10 @@ const UpdateClientSchema = z.object({
   paye_accounts_office_reference: z.string().optional(),
   vat_submit_type: z.enum(['Cash', 'Accrual']).optional().or(z.literal('')),
   vat_scheme: z.enum(['Monthly', 'Quarterly', 'Yearly']).optional().or(z.literal('')),
+  // Period-end month for the VAT scheme (1–12). For Quarterly, only 1–3
+  // are valid (HMRC stagger groups). For Monthly, must be null. The PATCH
+  // handler normalises this when the scheme is changed.
+  vat_scheme_period_end_month: z.number().int().min(1).max(12).optional().nullable(),
   year_end: z.string().optional(),
   mtd_it: z.boolean().optional(),
 });
@@ -107,6 +111,36 @@ export async function PATCH(
   if (d.paye_accounts_office_reference !== undefined) updates.paye_accounts_office_reference = d.paye_accounts_office_reference || null;
   if (d.vat_submit_type !== undefined) updates.vat_submit_type = d.vat_submit_type || null;
   if (d.vat_scheme !== undefined) updates.vat_scheme = d.vat_scheme || null;
+  // Period-end month: normalise based on the effective scheme so we never
+  // store an invalid combo (e.g. month 7 with Quarterly, or any month with
+  // Monthly). If the caller didn't supply scheme + month explicitly, fall
+  // back to whichever side they did supply.
+  if (d.vat_scheme_period_end_month !== undefined || d.vat_scheme !== undefined) {
+    const effectiveScheme = d.vat_scheme !== undefined
+      ? (d.vat_scheme || null)
+      : undefined; // undefined here means "scheme unchanged — read from DB if needed"
+    const proposedMonth = d.vat_scheme_period_end_month ?? null;
+
+    if (effectiveScheme === 'Monthly') {
+      updates.vat_scheme_period_end_month = null;
+    } else if (effectiveScheme === 'Quarterly') {
+      updates.vat_scheme_period_end_month =
+        proposedMonth !== null && proposedMonth >= 1 && proposedMonth <= 3
+          ? proposedMonth
+          : null;
+    } else if (effectiveScheme === 'Yearly') {
+      updates.vat_scheme_period_end_month =
+        proposedMonth !== null && proposedMonth >= 1 && proposedMonth <= 12
+          ? proposedMonth
+          : null;
+    } else if (effectiveScheme === null) {
+      // Scheme explicitly cleared — clear the month too.
+      updates.vat_scheme_period_end_month = null;
+    } else if (d.vat_scheme_period_end_month !== undefined) {
+      // Scheme unchanged, just updating the month: trust the input range.
+      updates.vat_scheme_period_end_month = proposedMonth;
+    }
+  }
   if (d.year_end !== undefined) updates.year_end = d.year_end || null;
   if (d.mtd_it !== undefined) updates.mtd_it = d.mtd_it;
 
