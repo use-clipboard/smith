@@ -14,7 +14,7 @@ const CreateTaskSchema = z.object({
   template_id: z.string().uuid().optional().nullable(),
   due_date: z.string().optional().nullable(),
   is_internal: z.boolean().optional(),
-  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
+  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'four-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
   /** Optional: link this task back to the outputs row it was spawned from
    *  (Meeting Notes history "Create task", future "create task from

@@ -34,6 +34,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: '', label: 'No recurrence (one-off)' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'bi-weekly', label: 'Bi-weekly (fortnightly)' },
+  { value: 'four-weekly', label: 'Four-weekly (every 28 days)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
   { value: 'annually', label: 'Annually' },

@@ -80,7 +80,7 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
           properties: {
             status:                   { type: 'string', enum: ['not_started', 'in_progress', 'waiting_on_client', 'records_here', 'review', 'complete'] },
             due_date:                 { type: 'string', description: 'ISO date or null to clear.' },
-            recurrence_type:          { type: 'string', enum: ['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom', 'none'] },
+            recurrence_type:          { type: 'string', enum: ['once', 'weekly', 'bi-weekly', 'four-weekly', 'monthly', 'quarterly', 'annually', 'custom', 'none'] },
             recurrence_interval_days: { type: 'integer' },
             reassign_steps_from_user: { type: 'string', description: 'When set, re-assign all step assignments from this user_id to reassign_steps_to_user on each affected task.' },
             reassign_steps_to_user:   { type: 'string' },

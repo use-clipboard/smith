@@ -48,6 +48,7 @@ const CLIENT_STATUS_LABELS: Record<string, { label: string; colour: string }> = 
 const RECURRENCE_META: Record<string, { label: string; colour: string }> = {
   weekly:      { label: 'Weekly',     colour: 'bg-sky-100 text-sky-700' },
   'bi-weekly': { label: 'Bi-weekly',  colour: 'bg-cyan-100 text-cyan-700' },
+  'four-weekly': { label: 'Four-weekly', colour: 'bg-teal-100 text-teal-700' },
   monthly:     { label: 'Monthly',    colour: 'bg-blue-100 text-blue-700' },
   quarterly:   { label: 'Quarterly',  colour: 'bg-violet-100 text-violet-700' },
   annually:    { label: 'Annually',   colour: 'bg-orange-100 text-orange-700' },

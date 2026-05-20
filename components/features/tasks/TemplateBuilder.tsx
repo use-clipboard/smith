@@ -1176,6 +1176,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                 <option value="">No recurrence</option>
                 <option value="weekly">Weekly</option>
                 <option value="bi-weekly">Bi-weekly</option>
+                <option value="four-weekly">Four-weekly</option>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
                 <option value="annually">Annually</option>
@@ -1242,6 +1243,7 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                     <option value="">No recurrence</option>
                     <option value="weekly">Weekly</option>
                     <option value="bi-weekly">Bi-weekly</option>
+                    <option value="four-weekly">Four-weekly</option>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
                     <option value="annually">Annually</option>

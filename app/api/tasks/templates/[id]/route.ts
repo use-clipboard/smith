@@ -8,7 +8,7 @@ const UpdateTemplateSchema = z.object({
   description: z.string().optional().nullable(),
   is_firm_wide: z.boolean().optional(),
   category: z.string().optional(),
-  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
+  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'four-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
   estimated_duration_days: z.number().int().positive().optional().nullable(),
   ch_deadline_type: z.enum(['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due']).optional().nullable(),

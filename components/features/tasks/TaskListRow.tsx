@@ -46,7 +46,7 @@ const TASK_STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
 ];
 
 const RECURRENCE_LABELS: Record<string, string> = {
-  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', 'four-weekly': 'Four-weekly', monthly: 'Monthly',
   quarterly: 'Quarterly', annually: 'Annually',
 };
 
@@ -69,6 +69,7 @@ function computeNextDue(dueDate: string | null, recType: RecurrenceType | null, 
   switch (recType) {
     case 'weekly':    base.setDate(base.getDate() + 7);          break;
     case 'bi-weekly': base.setDate(base.getDate() + 14);         break;
+    case 'four-weekly': base.setDate(base.getDate() + 28);       break;
     case 'monthly':   base.setMonth(base.getMonth() + 1);        break;
     case 'quarterly': base.setMonth(base.getMonth() + 3);        break;
     case 'annually':  base.setFullYear(base.getFullYear() + 1);  break;
@@ -448,6 +449,7 @@ export default function TaskListRow({
                       <option value="" disabled>↻</option>
                       <option value="weekly">Weekly</option>
                       <option value="bi-weekly">Bi-weekly</option>
+                      <option value="four-weekly">Four-weekly</option>
                       <option value="monthly">Monthly</option>
                       <option value="quarterly">Quarterly</option>
                       <option value="annually">Annually</option>

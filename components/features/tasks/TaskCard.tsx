@@ -37,7 +37,7 @@ function fmtDuration(mins: number) {
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
-  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', 'four-weekly': 'Four-weekly', monthly: 'Monthly',
   quarterly: 'Quarterly', annually: 'Annually',
 };
 
@@ -53,6 +53,7 @@ function computeNextDue(dueDate: string | null, recType: RecurrenceType | null, 
   switch (recType) {
     case 'weekly':    base.setDate(base.getDate() + 7);          break;
     case 'bi-weekly': base.setDate(base.getDate() + 14);         break;
+    case 'four-weekly': base.setDate(base.getDate() + 28);       break;
     case 'monthly':   base.setMonth(base.getMonth() + 1);        break;
     case 'quarterly': base.setMonth(base.getMonth() + 3);        break;
     case 'annually':  base.setFullYear(base.getFullYear() + 1);  break;

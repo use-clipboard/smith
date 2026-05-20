@@ -68,6 +68,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
   { value: '', label: 'One-off (no recurrence)' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'bi-weekly', label: 'Bi-weekly (fortnightly)' },
+  { value: 'four-weekly', label: 'Four-weekly (every 28 days)' },
   { value: 'monthly', label: 'Monthly' },
   { value: 'quarterly', label: 'Quarterly' },
   { value: 'annually', label: 'Annually' },
@@ -77,7 +78,7 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType | ''; label: string }[] = [
 // ── Template card helpers ─────────────────────────────────────────────────────
 
 const RECURRENCE_SHORT: Record<string, string> = {
-  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', monthly: 'Monthly',
+  weekly: 'Weekly', 'bi-weekly': 'Bi-weekly', 'four-weekly': 'Four-weekly', monthly: 'Monthly',
   quarterly: 'Quarterly', annually: 'Annually', custom: 'Custom',
 };
 

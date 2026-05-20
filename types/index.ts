@@ -584,7 +584,7 @@ export interface AppState2 {
 export type TaskStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'records_here' | 'review' | 'complete' | 'draft' | 'cancelled';
 export type StepStatus = 'not_started' | 'in_progress' | 'waiting_on_client' | 'complete' | 'skipped';
 export type StepType = 'regular' | 'start' | 'end';
-export type RecurrenceType = 'once' | 'weekly' | 'bi-weekly' | 'monthly' | 'quarterly' | 'annually' | 'custom';
+export type RecurrenceType = 'once' | 'weekly' | 'bi-weekly' | 'four-weekly' | 'monthly' | 'quarterly' | 'annually' | 'custom';
 export type EmailReminderTiming = 'on_assign' | '1_day_before_due' | '3_days_before_due' | '1_week_before_due' | 'on_due_date';
 
 export type StartTriggerType = 'manual' | 'deadline_relative' | 'day_of_month' | 'date_of_year';

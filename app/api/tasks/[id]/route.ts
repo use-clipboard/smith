@@ -17,7 +17,7 @@ const UpdateTaskSchema = z.object({
   status: z.enum(['not_started', 'in_progress', 'waiting_on_client', 'records_here', 'review', 'complete', 'draft']).optional(),
   due_date: z.string().optional().nullable(),
   is_internal: z.boolean().optional(),
-  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
+  recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'four-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
 });
 
@@ -258,6 +258,7 @@ function computeNextDueDate(currentDue: string | null, recType: string, interval
   switch (recType) {
     case 'weekly':       base.setDate(base.getDate() + 7); break;
     case 'bi-weekly':    base.setDate(base.getDate() + 14); break;
+    case 'four-weekly':  base.setDate(base.getDate() + 28); break;
     case 'monthly':      base.setMonth(base.getMonth() + 1); break;
     case 'quarterly':    base.setMonth(base.getMonth() + 3); break;
     case 'annually':     base.setFullYear(base.getFullYear() + 1); break;
