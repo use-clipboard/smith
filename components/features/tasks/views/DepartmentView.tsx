@@ -289,15 +289,50 @@ export default function DepartmentView({
   const dateLocked = filter.locked;
   const lockedByName = filter.locked_by_user?.full_name || filter.locked_by_user?.email;
 
+  function handleExport() {
+    if (tasksMatchingFilters.length === 0) return;
+    const perTemplate = new Map<string, Task[]>();
+    for (const t of tasksMatchingFilters) {
+      if (!t.template_id) continue;
+      const arr = perTemplate.get(t.template_id) ?? [];
+      arr.push(t);
+      perTemplate.set(t.template_id, arr);
+    }
+    const groups = [...perTemplate.entries()]
+      .map(([tid, arr]) => ({ template: templates.find(tpl => tpl.id === tid), tasks: arr }))
+      .sort((a, b) => (a.template?.name ?? '').localeCompare(b.template?.name ?? ''))
+      .map(g => ({
+        name: g.template?.name ?? '(deleted template)',
+        tasks: sortTasks(g.tasks),
+      }));
+    const safeLabel = label.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    exportTaskGroupsXlsx(groups, `tasks-${safeLabel}`);
+  }
+
   return (
     <div>
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-30 bg-gray-50 pb-3 space-y-3">
         {/* Title row */}
         <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">{label}</h2>
-            <p className="text-xs text-gray-500">Department overview · {stats.total} task{stats.total !== 1 ? 's' : ''} in view</p>
+          <div className="flex items-center gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{label}</h2>
+              <p className="text-xs text-gray-500">Department overview · {stats.total} task{stats.total !== 1 ? 's' : ''} in view</p>
+            </div>
+            <Tooltip label={tasksMatchingFilters.length === 0
+              ? 'No tasks to export'
+              : `Export ${label} to Excel — one sheet per template`}>
+              <button
+                onClick={handleExport}
+                disabled={tasksMatchingFilters.length === 0}
+                aria-label="Export department to Excel"
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-indigo-600 bg-white hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+            </Tooltip>
           </div>
           {/* Summary chips */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -414,34 +449,6 @@ export default function DepartmentView({
               <RefreshCw size={11} /> Reset
             </button>
           )}
-
-          <Tooltip label="Export this department to Excel — one sheet per template">
-            <button
-              onClick={() => {
-                const perTemplate = new Map<string, Task[]>();
-                for (const t of tasksMatchingFilters) {
-                  if (!t.template_id) continue;
-                  const arr = perTemplate.get(t.template_id) ?? [];
-                  arr.push(t);
-                  perTemplate.set(t.template_id, arr);
-                }
-                const groups = [...perTemplate.entries()]
-                  .map(([tid, arr]) => ({ template: templates.find(tpl => tpl.id === tid), tasks: arr }))
-                  .sort((a, b) => (a.template?.name ?? '').localeCompare(b.template?.name ?? ''))
-                  .map(g => ({
-                    name: g.template?.name ?? '(deleted template)',
-                    tasks: sortTasks(g.tasks),
-                  }));
-                const safeLabel = label.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-                exportTaskGroupsXlsx(groups, `tasks-${safeLabel}`);
-              }}
-              disabled={tasksMatchingFilters.length === 0}
-              aria-label="Export department to Excel"
-              className="ml-auto text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Download size={12} /> Export
-            </button>
-          </Tooltip>
 
           {/* Show-hidden toggles — surface only when the policy is actively
               hiding tasks AND there are some to show, so the chip doesn't
