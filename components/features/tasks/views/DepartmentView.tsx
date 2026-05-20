@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Lock, Unlock, RefreshCw, Search, CalendarDays, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Lock, Unlock, RefreshCw, Search, CalendarDays, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import TaskListRow from '../TaskListRow';
 import TaskTable, { type TaskColumn } from '../TaskTable';
 import { type SortDir } from '../SortHeader';
@@ -9,6 +9,7 @@ import { useTaskClientStatusPolicy } from '../TaskClientStatusPolicyProvider';
 import { isHiddenByClientStatus, isExcludedFromOverdueCounts, countsHiddenByClientStatus } from '../applyClientStatusVisibility';
 import Tooltip from '@/components/ui/Tooltip';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
+import { exportTaskGroupsXlsx } from '@/utils/taskExport';
 import type { Task, TaskStatus, TaskStep, TaskTemplate } from '@/types';
 
 interface TeamMember { id: string; full_name: string | null; email: string }
@@ -413,6 +414,34 @@ export default function DepartmentView({
               <RefreshCw size={11} /> Reset
             </button>
           )}
+
+          <Tooltip label="Export this department to Excel — one sheet per template">
+            <button
+              onClick={() => {
+                const perTemplate = new Map<string, Task[]>();
+                for (const t of tasksMatchingFilters) {
+                  if (!t.template_id) continue;
+                  const arr = perTemplate.get(t.template_id) ?? [];
+                  arr.push(t);
+                  perTemplate.set(t.template_id, arr);
+                }
+                const groups = [...perTemplate.entries()]
+                  .map(([tid, arr]) => ({ template: templates.find(tpl => tpl.id === tid), tasks: arr }))
+                  .sort((a, b) => (a.template?.name ?? '').localeCompare(b.template?.name ?? ''))
+                  .map(g => ({
+                    name: g.template?.name ?? '(deleted template)',
+                    tasks: sortTasks(g.tasks),
+                  }));
+                const safeLabel = label.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+                exportTaskGroupsXlsx(groups, `tasks-${safeLabel}`);
+              }}
+              disabled={tasksMatchingFilters.length === 0}
+              aria-label="Export department to Excel"
+              className="ml-auto text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download size={12} /> Export
+            </button>
+          </Tooltip>
 
           {/* Show-hidden toggles — surface only when the policy is actively
               hiding tasks AND there are some to show, so the chip doesn't

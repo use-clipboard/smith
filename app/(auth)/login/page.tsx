@@ -1,23 +1,14 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Mail, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { SmithLogoLoader } from '@/components/ui/SmithLogoLoader';
 
-// Race a promise against a timeout so a slow/hung call can't block the UI.
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return Promise.race([
-    p.catch(() => null),
-    new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
-  ]);
-}
-
 type Mode = 'password' | 'magic-link';
 
 function LoginContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const urlError = searchParams.get('error');
 
@@ -35,14 +26,24 @@ function LoginContent() {
     setLoading(true); setError('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError('Invalid email or password. Please try again.'); setLoading(false); return; }
-    // End all other active sessions and register this as the sole valid session.
-    // Race against a short timeout so a slow Supabase response or cold serverless
-    // function can't leave the user stuck on "Please wait…" indefinitely.
-    await Promise.all([
-      withTimeout(supabase.auth.signOut({ scope: 'others' }), 2500),
-      withTimeout(fetch('/api/auth/session-checkin', { method: 'POST' }), 2500),
-    ]);
-    router.push('/dashboard'); router.refresh();
+    // Best-effort housekeeping — end other sessions and register this one as the
+    // sole valid session. Fired without await so a slow Supabase response or a
+    // cold serverless function can't keep the user on "Signing you in…".
+    // The middleware nonce check tolerates the checkin landing slightly after
+    // the first dashboard request.
+    void supabase.auth.signOut({ scope: 'others' }).catch(() => {});
+    void fetch('/api/auth/session-checkin', { method: 'POST' }).catch(() => {});
+    // Hard navigation guarantees the freshly-set auth cookies are sent on the
+    // next request, avoiding a router.push + RSC-cache hang seen on Vercel.
+    // Safety net: if navigation somehow doesn't take, drop the spinner so the
+    // user can retry without a manual refresh.
+    const safety = setTimeout(() => setLoading(false), 5000);
+    try {
+      window.location.assign('/dashboard');
+    } catch {
+      clearTimeout(safety);
+      setLoading(false);
+    }
   }
 
   async function handleMagicLink(e: React.FormEvent) {
