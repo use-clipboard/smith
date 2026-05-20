@@ -1065,8 +1065,12 @@ export default function ClientDetailPage() {
           contact_number: editContactNumber || undefined,
           paye_reference: editPayeRef || undefined,
           paye_accounts_office_reference: editPayeAOR || undefined,
-          vat_submit_type: editVatSubmitType || undefined,
-          vat_scheme: editVatScheme || undefined,
+          // Send '' (not undefined) when cleared, so the API actually
+          // overwrites the existing value with null. `undefined` would
+          // make the field absent from the PATCH and leave the DB row
+          // unchanged.
+          vat_submit_type: editVatSubmitType,
+          vat_scheme: editVatScheme,
           vat_scheme_period_end_month: editVatPeriodEnd ? Number(editVatPeriodEnd) : null,
           year_end: (editYearEndDay && editYearEndMonth) ? `${editYearEndDay.padStart(2, '0')} ${editYearEndMonth}` : undefined,
           mtd_it: editMtdIt,
