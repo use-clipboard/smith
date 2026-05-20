@@ -262,7 +262,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   }
 
   return (
-    <header className="glass-topbar h-14 flex items-center px-6 gap-4 shrink-0 z-30">
+    <header className="glass-topbar relative h-14 flex items-center px-6 gap-4 shrink-0 z-40">
       {/* Page title */}
       <h1 className="flex-1 text-base font-semibold text-[var(--text-primary)] tracking-tight truncate">
         {title}
