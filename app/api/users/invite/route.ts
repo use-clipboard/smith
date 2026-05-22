@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 const schema = z.object({
   email: z.string().email(),
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
     // Send invite email via Supabase Auth
     const { data: invited, error: inviteError } = await service.auth.admin.inviteUserByEmail(email, {
       data: { full_name: full_name ?? '' },
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/auth/callback`,
+      redirectTo: `${getBaseUrl()}/auth/callback`,
     });
     if (inviteError) {
       console.error('Invite error:', inviteError);

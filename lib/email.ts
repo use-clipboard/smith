@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { resolveMergeTags, type MergeTagContext } from './emailMergeTags';
 import { createServiceClient } from './supabase-server';
 import { getRefreshedGmailClient, buildRawMessage } from './gmail';
+import { getBaseUrl } from './getBaseUrl';
 
 // Only instantiate if the key exists — avoids build-time crash when RESEND_API_KEY is not set yet.
 let _resend: Resend | null = null;
@@ -158,7 +159,7 @@ export interface ManagerBriefingEmailOptions {
 export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions) {
   const resend = getResend();
   const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = getBaseUrl();
   const link = `${baseUrl}/hr?tab=resources`;
 
   const html = `

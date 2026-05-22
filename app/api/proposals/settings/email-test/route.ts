@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { sendProposalEmail } from '@/lib/email';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 const Body = z.object({
   to: z.string().email(),
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
 
   const { data: firm } = await supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle();
   const { data: sender } = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).maybeSingle();
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = getBaseUrl();
   const link = `${baseUrl}/p/${proposal.public_token}`;
 
   try {

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { sendProposalEmail, renderProposalEmail } from '@/lib/email';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 // POST /api/proposals/[id]/send
 // Generates a public token (if missing), updates status to 'sent', recomputes
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: sender } = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).maybeSingle();
 
   // Build the public link
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = getBaseUrl();
   const link = `${baseUrl}/p/${token}`;
 
   // prepare_only path — render the email body + subject and hand the bytes

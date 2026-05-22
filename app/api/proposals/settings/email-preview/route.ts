@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { resolveProposalSubject } from '@/lib/email';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 // GET /api/proposals/settings/email-preview?kind=proposal|reminder|onboarding
 // Optional overrides (used by the live preview while the user types):
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     prospect_name: 'Sample Prospect',
     proposal_title: 'Sample Proposal — Q2 Bookkeeping',
   };
-  const previewUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'}/p/preview-link`;
+  const previewUrl = `${getBaseUrl()}/p/preview-link`;
 
   // Pick colour: explicit override > firm brand > per-kind default
   const headerColor = isValidHex(colorOverride)

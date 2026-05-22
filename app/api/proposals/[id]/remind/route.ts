@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { sendProposalReminderEmail } from '@/lib/email';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 const Body = z.object({
   message: z.string().nullable().optional(),
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle(),
     supabase.from('users').select('full_name, email').eq('id', ctx.userId).maybeSingle(),
   ]);
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const baseUrl = getBaseUrl();
   const link = `${baseUrl}/p/${proposal.public_token}`;
 
   try {

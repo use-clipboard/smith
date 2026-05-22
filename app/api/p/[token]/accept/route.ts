@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabase-server';
 import { createNotification } from '@/lib/notifications';
 import { sendProposalOnboardingEmail } from '@/lib/email';
+import { getBaseUrl } from '@/lib/getBaseUrl';
 
 const Body = z.object({
   signer_name: z.string().min(1),
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   if (action === 'send_onboarding') {
     // Best-effort — onboarding email failure is logged but does not block acceptance.
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+      const baseUrl = getBaseUrl();
       // If a specific template was selected on the proposal, check it's still
       // active; otherwise we fall back to "any active form on the firm" which
       // matches the pre-feature behaviour.
