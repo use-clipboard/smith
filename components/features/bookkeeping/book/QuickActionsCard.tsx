@@ -100,14 +100,16 @@ export default function QuickActionsCard({ onAddTransaction }: Props) {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-100">
-        <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-          <Zap size={14} />
+      <div className="px-3 pt-2 pb-1.5 flex items-center gap-2 border-b border-slate-100">
+        <div className="w-6 h-6 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <Zap size={12} />
         </div>
-        <h3 className="text-sm font-semibold text-slate-900">Quick Actions</h3>
+        <h3 className="text-xs font-semibold text-slate-900">Quick Actions</h3>
       </div>
 
-      <div className="p-3 grid grid-cols-2 gap-2">
+      {/* Compact 3-column grid — single line per button with icon + label.
+          The "Soon" hint moves into the tooltip so the layout stays clean. */}
+      <div className="p-2 grid grid-cols-3 gap-1.5">
         {actions.map(a => {
           const Icon = a.icon;
           const tone = TONE_CLASSES[a.tone];
@@ -121,21 +123,17 @@ export default function QuickActionsCard({ onAddTransaction }: Props) {
                   setComingHint(a.label);
                   setTimeout(() => setComingHint(null), 2500);
                 }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-left transition-colors hover:border-slate-300 ${
+                className={`w-full flex flex-col items-center gap-1 px-2 py-1.5 rounded-md border border-slate-200 bg-white transition-colors hover:border-slate-300 ${
                   isComing ? 'hover:bg-slate-50/50' : 'hover:bg-slate-50'
                 }`}
               >
-                <span className={`w-8 h-8 rounded-lg ${tone.bg} ${tone.text} flex items-center justify-center shrink-0 ${isComing ? 'opacity-60' : ''}`}>
-                  <Icon size={14} />
+                <span className={`w-6 h-6 rounded-md ${tone.bg} ${tone.text} flex items-center justify-center shrink-0 ${isComing ? 'opacity-50' : ''}`}>
+                  <Icon size={12} />
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className={`block text-xs font-medium truncate ${isComing ? 'text-slate-500' : 'text-slate-900'}`}>
-                    {a.label}
-                  </span>
+                <span className={`text-[10px] font-medium leading-tight text-center ${isComing ? 'text-slate-400' : 'text-slate-700'}`}>
+                  {a.label}
                   {isComing && (
-                    <span className="block text-[10px] text-slate-400 inline-flex items-center gap-1">
-                      <Sparkles size={9} /> Soon
-                    </span>
+                    <Sparkles size={8} className="inline-block ml-0.5 -mt-0.5 opacity-60" />
                   )}
                 </span>
               </button>
@@ -145,8 +143,8 @@ export default function QuickActionsCard({ onAddTransaction }: Props) {
       </div>
 
       {comingHint && (
-        <div className="px-3 pb-3">
-          <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+        <div className="px-2 pb-2">
+          <div className="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5">
             <span className="font-medium text-slate-700">{comingHint}</span> isn&apos;t wired up yet — it&apos;ll arrive in a later phase.
           </div>
         </div>

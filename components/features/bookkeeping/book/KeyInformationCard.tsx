@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, BarChart3, Wallet, Users, Building2, FileBadge, CalendarRange, TrendingUp, TrendingDown, Layers } from 'lucide-react';
+import { LedgerLink } from './BookNavigationContext';
 import type { Book, VatScheme } from '@/types/bookkeeping';
 import { VAT_SCHEME_LABEL } from '@/types/bookkeeping';
 
@@ -31,6 +32,9 @@ interface Props {
   book: Book;
   /** Bumped by parent when transactions change so we refetch. */
   refreshKey?: number;
+  /** Override the card's wrapper class — used by BookHomeTab to share a fixed
+   *  height with the stacked Quick Actions card. */
+  className?: string;
 }
 
 type SubTab = 'key' | 'profit' | 'assets' | 'ledgers';
@@ -57,7 +61,7 @@ function fmt(n: number): string {
   return n < 0 ? `(${abs})` : abs;
 }
 
-export default function KeyInformationCard({ book, refreshKey }: Props) {
+export default function KeyInformationCard({ book, refreshKey, className }: Props) {
   const [tab, setTab] = useState<SubTab>('key');
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,9 +134,9 @@ export default function KeyInformationCard({ book, refreshKey }: Props) {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col">
+    <div className={`rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col ${className ?? ''}`}>
       {/* Card header */}
-      <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-100">
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-100 shrink-0">
         <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
           <BarChart3 size={14} />
         </div>
@@ -140,8 +144,9 @@ export default function KeyInformationCard({ book, refreshKey }: Props) {
         {loading && <Loader2 size={12} className="animate-spin text-slate-400 ml-auto" />}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 px-4 py-3 min-h-[180px]">
+      {/* Content — scrollable so a tall ledger list inside a height-constrained
+          card doesn't overflow the wrapper. */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-3">
         {error ? (
           <div className="text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">
             {error}
@@ -164,7 +169,7 @@ export default function KeyInformationCard({ book, refreshKey }: Props) {
       </div>
 
       {/* Sub-tabs at the BOTTOM */}
-      <div className="border-t border-slate-100 px-2 py-1.5 flex items-center gap-1 overflow-x-auto">
+      <div className="border-t border-slate-100 px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0">
         {SUB_TABS.map(s => (
           <button
             key={s.id}
@@ -195,7 +200,7 @@ function sumByLedger(accounts: AccountBalance[], ledger: string): number {
     }, 0);
 }
 
-interface Row { label: string; value: string; icon?: React.ComponentType<{ size?: number; className?: string }>; tone?: 'default' | 'positive' | 'negative' }
+interface Row { label: React.ReactNode; value: string; icon?: React.ComponentType<{ size?: number; className?: string }>; tone?: 'default' | 'positive' | 'negative' }
 
 function DataRow({ label, value, icon: Icon, tone = 'default' }: Row) {
   const toneClass =
@@ -227,19 +232,19 @@ function KeyItemsView({
     <div className="space-y-0">
       <DataRow
         icon={Wallet}
-        label="Bank"
+        label={<LedgerLink ledger="Bank" className="text-xs">Bank</LedgerLink>}
         value={fmt(bankTotal)}
         tone={bankTotal < 0 ? 'negative' : 'default'}
       />
       <DataRow
         icon={Users}
-        label="Customers"
+        label={<LedgerLink ledger="Customers" className="text-xs">Customers</LedgerLink>}
         value={fmt(customersTotal)}
         tone={customersTotal < 0 ? 'negative' : 'default'}
       />
       <DataRow
         icon={Building2}
-        label="Suppliers"
+        label={<LedgerLink ledger="Suppliers" className="text-xs">Suppliers</LedgerLink>}
         value={fmt(suppliersTotal)}
         tone={suppliersTotal < 0 ? 'negative' : 'default'}
       />
@@ -300,7 +305,7 @@ function LedgersView({ byLedger }: { byLedger: { ledger: string; account_type: A
         <div key={l.ledger} className="flex items-center justify-between gap-3 py-1.5 border-b border-slate-50 last:border-b-0">
           <div className="flex items-center gap-2 min-w-0">
             <Layers size={11} className="text-slate-400 shrink-0" />
-            <span className="text-xs text-slate-700 truncate">{l.ledger}</span>
+            <LedgerLink ledger={l.ledger} className="text-xs truncate">{l.ledger}</LedgerLink>
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide border ${TYPE_CHIP[l.account_type]}`}>
               {l.account_type}
             </span>

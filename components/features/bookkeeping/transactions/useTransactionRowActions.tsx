@@ -36,11 +36,12 @@
 import { useCallback, useState } from 'react';
 import {
   Pencil, Copy as CopyIcon, Trash2, MoreHorizontal,
-  Clipboard, History,
+  Clipboard, History, ArrowRightLeft,
 } from 'lucide-react';
 import RowActionsMenu, { type ActionMenuItem, type AnchorPosition } from './RowActionsMenu';
 import TransactionEditModal from './TransactionEditModal';
 import AuditHistoryDrawer from './AuditHistoryDrawer';
+import ChangeTypeModal from './ChangeTypeModal';
 import type { Transaction } from '@/types/bookkeeping';
 
 interface Options {
@@ -63,6 +64,7 @@ export function useTransactionRowActions({
   const [editingTxn, setEditingTxn] = useState<Transaction | null>(null);
   const [editMode, setEditMode] = useState<'edit' | 'duplicate'>('edit');
   const [auditTxn, setAuditTxn] = useState<Transaction | null>(null);
+  const [changeTypeTxn, setChangeTypeTxn] = useState<Transaction | null>(null);
 
   // Brief toast for copy-ref
   const [toast, setToast] = useState<string | null>(null);
@@ -103,14 +105,19 @@ export function useTransactionRowActions({
     setAuditTxn(t);
   }, []);
 
+  const handleChangeType = useCallback((t: Transaction) => {
+    setChangeTypeTxn(t);
+  }, []);
+
   // ── Menu items builder ────────────────────────────────────────────────────
   function buildMenuItems(t: Transaction): ActionMenuItem[] {
     return [
-      { id: 'edit',      label: 'Edit',           icon: Pencil,     shortcut: 'Enter', onClick: () => handleEdit(t) },
-      { id: 'duplicate', label: 'Duplicate',      icon: CopyIcon,   shortcut: '⌘D',    onClick: () => handleDuplicate(t) },
-      { id: 'copy',      label: 'Copy reference', icon: Clipboard,  shortcut: '⌘C',    onClick: () => handleCopyRef(t) },
-      { id: 'audit',     label: 'Audit history',  icon: History,                       onClick: () => handleAudit(t) },
-      { id: 'delete',    label: 'Delete',         icon: Trash2,     shortcut: 'Del',   danger: true, onClick: () => void handleDelete(t) },
+      { id: 'edit',         label: 'Edit',              icon: Pencil,         shortcut: 'Enter', onClick: () => handleEdit(t) },
+      { id: 'duplicate',    label: 'Duplicate',         icon: CopyIcon,       shortcut: '⌘D',    onClick: () => handleDuplicate(t) },
+      { id: 'change_type',  label: 'Change type…',      icon: ArrowRightLeft,                    onClick: () => handleChangeType(t) },
+      { id: 'copy',         label: 'Copy reference',    icon: Clipboard,      shortcut: '⌘C',    onClick: () => handleCopyRef(t) },
+      { id: 'audit',        label: 'Audit history',     icon: History,                           onClick: () => handleAudit(t) },
+      { id: 'delete',       label: 'Delete',            icon: Trash2,         shortcut: 'Del',   danger: true, onClick: () => void handleDelete(t) },
     ];
   }
 
@@ -198,6 +205,15 @@ export function useTransactionRowActions({
         refNo={auditTxn?.ref_no}
         onClose={() => setAuditTxn(null)}
       />
+      {changeTypeTxn && (
+        <ChangeTypeModal
+          open
+          bookId={bookId}
+          txn={changeTypeTxn}
+          onClose={() => setChangeTypeTxn(null)}
+          onSaved={() => { setChangeTypeTxn(null); onChanged(); }}
+        />
+      )}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[1600] px-3 py-1.5 rounded-md bg-slate-900 text-white text-xs shadow-lg pointer-events-none">
           {toast}

@@ -438,6 +438,12 @@ Enable Row Level Security (RLS) on all tables. Users should only be able to read
 - Never hardcode API keys anywhere
 - Do not use `any` types in TypeScript unless absolutely unavoidable
 - **Hover tooltips:** never use the native `title=""` attribute on interactive elements — it renders in inconsistent platform-default chrome (beige on macOS Chrome, etc.). Always wrap the trigger in `<Tooltip label="…">` from `components/ui/Tooltip.tsx`, which renders the standard dark-pill tooltip used across SMITH. Pair with `aria-label` on the trigger for screen readers.
+- **Bookkeeping — refs, accounts and ledgers are always clickable.** Anywhere in the bookkeeping module that displays a transaction reference (`PAY 000001`), an account name (`Bank: Current account`, `Suppliers: Suspense`), or a bare ledger name (`Bank`, `Suppliers`, `Expenses`), use the appropriate link primitive from `components/features/bookkeeping/book/BookNavigationContext.tsx`:
+  - `<TxnRefLink txn={…} />` → opens the type-list view focused on that transaction
+  - `<AccountLink account={…} />` → opens that account's ledger drill-down
+  - `<LedgerLink ledger="…">…</LedgerLink>` → opens the ledger's master view (fixed Customers/Suppliers tabs, or a generic AccountsLedgerView dynamic tab for other ledgers)
+
+  These primitives fall back to a plain styled span when no nav context is mounted (print views, standalone embeds, tests), so they're safe to drop in anywhere. Do NOT render `<span className="text-indigo-700">{ref}</span>` or similar inert markup — that pattern is deprecated. When you build a new transaction list, breakdown, or report, default to the link primitives.
 
 ---
 

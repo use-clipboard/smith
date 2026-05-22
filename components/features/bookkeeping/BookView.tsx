@@ -43,6 +43,8 @@ import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
+import TransactionTypeListView from './transactions/TransactionTypeListView';
+import { BookNavigationProvider } from './book/BookNavigationContext';
 import { BOOK_TEMPLATE_LABEL, VAT_SCHEME_LABEL, type Book, type TransactionType } from '@/types/bookkeeping';
 
 interface Props {
@@ -60,6 +62,15 @@ interface DynamicLedgerTab {
   accountName: string;
   accountLedger: string | null;
 }
+interface DynamicTypeListTab {
+  id: string;                  // unique tab id: `type:<TYPE>`
+  kind: 'type_list';
+  txnType: TransactionType;
+  /** Optional initially-selected transaction id. Used when the user clicks
+   *  a ref elsewhere — we want them to land on that transaction. */
+  initialTxnId?: string;
+}
+type DynamicTab = DynamicLedgerTab | DynamicTypeListTab;
 type AnyTab = FixedTab | string; // string for dynamic tabs (their id)
 
 function formatDateUk(iso: string | null): string {
@@ -91,13 +102,15 @@ export default function BookView({ bookId, userRole }: Props) {
     initialTabParam === 'suppliers' ? 'suppliers' : 'home';
   const [tab, setTab] = useState<AnyTab>(initialTab);
 
-  // Dynamic ledger tabs opened by the user drilling into accounts from the TB.
-  const [ledgerTabs, setLedgerTabs] = useState<DynamicLedgerTab[]>([]);
+  // Dynamic tabs (per-account ledger drill-downs AND per-type lists) — both
+  // open from row clicks on transaction lists. Held in a single array so the
+  // rail renders them in order of appearance.
+  const [dynamicTabs, setDynamicTabs] = useState<DynamicTab[]>([]);
 
   function openLedgerTab(account: { id: string; name: string; ledger: string | null }) {
     if (!account.id) return; // ignore ledger-row clicks (not yet wired)
     const tabId = `ledger:${account.id}`;
-    setLedgerTabs(prev => {
+    setDynamicTabs(prev => {
       if (prev.some(t => t.id === tabId)) return prev;
       return [...prev, {
         id: tabId,
@@ -109,9 +122,46 @@ export default function BookView({ bookId, userRole }: Props) {
     });
     setTab(tabId);
   }
-  function closeLedgerTab(tabId: string) {
-    setLedgerTabs(prev => prev.filter(t => t.id !== tabId));
-    setTab(prev => (prev === tabId ? 'tb' : prev));
+  /** Opens the type-list tab for a transaction type, optionally pre-selecting
+   *  a specific transaction. Called by the click-handlers on ref numbers
+   *  across the various transaction lists. */
+  function openTypeListTab(txnType: TransactionType, initialTxnId?: string) {
+    const tabId = `type:${txnType}`;
+    setDynamicTabs(prev => {
+      const existing = prev.find(t => t.id === tabId);
+      if (existing && existing.kind === 'type_list') {
+        // Already open — just update its initial selection so a re-click
+        // from another list focuses the right transaction.
+        return prev.map(t => t.id === tabId && t.kind === 'type_list'
+          ? { ...t, initialTxnId } : t);
+      }
+      return [...prev, { id: tabId, kind: 'type_list', txnType, initialTxnId }];
+    });
+    setTab(tabId);
+  }
+  function closeDynamicTab(tabId: string) {
+    setDynamicTabs(prev => prev.filter(t => t.id !== tabId));
+    setTab(prev => (prev === tabId ? 'home' : prev));
+  }
+  /** Open a whole ledger's master view. Customers/Suppliers are fixed tabs
+   *  in the rail; any other ledger opens AccountsLedgerView via a dynamic
+   *  tab without pre-selecting an account (it auto-picks the first with
+   *  movement). */
+  function openLedgerView(ledger: string) {
+    if (ledger === 'Customers') { setTab('customers'); return; }
+    if (ledger === 'Suppliers') { setTab('suppliers'); return; }
+    const tabId = `ledger-all:${ledger}`;
+    setDynamicTabs(prev => {
+      if (prev.some(t => t.id === tabId)) return prev;
+      return [...prev, {
+        id: tabId,
+        kind: 'ledger',
+        accountId: '',          // empty → AccountsLedgerView auto-picks first with movement
+        accountName: ledger,
+        accountLedger: ledger,
+      }];
+    });
+    setTab(tabId);
   }
 
   // Current input-sheet type. Controlled here so the toolbar can drive it
@@ -183,18 +233,28 @@ export default function BookView({ bookId, userRole }: Props) {
     : 'Unallocated';
 
   return (
+    <BookNavigationProvider value={{
+      openAccount: openLedgerTab,
+      openTypeList: openTypeListTab,
+      openLedger: openLedgerView,
+    }}>
     <div className="p-4 max-w-[1600px] mx-auto flex gap-3 items-start">
       {/* ── Side rail ───────────────────────────────────────────────────── */}
       <BookSideRail
         activeTab={tab}
         onSelectTab={(id) => setTab(id as typeof tab)}
         onAction={handleAction}
-        ledgerTabs={ledgerTabs.map(lt => ({
-          id: lt.id,
-          accountName: lt.accountName,
-          accountLedger: lt.accountLedger,
-        }))}
-        onCloseLedgerTab={closeLedgerTab}
+        ledgerTabs={dynamicTabs
+          .filter((t): t is DynamicLedgerTab => t.kind === 'ledger')
+          .map(lt => ({
+            id: lt.id,
+            accountName: lt.accountName,
+            accountLedger: lt.accountLedger,
+          }))}
+        typeListTabs={dynamicTabs
+          .filter((t): t is DynamicTypeListTab => t.kind === 'type_list')
+          .map(tt => ({ id: tt.id, txnType: tt.txnType }))}
+        onCloseLedgerTab={closeDynamicTab}
         onOpenSettings={() => setSettingsOpen(true)}
         disabled={lockedForMe || book.archived}
         className="sticky top-4 self-start"
@@ -271,6 +331,8 @@ export default function BookView({ bookId, userRole }: Props) {
             onDelete={handleDelete}
             onAddTransaction={() => { setInputType('PAY'); setTab('input'); }}
             refreshKey={refreshKey}
+            onOpenAccount={openLedgerTab}
+            onOpenTypeList={openTypeListTab}
           />
         </div>
         <div hidden={tab !== 'input'}>
@@ -314,24 +376,39 @@ export default function BookView({ bookId, userRole }: Props) {
         <div hidden={tab !== 'suppliers'}>
           <AccountsLedgerView bookId={bookId} ledger="Suppliers" />
         </div>
-        {ledgerTabs.map(lt => (
-          <div key={lt.id} hidden={tab !== lt.id}>
-            {lt.accountLedger ? (
-              <AccountsLedgerView
+        {dynamicTabs.map(dt => {
+          if (dt.kind === 'ledger') {
+            return (
+              <div key={dt.id} hidden={tab !== dt.id}>
+                {dt.accountLedger ? (
+                  <AccountsLedgerView
+                    bookId={bookId}
+                    ledger={dt.accountLedger}
+                    initialAccountId={dt.accountId}
+                  />
+                ) : (
+                  <AccountLedgerTab
+                    bookId={bookId}
+                    accountId={dt.accountId}
+                    accountName={dt.accountName}
+                    accountLedger={dt.accountLedger}
+                  />
+                )}
+              </div>
+            );
+          }
+          // dt.kind === 'type_list'
+          return (
+            <div key={dt.id} hidden={tab !== dt.id}>
+              <TransactionTypeListView
                 bookId={bookId}
-                ledger={lt.accountLedger}
-                initialAccountId={lt.accountId}
+                type={dt.txnType}
+                initialTxnId={dt.initialTxnId}
+                onNewTransaction={() => { setInputType(dt.txnType); setTab('input'); }}
               />
-            ) : (
-              <AccountLedgerTab
-                bookId={bookId}
-                accountId={lt.accountId}
-                accountName={lt.accountName}
-                accountLedger={lt.accountLedger}
-              />
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
         </div>
       </div>
 
@@ -344,5 +421,6 @@ export default function BookView({ bookId, userRole }: Props) {
         onUpdated={next => setBook(next)}
       />
     </div>
+    </BookNavigationProvider>
   );
 }

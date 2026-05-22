@@ -28,6 +28,7 @@ import LedgerPicker from './LedgerPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { TxnRefLink, AccountLink } from '../book/BookNavigationContext';
 import {
   VAT_TREATMENT_OPTIONS,
   type BookAccountRef, type Transaction, type TransactionType, type VatTreatment,
@@ -841,7 +842,7 @@ export default function UniversalInputSheet({
                   return (
                     <tr key={t.id} {...rowActions.rowProps(t)} className={`border-t border-gray-100 ${rowActions.rowProps(t).className}`}>
                       <td className="px-2 py-1.5 text-gray-700">{formatDateUk(t.date)}</td>
-                      <td className="px-2 py-1.5 text-indigo-700 text-xs">{t.ref_no}</td>
+                      <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={t} className="text-xs" /></td>
                       <td className="px-2 py-1.5 text-gray-900">{t.details ?? ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(t.total).toFixed(2)}</td>
                       {showVatColumn && (
@@ -849,12 +850,8 @@ export default function UniversalInputSheet({
                           {Number(t.vat_total) > 0 ? Number(t.vat_total).toFixed(2) : ''}
                         </td>
                       )}
-                      <td className="px-2 py-1.5 text-gray-700">
-                        {t.primary_account ? `${t.primary_account.ledger ?? ''}: ${t.primary_account.name}` : ''}
-                      </td>
-                      <td className="px-2 py-1.5 text-gray-700">
-                        {analysis?.account ? `${analysis.account.ledger ?? ''}: ${analysis.account.name}` : ''}
-                      </td>
+                      <td className="px-2 py-1.5"><AccountLink account={t.primary_account ?? null} /></td>
+                      <td className="px-2 py-1.5"><AccountLink account={analysis?.account ?? null} /></td>
                       <td className="px-2 py-1.5 text-right">
                         {rowActions.renderActions(t)}
                       </td>

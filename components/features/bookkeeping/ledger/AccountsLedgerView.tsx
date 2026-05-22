@@ -25,6 +25,7 @@ import {
   Wallet, ReceiptText, Layers, FileBadge, Coins, Boxes, FolderTree, ShoppingCart,
 } from 'lucide-react';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { TxnRefLink } from '../book/BookNavigationContext';
 import type { Transaction, TransactionType } from '@/types/bookkeeping';
 
 interface AccountSummary {
@@ -608,7 +609,9 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId }:
                             )}
                           </td>
                           <td className="px-3 py-1.5 text-slate-700 tabular-nums">{formatDateUk(e.date)}</td>
-                          <td className="px-3 py-1.5 text-indigo-700 text-xs">{e.ref_no}</td>
+                          <td className="px-3 py-1.5 text-xs">
+                            <TxnRefLink txn={entryAsTxnStub(e)} className="text-xs" />
+                          </td>
                           <td className="px-3 py-1.5 text-slate-900 truncate max-w-[300px]">{e.details ?? ''}</td>
                           <td className="px-3 py-1.5 text-center">
                             {e.match_status === 'full' && (

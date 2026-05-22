@@ -75,14 +75,21 @@ export interface LedgerRailTab {
   accountName: string;
   accountLedger: string | null;
 }
+export interface TypeListRailTab {
+  id: string;
+  txnType: TransactionType;
+}
 
 interface Props {
-  /** Currently-active tab id (e.g. 'home', 'input', 'tb', or a ledger tab id). */
+  /** Currently-active tab id (e.g. 'home', 'input', 'tb', or a dynamic tab id). */
   activeTab: string;
   onSelectTab: (id: string) => void;
   onAction: (type: TransactionType) => void;
   /** Open ledger drill-down tabs — surfaced as their own icons in the rail. */
   ledgerTabs: LedgerRailTab[];
+  /** Open transaction-type list tabs (PAY list, REC list, etc.). */
+  typeListTabs?: TypeListRailTab[];
+  /** Single close handler for any dynamic tab (ledger or type-list). */
   onCloseLedgerTab: (id: string) => void;
   onOpenSettings: () => void;
   /** Disable the action button + tabs that should be unavailable. */
@@ -92,7 +99,7 @@ interface Props {
 }
 
 export default function BookSideRail({
-  activeTab, onSelectTab, onAction, ledgerTabs, onCloseLedgerTab, onOpenSettings,
+  activeTab, onSelectTab, onAction, ledgerTabs, typeListTabs = [], onCloseLedgerTab, onOpenSettings,
   disabled, className,
 }: Props) {
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -255,11 +262,43 @@ export default function BookSideRail({
         })}
       </div>
 
-      {/* Dynamic ledger drill-down tabs */}
-      {ledgerTabs.length > 0 && (
+      {/* Dynamic drill-down tabs — ledger accounts AND transaction-type lists */}
+      {(ledgerTabs.length > 0 || typeListTabs.length > 0) && (
         <>
           <div className="w-6 h-px bg-slate-200 my-2" aria-hidden />
           <div className="flex flex-col items-center gap-1 max-h-[40vh] overflow-y-auto w-full px-1">
+            {/* Type-list tabs (PAY / SIN / JRN etc.) render first — they're the
+                higher-level navigation, account drill-downs sit below. */}
+            {typeListTabs.map(tt => {
+              const active = activeTab === tt.id;
+              return (
+                <div key={tt.id} className="relative group">
+                  <Tooltip label={`${tt.txnType} list — click ✕ to close`} side="right">
+                    <button
+                      type="button"
+                      onClick={() => onSelectTab(tt.id)}
+                      aria-label={`Open ${tt.txnType} list`}
+                      aria-pressed={active}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center text-[10px] font-mono font-semibold transition-colors ${
+                        active
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                          : 'text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                    >
+                      {tt.txnType}
+                    </button>
+                  </Tooltip>
+                  <button
+                    type="button"
+                    onClick={() => onCloseLedgerTab(tt.id)}
+                    aria-label={`Close ${tt.txnType} list`}
+                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white border border-slate-300 text-slate-400 hover:text-red-600 hover:border-red-300 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              );
+            })}
             {ledgerTabs.map(lt => {
               const active = activeTab === lt.id;
               const initials = lt.accountName.slice(0, 2).toUpperCase();

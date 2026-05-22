@@ -15,6 +15,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
+import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { TxnRefLink } from '../book/BookNavigationContext';
 import type { Transaction } from '@/types/bookkeeping';
 
 interface Props {
@@ -51,6 +53,34 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
   const [periodTxns, setPeriodTxns] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Bumped by row-actions when something changes so this view refetches.
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Book-level VAT info for row-actions edit modal late-entry detection.
+  const [bookVatInfo, setBookVatInfo] = useState<{ vatRegistered: boolean; vatLockDate: string | null }>({
+    vatRegistered: false, vatLockDate: null,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled || !d?.book) return;
+        setBookVatInfo({
+          vatRegistered: Boolean(d.book.vat_registered),
+          vatLockDate: d.book.vat_lock_date ?? null,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
+
+  const rowActions = useTransactionRowActions({
+    bookId,
+    vatRegistered: bookVatInfo.vatRegistered,
+    vatLockDate: bookVatInfo.vatLockDate,
+    onChanged: () => setRefreshKey(k => k + 1),
+  });
 
   // ── Fetch opening balance + period transactions ──────────────────────────
   useEffect(() => {
@@ -97,7 +127,7 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, accountId, period.from, period.to]);
+  }, [bookId, accountId, period.from, period.to, refreshKey]);
 
   // ── Compute running balance + per-row debit/credit ───────────────────────
   const rows: LedgerRow[] = useMemo(() => {
@@ -179,16 +209,19 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
                   </td>
                 </tr>
               ) : (
-                rows.map(({ txn, debit, credit, balance }) => (
-                  <tr key={txn.id} className="border-t border-gray-100 hover:bg-indigo-50/30">
-                    <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
-                    <td className="px-2 py-1.5 text-indigo-700 text-xs">{txn.ref_no}</td>
-                    <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
-                  </tr>
-                ))
+                rows.map(({ txn, debit, credit, balance }) => {
+                  const rp = rowActions.rowProps(txn);
+                  return (
+                    <tr key={txn.id} {...rp} className={`border-t border-gray-100 hover:bg-indigo-50/30 ${rp.className}`}>
+                      <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</td>
+                      <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={txn} className="text-xs" /></td>
+                      <td className="px-2 py-1.5 text-gray-900 truncate max-w-[400px]">{txn.details ?? ''}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmt(debit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-red-700">{fmt(credit)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBalance(balance)}</td>
+                    </tr>
+                  );
+                })
               )}
               <tr className="border-t-2 border-gray-300 bg-gray-50/70">
                 <td className="px-2 py-1.5 text-gray-500 tabular-nums">{period.to ? formatDateUk(period.to) : ''}</td>
@@ -200,6 +233,7 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
           </table>
         </div>
       )}
+      {rowActions.menus}
     </div>
   );
 }

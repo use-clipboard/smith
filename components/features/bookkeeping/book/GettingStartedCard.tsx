@@ -12,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { Compass, ChevronRight, ChevronDown } from 'lucide-react';
+import { Compass } from 'lucide-react';
 
 interface Topic {
   id: string;
@@ -170,54 +170,48 @@ Until shipped, drop critical context in the book name itself (e.g. "Acme Ltd —
   },
 ];
 
-export default function GettingStartedCard() {
-  const [openId, setOpenId] = useState<string | null>('introduction');
+interface Props {
+  /** Caller-controlled height. Defaults to fitting the card to a height that
+   *  matches the stacked Key Info + Quick Actions on the left of the Home tab. */
+  className?: string;
+}
 
-  function toggle(id: string) {
-    setOpenId(prev => (prev === id ? null : id));
-  }
+export default function GettingStartedCard({ className }: Props) {
+  const [activeId, setActiveId] = useState<string>('introduction');
+  const active = TOPICS.find(t => t.id === activeId) ?? TOPICS[0];
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm h-full flex flex-col">
+    <div className={`rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col ${className ?? 'h-full'}`}>
+      {/* Header */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-slate-100">
         <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
           <Compass size={14} />
         </div>
         <h3 className="text-sm font-semibold text-slate-900">Getting Started</h3>
+        <span className="ml-auto text-[10px] uppercase tracking-wide text-slate-400 font-semibold">{active.title}</span>
       </div>
 
-      <div className="px-4 py-3 text-xs text-slate-600 border-b border-slate-100">
-        Welcome to SMITH bookkeeping. The basics are below — click any topic
-        to expand. Everything is double-entry under the hood, but the UI handles
-        the second leg for you on PAY, CHQ, REC, SIN, SCR, PIN, PCR.
+      {/* Body — scrollable, shows currently-selected topic */}
+      <div className="flex-1 overflow-y-auto min-h-0 px-4 py-3 text-[12px] text-slate-600 leading-relaxed whitespace-pre-line">
+        {active.body}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <ul className="divide-y divide-slate-100">
-          {TOPICS.map(t => {
-            const open = openId === t.id;
-            return (
-              <li key={t.id}>
-                <button
-                  type="button"
-                  onClick={() => toggle(t.id)}
-                  aria-expanded={open}
-                  className="w-full flex items-center justify-between gap-2 px-4 py-2 hover:bg-slate-50 transition-colors"
-                >
-                  <span className={`text-xs font-medium ${open ? 'text-indigo-700' : 'text-slate-700'}`}>{t.title}</span>
-                  {open
-                    ? <ChevronDown  size={12} className="text-slate-400 shrink-0" />
-                    : <ChevronRight size={12} className="text-slate-400 shrink-0" />}
-                </button>
-                {open && (
-                  <div className="px-4 pb-3 -mt-0.5 text-[12px] text-slate-600 leading-relaxed whitespace-pre-line">
-                    {t.body}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      {/* Sub-tabs at the BOTTOM — same pill style as KeyInformationCard.
+          Horizontal scroll lets all 10 topics stay reachable without wrapping. */}
+      <div className="border-t border-slate-100 px-2 py-1.5 flex items-center gap-1 overflow-x-auto">
+        {TOPICS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveId(t.id)}
+            className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors whitespace-nowrap ${
+              activeId === t.id
+                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'text-slate-500 border-transparent hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            {t.title}
+          </button>
+        ))}
       </div>
     </div>
   );

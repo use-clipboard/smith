@@ -34,6 +34,9 @@ import {
 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import MarkAsFiledModal from './MarkAsFiledModal';
+import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { TxnRefLink } from '../book/BookNavigationContext';
+import type { Transaction, TransactionType } from '@/types/bookkeeping';
 
 interface BoxFigure { label: string; value: number; }
 interface BreakdownRow {
@@ -179,6 +182,42 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
 
   // Bump to refetch after file/unfile.
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Right-click row actions on the Outputs / Inputs / Backup-report tables.
+  // No inline hover-strip in this view — the rows are tight and read-only;
+  // right-click delivers all the same actions via context menu.
+  const rowActions = useTransactionRowActions({
+    bookId,
+    vatRegistered: Boolean(data?.vat_registered),
+    vatLockDate: data?.vat_lock_date ?? null,
+    onChanged: () => setRefreshKey(k => k + 1),
+  });
+  /** Synthesise the minimal Transaction stub the row-actions hook needs from
+   *  a BreakdownRow. The Edit modal does its own full fetch by id, so just
+   *  the id + ref_no + type fields are required by the hook itself. */
+  function breakdownAsTxnStub(row: BreakdownRow): Transaction {
+    return {
+      id: row.id,
+      book_id: bookId,
+      type: row.type as TransactionType,
+      ref_no: row.ref_no,
+      ref_seq: 0,
+      date: row.date,
+      payee_text: row.payee_text,
+      details: row.details,
+      total: row.total,
+      vat_total: row.vat_total,
+      vat_rate: row.vat_rate,
+      vat_treatment: null,
+      vat_period_override: row.vat_period_override,
+      primary_account_id: null,
+      status: 'posted',
+      created_by: null,
+      created_at: '',
+      updated_at: '',
+      posted_at: null,
+    };
+  }
 
   // ── Fetch filings ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -351,7 +390,16 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
           </thead>
           <tbody>
             {rows.map(row => (
-              <tr key={row.id} className={`border-t border-slate-100 ${row.is_late_entry ? 'bg-amber-50/40' : ''}`}>
+              <tr
+                key={row.id}
+                onContextMenu={ev => {
+                  const t = ev.target as HTMLElement;
+                  if (t.closest('input, textarea, select, [contenteditable]')) return;
+                  ev.preventDefault();
+                  rowActions.rowProps(breakdownAsTxnStub(row)).onContextMenu(ev);
+                }}
+                className={`border-t border-slate-100 cursor-context-menu ${row.is_late_entry ? 'bg-amber-50/40' : ''}`}
+              >
                 <td className="px-2 py-1.5 tabular-nums border-r border-slate-100">
                   <span className={row.is_late_entry ? 'text-amber-800' : 'text-slate-700'}>
                     {formatDateUk(row.date)}
@@ -360,7 +408,7 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
                     <span className="ml-1 text-[10px] uppercase tracking-wide text-amber-700 font-semibold">late</span>
                   )}
                 </td>
-                <td className="px-2 py-1.5 text-indigo-700 text-xs border-r border-slate-100">{row.ref_no}</td>
+                <td className="px-2 py-1.5 text-xs border-r border-slate-100"><TxnRefLink txn={breakdownAsTxnStub(row)} className="text-xs" /></td>
                 <td className="px-2 py-1.5 text-slate-600 text-xs border-r border-slate-100">{row.type}</td>
                 <td className="px-2 py-1.5 text-slate-900 border-r border-slate-100">
                   {row.payee_text ?? row.details ?? ''}
@@ -773,6 +821,9 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
             onFiled={() => { setFileModalOpen(false); setRefreshKey(k => k + 1); }}
           />
         )}
+
+        {/* Right-click row actions on the Outputs / Inputs breakdown rows */}
+        {rowActions.menus}
       </div>
     </div>
   );
@@ -901,7 +952,12 @@ function BackupBreakdown({ rows }: { rows: BreakdownRow[] }) {
               <td className="px-2 py-1 tabular-nums border-r border-slate-200">
                 {formatDateUk(row.date)}{row.is_late_entry && <span className="text-amber-700"> (late)</span>}
               </td>
-              <td className="px-2 py-1 border-r border-slate-200">{row.ref_no}</td>
+              <td className="px-2 py-1 border-r border-slate-200">
+                <TxnRefLink
+                  txn={{ id: row.id, type: row.type as TransactionType, ref_no: row.ref_no }}
+                  className="text-xs print:text-slate-700"
+                />
+              </td>
               <td className="px-2 py-1 border-r border-slate-200">{row.type}</td>
               <td className="px-2 py-1 border-r border-slate-200">{row.payee_text ?? row.details ?? ''}</td>
               <td className="px-2 py-1 text-right tabular-nums border-r border-slate-200">{row.sign === -1 ? '−' : ''}{fmt(row.net)}</td>

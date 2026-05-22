@@ -20,6 +20,7 @@ import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { TxnRefLink } from '../book/BookNavigationContext';
 import type { BookAccountRef, Transaction, TransactionType } from '@/types/bookkeeping';
 import { TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 
@@ -559,7 +560,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
                   return (
                     <tr key={t.id} {...rp} className={`border-t border-gray-100 ${rp.className}`}>
                       <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(t.date)}</td>
-                      <td className="px-2 py-1.5 text-indigo-700 text-xs">{t.ref_no}</td>
+                      <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={t} className="text-xs" /></td>
                       <td className="px-2 py-1.5 text-gray-900">{t.details ?? ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{Number(t.total).toFixed(2)}</td>
                       <td className="px-2 py-1.5 text-gray-500">{t.splits?.length ?? 0}</td>
