@@ -47,6 +47,12 @@ interface PublicProposal {
   status: 'draft' | 'sent' | 'viewed' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
   sent_at: string | null;
   expires_at: string | null;
+  /** Drives the post-acceptance screen: when 'none' or 'auto_create_client'
+   *  we hide the "Continue to onboarding form" call-to-action because there
+   *  is no form to fill out. */
+  post_acceptance_action?: 'none' | 'send_onboarding' | 'auto_create_client' | null;
+  /** How the totals block reads. See migration 20260614. */
+  totals_display?: 'first_year' | 'monthly' | null;
   total_one_off: number;
   total_monthly: number;
   total_annual: number;
@@ -181,13 +187,23 @@ export default function ProposalPublicView(props: ProposalPublicViewProps) {
 
   const alreadyDecided = proposal.status === 'accepted' || proposal.status === 'declined';
   if (done === 'accepted' || proposal.status === 'accepted') {
+    // When the firm picked "no auto steps" or "auto-create client" on this
+    // proposal, there's no form to fill — show a simple thank-you instead of
+    // the onboarding CTA.
+    const sendsOnboarding = (proposal.post_acceptance_action ?? 'send_onboarding') === 'send_onboarding';
     return (
       <FullPageState>
         <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center"><Check size={24} className="text-emerald-700" /></div>
         <h1 className="text-lg font-semibold">Thanks, {proposal.prospect.contact_name.split(' ')[0]}!</h1>
         <p className="text-sm text-[var(--text-secondary)] max-w-md text-center">Your acceptance has been recorded.</p>
-        <a href={`/p/${token}/onboarding`} className="text-sm text-white bg-[var(--accent)] px-4 py-2 rounded-md font-semibold">Continue to onboarding form →</a>
-        <p className="text-[11px] text-[var(--text-muted)] max-w-md text-center">We've also emailed you a link in case you'd rather complete it later.</p>
+        {sendsOnboarding ? (
+          <>
+            <a href={`/p/${token}/onboarding`} className="text-sm text-white bg-[var(--accent)] px-4 py-2 rounded-md font-semibold">Continue to onboarding form →</a>
+            <p className="text-[11px] text-[var(--text-muted)] max-w-md text-center">We've also emailed you a link in case you'd rather complete it later.</p>
+          </>
+        ) : (
+          <p className="text-[11px] text-[var(--text-muted)] max-w-md text-center">{proposal.firm_name ?? 'The firm'} will be in touch shortly to take it from here.</p>
+        )}
       </FullPageState>
     );
   }
@@ -310,8 +326,23 @@ export default function ProposalPublicView(props: ProposalPublicViewProps) {
             </div>
             {error && <div className="mt-3 text-xs text-red-700 flex items-center gap-1.5"><AlertTriangle size={12} />{error}</div>}
             <div className="flex flex-wrap items-center justify-end gap-2 mt-4">
-              <button onClick={() => !previewMode && setDeclineOpen(true)} disabled={previewMode} className="btn-secondary text-sm disabled:opacity-50 disabled:cursor-not-allowed">Decline</button>
-              <button onClick={() => void accept()} disabled={accepting || previewMode} className="text-sm inline-flex items-center gap-1.5 text-white px-4 py-2 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed" style={{ background: brand.primary_color }}>
+              {/* Decline button — explicitly styled with a rose outline so it
+                  reads as a clear "no" option next to the bold-coloured Accept.
+                  Was previously btn-secondary which rendered as a faint grey
+                  outline that prospects routinely missed. */}
+              <button
+                onClick={() => !previewMode && setDeclineOpen(true)}
+                disabled={previewMode}
+                className="text-sm inline-flex items-center gap-1.5 px-4 py-2 rounded-md font-semibold border-2 border-rose-300 text-rose-700 bg-white hover:bg-rose-50 hover:border-rose-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <X size={12} />Decline
+              </button>
+              <button
+                onClick={() => void accept()}
+                disabled={accepting || previewMode}
+                className="text-sm inline-flex items-center gap-1.5 text-white px-4 py-2 rounded-md font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: brand.primary_color }}
+              >
                 {accepting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}Accept proposal
               </button>
             </div>
@@ -381,14 +412,21 @@ function ServicesTable({ items, vatMode, compact }: { items: LineItem[]; vatMode
 /**
  * Renders the totals breakdown shown above the Terms block. Sums all line
  * items across packages and standalone, splits by frequency, and applies
- * the discount (flat or percent) to the grand-first-year total.
+ * the discount (flat or percent) to the appropriate headline figure.
  *
- * Rules:
- *   - Only frequencies with a non-zero subtotal are shown.
- *   - "First-year total" = one-off + monthly×12 + quarterly×4 + annual.
- *   - Percent discount → discount value = pct/100 × first-year total.
- *   - Flat discount   → discount value = the £ amount.
- *   - "Total after discount" only appears when a discount > 0 is configured.
+ * Two display modes, controlled by `proposal.totals_display`:
+ *
+ *   • 'first_year' (default) — bold "First-year total" headline. Per-frequency
+ *     rows above. Discount applied to first-year total. Best for fixed-fee or
+ *     one-off-heavy proposals.
+ *   • 'monthly' — emphasises the monthly retainer figure. The first-year
+ *     headline line is hidden; the discount (if any) is also expressed
+ *     per-month. One-offs / annuals / quarterlies still appear in their
+ *     own rows for transparency. Best for retainer-style proposals.
+ *
+ * VAT indicator: a small clarifying line at the top of the card states whether
+ * amounts are shown inclusive or exclusive of VAT, so prospects don't have to
+ * guess. Driven by `proposal.vat_mode`.
  */
 function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
   // Aggregate every line item — packaged and standalone alike — so the
@@ -405,23 +443,40 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
   const firstYearTotal = one_off + monthly * 12 + quarterly * 4 + annual;
   const discountType   = proposal.discount_type ?? 'amount';
   const discountRaw    = Number(proposal.discount_amount) || 0;
+  // Discount value is always computed against the first-year total — this is
+  // how it's stored in the proposal. In "monthly" mode we then divide by 12
+  // to express it per-month, so the maths stays consistent across modes.
   const discountValue  = discountType === 'percent'
     ? Math.min(firstYearTotal, (discountRaw / 100) * firstYearTotal)
     : Math.min(firstYearTotal, discountRaw);
   const afterDiscount  = firstYearTotal - discountValue;
   const showDiscount   = discountValue > 0;
 
+  const mode = proposal.totals_display ?? 'first_year';
+  const monthlyDiscount = discountValue / 12;
+  const monthlyAfterDiscount = monthly - monthlyDiscount;
+
   const rows: Array<{ label: string; value: string }> = [];
-  if (one_off   > 0) rows.push({ label: 'One-off',           value: `£${one_off.toFixed(2)}` });
-  if (monthly   > 0) rows.push({ label: 'Monthly',           value: `£${monthly.toFixed(2)} /mo` });
-  if (quarterly > 0) rows.push({ label: 'Quarterly',         value: `£${quarterly.toFixed(2)} /qtr` });
-  if (annual    > 0) rows.push({ label: 'Annual',            value: `£${annual.toFixed(2)} /yr` });
+  if (one_off   > 0) rows.push({ label: 'One-off',   value: `£${one_off.toFixed(2)}` });
+  if (monthly   > 0) rows.push({ label: 'Monthly',   value: `£${monthly.toFixed(2)} /mo` });
+  if (quarterly > 0) rows.push({ label: 'Quarterly', value: `£${quarterly.toFixed(2)} /qtr` });
+  if (annual    > 0) rows.push({ label: 'Annual',    value: `£${annual.toFixed(2)} /yr` });
 
   if (rows.length === 0) return null;
 
+  // VAT label — single clarifier shown next to the "Totals" heading.
+  const vatNote = proposal.vat_mode === 'inclusive'
+    ? 'inc VAT'
+    : `+ VAT${proposal.vat_rate ? ` @ ${proposal.vat_rate}%` : ''}`;
+
   return (
     <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/60">
-      <p className="text-[11px] uppercase tracking-wide font-bold text-[var(--text-muted)] mb-3">Totals</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] uppercase tracking-wide font-bold text-[var(--text-muted)]">Totals</p>
+        <span className="text-[11px] font-medium text-gray-600 px-2 py-0.5 rounded-full bg-white border border-gray-200">
+          {vatNote}
+        </span>
+      </div>
       <div className="max-w-md ml-auto space-y-1.5 text-sm">
         {rows.map(r => (
           <div key={r.label} className="flex items-center justify-between text-gray-700">
@@ -429,25 +484,61 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
             <span className="tabular-nums">{r.value}</span>
           </div>
         ))}
-        <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
-          <span>First-year total</span>
-          <span className="tabular-nums">£{firstYearTotal.toFixed(2)}</span>
-        </div>
-        {showDiscount && (
+
+        {mode === 'first_year' ? (
           <>
-            <div className="flex items-center justify-between text-emerald-700">
-              <span>
-                {proposal.discount_label ?? 'Discount'}
-                {discountType === 'percent' && discountRaw > 0 && (
-                  <span className="text-xs text-[var(--text-muted)] ml-1">({discountRaw}% off)</span>
-                )}
-              </span>
-              <span className="font-semibold tabular-nums">− £{discountValue.toFixed(2)}</span>
-            </div>
             <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
-              <span>Total after discount</span>
-              <span className="tabular-nums">£{afterDiscount.toFixed(2)}</span>
+              <span>First-year total</span>
+              <span className="tabular-nums">£{firstYearTotal.toFixed(2)}</span>
             </div>
+            {showDiscount && (
+              <>
+                <div className="flex items-center justify-between text-emerald-700">
+                  <span>
+                    {proposal.discount_label ?? 'Discount'}
+                    {discountType === 'percent' && discountRaw > 0 && (
+                      <span className="text-xs text-[var(--text-muted)] ml-1">({discountRaw}% off)</span>
+                    )}
+                  </span>
+                  <span className="font-semibold tabular-nums">− £{discountValue.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
+                  <span>Total after discount</span>
+                  <span className="tabular-nums">£{afterDiscount.toFixed(2)}</span>
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          /* ── Monthly mode ─────────────────────────────────────────────
+             Hides the first-year headline. If there's a discount, express
+             it per-month. The headline becomes monthly-after-discount when
+             a discount exists; otherwise just the monthly subtotal. */
+          <>
+            {showDiscount && monthly > 0 && (
+              <div className="flex items-center justify-between text-emerald-700">
+                <span>
+                  {proposal.discount_label ?? 'Discount'}
+                  {discountType === 'percent' && discountRaw > 0 && (
+                    <span className="text-xs text-[var(--text-muted)] ml-1">({discountRaw}% off)</span>
+                  )}
+                </span>
+                <span className="font-semibold tabular-nums">− £{monthlyDiscount.toFixed(2)} /mo</span>
+              </div>
+            )}
+            {monthly > 0 && (
+              <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
+                <span>{showDiscount ? 'Monthly after discount' : 'Monthly total'}</span>
+                <span className="tabular-nums">£{(showDiscount ? monthlyAfterDiscount : monthly).toFixed(2)} /mo</span>
+              </div>
+            )}
+            {/* Tiny first-year reference for context (small, muted) so the
+                prospect can still see the annual commitment if they want. */}
+            {monthly > 0 && (one_off + quarterly + annual + (showDiscount ? discountValue : 0) > 0 || true) && (
+              <p className="text-[11px] text-[var(--text-muted)] text-right pt-1">
+                Equivalent first-year total: £{afterDiscount.toFixed(2)}
+              </p>
+            )}
           </>
         )}
       </div>

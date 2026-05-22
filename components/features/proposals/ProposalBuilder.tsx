@@ -68,6 +68,13 @@ interface ProposalRow {
   decided_at: string | null;
   decline_reason: string | null;
   onboarding_response_id: string | null;
+  /** What happens automatically when the prospect accepts this proposal.
+   *  See migration 20260614 for the full enum semantics. */
+  post_acceptance_action: 'none' | 'send_onboarding' | 'auto_create_client';
+  post_acceptance_onboarding_form_id: string | null;
+  /** How the prospect-facing totals block summarises the proposal. See
+   *  migration 20260614 for the semantics. */
+  totals_display: 'first_year' | 'monthly';
   prospect: { id: string; contact_name: string; company_name: string | null; email: string };
   offered_packages: Array<OfferedPackage & { total_one_off: number; total_monthly: number; total_annual: number }>;
   line_items: Array<LineItem & { id: string }>;
@@ -81,9 +88,13 @@ interface Props {
 let _id = 0;
 function tmpId(prefix: string) { _id++; return `${prefix}_${Date.now()}_${_id}`; }
 
+/** Onboarding form reference for the "When accepted, send this form" picker. */
+interface OnboardingFormRef { id: string; name: string; client_type: string | null; is_default: boolean; active: boolean; }
+
 export default function ProposalBuilder({ proposalId }: Props) {
   const [proposal, setProposal] = useState<ProposalRow | null>(null);
   const [services, setServices] = useState<Service[]>([]);
+  const [onboardingForms, setOnboardingForms] = useState<OnboardingFormRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [packages, setPackages] = useState<OfferedPackage[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
@@ -107,9 +118,12 @@ export default function ProposalBuilder({ proposalId }: Props) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [pRes, sRes] = await Promise.all([
+    const [pRes, sRes, fRes] = await Promise.all([
       fetch(`/api/proposals/${proposalId}`).then(r => r.json()),
       fetch('/api/proposals/services').then(r => r.json()),
+      // Onboarding-form templates for the "When accepted, send this form" picker.
+      // Best-effort — if the endpoint fails the dropdown just shows "(firm default)".
+      fetch('/api/proposals/onboarding-forms').then(r => r.ok ? r.json() : { forms: [] }).catch(() => ({ forms: [] })),
     ]);
     const p = pRes.proposal as ProposalRow;
     setProposal(p);
@@ -119,6 +133,7 @@ export default function ProposalBuilder({ proposalId }: Props) {
     setPackages(pkgs);
     setItems(p.line_items.map(li => ({ ...li })));
     setServices(sRes.services ?? []);
+    setOnboardingForms((fRes.forms ?? []) as OnboardingFormRef[]);
     setLoading(false);
   }, [proposalId]);
   useEffect(() => { void load(); }, [load]);
@@ -235,6 +250,9 @@ export default function ProposalBuilder({ proposalId }: Props) {
         discount_type:   proposal.discount_type ?? 'amount',
         discount_label: proposal.discount_label,
         expires_at: proposal.expires_at,
+        post_acceptance_action: proposal.post_acceptance_action ?? 'send_onboarding',
+        post_acceptance_onboarding_form_id: proposal.post_acceptance_onboarding_form_id,
+        totals_display: proposal.totals_display ?? 'first_year',
         packages: packages.map((p, i) => ({
           id: p.isPersisted ? p.id : undefined,
           name: p.name,
@@ -500,7 +518,108 @@ export default function ProposalBuilder({ proposalId }: Props) {
           </Field>
           <Field label="Discount label"><input value={proposal.discount_label ?? ''} onChange={e => update('discount_label', e.target.value || null)} disabled={readonly} className="input-base text-sm w-full" placeholder="e.g. First-year welcome" /></Field>
           <Field label="Expires (optional)"><input type="date" value={proposal.expires_at ? proposal.expires_at.slice(0, 10) : ''} onChange={e => update('expires_at', e.target.value || null)} disabled={readonly} className="input-base text-sm w-full" /></Field>
+          <Field label="Totals headline">
+            <select
+              value={proposal.totals_display ?? 'first_year'}
+              onChange={e => update('totals_display', e.target.value as 'first_year' | 'monthly')}
+              disabled={readonly}
+              className="input-base text-sm w-full"
+            >
+              <option value="first_year">First-year total (annual figure)</option>
+              <option value="monthly">Monthly retainer (no annual line)</option>
+            </select>
+            <p className="text-[11px] text-[var(--text-muted)] mt-1">
+              Pick &ldquo;Monthly&rdquo; when the proposal is an ongoing retainer (bookkeeping, payroll, etc.). The discount will be expressed per-month too.
+            </p>
+          </Field>
         </div>
+      </div>
+
+      {/* ── When accepted ────────────────────────────────────────────────────
+          What happens automatically the moment the prospect clicks Accept.
+          Default is "send onboarding" to preserve pre-feature behaviour, but
+          the preparer can switch to "do nothing" for white-glove clients or
+          "auto-create client" when they want to skip the form entirely. */}
+      <div className="bg-white border border-[var(--border)] rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">When this proposal is accepted</h3>
+          <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)] font-semibold">Auto-actions</span>
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          You'll always be notified when a prospect accepts or declines. Choose what — if anything — happens next.
+        </p>
+        <div className="space-y-2">
+          {([
+            {
+              id: 'none' as const,
+              label: 'Just notify me — no automatic next steps',
+              desc: 'Use this when you want to handle onboarding outside SMITH for this client.',
+            },
+            {
+              id: 'send_onboarding' as const,
+              label: 'Send the prospect an onboarding form',
+              desc: 'Email them a link to complete an onboarding form. A client record is created once they submit.',
+            },
+            {
+              id: 'auto_create_client' as const,
+              label: 'Auto-create the client record (skip the onboarding form)',
+              desc: 'Creates a client immediately using the prospect details — you can fill in the rest from the Clients screen.',
+            },
+          ]).map(opt => {
+            const active = (proposal.post_acceptance_action ?? 'send_onboarding') === opt.id;
+            return (
+              <label
+                key={opt.id}
+                className={`flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-colors ${
+                  active
+                    ? 'border-[var(--accent)] bg-[var(--accent-light)]'
+                    : 'border-[var(--border)] hover:border-[var(--text-muted)]'
+                } ${readonly ? 'opacity-60 cursor-not-allowed' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="post_acceptance_action"
+                  checked={active}
+                  disabled={readonly}
+                  onChange={() => update('post_acceptance_action', opt.id)}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--text-primary)]">{opt.label}</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">{opt.desc}</p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        {/* Form picker — only shown when "Send onboarding" is selected. */}
+        {(proposal.post_acceptance_action ?? 'send_onboarding') === 'send_onboarding' && (
+          <Field label="Onboarding form template">
+            <select
+              value={proposal.post_acceptance_onboarding_form_id ?? ''}
+              onChange={e => update('post_acceptance_onboarding_form_id', e.target.value || null)}
+              disabled={readonly}
+              className="input-base text-sm w-full"
+            >
+              <option value="">— Firm default (whichever active form fits the client type)</option>
+              {onboardingForms
+                .filter(f => f.active)
+                .map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                    {f.client_type ? ` · ${f.client_type}` : ''}
+                    {f.is_default ? ' (default)' : ''}
+                  </option>
+                ))}
+            </select>
+            {onboardingForms.filter(f => f.active).length === 0 && (
+              <p className="text-[11px] text-amber-700 mt-1">
+                You don't have any active onboarding forms set up. Go to Settings → Proposals → Onboarding to create one, or pick a different action above.
+              </p>
+            )}
+          </Field>
+        )}
       </div>
 
       {/* Packages or single list */}

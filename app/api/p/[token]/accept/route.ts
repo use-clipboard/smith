@@ -23,6 +23,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     .from('proposals')
     .select(`
       id, firm_id, status, prospect_id, created_by, title, expires_at,
+      post_acceptance_action, post_acceptance_onboarding_form_id,
       offered_packages:proposal_offered_packages(id),
       required_signers:proposal_required_signers(id, signer_email),
       signatures:proposal_signatures(id, required_signer_id, signer_email)
@@ -102,35 +103,93 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     .update({ status: 'accepted', decided_at: new Date().toISOString(), chosen_package_id: chosen })
     .eq('id', proposal.id);
 
-  // If the firm has an active onboarding form, send the prospect the link.
-  // Best-effort — failure is logged but does not block acceptance.
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
-    const { count } = await service
-      .from('proposal_onboarding_forms')
-      .select('id', { count: 'exact', head: true })
-      .eq('firm_id', proposal.firm_id)
-      .eq('active', true);
-    if ((count ?? 0) > 0) {
+  // ── Post-acceptance action ───────────────────────────────────────────────
+  // Three modes (per migration 20260614 / proposals.post_acceptance_action):
+  //   • 'none'                — skip all automation, just notify the firm
+  //   • 'send_onboarding'     — email the prospect the onboarding-form link
+  //                             (specific template if set; firm default otherwise)
+  //   • 'auto_create_client'  — create a clients row immediately from prospect
+  //                             details; skip the onboarding email
+  // Legacy proposals (column null) fall back to 'send_onboarding' for back-compat.
+  const action = (proposal.post_acceptance_action as string | null) ?? 'send_onboarding';
+  let autoCreatedClientId: string | null = null;
+
+  if (action === 'send_onboarding') {
+    // Best-effort — onboarding email failure is logged but does not block acceptance.
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+      // If a specific template was selected on the proposal, check it's still
+      // active; otherwise we fall back to "any active form on the firm" which
+      // matches the pre-feature behaviour.
+      const specificFormId = proposal.post_acceptance_onboarding_form_id as string | null;
+      let hasForm = false;
+      if (specificFormId) {
+        const { count } = await service
+          .from('proposal_onboarding_forms')
+          .select('id', { count: 'exact', head: true })
+          .eq('id', specificFormId)
+          .eq('firm_id', proposal.firm_id)
+          .eq('active', true);
+        hasForm = (count ?? 0) > 0;
+      } else {
+        const { count } = await service
+          .from('proposal_onboarding_forms')
+          .select('id', { count: 'exact', head: true })
+          .eq('firm_id', proposal.firm_id)
+          .eq('active', true);
+        hasForm = (count ?? 0) > 0;
+      }
+      if (hasForm) {
+        const { data: prospect } = await service
+          .from('proposal_prospects')
+          .select('contact_name, email')
+          .eq('id', proposal.prospect_id)
+          .maybeSingle();
+        const { data: firm } = await service.from('firms').select('name').eq('id', proposal.firm_id).maybeSingle();
+        if (prospect) {
+          await sendProposalOnboardingEmail({
+            firmId: proposal.firm_id,
+            to: prospect.email,
+            prospectName: prospect.contact_name,
+            firmName: firm?.name ?? 'your accountancy firm',
+            onboardingUrl: `${baseUrl}/p/${params.token}/onboarding`,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[proposals/accept] onboarding email failed', e);
+    }
+  } else if (action === 'auto_create_client') {
+    // Create a clients row from the prospect's details. We deliberately keep
+    // this minimal — the firm can fill in the rest from the Clients screen.
+    try {
       const { data: prospect } = await service
         .from('proposal_prospects')
-        .select('contact_name, email')
+        .select('contact_name, company_name, email')
         .eq('id', proposal.prospect_id)
         .maybeSingle();
-      const { data: firm } = await service.from('firms').select('name').eq('id', proposal.firm_id).maybeSingle();
       if (prospect) {
-        await sendProposalOnboardingEmail({
-          firmId: proposal.firm_id,
-          to: prospect.email,
-          prospectName: prospect.contact_name,
-          firmName: firm?.name ?? 'your accountancy firm',
-          onboardingUrl: `${baseUrl}/p/${params.token}/onboarding`,
-        });
+        const clientName = prospect.company_name?.trim() || prospect.contact_name?.trim() || 'New client';
+        const { data: client, error: clientErr } = await service
+          .from('clients')
+          .insert({
+            firm_id: proposal.firm_id,
+            name: clientName,
+            contact_email: prospect.email ?? null,
+          })
+          .select('id')
+          .single();
+        if (clientErr) {
+          console.error('[proposals/accept] auto-create client failed', clientErr);
+        } else if (client) {
+          autoCreatedClientId = client.id;
+        }
       }
+    } catch (e) {
+      console.error('[proposals/accept] auto-create client errored', e);
     }
-  } catch (e) {
-    console.error('[proposals/accept] onboarding email failed', e);
   }
+  // action === 'none' → fall through; the notification block below handles the rest.
 
   // Notify the proposal creator + firm admins
   if (proposal.created_by) {
@@ -139,7 +198,11 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       firmId: proposal.firm_id,
       type: 'proposal_accepted',
       title: 'Proposal accepted',
-      body: `${body.signer_name} accepted "${proposal.title}".`,
+      body: `${body.signer_name} accepted "${proposal.title}".${
+        action === 'none' ? ' No onboarding has been triggered — handle next steps manually.' :
+        action === 'auto_create_client' ? (autoCreatedClientId ? ' A client record has been created automatically.' : ' Auto client creation was requested but failed — handle manually.') :
+        ''
+      }`,
       data: { proposal_id: proposal.id, link: '/proposals' },
     });
   }
@@ -156,7 +219,11 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       firmId: proposal.firm_id,
       type: 'proposal_accepted',
       title: 'Proposal accepted',
-      body: `${body.signer_name} accepted "${proposal.title}".`,
+      body: `${body.signer_name} accepted "${proposal.title}".${
+        action === 'none' ? ' No onboarding has been triggered — handle next steps manually.' :
+        action === 'auto_create_client' ? (autoCreatedClientId ? ' A client record has been created automatically.' : ' Auto client creation was requested but failed — handle manually.') :
+        ''
+      }`,
       data: { proposal_id: proposal.id, link: '/proposals' },
     });
   }

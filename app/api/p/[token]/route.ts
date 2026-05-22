@@ -9,9 +9,11 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   const { data: proposal, error } = await service
     .from('proposals')
     .select(`
-      id, firm_id, title, intro, terms, vat_mode, vat_rate, discount_amount, discount_label,
+      id, firm_id, title, intro, terms, vat_mode, vat_rate, discount_amount, discount_type, discount_label,
       status, sent_at, first_viewed_at, last_viewed_at, decided_at, decline_reason, expires_at,
       total_one_off, total_monthly, total_annual, chosen_package_id,
+      post_acceptance_action, post_acceptance_onboarding_form_id,
+      totals_display,
       prospect:proposal_prospects(contact_name, company_name, email),
       offered_packages:proposal_offered_packages(*),
       line_items:proposal_line_items(*),

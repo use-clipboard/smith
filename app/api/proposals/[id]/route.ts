@@ -36,6 +36,11 @@ const Patch = z.object({
   discount_label: z.string().nullable().optional(),
   expires_at: z.string().nullable().optional(),
   status: z.enum(['draft','sent','viewed','accepted','declined','expired','withdrawn']).optional(),
+  // Post-acceptance behaviour — chosen by the preparer per proposal.
+  post_acceptance_action: z.enum(['none', 'send_onboarding', 'auto_create_client']).optional(),
+  post_acceptance_onboarding_form_id: z.string().uuid().nullable().optional(),
+  // How the totals block summarises the proposal — see migration 20260614.
+  totals_display: z.enum(['first_year', 'monthly']).optional(),
   packages: z.array(OfferedPackage).optional(),
   line_items: z.array(LineItem).optional(),
 });
