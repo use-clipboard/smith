@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
   BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
-  MessagesSquare, CalendarCheck,
+  MessagesSquare, CalendarCheck, BookCopy,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -17,6 +17,8 @@ export interface NavItem {
   label: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: ElementType<any>;
+  /** When true, the sidebar renders this item with a "Soon" pill regardless of module-active state. Used during in-development tool builds. */
+  comingSoon?: boolean;
 }
 
 export const DASHBOARD_ITEM: NavItem = {
@@ -44,6 +46,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'email-triage',  href: '/email',          label: 'Email Triage',    icon: Mail },
   { moduleId: 'hr',            href: '/hr',             label: 'HR',              icon: HeartHandshake },
   { moduleId: 'proposals',     href: '/proposals',      label: 'Proposals',       icon: FileSignature },
+  { moduleId: 'bookkeeping',   href: '/bookkeeping',    label: 'Bookkeeping',     icon: BookCopy, comingSoon: true },
 ];
 
 /** Workspace nav items (always visible, no module gate). */

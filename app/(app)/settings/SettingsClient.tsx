@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
@@ -19,10 +19,11 @@ import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
 import AgentSmithSettingsTab from './tabs/AgentSmithSettingsTab';
 import CommunityTab from './tabs/CommunityTab';
+import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community';
+type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping';
 
 interface Props {
   userId: string;
@@ -43,6 +44,7 @@ interface Props {
   hrModuleActive?: boolean;
   proposalsModuleActive?: boolean;
   mtdItModuleActive?: boolean;
+  bookkeepingActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -57,7 +59,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, bookkeepingActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -99,6 +101,7 @@ export default function SettingsClient({
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
     { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
+    { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
@@ -491,6 +494,11 @@ export default function SettingsClient({
       {/* MTD IT tab — admin only, shown when MTD IT module is active */}
       {activeTab === 'mtd-it' && isAdmin && mtdItModuleActive && (
         <MtdItSettingsTab />
+      )}
+
+      {/* Bookkeeping tab — gated by canAccessBookkeeping (server-side) */}
+      {activeTab === 'bookkeeping' && bookkeepingActive && (
+        <BookkeepingSettingsTab />
       )}
 
       {/* Agent Smith tab — admin only */}

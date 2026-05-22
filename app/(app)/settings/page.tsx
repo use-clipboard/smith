@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { OPTIONAL_MODULE_IDS } from '@/config/modules.config';
+import { canAccessBookkeeping } from '@/lib/bookkeeping/access';
 import SettingsClient from './SettingsClient';
 
 export default async function SettingsPage() {
@@ -78,6 +79,7 @@ export default async function SettingsPage() {
       emailTriageModuleActive={activeModules.includes('email-triage')}
       hrModuleActive={activeModules.includes('hr')}
       proposalsModuleActive={activeModules.includes('proposals')}
+      bookkeepingActive={canAccessBookkeeping(user)}
       emailSenderName={emailSenderName}
       emailSenderAddress={emailSenderAddress}
     />

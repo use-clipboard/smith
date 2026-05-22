@@ -509,14 +509,17 @@ export default function AskSmithBubble() {
         </div>
       )}
 
-      {/* Floating button */}
+      {/* Floating button — fades to ~40% opacity at rest so it doesn't dominate
+          panel footers / tab strips at the bottom of dense screens (e.g. the
+          VAT return + ledger views), and pops back to full opacity on hover
+          so the user can find and click it normally. */}
       <button
         onClick={() => setOpen(!open)}
         aria-label="Open Ask Smith chat"
         className={`fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full flex items-center justify-center shadow-dropdown transition-all duration-200
           ${open
             ? 'bg-[var(--text-primary)] text-[var(--bg-page)] scale-95'
-            : 'bg-[#1A1A2E] dark:bg-white text-white dark:text-[#0F0F1A] hover:scale-105 hover:shadow-accent-glow'
+            : 'bg-[#1A1A2E] dark:bg-white text-white dark:text-[#0F0F1A] opacity-40 hover:opacity-100 hover:scale-105 hover:shadow-accent-glow focus-visible:opacity-100'
           }`}
       >
         {open ? <X size={22} /> : <Sparkles size={22} />}

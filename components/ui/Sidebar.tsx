@@ -205,8 +205,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   // Set of moduleIds already shown in Favourites — exclude from Tools & Workspace sections
   const favouritedIds = new Set(activeFavouriteItems.map(i => i.moduleId));
 
-  const visibleTools = TOOL_NAV_ITEMS.filter(item => isModuleActive(item.moduleId) && !favouritedIds.has(item.moduleId));
-  const inactiveCount = TOOL_NAV_ITEMS.filter(item => !isModuleActive(item.moduleId)).length;
+  const visibleTools = TOOL_NAV_ITEMS.filter(item =>
+    (item.comingSoon || isModuleActive(item.moduleId)) && !favouritedIds.has(item.moduleId)
+  );
+  // Coming-soon items are not counted as "inactive modules" — they're not yet
+  // available to enable, so showing them in the admin hint would be misleading.
+  const inactiveCount = TOOL_NAV_ITEMS.filter(item =>
+    !item.comingSoon && !isModuleActive(item.moduleId)
+  ).length;
   const visibleWorkspace = WORKSPACE_NAV_ITEMS.filter(item => !favouritedIds.has(item.moduleId));
 
   const width = collapsed ? 64 : 240;
@@ -258,7 +264,8 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
     if (collapsed) {
       const collapsedLabel =
-        calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
+        item.comingSoon ? `${item.label} · Coming soon`
+        : calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
         : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
         : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
         : hrBadge    ? `${item.label} · ${hrBadgeCount} item${hrBadgeCount !== 1 ? 's' : ''} needing attention`
@@ -342,6 +349,11 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         >
           <Icon size={18} className={iconClass} />
           <span className="text-sm font-medium truncate text-left">{item.label}</span>
+          {item.comingSoon && (
+            <span className="shrink-0 ml-auto mr-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200">
+              Soon
+            </span>
+          )}
         </button>
 
         {!isActive && (

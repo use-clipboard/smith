@@ -1,0 +1,241 @@
+// Bookkeeping tool — shared types.
+//
+// Kept in its own file (not types/index.ts) because the tool is large and
+// will grow many domain types — transactions, splits, matches, VAT returns,
+// etc. — over the course of the build.
+
+export type BookTemplateType =
+  | 'basic'
+  | 'ltd'
+  | 'llp'
+  | 'partnership'
+  | 'self_employed'
+  | 'sole_trader'
+  | 'trust'
+  | 'charity';
+
+export type VatScheme =
+  | 'standard'
+  | 'flat_rate'
+  | 'cash'
+  | 'annual'
+  | 'margin'
+  | 'partial_exemption';
+
+export type BookRole = 'viewer' | 'bookkeeper' | 'reviewer' | 'admin';
+
+export interface BookClientRef {
+  id: string;
+  name: string;
+  client_ref: string | null;
+}
+
+export interface BookCreatorRef {
+  id: string;
+  full_name: string | null;
+  email: string;
+}
+
+export interface Book {
+  id: string;
+  firm_id: string;
+  client_id: string | null;
+  client?: BookClientRef | null;
+  name: string;
+  template_type: BookTemplateType;
+  base_currency: string;
+  vat_registered: boolean;
+  vat_scheme: VatScheme | null;
+  vat_number: string | null;
+  period_lock_date: string | null;
+  /** Soft VAT lock — auto-set to the latest filed VAT return's period_to.
+   *  Transactions dated on/before this can still be posted, but they must be
+   *  flagged as late entries via `vat_period_override` on the transaction. */
+  vat_lock_date: string | null;
+  admin_locked: boolean;
+  archived: boolean;
+  created_by: string | null;
+  creator?: BookCreatorRef | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Picker labels (ordered for the create modal) ─────────────────────────────
+
+export const BOOK_TEMPLATE_OPTIONS: { id: BookTemplateType; label: string; hint: string }[] = [
+  { id: 'ltd',           label: 'Limited Company',  hint: 'Companies House registered, CT' },
+  { id: 'sole_trader',   label: 'Sole Trader',      hint: 'Single owner, unincorporated' },
+  { id: 'self_employed', label: 'Self-Employed',    hint: 'Self-assessment, no separate business entity' },
+  { id: 'partnership',   label: 'Partnership',      hint: 'Two or more partners, no LLP' },
+  { id: 'llp',           label: 'LLP',              hint: 'Limited Liability Partnership' },
+  { id: 'trust',         label: 'Trust',            hint: 'Discretionary, interest-in-possession, etc.' },
+  { id: 'charity',       label: 'Charity',          hint: 'Charity Commission / SORP' },
+  { id: 'basic',         label: 'Basic',            hint: 'Generic chart of accounts — anything else' },
+];
+
+export const BOOK_TEMPLATE_LABEL: Record<BookTemplateType, string> =
+  Object.fromEntries(BOOK_TEMPLATE_OPTIONS.map(o => [o.id, o.label])) as Record<BookTemplateType, string>;
+
+export const VAT_SCHEME_OPTIONS: { id: VatScheme; label: string }[] = [
+  { id: 'standard',          label: 'Standard (accrual)' },
+  { id: 'cash',              label: 'Cash accounting' },
+  { id: 'flat_rate',         label: 'Flat rate' },
+  { id: 'annual',            label: 'Annual accounting' },
+  { id: 'margin',            label: 'Margin scheme' },
+  { id: 'partial_exemption', label: 'Partial exemption' },
+];
+
+export const VAT_SCHEME_LABEL: Record<VatScheme, string> =
+  Object.fromEntries(VAT_SCHEME_OPTIONS.map(o => [o.id, o.label])) as Record<VatScheme, string>;
+
+// Common base currencies. Multi-currency support arrives later phases — this
+// is just the list shown in the picker on book creation.
+export const BASE_CURRENCY_OPTIONS = ['GBP', 'EUR', 'USD'] as const;
+export type BaseCurrency = typeof BASE_CURRENCY_OPTIONS[number];
+
+// ── Transactions ────────────────────────────────────────────────────────────
+
+export type TransactionType =
+  | 'PAY'  // Bank payment (out of bank)
+  | 'CHQ'  // Cheque payment (out of bank, separate sequence)
+  | 'REC'  // Bank receipt (into bank)
+  | 'SIN'  // Sales invoice
+  | 'SCR'  // Sales credit note
+  | 'PIN'  // Purchase invoice
+  | 'PCR'  // Purchase credit note
+  | 'JRN'  // Journal
+  | 'RJN'  // Reversing journal — self-reverses on a chosen future date
+  | 'TRF'; // Bank-to-bank transfer
+
+export const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
+  PAY: 'Bank payment',
+  CHQ: 'Cheque payment',
+  REC: 'Bank receipt',
+  SIN: 'Sales invoice',
+  SCR: 'Sales credit note',
+  PIN: 'Purchase invoice',
+  PCR: 'Purchase credit note',
+  JRN: 'Journal',
+  RJN: 'Reversing journal',
+  TRF: 'Transfer',
+};
+
+export type TransactionStatus = 'posted' | 'draft';
+
+export type VatTreatment =
+  | 'no_vat'
+  | 'standard_20'
+  | 'reduced_5'
+  | 'zero'
+  | 'exempt'
+  | 'outside_scope';
+
+export const VAT_TREATMENT_OPTIONS: { id: VatTreatment; label: string; rate: number }[] = [
+  { id: 'no_vat',         label: 'No VAT',           rate: 0  },
+  { id: 'standard_20',    label: 'Standard (20%)',   rate: 20 },
+  { id: 'reduced_5',      label: 'Reduced (5%)',     rate: 5  },
+  { id: 'zero',           label: 'Zero-rated',       rate: 0  },
+  { id: 'exempt',         label: 'Exempt',           rate: 0  },
+  { id: 'outside_scope',  label: 'Outside scope',    rate: 0  },
+];
+
+export interface BookAccountRef {
+  id: string;
+  name: string;
+  ledger: string | null;
+  account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+}
+
+export interface TransactionSplit {
+  id: string;
+  transaction_id: string;
+  line_no: number;
+  account_id: string;
+  account?: BookAccountRef | null;
+  debit: number;
+  credit: number;
+  entry_details: string | null;
+  notes: string | null;
+}
+
+export interface Transaction {
+  id: string;
+  book_id: string;
+  type: TransactionType;
+  ref_no: string;
+  ref_seq: number;
+  date: string;
+  payee_text: string | null;
+  details: string | null;
+  total: number;
+  vat_total: number;
+  vat_rate: number | null;
+  vat_treatment: VatTreatment | null;
+  /** Late-entry override. When set, the VAT-return calculation uses this
+   *  date instead of `date` to slot the transaction into a VAT return.
+   *  Allows missed invoices for a filed period to be carried into the
+   *  next return while keeping their real posting date for P&L/BS. */
+  vat_period_override: string | null;
+  primary_account_id: string | null;
+  primary_account?: BookAccountRef | null;
+  status: TransactionStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  posted_at: string | null;
+  splits?: TransactionSplit[];
+}
+
+// ── VAT returns ─────────────────────────────────────────────────────────────
+
+export interface VatReturn {
+  id: string;
+  book_id: string;
+  /** Sequential VT-style ref — VAT 000001, etc. */
+  ref_no: string | null;
+  ref_seq: number | null;
+  period_from: string;
+  period_to: string;
+  box1: number;
+  box2: number;
+  box3: number;
+  box4: number;
+  box5: number;
+  box6: number;
+  box7: number;
+  box8: number;
+  box9: number;
+  /** VAT amount in this return that came in via late entries from earlier
+   *  filed periods. Memorandum figure for the 10th row of the boxes table. */
+  late_entry_vat: number;
+  filed_at: string;
+  filed_by: string | null;
+  filed_by_name?: string | null;
+  /** When the return was actually sent to HMRC. Distinct from filed_at, which
+   *  is when it was recorded in SMITH. Null until set. */
+  submitted_at: string | null;
+  submission_method: 'manual' | 'mtd_api' | null;
+  hmrc_reference: string | null;
+  notes: string | null;
+  /** Link to the closing journal posted at filing time. */
+  filing_journal_id: string | null;
+  /** Full transaction-level audit snapshot captured at filing time. */
+  snapshot: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+// Best-effort mapping from a client's business_type to a sensible default
+// template_type for the create modal. The user can always change it.
+export function defaultTemplateFromBusinessType(bt: string | null | undefined): BookTemplateType {
+  if (!bt) return 'basic';
+  const t = bt.toLowerCase();
+  if (t.includes('limited') || t.includes('ltd')) return 'ltd';
+  if (t.includes('llp')) return 'llp';
+  if (t.includes('partnership')) return 'partnership';
+  if (t.includes('sole')) return 'sole_trader';
+  if (t.includes('self') || t.includes('individual')) return 'self_employed';
+  if (t.includes('trust')) return 'trust';
+  if (t.includes('charity')) return 'charity';
+  return 'basic';
+}
