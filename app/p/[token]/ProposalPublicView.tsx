@@ -464,24 +464,20 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
 
   if (rows.length === 0) return null;
 
-  // VAT label — single clarifier shown next to the "Totals" heading.
-  const vatNote = proposal.vat_mode === 'inclusive'
-    ? 'inc VAT'
-    : `+ VAT${proposal.vat_rate ? ` @ ${proposal.vat_rate}%` : ''}`;
+  // VAT suffix appended inline to each total. We only add it when there's a
+  // real VAT impact — a 0% exclusive line would just be visual noise.
+  const vatSuffix = proposal.vat_mode === 'inclusive'
+    ? ' inc VAT'
+    : (proposal.vat_rate && proposal.vat_rate > 0 ? ' +VAT' : '');
 
   return (
     <div className="px-8 py-5 border-b border-gray-100 bg-gray-50/60">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[11px] uppercase tracking-wide font-bold text-[var(--text-muted)]">Totals</p>
-        <span className="text-[11px] font-medium text-gray-600 px-2 py-0.5 rounded-full bg-white border border-gray-200">
-          {vatNote}
-        </span>
-      </div>
+      <p className="text-[11px] uppercase tracking-wide font-bold text-[var(--text-muted)] mb-3">Totals</p>
       <div className="max-w-md ml-auto space-y-1.5 text-sm">
         {rows.map(r => (
           <div key={r.label} className="flex items-center justify-between text-gray-700">
             <span>{r.label}</span>
-            <span className="tabular-nums">{r.value}</span>
+            <span className="tabular-nums">{r.value}{vatSuffix}</span>
           </div>
         ))}
 
@@ -489,7 +485,7 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
           <>
             <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
               <span>First-year total</span>
-              <span className="tabular-nums">£{firstYearTotal.toFixed(2)}</span>
+              <span className="tabular-nums">£{firstYearTotal.toFixed(2)}{vatSuffix}</span>
             </div>
             {showDiscount && (
               <>
@@ -504,7 +500,7 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
                 </div>
                 <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
                   <span>Total after discount</span>
-                  <span className="tabular-nums">£{afterDiscount.toFixed(2)}</span>
+                  <span className="tabular-nums">£{afterDiscount.toFixed(2)}{vatSuffix}</span>
                 </div>
               </>
             )}
@@ -529,14 +525,14 @@ function ProposalTotalsBlock({ proposal }: { proposal: PublicProposal }) {
             {monthly > 0 && (
               <div className="flex items-center justify-between text-gray-900 font-semibold border-t border-gray-200 pt-1.5 mt-1.5">
                 <span>{showDiscount ? 'Monthly after discount' : 'Monthly total'}</span>
-                <span className="tabular-nums">£{(showDiscount ? monthlyAfterDiscount : monthly).toFixed(2)} /mo</span>
+                <span className="tabular-nums">£{(showDiscount ? monthlyAfterDiscount : monthly).toFixed(2)} /mo{vatSuffix}</span>
               </div>
             )}
             {/* Tiny first-year reference for context (small, muted) so the
                 prospect can still see the annual commitment if they want. */}
-            {monthly > 0 && (one_off + quarterly + annual + (showDiscount ? discountValue : 0) > 0 || true) && (
+            {monthly > 0 && (
               <p className="text-[11px] text-[var(--text-muted)] text-right pt-1">
-                Equivalent first-year total: £{afterDiscount.toFixed(2)}
+                Equivalent first-year total: £{afterDiscount.toFixed(2)}{vatSuffix}
               </p>
             )}
           </>
