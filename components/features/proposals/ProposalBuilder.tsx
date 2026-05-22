@@ -715,6 +715,10 @@ export default function ProposalBuilder({ proposalId }: Props) {
           status:          proposal.status,
           sent_at:         proposal.sent_at,
           expires_at:      proposal.expires_at,
+          // Pass the new builder settings through so the preview matches what
+          // the prospect will see — without needing to save the proposal first.
+          totals_display:        proposal.totals_display ?? 'first_year',
+          post_acceptance_action: proposal.post_acceptance_action ?? 'send_onboarding',
           prospect:        proposal.prospect,
         }}
         packages={packages.map(p => ({ id: p.id, name: p.name, description: p.description }))}

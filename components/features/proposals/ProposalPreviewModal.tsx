@@ -30,6 +30,10 @@ interface PreviewProposal {
   status:          'draft' | 'sent' | 'viewed' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
   sent_at:         string | null;
   expires_at:      string | null;
+  /** Optional — preview reads through to the public view's new totals modes
+   *  + post-acceptance gating. Null/undefined falls back to the defaults. */
+  totals_display?: 'first_year' | 'monthly' | null;
+  post_acceptance_action?: 'none' | 'send_onboarding' | 'auto_create_client' | null;
   prospect:        { contact_name: string; company_name: string | null; email: string };
 }
 
@@ -130,6 +134,11 @@ export default function ProposalPreviewModal({ open, onClose, proposal, packages
     discount_amount:  proposal.discount_amount,
     discount_type:    proposal.discount_type,
     discount_label:   proposal.discount_label,
+    // Pass through the new builder settings so the preview reflects what the
+    // prospect will actually see — including the Totals headline mode and
+    // the post-acceptance gating on the thank-you screen.
+    totals_display:        proposal.totals_display ?? 'first_year',
+    post_acceptance_action: proposal.post_acceptance_action ?? 'send_onboarding',
     // Always render the editable / not-yet-decided layout so the preparer
     // sees the accept/decline panel exactly as the prospect would.
     status:           'sent',
