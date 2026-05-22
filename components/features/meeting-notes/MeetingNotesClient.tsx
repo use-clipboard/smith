@@ -28,6 +28,7 @@ import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 import { consumePendingClient } from '@/lib/pendingClient';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { useScreenWakeLock } from '@/lib/useScreenWakeLock';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 
@@ -194,6 +195,11 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
   const [screenError,       setScreenError]       = useState<string | null>(null);
   const [recordingSize,     setRecordingSize]      = useState(0);   // bytes accumulated
   const [supplementalNotes, setSupplementalNotes] = useState('');  // other-party notes
+
+  // Keep the device's screen on while we're actively recording. Without this,
+  // phones especially sleep mid-meeting and the mic + transcript die with
+  // the screen. Auto re-acquires when the page becomes visible again.
+  useScreenWakeLock(isRecording || isScreenRecording);
 
   // Drive video upload
   const [uploadProgress,  setUploadProgress]  = useState<number | null>(null); // 0–100 or null
