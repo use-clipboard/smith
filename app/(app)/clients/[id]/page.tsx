@@ -231,18 +231,58 @@ function EmailThreadGroupCard({ group, onPin }: {
     return next;
   });
 
+  // Thread pin state — a thread is "pinned" when every email in it is pinned.
+  // Mixed state collapses to unpinned so the next click pins the rest.
+  const allPinned = group.emails.every(n => n.is_pinned);
+  const [pinningThread, setPinningThread] = useState(false);
+  async function toggleThreadPin() {
+    if (pinningThread) return;
+    setPinningThread(true);
+    try {
+      const target = !allPinned;
+      // Sequential — typical threads are 2-10 emails. The shared onPin
+      // already handles the per-note PATCH against /api/clients/.../notes.
+      for (const n of group.emails) {
+        if (n.is_pinned !== target) {
+          await onPin(n.id, target);
+        }
+      }
+    } finally {
+      setPinningThread(false);
+    }
+  }
+
   return (
-    <div className="glass-solid rounded-xl border border-[var(--border)] overflow-hidden">
+    <div className={`glass-solid rounded-xl border overflow-hidden transition-all group ${allPinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
       {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2 flex-wrap mb-1">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
-            <Mail size={11} />Email Thread
-          </span>
-          <span className="text-xs text-[var(--text-muted)]">{formatDate(group.noteDate)}</span>
-          <span className="text-xs text-[var(--text-muted)]">· {group.emails.length} emails</span>
+      <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 border-b border-[var(--border)]">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+              <Mail size={11} />Email Thread
+            </span>
+            <span className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">{formatDate(group.noteDate)}</span>
+            <span className="text-xs text-[var(--text-muted)]">· {group.emails.length} emails</span>
+            {allPinned && (
+              <span className="inline-flex items-center gap-0.5 text-xs text-[var(--accent)] font-medium">
+                <Pin size={10} className="fill-[var(--accent)]" />Pinned
+              </span>
+            )}
+          </div>
+          <p className="font-semibold text-[var(--text-primary)] text-sm">{group.subject}</p>
         </div>
-        <p className="font-semibold text-[var(--text-primary)] text-sm">{group.subject}</p>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <Tooltip label={allPinned ? 'Unpin thread' : 'Pin thread to top'}>
+            <button
+              onClick={() => void toggleThreadPin()}
+              disabled={pinningThread}
+              aria-label={allPinned ? 'Unpin thread' : 'Pin thread to top'}
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors disabled:opacity-50"
+            >
+              {allPinned ? <PinOff size={13} /> : <Pin size={13} />}
+            </button>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Strips — earliest first so the thread reads top→bottom chronologically */}
@@ -255,8 +295,13 @@ function EmailThreadGroupCard({ group, onPin }: {
           const timeLabel = ts
             ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
             : '';
+          // Snippet fallback — older allocations may have stored an empty
+          // snippet; show a slice of the body so the collapsed strip still
+          // hints at what the email's about.
+          const previewText = (email.snippet || '').trim()
+            || (email.bodyText ? email.bodyText.replace(/\s+/g, ' ').trim().slice(0, 160) : '');
           return (
-            <div key={note.id} className={note.is_pinned ? 'bg-[var(--accent-light)]/30' : ''}>
+            <div key={note.id}>
               {/* Purple strip — collapsed header */}
               <button
                 onClick={() => toggle(note.id)}
@@ -265,11 +310,8 @@ function EmailThreadGroupCard({ group, onPin }: {
                 <span className="text-xs font-mono font-semibold text-[var(--accent)] shrink-0 tabular-nums">{timeLabel}</span>
                 <span className="text-xs text-[var(--text-secondary)] truncate flex-1">
                   <span className="font-medium text-[var(--text-primary)]">{email.fromName || email.fromEmail || 'Unknown sender'}</span>
-                  {email.snippet && <span className="text-[var(--text-muted)]"> — {email.snippet}</span>}
+                  {previewText && <span className="text-[var(--text-muted)]"> — {previewText}</span>}
                 </span>
-                {note.is_pinned && (
-                  <Pin size={10} className="text-[var(--accent)] fill-[var(--accent)] shrink-0" />
-                )}
                 <ChevronDown size={13} className={`shrink-0 text-[var(--accent)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -312,17 +354,6 @@ function EmailThreadGroupCard({ group, onPin }: {
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center justify-end pt-1">
-                    <Tooltip label={note.is_pinned ? 'Unpin' : 'Pin to top'}>
-                      <button
-                        onClick={() => void onPin(note.id, !note.is_pinned)}
-                        aria-label={note.is_pinned ? 'Unpin' : 'Pin to top'}
-                        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
-                      >
-                        {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
-                      </button>
-                    </Tooltip>
-                  </div>
                 </div>
               )}
             </div>
@@ -488,6 +519,105 @@ function NoteCard({
     );
   }
 
+  // Email notes get a separate layout that mirrors EmailThreadGroupCard —
+  // padded header on top, purple strip flush to the outer card's edges,
+  // expanded body below. Standalone emails and thread groups now share one
+  // visual language.
+  if (isEmailNote && emailData) {
+    const ts = emailData.sentAt || emailData.date;
+    const timeLabel = ts
+      ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '';
+    // Some older allocations stored an empty snippet — fall back to a
+    // trimmed slice of the body so the collapsed strip is still informative.
+    const previewText = (emailData.snippet || '').trim()
+      || (emailData.bodyText ? emailData.bodyText.replace(/\s+/g, ' ').trim().slice(0, 160) : '');
+    return (
+      <div className={`glass-solid rounded-xl border transition-all group overflow-hidden ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
+        {/* Padded header — type badge, date, user, pinned + actions */}
+        <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${meta.colour}`}>
+                {meta.icon}{meta.label}
+              </span>
+              <span className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">{formatDate(note.note_date)}</span>
+              {note.users?.full_name && <span className="text-xs text-[var(--text-muted)]">· {note.users.full_name}</span>}
+              {note.is_pinned && (
+                <span className="inline-flex items-center gap-0.5 text-xs text-[var(--accent)] font-medium">
+                  <Pin size={10} className="fill-[var(--accent)]" />Pinned
+                </span>
+              )}
+            </div>
+            <p className="font-semibold text-[var(--text-primary)] text-sm">{note.title}</p>
+          </div>
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <Tooltip label={note.is_pinned ? 'Unpin' : 'Pin to top'}>
+              <button onClick={() => void onPin(note.id, !note.is_pinned)}
+                aria-label={note.is_pinned ? 'Unpin' : 'Pin to top'}
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
+                {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/* Purple strip — flush to outer card edges */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="w-full flex items-center gap-3 px-4 py-2.5 bg-[var(--accent-light)] hover:brightness-95 transition-all text-left border-t border-[var(--border)]"
+        >
+          <span className="text-xs font-mono font-semibold text-[var(--accent)] shrink-0 tabular-nums">{timeLabel}</span>
+          <span className="text-xs text-[var(--text-secondary)] truncate flex-1">
+            <span className="font-medium text-[var(--text-primary)]">{emailData.fromName || emailData.fromEmail || 'Unknown sender'}</span>
+            {previewText && <span className="text-[var(--text-muted)]"> — {previewText}</span>}
+          </span>
+          <ChevronDown size={13} className={`shrink-0 text-[var(--accent)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* Expanded body — flush, with From/To/CC/BCC/Sent + body + attachments */}
+        {expanded && (
+          <div className="px-4 py-3 bg-[var(--bg-card-solid)] border-t border-[var(--border)] space-y-2">
+            <div className="space-y-0.5 text-xs pb-2 border-b border-[var(--border)]">
+              <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">From:</span> {emailData.fromName ? `${emailData.fromName} <${emailData.fromEmail}>` : emailData.fromEmail}</p>
+              {emailData.to && (
+                <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">To:</span> {emailData.to}</p>
+              )}
+              {emailData.cc && (
+                <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">CC:</span> {emailData.cc}</p>
+              )}
+              {emailData.bcc && (
+                <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">BCC:</span> {emailData.bcc}</p>
+              )}
+              {ts && (
+                <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">Sent:</span> {new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+              )}
+            </div>
+            {emailData.bodyText ? (
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{emailData.bodyText}</p>
+            ) : emailData.snippet ? (
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed italic">{emailData.snippet}</p>
+            ) : null}
+            {emailData.attachments && emailData.attachments.length > 0 && (
+              <div className="pt-1.5 border-t border-[var(--border)]">
+                <p className="text-[11px] font-medium text-[var(--text-muted)] mb-1.5">Attachments</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {emailData.attachments.map((a, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-xs text-[var(--text-secondary)]">
+                      <Paperclip size={10} className="shrink-0 text-[var(--text-muted)]" />
+                      <span className="max-w-[180px] truncate">{a.filename}</span>
+                      {a.size > 0 && <span className="text-[var(--text-muted)] shrink-0">({Math.round(a.size / 1024)}KB)</span>}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const parsedMd = (() => {
     if (!note.content) return null;
     if (note.metadata) return note.metadata;
@@ -509,7 +639,7 @@ function NoteCard({
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${meta.colour}`}>
               {meta.icon}{meta.label}
             </span>
-            <span className="text-xs text-[var(--text-muted)]">{formatDate(note.note_date)}</span>
+            <span className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">{formatDate(note.note_date)}</span>
             {note.users?.full_name && <span className="text-xs text-[var(--text-muted)]">· {note.users.full_name}</span>}
             {note.is_pinned && (
               <span className="inline-flex items-center gap-0.5 text-xs text-[var(--accent)] font-medium">
@@ -536,64 +666,6 @@ function NoteCard({
           {/* Summary line for meeting notes (collapsed) */}
           {isMeetingNote && !expanded && md && (
             <p className="text-sm text-[var(--text-secondary)] mt-1 leading-relaxed line-clamp-2">{md.summary}</p>
-          )}
-
-          {/* Email note — collapsible card */}
-          {isEmailNote && emailData && (
-            <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-nav-hover)] overflow-hidden">
-              {/* From line + expand toggle — always visible */}
-              <button
-                onClick={() => setExpanded(v => !v)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-[var(--border)]/30 transition-colors text-left"
-              >
-                <p className="text-xs text-[var(--text-muted)] truncate">
-                  <span className="font-medium text-[var(--text-secondary)]">From: </span>
-                  {emailData.fromName && <span className="text-[var(--text-primary)]">{emailData.fromName} </span>}
-                  {emailData.fromEmail && <span className="text-[var(--text-muted)]">&lt;{emailData.fromEmail}&gt;</span>}
-                </p>
-                <ChevronDown size={13} className={`shrink-0 text-[var(--text-muted)] transition-transform ${expanded ? 'rotate-180' : ''}`} />
-              </button>
-
-              {/* Expanded body + attachments */}
-              {expanded && (
-                <div className="border-t border-[var(--border)] px-3 py-2.5 space-y-2">
-                  {/* Addressing + sent time */}
-                  <div className="space-y-0.5 text-xs pb-2 border-b border-[var(--border)]">
-                    {emailData.to && (
-                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">To:</span> {emailData.to}</p>
-                    )}
-                    {emailData.cc && (
-                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">CC:</span> {emailData.cc}</p>
-                    )}
-                    {emailData.bcc && (
-                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">BCC:</span> {emailData.bcc}</p>
-                    )}
-                    {emailData.sentAt && (
-                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-8 inline-block">Sent:</span> {new Date(emailData.sentAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
-                    )}
-                  </div>
-                  {emailData.bodyText ? (
-                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{emailData.bodyText}</p>
-                  ) : emailData.snippet ? (
-                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed italic">{emailData.snippet}</p>
-                  ) : null}
-                  {emailData.attachments && emailData.attachments.length > 0 && (
-                    <div className="pt-1.5 border-t border-[var(--border)]">
-                      <p className="text-[11px] font-medium text-[var(--text-muted)] mb-1.5">Attachments</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {emailData.attachments.map((a, i) => (
-                          <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-xs text-[var(--text-secondary)]">
-                            <Paperclip size={10} className="shrink-0 text-[var(--text-muted)]" />
-                            <span className="max-w-[180px] truncate">{a.filename}</span>
-                            {a.size > 0 && <span className="text-[var(--text-muted)] shrink-0">({Math.round(a.size / 1024)}KB)</span>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           )}
 
           {/* Regular note content */}
@@ -1260,14 +1332,13 @@ export default function ClientDetailPage() {
     const matchesSearch = !timelineSearch.trim() || n.title.toLowerCase().includes(timelineSearch.toLowerCase());
     return matchesType && matchesSearch;
   });
-  const pinnedNotes = filteredNotes.filter(n => n.is_pinned);
-  const unpinnedNotes = filteredNotes.filter(n => !n.is_pinned);
-
-  // Group email notes by (threadId, note_date) so a long reply chain on one
-  // day collapses to a single card with expandable strips instead of one card
-  // per message.
+  // Group email notes by (threadId, note_date) across the full filtered set
+  // (regardless of pin status) so a long reply chain on one day collapses to
+  // a single card with expandable strips. Pinning is then evaluated on each
+  // GROUP so a "pinned thread" lifts the whole conversation, not individual
+  // emails.
   const emailNotesByGroup = new Map<string, TimelineNote[]>();
-  for (const n of unpinnedNotes) {
+  for (const n of filteredNotes) {
     const e = parseEmailFromNote(n);
     if (!e || !e.threadId) continue;
     const key = `${e.threadId}::${n.note_date}`;
@@ -1298,17 +1369,35 @@ export default function ClientDetailPage() {
     });
   }
 
+  const isGroupPinned = (g: EmailGroup) => g.emails.every(n => n.is_pinned);
+  const pinnedEmailGroups   = emailGroups.filter(isGroupPinned);
+  const unpinnedEmailGroups = emailGroups.filter(g => !isGroupPinned(g));
+
+  // Ungrouped notes (singles and non-email types) bucket by their own is_pinned.
+  const ungroupedNotes        = filteredNotes.filter(n => !groupedNoteIds.has(n.id));
+  const pinnedSingleNotes     = ungroupedNotes.filter(n => n.is_pinned);
+  const unpinnedSingleNotes   = ungroupedNotes.filter(n => !n.is_pinned);
+
   // Build year groups for unpinned notes + email groups + vault docs merged
   type TimelineItem =
     | { kind: 'note'; data: TimelineNote }
     | { kind: 'email-group'; data: EmailGroup }
     | { kind: 'vault'; data: VaultDoc };
 
+  // Pinned section — mix of single pinned notes and fully-pinned email groups.
+  // Sorted so the most-recent activity surfaces first within Pinned too.
+  const pinnedItems: TimelineItem[] = [
+    ...pinnedSingleNotes.map(n => ({ kind: 'note' as const, data: n })),
+    ...pinnedEmailGroups.map(g => ({ kind: 'email-group' as const, data: g })),
+  ].sort((a, b) => {
+    const da = a.kind === 'note' ? a.data.note_date : (a as { data: EmailGroup }).data.sortDate;
+    const db = b.kind === 'note' ? b.data.note_date : (b as { data: EmailGroup }).data.sortDate;
+    return new Date(db).getTime() - new Date(da).getTime();
+  });
+
   const timelineItems: TimelineItem[] = [
-    ...unpinnedNotes
-      .filter(n => !groupedNoteIds.has(n.id))
-      .map(n => ({ kind: 'note' as const, data: n })),
-    ...emailGroups.map(g => ({ kind: 'email-group' as const, data: g })),
+    ...unpinnedSingleNotes.map(n => ({ kind: 'note' as const, data: n })),
+    ...unpinnedEmailGroups.map(g => ({ kind: 'email-group' as const, data: g })),
     ...(showVaultItems ? vaultDocs.map(d => ({ kind: 'vault' as const, data: d })) : []),
   ].sort((a, b) => {
     const da = a.kind === 'note' ? a.data.note_date
@@ -1639,22 +1728,34 @@ export default function ClientDetailPage() {
                 <AddNoteForm clientId={clientId} onAdd={handleAddNote} onCancel={() => setShowAddNote(false)} />
               )}
 
-              {/* Pinned notes */}
-              {pinnedNotes.length > 0 && (
+              {/* Pinned items — mix of single notes and pinned email threads */}
+              {pinnedItems.length > 0 && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Pin size={12} className="text-[var(--accent)] fill-[var(--accent)]" />
                     <span className="text-xs font-bold uppercase tracking-widest text-[var(--accent)]">Pinned</span>
                     <div className="flex-1 h-px bg-[var(--accent)]/20" />
                   </div>
-                  {pinnedNotes.map(note => (
-                    <NoteCard key={note.id} note={note} onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
-                  ))}
+                  {pinnedItems.map(item => {
+                    if (item.kind === 'note') {
+                      return (
+                        <NoteCard key={`pin-note-${item.data.id}`} note={item.data}
+                          onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
+                      );
+                    }
+                    return (
+                      <EmailThreadGroupCard
+                        key={`pin-group-${item.data.groupKey}`}
+                        group={item.data}
+                        onPin={handlePinNote}
+                      />
+                    );
+                  })}
                 </div>
               )}
 
               {/* Empty state */}
-              {timelineItems.length === 0 && pinnedNotes.length === 0 && !showAddNote && (
+              {timelineItems.length === 0 && pinnedItems.length === 0 && !showAddNote && (
                 <div className="glass-solid rounded-xl py-16 text-center">
                   <FileText size={28} className="mx-auto text-[var(--text-muted)] opacity-30 mb-3" />
                   <p className="text-sm text-[var(--text-muted)]">No timeline activity yet for this client.</p>
@@ -1674,15 +1775,30 @@ export default function ClientDetailPage() {
                   </div>
 
                   <div className="relative">
-                    <div className="absolute left-3.5 top-2 bottom-2 w-px bg-[var(--border)]" />
+                    {/* Vertical timeline rail — passes through the centre of
+                        each dot (date column is w-12 = 48px, gap-3 = 12px,
+                        dot is w-4 centred at +8 → 48 + 12 + 8 = 68). */}
+                    <div className="absolute left-[68px] top-2 bottom-2 w-px bg-[var(--border)]" />
                     <ul className="space-y-3">
                       {yearGroups[year].map((item) => {
+                        const rawDate =
+                          item.kind === 'note' ? item.data.note_date
+                          : item.kind === 'email-group' ? item.data.noteDate
+                          : (item.data.tag_document_date ?? item.data.indexed_at);
+                        const railDate = new Date(rawDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                        const railDateLabel = (
+                          <span className="shrink-0 w-12 mt-3 text-xs font-semibold text-[var(--text-primary)] tabular-nums text-right whitespace-nowrap">
+                            {railDate}
+                          </span>
+                        );
+
                         if (item.kind === 'note') {
                           const note = item.data;
                           return (
-                            <li key={`note-${note.id}`} className="flex gap-4 items-start pl-2">
+                            <li key={`note-${note.id}`} className="flex gap-3 items-start">
+                              {railDateLabel}
                               <div className="shrink-0 w-4 h-4 rounded-full border-2 border-[var(--accent)] bg-[var(--bg-card-solid)] mt-3 z-10" />
-                              <div className="flex-1">
+                              <div className="flex-1 min-w-0">
                                 <NoteCard note={note} onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
                               </div>
                             </li>
@@ -1691,9 +1807,10 @@ export default function ClientDetailPage() {
                         if (item.kind === 'email-group') {
                           const group = item.data;
                           return (
-                            <li key={`email-group-${group.groupKey}`} className="flex gap-4 items-start pl-2">
+                            <li key={`email-group-${group.groupKey}`} className="flex gap-3 items-start">
+                              {railDateLabel}
                               <div className="shrink-0 w-4 h-4 rounded-full border-2 border-amber-400 bg-[var(--bg-card-solid)] mt-3 z-10" />
-                              <div className="flex-1">
+                              <div className="flex-1 min-w-0">
                                 <EmailThreadGroupCard group={group} onPin={handlePinNote} />
                               </div>
                             </li>
@@ -1706,9 +1823,10 @@ export default function ClientDetailPage() {
                         const typeColour = DOC_TYPE_COLOURS[typeKey] ?? DOC_TYPE_COLOURS.other;
                         const typeLabel = doc.tag_document_type ? doc.tag_document_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Other';
                         return (
-                          <li key={`vault-${doc.id}`} className="flex gap-4 items-start pl-2">
+                          <li key={`vault-${doc.id}`} className="flex gap-3 items-start">
+                            {railDateLabel}
                             <div className="shrink-0 w-4 h-4 rounded-full border-2 border-[var(--border)] bg-[var(--bg-card-solid)] mt-3 z-10" />
-                            <div className="flex-1 glass-solid rounded-xl p-3.5 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors group">
+                            <div className="flex-1 min-w-0 glass-solid rounded-xl p-3.5 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors group">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">

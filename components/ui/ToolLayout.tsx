@@ -14,7 +14,7 @@ interface ToolLayoutProps {
 
 export default function ToolLayout({ title, description, icon: Icon, iconColor = 'var(--accent)', children, wide, headerRight }: ToolLayoutProps) {
   return (
-    <div className={`p-6 ${wide ? 'w-full' : 'max-w-[1400px]'}`}>
+    <div className={`p-6 ${wide ? 'w-full' : 'max-w-[1400px] mx-auto'}`}>
       {/* Page header */}
       <div className="flex items-center gap-3 mb-6">
         {Icon && (
