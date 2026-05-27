@@ -187,11 +187,158 @@ function showFor(field: string, type: string | null): boolean {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
-function InfoRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+
+interface EmailNoteData {
+  threadId: string; subject: string; snippet: string;
+  fromName: string; fromEmail: string; date: string;
+  to?: string; cc?: string; bcc?: string; sentAt?: string;
+  bodyText?: string;
+  attachments?: { filename: string; mimeType: string; size: number }[];
+}
+
+function parseEmailFromNote(note: TimelineNote): EmailNoteData | null {
+  if (note.note_type !== 'email' || !note.content) return null;
+  try {
+    const parsed = JSON.parse(note.content) as Record<string, unknown>;
+    if (parsed.__smith_email__) return parsed as unknown as EmailNoteData;
+  } catch { /* not JSON */ }
+  return null;
+}
+
+function emailSortTime(note: TimelineNote, email: EmailNoteData | null): number {
+  const ts = email?.sentAt || email?.date || note.created_at || note.note_date;
+  const t = ts ? new Date(ts).getTime() : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+interface EmailGroup {
+  groupKey: string;
+  threadId: string;
+  noteDate: string;
+  subject: string;
+  emails: TimelineNote[];
+  sortDate: string;
+}
+
+function EmailThreadGroupCard({ group, onPin }: {
+  group: EmailGroup;
+  onPin: (id: string, pinned: boolean) => Promise<void>;
+}) {
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setOpenIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  return (
+    <div className="glass-solid rounded-xl border border-[var(--border)] overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+            <Mail size={11} />Email Thread
+          </span>
+          <span className="text-xs text-[var(--text-muted)]">{formatDate(group.noteDate)}</span>
+          <span className="text-xs text-[var(--text-muted)]">· {group.emails.length} emails</span>
+        </div>
+        <p className="font-semibold text-[var(--text-primary)] text-sm">{group.subject}</p>
+      </div>
+
+      {/* Strips — earliest first so the thread reads top→bottom chronologically */}
+      <div className="divide-y divide-[var(--border)]">
+        {group.emails.map(note => {
+          const email = parseEmailFromNote(note);
+          if (!email) return null;
+          const isOpen = openIds.has(note.id);
+          const ts = email.sentAt || email.date;
+          const timeLabel = ts
+            ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+            : '';
+          return (
+            <div key={note.id} className={note.is_pinned ? 'bg-[var(--accent-light)]/30' : ''}>
+              {/* Purple strip — collapsed header */}
+              <button
+                onClick={() => toggle(note.id)}
+                className="w-full flex items-center gap-3 px-4 py-2.5 bg-[var(--accent-light)] hover:brightness-95 transition-all text-left"
+              >
+                <span className="text-xs font-mono font-semibold text-[var(--accent)] shrink-0 tabular-nums">{timeLabel}</span>
+                <span className="text-xs text-[var(--text-secondary)] truncate flex-1">
+                  <span className="font-medium text-[var(--text-primary)]">{email.fromName || email.fromEmail || 'Unknown sender'}</span>
+                  {email.snippet && <span className="text-[var(--text-muted)]"> — {email.snippet}</span>}
+                </span>
+                {note.is_pinned && (
+                  <Pin size={10} className="text-[var(--accent)] fill-[var(--accent)] shrink-0" />
+                )}
+                <ChevronDown size={13} className={`shrink-0 text-[var(--accent)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Expanded body */}
+              {isOpen && (
+                <div className="px-4 py-3 bg-[var(--bg-card-solid)] space-y-2">
+                  <div className="space-y-0.5 text-xs pb-2 border-b border-[var(--border)]">
+                    {email.to && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">From:</span> {email.fromName ? `${email.fromName} <${email.fromEmail}>` : email.fromEmail}</p>
+                    )}
+                    {email.to && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">To:</span> {email.to}</p>
+                    )}
+                    {email.cc && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">CC:</span> {email.cc}</p>
+                    )}
+                    {email.bcc && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">BCC:</span> {email.bcc}</p>
+                    )}
+                    {ts && (
+                      <p className="text-[var(--text-muted)]"><span className="font-medium text-[var(--text-secondary)] w-10 inline-block">Sent:</span> {new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</p>
+                    )}
+                  </div>
+                  {email.bodyText ? (
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">{email.bodyText}</p>
+                  ) : email.snippet ? (
+                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed italic">{email.snippet}</p>
+                  ) : null}
+                  {email.attachments && email.attachments.length > 0 && (
+                    <div className="pt-1.5 border-t border-[var(--border)]">
+                      <p className="text-[11px] font-medium text-[var(--text-muted)] mb-1.5">Attachments</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {email.attachments.map((a, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-[var(--bg-card-solid)] text-xs text-[var(--text-secondary)]">
+                            <Paperclip size={10} className="shrink-0 text-[var(--text-muted)]" />
+                            <span className="max-w-[180px] truncate">{a.filename}</span>
+                            {a.size > 0 && <span className="text-[var(--text-muted)] shrink-0">({Math.round(a.size / 1024)}KB)</span>}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end pt-1">
+                    <Tooltip label={note.is_pinned ? 'Unpin' : 'Pin to top'}>
+                      <button
+                        onClick={() => void onPin(note.id, !note.is_pinned)}
+                        aria-label={note.is_pinned ? 'Unpin' : 'Pin to top'}
+                        className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+                      >
+                        {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function InfoRow({ label, value }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  // `mono` prop retained for call-site compatibility but no longer applied — all
+  // Client Information / Tax Details values render in the same font as Client Name.
   return (
     <div>
       <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{label}</dt>
-      <dd className={`mt-1 text-[var(--text-primary)] font-medium ${mono ? 'font-mono' : ''}`}>{value ?? '—'}</dd>
+      <dd className="mt-1 text-[var(--text-primary)] font-medium">{value ?? '—'}</dd>
     </div>
   );
 }
@@ -1116,19 +1263,68 @@ export default function ClientDetailPage() {
   const pinnedNotes = filteredNotes.filter(n => n.is_pinned);
   const unpinnedNotes = filteredNotes.filter(n => !n.is_pinned);
 
-  // Build year groups for unpinned notes + vault docs merged
-  const timelineItems: Array<{ kind: 'note'; data: TimelineNote } | { kind: 'vault'; data: VaultDoc }> = [
-    ...unpinnedNotes.map(n => ({ kind: 'note' as const, data: n })),
+  // Group email notes by (threadId, note_date) so a long reply chain on one
+  // day collapses to a single card with expandable strips instead of one card
+  // per message.
+  const emailNotesByGroup = new Map<string, TimelineNote[]>();
+  for (const n of unpinnedNotes) {
+    const e = parseEmailFromNote(n);
+    if (!e || !e.threadId) continue;
+    const key = `${e.threadId}::${n.note_date}`;
+    const list = emailNotesByGroup.get(key);
+    if (list) list.push(n);
+    else emailNotesByGroup.set(key, [n]);
+  }
+
+  const groupedNoteIds = new Set<string>();
+  const emailGroups: EmailGroup[] = [];
+  for (const [key, notesInGroup] of emailNotesByGroup) {
+    if (notesInGroup.length < 2) continue;
+    const sorted = [...notesInGroup].sort(
+      (a, b) => emailSortTime(a, parseEmailFromNote(a)) - emailSortTime(b, parseEmailFromNote(b)),
+    );
+    sorted.forEach(n => groupedNoteIds.add(n.id));
+    const latest = sorted[sorted.length - 1];
+    const latestEmail = parseEmailFromNote(latest);
+    const firstEmail = parseEmailFromNote(sorted[0]);
+    const sortTs = emailSortTime(latest, latestEmail);
+    emailGroups.push({
+      groupKey: key,
+      threadId: firstEmail?.threadId ?? '',
+      noteDate: notesInGroup[0].note_date,
+      subject: latestEmail?.subject || firstEmail?.subject || latest.title,
+      emails: sorted,
+      sortDate: new Date(sortTs).toISOString(),
+    });
+  }
+
+  // Build year groups for unpinned notes + email groups + vault docs merged
+  type TimelineItem =
+    | { kind: 'note'; data: TimelineNote }
+    | { kind: 'email-group'; data: EmailGroup }
+    | { kind: 'vault'; data: VaultDoc };
+
+  const timelineItems: TimelineItem[] = [
+    ...unpinnedNotes
+      .filter(n => !groupedNoteIds.has(n.id))
+      .map(n => ({ kind: 'note' as const, data: n })),
+    ...emailGroups.map(g => ({ kind: 'email-group' as const, data: g })),
     ...(showVaultItems ? vaultDocs.map(d => ({ kind: 'vault' as const, data: d })) : []),
   ].sort((a, b) => {
-    const da = a.kind === 'note' ? a.data.note_date : (a.data.tag_document_date ?? a.data.indexed_at);
-    const db = b.kind === 'note' ? b.data.note_date : (b.data.tag_document_date ?? b.data.indexed_at);
+    const da = a.kind === 'note' ? a.data.note_date
+             : a.kind === 'email-group' ? a.data.sortDate
+             : (a.data.tag_document_date ?? a.data.indexed_at);
+    const db = b.kind === 'note' ? b.data.note_date
+             : b.kind === 'email-group' ? b.data.sortDate
+             : (b.data.tag_document_date ?? b.data.indexed_at);
     return new Date(db).getTime() - new Date(da).getTime();
   });
 
-  const yearGroups: Record<string, typeof timelineItems> = {};
+  const yearGroups: Record<string, TimelineItem[]> = {};
   for (const item of timelineItems) {
-    const dateStr = item.kind === 'note' ? item.data.note_date : (item.data.tag_document_date ?? item.data.indexed_at);
+    const dateStr = item.kind === 'note' ? item.data.note_date
+                  : item.kind === 'email-group' ? item.data.noteDate
+                  : (item.data.tag_document_date ?? item.data.indexed_at);
     const year = new Date(dateStr).getFullYear().toString();
     if (!yearGroups[year]) yearGroups[year] = [];
     yearGroups[year].push(item);
@@ -1482,12 +1678,23 @@ export default function ClientDetailPage() {
                     <ul className="space-y-3">
                       {yearGroups[year].map((item) => {
                         if (item.kind === 'note') {
-                          const note = item.data as TimelineNote;
+                          const note = item.data;
                           return (
                             <li key={`note-${note.id}`} className="flex gap-4 items-start pl-2">
                               <div className="shrink-0 w-4 h-4 rounded-full border-2 border-[var(--accent)] bg-[var(--bg-card-solid)] mt-3 z-10" />
                               <div className="flex-1">
                                 <NoteCard note={note} onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
+                              </div>
+                            </li>
+                          );
+                        }
+                        if (item.kind === 'email-group') {
+                          const group = item.data;
+                          return (
+                            <li key={`email-group-${group.groupKey}`} className="flex gap-4 items-start pl-2">
+                              <div className="shrink-0 w-4 h-4 rounded-full border-2 border-amber-400 bg-[var(--bg-card-solid)] mt-3 z-10" />
+                              <div className="flex-1">
+                                <EmailThreadGroupCard group={group} onPin={handlePinNote} />
                               </div>
                             </li>
                           );

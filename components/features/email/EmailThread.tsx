@@ -859,19 +859,27 @@ export default function EmailThread({
           </div>
         )}
 
-        {/* Allocation badges */}
-        {allocations.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5 items-center">
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">Allocated to:</span>
-            {allocations.map(a => (
-              <span key={a.client_id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                {a.clients?.name ?? 'Client'}
-                {a.clients?.client_ref && <span className="opacity-60">· {a.clients.client_ref}</span>}
-                <button onClick={() => onRemoveAllocation(a.client_id)} className="ml-0.5 hover:text-red-500 transition-colors"><X size={10} /></button>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Allocation badges — per-message rows collapsed to one chip per client */}
+        {allocations.length > 0 && (() => {
+          const seen = new Set<string>();
+          const uniqueAllocations = allocations.filter(a => {
+            if (seen.has(a.client_id)) return false;
+            seen.add(a.client_id);
+            return true;
+          });
+          return (
+            <div className="mt-3 flex flex-wrap gap-1.5 items-center">
+              <span className="text-[11px] font-medium text-[var(--text-muted)]">Allocated to:</span>
+              {uniqueAllocations.map(a => (
+                <span key={a.client_id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  {a.clients?.name ?? 'Client'}
+                  {a.clients?.client_ref && <span className="opacity-60">· {a.clients.client_ref}</span>}
+                  <button onClick={() => onRemoveAllocation(a.client_id)} className="ml-0.5 hover:text-red-500 transition-colors"><X size={10} /></button>
+                </span>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* Task link badges */}
         {taskLinks.length > 0 && (

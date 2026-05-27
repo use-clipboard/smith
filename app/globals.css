@@ -382,3 +382,104 @@ body {
   pointer-events: none; position: absolute; z-index: 2;
 }
 .performance-prose td, .performance-prose th { position: relative; }
+
+/* ── Bookkeeping report print styles ──────────────────────────────────────
+ *
+ * Activated when the user clicks Print on the TB / P&L / BS / CF tabs. Each
+ * tab wraps its printable area in `.bk-print-area` and includes a
+ * `.bk-print-only` header element with the firm name + report title + date.
+ * The on-screen toolbars / sidebars / rail get `.print-hidden` so the
+ * print preview shows ONLY the report, formatted like the VT TB / P&L /
+ * BS PDF: minimal chrome, classic accountant typography, A4 portrait.
+ *
+ * We also use `position: sticky` on `<thead>` for the on-screen view —
+ * a separate concern but lives in the same file so both report-table
+ * conventions are documented in one place.
+ */
+
+@media print {
+  /* Bookkeeping reports use the printReport() utility (printReport.ts)
+     which opens the report in a fresh popup window and triggers print there.
+     That gives us a clean DOM for pagination + Tailwind classes resolving
+     correctly. We deliberately do NOT use the old "@media print on the
+     live page" approach — Next.js wrapper divs interfered with both the
+     positioning and the page-break engine, leaving the user with a blank
+     first page or a one-page-only printout for long reports.
+     This block stays as a no-op anchor for the rest of the print rules
+     below (margin reset, table density, etc.) which still apply in the
+     popup because globals.css is copied across. */
+  .print-hidden, .print-hidden * { display: none !important; }
+  .bk-print-only { display: block !important; }
+  .bk-print-area {
+    max-width: 100% !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    page-break-inside: auto;
+  }
+  /* Force a sensible page size + margin. The browser's "scale" option in
+     the print dialog still works on top of this. */
+  @page { size: A4 portrait; margin: 14mm 16mm; }
+
+  /* Strip every coloured background, border, shadow — accountants print
+     in black on white. Tailwind's slate utilities re-assert otherwise. */
+  .bk-print-area *,
+  .bk-print-area *::before,
+  .bk-print-area *::after {
+    background: transparent !important;
+    color: black !important;
+    box-shadow: none !important;
+    border-color: #000 !important;
+  }
+  /* Re-enable the structural borders we DO want — totals lines. */
+  .bk-print-area .border-t,
+  .bk-print-area .border-t-2,
+  .bk-print-area .border-b,
+  .bk-print-area .border-b-2 {
+    border-color: #000 !important;
+  }
+  /* Drop hover backgrounds + remove the rounded card chrome entirely. */
+  .bk-print-area .hover\:bg-slate-50:hover { background: transparent !important; }
+
+  /* Tighten table padding so 50+ rows fit on a page like VT. */
+  .bk-print-area table { font-size: 10pt; }
+  .bk-print-area thead th { padding: 4pt 6pt; font-weight: 700; }
+  .bk-print-area tbody td { padding: 2pt 6pt; }
+
+  /* Help the browser keep section blocks together where possible. */
+  .bk-print-area tbody tr { page-break-inside: avoid; }
+
+  /* Indigo/violet account-name links print as plain black, no underline. */
+  .bk-print-area a, .bk-print-area button { text-decoration: none !important; }
+}
+
+/* The header element rendered by ReportPrintHeader. Hidden on screen,
+   visible only when printing. */
+.bk-print-only { display: none; }
+
+/* Sticky table headers — applied to <thead> on every report table so the
+   column titles stay visible as the user scrolls a long TB / P&L / BS.
+   The z-index sits above body cells but below modals. Background must be
+   solid so cells passing underneath don't bleed through. */
+.bk-sticky-thead th {
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 5;
+}
+
+/* ─── Focus mode ───────────────────────────────────────────────────────────
+   Toggled by FocusModeProvider via a class on <body>. Hides the main SMITH
+   chrome (sidebar, top bar, tab strip, banners) so the active tool gets the
+   full viewport. CSS-only — no DOM unmounts, so the active tab and any
+   in-progress edits are preserved across the toggle. Never persisted. */
+body.focus-mode aside.glass-sidebar,
+body.focus-mode header.glass-topbar,
+body.focus-mode .app-tab-bar,
+body.focus-mode .api-key-banner,
+body.focus-mode .calendar-reminder-banner {
+  display: none !important;
+}
+

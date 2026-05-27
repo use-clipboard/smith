@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
   ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
+  Maximize2,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
@@ -12,6 +13,7 @@ import StickyNotesHeaderButton from './StickyNotes/StickyNotesHeaderButton';
 import { useChatContext } from '@/components/chat/ChatProvider';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
+import { useFocusMode } from './FocusModeProvider';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from '@/config/navItems';
 import type { Tab } from '@/components/ui/TabContext';
 import type { LucideIcon } from 'lucide-react';
@@ -120,6 +122,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const title = getPageTitle(pathname);
   const { totalUnread, isPanelOpen, setIsPanelOpen } = useChatContext();
   const { openTab } = useTabContext();
+  const { toggleFocusMode } = useFocusMode();
 
   // Search
   const [searchOpen, setSearchOpen] = useState(false);
@@ -376,6 +379,17 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           </Tooltip>
           {isPanelOpen && <ChatPanel />}
         </div>
+
+        {/* Focus mode toggle — hides sidebar, top bar, tabs, banners */}
+        <Tooltip label="Focus mode — hide SMITH chrome (Ctrl+\)">
+          <button
+            onClick={toggleFocusMode}
+            aria-label="Enter focus mode"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-all"
+          >
+            <Maximize2 size={16} />
+          </button>
+        </Tooltip>
 
         {/* Sticky Notes (personal, private — sit on top of every page) */}
         <StickyNotesHeaderButton />

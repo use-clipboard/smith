@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Mail, PenSquare, Loader2, Settings, Settings2, X } from 'lucide-react';
+import { Mail, PenSquare, Loader2, Settings, Settings2, X, AlertTriangle } from 'lucide-react';
 import EmailSidebar from './EmailSidebar';
 import EmailList from './EmailList';
 import EmailThread from './EmailThread';
@@ -130,6 +130,8 @@ export default function EmailTriagePage() {
   const composeWindow = useComposeWindow();
   const [draftingAIReply, setDraftingAIReply] = useState(false);
   const [allocateOpen, setAllocateOpen] = useState(false);
+  const [pendingRemoveAllocation, setPendingRemoveAllocation] = useState<{ clientId: string; clientName: string } | null>(null);
+  const [removingAllocation, setRemovingAllocation] = useState(false);
 
   // Task creation from email
   const [creatingTask, setCreatingTask]         = useState(false);
@@ -733,19 +735,33 @@ export default function EmailTriagePage() {
     }
   }
 
-  async function handleRemoveAllocation(clientId: string) {
+  function handleRemoveAllocation(clientId: string) {
     if (!activeThread) return;
-    await fetch('/api/email/allocate', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThread.gmailThreadId ?? activeThread.id, clientId }),
-    });
-    await openThread(activeThread);
-    setThreadMeta(prev => {
-      const current = prev[activeThread.id];
-      const remaining = (threadDetail?.allocations ?? []).filter(a => a.client_id !== clientId);
-      return { ...prev, [activeThread.id]: { ...current, hasAllocation: remaining.length > 0 } };
-    });
+    const alloc = (threadDetail?.allocations ?? []).find(a => a.client_id === clientId);
+    const clientName = alloc?.clients?.name ?? 'this client';
+    setPendingRemoveAllocation({ clientId, clientName });
+  }
+
+  async function confirmRemoveAllocation() {
+    if (!activeThread || !pendingRemoveAllocation) return;
+    const { clientId } = pendingRemoveAllocation;
+    setRemovingAllocation(true);
+    try {
+      await fetch('/api/email/allocate', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: activeThread.gmailThreadId ?? activeThread.id, clientId }),
+      });
+      await openThread(activeThread);
+      setThreadMeta(prev => {
+        const current = prev[activeThread.id];
+        const remaining = (threadDetail?.allocations ?? []).filter(a => a.client_id !== clientId);
+        return { ...prev, [activeThread.id]: { ...current, hasAllocation: remaining.length > 0 } };
+      });
+    } finally {
+      setRemovingAllocation(false);
+      setPendingRemoveAllocation(null);
+    }
   }
 
   async function handleRemoveTaskLink(taskId: string) {
@@ -1354,6 +1370,63 @@ export default function EmailTriagePage() {
           defaultClientId={taskSuggestedClientId}
           defaultClientName={taskSuggestedClientName}
         />
+      )}
+
+      {pendingRemoveAllocation && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => { if (!removingAllocation) setPendingRemoveAllocation(null); }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-allocation-title"
+        >
+          <div
+            className="w-full max-w-md bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 px-5 py-4 border-b border-[var(--border)]">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 id="remove-allocation-title" className="text-sm font-semibold text-[var(--text-primary)]">
+                  Remove allocation?
+                </h3>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  This will unallocate the entire conversation, not just one email.
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 text-sm text-[var(--text-primary)] space-y-2">
+              <p>
+                Every email in this thread is allocated to{' '}
+                <span className="font-semibold">{pendingRemoveAllocation.clientName}</span>, and each one has its own entry on the client&apos;s timeline.
+              </p>
+              <p className="text-[var(--text-muted)]">
+                Removing the allocation will delete <span className="font-medium text-[var(--text-primary)]">all</span> of those timeline entries for this conversation. This can&apos;t be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border)] bg-[var(--bg-subtle)] rounded-b-xl">
+              <button
+                onClick={() => setPendingRemoveAllocation(null)}
+                disabled={removingAllocation}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void confirmRemoveAllocation()}
+                disabled={removingAllocation}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 inline-flex items-center gap-1.5"
+              >
+                {removingAllocation && <Loader2 size={12} className="animate-spin" />}
+                Remove allocation
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

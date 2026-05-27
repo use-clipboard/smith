@@ -30,6 +30,7 @@ import {
   BookCopy, ChevronLeft, Loader2, Lock,
   Archive as ArchiveIcon,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
@@ -44,17 +45,30 @@ import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
 import TransactionTypeListView from './transactions/TransactionTypeListView';
-import { BookNavigationProvider } from './book/BookNavigationContext';
+import ManualBankRecSheet from './ledger/ManualBankRecSheet';
+import BookImportTab from './imports/BookImportTab';
+import BookSearchLightbox from './book/BookSearchLightbox';
+import { BookNavigationProvider, type ActivePeriod } from './book/BookNavigationContext';
+import BookYearPeriodBar from './book/BookYearPeriodBar';
 import { BOOK_TEMPLATE_LABEL, VAT_SCHEME_LABEL, type Book, type TransactionType } from '@/types/bookkeeping';
 
 interface Props {
   bookId: string;
   userRole: 'admin' | 'staff';
+  /** Current user — threaded through to the home-tab whiteboard so notes
+   *  can be attributed and the eraser/own-note UI knows who's looking. */
+  currentUserId: string;
+  currentUserName: string | null;
+  /** Optional close handler. When the bookkeeping module is hosted by the
+   *  always-mounted BookkeepingTool wrapper, this fires instead of a route
+   *  push so the wrapper can swap views without unmounting. Falls back to
+   *  `router.push('/bookkeeping')` when omitted (direct URL access). */
+  onCloseBook?: () => void;
 }
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'customers' | 'suppliers';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'import';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -70,7 +84,13 @@ interface DynamicTypeListTab {
    *  a ref elsewhere — we want them to land on that transaction. */
   initialTxnId?: string;
 }
-type DynamicTab = DynamicLedgerTab | DynamicTypeListTab;
+interface DynamicManualRecTab {
+  id: string;                  // unique tab id: `manual-rec:<accountId>`
+  kind: 'manual_rec';
+  accountId: string;
+  accountName: string;
+}
+type DynamicTab = DynamicLedgerTab | DynamicTypeListTab | DynamicManualRecTab;
 type AnyTab = FixedTab | string; // string for dynamic tabs (their id)
 
 function formatDateUk(iso: string | null): string {
@@ -79,7 +99,7 @@ function formatDateUk(iso: string | null): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export default function BookView({ bookId, userRole }: Props) {
+export default function BookView({ bookId, userRole, currentUserId, currentUserName, onCloseBook }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isAdmin = userRole === 'admin';
@@ -88,6 +108,29 @@ export default function BookView({ bookId, userRole }: Props) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Book-wide search lightbox — opens from the Search rail button,
+   *  Ctrl+K shortcut, or the home tab's "View all" recent-transactions link. */
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Focus mode is a global capability — provided by FocusModeProvider in
+  // AppShell (toggle lives in the TopBar). Nothing to wire up locally.
+
+  // ── Ctrl+K / ⌘K global shortcut to open the search lightbox ─────────────
+  // Bound at the BookView level so it works on every tab. We deliberately
+  // intercept even when an input is focused — the user might be mid-edit and
+  // want to look something up; the lightbox will steal focus into its own
+  // search box on open. Pressing it again (or Escape) closes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const isK = (e.key === 'k' || e.key === 'K');
+      if (isK && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setSearchOpen(o => !o);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Tab state — initialised from ?tab=… so deep-links work.
   const initialTabParam = searchParams?.get('tab');
@@ -98,6 +141,7 @@ export default function BookView({ bookId, userRole }: Props) {
     initialTabParam === 'bs'    ? 'bs'    :
     initialTabParam === 'cf'    ? 'cf'    :
     initialTabParam === 'vat'   ? 'vat'   :
+    initialTabParam === 'bank'      ? 'bank'      :
     initialTabParam === 'customers' ? 'customers' :
     initialTabParam === 'suppliers' ? 'suppliers' : 'home';
   const [tab, setTab] = useState<AnyTab>(initialTab);
@@ -143,6 +187,17 @@ export default function BookView({ bookId, userRole }: Props) {
     setDynamicTabs(prev => prev.filter(t => t.id !== tabId));
     setTab(prev => (prev === tabId ? 'home' : prev));
   }
+  /** Open the manual reconciliation entry sheet as its own rail tab —
+   *  mirrors how UniversalInputSheet lives in the Input tab. Avoids the
+   *  modal focus-trap headaches and gives the sheet the whole workspace. */
+  function openManualRecTab(accountId: string, accountName: string) {
+    const tabId = `manual-rec:${accountId}`;
+    setDynamicTabs(prev => {
+      if (prev.some(t => t.id === tabId)) return prev;
+      return [...prev, { id: tabId, kind: 'manual_rec', accountId, accountName }];
+    });
+    setTab(tabId);
+  }
   /** Open a whole ledger's master view. Customers/Suppliers are fixed tabs
    *  in the rail; any other ledger opens AccountsLedgerView via a dynamic
    *  tab without pre-selecting an account (it auto-picks the first with
@@ -150,6 +205,7 @@ export default function BookView({ bookId, userRole }: Props) {
   function openLedgerView(ledger: string) {
     if (ledger === 'Customers') { setTab('customers'); return; }
     if (ledger === 'Suppliers') { setTab('suppliers'); return; }
+    if (ledger === 'Bank')      { setTab('bank');      return; }
     const tabId = `ledger-all:${ledger}`;
     setDynamicTabs(prev => {
       if (prev.some(t => t.id === tabId)) return prev;
@@ -167,6 +223,13 @@ export default function BookView({ bookId, userRole }: Props) {
   // Current input-sheet type. Controlled here so the toolbar can drive it
   // (clicking PAY/CHQ/REC/… switches the sheet without leaving the tab).
   const [inputType, setInputType] = useState<TransactionType>('PAY');
+
+  // Active reporting period from the BookYearPeriodBar — broadcast to every
+  // report (TB/P&L/BS/CF) via BookNavigation. Defaults to the empty / not-
+  // ready state until the bar mounts and emits one.
+  const [activePeriod, setActivePeriod] = useState<ActivePeriod>({
+    ready: false, fromIso: null, toIso: null, fyStartIso: null, fyEndIso: null, label: 'No year set',
+  });
 
   // Bump this when a new transaction posts so the Home tab refreshes.
   const [refreshKey, setRefreshKey] = useState(0);
@@ -234,9 +297,12 @@ export default function BookView({ bookId, userRole }: Props) {
 
   return (
     <BookNavigationProvider value={{
+      bookId,
       openAccount: openLedgerTab,
       openTypeList: openTypeListTab,
       openLedger: openLedgerView,
+      openManualRec: openManualRecTab,
+      activePeriod,
     }}>
     <div className="p-4 max-w-[1600px] mx-auto flex gap-3 items-start">
       {/* ── Side rail ───────────────────────────────────────────────────── */}
@@ -254,30 +320,40 @@ export default function BookView({ bookId, userRole }: Props) {
         typeListTabs={dynamicTabs
           .filter((t): t is DynamicTypeListTab => t.kind === 'type_list')
           .map(tt => ({ id: tt.id, txnType: tt.txnType }))}
+        manualRecTabs={dynamicTabs
+          .filter((t): t is DynamicManualRecTab => t.kind === 'manual_rec')
+          .map(mr => ({ id: mr.id, accountName: mr.accountName }))}
         onCloseLedgerTab={closeDynamicTab}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSearch={() => setSearchOpen(true)}
         disabled={lockedForMe || book.archived}
         className="sticky top-4 self-start"
       />
 
       {/* ── Main column ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-w-0">
-        {/* Header card */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm mb-3">
+        {/* Header card — deep purple "you're in the bookkeeping module"
+            band so the workspace chrome doesn't blend into the rest of
+            the app. Text colours inverted to white/violet-200. */}
+        {/* Option C — soft off-white card with a meaningfully stronger
+            shadow. No colour at all — the chrome reads as a "raised
+            surface" sitting above the page, like a header bar in an
+            elevated panel. Closest to QuickBooks / Xero's approach. */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50 shadow mb-3">
           <div className="p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
               <BookCopy size={18} />
             </div>
             <div className="flex-1 min-w-0">
               <h1 className="text-base font-semibold text-slate-900 truncate leading-tight">{book.name}</h1>
-              <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+              <div className="text-[11px] text-slate-600 flex items-center gap-1.5 flex-wrap mt-0.5">
                 <span>Client:</span>
-                <span className="font-medium text-slate-700">{clientLabel}</span>
+                <span className="font-medium text-slate-800">{clientLabel}</span>
                 <span className="text-slate-300">·</span>
                 <span>Template:</span>
-                <span className="font-medium text-slate-700">{BOOK_TEMPLATE_LABEL[book.template_type]}</span>
+                <span className="font-medium text-slate-800">{BOOK_TEMPLATE_LABEL[book.template_type]}</span>
                 <span className="text-slate-300">·</span>
-                <span className="font-medium text-slate-700">{book.base_currency}</span>
+                <span className="font-medium text-slate-800">{book.base_currency}</span>
                 <span className="text-slate-300">·</span>
                 {book.vat_registered ? (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
@@ -302,6 +378,19 @@ export default function BookView({ bookId, userRole }: Props) {
                     </span>
                   </>
                 )}
+                {/* Year / period / lock controls sit inline with the rest of
+                    the metadata. When the book has no year-end set the bar
+                    collapses to a single amber call-to-action. */}
+                <span className="text-slate-300">·</span>
+                <BookYearPeriodBar
+                  bookId={bookId}
+                  periodLockDate={book.period_lock_date}
+                  yearEndMd={book.year_end_md}
+                  currentFyId={book.current_fy_id ?? null}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                  onOpenYearEnds={() => setSettingsOpen(true)}
+                  onPeriodChange={setActivePeriod}
+                />
               </div>
             </div>
             {book.admin_locked && (
@@ -315,7 +404,7 @@ export default function BookView({ bookId, userRole }: Props) {
               </span>
             )}
             <button
-              onClick={() => router.push('/bookkeeping')}
+              onClick={() => { if (onCloseBook) onCloseBook(); else router.push('/bookkeeping'); }}
               className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-200 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 transition-colors"
             >
               <ChevronLeft size={13} /> Books
@@ -330,13 +419,17 @@ export default function BookView({ bookId, userRole }: Props) {
             book={book}
             onDelete={handleDelete}
             onAddTransaction={() => { setInputType('PAY'); setTab('input'); }}
+            onImport={() => setTab('import')}
+            onOpenSearch={() => setSearchOpen(true)}
             refreshKey={refreshKey}
             onOpenAccount={openLedgerTab}
             onOpenTypeList={openTypeListTab}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
           />
         </div>
         <div hidden={tab !== 'input'}>
-          {(inputType === 'JRN' || inputType === 'RJN') ? (
+          {(inputType === 'JRN' || inputType === 'RJN' || inputType === 'YET' || inputType === 'DVT') ? (
             <JournalInputSheet
               bookId={bookId}
               vatRegistered={book.vat_registered}
@@ -370,11 +463,21 @@ export default function BookView({ bookId, userRole }: Props) {
         <div hidden={tab !== 'vat'}>
           <VatReturnTab bookId={bookId} isAdmin={isAdmin} />
         </div>
+        <div hidden={tab !== 'bank'}>
+          <AccountsLedgerView bookId={bookId} ledger="Bank" isAdmin={isAdmin} />
+        </div>
         <div hidden={tab !== 'customers'}>
-          <AccountsLedgerView bookId={bookId} ledger="Customers" />
+          <AccountsLedgerView bookId={bookId} ledger="Customers" isAdmin={isAdmin} />
         </div>
         <div hidden={tab !== 'suppliers'}>
-          <AccountsLedgerView bookId={bookId} ledger="Suppliers" />
+          <AccountsLedgerView bookId={bookId} ledger="Suppliers" isAdmin={isAdmin} />
+        </div>
+        <div hidden={tab !== 'import'}>
+          {/* onChanged fires after a successful Post OR Rollback — same
+              bumpRefresh used by the input sheets, so the Home tab's recent-
+              transactions feed + Key Information balances refresh straight
+              away without a page reload. */}
+          <BookImportTab bookId={bookId} isAdmin={isAdmin} onChanged={bumpRefresh} />
         </div>
         {dynamicTabs.map(dt => {
           if (dt.kind === 'ledger') {
@@ -385,6 +488,7 @@ export default function BookView({ bookId, userRole }: Props) {
                     bookId={bookId}
                     ledger={dt.accountLedger}
                     initialAccountId={dt.accountId}
+                    isAdmin={isAdmin}
                   />
                 ) : (
                   <AccountLedgerTab
@@ -397,14 +501,32 @@ export default function BookView({ bookId, userRole }: Props) {
               </div>
             );
           }
-          // dt.kind === 'type_list'
+          if (dt.kind === 'type_list') {
+            return (
+              <div key={dt.id} hidden={tab !== dt.id}>
+                <TransactionTypeListView
+                  bookId={bookId}
+                  type={dt.txnType}
+                  initialTxnId={dt.initialTxnId}
+                  onNewTransaction={() => { setInputType(dt.txnType); setTab('input'); }}
+                />
+              </div>
+            );
+          }
+          // dt.kind === 'manual_rec' — VT-style bank cash book entry sheet.
           return (
             <div key={dt.id} hidden={tab !== dt.id}>
-              <TransactionTypeListView
+              <ManualBankRecSheet
                 bookId={bookId}
-                type={dt.txnType}
-                initialTxnId={dt.initialTxnId}
-                onNewTransaction={() => { setInputType(dt.txnType); setTab('input'); }}
+                accountId={dt.accountId}
+                accountName={dt.accountName}
+                vatRegistered={book.vat_registered}
+                onClose={() => closeDynamicTab(dt.id)}
+                onPosted={() => {
+                  closeDynamicTab(dt.id);
+                  setTab('bank');
+                  bumpRefresh();
+                }}
               />
             </div>
           );
@@ -420,6 +542,19 @@ export default function BookView({ bookId, userRole }: Props) {
         isAdmin={isAdmin}
         onUpdated={next => setBook(next)}
       />
+
+      {/* ── Book search lightbox — Ctrl+K / rail Search icon / Home View all */}
+      {searchOpen && (
+        <BookSearchLightbox
+          bookId={bookId}
+          bookName={book.name}
+          vatRegistered={book.vat_registered}
+          vatLockDate={book.vat_lock_date ?? null}
+          onOpenAccount={openLedgerTab}
+          onOpenTypeList={openTypeListTab}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
     </div>
     </BookNavigationProvider>
   );

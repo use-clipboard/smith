@@ -13,6 +13,8 @@ import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
 import StickyNotesProvider from './StickyNotes/StickyNotesProvider';
 import StickyNotesLayer from './StickyNotes/StickyNotesLayer';
+import FocusModeProvider, { useFocusMode } from './FocusModeProvider';
+import { Minimize2 } from 'lucide-react';
 import ComposeWindowProvider from '@/components/features/email/ComposeWindowProvider';
 import GlobalComposeWindow from '@/components/features/email/GlobalComposeWindow';
 import MinimisedComposeChip from '@/components/features/email/MinimisedComposeChip';
@@ -95,6 +97,25 @@ function UnreadMessageChips() {
   );
 }
 
+// Floating "Exit focus" affordance — pinned top-right when focus mode is on
+// so the user always has a visible way out (the chrome itself is hidden).
+function FocusModeExitChip() {
+  const { focusMode, setFocusMode } = useFocusMode();
+  if (!focusMode) return null;
+  return (
+    <Tooltip label="Exit focus mode (Esc or Ctrl+\)" side="left">
+      <button
+        onClick={() => setFocusMode(false)}
+        aria-label="Exit focus mode"
+        className="fixed top-3 right-3 z-[100] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-white text-xs font-semibold shadow-xl hover:brightness-110 transition-all"
+      >
+        <Minimize2 size={13} />
+        Exit focus
+      </button>
+    </Tooltip>
+  );
+}
+
 type AppShellInnerProps = Omit<AppShellProps, 'firmId' | 'activeModules' | 'initialFavourites' | 'showOnboarding'>;
 
 // Inner layout — runs inside all providers so it can read TabContext and TabActivityContext
@@ -164,6 +185,7 @@ export default function AppShell({
           <TabActivityProvider>
             <StickyNotesProvider userId={userId}>
               <ComposeWindowProvider userName={userName}>
+                <FocusModeProvider>
                 <AppShellInner
                   userName={userName}
                   userEmail={userEmail}
@@ -182,9 +204,11 @@ export default function AppShell({
                 <StickyNotesLayer />
                 <GlobalComposeWindow />
                 <MinimisedComposeChip />
+                <FocusModeExitChip />
                 {onboardingVisible && (
                   <OnboardingModal onDismiss={handleDismissOnboarding} />
                 )}
+                </FocusModeProvider>
               </ComposeWindowProvider>
             </StickyNotesProvider>
           </TabActivityProvider>
