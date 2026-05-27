@@ -331,9 +331,31 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: 'No firms with schedules' });
   }
 
+  // Fairness: order firms by how long it's been since their last successful
+  // refresh. Without this, PostgREST's default order means firm A (first in
+  // the list) hogs every tick's 4-minute budget on big firms, and firm B
+  // (further down) never gets processed. The single-firm case sees no
+  // change; only matters once there are 2+ firms with overlapping schedules.
+  const { data: lastRuns } = await service
+    .from('ch_cache')
+    .select('firm_id, refreshed_at');
+  const lastRunByFirm = new Map<string, string>();
+  for (const r of (lastRuns ?? []) as { firm_id: string; refreshed_at: string | null }[]) {
+    if (r.refreshed_at) lastRunByFirm.set(r.firm_id, r.refreshed_at);
+  }
+  const orderedFirms = [...firms].sort((a, b) => {
+    const ta = lastRunByFirm.get(a.id);
+    const tb = lastRunByFirm.get(b.id);
+    // Firms with no recorded refresh go first (most-starved wins).
+    if (!ta && !tb) return 0;
+    if (!ta) return -1;
+    if (!tb) return 1;
+    return new Date(ta).getTime() - new Date(tb).getTime();
+  });
+
   const results: Array<{ firmId: string; action: string; processed: number; remaining: number }> = [];
 
-  for (const firm of firms) {
+  for (const firm of orderedFirms) {
     const f = firm as {
       id: string;
       ch_api_key: string;

@@ -73,6 +73,7 @@ interface TaskRow {
   title: string;
   description: string | null;
   status: string;
+  completed_at: string | null;
   due_date: string | null;
   recurrence_type: string | null;
   recurrence_interval_days: number | null;
@@ -168,7 +169,7 @@ export async function syncCHDeadlineLinks(
   const taskIds = Array.from(new Set((links as LinkRow[]).map(l => l.task_id)));
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, firm_id, client_id, created_by, template_id, title, description, status, due_date, recurrence_type, recurrence_interval_days')
+    .select('id, firm_id, client_id, created_by, template_id, title, description, status, completed_at, due_date, recurrence_type, recurrence_interval_days')
     .in('id', taskIds);
   const taskById = new Map<string, TaskRow>();
   for (const t of (tasks ?? []) as TaskRow[]) taskById.set(t.id, t);
@@ -292,7 +293,35 @@ export async function syncCHDeadlineLinks(
         //      structure, which is silently wrong for any template-built
         //      task. Step statuses reset to 'not_started' so the new
         //      cycle isn't pre-completed by the previous run's state.
-        await cloneTaskWorkflow(supabase, task.id, cloned.id);
+        //
+        //      If the workflow clone fails we MUST NOT silently leave the
+        //      link pointing at a workflow-less task — the user would lose
+        //      their step structure without any warning. Roll the new task
+        //      back, undo the original task's auto-complete, and mark the
+        //      link broken so a human can fix it.
+        try {
+          await cloneTaskWorkflow(supabase, task.id, cloned.id);
+        } catch (cloneWorkflowErr) {
+          console.error('syncCHDeadlineLinks: workflow clone failed', cloneWorkflowErr);
+          // Best-effort rollback: delete the orphan clone, restore the
+          // original task's pre-renewal state (status, completed_at,
+          // description — all snapshotted from `task` which we read before
+          // any mutation), and mark the link broken so the user notices
+          // and a human can fix it.
+          await supabase.from('tasks').delete().eq('id', cloned.id);
+          await supabase.from('tasks').update({
+            status:       task.status,
+            completed_at: task.completed_at,
+            description:  task.description ?? null,
+            updated_at:   new Date().toISOString(),
+          }).eq('id', task.id);
+          await markBroken(
+            supabase, link,
+            'Annual renewal rolled back — workflow clone failed. Recreate the task manually and re-link, or contact support.',
+          );
+          summary.failed += 1;
+          continue;
+        }
 
         // (c) Repoint the link.
         await supabase
@@ -304,6 +333,7 @@ export async function syncCHDeadlineLinks(
             status:                 'active',
             consecutive_failures:   0,
             last_error:             null,
+            linked_company_number:  link.linked_company_number,
             updated_at:             new Date().toISOString(),
           })
           .eq('id', link.id);
@@ -392,15 +422,20 @@ async function bumpFailure(supabase: SupabaseClient, link: LinkRow, reason: stri
  * step's runtime state so the cloned workflow looks like a fresh one. Used
  * by the annual renewal path so step-based templates don't lose their
  * structure each year.
+ *
+ * Throws on any Supabase error so the caller can roll back the renewal —
+ * silently returning here would leave the user's link pointing at a
+ * workflow-less clone with no audit trail.
  */
 async function cloneTaskWorkflow(supabase: SupabaseClient, fromTaskId: string, toTaskId: string): Promise<void> {
   // Steps — fetch, strip ids + completion state, insert against the new task.
-  const { data: steps } = await supabase
+  const { data: steps, error: stepsReadErr } = await supabase
     .from('task_steps')
     .select('template_step_id, step_key, title, description, assignee_id, is_client_step, tool_module_id, tool_output_id, email_reminder_enabled, email_reminder_config, email_reminder_subject, email_reminder_message, client_instructions, client_can_upload, position_x, position_y')
     .eq('task_id', fromTaskId);
+  if (stepsReadErr) throw new Error(`task_steps read failed: ${stepsReadErr.message}`);
   if (steps && steps.length > 0) {
-    await supabase.from('task_steps').insert(
+    const { error: stepsInsertErr } = await supabase.from('task_steps').insert(
       steps.map(s => ({
         ...s,
         task_id:      toTaskId,
@@ -408,17 +443,20 @@ async function cloneTaskWorkflow(supabase: SupabaseClient, fromTaskId: string, t
         completed_at: null,
       })),
     );
+    if (stepsInsertErr) throw new Error(`task_steps insert failed: ${stepsInsertErr.message}`);
   }
 
   // Edges — straight copy onto the new task id.
-  const { data: edges } = await supabase
+  const { data: edges, error: edgesReadErr } = await supabase
     .from('task_step_edges')
     .select('from_step_key, to_step_key, label')
     .eq('task_id', fromTaskId);
+  if (edgesReadErr) throw new Error(`task_step_edges read failed: ${edgesReadErr.message}`);
   if (edges && edges.length > 0) {
-    await supabase.from('task_step_edges').insert(
+    const { error: edgesInsertErr } = await supabase.from('task_step_edges').insert(
       edges.map(e => ({ ...e, task_id: toTaskId })),
     );
+    if (edgesInsertErr) throw new Error(`task_step_edges insert failed: ${edgesInsertErr.message}`);
   }
 }
 
