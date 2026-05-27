@@ -1,14 +1,23 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { LucideIcon, Plus } from 'lucide-react';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS, DASHBOARD_ITEM } from '@/config/navItems';
 
 export interface Tab {
   id: string;
   title: string;
+  /** Canonical tool route — `/bookkeeping`, `/tasks`, etc. Used for tab
+   *  identity, the icon/title lookup, and duplicate detection. Never
+   *  changes once the tab is opened. */
   route: string;
+  /** Most-recently-visited URL inside this tool (pathname + search). When
+   *  the user clicks the tab in the tab bar, we navigate here rather than
+   *  to `route` — so coming back to Bookkeeping after dipping into another
+   *  tool lands you back on `/bookkeeping/<bookId>?tab=…`, not the books
+   *  list. Falls back to `route` if we've never tracked a deeper URL. */
+  currentRoute?: string;
   icon: LucideIcon;
 }
 
@@ -25,7 +34,7 @@ for (const item of [DASHBOARD_ITEM, ...TOOL_NAV_ITEMS, ...WORKSPACE_NAV_ITEMS]) 
 }
 ROUTE_TO_NAV.set('/newtab', { label: 'New Tab', icon: Plus });
 
-interface SerialisedTab { id: string; title: string; route: string }
+interface SerialisedTab { id: string; title: string; route: string; currentRoute?: string }
 
 function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
   if (typeof window === 'undefined') return null;
@@ -44,7 +53,13 @@ function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
       if (!nav) continue; // unknown route — skip (probably an old/removed module)
       if (seenRoutes.has(t.route)) continue; // collapse duplicates
       seenRoutes.add(t.route);
-      tabs.push({ id: t.id, title: t.title || nav.label, route: t.route, icon: nav.icon });
+      tabs.push({
+        id: t.id,
+        title: t.title || nav.label,
+        route: t.route,
+        currentRoute: t.currentRoute,
+        icon: nav.icon,
+      });
     }
     const activeTabId = parsed.activeTabId && tabs.some(t => t.id === parsed.activeTabId)
       ? parsed.activeTabId
@@ -57,7 +72,7 @@ function persist(tabs: Tab[], activeTabId: string | null): void {
   if (typeof window === 'undefined') return;
   try {
     const payload = {
-      tabs: tabs.map(t => ({ id: t.id, title: t.title, route: t.route })),
+      tabs: tabs.map(t => ({ id: t.id, title: t.title, route: t.route, currentRoute: t.currentRoute })),
       activeTabId,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -72,6 +87,11 @@ interface TabContextValue {
   addTab: () => string;               // opens a blank new-tab picker
   closeTab: (id: string) => string;   // returns route to navigate to after close
   setActiveTabId: (id: string | null) => void;
+  /** Imperatively update the active tab's `currentRoute` (the URL it should
+   *  return to). Tool-tab components use this when they swap views via
+   *  history.replaceState — that bypasses Next.js's router so the pathname
+   *  reconcile effect can't catch it on its own. */
+  setActiveTabCurrentRoute: (route: string) => void;
 }
 
 const TabContext = createContext<TabContextValue>({
@@ -82,6 +102,7 @@ const TabContext = createContext<TabContextValue>({
   addTab: () => '/dashboard',
   closeTab: () => '/dashboard',
   setActiveTabId: () => {},
+  setActiveTabCurrentRoute: () => {},
 });
 
 export function useTabContext() {
@@ -116,6 +137,8 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchString = searchParams ? searchParams.toString() : '';
 
   // Reconcile saved state with the URL. Runs on every pathname change so that
   // when a sub-route loads (e.g. /mtd-it/abc/2026/1) we activate the parent
@@ -141,6 +164,13 @@ export default function TabProvider({ children }: { children: ReactNode }) {
       tabs.find(t => t.route !== '/' && pathname.startsWith(t.route + '/'));
 
     if (existing) {
+      // Remember the deep URL the user is currently on so that clicking back
+      // on this tab from elsewhere returns to the same place (e.g. the
+      // specific book they were working in, not the books list).
+      const deep = searchString ? `${pathname}?${searchString}` : pathname;
+      if (existing.currentRoute !== deep) {
+        setTabs(prev => prev.map(t => t.id === existing.id ? { ...t, currentRoute: deep } : t));
+      }
       if (activeTabId !== existing.id) setActiveTabId(existing.id);
       reconciledRef.current = true;
       return;
@@ -154,10 +184,11 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     const nav = ROUTE_TO_NAV.get(pathname);
     if (!nav) return; // pathname isn't a tool/tab route — let it be
     const newId = `tab-${Date.now()}`;
-    setTabs(prev => [...prev, { id: newId, title: nav.label, route: pathname, icon: nav.icon }]);
+    const deep = searchString ? `${pathname}?${searchString}` : pathname;
+    setTabs(prev => [...prev, { id: newId, title: nav.label, route: pathname, currentRoute: deep, icon: nav.icon }]);
     setActiveTabId(newId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, tabs.length, hydrated]);
+  }, [pathname, searchString, tabs.length, hydrated]);
 
   // Persist on every change
   useEffect(() => { persist(tabs, activeTabId); }, [tabs, activeTabId]);
@@ -215,7 +246,9 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     return '/newtab';
   }, [tabs, activeTabId]);
 
-  // Remove a tab and return the route to navigate to
+  // Remove a tab and return the route to navigate to. Prefers each tab's
+  // last-known deep URL so closing a tab returns the user to where they
+  // left off in the next tab over.
   const closeTab = useCallback((id: string): string => {
     const idx = tabs.findIndex(t => t.id === id);
     const newTabs = tabs.filter(t => t.id !== id);
@@ -223,13 +256,24 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     if (activeTabId === id) {
       const next = newTabs[idx] ?? newTabs[idx - 1] ?? null;
       setActiveTabId(next?.id ?? null);
-      return next?.route ?? '/dashboard';
+      return next?.currentRoute ?? next?.route ?? '/dashboard';
     }
-    return tabs.find(t => t.id === activeTabId)?.route ?? '/dashboard';
+    const active = tabs.find(t => t.id === activeTabId);
+    return active?.currentRoute ?? active?.route ?? '/dashboard';
   }, [tabs, activeTabId]);
 
+  // Imperative update used by tool-tab components when their internal nav
+  // changes the URL via history.replaceState (which Next.js's pathname hook
+  // doesn't observe). Keeps tab.currentRoute in sync so the next click on
+  // this tab returns to the right deep URL.
+  const setActiveTabCurrentRoute = useCallback((route: string) => {
+    setTabs(prev => prev.map(t =>
+      t.id === activeTabId && t.currentRoute !== route ? { ...t, currentRoute: route } : t
+    ));
+  }, [activeTabId]);
+
   return (
-    <TabContext.Provider value={{ tabs, activeTabId, openTab, openInNewTab, addTab, closeTab, setActiveTabId }}>
+    <TabContext.Provider value={{ tabs, activeTabId, openTab, openInNewTab, addTab, closeTab, setActiveTabId, setActiveTabCurrentRoute }}>
       {children}
     </TabContext.Provider>
   );

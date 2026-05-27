@@ -108,6 +108,47 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .single();
   if (exErr || !existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // Bank-rec lock — if any of this transaction's splits has been reconciled
+  // against a bank statement line, editing/replacing the splits would silently
+  // break that reconciliation. Per Bank Rec design decision: locked.
+  // The user has to un-reconcile the line first (in the Bank Rec sub-tab).
+  const { data: reconciledLink } = await supabase
+    .from('bookkeeping_bank_lines')
+    .select(`id, matched_split_id, split:bookkeeping_transaction_splits!bookkeeping_bank_lines_matched_split_id_fkey(transaction_id)`)
+    .not('matched_split_id', 'is', null)
+    .eq('split.transaction_id', params.txId)
+    .limit(1)
+    .maybeSingle();
+  if (reconciledLink && reconciledLink.matched_split_id) {
+    return NextResponse.json({
+      error: 'bank_reconciled',
+      message: 'This transaction is reconciled against a bank statement line. Un-reconcile it on the Bank Rec tab before editing.',
+    }, { status: 409 });
+  }
+
+  // Period-first bank-rec lock — under the new model a split can be cleared
+  // in a rec without a paired bank_lines row. If any of this transaction's
+  // splits sits inside a RECONCILED rec, edits are blocked at this layer
+  // (the user has to reopen the rec from History to make changes).
+  const { data: clearedInClosedRec } = await supabase
+    .from('bookkeeping_transaction_splits')
+    .select(`id, cleared_in_rec_id, rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(id, status, display_label, file_name)`)
+    .eq('transaction_id', params.txId)
+    .not('cleared_in_rec_id', 'is', null);
+  const blockingRec = (clearedInClosedRec ?? []).find(
+    // @ts-expect-error — embed type isn't perfectly inferred
+    s => s.rec?.status === 'reconciled',
+  );
+  if (blockingRec) {
+    return NextResponse.json({
+      error: 'bank_reconciled',
+      // @ts-expect-error — embed type isn't perfectly inferred
+      message: `This transaction is cleared inside a completed reconciliation (${blockingRec.rec.display_label ?? blockingRec.rec.file_name ?? 'rec'}). Reopen the rec from the History tab before editing.`,
+      // @ts-expect-error — embed type isn't perfectly inferred
+      rec_id: blockingRec.rec.id,
+    }, { status: 409 });
+  }
+
   // Period lock blocks edits to/from a locked date.
   if (book.period_lock_date && !isAdmin) {
     const oldDate = existing.date;
@@ -156,6 +197,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         { error: `Out of balance: Dr ${totalDr.toFixed(2)} vs Cr ${totalCr.toFixed(2)}` },
         { status: 400 },
       );
+    }
+  }
+
+  // Block introducing a NEW reference to a locked account on edit. Accounts
+  // already used by this transaction can stay (so the user can fix a typo,
+  // re-date, etc. without first unlocking the account) — but a fresh
+  // account_id that points at an inactive row gets rejected.
+  if (body.splits || body.primary_account_id !== undefined) {
+    const { data: previousSplits } = await supabase
+      .from('bookkeeping_transaction_splits')
+      .select('account_id')
+      .eq('transaction_id', params.txId);
+    const previouslyUsed = new Set<string>(
+      (previousSplits ?? []).map(r => r.account_id as string),
+    );
+    const requestedIds = new Set<string>([
+      ...((body.splits ?? []).map(s => s.account_id)),
+      ...(body.primary_account_id ? [body.primary_account_id] : []),
+    ]);
+    const candidatesToCheck = [...requestedIds].filter(id => !previouslyUsed.has(id));
+    if (candidatesToCheck.length > 0) {
+      const { data: locked } = await supabase
+        .from('bookkeeping_accounts')
+        .select('id, name')
+        .in('id', candidatesToCheck)
+        .eq('inactive', true);
+      if (locked && locked.length > 0) {
+        return NextResponse.json(
+          { error: `Can’t post to locked account: ${locked.map(l => l.name).join(', ')}. Unlock it in Properties first, or pick a different account.` },
+          { status: 400 },
+        );
+      }
     }
   }
 
@@ -255,6 +328,42 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       { error: `Period locked through ${book.period_lock_date}` },
       { status: 403 },
     );
+  }
+
+  // Bank-rec lock — same rule as PATCH: can't delete a transaction whose
+  // splits are reconciled. User must un-reconcile from the Bank Rec tab first.
+  const { data: reconciledLink } = await supabase
+    .from('bookkeeping_bank_lines')
+    .select(`id, matched_split_id, split:bookkeeping_transaction_splits!bookkeeping_bank_lines_matched_split_id_fkey(transaction_id)`)
+    .not('matched_split_id', 'is', null)
+    .eq('split.transaction_id', params.txId)
+    .limit(1)
+    .maybeSingle();
+  if (reconciledLink && reconciledLink.matched_split_id) {
+    return NextResponse.json({
+      error: 'bank_reconciled',
+      message: 'This transaction is reconciled against a bank statement line. Un-reconcile it on the Bank Rec tab before deleting.',
+    }, { status: 409 });
+  }
+
+  // Period-first bank-rec lock — same guard as PATCH.
+  const { data: clearedInClosedRec } = await supabase
+    .from('bookkeeping_transaction_splits')
+    .select(`id, cleared_in_rec_id, rec:bookkeeping_bank_imports!bookkeeping_transaction_splits_cleared_in_rec_id_fkey(id, status, display_label, file_name)`)
+    .eq('transaction_id', params.txId)
+    .not('cleared_in_rec_id', 'is', null);
+  const blockingRec = (clearedInClosedRec ?? []).find(
+    // @ts-expect-error — embed type isn't perfectly inferred
+    s => s.rec?.status === 'reconciled',
+  );
+  if (blockingRec) {
+    return NextResponse.json({
+      error: 'bank_reconciled',
+      // @ts-expect-error — embed type isn't perfectly inferred
+      message: `This transaction is cleared inside a completed reconciliation (${blockingRec.rec.display_label ?? blockingRec.rec.file_name ?? 'rec'}). Reopen the rec from the History tab before deleting.`,
+      // @ts-expect-error — embed type isn't perfectly inferred
+      rec_id: blockingRec.rec.id,
+    }, { status: 409 });
   }
 
   const { error: delErr } = await supabase

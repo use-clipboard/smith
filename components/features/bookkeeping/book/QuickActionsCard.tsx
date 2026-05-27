@@ -24,11 +24,6 @@ import {
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 
-interface Props {
-  /** Switch to the Input tab. Set by BookView so the action drives the workspace. */
-  onAddTransaction: () => void;
-}
-
 interface ActionDef {
   id: string;
   label: string;
@@ -40,6 +35,15 @@ interface ActionDef {
   onClick?: () => void;
 }
 
+interface Props {
+  onAddTransaction: () => void;
+  /** Switches the workspace to the Import tab. Defined here on the home
+   *  page (rather than the side rail) because bulk imports are an
+   *  occasional, deliberate action — not something the user wants taking
+   *  up rail real estate next to the day-to-day reports. */
+  onImport?: () => void;
+}
+
 const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
   indigo:  { bg: 'bg-indigo-50',  text: 'text-indigo-600'  },
   emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600' },
@@ -49,7 +53,7 @@ const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
   sky:     { bg: 'bg-sky-50',     text: 'text-sky-600'     },
 };
 
-export default function QuickActionsCard({ onAddTransaction }: Props) {
+export default function QuickActionsCard({ onAddTransaction, onImport }: Props) {
   const [comingHint, setComingHint] = useState<string | null>(null);
 
   const actions: ActionDef[] = [
@@ -92,9 +96,10 @@ export default function QuickActionsCard({ onAddTransaction }: Props) {
     {
       id: 'import_data',
       label: 'Import Data',
-      description: 'Bring in transactions from CSV / Excel / VT',
+      description: 'Bulk-import transactions from a VT Transaction Report (admin only)',
       icon: Upload,
       tone: 'sky',
+      onClick: onImport,
     },
   ];
 

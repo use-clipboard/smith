@@ -46,7 +46,7 @@ export interface TransactionTypeConfig {
 }
 
 export const TRANSACTION_TYPE_CONFIG: Record<
-  Exclude<TransactionType, 'JRN' | 'TRF'>,
+  Exclude<TransactionType, 'JRN' | 'RJN' | 'YET' | 'DVT' | 'TRF'>,
   TransactionTypeConfig
 > & { TRF: TransactionTypeConfig } = {
   PAY: {
@@ -153,11 +153,42 @@ export const TRANSACTION_TYPE_CONFIG: Record<
     vatDirection: 'input',
     primaryDirection: 'debit',
   },
+  // WOF / WBK live in the "purchases" family (they typically act on supplier
+  // ledgers) but the primary picker is open to ANY ledger because the user
+  // might be writing off a debtor balance as well. VAT is off — write-offs
+  // don't carry VAT (the VAT was claimed/charged on the original invoice).
+  WOF: {
+    type: 'WOF',
+    shortLabel: 'Write off',
+    description: 'Clear a residual balance — Dr expense, Cr supplier/debtor',
+    family: 'purchases',
+    primaryLedger: null,
+    primaryLabel: 'Supplier / debtor',
+    analysisLedger: null,
+    analysisLabel: 'Write-off account',
+    hasVat: false,
+    vatDirection: null,
+    primaryDirection: 'credit',
+  },
+  WBK: {
+    type: 'WBK',
+    shortLabel: 'Write back',
+    description: 'Re-instate a previously written-off balance — Dr supplier/debtor, Cr expense',
+    family: 'purchases',
+    primaryLedger: null,
+    primaryLabel: 'Supplier / debtor',
+    analysisLedger: null,
+    analysisLabel: 'Write-back account',
+    hasVat: false,
+    vatDirection: null,
+    primaryDirection: 'debit',
+  },
 };
 
-/** Type guard for "types we actually support in 2B-B" (everything except JRN). */
+/** Type guard for "types using the primary/analysis input sheet". The journal-
+ *  style types (JRN, RJN, YET, DVT) have their own multi-leg Dr/Cr grid UI. */
 export function isInputSheetType(t: TransactionType): t is keyof typeof TRANSACTION_TYPE_CONFIG {
-  return t !== 'JRN';
+  return t !== 'JRN' && t !== 'RJN' && t !== 'YET' && t !== 'DVT';
 }
 
 export function getTypeConfig(t: TransactionType): TransactionTypeConfig | null {

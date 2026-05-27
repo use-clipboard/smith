@@ -13,9 +13,14 @@
  *   • Prior period   — auto-computed as the same length immediately before
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { printReport } from './printReport';
+import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
 import { Loader2, Printer, Download, FileBarChart2 } from 'lucide-react';
-import PeriodSelector, { type DateRange } from './PeriodSelector';
+import { type DateRange } from './PeriodSelector';
+import PeriodEmptyState from './PeriodEmptyState';
+import ReportPrintHeader from './ReportPrintHeader';
+import { useBookNavigation } from '../book/BookNavigationContext';
 
 interface AccountBalance {
   id: string;
@@ -32,13 +37,29 @@ interface Props {
   onOpenAccount?: (a: { id: string; name: string; ledger: string | null }) => void;
 }
 
-// P&L-relevant ledgers grouped into the four sections we display.
-const PL_SECTIONS: { ledger: string; title: string }[] = [
-  { ledger: 'Income',        title: 'Income'        },
-  { ledger: 'Cost of sales', title: 'Cost of sales' },
-  { ledger: 'Expenses',      title: 'Expenses'      },
-  { ledger: 'Taxation',      title: 'Taxation'      },
+// P&L "preferred" sections — these get a fixed slot at the top of the report
+// in the canonical accountant's order. Any OTHER ledger that contains
+// income/expense accounts is appended dynamically after these, so a book with
+// a custom ledger like "Marketing expenses" (or anything we haven't seen
+// before — incl. imported COA from VT) still shows up rather than vanishing.
+const PL_PREFERRED_SECTIONS: { ledger: string; title: string; bucket: 'income' | 'cost_of_sales' | 'expense' | 'taxation' }[] = [
+  { ledger: 'Income',        title: 'Income',        bucket: 'income'        },
+  { ledger: 'Cost of sales', title: 'Cost of sales', bucket: 'cost_of_sales' },
+  { ledger: 'Expenses',      title: 'Expenses',      bucket: 'expense'       },
+  { ledger: 'Taxation',      title: 'Taxation',      bucket: 'taxation'      },
 ];
+
+/** Decide which subtotal a section contributes to. Driven by ledger-name
+ *  hints first, then by the account_type as a backstop, so an unfamiliar
+ *  ledger like "Marketing" still lands in the right bucket. */
+function bucketForLedger(ledger: string, sampleAccountType: string): 'income' | 'cost_of_sales' | 'expense' | 'taxation' {
+  const lc = ledger.toLowerCase();
+  if (lc === 'income' || lc.includes('income') || lc.includes('sales') || lc.includes('revenue')) return 'income';
+  if (lc === 'cost of sales' || lc.includes('cost of sales') || lc.includes('cogs')) return 'cost_of_sales';
+  if (lc === 'taxation' || lc.includes('tax')) return 'taxation';
+  if (sampleAccountType === 'income') return 'income';
+  return 'expense';
+}
 
 function isoDayBefore(iso: string): string {
   const d = new Date(iso);
@@ -70,10 +91,22 @@ function fmt(n: number): string {
   return n < 0 ? `(${abs})` : abs;
 }
 
-async function fetchBalances(bookId: string, range: DateRange): Promise<AccountBalance[]> {
+async function fetchBalances(bookId: string, range: DateRange, includeZero: boolean): Promise<AccountBalance[]> {
   const params = new URLSearchParams();
   if (range.from) params.set('from', range.from);
   if (range.to)   params.set('to',   range.to);
+  // Exclude year-end closing journals from the P&L aggregation. YET entries
+  // clear P&L accounts into Retained Earnings — if we include them, every
+  // income/expense account nets to zero and the report looks empty.
+  // The Balance Sheet does NOT pass this flag because YET is exactly what
+  // updates Retained Earnings.
+  params.set('exclude_types', 'YET');
+  // When the user wants to see zero-balance accounts, we have to ask the
+  // server for them — the balances endpoint hides accounts with no movement
+  // by default. Without this, the "Show zero-balance accounts" checkbox in
+  // the toolbar would be a no-op because those rows were never in the
+  // response in the first place.
+  if (includeZero) params.set('include_zero', 'true');
   const r = await fetch(`/api/bookkeeping/books/${bookId}/balances?${params}`);
   if (!r.ok) throw new Error('Failed to load balances');
   const d = await r.json();
@@ -95,23 +128,30 @@ function formatUk(iso: string): string {
 }
 
 export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
-  const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
+  // Period comes from the header's year/period bar via BookNavigation. The
+  // old in-tab PeriodSelector has been removed.
+  const nav = useBookNavigation();
+  const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
+  const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
+
   const [current, setCurrent] = useState<AccountBalance[]>([]);
   const [prior, setPrior]     = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [showZero, setShowZero] = useState(false);
+  const printRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!activePeriod.ready) { setCurrent([]); setPrior([]); return; }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
       try {
         const priorPeriod = computePriorPeriod(period);
         const [cur, pri] = await Promise.all([
-          fetchBalances(bookId, period),
+          fetchBalances(bookId, period, showZero),
           priorPeriod.from && priorPeriod.to
-            ? fetchBalances(bookId, priorPeriod)
+            ? fetchBalances(bookId, priorPeriod, showZero)
             : Promise.resolve([] as AccountBalance[]),
         ]);
         if (cancelled) return;
@@ -125,17 +165,64 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, period.from, period.to]);
+    // showZero is in the deps so toggling the checkbox triggers a refetch
+    // that pulls the zero-balance rows in (rather than relying on
+    // post-filter only, which only works for rows already in the cache).
+  }, [bookId, activePeriod.ready, period.from, period.to, showZero]);
 
   const priorPeriod = useMemo(() => computePriorPeriod(period), [period.from, period.to]);
 
   // ── Build the per-section grouped data ──────────────────────────────────
   type Row = { id: string; name: string; ledger: string | null; current: number; prior: number };
-  type Section = { title: string; ledger: string; rows: Row[]; currentTotal: number; priorTotal: number };
+  type Section = {
+    title: string;
+    ledger: string;
+    bucket: 'income' | 'cost_of_sales' | 'expense' | 'taxation';
+    rows: Row[];
+    currentTotal: number;
+    priorTotal: number;
+  };
 
   const sections: Section[] = useMemo(() => {
-    return PL_SECTIONS.map(def => {
-      const inLedger = (acc: AccountBalance[]) => acc.filter(a => a.ledger === def.ledger);
+    // 1. Find every ledger that contains at least one P&L account (income or
+    //    expense account_type) across either period. This way an imported COA
+    //    with custom ledger names still shows up, instead of being filtered
+    //    out by the old "exact ledger name match" rule.
+    const plTypes: ReadonlySet<string> = new Set(['income', 'expense']);
+    const ledgerSet = new Set<string>();
+    const sampleTypeByLedger = new Map<string, string>();
+    for (const a of [...current, ...prior]) {
+      if (!plTypes.has(a.account_type)) continue;
+      const lg = (a.ledger ?? '').trim();
+      if (!lg) continue;
+      ledgerSet.add(lg);
+      if (!sampleTypeByLedger.has(lg)) sampleTypeByLedger.set(lg, a.account_type);
+    }
+
+    // 2. Order: preferred sections first (in canonical order), then any
+    //    unfamiliar ledgers sorted alphabetically.
+    const preferredNames = new Set(PL_PREFERRED_SECTIONS.map(s => s.ledger));
+    const orderedLedgers: { ledger: string; title: string; bucket: Section['bucket'] }[] = [];
+    for (const def of PL_PREFERRED_SECTIONS) {
+      if (ledgerSet.has(def.ledger)) {
+        orderedLedgers.push({ ledger: def.ledger, title: def.title, bucket: def.bucket });
+      }
+    }
+    const extras = [...ledgerSet]
+      .filter(l => !preferredNames.has(l))
+      .sort((a, b) => a.localeCompare(b));
+    for (const lg of extras) {
+      orderedLedgers.push({
+        ledger: lg,
+        title: lg,
+        bucket: bucketForLedger(lg, sampleTypeByLedger.get(lg) ?? 'expense'),
+      });
+    }
+
+    // 3. For each section, walk current + prior balances, dedupe rows by id.
+    return orderedLedgers.map(def => {
+      const inLedger = (acc: AccountBalance[]) =>
+        acc.filter(a => (a.ledger ?? '').trim() === def.ledger && plTypes.has(a.account_type));
       const cur = inLedger(current);
       const pri = inLedger(prior);
       const idMap = new Map<string, { name: string; ledger: string | null; current: number; prior: number }>();
@@ -153,37 +240,82 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
         .sort((a, b) => a.name.localeCompare(b.name));
       const currentTotal = rows.reduce((s, r) => s + r.current, 0);
       const priorTotal   = rows.reduce((s, r) => s + r.prior,   0);
-      return { title: def.title, ledger: def.ledger, rows, currentTotal, priorTotal };
+      return { title: def.title, ledger: def.ledger, bucket: def.bucket, rows, currentTotal, priorTotal };
     });
   }, [current, prior, showZero]);
 
-  const gross     = { current: sections[0].currentTotal - sections[1].currentTotal, prior: sections[0].priorTotal - sections[1].priorTotal };
-  const operating = { current: gross.current - sections[2].currentTotal,            prior: gross.prior - sections[2].priorTotal           };
-  const net       = { current: operating.current - sections[3].currentTotal,        prior: operating.prior - sections[3].priorTotal       };
+  // Bucket totals — sum across every section that lands in each bucket, so
+  // a book with custom "Marketing" / "R&D" ledgers still rolls them into the
+  // Expenses subtotal rather than orphaning them.
+  function sumBucket(b: Section['bucket']): { current: number; prior: number } {
+    return sections.filter(s => s.bucket === b).reduce(
+      (acc, s) => ({ current: acc.current + s.currentTotal, prior: acc.prior + s.priorTotal }),
+      { current: 0, prior: 0 },
+    );
+  }
+  const incomeT  = sumBucket('income');
+  const cosT     = sumBucket('cost_of_sales');
+  const expT     = sumBucket('expense');
+  const taxT     = sumBucket('taxation');
+  const gross     = { current: incomeT.current - cosT.current, prior: incomeT.prior - cosT.prior };
+  const operating = { current: gross.current - expT.current,   prior: gross.prior - expT.prior   };
+  const net       = { current: operating.current - taxT.current, prior: operating.prior - taxT.prior };
 
   const hasMovement = sections.some(s => s.rows.length > 0);
 
+  // Empty state when no year-end is set / no period chosen. Placed AFTER
+  // every hook so the hook count stays constant across renders.
+  if (!activePeriod.ready) return <PeriodEmptyState reportName="profit & loss" />;
+
   return (
-    <div className="space-y-3">
-      {/* Period selector + view options */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <PeriodSelector bookId={bookId} value={period} onChange={setPeriod} />
+    <div className="space-y-3 bk-print-root" ref={printRootRef}>
+      <ReportPrintHeader
+        bookId={bookId}
+        reportTitle="Profit and Loss Account"
+        periodDescription={`For the year ended ${activePeriod.label.replace(/^Year to\s+/, '')}`}
+      />
+      {/* Period now lives in the header bar; tab toolbar only shows the
+          report title + view options + actions. */}
+      <div className="flex items-center gap-3 flex-wrap print-hidden">
+        <h2 className="text-sm font-semibold text-slate-900">
+          Profit &amp; Loss
+          <span className="text-xs font-normal text-slate-500 ml-2">· {activePeriod.label}</span>
+        </h2>
         <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 ml-auto">
           <input type="checkbox" checked={showZero} onChange={e => setShowZero(e.target.checked)} className="rounded border-slate-300" />
           Show zero-balance accounts
         </label>
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={() => printReport(printRootRef.current, `Profit and Loss — ${activePeriod.label}`)}
           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Printer size={12} /> Print
         </button>
         <button
           type="button"
-          disabled
-          title="Export — coming with the reports polish pass"
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+          onClick={() => {
+            // Section header → account rows → section subtotal, mirroring
+            // the on-screen layout so the numbers line up with what the
+            // user sees. Last two rows: Gross profit, Operating profit,
+            // Net profit (same triple shown at the bottom of the report).
+            const curLabel = periodHeader(period);
+            const priLabel = periodHeader(priorPeriod);
+            const rows: CsvRow[] = [['Section', 'Account', curLabel, priLabel]];
+            for (const s of sections) {
+              if (s.rows.length === 0) continue;
+              rows.push([s.title, '', '', '']);
+              for (const r of s.rows) {
+                rows.push([s.title, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
+              }
+              rows.push([s.title, `${s.title} total`, s.currentTotal.toFixed(2), s.priorTotal.toFixed(2)]);
+            }
+            rows.push(['', 'Gross profit', gross.current.toFixed(2), gross.prior.toFixed(2)]);
+            rows.push(['', 'Operating profit', operating.current.toFixed(2), operating.prior.toFixed(2)]);
+            rows.push(['', 'Net profit', net.current.toFixed(2), net.prior.toFixed(2)]);
+            exportRowsAsCsv(`Profit and Loss — ${activePeriod.label}.csv`, rows);
+          }}
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Download size={12} /> Export
         </button>
@@ -206,14 +338,14 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
           <p className="text-xs text-slate-500">No P&amp;L movement in the selected period. Adjust the dates or post some transactions.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm bk-print-area">
           <table className="w-full text-sm">
             <colgroup>
               <col />
               <col className="w-40" />
               <col className="w-40" />
             </colgroup>
-            <thead>
+            <thead className="bk-sticky-thead">
               <tr>
                 <th />
                 <th className="px-6 py-3 text-right">

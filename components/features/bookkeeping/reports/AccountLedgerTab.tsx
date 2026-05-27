@@ -148,8 +148,10 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
   const closingBalance = rows.length > 0 ? rows[rows.length - 1].balance : openingBalance;
   const periodMovement = +(closingBalance - openingBalance).toFixed(2);
 
-  const fmt = (n: number) => n === 0 ? '' : n.toFixed(2);
-  const fmtBalance = (n: number) => Math.abs(n) < 0.005 ? '0.00' : n.toFixed(2);
+  // Always render with thousands separators for parity with the other reports.
+  const localeFmt = (n: number) => n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt = (n: number) => n === 0 ? '' : localeFmt(n);
+  const fmtBalance = (n: number) => Math.abs(n) < 0.005 ? '0.00' : localeFmt(n);
 
   return (
     <div className="space-y-3">
@@ -164,7 +166,7 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
         <div className="text-xs text-gray-600 flex items-center gap-3 flex-wrap tabular-nums">
           <span>Opening <span className="font-semibold text-gray-900">{fmtBalance(openingBalance)}</span></span>
           <span className={`${periodMovement > 0 ? 'text-emerald-700' : periodMovement < 0 ? 'text-red-700' : ''}`}>
-            Movement <span className="font-semibold">{periodMovement > 0 ? '+' : ''}{periodMovement.toFixed(2)}</span>
+            Movement <span className="font-semibold">{periodMovement > 0 ? '+' : ''}{localeFmt(periodMovement)}</span>
           </span>
           <span>Closing <span className="font-semibold text-gray-900">{fmtBalance(closingBalance)}</span></span>
         </div>

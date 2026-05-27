@@ -9,9 +9,13 @@
  * shading every row.
  */
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { printReport } from './printReport';
+import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
 import { Loader2, Scale, Printer, Download } from 'lucide-react';
-import PeriodSelector, { type DateRange } from './PeriodSelector';
+import PeriodEmptyState from './PeriodEmptyState';
+import ReportPrintHeader from './ReportPrintHeader';
+import { useBookNavigation } from '../book/BookNavigationContext';
 
 interface AccountBalance {
   id: string;
@@ -44,22 +48,81 @@ function fmt(n: number): string {
   return Math.abs(n).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// VT-style TB ordering — P&L accounts first, then BS, then equity. Anything
+// not in this list (custom ledger, imported COA name we don't recognise) is
+// appended after, sorted by account_type then alphabetically.
+const LEDGER_ORDER = [
+  'Income',
+  'Cost of sales',
+  'Expenses',
+  'Taxation',
+  'FA - intangible',
+  'FA - land and buildings',
+  'FA - plant and machinery',
+  'FA - equipment, fixtures & fittings',
+  'FA - vehicles',
+  'Investments - fixed',
+  'Stocks',
+  'Customers',
+  'Debtors',
+  'Bank',
+  'Investments - current',
+  'Suppliers',
+  'Creditors',
+  'Deferred tax',
+  'Share capital',
+  'Share premium',
+  'Revaluation reserve',
+  'Profit and loss account',
+];
+const TYPE_ORDER: Record<string, number> = {
+  income: 0, expense: 1, asset: 2, liability: 3, equity: 4,
+};
+function ledgerSortKey(ledger: string, accountType: string): [number, number, string] {
+  const idx = LEDGER_ORDER.indexOf(ledger);
+  // First sort bucket: canonical-order ledgers (0..N) before unknowns
+  // (which all share the same first key of LEDGER_ORDER.length).
+  // Second bucket: account_type — pushes any unknown ledger near its peers
+  // (an "expense"-typed custom ledger appears near Cost of sales/Expenses).
+  // Third bucket: alphabetical fallback.
+  return [idx >= 0 ? idx : LEDGER_ORDER.length, TYPE_ORDER[accountType] ?? 99, ledger];
+}
+
 export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
-  const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
+  // Period now lives in BookNavigation — the header's year/period bar drives
+  // every report at once. The local PeriodSelector that used to live here
+  // is gone; the bar is the single source of truth.
+  const nav = useBookNavigation();
+  const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
+
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
   const [totals, setTotals] = useState({ debit_total: 0, credit_total: 0 });
   const [netProfit, setNetProfit] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showZero, setShowZero] = useState(false);
+  const printRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Don't fetch until the user has set up a year-end + selected a period.
+    if (!activePeriod.ready) { setAccounts([]); setTotals({ debit_total: 0, credit_total: 0 }); setNetProfit(0); return; }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
       try {
         const params = new URLSearchParams();
-        if (period.from) params.set('from', period.from);
-        if (period.to)   params.set('to',   period.to);
+        if (activePeriod.fromIso) params.set('from', activePeriod.fromIso);
+        if (activePeriod.toIso)   params.set('to',   activePeriod.toIso);
+        // Same as the P&L: drop year-end closing journals so P&L accounts
+        // show their NET activity for the year rather than zeroing out
+        // against the YET clearance. The BS already gets RE from YET via
+        // Profit-and-loss-account ledger, which isn't a P&L account, so
+        // excluding YET here doesn't break it.
+        params.set('exclude_types', 'YET');
+        // Same pattern as the P&L/BS — when the user ticks "Show zero-balance
+        // accounts" we have to ask the server for them, because the response
+        // hides zero-movement rows by default.
+        if (showZero) params.set('include_zero', 'true');
         const r = await fetch(`/api/bookkeeping/books/${bookId}/balances?${params}`);
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
@@ -78,36 +141,106 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, period.from, period.to]);
+    // showZero re-runs the fetch — server-side filter, can't be done client-only.
+  }, [bookId, activePeriod.ready, activePeriod.fromIso, activePeriod.toIso, showZero]);
 
-  // Group by ledger, preserving the server's name ordering within each group.
+  // Group by ledger AND sort ledgers in VT's canonical order — P&L first
+  // (Income, Cost of sales, Expenses, Taxation), then BS (FA, Customers,
+  // Debtors, Bank, Suppliers, Creditors), then equity (Share capital,
+  // Profit and loss account). Any imported ledger we don't recognise is
+  // appended at the end, grouped near peers of the same account_type.
+  // Computed unconditionally so React sees the same hooks every render —
+  // the empty-state early return below must come AFTER all hook calls.
   const grouped = useMemo(() => {
     const map = new Map<string, AccountBalance[]>();
     for (const a of accounts) {
-      if (a.debit_total === 0 && a.credit_total === 0) continue;
+      // Hide rows whose NET balance is zero (Dr == Cr) unless the user has
+      // explicitly asked to see them. The previous check used gross totals,
+      // which meant accounts whose movement cancels out (e.g. an invoice
+      // raised and then fully paid — Dr 512 / Cr 512) stayed visible even
+      // though VT's TB drops them.
+      const net = Math.abs(a.debit_total - a.credit_total);
+      if (!showZero && net < 0.005) continue;
       const key = a.ledger ?? '— Ungrouped';
       const arr = map.get(key) ?? [];
       arr.push(a);
       map.set(key, arr);
     }
-    return [...map.entries()];
-  }, [accounts]);
+    const entries = [...map.entries()];
+    entries.sort((a, b) => {
+      const ka = ledgerSortKey(a[0], a[1][0].account_type);
+      const kb = ledgerSortKey(b[0], b[1][0].account_type);
+      if (ka[0] !== kb[0]) return ka[0] - kb[0];
+      if (ka[1] !== kb[1]) return ka[1] - kb[1];
+      return ka[2].localeCompare(kb[2]);
+    });
+    return entries;
+  }, [accounts, showZero]);
+
+  // Recompute totals client-side from the NET balances we display, so the
+  // footer matches the actual rows (we ignore the server totals because
+  // they're gross Dr/Cr sums — different from what the rows show now).
+  const netTotals = useMemo(() => {
+    let dr = 0, cr = 0;
+    for (const [, items] of grouped) {
+      for (const a of items) {
+        const net = a.debit_total - a.credit_total;
+        if (net > 0) dr += net; else cr += -net;
+      }
+    }
+    return { dr: +dr.toFixed(2), cr: +cr.toFixed(2) };
+  }, [grouped]);
+
+  // Empty state when no year-end is set / no period chosen. Must come AFTER
+  // all hook calls so the hook count stays stable across renders.
+  if (!activePeriod.ready) return <PeriodEmptyState reportName="trial balance" />;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3 flex-wrap">
-        <PeriodSelector bookId={bookId} value={period} onChange={setPeriod} />
+    <div className="space-y-3 bk-print-root" ref={printRootRef}>
+      <ReportPrintHeader
+        bookId={bookId}
+        reportTitle="Trial Balance"
+        periodDescription={`At ${activePeriod.label}`}
+      />
+      <div className="flex items-center gap-3 flex-wrap print-hidden">
+        <h2 className="text-sm font-semibold text-slate-900 inline-flex items-center gap-2">
+          <Scale size={14} className="text-indigo-600" />
+          Trial Balance
+          <span className="text-xs font-normal text-slate-500">· {activePeriod.label}</span>
+        </h2>
+        <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 ml-auto">
+          <input type="checkbox" checked={showZero} onChange={e => setShowZero(e.target.checked)} className="rounded border-slate-300" />
+          Show zero-balance accounts
+        </label>
         <button
           type="button"
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 ml-auto"
+          onClick={() => printReport(printRootRef.current, `Trial Balance — ${activePeriod.label}`)}
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Printer size={12} /> Print
         </button>
         <button
           type="button"
-          disabled
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+          onClick={() => {
+            // Header + one row per account, with a ledger column so the
+            // grouping survives in Excel. Final row carries the column
+            // totals so the file is self-contained.
+            const rows: CsvRow[] = [['Ledger', 'Account', 'Debit', 'Credit']];
+            for (const [ledger, items] of grouped) {
+              for (const a of items) {
+                const net = a.debit_total - a.credit_total;
+                rows.push([
+                  ledger,
+                  a.name,
+                  net > 0.005 ? net.toFixed(2) : '',
+                  net < -0.005 ? Math.abs(net).toFixed(2) : '',
+                ]);
+              }
+            }
+            rows.push(['', 'Total', netTotals.dr.toFixed(2), netTotals.cr.toFixed(2)]);
+            exportRowsAsCsv(`Trial Balance — ${activePeriod.label}.csv`, rows);
+          }}
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Download size={12} /> Export
         </button>
@@ -130,14 +263,14 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
           <p className="text-xs text-slate-500">No movement in the selected period — adjust the dates above, or post some transactions.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm bk-print-area">
           <table className="w-full text-sm">
             <colgroup>
               <col />
               <col className="w-36" />
               <col className="w-36" />
             </colgroup>
-            <thead>
+            <thead className="bk-sticky-thead">
               <tr>
                 <th />
                 <th className="px-6 py-3 text-right">
@@ -164,22 +297,30 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
                         </span>
                       </td>
                     </tr>
-                    {/* Account rows */}
-                    {items.map(a => (
-                      <tr key={a.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-1 pl-10">
-                          <button
-                            type="button"
-                            onClick={() => onOpenAccount({ id: a.id, name: a.name, ledger: a.ledger })}
-                            className="text-indigo-700 hover:underline text-left"
-                          >
-                            {a.name}
-                          </button>
-                        </td>
-                        <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(a.debit_total)}</td>
-                        <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(a.credit_total)}</td>
-                      </tr>
-                    ))}
+                    {/* Account rows — show NET balance on the natural side
+                        (Dr if balance > 0, Cr if < 0), matching VT's TB.
+                        Showing both gross sums made the year-end clearance
+                        (YET) look like everything netted to zero. */}
+                    {items.map(a => {
+                      const net = a.debit_total - a.credit_total;
+                      const showDr = net > 0.005 ? Math.abs(net) : 0;
+                      const showCr = net < -0.005 ? Math.abs(net) : 0;
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-50">
+                          <td className="px-6 py-1 pl-10">
+                            <button
+                              type="button"
+                              onClick={() => onOpenAccount({ id: a.id, name: a.name, ledger: a.ledger })}
+                              className="text-indigo-700 hover:underline text-left"
+                            >
+                              {a.name}
+                            </button>
+                          </td>
+                          <td className="px-6 py-1 text-right tabular-nums text-slate-700">{showDr ? fmt(showDr) : ''}</td>
+                          <td className="px-6 py-1 text-right tabular-nums text-slate-700">{showCr ? fmt(showCr) : ''}</td>
+                        </tr>
+                      );
+                    })}
                   </Fragment>
                 );
               })}
@@ -187,8 +328,8 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
             <tfoot>
               <tr>
                 <td className="px-6 py-2 text-right text-slate-700 font-medium">Total</td>
-                <td className="px-6 py-2 text-right tabular-nums font-semibold text-slate-900 border-t border-slate-400">{totals.debit_total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td className="px-6 py-2 text-right tabular-nums font-semibold text-slate-900 border-t border-slate-400">{totals.credit_total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="px-6 py-2 text-right tabular-nums font-semibold text-slate-900 border-t border-slate-400">{netTotals.dr.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td className="px-6 py-2 text-right tabular-nums font-semibold text-slate-900 border-t border-slate-400">{netTotals.cr.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
               </tr>
               <tr>
                 <td className="px-6 py-2 text-right text-slate-700 font-medium border-t-2 border-slate-300">Net {netProfit >= 0 ? 'profit' : 'loss'} for the period</td>

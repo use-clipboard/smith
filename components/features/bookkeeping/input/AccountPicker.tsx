@@ -138,6 +138,8 @@ export default function AccountPicker({
     setLoading(true);
     const params = new URLSearchParams();
     if (ledgerFilter) params.set('ledger', ledgerFilter);
+    // Hide accounts marked inactive — they're locked for new entries.
+    params.set('pickable_only', 'true');
     fetch(`/api/bookkeeping/books/${bookId}/accounts?${params}`)
       .then(r => r.ok ? r.json() : Promise.reject(r))
       .then(d => {
@@ -188,6 +190,15 @@ export default function AccountPicker({
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
 
+  // Pull focus into the input on the render after a button→input transition,
+  // so tabbing into a Picker-with-a-value lands the cursor in the typeahead
+  // (otherwise focus is lost when the button unmounts mid-state-change).
+  useEffect(() => {
+    if (open && inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [open]);
+
   // ── Autofocus / open on mount ──────────────────────────────────────────────
   useEffect(() => {
     if (autoFocus) {
@@ -207,7 +218,9 @@ export default function AccountPicker({
     onChange(a);
     setQuery('');
     setOpen(false);
-    inputRef.current?.blur();
+    // Intentionally NOT blurring — see VatTreatmentPicker for the rationale
+    // (blur sends focus to <body> and the modal's focus trap then yanks it
+    // to the first focusable, instead of letting Tab advance naturally).
   }, [onChange]);
 
   // ── Open / cancel the inline create form ──────────────────────────────────
@@ -286,11 +299,14 @@ export default function AccountPicker({
         handlePick(flat[highlight]);
       }
     } else if (e.key === 'Tab') {
-      // Auto-pick when the query has narrowed to a single option — VT/Excel
-      // muscle memory: type a few letters, tab to commit and move on. We
-      // intentionally don't preventDefault so Tab still advances focus.
-      if (open && flat.length === 1 && query.trim() !== '') {
-        handlePick(flat[0]);
+      // Commit but DEFER the close so the input stays mounted long enough
+      // for Tab's default focus-advance. Closing synchronously would unmount
+      // the input mid-event, dropping focus to <body>; the browser then
+      // walks the whole document from the top and lands on the SMITH logo.
+      if (open && flat[highlight]) {
+        onChange(flat[highlight]);
+        setQuery('');
+        setTimeout(() => setOpen(false), 0);
       }
     } else if (e.key === 'Escape') {
       setOpen(false);
@@ -307,6 +323,22 @@ export default function AccountPicker({
         <button
           type="button"
           onClick={() => { setOpen(true); setQuery(''); setTimeout(() => inputRef.current?.focus(), 0); }}
+          onFocus={() => { setOpen(true); setQuery(''); setHighlight(0); setTimeout(() => inputRef.current?.focus(), 0); }}
+          onKeyDown={e => {
+            // Typeahead-from-button — see LedgerPicker for rationale.
+            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+              e.preventDefault();
+              setQuery(e.key);
+              setHighlight(0);
+              setOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+              e.preventDefault();
+              setQuery('');
+              setOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            }
+          }}
           disabled={disabled}
           className="w-full text-left text-sm px-2.5 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -335,7 +367,7 @@ export default function AccountPicker({
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, maxHeight: 288 }}
-          className="z-[1200] bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto"
+          className="z-[1500] bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto"
         >
           {loading ? (
             <div className="px-3 py-3 text-xs text-gray-500 flex items-center gap-2">

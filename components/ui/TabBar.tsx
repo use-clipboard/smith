@@ -16,13 +16,18 @@ export default function TabBar() {
   function handleTabClick(tabId: string, route: string) {
     setActiveTabId(tabId);
     resetIfDone(route);
+    // Prefer the tab's last-known deep URL so coming back to a tool returns
+    // to where you left off (e.g. the specific book in /bookkeeping/<id>).
+    // Fall back to the canonical tool route for tabs we've never tracked.
+    const tab = tabs.find(t => t.id === tabId);
+    const target = tab?.currentRoute ?? route;
     if (TOOL_ROUTES.has(route)) {
       // Tool tab — TabPanels handles rendering. Just update the URL bar.
-      window.history.replaceState(null, '', route);
+      window.history.replaceState(null, '', target);
     } else {
       // Workspace / settings / help — these are rendered through Next.js {children}.
       // `replaceState` would leave Next.js unaware so the previous page would linger.
-      router.push(route);
+      router.push(target);
     }
   }
 
@@ -43,7 +48,7 @@ export default function TabBar() {
   }
 
   return (
-    <div className="flex items-end gap-0.5 px-4 border-b border-[var(--border)] bg-[var(--bg-topbar)] overflow-x-auto scrollbar-thin shrink-0">
+    <div className="app-tab-bar flex items-end gap-0.5 px-4 border-b border-[var(--border)] bg-[var(--bg-topbar)] overflow-x-auto scrollbar-thin shrink-0">
       {/* Dashboard tab — always first, permanent, uses Next.js Link */}
       <Link
         href="/dashboard"

@@ -20,9 +20,12 @@ import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
+import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
 import { TxnRefLink } from '../book/BookNavigationContext';
 import type { BookAccountRef, Transaction, TransactionType } from '@/types/bookkeeping';
 import { TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
+import { checkRecLock, type RecLockHit, type RecLockProbe } from '@/lib/bookkeeping/checkRecLock';
+import RecLockWarningModal from '../ledger/RecLockWarningModal';
 
 interface Props {
   bookId: string;
@@ -30,28 +33,33 @@ interface Props {
    *  symmetric with UniversalInputSheet so the input tab can swap components
    *  without prop changes. */
   vatRegistered: boolean;
-  /** 'JRN' for plain journals, 'RJN' for reversing journals. */
-  type: 'JRN' | 'RJN';
+  /** Journal-family type. 'JRN' = plain, 'RJN' = reversing, 'YET' = year-end
+   *  closing journal, 'DVT' = deferred VAT transfer (import-VAT control-account
+   *  movement). All four share the multi-leg Dr/Cr grid UI — only RJN adds a
+   *  reversal date — but each has its own ref counter for audit. */
+  type: 'JRN' | 'RJN' | 'YET' | 'DVT';
   /** Type selector — clicking a non-journal button switches to UniversalInputSheet. */
   onTypeChange: (t: TransactionType) => void;
   onPosted?: (txn: Transaction) => void;
 }
 
 // Same order as UniversalInputSheet so the muscle memory is preserved.
-const TYPE_ORDER: TransactionType[] = ['PAY','CHQ','REC','TRF','SIN','SCR','PIN','PCR','JRN','RJN'];
+const TYPE_ORDER: TransactionType[] = ['PAY','CHQ','REC','TRF','SIN','SCR','PIN','PCR','JRN','RJN','YET','DVT','WOF','WBK'];
 
 // Per-family colour tints — match the New transaction popout's icon tiles.
-const FAMILY_PILL_CLASSES: Record<'bank'|'sales'|'purchases'|'journals', { active: string; inactive: string }> = {
-  bank:      { active: 'bg-emerald-600 text-white', inactive: 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' },
-  sales:     { active: 'bg-blue-600 text-white',    inactive: 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'      },
-  purchases: { active: 'bg-amber-600 text-white',   inactive: 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'    },
-  journals:  { active: 'bg-violet-600 text-white',  inactive: 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'  },
+const FAMILY_PILL_CLASSES: Record<'bank'|'sales'|'purchases'|'journals'|'adjustments', { active: string; inactive: string }> = {
+  bank:        { active: 'bg-emerald-600 text-white', inactive: 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' },
+  sales:       { active: 'bg-blue-600 text-white',    inactive: 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'      },
+  purchases:   { active: 'bg-amber-600 text-white',   inactive: 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'    },
+  journals:    { active: 'bg-violet-600 text-white',  inactive: 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'  },
+  adjustments: { active: 'bg-rose-600 text-white',    inactive: 'text-slate-600 hover:bg-rose-50 hover:text-rose-700'      },
 };
 function familyOf(t: TransactionType): keyof typeof FAMILY_PILL_CLASSES {
   if (t === 'PAY' || t === 'CHQ' || t === 'REC' || t === 'TRF') return 'bank';
   if (t === 'SIN' || t === 'SCR') return 'sales';
   if (t === 'PIN' || t === 'PCR') return 'purchases';
-  return 'journals'; // JRN, RJN
+  if (t === 'WOF' || t === 'WBK') return 'adjustments';
+  return 'journals'; // JRN, RJN, YET, DVT
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,6 +113,14 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
   const [lines, setLines] = useState<Line[]>(() => [makeBlankLine(), makeBlankLine()]);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
+  /** Rec-lock warning state. When set, handlePost is paused on the modal
+   *  and doPost runs on confirm. */
+  const [recLockHits, setRecLockHits] = useState<RecLockHit[]>([]);
+  const [pendingPost, setPendingPost] = useState<null | {
+    isoDate: string;
+    isoReversesOn: string | null;
+    nonBlankLines: Line[];
+  }>(null);
 
   const [recent, setRecent] = useState<Transaction[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
@@ -198,10 +214,41 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
       if (dr === 0 && cr === 0) { setError('Every line needs a debit or a credit.'); return; }
     }
     if (!isBalanced) {
-      setError(`Out of balance: Dr ${totals.dr.toFixed(2)} vs Cr ${totals.cr.toFixed(2)} (diff ${totals.diff.toFixed(2)}).`);
+      setError(`Out of balance: Dr ${formatMoneyAbs(totals.dr)} vs Cr ${formatMoneyAbs(totals.cr)} (diff ${formatMoneyAbs(totals.diff)}).`);
       return;
     }
 
+    // Rec-lock probe — any line that posts to a bank-ledger account on
+    // a date that falls inside a reconciled rec triggers the warning
+    // lightbox. JRNs typically don't touch bank, but YEs / corrections
+    // sometimes do; cheap to check either way.
+    const probes: RecLockProbe[] = [];
+    for (const l of nonBlankLines) {
+      if (l.account?.ledger === 'Bank') {
+        probes.push({
+          accountId: l.account.id,
+          date: isoDate,
+          accountName: `${l.account.ledger}: ${l.account.name}`,
+        });
+      }
+    }
+    if (probes.length > 0) {
+      const hits = await checkRecLock(bookId, probes);
+      if (hits.length > 0) {
+        setRecLockHits(hits);
+        setPendingPost({ isoDate, isoReversesOn, nonBlankLines });
+        return;
+      }
+    }
+
+    await doPost({ isoDate, isoReversesOn, nonBlankLines });
+  }
+
+  async function doPost({ isoDate, isoReversesOn, nonBlankLines }: {
+    isoDate: string;
+    isoReversesOn: string | null;
+    nonBlankLines: Line[];
+  }) {
     setPosting(true);
     try {
       const splits = nonBlankLines.map(l => ({
@@ -268,8 +315,12 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
               ? 'Journal entry'
               : t === 'RJN'
               ? 'Reversing journal — auto-reverses on a chosen date'
+              : t === 'YET'
+              ? 'Year-end transaction — closing journal posted on the FY end date'
+              : t === 'DVT'
+              ? 'Deferred VAT transfer — moves import VAT between control accounts'
               : TRANSACTION_TYPE_CONFIG[t as keyof typeof TRANSACTION_TYPE_CONFIG]?.description ?? '';
-            const showDivider = i > 0 && (t === 'SIN' || t === 'PIN' || t === 'JRN');
+            const showDivider = i > 0 && (t === 'SIN' || t === 'PIN' || t === 'JRN' || t === 'WOF');
             return (
               <span key={t} className="inline-flex items-center">
                 {showDivider && <span aria-hidden className="w-px h-5 bg-slate-200" />}
@@ -290,6 +341,10 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
         <span className="text-xs text-slate-500">
           {type === 'RJN'
             ? 'Reversing journal — posts the original, then auto-posts a reversal on the chosen date.'
+            : type === 'YET'
+            ? 'Year-end transaction — multi-line Dr/Cr table, must balance. Use for closing journals and FY adjustments.'
+            : type === 'DVT'
+            ? 'Deferred VAT transfer — multi-line Dr/Cr table, must balance. Used to move VAT-on-imports between control accounts.'
             : 'Journal entry — multi-line Dr/Cr table, must balance.'}
         </span>
       </div>
@@ -486,8 +541,8 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
               <td className="px-2 py-2 text-right text-[10px] uppercase tracking-wide font-semibold text-slate-600 border-r border-slate-200">
                 Totals
               </td>
-              <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{totals.dr.toFixed(2)}</td>
-              <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{totals.cr.toFixed(2)}</td>
+              <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.dr)}</td>
+              <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.cr)}</td>
               <td colSpan={3} />
             </tr>
             <tr className="border-t border-slate-200">
@@ -501,7 +556,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
                   ? 'text-slate-400'
                   : 'text-rose-700'
               }`}>
-                {totals.diff.toFixed(2)}
+                {formatMoneyAbs(totals.diff)}
               </td>
               <td colSpan={3} />
             </tr>
@@ -562,7 +617,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
                       <td className="px-2 py-1.5 text-gray-700 tabular-nums">{formatDateUk(t.date)}</td>
                       <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={t} className="text-xs" /></td>
                       <td className="px-2 py-1.5 text-gray-900">{t.details ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(t.total).toFixed(2)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{formatMoneyAbs(Number(t.total))}</td>
                       <td className="px-2 py-1.5 text-gray-500">{t.splits?.length ?? 0}</td>
                       <td className="px-2 py-1.5 text-right">
                         {rowActions.renderActions(t)}
@@ -576,6 +631,23 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
         )}
       </div>
       {rowActions.menus}
+
+      {/* Rec-lock warning lightbox — only mounted when handlePost detects
+          a JRN line that posts to a bank account inside a reconciled
+          period. Confirm runs doPost on the cached payload; Cancel
+          discards the pending state. */}
+      {recLockHits.length > 0 && pendingPost && (
+        <RecLockWarningModal
+          hits={recLockHits}
+          onCancel={() => { setRecLockHits([]); setPendingPost(null); }}
+          onConfirm={() => {
+            const p = pendingPost;
+            setRecLockHits([]);
+            setPendingPost(null);
+            void doPost(p);
+          }}
+        />
+      )}
     </div>
   );
 }

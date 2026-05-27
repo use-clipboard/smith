@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { seedBookCoa } from '@/lib/bookkeeping/seedCoa';
+import { parseYearEndMd, enumerateFys } from '@/lib/bookkeeping/financialYears';
 import type { BookTemplateType } from '@/types/bookkeeping';
 
 const VAT_SCHEMES = ['standard','flat_rate','cash','annual','margin','partial_exemption'] as const;
@@ -17,11 +18,23 @@ const PatchBody = z.object({
   admin_locked: z.boolean().optional(),
   archived: z.boolean().optional(),
   period_lock_date: z.string().nullable().optional(),
+  /** MM-DD year-end pattern. When set/changed, the API generates missing FY
+   *  rows in `bookkeeping_financial_years` (no-op once they're already
+   *  there). The first FY starts at `first_period_start` (if already set)
+   *  or at the body's `first_period_start` value, or — as a last resort —
+   *  the earliest existing transaction date / today. */
+  year_end_md: z.string().regex(/^\d{2}-\d{2}$/, 'year_end_md must be MM-DD').nullable().optional(),
+  first_period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  retained_earnings_account_id: z.string().uuid().nullable().optional(),
+  // Currently-selected FY — persisted on the book so the whole team sees the
+  // same default until someone changes it. Driven by BookYearPeriodBar.
+  current_fy_id: z.string().uuid().nullable().optional(),
 });
 
 const BOOK_SELECT = `
   id, firm_id, client_id, name, template_type, base_currency,
   vat_registered, vat_scheme, vat_number, period_lock_date, vat_lock_date,
+  year_end_md, first_period_start, retained_earnings_account_id, current_fy_id,
   admin_locked, archived, created_by, created_at, updated_at,
   client:clients(id, name, client_ref),
   creator:users!bookkeeping_books_created_by_fkey(id, full_name, email)
@@ -60,11 +73,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // (also need vat_registered + template_type for the back-fill check below)
   const { data: existing, error: loadErr } = await supabase
     .from('bookkeeping_books')
-    .select('id, firm_id, admin_locked, vat_registered, template_type')
+    .select('id, firm_id, admin_locked, vat_registered, template_type, year_end_md, first_period_start')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
   if (loadErr || !existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  // Year-end is locked once any FY has been closed — that audit chain is
+  // immutable and changing the pattern under it would silently break old
+  // year boundaries.
+  if (body.year_end_md !== undefined && body.year_end_md !== existing.year_end_md) {
+    const { data: closedFy } = await supabase
+      .from('bookkeeping_financial_years')
+      .select('id')
+      .eq('book_id', params.id)
+      .eq('status', 'closed')
+      .limit(1)
+      .maybeSingle();
+    if (closedFy) {
+      return NextResponse.json({
+        error: 'year_end_locked',
+        message: 'Year-end can’t be changed once a financial year has been closed.',
+      }, { status: 409 });
+    }
+  }
 
   const isAdmin = ctx.userRole === 'admin';
   if ((body.admin_locked !== undefined || body.period_lock_date !== undefined) && !isAdmin) {
@@ -85,6 +117,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.admin_locked !== undefined)     patch.admin_locked = body.admin_locked;
   if (body.archived !== undefined)         patch.archived = body.archived;
   if (body.period_lock_date !== undefined) patch.period_lock_date = body.period_lock_date;
+  if (body.year_end_md !== undefined)      patch.year_end_md = body.year_end_md;
+  if (body.first_period_start !== undefined) patch.first_period_start = body.first_period_start;
+  if (body.retained_earnings_account_id !== undefined) patch.retained_earnings_account_id = body.retained_earnings_account_id;
+  if (body.current_fy_id !== undefined) patch.current_fy_id = body.current_fy_id;
 
   // Normalise: when VAT is being turned off, clear scheme + number
   if (patch.vat_registered === false) {
@@ -120,6 +156,67 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     action,
     diff: body,
   });
+
+  // ── Generate financial-year rows when the year-end is set or changed ──
+  // Only runs when there are no closed FYs (guarded earlier). The
+  // first-period start is derived in priority order:
+  //   1. The body's explicit `first_period_start` (if the user picked one)
+  //   2. The book's existing `first_period_start` column
+  //   3. The earliest existing transaction date
+  //   4. Today's date (fresh book)
+  if (body.year_end_md !== undefined && body.year_end_md !== null) {
+    const pattern = parseYearEndMd(body.year_end_md);
+    if (pattern) {
+      // Wipe any pre-existing open FY rows for this book so we don't double
+      // up after a year-end change. Closed FYs already block this codepath.
+      await supabase
+        .from('bookkeeping_financial_years')
+        .delete()
+        .eq('book_id', params.id)
+        .eq('status', 'open');
+
+      // Resolve first-period start.
+      let firstStart =
+        (body.first_period_start as string | null | undefined) ||
+        (existing.first_period_start as string | null) ||
+        null;
+      if (!firstStart) {
+        const { data: firstTxn } = await supabase
+          .from('bookkeeping_transactions')
+          .select('date')
+          .eq('book_id', params.id)
+          .order('date', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        firstStart = firstTxn?.date ?? new Date().toISOString().slice(0, 10);
+      }
+
+      // Stamp the first-period anchor onto the book so future generations
+      // are deterministic.
+      await supabase
+        .from('bookkeeping_books')
+        .update({ first_period_start: firstStart })
+        .eq('id', params.id);
+
+      // Generate FYs through one year past today (so forward-looking budget
+      // views have something to bind against).
+      const oneYearForward = new Date();
+      oneYearForward.setUTCFullYear(oneYearForward.getUTCFullYear() + 1);
+      const throughIso = oneYearForward.toISOString().slice(0, 10);
+
+      const desired = enumerateFys(pattern, firstStart, throughIso);
+      if (desired.length > 0) {
+        await supabase
+          .from('bookkeeping_financial_years')
+          .insert(desired.map(r => ({
+            book_id: params.id,
+            start_date: r.start,
+            end_date:   r.end,
+            status: 'open' as const,
+          })));
+      }
+    }
+  }
 
   // VAT back-fill: when a book is flipped from non-VAT to VAT-registered,
   // seed the missing VAT accounts. seedBookCoa is idempotent — it only inserts

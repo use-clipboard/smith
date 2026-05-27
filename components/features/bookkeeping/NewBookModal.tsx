@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { X, Loader2, BookCopy, ChevronRight, ChevronDown, ListTree } from 'lucide-react';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
+import DateInput, { fromIso, toIso } from './input/DateInput';
 import {
   BOOK_TEMPLATE_OPTIONS, VAT_SCHEME_OPTIONS, BASE_CURRENCY_OPTIONS,
   defaultTemplateFromBusinessType,
@@ -26,6 +27,66 @@ interface ClientDetail {
   // so we only use vat_submit_type and Yearly frequency as soft hints below.
   vat_scheme: 'Monthly' | 'Quarterly' | 'Yearly' | null;
   vat_submit_type: 'Cash' | 'Accrual' | null;
+  /** Free-text year-end on the client record (e.g. "31 March", "31/03",
+   *  "March", "31-03"). We do a best-effort parse to suggest a MM-DD
+   *  default for the book; the user always confirms. */
+  year_end: string | null;
+}
+
+/** Best-effort parse of the client.year_end free-text field into MM-DD.
+ *  Returns null when nothing sensible can be extracted. */
+function parseClientYearEnd(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+
+  // Already canonical (MM-DD)
+  const md = /^(\d{2})-(\d{2})$/.exec(s);
+  if (md) return s;
+
+  // dd/mm or dd/mm/yyyy or dd-mm or dd-mm-yyyy
+  const slash = /^(\d{1,2})[\/\-](\d{1,2})(?:[\/\-]\d{2,4})?$/.exec(s);
+  if (slash) {
+    const dd = String(parseInt(slash[1], 10)).padStart(2, '0');
+    const mm = String(parseInt(slash[2], 10)).padStart(2, '0');
+    if (+mm >= 1 && +mm <= 12 && +dd >= 1 && +dd <= 31) return `${mm}-${dd}`;
+  }
+
+  // "31 March", "31st March", "31 Mar 2025"
+  const named = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)/.exec(s);
+  if (named) {
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mIndex = months.findIndex(m => named[2].toLowerCase().startsWith(m));
+    if (mIndex !== -1) {
+      const dd = String(parseInt(named[1], 10)).padStart(2, '0');
+      const mm = String(mIndex + 1).padStart(2, '0');
+      return `${mm}-${dd}`;
+    }
+  }
+
+  // Just a month name ("March") — assume last day of that month
+  const monthOnly = /^([A-Za-z]+)$/.exec(s);
+  if (monthOnly) {
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mIndex = months.findIndex(m => monthOnly[1].toLowerCase().startsWith(m));
+    if (mIndex !== -1) {
+      // Last day of the month — leap-year-agnostic; we pick the 28th for Feb.
+      const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      const dd = String(monthDays[mIndex]).padStart(2, '0');
+      const mm = String(mIndex + 1).padStart(2, '0');
+      return `${mm}-${dd}`;
+    }
+  }
+
+  return null;
+}
+
+/** Auto-format DD-MM as the user types: keep only digits, insert the hyphen
+ *  after the second digit. Same behaviour as Book Settings. */
+function autoFormatDm(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
 }
 
 function inferVatSchemeFromClient(c: Pick<ClientDetail, 'vat_scheme' | 'vat_submit_type'>): VatScheme {
@@ -46,6 +107,15 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
   const [vatRegistered, setVatRegistered] = useState(false);
   const [vatScheme, setVatScheme]         = useState<VatScheme>('standard');
   const [vatNumber, setVatNumber]         = useState('');
+
+  // Year-end pattern shown in DD-MM (UK convention). Internally converted
+  // to MM-DD before sending to the API since that's what the DB column
+  // stores. Pre-filled from the client record when we can parse it.
+  const [yearEndDm, setYearEndDm]         = useState('');
+  // First-period start as the user-typed dd/mm/yyyy string. Holding the
+  // raw string here means half-formed input ('01/0…') stays in the input
+  // box. Converted to ISO when we send to the API.
+  const [firstPeriodStartUk, setFirstPeriodStartUk] = useState<string>(() => fromIso(new Date().toISOString().slice(0, 10)));
 
   // Track whether the user has manually edited the book name. Once they have,
   // we stop auto-rewriting it when the client/template changes.
@@ -87,6 +157,13 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
           setVatRegistered(true);
           setVatNumber(c.vat_number);
           setVatScheme(inferVatSchemeFromClient(c));
+        }
+        // Soft-parse the client's free-text year_end. parseClientYearEnd
+        // returns MM-DD; flip to DD-MM for the input.
+        const parsedYeMd = parseClientYearEnd(c.year_end);
+        if (parsedYeMd) {
+          const [mm, dd] = parsedYeMd.split('-');
+          setYearEndDm(`${dd}-${mm}`);
         }
       } catch { /* ignore */ }
     })();
@@ -132,6 +209,14 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
           vat_registered: vatRegistered,
           vat_scheme: vatRegistered ? vatScheme : null,
           vat_number: vatRegistered ? (vatNumber.trim() || null) : null,
+          // Flip DD-MM (display) → MM-DD (DB) at the API boundary.
+          year_end_md: (() => {
+            const m = /^(\d{2})-(\d{2})$/.exec(yearEndDm.trim());
+            return m ? `${m[2]}-${m[1]}` : null;
+          })(),
+          // Convert dd/mm/yyyy → ISO for the API. Falls back to null if
+          // the user didn't supply a year-end or didn't enter a valid date.
+          first_period_start: yearEndDm.trim() ? (toIso(firstPeriodStartUk) || null) : null,
         }),
       });
       if (!r.ok) {
@@ -267,6 +352,44 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
                 />
                 Yes — register VAT details below
               </label>
+            </div>
+          </div>
+
+          {/* Year-end pattern + first-period anchor. Optional — books work
+              fine without one, but until set the period management features
+              (year-end close, FY-aware reports) stay dormant. */}
+          <div className="grid grid-cols-2 gap-4 p-3 rounded-lg bg-indigo-50/40 border border-indigo-100">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                Year-end <span className="text-[10px] font-normal text-gray-400 normal-case">(optional, DD-MM)</span>
+              </label>
+              <input
+                type="text"
+                value={yearEndDm}
+                onChange={e => setYearEndDm(autoFormatDm(e.target.value))}
+                placeholder="31-03"
+                inputMode="numeric"
+                pattern="\d{2}-\d{2}"
+                maxLength={5}
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                e.g. <code>31-03</code> for 31 March. Drives financial years + year-end close.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                First period start
+              </label>
+              <DateInput
+                value={firstPeriodStartUk}
+                onChange={setFirstPeriodStartUk}
+                disabled={!yearEndDm.trim()}
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                When the very first FY starts. Can be a short year.
+              </p>
             </div>
           </div>
 

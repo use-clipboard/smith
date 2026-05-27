@@ -12,6 +12,12 @@ import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 //   ?include_zero=true      — opt in to accounts with zero net balance
 //                             (default: exclude unless they have non-zero
 //                              debit OR credit totals)
+//   ?exclude_types=YET,...  — comma-separated transaction types to leave out
+//                             of the aggregation. The P&L passes YET so that
+//                             year-end closing journals don't zero out the
+//                             income/expense accounts for the period. The
+//                             Balance Sheet does NOT pass it, because YET is
+//                             exactly what populates Retained Earnings.
 //
 // Response:
 //   {
@@ -39,6 +45,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
   const includeZero = url.searchParams.get('include_zero') === 'true';
+  const excludeTypes = (url.searchParams.get('exclude_types') ?? '')
+    .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
 
   if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
     return NextResponse.json({ error: 'Invalid from date — use YYYY-MM-DD' }, { status: 400 });
@@ -65,7 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     credit: number;
     account_id: string;
     account: { id: string; name: string; ledger: string | null; account_type: string; archived: boolean } | null;
-    transaction: { date: string } | null;
+    transaction: { date: string; type: string } | null;
   };
   const rows: SplitRow[] = [];
   let pageStart = 0;
@@ -75,7 +83,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .select(`
         debit, credit, account_id,
         account:bookkeeping_accounts!inner(id, name, ledger, account_type, archived, book_id),
-        transaction:bookkeeping_transactions!inner(date, book_id)
+        transaction:bookkeeping_transactions!inner(date, type, book_id)
       `)
       .eq('account.book_id', params.id)
       .eq('transaction.book_id', params.id)
@@ -83,6 +91,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     if (from) q = q.gte('transaction.date', from);
     if (to)   q = q.lte('transaction.date', to);
+    // Exclude e.g. YET (year-end closing) for the P&L, so it shows the
+    // period's gross activity rather than netting to zero.
+    if (excludeTypes.length > 0) q = q.not('transaction.type', 'in', `(${excludeTypes.join(',')})`);
 
     const { data, error } = await q;
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

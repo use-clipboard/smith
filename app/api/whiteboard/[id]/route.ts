@@ -3,11 +3,24 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 
+// ── /api/whiteboard/[id] ────────────────────────────────────────────────────
+// PATCH  → update own note (content / colour / position / rotation).
+// DELETE → remove own note.
+//
+// RLS already restricts both to the note's owner; we layer an explicit
+// user_id check as belt-and-braces.
+
 const PatchSchema = z.object({
-  content: z.string().min(1).max(200),
+  content: z.string().min(1).max(500).optional(),
+  color: z.string().optional(),
+  pos_x: z.number().min(0).max(100).optional(),
+  pos_y: z.number().min(0).max(100).optional(),
+  rotation: z.number().min(-15).max(15).optional(),
 });
 
-// PATCH /api/whiteboard/[id] — edit own note content
+const SELECT = 'id, content, color, author_name, created_at, user_id, kind, pos_x, pos_y, rotation';
+
+// PATCH /api/whiteboard/[id] — edit own note (content/colour/position)
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -25,13 +38,20 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
   }
 
+  const patch: Record<string, unknown> = {};
+  if (parsed.data.content  !== undefined) patch.content  = parsed.data.content;
+  if (parsed.data.color    !== undefined) patch.color    = parsed.data.color;
+  if (parsed.data.pos_x    !== undefined) patch.pos_x    = parsed.data.pos_x;
+  if (parsed.data.pos_y    !== undefined) patch.pos_y    = parsed.data.pos_y;
+  if (parsed.data.rotation !== undefined) patch.rotation = parsed.data.rotation;
+
   const supabase = createClient();
   const { data, error } = await supabase
     .from('whiteboard_messages')
-    .update({ content: parsed.data.content })
+    .update(patch)
     .eq('id', params.id)
-    .eq('user_id', ctx.userId) // belt-and-braces on top of RLS
-    .select()
+    .eq('user_id', ctx.userId)
+    .select(SELECT)
     .single();
 
   if (error) {
@@ -57,7 +77,7 @@ export async function DELETE(
     .from('whiteboard_messages')
     .delete()
     .eq('id', params.id)
-    .eq('user_id', ctx.userId); // belt-and-braces on top of RLS
+    .eq('user_id', ctx.userId);
 
   if (error) {
     console.error('DELETE /api/whiteboard/[id]', error);

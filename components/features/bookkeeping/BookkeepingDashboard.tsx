@@ -37,8 +37,20 @@ function formatDate(s: string | null): string {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export default function BookkeepingDashboard() {
+interface BookkeepingDashboardProps {
+  /** Optional callback invoked when the user opens a book. If provided, the
+   *  dashboard delegates navigation to the parent (used by the always-mounted
+   *  BookkeepingTool wrapper to keep state alive). Falls back to a regular
+   *  Next.js route push when omitted (direct URL access keeps working). */
+  onOpenBook?: (bookId: string) => void;
+}
+
+export default function BookkeepingDashboard({ onOpenBook }: BookkeepingDashboardProps = {}) {
   const router = useRouter();
+  const openBook = (bookId: string) => {
+    if (onOpenBook) onOpenBook(bookId);
+    else router.push(`/bookkeeping/${bookId}`);
+  };
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('all');
@@ -62,7 +74,7 @@ export default function BookkeepingDashboard() {
   function handleBookCreated(book: Book) {
     setModalOpen(false);
     // Drop the user straight into the new book — Phase 1 stub page for now
-    router.push(`/bookkeeping/${book.id}`);
+    openBook(book.id);
   }
 
   // ── Derived list ────────────────────────────────────────────────────────────
@@ -211,7 +223,7 @@ export default function BookkeepingDashboard() {
               {filtered.map(b => (
                 <tr
                   key={b.id}
-                  onClick={() => router.push(`/bookkeeping/${b.id}`)}
+                  onClick={() => openBook(b.id)}
                   className="border-t border-gray-100 hover:bg-indigo-50/50 cursor-pointer transition-colors group"
                 >
                   <td className="px-4 py-2.5">

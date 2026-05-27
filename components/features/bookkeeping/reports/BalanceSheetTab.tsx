@@ -12,9 +12,14 @@
  *   • As at <same date one year earlier>
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { printReport } from './printReport';
+import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
 import { Loader2, Printer, Download, Layers, AlertTriangle } from 'lucide-react';
-import PeriodSelector, { type DateRange } from './PeriodSelector';
+import { type DateRange } from './PeriodSelector';
+import PeriodEmptyState from './PeriodEmptyState';
+import ReportPrintHeader from './ReportPrintHeader';
+import { useBookNavigation } from '../book/BookNavigationContext';
 
 interface AccountBalance {
   id: string;
@@ -34,15 +39,30 @@ interface Props {
 type BsGroup = 'fixed_assets' | 'current_assets' | 'current_liabilities' | 'long_term_liabilities' | 'equity';
 
 function bsGroupOf(ledger: string | null, accountType: AccountBalance['account_type']): BsGroup | null {
-  if (!ledger) return null;
+  // P&L accounts never appear on the BS (their balance closes to RE via YET).
   if (accountType === 'income' || accountType === 'expense') return null;
-  if (ledger.startsWith('FA ')) return 'fixed_assets';
-  if (ledger === 'Investments - fixed') return 'fixed_assets';
-  if (ledger === 'Investments - current') return 'current_assets';
-  if (ledger === 'Stocks' || ledger === 'Customers' || ledger === 'Debtors' || ledger === 'Bank') return 'current_assets';
-  if (ledger === 'Suppliers' || ledger === 'Creditors') return 'current_liabilities';
-  if (ledger === 'Deferred tax') return 'long_term_liabilities';
-  if (accountType === 'equity') return 'equity';
+
+  // Ledger-name hints first — keeps the canonical VT ledger names in the
+  // "right" bucket regardless of how their account_type is tagged.
+  if (ledger) {
+    const lc = ledger.toLowerCase();
+    if (ledger.startsWith('FA ') || lc.startsWith('fa ') || lc.includes('fixed asset')) return 'fixed_assets';
+    if (ledger === 'Investments - fixed') return 'fixed_assets';
+    if (ledger === 'Investments - current') return 'current_assets';
+    if (['Stocks', 'Customers', 'Debtors', 'Bank'].includes(ledger)) return 'current_assets';
+    if (lc.includes('petty cash') || lc === 'cash') return 'current_assets';
+    if (['Suppliers', 'Creditors'].includes(ledger)) return 'current_liabilities';
+    if (ledger === 'Deferred tax') return 'long_term_liabilities';
+    if (lc.includes('long-term') || lc.includes('long term') || lc.includes('loan')) return 'long_term_liabilities';
+  }
+
+  // Account-type fallback — covers any custom/imported ledger the hints
+  // missed. Without this, asset/liability accounts in an unfamiliar ledger
+  // would silently disappear from the BS (which is what was happening for
+  // the imported VT book).
+  if (accountType === 'asset')     return 'current_assets';
+  if (accountType === 'liability') return 'current_liabilities';
+  if (accountType === 'equity')    return 'equity';
   return null;
 }
 
@@ -76,10 +96,14 @@ function formatUk(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`;
 }
 
-async function fetchBalances(bookId: string, asAt: string | null): Promise<AccountBalance[]> {
+async function fetchBalances(bookId: string, asAt: string | null, includeZero: boolean): Promise<AccountBalance[]> {
   const params = new URLSearchParams();
   if (asAt) params.set('to', asAt);
-  params.set('include_zero', 'false');
+  // Server hides zero-balance accounts by default. Pass include_zero=true
+  // when the user has ticked "Show zero-balance accounts" so they actually
+  // come back from the API — otherwise the checkbox would be a no-op
+  // because those rows were never in the response.
+  if (includeZero) params.set('include_zero', 'true');
   const r = await fetch(`/api/bookkeeping/books/${bookId}/balances?${params}`);
   if (!r.ok) throw new Error('Failed to load balances');
   const d = await r.json();
@@ -87,8 +111,15 @@ async function fetchBalances(bookId: string, asAt: string | null): Promise<Accou
 }
 
 export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
-  const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
+  // Period from the header bar. Balance sheet is "as at" period.toIso —
+  // the from date doesn't apply (balances are cumulative from the start
+  // of the book).
+  const nav = useBookNavigation();
+  const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
+  const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
+
   const [showZero, setShowZero] = useState(false);
+  const printRootRef = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<AccountBalance[]>([]);
   const [prior, setPrior]     = useState<AccountBalance[]>([]);
   const [loading, setLoading] = useState(false);
@@ -98,13 +129,14 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
   const asAtPrior   = period.to ? isoOneYearBefore(period.to) : null;
 
   useEffect(() => {
+    if (!activePeriod.ready) { setCurrent([]); setPrior([]); return; }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
       try {
         const [cur, pri] = await Promise.all([
-          fetchBalances(bookId, asAtCurrent),
-          asAtPrior ? fetchBalances(bookId, asAtPrior) : Promise.resolve([] as AccountBalance[]),
+          fetchBalances(bookId, asAtCurrent, showZero),
+          asAtPrior ? fetchBalances(bookId, asAtPrior, showZero) : Promise.resolve([] as AccountBalance[]),
         ]);
         if (cancelled) return;
         setCurrent(cur);
@@ -117,10 +149,23 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, asAtCurrent, asAtPrior]);
+    // showZero re-runs the fetch so zero-balance rows can come back from
+    // the server (the response is filtered by include_zero, so a client-side
+    // filter alone can't surface rows that weren't in the original response).
+  }, [bookId, activePeriod.ready, asAtCurrent, asAtPrior, showZero]);
 
   type Row = { id: string; name: string; ledger: string | null; current: number; prior: number };
-  type Section = { key: BsGroup; title: string; rows: Row[]; currentTotal: number; priorTotal: number };
+  /** Within a section, rows are grouped by ledger so the report reads like
+   *  VT's BS (FA - equipment, fixture; FA - vehicles; Customers; Bank; etc.
+   *  each get their own labelled block with a sub-total). */
+  type LedgerGroup = { ledger: string; rows: Row[]; currentTotal: number; priorTotal: number };
+  type Section = {
+    key: BsGroup;
+    title: string;
+    groups: LedgerGroup[];
+    currentTotal: number;
+    priorTotal: number;
+  };
 
   const sections: Section[] = useMemo(() => {
     return SECTIONS.map(def => {
@@ -138,15 +183,33 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
       }
       const rows: Row[] = [...idMap.entries()]
         .map(([id, v]) => ({ id, ...v }))
-        .filter(r => showZero || Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005)
-        .sort((a, b) => {
-          const ledgerCmp = (a.ledger ?? '').localeCompare(b.ledger ?? '');
-          if (ledgerCmp !== 0) return ledgerCmp;
-          return a.name.localeCompare(b.name);
-        });
-      const currentTotal = rows.reduce((s, r) => s + r.current, 0);
-      const priorTotal   = rows.reduce((s, r) => s + r.prior,   0);
-      return { key: def.key, title: def.title, rows, currentTotal, priorTotal };
+        .filter(r => showZero || Math.abs(r.current) >= 0.005 || Math.abs(r.prior) >= 0.005);
+
+      // Group by ledger — VT-style sub-headers. Accounts with no ledger
+      // fall into a synthetic "(Unledgered)" bucket so they're still visible
+      // rather than silently disappearing.
+      const byLedger = new Map<string, Row[]>();
+      for (const r of rows) {
+        const key = (r.ledger ?? '').trim() || '(Unledgered)';
+        const list = byLedger.get(key) ?? [];
+        list.push(r);
+        byLedger.set(key, list);
+      }
+      const groups: LedgerGroup[] = [...byLedger.entries()]
+        .map(([ledger, rs]) => {
+          const sorted = rs.sort((a, b) => a.name.localeCompare(b.name));
+          return {
+            ledger,
+            rows: sorted,
+            currentTotal: sorted.reduce((s, r) => s + r.current, 0),
+            priorTotal:   sorted.reduce((s, r) => s + r.prior,   0),
+          };
+        })
+        .sort((a, b) => a.ledger.localeCompare(b.ledger));
+
+      const currentTotal = groups.reduce((s, g) => s + g.currentTotal, 0);
+      const priorTotal   = groups.reduce((s, g) => s + g.priorTotal,   0);
+      return { key: def.key, title: def.title, groups, currentTotal, priorTotal };
     });
   }, [current, prior, showZero]);
 
@@ -167,27 +230,63 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
     };
   }, [sections]);
 
-  const hasMovement = sections.some(s => s.rows.length > 0);
+  const hasMovement = sections.some(s => s.groups.length > 0);
+
+  // Empty state placed AFTER all hook calls so the hook count stays
+  // constant across renders (Rules of Hooks).
+  if (!activePeriod.ready) return <PeriodEmptyState reportName="balance sheet" />;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3 flex-wrap">
-        <PeriodSelector bookId={bookId} value={period} onChange={setPeriod} />
+    <div className="space-y-3 bk-print-root" ref={printRootRef}>
+      <ReportPrintHeader
+        bookId={bookId}
+        reportTitle="Balance Sheet"
+        periodDescription={`As at ${activePeriod.label.replace(/^Year to\s+/, '')}`}
+      />
+      <div className="flex items-center gap-3 flex-wrap print-hidden">
+        <h2 className="text-sm font-semibold text-slate-900">
+          Balance Sheet
+          <span className="text-xs font-normal text-slate-500 ml-2">· as at {activePeriod.label}</span>
+        </h2>
         <label className="text-xs text-slate-600 inline-flex items-center gap-1.5 ml-auto">
           <input type="checkbox" checked={showZero} onChange={e => setShowZero(e.target.checked)} className="rounded border-slate-300" />
           Show zero-balance accounts
         </label>
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={() => printReport(printRootRef.current, `Balance Sheet — ${activePeriod.label}`)}
           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Printer size={12} /> Print
         </button>
         <button
           type="button"
-          disabled
-          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+          onClick={() => {
+            // Section → ledger → account, mirroring the on-screen layout
+            // (Fixed Assets / FA - equipment, fixture / Cost - b/fwd …).
+            // Final rows: Total assets / Total liabilities / Net assets /
+            // Total capital and reserves, matching the bottom of the BS.
+            const curLabel = asAtCurrent ? `As at ${asAtCurrent}` : 'Current';
+            const priLabel = asAtPrior   ? `As at ${asAtPrior}`   : 'Prior';
+            const rows: CsvRow[] = [['Section', 'Ledger', 'Account', curLabel, priLabel]];
+            for (const s of sections) {
+              if (s.groups.length === 0) continue;
+              for (const g of s.groups) {
+                rows.push([s.title, g.ledger, '', '', '']);
+                for (const r of g.rows) {
+                  rows.push([s.title, g.ledger, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
+                }
+                rows.push([s.title, g.ledger, `${g.ledger} total`, g.currentTotal.toFixed(2), g.priorTotal.toFixed(2)]);
+              }
+              rows.push([s.title, '', `${s.title} total`, s.currentTotal.toFixed(2), s.priorTotal.toFixed(2)]);
+            }
+            rows.push(['', '', 'Total assets',      totals.totalAssets.toFixed(2),      totals.priorAssets.toFixed(2)]);
+            rows.push(['', '', 'Total liabilities', totals.totalLiabilities.toFixed(2), totals.priorLiabilities.toFixed(2)]);
+            rows.push(['', '', 'Net assets',        totals.netAssets.toFixed(2),        totals.priorNetAssets.toFixed(2)]);
+            rows.push(['', '', 'Total capital and reserves', totals.totalCapital.toFixed(2), totals.priorCapital.toFixed(2)]);
+            exportRowsAsCsv(`Balance Sheet — ${activePeriod.label}.csv`, rows);
+          }}
+          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Download size={12} /> Export
         </button>
@@ -216,14 +315,14 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
           <p className="text-xs text-slate-500">Post some transactions or opening balances and they&apos;ll show here.</p>
         </div>
       ) : (
-        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm bk-print-area">
           <table className="w-full text-sm">
             <colgroup>
               <col />
               <col className="w-40" />
               <col className="w-40" />
             </colgroup>
-            <thead>
+            <thead className="bk-sticky-thead">
               <tr>
                 <th />
                 <th className="px-6 py-3 text-right">
@@ -238,7 +337,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
             </thead>
             <tbody>
               {/* Assets */}
-              {(sections[0].rows.length > 0 || sections[1].rows.length > 0) && (
+              {(sections[0].groups.length > 0 || sections[1].groups.length > 0) && (
                 <>
                   <BsTitle title="Assets" />
                   <BsSection section={sections[0]} onOpenAccount={onOpenAccount} />
@@ -248,7 +347,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
               )}
 
               {/* Liabilities */}
-              {(sections[2].rows.length > 0 || sections[3].rows.length > 0) && (
+              {(sections[2].groups.length > 0 || sections[3].groups.length > 0) && (
                 <>
                   <BsTitle title="Liabilities" />
                   <BsSection section={sections[2]} onOpenAccount={onOpenAccount} />
@@ -265,7 +364,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
               </tr>
 
               {/* Capital and reserves */}
-              {sections[4].rows.length > 0 && (
+              {sections[4].groups.length > 0 && (
                 <>
                   <BsTitle title="Capital and reserves" />
                   <BsSection section={sections[4]} onOpenAccount={onOpenAccount} hideSectionLabel />
@@ -296,7 +395,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
     onOpenAccount?: Props['onOpenAccount'];
     hideSectionLabel?: boolean;
   }) {
-    if (section.rows.length === 0) return null;
+    if (section.groups.length === 0) return null;
     return (
       <>
         {!hideSectionLabel && (
@@ -304,9 +403,37 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
             <td colSpan={3} className="px-6 pt-2 pb-0.5 pl-10 text-[11px] uppercase tracking-wide font-medium text-slate-500">{section.title}</td>
           </tr>
         )}
-        {section.rows.map(r => (
+        {/* VT-style: ledger sub-header → accounts in the ledger → ledger
+            sub-total. So "Bank" / "Customers" / "FA - vehicles" each get
+            their own labelled block within the Section bucket. */}
+        {section.groups.map(g => (
+          <BsLedgerGroup key={g.ledger} group={g} onOpenAccount={onOpenAccount} />
+        ))}
+        {/* Section total (Total fixed assets / Total current assets etc.) */}
+        <tr>
+          <td className="px-6 py-1" />
+          <td className="px-6 py-1 text-right tabular-nums text-slate-900 border-t border-slate-300">{fmt(section.currentTotal)}</td>
+          <td className="px-6 py-1 text-right tabular-nums text-slate-900 border-t border-slate-300">{fmt(section.priorTotal)}</td>
+        </tr>
+      </>
+    );
+  }
+
+  function BsLedgerGroup({ group, onOpenAccount }: {
+    group: LedgerGroup;
+    onOpenAccount?: Props['onOpenAccount'];
+  }) {
+    return (
+      <>
+        {/* Ledger sub-header — small caps, indented under the section title. */}
+        <tr>
+          <td colSpan={3} className="px-6 pt-1.5 pb-0.5 pl-12 text-[11px] font-semibold text-slate-700">
+            {group.ledger}
+          </td>
+        </tr>
+        {group.rows.map(r => (
           <tr key={r.id} className="hover:bg-slate-50">
-            <td className="px-6 py-1 pl-14">
+            <td className="px-6 py-1 pl-16">
               {onOpenAccount ? (
                 <button
                   type="button"
@@ -323,10 +450,11 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
             <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(r.prior)}</td>
           </tr>
         ))}
+        {/* Ledger sub-total — VT shows this even for single-row ledgers. */}
         <tr>
-          <td className="px-6 py-1" />
-          <td className="px-6 py-1 text-right tabular-nums text-slate-900 border-t border-slate-300">{fmt(section.currentTotal)}</td>
-          <td className="px-6 py-1 text-right tabular-nums text-slate-900 border-t border-slate-300">{fmt(section.priorTotal)}</td>
+          <td className="px-6 py-0.5" />
+          <td className="px-6 py-0.5 text-right tabular-nums text-slate-700 border-t border-slate-200">{fmt(group.currentTotal)}</td>
+          <td className="px-6 py-0.5 text-right tabular-nums text-slate-700 border-t border-slate-200">{fmt(group.priorTotal)}</td>
         </tr>
       </>
     );

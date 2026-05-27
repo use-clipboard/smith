@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 
-const TRANSACTION_TYPES = ['PAY','CHQ','REC','SIN','SCR','PIN','PCR','JRN','TRF','RJN'] as const;
+const TRANSACTION_TYPES = ['PAY','CHQ','REC','SIN','SCR','PIN','PCR','JRN','TRF','RJN','WOF','WBK','YET','DVT'] as const;
 const VAT_TREATMENTS = ['no_vat','standard_20','reduced_5','zero','exempt','outside_scope'] as const;
 
 // Each split is exclusively a debit OR a credit. We accept zero on either
@@ -57,7 +57,8 @@ const TX_SELECT = `
 
 // ── GET /api/bookkeeping/books/[id]/transactions ─────────────────────────────
 // List transactions for a book. Most recent first by default.
-//   ?limit=N (default 100, max 500)
+//   ?limit=N (default 100, max 10000 — bulk-imported books can have several
+//             thousand rows and the Home recent-feed asks for them all)
 //   ?type=PAY
 //   ?account_id=… (transactions touching this account in any split)
 //   ?date_from=YYYY-MM-DD
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   const url = new URL(req.url);
-  const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '100', 10) || 100, 500);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '100', 10) || 100, 10000);
   const type  = url.searchParams.get('type');
   const accountId = url.searchParams.get('account_id');
   const dateFrom = url.searchParams.get('date_from');
@@ -85,34 +86,68 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .single();
   if (bookErr || !book) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  let q = supabase
-    .from('bookkeeping_transactions')
-    .select(TX_SELECT)
-    .eq('book_id', params.id)
-    .order('date', { ascending: order === 'asc' })
-    .order('created_at', { ascending: order === 'asc' })
-    .limit(limit);
+  // Supabase / PostgREST caps single-query results at the project "Max Rows"
+  // setting (1000 by default). When the caller asks for more, we have to
+  // page through with .range() and concatenate. The book's home recent feed
+  // requests limit=10000 to mean "show everything", so we honour that here.
+  const PAGE_SIZE = 1000;
 
-  if (type) q = q.eq('type', type);
-  if (dateFrom) q = q.gte('date', dateFrom);
-  if (dateTo)   q = q.lte('date', dateTo);
+  type Row = unknown;
+  const allRows: Row[] = [];
+  let accountFilterIds: string[] | null = null;
+
   if (accountId) {
     // To filter by account that appears in any split, fetch ids first then filter.
     // PostgREST can't do a "transactions whose splits include account X" filter
-    // in one query, so use a two-step approach.
-    const { data: splitRows, error: splitErr } = await supabase
-      .from('bookkeeping_transaction_splits')
-      .select('transaction_id')
-      .eq('account_id', accountId);
-    if (splitErr) return NextResponse.json({ error: splitErr.message }, { status: 500 });
-    const ids = [...new Set((splitRows ?? []).map(r => r.transaction_id))];
-    if (ids.length === 0) return NextResponse.json({ transactions: [] });
-    q = q.in('id', ids);
+    // in one query, so use a two-step approach. Split ids may number in the
+    // thousands too — page through them as well.
+    const splitIds = new Set<string>();
+    let from = 0;
+    while (true) {
+      const { data: splitRows, error: splitErr } = await supabase
+        .from('bookkeeping_transaction_splits')
+        .select('transaction_id')
+        .eq('account_id', accountId)
+        .range(from, from + PAGE_SIZE - 1);
+      if (splitErr) return NextResponse.json({ error: splitErr.message }, { status: 500 });
+      for (const r of splitRows ?? []) splitIds.add(r.transaction_id as string);
+      if (!splitRows || splitRows.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    accountFilterIds = [...splitIds];
+    if (accountFilterIds.length === 0) return NextResponse.json({ transactions: [] });
   }
 
-  const { data, error } = await q;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ transactions: data ?? [] });
+  // Page through transactions until we've fetched `limit` rows (or run out).
+  let from = 0;
+  while (allRows.length < limit) {
+    const remaining = limit - allRows.length;
+    const pageSize = Math.min(PAGE_SIZE, remaining);
+    let q = supabase
+      .from('bookkeeping_transactions')
+      .select(TX_SELECT)
+      .eq('book_id', params.id)
+      .order('date', { ascending: order === 'asc' })
+      .order('created_at', { ascending: order === 'asc' })
+      .range(from, from + pageSize - 1);
+
+    if (type) q = q.eq('type', type);
+    if (dateFrom) q = q.gte('date', dateFrom);
+    if (dateTo)   q = q.lte('date', dateTo);
+    // PostgREST has a practical URL-length limit on .in() — if we ever needed
+    // to filter by tens of thousands of ids we'd batch. For now (one account's
+    // splits) the size is manageable.
+    if (accountFilterIds) q = q.in('id', accountFilterIds);
+
+    const { data, error } = await q;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const rows = data ?? [];
+    allRows.push(...rows);
+    if (rows.length < pageSize) break; // exhausted the table
+    from += pageSize;
+  }
+
+  return NextResponse.json({ transactions: allRows });
 }
 
 // ── POST /api/bookkeeping/books/[id]/transactions ────────────────────────────
@@ -206,6 +241,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       { error: `Out of balance: Dr ${totalDr.toFixed(2)} vs Cr ${totalCr.toFixed(2)}` },
       { status: 400 },
     );
+  }
+
+  // Block posting to any inactive account. Existing entries can still be
+  // edited (the PATCH route allows accounts that were already used) — this
+  // create endpoint is strictly "new entries", so a locked account is off
+  // limits, mirroring what AccountPicker hides client-side.
+  {
+    const accountIds = [
+      ...body.splits.map(s => s.account_id),
+      ...(body.primary_account_id ? [body.primary_account_id] : []),
+    ];
+    if (accountIds.length > 0) {
+      const { data: locked } = await supabase
+        .from('bookkeeping_accounts')
+        .select('id, name')
+        .in('id', accountIds)
+        .eq('inactive', true);
+      if (locked && locked.length > 0) {
+        return NextResponse.json(
+          { error: `Can’t post to locked account: ${locked.map(l => l.name).join(', ')}. Unlock it in Properties first, or pick a different account.` },
+          { status: 400 },
+        );
+      }
+    }
   }
 
   // Allocate next ref atomically via SQL function.

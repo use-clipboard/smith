@@ -108,7 +108,7 @@ interface Props {
   recentClients: { id: string; name: string; client_ref?: string }[];
   recentOutputs: ActivityOutput[];
   teamMembers: TeamMember[];
-  whiteboardMessages: { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string }[];
+  whiteboardMessages: { id: string; content: string; color: string; author_name: string; created_at: string; user_id: string; kind: 'sticky' | 'marker'; pos_x: number; pos_y: number; rotation: number }[];
   currentUserId: string;
   firmId: string;
   currentUserName: string;

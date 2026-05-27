@@ -36,6 +36,11 @@ interface Props {
   'data-cell'?: string;
   /** Optional aria label for screen readers. */
   ariaLabel?: string;
+  /** Date in dd/mm/yyyy used to fill in the month/year when the user types
+   *  just a day (e.g. "23") and Tabs out. Typical use is the previous row's
+   *  date in an entry grid — so on a long sheet you only need to retype the
+   *  day part of each row. Leave undefined for the first row of a grid. */
+  previousDate?: string;
 }
 
 // ── Format helpers ──────────────────────────────────────────────────────────
@@ -135,6 +140,21 @@ export function fromIso(iso: string): string {
   return `${d}/${mo}/${y}`;
 }
 
+/** Shift a UK date (dd/mm/yyyy) by `days`. Handles month/year rollover via
+ *  the JS Date constructor's normalisation. Returns dd/mm/yyyy or '' when
+ *  the input couldn't be parsed. Used by the +/- keyboard shortcuts. */
+function shiftUkDateBy(uk: string, days: number): string {
+  const iso = toIso(uk);
+  if (!iso) return '';
+  const [ys, ms, ds] = iso.split('-').map(Number);
+  const d = new Date(Date.UTC(ys, ms - 1, ds));
+  d.setUTCDate(d.getUTCDate() + days);
+  const yy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${dd}/${mm}/${yy}`;
+}
+
 /**
  * Strict UK parser used at post-time. Accepts:
  *   - "*"            → today (ISO)
@@ -157,7 +177,7 @@ export function parseUkDateStrict(input: string): string {
 
 export default function DateInput({
   value, onChange, placeholder = 'dd/mm/yyyy', className = '', disabled,
-  'data-row-id': dataRowId, 'data-cell': dataCell, ariaLabel,
+  'data-row-id': dataRowId, 'data-cell': dataCell, ariaLabel, previousDate,
 }: Props) {
   const pickerRef = useRef<HTMLInputElement>(null);
 
@@ -172,6 +192,52 @@ export default function DateInput({
     el.click();
   }
 
+  /** Keyboard shortcuts:
+   *    +     → bump day by +1 (today if field is blank)
+   *    -     → bump day by −1 (today if field is blank)
+   *    Tab   → if the field contains only a 1- or 2-digit day, complete it
+   *            using previousDate's month/year (or today's as a fallback)
+   *
+   *  All three intercepted keys would otherwise be inserted/skipped by the
+   *  browser; preventDefault keeps the visible text consistent with what
+   *  onChange just received.
+   */
+  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    // + / - day-shift. Plus is typed as Shift+= on UK/US layouts and "+" on
+    // a numpad; both arrive as e.key === '+' so a single check covers it.
+    if (e.key === '+' || e.key === '-') {
+      e.preventDefault();
+      const direction = e.key === '+' ? 1 : -1;
+      // Empty / unparseable → start from today, then shift. So + on an empty
+      // field gives "tomorrow", - gives "yesterday".
+      const base = toIso(value) || new Date().toISOString().slice(0, 10);
+      onChange(shiftUkDateBy(fromIso(base), direction));
+      return;
+    }
+
+    // Tab on a 1- or 2-digit day-only value → complete via previousDate.
+    if (e.key === 'Tab' && !e.shiftKey) {
+      const dayOnly = /^(\d{1,2})$/.exec(value.trim());
+      if (dayOnly) {
+        const day = parseInt(dayOnly[1], 10);
+        // Use previousDate when present and parseable; otherwise fall back
+        // to today's month/year so the field still autocompletes sensibly
+        // on the first row of a sheet.
+        const referenceIso =
+          (previousDate && toIso(previousDate)) ||
+          new Date().toISOString().slice(0, 10);
+        const [y, m] = referenceIso.split('-');
+        const dd = String(day).padStart(2, '0');
+        const candidate = `${dd}/${m}/${y}`;
+        if (isValidUk(candidate)) {
+          // Don't preventDefault — let Tab still move focus to the next
+          // cell. We just update the value alongside.
+          onChange(candidate);
+        }
+      }
+    }
+  }
+
   // Visual hint when the text in the box isn't a real calendar day. Empty is
   // treated as "not entered yet" — no red ring until the user actually types.
   const invalid = !isValidUk(value);
@@ -183,6 +249,7 @@ export default function DateInput({
         type="text"
         value={value}
         onChange={e => onChange(maybeAutoFormat(e.target.value))}
+        onKeyDown={onKey}
         placeholder={placeholder}
         disabled={disabled}
         data-row-id={dataRowId}

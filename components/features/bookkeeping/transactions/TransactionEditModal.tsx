@@ -29,6 +29,7 @@ import LedgerPicker from '../input/LedgerPicker';
 import DateInput, { parseUkDateStrict, fromIso } from '../input/DateInput';
 import { getTypeConfig, TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 import { buildSplits } from '@/lib/bookkeeping/buildSplits';
+import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
 import {
   VAT_TREATMENT_OPTIONS,
   type BookAccountRef, type Transaction, type TransactionType, type VatTreatment,
@@ -211,18 +212,62 @@ function UniversalEditForm({
   const config = getTypeConfig(type) ?? TRANSACTION_TYPE_CONFIG.PAY;
 
   // Reconstruct the form state from the loaded transaction.
-  const analysisSplit = useMemo(
-    () => txn.splits?.find(s => s.account_id !== txn.primary_account_id) ?? null,
-    [txn],
-  );
+  //
+  // primary_account_id may be NULL on bulk-imported transactions (the
+  // legacy import didn't set it). In that case we can't trust the simple
+  // "not-equal-to-primary" filter to pick the analysis split — it'd return
+  // the first split, which for an imported PAY is usually the bank side.
+  //
+  // We infer the primary by ledger using the transaction-type config:
+  //   • PAY / CHQ / REC → primary lives on the Bank ledger
+  //   • SIN / SCR       → primary lives on Customers
+  //   • PIN / PCR       → primary lives on Suppliers
+  //   • WOF / WBK / TRF → primaryLedger is null in config; fall back to
+  //                       "the first non-VAT split", which is the best
+  //                       guess we can make.
+  const { inferredPrimary, inferredAnalysis } = useMemo(() => {
+    const splits = txn.splits ?? [];
+    const isVatAcct = (name?: string | null) =>
+      /VAT\s*(Input|Output)/i.test(name ?? '');
+
+    // 1. Primary: prefer the persisted column, else infer by ledger.
+    let primarySplit = splits.find(s => s.account_id === txn.primary_account_id) ?? null;
+    if (!primarySplit && config.primaryLedger) {
+      primarySplit = splits.find(s => s.account?.ledger === config.primaryLedger) ?? null;
+    }
+    if (!primarySplit) {
+      // Last resort — drop VAT splits then take the first remaining.
+      primarySplit = splits.find(s => !isVatAcct(s.account?.name)) ?? splits[0] ?? null;
+    }
+
+    // 2. Analysis: a non-primary, non-VAT split. There's typically only
+    //    one such row for PAY/CHQ/REC/etc.
+    const analysisSplit = splits.find(s =>
+      s.id !== primarySplit?.id &&
+      !isVatAcct(s.account?.name),
+    ) ?? null;
+
+    return { inferredPrimary: primarySplit, inferredAnalysis: analysisSplit };
+  }, [txn, config.primaryLedger]);
+
+  // Kept as `analysisSplit` for the downstream code that already references it.
+  const analysisSplit = inferredAnalysis;
 
   const [date, setDate] = useState(mode === 'duplicate' ? fromIso(todayIso()) : fromIso(txn.date));
   const [primary, setPrimary] = useState<BookAccountRef | null>(
+    // Prefer the persisted primary_account when present; otherwise seed
+    // from the inferred primary split so the Bank Account picker shows
+    // the right account even on the legacy-imported rows.
     txn.primary_account ? {
       id: txn.primary_account.id,
       name: txn.primary_account.name,
       ledger: txn.primary_account.ledger,
       account_type: txn.primary_account.account_type,
+    } : inferredPrimary?.account ? {
+      id: inferredPrimary.account.id,
+      name: inferredPrimary.account.name,
+      ledger: inferredPrimary.account.ledger,
+      account_type: inferredPrimary.account.account_type,
     } : null,
   );
   const [details, setDetails] = useState(txn.payee_text ?? txn.details ?? '');
@@ -385,7 +430,7 @@ function UniversalEditForm({
         {showVatColumn && (
           <Field label="Net">
             <div className="text-sm px-2 py-1.5 border border-transparent text-right text-slate-600 tabular-nums">
-              {total > 0 ? net.toFixed(2) : ''}
+              {total > 0 ? formatMoneyAbs(net) : ''}
             </div>
           </Field>
         )}
@@ -537,7 +582,7 @@ function JournalEditForm({
       if (dr === 0 && cr === 0) { onError('Every line needs a debit or a credit.'); return; }
     }
     if (!isBalanced) {
-      onError(`Out of balance: Dr ${totals.dr.toFixed(2)} vs Cr ${totals.cr.toFixed(2)} (diff ${totals.diff.toFixed(2)}).`);
+      onError(`Out of balance: Dr ${formatMoneyAbs(totals.dr)} vs Cr ${formatMoneyAbs(totals.cr)} (diff ${formatMoneyAbs(totals.diff)}).`);
       return;
     }
 
@@ -709,8 +754,8 @@ function JournalEditForm({
           <tfoot className="bg-slate-50 text-sm">
             <tr className="border-t-2 border-slate-300">
               <td className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wide font-semibold text-slate-600 border-r border-slate-200">Totals</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{totals.dr.toFixed(2)}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{totals.cr.toFixed(2)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.dr)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.cr)}</td>
               <td colSpan={3} />
             </tr>
             <tr className="border-t border-slate-200">
@@ -718,7 +763,7 @@ function JournalEditForm({
               <td colSpan={2} className={`px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200 ${
                 isBalanced ? 'text-emerald-700' : totals.diff === 0 ? 'text-slate-400' : 'text-rose-700'
               }`}>
-                {totals.diff.toFixed(2)}
+                {formatMoneyAbs(totals.diff)}
               </td>
               <td colSpan={3} />
             </tr>

@@ -52,10 +52,46 @@ export interface Book {
    *  Transactions dated on/before this can still be posted, but they must be
    *  flagged as late entries via `vat_period_override` on the transaction. */
   vat_lock_date: string | null;
+  /** MM-DD pattern for the book's year-end (e.g. '03-31'). Drives the FY
+   *  boundaries surfaced in bookkeeping_financial_years. Null means the
+   *  user hasn't set a year-end yet — most period features stay dormant
+   *  until they do. */
+  year_end_md: string | null;
+  current_fy_id?: string | null;
+  /** Start date of the very first FY on this book. Set the first time the
+   *  user sets a year-end. Can be a "short first year" (i.e. doesn't have
+   *  to align with the pattern). */
+  first_period_start: string | null;
+  /** Equity account that the year-end close journal credits the net P&L
+   *  into. Null until the user picks one in book settings. */
+  retained_earnings_account_id: string | null;
   admin_locked: boolean;
   archived: boolean;
   created_by: string | null;
   creator?: BookCreatorRef | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Financial years (period management) ──────────────────────────────────────
+
+export type FinancialYearStatus = 'open' | 'closed' | 'reopened';
+
+export interface FinancialYear {
+  id: string;
+  book_id: string;
+  /** ISO yyyy-mm-dd inclusive boundary. */
+  start_date: string;
+  end_date: string;
+  status: FinancialYearStatus;
+  closed_at: string | null;
+  closed_by: string | null;
+  /** The JRN that effected the year-end close (zeros P&L into Retained
+   *  earnings). Null until the year is closed. */
+  closing_journal_id: string | null;
+  reopened_at: string | null;
+  reopened_by: string | null;
+  reopen_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,7 +141,11 @@ export type TransactionType =
   | 'PCR'  // Purchase credit note
   | 'JRN'  // Journal
   | 'RJN'  // Reversing journal — self-reverses on a chosen future date
-  | 'TRF'; // Bank-to-bank transfer
+  | 'TRF'  // Bank-to-bank transfer
+  | 'WOF'  // Write off — clear residual supplier/debtor balance
+  | 'WBK'  // Write back — re-instate a previously written-off balance
+  | 'YET'  // Year-end transaction — closing journal posted on FY end date
+  | 'DVT'; // Deferred VAT transfer — moves import VAT between control accounts
 
 export const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
   PAY: 'Bank payment',
@@ -118,6 +158,10 @@ export const TRANSACTION_TYPE_LABEL: Record<TransactionType, string> = {
   JRN: 'Journal',
   RJN: 'Reversing journal',
   TRF: 'Transfer',
+  WOF: 'Write off',
+  WBK: 'Write back',
+  YET: 'Year-end transaction',
+  DVT: 'Deferred VAT transfer',
 };
 
 export type TransactionStatus = 'posted' | 'draft';

@@ -59,14 +59,15 @@ export default async function DashboardPage() {
     last_sign_in_at: lastLoginMap[m.id] ?? null,
   }));
 
-  // Fetch whiteboard messages for this firm
+  // Fetch whiteboard messages for this firm — includes the new positioning
+  // and kind columns so notes are draggable / can be marker text.
   const { data: whiteboardMessages } = firmId
     ? await supabase
         .from('whiteboard_messages')
-        .select('id, content, color, author_name, created_at, user_id')
+        .select('id, content, color, author_name, created_at, user_id, kind, pos_x, pos_y, rotation')
         .eq('firm_id', firmId)
         .order('created_at', { ascending: false })
-        .limit(40)
+        .limit(100)
     : { data: [] };
 
   return (

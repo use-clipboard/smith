@@ -13,7 +13,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Printer, Download, Wallet, Sparkles } from 'lucide-react';
-import PeriodSelector, { type DateRange } from './PeriodSelector';
+import { type DateRange } from './PeriodSelector';
+import PeriodEmptyState from './PeriodEmptyState';
+import { useBookNavigation } from '../book/BookNavigationContext';
 
 interface MonthRow {
   month: string;      // YYYY-MM
@@ -37,7 +39,11 @@ function fmt(n: number): string {
 }
 
 export default function CashFlowTab({ bookId }: Props) {
-  const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
+  // Period from the header bar via BookNavigation.
+  const nav = useBookNavigation();
+  const activePeriod = nav?.activePeriod ?? { ready: false, fromIso: null, toIso: null, label: '' };
+  const period: DateRange = useMemo(() => ({ from: activePeriod.fromIso, to: activePeriod.toIso }), [activePeriod.fromIso, activePeriod.toIso]);
+
   const [months, setMonths] = useState<MonthRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -45,6 +51,7 @@ export default function CashFlowTab({ bookId }: Props) {
   const [windowMonths, setWindowMonths]     = useState(3);   // rolling avg size
 
   useEffect(() => {
+    if (!activePeriod.ready) { setMonths([]); return; }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
@@ -67,7 +74,7 @@ export default function CashFlowTab({ bookId }: Props) {
     }
     void go();
     return () => { cancelled = true; };
-  }, [bookId, period.from, period.to]);
+  }, [bookId, activePeriod.ready, period.from, period.to]);
 
   // ── Forecast ─────────────────────────────────────────────────────────────
   // Take the rolling average of the last `windowMonths` actual months' receipts
@@ -109,10 +116,17 @@ export default function CashFlowTab({ bookId }: Props) {
 
   const finalClosing = allMonths.length > 0 ? allMonths[allMonths.length - 1].closing : 0;
 
+  // Empty state placed AFTER all hook calls so the hook count stays
+  // constant across renders (Rules of Hooks).
+  if (!activePeriod.ready) return <PeriodEmptyState reportName="cash flow" />;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 flex-wrap">
-        <PeriodSelector bookId={bookId} value={period} onChange={setPeriod} />
+        <h2 className="text-sm font-semibold text-slate-900">
+          Cash Flow
+          <span className="text-xs font-normal text-slate-500 ml-2">· {activePeriod.label}</span>
+        </h2>
 
         <div className="flex items-center gap-2 text-xs text-slate-600 ml-auto">
           <label className="inline-flex items-center gap-1">

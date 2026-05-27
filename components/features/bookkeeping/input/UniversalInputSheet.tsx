@@ -29,12 +29,15 @@ import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, AccountLink } from '../book/BookNavigationContext';
+import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
 import {
   VAT_TREATMENT_OPTIONS,
   type BookAccountRef, type Transaction, type TransactionType, type VatTreatment,
 } from '@/types/bookkeeping';
 import { getTypeConfig, TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 import { buildSplits } from '@/lib/bookkeeping/buildSplits';
+import { checkRecLock, type RecLockHit, type RecLockProbe } from '@/lib/bookkeeping/checkRecLock';
+import RecLockWarningModal from '../ledger/RecLockWarningModal';
 
 interface Props {
   bookId: string;
@@ -120,20 +123,22 @@ function isLateEntry(row: Row, vatLockDate: string | null | undefined, rate: num
 }
 
 // Type selector — ordered to match the action-toolbar grouping.
-const TYPE_ORDER: TransactionType[] = ['PAY','CHQ','REC','TRF','SIN','SCR','PIN','PCR','JRN','RJN'];
+const TYPE_ORDER: TransactionType[] = ['PAY','CHQ','REC','TRF','SIN','SCR','PIN','PCR','JRN','RJN','YET','DVT','WOF','WBK'];
 
 // Per-family colour tints — match the New transaction popout's icon tiles.
-const FAMILY_PILL_CLASSES: Record<'bank'|'sales'|'purchases'|'journals', { active: string; inactive: string }> = {
-  bank:      { active: 'bg-emerald-600 text-white', inactive: 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' },
-  sales:     { active: 'bg-blue-600 text-white',    inactive: 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'      },
-  purchases: { active: 'bg-amber-600 text-white',   inactive: 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'    },
-  journals:  { active: 'bg-violet-600 text-white',  inactive: 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'  },
+const FAMILY_PILL_CLASSES: Record<'bank'|'sales'|'purchases'|'journals'|'adjustments', { active: string; inactive: string }> = {
+  bank:        { active: 'bg-emerald-600 text-white', inactive: 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' },
+  sales:       { active: 'bg-blue-600 text-white',    inactive: 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'      },
+  purchases:   { active: 'bg-amber-600 text-white',   inactive: 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'    },
+  journals:    { active: 'bg-violet-600 text-white',  inactive: 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'  },
+  adjustments: { active: 'bg-rose-600 text-white',    inactive: 'text-slate-600 hover:bg-rose-50 hover:text-rose-700'      },
 };
 function familyOf(t: TransactionType): keyof typeof FAMILY_PILL_CLASSES {
   if (t === 'PAY' || t === 'CHQ' || t === 'REC' || t === 'TRF') return 'bank';
   if (t === 'SIN' || t === 'SCR') return 'sales';
   if (t === 'PIN' || t === 'PCR') return 'purchases';
-  return 'journals'; // JRN, RJN
+  if (t === 'WOF' || t === 'WBK') return 'adjustments';
+  return 'journals'; // JRN, RJN, YET, DVT
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -149,6 +154,12 @@ export default function UniversalInputSheet({
   ]);
   const [postingProgress, setPostingProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState('');
+  /** Rec-lock warning state. When set, the user is staring at the
+   *  RecLockWarningModal and the post is paused waiting on Cancel /
+   *  "Post anyway". `pendingLive` is the validated list of rows that
+   *  doPost() will commit on confirm. */
+  const [recLockHits, setRecLockHits] = useState<RecLockHit[]>([]);
+  const [pendingLive, setPendingLive] = useState<Array<{ r: Row; idx: number; c: ReturnType<typeof calcRow> }> | null>(null);
   const [recent, setRecent] = useState<Transaction[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
 
@@ -264,16 +275,23 @@ export default function UniversalInputSheet({
   const hasLateRows = lateRows.some(Boolean);
 
   // ── Post all non-blank rows ──────────────────────────────────────────────
+  // handlePost runs validation + the rec-lock check, then either shows the
+  // warning lightbox or hands straight off to doPost. The latter is the
+  // actual network loop and is also the confirm path on the modal.
   async function handlePost() {
     setError('');
 
-    // Identify rows that have enough to post.
+    // Identify rows that have enough to post. Total can be 0 — zero-amount
+    // transactions are legitimate "reminder" entries that show up on the
+    // ledger as a placeholder for something the user hasn't valued yet.
+    // Negative totals are still rejected; VT convention is to flip the type
+    // (PAY ↔ REC, SIN ↔ SCR, etc.) instead of using a negative sign.
     const live = rows
       .map((r, idx) => ({ r, idx, c: rowCalcs[idx] }))
-      .filter(({ r, c }) => r.primary && r.analysis && c.total > 0);
+      .filter(({ r, c }) => r.primary && r.analysis && c.total >= 0);
 
     if (live.length === 0) {
-      setError('Add at least one row with a primary account, analysis account, and a total greater than zero.');
+      setError('Add at least one row with a primary account and an analysis account. Total can be 0 for placeholder entries.');
       return;
     }
 
@@ -285,6 +303,41 @@ export default function UniversalInputSheet({
       if (r.primary!.id === r.analysis!.id) { setError(`Row ${lineNo}: Primary and analysis must be different accounts.`); return; }
     }
 
+    // Rec-lock probe — gather every (bank-ledger account, date) pair this
+    // batch will touch. Both primary AND analysis are probed since contra
+    // entries (TRF and similar) put the bank account on the analysis leg.
+    // Non-bank accounts come back `locked:false` from the endpoint so
+    // pre-filtering isn't strictly required, but trimming saves us a few
+    // round-trips on big PIN/SIN batches that never touch bank.
+    const probes: RecLockProbe[] = [];
+    for (const { r } of live) {
+      const iso = parseDate(r.date);
+      if (!iso) continue;
+      if (r.primary && r.primary.ledger === 'Bank') {
+        probes.push({ accountId: r.primary.id, date: iso, accountName: `${r.primary.ledger}: ${r.primary.name}` });
+      }
+      if (r.analysis && r.analysis.ledger === 'Bank') {
+        probes.push({ accountId: r.analysis.id, date: iso, accountName: `${r.analysis.ledger}: ${r.analysis.name}` });
+      }
+    }
+    if (probes.length > 0) {
+      const hits = await checkRecLock(bookId, probes);
+      if (hits.length > 0) {
+        // Hand off to the modal. doPost runs on confirm; cancel just
+        // clears the pending state and we go nowhere.
+        setRecLockHits(hits);
+        setPendingLive(live);
+        return;
+      }
+    }
+
+    await doPost(live);
+  }
+
+  /** The actual network loop — extracted so the rec-lock warning can call
+   *  it on confirm. Stays in this closure so it inherits all the row /
+   *  VAT / progress state without prop-drilling. */
+  async function doPost(live: Array<{ r: Row; idx: number; c: ReturnType<typeof calcRow> }>) {
     setPostingProgress({ done: 0, total: live.length });
     try {
       for (let i = 0; i < live.length; i++) {
@@ -470,10 +523,14 @@ export default function UniversalInputSheet({
               ? 'Journal entry'
               : t === 'RJN'
               ? 'Reversing journal — auto-reverses on a chosen date'
+              : t === 'YET'
+              ? 'Year-end transaction — closing journal posted on the FY end date'
+              : t === 'DVT'
+              ? 'Deferred VAT transfer — moves import VAT between control accounts'
               : TRANSACTION_TYPE_CONFIG[t as keyof typeof TRANSACTION_TYPE_CONFIG]?.description ?? '';
             const active = t === type;
             const familyClasses = FAMILY_PILL_CLASSES[familyOf(t)];
-            const showDivider = i > 0 && (t === 'SIN' || t === 'PIN' || t === 'JRN');
+            const showDivider = i > 0 && (t === 'SIN' || t === 'PIN' || t === 'JRN' || t === 'WOF');
             return (
               <span key={t} className="inline-flex items-center">
                 {showDivider && <span aria-hidden className="w-px h-5 bg-slate-200" />}
@@ -663,7 +720,7 @@ export default function UniversalInputSheet({
                   {showVatColumn && (
                     <td className="px-0 py-0 border-r border-slate-200">
                       <div className="text-sm px-2 py-1.5 text-right text-slate-600 tabular-nums">
-                        {c.total > 0 ? c.net.toFixed(2) : ''}
+                        {c.total > 0 ? formatMoneyAbs(c.net) : ''}
                       </div>
                     </td>
                   )}
@@ -759,9 +816,9 @@ export default function UniversalInputSheet({
                           <span className="font-medium">Row {i + 1}</span> · {r.date}
                           {r.details ? ` · ${r.details}` : ''}
                           {' · '}
-                          <span className="tabular-nums">£{c.total.toFixed(2)}</span>
+                          <span className="tabular-nums">£{formatMoneyAbs(c.total)}</span>
                           {' '}
-                          (VAT <span className="tabular-nums">£{c.vat.toFixed(2)}</span>)
+                          (VAT <span className="tabular-nums">£{formatMoneyAbs(c.vat)}</span>)
                           {r.includeInNextReturn
                             ? <span className="ml-1 text-amber-700">— will be included in next return</span>
                             : <span className="ml-1 text-rose-700">— will fail to post (period locked)</span>}
@@ -844,10 +901,10 @@ export default function UniversalInputSheet({
                       <td className="px-2 py-1.5 text-gray-700">{formatDateUk(t.date)}</td>
                       <td className="px-2 py-1.5 text-xs"><TxnRefLink txn={t} className="text-xs" /></td>
                       <td className="px-2 py-1.5 text-gray-900">{t.details ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{Number(t.total).toFixed(2)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{formatMoneyAbs(Number(t.total))}</td>
                       {showVatColumn && (
                         <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">
-                          {Number(t.vat_total) > 0 ? Number(t.vat_total).toFixed(2) : ''}
+                          {Number(t.vat_total) > 0 ? formatMoneyAbs(Number(t.vat_total)) : ''}
                         </td>
                       )}
                       <td className="px-2 py-1.5"><AccountLink account={t.primary_account ?? null} /></td>
@@ -864,6 +921,23 @@ export default function UniversalInputSheet({
         )}
       </div>
       {rowActions.menus}
+
+      {/* Rec-lock warning lightbox — only mounted when handlePost detects
+          a reconciled-period collision. Confirm = run doPost on the
+          stored pendingLive; Cancel = drop the pending state and go
+          back to the sheet untouched. */}
+      {recLockHits.length > 0 && pendingLive && (
+        <RecLockWarningModal
+          hits={recLockHits}
+          onCancel={() => { setRecLockHits([]); setPendingLive(null); }}
+          onConfirm={() => {
+            const live = pendingLive;
+            setRecLockHits([]);
+            setPendingLive(null);
+            void doPost(live);
+          }}
+        />
+      )}
     </div>
   );
 }

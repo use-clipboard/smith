@@ -13,6 +13,7 @@ import {
   X, Save, Loader2, Check, Lock, Unlock, Archive as ArchiveIcon, AlertTriangle,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import DateInput, { fromIso, toIso } from '../input/DateInput';
 import {
   VAT_SCHEME_OPTIONS, BASE_CURRENCY_OPTIONS,
   type Book, type VatScheme,
@@ -27,6 +28,29 @@ interface Props {
   onUpdated: (next: Book) => void;
 }
 
+/** Convert MM-DD (DB) → DD-MM (display). Returns '' for null/invalid. */
+function mdToDm(md: string | null | undefined): string {
+  if (!md) return '';
+  const m = /^(\d{2})-(\d{2})$/.exec(md);
+  return m ? `${m[2]}-${m[1]}` : '';
+}
+/** Convert DD-MM (display) → MM-DD (DB). Returns null when malformed/empty. */
+function dmToMd(dm: string): string | null {
+  const trimmed = dm.trim();
+  if (!trimmed) return null;
+  const m = /^(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!m) return null;
+  return `${m[2]}-${m[1]}`;
+}
+/** Auto-format DD-MM as the user types: takes any raw input, keeps only
+ *  digits, inserts the hyphen after the second digit, and clamps to 4 digits
+ *  total. So typing "3103" produces "31-03". */
+function autoFormatDm(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+
 export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpdated }: Props) {
   const lockedForMe = book.admin_locked && !isAdmin;
 
@@ -35,10 +59,20 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
   const [vatRegistered, setVatRegistered] = useState(book.vat_registered);
   const [vatScheme, setVatScheme]         = useState<VatScheme>((book.vat_scheme ?? 'standard') as VatScheme);
   const [vatNumber, setVatNumber]         = useState(book.vat_number ?? '');
+  // The DB stores MM-DD for trivial sort/parse; the UI shows DD-MM because
+  // that's the UK convention the rest of the module uses for dates.
+  const [yearEndDm, setYearEndDm]               = useState(mdToDm(book.year_end_md));
+  // Stored as the user-typed dd/mm/yyyy string so half-formed input ('01/0')
+  // doesn't get rejected. Converted to ISO at the API boundary.
+  const [firstPeriodStartUk, setFirstPeriodStartUk] = useState(fromIso(book.first_period_start ?? ''));
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
   const [error, setError]   = useState('');
+
+  // Year-end is locked once any FY has been closed — we fetch the count of
+  // closed FYs on open so the UI can grey out the field and explain why.
+  const [closedFyCount, setClosedFyCount] = useState<number | null>(null);
 
   // Reset form state whenever the drawer (re)opens or the book changes.
   useEffect(() => {
@@ -48,9 +82,22 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
     setVatRegistered(book.vat_registered);
     setVatScheme((book.vat_scheme ?? 'standard') as VatScheme);
     setVatNumber(book.vat_number ?? '');
+    setYearEndDm(mdToDm(book.year_end_md));
+    setFirstPeriodStartUk(fromIso(book.first_period_start ?? ''));
     setError('');
     setSaved(false);
+
+    // Pull FY status so we know whether to lock the year-end input.
+    fetch(`/api/bookkeeping/books/${book.id}/years`)
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { years?: { status: string }[] } | null) => {
+        if (!d?.years) { setClosedFyCount(0); return; }
+        setClosedFyCount(d.years.filter(y => y.status === 'closed').length);
+      })
+      .catch(() => setClosedFyCount(0));
   }, [open, book]);
+
+  const yearEndLocked = (closedFyCount ?? 0) > 0;
 
   async function patch(payload: Record<string, unknown>) {
     const r = await fetch(`/api/bookkeeping/books/${book.id}`, {
@@ -68,13 +115,33 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
   async function handleSave() {
     setSaving(true); setError(''); setSaved(false);
     try {
-      const next = await patch({
+      // Build the patch payload. Year-end / first-period only included
+      // when not locked AND something actually changed — otherwise the API
+      // would re-run FY generation unnecessarily.
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         base_currency: baseCurrency,
         vat_registered: vatRegistered,
         vat_scheme: vatRegistered ? vatScheme : null,
         vat_number: vatRegistered ? (vatNumber.trim() || null) : null,
-      });
+      };
+      if (!yearEndLocked) {
+        // Convert the displayed DD-MM back to the DB's MM-DD for the API.
+        const yearEndMdForApi = dmToMd(yearEndDm);
+        if ((yearEndMdForApi || null) !== (book.year_end_md || null)) {
+          payload.year_end_md = yearEndMdForApi;
+        }
+        // Convert dd/mm/yyyy → ISO at the API boundary. Bail early if the
+        // user typed something the parser couldn't make sense of.
+        const firstPeriodStartIso = firstPeriodStartUk.trim() ? toIso(firstPeriodStartUk) : '';
+        if (firstPeriodStartUk.trim() && !firstPeriodStartIso) {
+          throw new Error(`"${firstPeriodStartUk}" isn't a valid date — use dd/mm/yyyy.`);
+        }
+        if ((firstPeriodStartIso || null) !== (book.first_period_start || null)) {
+          payload.first_period_start = firstPeriodStartIso || null;
+        }
+      }
+      const next = await patch(payload);
       onUpdated(next);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -173,6 +240,47 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
                   />
                   VAT registered
                 </label>
+                <div className="space-y-3 p-3 rounded bg-indigo-50/40 border border-indigo-100">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] uppercase tracking-wide font-semibold text-indigo-900">Year-end &amp; periods</p>
+                    {yearEndLocked && (
+                      <Tooltip label="Year-end can't be changed once a financial year has been closed.">
+                        <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                          <Lock size={9} /> Locked
+                        </span>
+                      </Tooltip>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Year-end (DD-MM)</label>
+                      <input
+                        type="text"
+                        value={yearEndDm}
+                        onChange={e => setYearEndDm(autoFormatDm(e.target.value))}
+                        placeholder="31-03"
+                        inputMode="numeric"
+                        pattern="\d{2}-\d{2}"
+                        maxLength={5}
+                        disabled={lockedForMe || yearEndLocked}
+                        className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums disabled:bg-gray-100 disabled:text-gray-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">First period start</label>
+                      <DateInput
+                        value={firstPeriodStartUk}
+                        onChange={setFirstPeriodStartUk}
+                        disabled={lockedForMe || yearEndLocked || !yearEndDm.trim()}
+                        className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-500"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-500">
+                    Drives financial-year boundaries, year-end close and the FY-aware reports. Once a year is closed the pattern is locked — adjusting it would silently break old boundaries.
+                  </p>
+                </div>
+
                 {vatRegistered && (
                   <div className="space-y-3 p-3 rounded bg-gray-50 border border-gray-100">
                     <div>

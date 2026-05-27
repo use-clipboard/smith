@@ -21,9 +21,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Plus, Home as HomeIcon, Pencil, Scale, X, Settings as SettingsIcon,
+  Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
+  Upload,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { TransactionType } from '@/types/bookkeeping';
@@ -66,6 +67,17 @@ const GROUPS: { name: string; icon: React.ComponentType<{ size?: number; classNa
     actions: [
       { type: 'JRN', label: 'JRN', description: 'Journal entry' },
       { type: 'RJN', label: 'RJN', description: 'Reversing journal — auto-reverses on a chosen date' },
+      { type: 'YET', label: 'YET', description: 'Year-end transaction — closing journal posted on the FY end date' },
+      { type: 'DVT', label: 'DVT', description: 'Deferred VAT transfer — moves import VAT between control accounts' },
+    ],
+  },
+  {
+    name: 'Adjustments',
+    icon: BookOpenCheck,
+    tone: 'text-rose-600 bg-rose-50',
+    actions: [
+      { type: 'WOF', label: 'WOF', description: 'Write off — clear residual supplier/debtor balance' },
+      { type: 'WBK', label: 'WBK', description: 'Write back — reinstate a previously written-off balance' },
     ],
   },
 ];
@@ -79,6 +91,10 @@ export interface TypeListRailTab {
   id: string;
   txnType: TransactionType;
 }
+export interface ManualRecRailTab {
+  id: string;
+  accountName: string;
+}
 
 interface Props {
   /** Currently-active tab id (e.g. 'home', 'input', 'tb', or a dynamic tab id). */
@@ -89,9 +105,13 @@ interface Props {
   ledgerTabs: LedgerRailTab[];
   /** Open transaction-type list tabs (PAY list, REC list, etc.). */
   typeListTabs?: TypeListRailTab[];
-  /** Single close handler for any dynamic tab (ledger or type-list). */
+  /** Open manual reconciliation entry sheets — one per bank account. */
+  manualRecTabs?: ManualRecRailTab[];
+  /** Single close handler for any dynamic tab (ledger / type-list / manual-rec). */
   onCloseLedgerTab: (id: string) => void;
   onOpenSettings: () => void;
+  /** Opens the book-wide search lightbox (Ctrl+K also triggers it). */
+  onOpenSearch?: () => void;
   /** Disable the action button + tabs that should be unavailable. */
   disabled?: boolean;
   /** Match the page width's safe area. */
@@ -99,8 +119,8 @@ interface Props {
 }
 
 export default function BookSideRail({
-  activeTab, onSelectTab, onAction, ledgerTabs, typeListTabs = [], onCloseLedgerTab, onOpenSettings,
-  disabled, className,
+  activeTab, onSelectTab, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
+  onCloseLedgerTab, onOpenSettings, onOpenSearch, disabled, className,
 }: Props) {
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,7 +184,16 @@ export default function BookSideRail({
     disabled?: boolean;
     accent?: 'indigo' | 'emerald';
   }) {
-    const accentBg = accent === 'emerald' ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700';
+    // Rail uses a deep purple panel — same "you're in the bookkeeping module"
+    // signal as the header card. Icons sit in white-ish on purple; active
+    // tab gets a brighter (white-on-violet-700) chip so it still stands out.
+    // Active tile — back to the original light-tint look (matches the rest
+    // of SMITH's white-chrome tools). The accent stripe on the rail's left
+    // edge carries the "this is bookkeeping" signal so the active state
+    // doesn't need to.
+    const accentBg = accent === 'emerald'
+      ? 'bg-emerald-50 text-emerald-700'
+      : 'bg-indigo-50 text-indigo-700';
     return (
       <Tooltip key={id} label={tooltip} side="right">
         <button
@@ -188,7 +217,7 @@ export default function BookSideRail({
   return (
     <div
       ref={containerRef}
-      className={`relative w-14 shrink-0 rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col items-center py-2 ${className ?? ''}`}
+      className={`relative w-14 shrink-0 rounded-xl border border-slate-200 bg-slate-50 shadow flex flex-col items-center py-2 ${className ?? ''}`}
     >
       {/* New transaction (popout trigger) */}
       <Tooltip label={disabled ? 'New transaction — book is locked or archived' : 'New transaction'} side="right">
@@ -218,6 +247,14 @@ export default function BookSideRail({
           id: 'home', label: 'Home', tooltip: 'Home',
           icon: HomeIcon, active: activeTab === 'home',
           onClick: () => onSelectTab('home'),
+        })}
+        {/* Search — opens the book-wide search lightbox. Ctrl+K also fires
+            this from anywhere in the book. Doesn't have a tab to "activate"
+            since the lightbox sits on top of whatever tab is current. */}
+        {railButton({
+          id: 'search', label: 'Search', tooltip: 'Search · Ctrl+K',
+          icon: SearchIcon, active: false,
+          onClick: () => onOpenSearch?.(),
         })}
         {railButton({
           id: 'input', label: 'Input sheet', tooltip: 'Input sheet',
@@ -251,6 +288,11 @@ export default function BookSideRail({
           onClick: () => onSelectTab('vat'),
         })}
         {railButton({
+          id: 'bank', label: 'Bank', tooltip: 'Bank ledger + reconciliations',
+          icon: Wallet, active: activeTab === 'bank',
+          onClick: () => onSelectTab('bank'),
+        })}
+        {railButton({
           id: 'customers', label: 'Customers', tooltip: 'Customers ledger + matching',
           icon: Users, active: activeTab === 'customers',
           onClick: () => onSelectTab('customers'),
@@ -260,14 +302,52 @@ export default function BookSideRail({
           icon: Building2, active: activeTab === 'suppliers',
           onClick: () => onSelectTab('suppliers'),
         })}
+        {/* Bulk Import lives on the home-page Quick Actions card now, not
+            the rail — it's a deliberate occasional action rather than a
+            day-to-day surface that needs constant access. */}
       </div>
 
       {/* Dynamic drill-down tabs — ledger accounts AND transaction-type lists */}
-      {(ledgerTabs.length > 0 || typeListTabs.length > 0) && (
+      {(ledgerTabs.length > 0 || typeListTabs.length > 0 || manualRecTabs.length > 0) && (
         <>
           <div className="w-6 h-px bg-slate-200 my-2" aria-hidden />
-          <div className="flex flex-col items-center gap-1 max-h-[40vh] overflow-y-auto w-full px-1">
-            {/* Type-list tabs (PAY / SIN / JRN etc.) render first — they're the
+          {/* pt-1.5 pr-1.5: the ✕ close-buttons on each tab sit at -top-1
+              / -right-1 (negative offsets), which would otherwise be clipped
+              by overflow-y-auto. The padding gives them room to render fully. */}
+          <div className="flex flex-col items-center gap-1 max-h-[40vh] overflow-y-auto w-full px-1 pt-1.5 pr-1.5">
+            {/* Manual rec entry sheets — one per open bank account. Render
+                first so the "live work in progress" sits at the top. */}
+            {manualRecTabs.map(mr => {
+              const active = activeTab === mr.id;
+              return (
+                <div key={mr.id} className="relative group">
+                  <Tooltip label={`Manual rec — ${mr.accountName} — click ✕ to close`} side="right">
+                    <button
+                      type="button"
+                      onClick={() => onSelectTab(mr.id)}
+                      aria-label={`Open manual rec for ${mr.accountName}`}
+                      aria-pressed={active}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+                        active
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'text-emerald-700 hover:bg-emerald-50 border border-emerald-200 bg-emerald-50/40'
+                      }`}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </Tooltip>
+                  <button
+                    type="button"
+                    onClick={() => onCloseLedgerTab(mr.id)}
+                    aria-label={`Close manual rec for ${mr.accountName}`}
+                    className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white border border-slate-300 text-slate-400 hover:text-red-600 hover:border-red-300 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              );
+            })}
+            {/* Type-list tabs (PAY / SIN / JRN etc.) render next — they're the
                 higher-level navigation, account drill-downs sit below. */}
             {typeListTabs.map(tt => {
               const active = activeTab === tt.id;

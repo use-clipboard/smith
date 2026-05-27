@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Search, Plus, ReceiptText, ShoppingCart, Wallet, BookOpenCheck, ArrowRightLeft } from 'lucide-react';
+import { Loader2, Search, Plus, ReceiptText, ShoppingCart, Wallet, BookOpenCheck, ArrowRightLeft, Eraser, FileBadge } from 'lucide-react';
 import { useTransactionRowActions } from './useTransactionRowActions';
 import { AccountLink } from '../book/BookNavigationContext';
 import type { Transaction, TransactionType } from '@/types/bookkeeping';
@@ -50,6 +50,10 @@ const TYPE_META: Record<TransactionType, { label: string; description: string; i
   PCR: { label: 'PCR', description: 'Purchase credits',  icon: ShoppingCart,   tone: 'bg-amber-50 text-amber-600'     },
   JRN: { label: 'JRN', description: 'Journal entries',   icon: BookOpenCheck,  tone: 'bg-violet-50 text-violet-600'   },
   RJN: { label: 'RJN', description: 'Reversing journals', icon: BookOpenCheck, tone: 'bg-violet-50 text-violet-600'   },
+  YET: { label: 'YET', description: 'Year-end transactions', icon: BookOpenCheck, tone: 'bg-violet-50 text-violet-600' },
+  DVT: { label: 'DVT', description: 'Deferred VAT transfers', icon: FileBadge,  tone: 'bg-violet-50 text-violet-600'  },
+  WOF: { label: 'WOF', description: 'Write offs',        icon: Eraser,         tone: 'bg-rose-50 text-rose-600'      },
+  WBK: { label: 'WBK', description: 'Write backs',       icon: Eraser,         tone: 'bg-rose-50 text-rose-600'      },
 };
 
 function formatDateUk(iso: string): string {
@@ -127,14 +131,21 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
     onChanged: () => setRefreshKey(k => k + 1),
   });
 
-  // ── Filter / search ───────────────────────────────────────────────────────
+  // ── Filter / search + ref-number sort ────────────────────────────────────
+  // Always order by ref_seq desc (highest ref at the top) regardless of
+  // date — the user wants the per-type list to be a sequence of allocations,
+  // not chronology. ref_seq is monotonic per type so this gives stable
+  // "newest entry first" without depending on `posted_at`/`created_at`,
+  // which can drift when entries are edited or imports back-fill the past.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return transactions;
-    return transactions.filter(t => {
-      const hay = [t.ref_no, t.details ?? '', t.payee_text ?? '', formatDateUk(t.date)].join(' ').toLowerCase();
-      return hay.includes(q);
-    });
+    const matches = !q
+      ? transactions
+      : transactions.filter(t => {
+          const hay = [t.ref_no, t.details ?? '', t.payee_text ?? '', formatDateUk(t.date)].join(' ').toLowerCase();
+          return hay.includes(q);
+        });
+    return [...matches].sort((a, b) => (b.ref_seq ?? 0) - (a.ref_seq ?? 0));
   }, [transactions, search]);
 
   const selected = useMemo(
@@ -288,7 +299,13 @@ export default function TransactionTypeListView({ bookId, type, initialTxnId, on
                   </tr>
                 </thead>
                 <tbody>
-                  {(selected.splits ?? []).map(s => (
+                  {/* Debits-first, credits-last — matches the T-account hover
+                      and standard double-entry presentation regardless of the
+                      DB insert order of the splits. */}
+                  {[
+                    ...(selected.splits ?? []).filter(s => Number(s.debit)  > 0),
+                    ...(selected.splits ?? []).filter(s => Number(s.credit) > 0 && !(Number(s.debit) > 0)),
+                  ].map(s => (
                     <tr key={s.id} className="border-b border-slate-100">
                       <td className="px-3 py-1.5"><AccountLink account={s.account ?? null} /></td>
                       <td className="px-3 py-1.5 text-slate-700">{s.entry_details ?? ''}</td>

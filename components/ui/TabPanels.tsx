@@ -25,6 +25,7 @@ import HrClient from '@/components/features/hr/HrClient';
 import ProposalsClient from '@/components/features/proposals/ProposalsClient';
 import SettingsHosted from '@/app/(app)/settings/SettingsHosted';
 import HelpPage from '@/app/(app)/help/page';
+import BookkeepingTool from '@/components/features/bookkeeping/BookkeepingTool';
 
 const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/full-analysis':   FullAnalysisPage,
@@ -47,6 +48,9 @@ const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/proposals':       ProposalsClient,
   '/settings':        SettingsHosted,
   '/help':            HelpPage,
+  // Bookkeeping is hosted via a client wrapper that keeps the BookView (and
+  // any open book / drill-down tab state) mounted across tab switches.
+  '/bookkeeping':     BookkeepingTool,
 };
 
 /** Routes managed by TabPanels (not Next.js routing). Import this wherever you need to distinguish tool tabs from regular pages. */

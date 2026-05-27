@@ -124,11 +124,22 @@ export default function LedgerPicker({
     el?.scrollIntoView({ block: 'nearest' });
   }, [highlight, open]);
 
+  // When the dropdown transitions to open, the button unmounts and the input
+  // mounts — but the focus from the button doesn't carry across automatically.
+  // Pull focus into the freshly-mounted input on the render after the swap.
+  useEffect(() => {
+    if (open && inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [open]);
+
   const handlePick = useCallback((l: string) => {
     onChange(l);
     setQuery('');
     setOpen(false);
-    inputRef.current?.blur();
+    // Intentionally NOT blurring — see VatTreatmentPicker for the rationale
+    // (blur sends focus to <body> and the modal's focus trap then yanks it
+    // to the first focusable, instead of letting Tab advance naturally).
   }, [onChange]);
 
   const handleKey = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -145,11 +156,14 @@ export default function LedgerPicker({
         handlePick(filtered[highlight]);
       }
     } else if (e.key === 'Tab') {
-      // Auto-pick when the query has narrowed to a single option — VT/Excel
-      // muscle memory: type a few letters, tab to commit and move on. We
-      // intentionally don't preventDefault so Tab still advances focus.
-      if (open && filtered.length === 1 && query.trim() !== '') {
-        handlePick(filtered[0]);
+      // Commit but DEFER the close so the input stays mounted long enough
+      // for Tab's default focus-advance. Closing synchronously would unmount
+      // the input mid-event, dropping focus to <body>; the browser then
+      // walks the whole document from the top and lands on the SMITH logo.
+      if (open && filtered[highlight]) {
+        onChange(filtered[highlight]);
+        setQuery('');
+        setTimeout(() => setOpen(false), 0);
       }
     } else if (e.key === 'Escape') {
       setOpen(false);
@@ -165,6 +179,25 @@ export default function LedgerPicker({
         <button
           type="button"
           onClick={() => { setOpen(true); setQuery(''); setTimeout(() => inputRef.current?.focus(), 0); }}
+          onFocus={() => { setOpen(true); setQuery(''); setHighlight(0); setTimeout(() => inputRef.current?.focus(), 0); }}
+          onKeyDown={e => {
+            // Typeahead-from-button: a printable single character flips to
+            // input mode with the character pre-filled as the query, so the
+            // user never has to click to start filtering. Mirrors the
+            // behaviour the picker has when it's already empty.
+            if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+              e.preventDefault();
+              setQuery(e.key);
+              setHighlight(0);
+              setOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+              e.preventDefault();
+              setQuery('');
+              setOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
+            }
+          }}
           disabled={disabled}
           className="w-full text-left text-sm px-2.5 py-1.5 rounded border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -193,7 +226,7 @@ export default function LedgerPicker({
         <div
           ref={dropdownRef}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, maxHeight: 288 }}
-          className="z-[1200] bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto"
+          className="z-[1500] bg-white border border-gray-200 rounded-lg shadow-lg overflow-y-auto"
         >
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-xs text-gray-500">No ledgers match.</div>

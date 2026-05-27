@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { seedBookCoa } from '@/lib/bookkeeping/seedCoa';
+import { parseYearEndMd, enumerateFys } from '@/lib/bookkeeping/financialYears';
 
 const TEMPLATE_TYPES = ['basic','ltd','llp','partnership','self_employed','sole_trader','trust','charity'] as const;
 const VAT_SCHEMES = ['standard','flat_rate','cash','annual','margin','partial_exemption'] as const;
@@ -15,6 +16,12 @@ const CreateBody = z.object({
   vat_registered: z.boolean().default(false),
   vat_scheme: z.enum(VAT_SCHEMES).nullable().optional(),
   vat_number: z.string().max(50).nullable().optional(),
+  /** MM-DD year-end pattern, e.g. '03-31' for 31 March. Optional — when set,
+   *  the create endpoint also generates the implied FY rows (see PATCH for
+   *  the same logic; we inline a copy here to keep create idempotent). */
+  year_end_md: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
+  /** Explicit start of the first FY. Defaults to today when omitted. */
+  first_period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
 // ── GET /api/bookkeeping/books ───────────────────────────────────────────────
@@ -66,6 +73,11 @@ export async function POST(req: NextRequest) {
   const vatScheme = body.vat_registered ? body.vat_scheme ?? null : null;
   const vatNumber = body.vat_registered ? (body.vat_number ?? null) : null;
 
+  // Year-end pattern is optional at create time. When set, we also stamp
+  // the first-period anchor so the FY generator below has somewhere to begin.
+  const yearEndMd = body.year_end_md && parseYearEndMd(body.year_end_md) ? body.year_end_md : null;
+  const firstPeriodStart = yearEndMd ? (body.first_period_start ?? new Date().toISOString().slice(0, 10)) : null;
+
   const supabase = createClient();
   const { data, error } = await supabase
     .from('bookkeeping_books')
@@ -78,11 +90,14 @@ export async function POST(req: NextRequest) {
       vat_registered: body.vat_registered,
       vat_scheme: vatScheme,
       vat_number: vatNumber,
+      year_end_md: yearEndMd,
+      first_period_start: firstPeriodStart,
       created_by: ctx.userId,
     })
     .select(`
       id, firm_id, client_id, name, template_type, base_currency,
       vat_registered, vat_scheme, vat_number, period_lock_date, vat_lock_date,
+      year_end_md, first_period_start, retained_earnings_account_id,
       admin_locked, archived, created_by, created_at, updated_at,
       client:clients(id, name, client_ref),
       creator:users!bookkeeping_books_created_by_fkey(id, full_name, email)
@@ -121,6 +136,25 @@ export async function POST(req: NextRequest) {
     }
   } catch (seedError) {
     console.error('[bookkeeping] COA seed failed for book', data.id, seedError);
+  }
+
+  // Generate the implied financial-year rows when a year-end was supplied.
+  // We use the helper here too so create + patch share the exact same logic.
+  if (yearEndMd && firstPeriodStart) {
+    const pattern = parseYearEndMd(yearEndMd)!;
+    const oneYearForward = new Date();
+    oneYearForward.setUTCFullYear(oneYearForward.getUTCFullYear() + 1);
+    const desired = enumerateFys(pattern, firstPeriodStart, oneYearForward.toISOString().slice(0, 10));
+    if (desired.length > 0) {
+      await supabase.from('bookkeeping_financial_years').insert(
+        desired.map(r => ({
+          book_id: data.id,
+          start_date: r.start,
+          end_date:   r.end,
+          status: 'open' as const,
+        })),
+      );
+    }
   }
 
   return NextResponse.json({ book: data });

@@ -16,6 +16,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const ledger = url.searchParams.get('ledger');
   const search = url.searchParams.get('search')?.trim();
   const includeArchived = url.searchParams.get('include_archived') === 'true';
+  // The account picker uses ?pickable_only=true to hide inactive accounts so
+  // users can't post new entries to them. The ledger view doesn't pass it —
+  // inactive accounts must still appear there so historic balances remain
+  // discoverable.
+  const pickableOnly = url.searchParams.get('pickable_only') === 'true';
 
   const supabase = createClient();
   // Confirm the book belongs to this firm before exposing its accounts.
@@ -29,13 +34,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   let q = supabase
     .from('bookkeeping_accounts')
-    .select('id, name, ledger, account_type, sort_order, archived')
+    .select('id, name, ledger, account_type, sort_order, archived, inactive, notes')
     .eq('book_id', params.id)
     .order('ledger', { ascending: true, nullsFirst: false })
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
 
   if (!includeArchived) q = q.eq('archived', false);
+  if (pickableOnly) q = q.eq('inactive', false);
+  if (pickableOnly) q = q.eq('system_managed', false); // hide Petty cash etc. from manual posting
   if (ledger) q = q.eq('ledger', ledger);
   if (search) q = q.ilike('name', `%${search}%`);
 

@@ -13,5 +13,21 @@ export default async function BookPage({ params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) redirect('/login');
 
-  return <BookView bookId={params.id} userRole={ctx.userRole} />;
+  // Author name travels with whiteboard notes so the UI can show "Posted by …"
+  // without per-render joins. Fall back to email if the profile has no name.
+  const { data: profile } = await supabase
+    .from('users')
+    .select('full_name, email')
+    .eq('id', ctx.userId)
+    .maybeSingle();
+  const currentUserName = profile?.full_name ?? profile?.email ?? null;
+
+  return (
+    <BookView
+      bookId={params.id}
+      userRole={ctx.userRole}
+      currentUserId={ctx.userId}
+      currentUserName={currentUserName}
+    />
+  );
 }

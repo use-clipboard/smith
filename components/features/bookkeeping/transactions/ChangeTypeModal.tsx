@@ -146,7 +146,7 @@ export default function ChangeTypeModal({ open, bookId, txn, onClose, onSaved }:
                   <div className="flex items-start gap-1.5 text-amber-800">
                     <AlertTriangle size={12} className="mt-0.5 shrink-0" />
                     <span>
-                      The existing VAT amount (£{Number(txn.vat_total).toFixed(2)}) will be cleared — journals don't carry header VAT. If the transaction belongs in a VAT return, post it as a regular type instead.
+                      The existing VAT amount (£{Number(txn.vat_total).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) will be cleared — journals don't carry header VAT. If the transaction belongs in a VAT return, post it as a regular type instead.
                     </span>
                   </div>
                 )}

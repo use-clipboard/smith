@@ -27,7 +27,7 @@ import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 // Body: { new_type: 'PAY'|'CHQ'|… }
 // Returns: { transaction, warning?: string }
 
-const TRANSACTION_TYPES = ['PAY','CHQ','REC','SIN','SCR','PIN','PCR','JRN','TRF','RJN'] as const;
+const TRANSACTION_TYPES = ['PAY','CHQ','REC','SIN','SCR','PIN','PCR','JRN','TRF','RJN','WOF','WBK','YET','DVT'] as const;
 type TxType = typeof TRANSACTION_TYPES[number];
 
 const Body = z.object({
