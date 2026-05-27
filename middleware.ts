@@ -43,7 +43,16 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/mtd-it/approve/') ||
     request.nextUrl.pathname.startsWith('/api/mtd-it/approve/');
 
-  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove) {
+  // Vercel cron endpoints. Vercel's scheduler can't carry a Supabase session,
+  // so the middleware would otherwise 307 every tick to /login and the cron
+  // would never run. Each cron handler verifies its own Bearer CRON_SECRET
+  // (see isAuthorisedCron / equivalent in each route), so bypassing the
+  // session check here is safe.
+  const isCronRoute =
+    request.nextUrl.pathname.startsWith('/api/cron/') ||
+    request.nextUrl.pathname === '/api/tasks/reminders/process';
+
+  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
