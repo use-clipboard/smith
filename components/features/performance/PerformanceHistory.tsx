@@ -94,7 +94,10 @@ const COLUMNS: ColumnConfig[] = [
 const COLUMN_PREF_KEY = 'smith.performance.history.columns';
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return new Date(iso).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
 }
 
 // ── Component ──────────────────────────────────────────────────────────────

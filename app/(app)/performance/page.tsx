@@ -662,7 +662,12 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
           />
 
           <PerformanceEditor
-            initialHtml={reportHtml}
+            // Prefer the edited version when present — this is what makes
+            // re-opening a saved report from history show the user's edits
+            // instead of the original AI output. On a fresh run editorHtml
+            // is initialised to the same value as reportHtml so the fallback
+            // is harmless.
+            initialHtml={editorHtml || reportHtml}
             titlePageHtml={titlePageHtml}
             firmLogoUrl={firmLogoUrl}
             defaultTitle={paBusinessName}

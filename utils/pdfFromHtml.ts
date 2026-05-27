@@ -26,9 +26,16 @@ export async function generatePdfBlob(
 
   const A4_W_MM   = 210;
   const A4_H_MM   = 297;
-  const MARGIN_V  = 14;
-  const CONTENT_H_MM = A4_H_MM - MARGIN_V * 2;
-  const PAGE_H_PX = Math.round(794 * CONTENT_H_MM / A4_W_MM);
+  // PDF page height matches the editor preview's page-break bands (every
+  // 1123px on a 794px-wide paper, i.e. full A4 with no extra margin).
+  // The "margin" the user sees in the PDF comes from the editor paper's own
+  // 48px inner padding which is preserved in the clone.
+  const PAGE_H_PX = 1123;
+  // Hard cap to prevent a runaway canvas from generating a 100MB+ PDF.
+  // Legitimate performance reports are ~10-40 pages; anything beyond
+  // SANITY_MAX_PAGES indicates a layout bug in the source DOM.
+  const SANITY_MAX_PAGES = 100;
+  const SCALE = 1.5;
 
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;';
@@ -114,22 +121,51 @@ export async function generatePdfBlob(
     }
 
     const canvas = await html2canvas(captureTarget, {
-      scale: 1.5,
+      scale: SCALE,
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff',
       windowWidth: 794,
     });
 
-    const imgData  = canvas.toDataURL('image/png');
-    const pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const imgW     = A4_W_MM;
-    const imgH_MM  = (canvas.height * A4_W_MM) / canvas.width;
-    const numPages = Math.max(1, Math.ceil(imgH_MM / CONTENT_H_MM));
+    const pageHeightCanvasPx = PAGE_H_PX * SCALE;
+    const numPages = Math.max(1, Math.ceil(canvas.height / pageHeightCanvasPx));
 
+    if (numPages > SANITY_MAX_PAGES) {
+      throw new Error(
+        `Generated PDF would be ${numPages} pages — the report's rendered height (${Math.round(canvas.height / SCALE)}px) is far larger than expected. ` +
+        `This usually means a layout bug in the editor (e.g. an element with runaway height). ` +
+        `Try refreshing the page, removing the most recent section, or contact support.`,
+      );
+    }
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // Slice the captured canvas into per-page sub-canvases. Each PDF page
+    // gets its own (smaller) PNG instead of the whole giant image being
+    // embedded once per page — which previously bloated the file (a 1090-
+    // page report came out at 106MB because every page held the full image).
     for (let i = 0; i < numPages; i++) {
+      const sliceCanvas = document.createElement('canvas');
+      sliceCanvas.width  = canvas.width;
+      sliceCanvas.height = pageHeightCanvasPx;
+      const ctx = sliceCanvas.getContext('2d');
+      if (!ctx) continue;
+      // Fill the slice with white so any "missing" pixels (the last partial
+      // page) render as white rather than transparent/black.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+      ctx.drawImage(
+        canvas,
+        0, i * pageHeightCanvasPx,                  // source x, y
+        canvas.width, pageHeightCanvasPx,           // source w, h
+        0, 0,                                       // dest x, y
+        canvas.width, pageHeightCanvasPx,           // dest w, h
+      );
+
+      const sliceImgData = sliceCanvas.toDataURL('image/png');
       if (i > 0) pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, MARGIN_V - i * CONTENT_H_MM, imgW, imgH_MM);
+      pdf.addImage(sliceImgData, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
     }
 
     return pdf.output('blob');
