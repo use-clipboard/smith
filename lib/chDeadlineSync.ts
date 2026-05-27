@@ -243,16 +243,28 @@ export async function syncCHDeadlineLinks(
       if (renewal) {
         // (a) Auto-complete current task with an audit note appended to
         //     its description so the user has a record of what we did.
-        const auditNote = `\n\n— Auto-completed by SMITH on ${new Date().toISOString().slice(0, 10)}: Companies House ${readableDeadlineLabel(link.deadline_type)} rolled forward to ${rawDeadline}. A new task was created for the next cycle.`;
+        //
+        //     If the user already manually marked this task complete, we
+        //     must NOT overwrite completed_at — doing so loses the real
+        //     completion timestamp and corrupts "completed on time" reporting.
+        //     We still append the audit note and bump updated_at so the
+        //     renewal is visible, but completed_at is left alone in that case.
+        const alreadyComplete = task.status === 'complete';
+        const auditNote = alreadyComplete
+          ? `\n\n— SMITH on ${new Date().toISOString().slice(0, 10)}: Companies House ${readableDeadlineLabel(link.deadline_type)} rolled forward to ${rawDeadline}. A new task was created for the next cycle. (You had already marked this task complete — original completion time preserved.)`
+          : `\n\n— Auto-completed by SMITH on ${new Date().toISOString().slice(0, 10)}: Companies House ${readableDeadlineLabel(link.deadline_type)} rolled forward to ${rawDeadline}. A new task was created for the next cycle.`;
         const newDescription = (task.description ?? '') + auditNote;
+        const updatePayload: Record<string, unknown> = {
+          status:      'complete',
+          description: newDescription,
+          updated_at:  new Date().toISOString(),
+        };
+        if (!alreadyComplete) {
+          updatePayload.completed_at = new Date().toISOString();
+        }
         const { error: completeErr } = await supabase
           .from('tasks')
-          .update({
-            status:       'complete',
-            completed_at: new Date().toISOString(),
-            description:  newDescription,
-            updated_at:   new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq('id', task.id);
         if (completeErr) { summary.failed += 1; continue; }
 
@@ -304,21 +316,27 @@ export async function syncCHDeadlineLinks(
           .eq('id', task.id);
         if (slideErr) { summary.failed += 1; continue; }
 
-        // Backward-jump heads-up: if the new deadline is more than 30 days
-        // *earlier* than the last-synced one, the user is going to be
-        // surprised ("why is my August task suddenly due in March?"). This
-        // is normal for Officer/PSC IDV when a new officer joins with an
-        // earlier deadline — we append a small audit note so the surprise
-        // explains itself.
+        // Significant-shift heads-up — symmetric for both directions:
+        //   - Backward jump ≥ 30 days: user is going to be surprised ("why
+        //     is my August task suddenly due in March?"). Normal for IDV
+        //     when a new officer/PSC joins with an earlier deadline.
+        //   - Forward jump ≥ 30 days: the slide silently overwrites
+        //     whatever due_date the task had — which may have been a
+        //     manual override. Appending a note means the change leaves a
+        //     paper trail in the task itself.
         if (previous) {
-          const delta = daysBetweenIso(previous, rawDeadline);
-          if (delta <= -30) {
-            const reason = link.deadline_type === 'officer_idv_due'
-              ? "Officer IDV deadline brought forward — a new officer's IDV is due sooner than the previous earliest."
-              : link.deadline_type === 'psc_idv_due'
-                ? "PSC IDV deadline brought forward — a new PSC's IDV is due sooner than the previous earliest."
-                : 'Companies House deadline brought forward.';
-            const heads = `\n\n— SMITH (${new Date().toISOString().slice(0, 10)}): ${readableDeadlineLabel(link.deadline_type)} moved earlier by ${Math.abs(delta)} days, from ${previous} to ${rawDeadline}. ${reason}`;
+          const delta    = daysBetweenIso(previous, rawDeadline);
+          const absDelta = Math.abs(delta);
+          if (absDelta >= 30) {
+            const direction = delta < 0 ? 'earlier' : 'later';
+            const reason = delta < 0
+              ? (link.deadline_type === 'officer_idv_due'
+                  ? "Officer IDV deadline brought forward — a new officer's IDV is due sooner than the previous earliest."
+                  : link.deadline_type === 'psc_idv_due'
+                    ? "PSC IDV deadline brought forward — a new PSC's IDV is due sooner than the previous earliest."
+                    : 'Companies House deadline brought forward.')
+              : 'Companies House deadline pushed back. The task due date has been updated to match; any manual override of the due date has been replaced.';
+            const heads = `\n\n— SMITH (${new Date().toISOString().slice(0, 10)}): ${readableDeadlineLabel(link.deadline_type)} moved ${direction} by ${absDelta} days, from ${previous} to ${rawDeadline}. ${reason}`;
             await supabase
               .from('tasks')
               .update({ description: (task.description ?? '') + heads, updated_at: new Date().toISOString() })
