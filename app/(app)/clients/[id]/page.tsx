@@ -285,7 +285,7 @@ function EmailThreadGroupCard({ group, onPin }: {
         </div>
       </div>
 
-      {/* Strips — earliest first so the thread reads top→bottom chronologically */}
+      {/* Strips — newest first so the most recent reply sits at the top of the card */}
       <div className="divide-y divide-[var(--border)]">
         {group.emails.map(note => {
           const email = parseEmailFromNote(note);
@@ -1262,9 +1262,13 @@ export default function ClientDetailPage() {
     setEditVatSubmitType(client.vat_submit_type ?? '');
     setEditVatScheme(client.vat_scheme ?? '');
     setEditVatPeriodEnd(client.vat_scheme_period_end_month != null ? String(client.vat_scheme_period_end_month) : '');
-    // year_end stored as "31 MAR" — split into day and month for the editor
-    const [yeDay = '', yeMonth = ''] = (client.year_end ?? '').split(' ');
-    setEditYearEndDay(yeDay); setEditYearEndMonth(yeMonth);
+    // year_end is free-text from imports / earlier edits — accept either
+    // a space or a dash between day and month (we've seen both "31 MAR"
+    // and "31-DEC" in real data). Splitting on a single literal here used
+    // to drop the dash-form entirely, leaving both fields blank on edit
+    // and silently wiping the value on save.
+    const [yeDay = '', yeMonthRaw = ''] = (client.year_end ?? '').trim().split(/[\s-]+/);
+    setEditYearEndDay(yeDay); setEditYearEndMonth(yeMonthRaw.toUpperCase());
     setEditMtdIt(client.mtd_it ?? false);
     setEditError(null); setEditing(true);
   }
@@ -1364,7 +1368,10 @@ export default function ClientDetailPage() {
       threadId: firstEmail?.threadId ?? '',
       noteDate: notesInGroup[0].note_date,
       subject: latestEmail?.subject || firstEmail?.subject || latest.title,
-      emails: sorted,
+      // Display newest-first inside the thread card (matches the way inbox
+      // clients show conversations). `sorted` stays ascending for the
+      // latest/first lookups above.
+      emails: [...sorted].reverse(),
       sortDate: new Date(sortTs).toISOString(),
     });
   }

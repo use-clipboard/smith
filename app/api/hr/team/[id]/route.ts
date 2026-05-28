@@ -10,6 +10,12 @@ const PatchSchema = z.object({
   job_description: z.string().nullable().optional(),
   employment_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   holiday_entitlement_days_override: z.number().min(0).max(366).nullable().optional(),
+  pro_rata_first_year: z.boolean().optional(),
+  // Admins can also maintain DOB + the "show to team" flag from the People
+  // view — the self-serve endpoint /api/users/me/birthday handles the same
+  // fields for the logged-in user.
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  show_birthday_to_team: z.boolean().optional(),
 });
 
 // PATCH /api/hr/team/[id] — admin-only update of a user's HR fields.
@@ -44,7 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .update(patch)
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
-    .select('id, full_name, email, role, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override')
+    .select('id, full_name, email, role, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override, pro_rata_first_year, date_of_birth, show_birthday_to_team')
     .single();
 
   if (error) {

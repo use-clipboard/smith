@@ -17,6 +17,9 @@ interface Props {
   viewerId: string;
   viewerRole: 'admin' | 'staff';
   team: TeamMember[];
+  /** Called whenever a section successfully saves a user-row field, so the
+   *  parent can update its team-list state without a full refetch. */
+  onMemberUpdated?: (member: Partial<TeamMember> & { id: string }) => void;
 }
 
 // Section wrapper ─────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ function fmtDate(iso: string | null | undefined): string {
 }
 
 // ── Main tab ─────────────────────────────────────────────────────────────
-export default function ProfileTab({ userId, viewerId, viewerRole, team }: Props) {
+export default function ProfileTab({ userId, viewerId, viewerRole, team, onMemberUpdated }: Props) {
   const subject = useMemo(() => team.find(m => m.id === userId), [team, userId]);
   const isSelf = userId === viewerId;
   const isAdmin = viewerRole === 'admin';
@@ -75,7 +78,8 @@ export default function ProfileTab({ userId, viewerId, viewerRole, team }: Props
         </div>
       </div>
 
-      <BirthdaySection userId={userId} isSelf={isSelf} />
+      <BirthdaySection userId={userId} isSelf={isSelf} isAdmin={isAdmin} subject={subject} onMemberUpdated={onMemberUpdated} />
+      {isAdmin && !isSelf && <EmploymentDatesSection userId={userId} subject={subject} onMemberUpdated={onMemberUpdated} />}
       <EmergencyContactsSection userId={userId} canEdit={canEdit} isSelf={isSelf} />
       <RightToWorkSection userId={userId} isAdmin={isAdmin} />
       <ProbationSection userId={userId} isAdmin={isAdmin} canEditDates={isAdmin || isManager} />
@@ -92,49 +96,169 @@ export default function ProfileTab({ userId, viewerId, viewerRole, team }: Props
 }
 
 // ── Birthday & DOB ───────────────────────────────────────────────────────
-function BirthdaySection({ userId, isSelf }: { userId: string; isSelf: boolean }) {
-  const [dob, setDob] = useState<string | null>(null);
+// Self serve: edit your own DOB via /api/users/me/birthday.
+// Admin: can edit anyone else's DOB via /api/hr/team/[id] (PATCH).
+function BirthdaySection({
+  userId, isSelf, isAdmin, subject, onMemberUpdated,
+}: {
+  userId: string;
+  isSelf: boolean;
+  isAdmin: boolean;
+  subject: TeamMember;
+  onMemberUpdated?: (member: Partial<TeamMember> & { id: string }) => void;
+}) {
+  const [dob, setDob] = useState<string>('');
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  const canEdit = isSelf || isAdmin;
 
   useEffect(() => {
-    if (!isSelf) { setLoading(false); return; }
-    fetch('/api/users/me/birthday')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setDob(d.date_of_birth ?? ''); setShow(!!d.show_birthday_to_team); } })
-      .finally(() => setLoading(false));
-  }, [isSelf]);
+    if (isSelf) {
+      fetch('/api/users/me/birthday')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) { setDob(d.date_of_birth ?? ''); setShow(!!d.show_birthday_to_team); } })
+        .finally(() => setLoading(false));
+    } else {
+      // For admins viewing someone else, the subject row from the team list
+      // already carries date_of_birth / show_birthday_to_team — no extra
+      // fetch needed. Staff viewing a colleague never see this section.
+      setDob(subject.date_of_birth ?? '');
+      setShow(!!subject.show_birthday_to_team);
+      setLoading(false);
+    }
+  }, [isSelf, subject.date_of_birth, subject.show_birthday_to_team]);
 
+  const [error, setError] = useState<string | null>(null);
   async function save() {
     setSaving(true);
+    setError(null);
     try {
-      await fetch('/api/users/me/birthday', {
+      const endpoint = isSelf ? '/api/users/me/birthday' : `/api/hr/team/${userId}`;
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date_of_birth: dob || null, show_birthday_to_team: show }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const msg = body?.error ?? body?.detail ?? `Save failed (${res.status})`;
+        setError(typeof msg === 'string' ? msg : 'Save failed');
+        return;
+      }
+      // For admin updates the server returns the refreshed member row; mirror
+      // those values back into local state so what's on screen matches what
+      // landed in the DB (date_of_birth normalises to YYYY-MM-DD). Also push
+      // the row up so the parent's team list refreshes — keeps the profile
+      // header, list and any other consumers in sync without a refresh.
+      if (!isSelf) {
+        const body = await res.json().catch(() => null);
+        const m = body?.member as TeamMember | undefined;
+        if (m) {
+          setDob(m.date_of_birth ?? '');
+          setShow(!!m.show_birthday_to_team);
+          onMemberUpdated?.(m);
+        }
+      } else {
+        // Self-serve endpoint doesn't return the row, but we know the user
+        // id + which fields changed, so we can still propagate them.
+        onMemberUpdated?.({ id: userId, date_of_birth: dob || null, show_birthday_to_team: show });
+      }
+      setSavedAt(Date.now());
     } finally { setSaving(false); }
   }
 
-  if (!isSelf) return null;
+  // Staff viewing a colleague: hide the whole section (DOB is private unless
+  // the owner opts in, and that opt-in is surfaced elsewhere — the Overview
+  // tab's upcoming birthdays).
+  if (!canEdit) return null;
   return (
-    <Section id="dob" title="Birthday" icon={Cake}>
+    <Section id="dob" title="Birthday" icon={Cake} defaultOpen={isAdmin && !isSelf}>
       {loading ? <MiniLoader /> : (
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-xs">
             <span className="block mb-1 text-[var(--text-muted)]">Date of birth</span>
-            <input type="date" value={dob ?? ''} onChange={e => setDob(e.target.value)} className="input-base text-sm" />
+            <input type="date" value={dob} onChange={e => setDob(e.target.value)} className="input-base text-sm" />
           </label>
           <label className="text-xs flex items-center gap-2 mb-2">
             <input type="checkbox" checked={show} onChange={e => setShow(e.target.checked)} />
-            Show my birthday to the team
+            {isSelf ? 'Show my birthday to the team' : 'Show on the team birthday list'}
           </label>
           <button onClick={() => void save()} disabled={saving} className="btn-primary text-sm">
             {saving ? <Loader2 size={12} className="animate-spin inline" /> : 'Save'}
           </button>
+          {savedAt && !saving && !error && (
+            <span className="text-xs text-emerald-600 mb-2">Saved</span>
+          )}
+          {error && (
+            <span className="text-xs text-rose-600 mb-2">{error}</span>
+          )}
         </div>
       )}
+    </Section>
+  );
+}
+
+// ── Employment start date (admin only) ───────────────────────────────────
+// Lets an admin set / correct someone's work start date from the People view
+// instead of re-running the joiner wizard. Service-anniversary calculations
+// across the HR tool pick the new value up automatically on next load.
+function EmploymentDatesSection({ userId, subject, onMemberUpdated }: {
+  userId: string;
+  subject: TeamMember;
+  onMemberUpdated?: (member: Partial<TeamMember> & { id: string }) => void;
+}) {
+  const [startDate, setStartDate] = useState<string>(subject.employment_start_date ?? '');
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { setStartDate(subject.employment_start_date ?? ''); }, [subject.employment_start_date]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/hr/team/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employment_start_date: startDate || null }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const msg = body?.error ?? body?.detail ?? `Save failed (${res.status})`;
+        setError(typeof msg === 'string' ? msg : 'Save failed');
+        return;
+      }
+      const body = await res.json().catch(() => null);
+      const m = body?.member as TeamMember | undefined;
+      if (m) {
+        setStartDate(m.employment_start_date ?? '');
+        onMemberUpdated?.(m);
+      }
+      setSavedAt(Date.now());
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Section id="employment-dates" title="Employment dates" icon={Clock} defaultOpen>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs">
+          <span className="block mb-1 text-[var(--text-muted)]">Work start date</span>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="input-base text-sm" />
+        </label>
+        <button onClick={() => void save()} disabled={saving} className="btn-primary text-sm">
+          {saving ? <Loader2 size={12} className="animate-spin inline" /> : 'Save'}
+        </button>
+        {savedAt && !saving && !error && (
+          <span className="text-xs text-emerald-600 mb-2">Saved</span>
+        )}
+        {error && (
+          <span className="text-xs text-rose-600 mb-2">{error}</span>
+        )}
+      </div>
     </Section>
   );
 }

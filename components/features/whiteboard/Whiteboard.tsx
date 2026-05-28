@@ -66,6 +66,15 @@ const MARKER_COLORS: { value: MarkerColor; ink: string; label: string }[] = [
 
 /** Stable ±4.5° rotation derived from the note id — keeps stickies feeling
  *  pinned-up rather than pixel-grid-perfect. */
+/** dd-mm-yyyy from any ISO/datetime string. */
+function formatUkDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
 function noteRotation(id: string): number {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = Math.imul(31, h) + id.charCodeAt(i) | 0;
@@ -589,6 +598,9 @@ function StickyView({
               }}
             >
               <p style={{ fontWeight: 600 }} className="truncate">{message.author_name || '—'}</p>
+              {message.created_at && (
+                <p style={{ fontSize: '0.7rem', opacity: 0.8 }} className="truncate">{formatUkDate(message.created_at)}</p>
+              )}
             </div>
           </>
         )}

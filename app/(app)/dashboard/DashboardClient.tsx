@@ -37,37 +37,20 @@ const ALL_TOOLS = [
   { moduleId: 'proposals',       href: '/proposals',      label: 'Proposals',          desc: 'Send proposals to prospects, accept & onboard',          icon: FileSignature,  color: '#0EA5E9' },
 ];
 
-const FEATURE_LABELS: Record<string, string> = {
-  full_analysis: 'Full Analysis',
-  bank_to_csv: 'Bank to CSV',
-  landlord_analysis: 'Landlord Analysis',
-  final_accounts_review: 'Accounts Review',
-  performance_analysis: 'Performance',
-  p32_summary: 'P32 Summary',
-  risk_assessment: 'Risk Assessment',
-  summarise: 'Summarise',
-};
-
-const FEATURE_ICONS: Record<string, React.ElementType> = {
-  full_analysis: FileSearch,
-  bank_to_csv: ArrowLeftRight,
-  landlord_analysis: House,
-  final_accounts_review: ClipboardCheck,
-  performance_analysis: TrendingUp,
-  p32_summary: Receipt,
-  risk_assessment: ShieldAlert,
-  summarise: FileText,
-};
-
-const FEATURE_COLORS: Record<string, string> = {
-  full_analysis: '#4F46E5',
-  bank_to_csv: '#0891B2',
-  landlord_analysis: '#D97706',
-  final_accounts_review: '#7C3AED',
-  performance_analysis: '#059669',
-  p32_summary: '#CA8A04',
-  risk_assessment: '#DC2626',
-  summarise: '#475569',
+// Feature meta — kept in lockstep with the `feature` strings written to the
+// `outputs` table by /app/api/outputs/*. Add a new entry here whenever a new
+// tool starts logging outputs, otherwise it shows up as a generic Activity
+// row with no icon/label.
+const FEATURE_META: Record<string, { label: string; icon: React.ElementType; color: string; route: string }> = {
+  full_analysis:         { label: 'Full Analysis',     icon: FileSearch,     color: '#4F46E5', route: '/full-analysis'   },
+  bank_to_csv:           { label: 'Bank to CSV',       icon: ArrowLeftRight, color: '#0891B2', route: '/bank-to-csv'     },
+  landlord_analysis:     { label: 'Landlord Analysis', icon: House,          color: '#D97706', route: '/landlord'        },
+  final_accounts_review: { label: 'Accounts Review',   icon: ClipboardCheck, color: '#7C3AED', route: '/final-accounts'  },
+  performance_analysis:  { label: 'Performance',       icon: TrendingUp,     color: '#059669', route: '/performance'     },
+  p32_summary:           { label: 'P32 Summary',       icon: Receipt,        color: '#CA8A04', route: '/p32'             },
+  risk_assessment:       { label: 'Risk Assessment',   icon: ShieldAlert,    color: '#DC2626', route: '/risk-assessment' },
+  summarise:             { label: 'Summarise',         icon: FileText,       color: '#475569', route: '/summarise'       },
+  meeting_notes:         { label: 'Meeting Notes',     icon: MicVocal,       color: '#7C3AED', route: '/meeting-notes'   },
 };
 
 function formatTimeAgo(dateStr: string): string {
@@ -222,7 +205,16 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
               </div>
               <span className="text-sm font-semibold text-[var(--text-primary)]">Recent Clients</span>
             </div>
-            <Link href="/clients" className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">
+            <Link
+              href="/clients"
+              onClick={() => openTab({
+                id: 'clients',
+                title: 'Clients',
+                route: '/clients',
+                icon: Users as Tab['icon'],
+              })}
+              className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
+            >
               View all <ExternalLink size={10} />
             </Link>
           </div>
@@ -269,8 +261,9 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
           ) : (
             <ul className="space-y-3">
               {recentOutputs.map(o => {
-                const Icon = FEATURE_ICONS[o.feature] ?? Activity;
-                const color = FEATURE_COLORS[o.feature] ?? '#6B7280';
+                const meta = FEATURE_META[o.feature];
+                const Icon = meta?.icon ?? Activity;
+                const color = meta?.color ?? '#6B7280';
                 return (
                   <li key={o.id} className="flex items-center gap-3">
                     <div
@@ -281,7 +274,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                        {FEATURE_LABELS[o.feature] || o.feature}
+                        {meta?.label || o.feature}
                       </p>
                       <p className="text-xs text-[var(--text-muted)] truncate">
                         {o.clients?.name
@@ -390,8 +383,10 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {allOutputs.map(o => {
-                const Icon = FEATURE_ICONS[o.feature] ?? Activity;
-                const color = FEATURE_COLORS[o.feature] ?? '#6B7280';
+                const meta = FEATURE_META[o.feature];
+                const Icon = meta?.icon ?? Activity;
+                const color = meta?.color ?? '#6B7280';
+                const canOpenTool = !!meta?.route;
                 return (
                   <li key={o.id} className="flex items-center gap-4 py-3 px-1">
                     <div
@@ -401,9 +396,27 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                       <Icon size={16} style={{ color }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-[var(--text-primary)]">
-                        {FEATURE_LABELS[o.feature] || o.feature}
-                      </p>
+                      {canOpenTool ? (
+                        <Link
+                          href={meta.route}
+                          onClick={() => {
+                            setActivityOpen(false);
+                            openTab({
+                              id: o.feature,
+                              title: meta.label,
+                              route: meta.route,
+                              icon: meta.icon as Tab['icon'],
+                            });
+                          }}
+                          className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline"
+                        >
+                          {meta.label}
+                        </Link>
+                      ) : (
+                        <p className="text-sm font-medium text-[var(--text-primary)]">
+                          {o.feature}
+                        </p>
+                      )}
                       {o.clients?.name ? (
                         <p className="text-xs text-[var(--text-muted)] truncate">
                           {o.clients.name}

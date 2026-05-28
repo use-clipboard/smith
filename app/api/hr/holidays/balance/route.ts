@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   // Visibility: caller can fetch own; manager of target; admin of firm.
   const { data: target } = await supabase
     .from('users')
-    .select('id, firm_id, manager_id, holiday_entitlement_days_override')
+    .select('id, firm_id, manager_id, holiday_entitlement_days_override, employment_start_date, pro_rata_first_year')
     .eq('id', userId)
     .maybeSingle();
   if (!target || target.firm_id !== ctx.firmId) return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -42,13 +42,42 @@ export async function GET(req: NextRequest) {
   const resetMonth = settings?.holiday_reset_month ?? 1;
   const resetDay = settings?.holiday_reset_day ?? 1;
   const defaultDays = Number(settings?.default_annual_holiday_days ?? 28);
-  const entitlement = target.holiday_entitlement_days_override != null
-    ? Number(target.holiday_entitlement_days_override)
-    : defaultDays;
 
   const { start, end } = holidayYearWindow(resetMonth, resetDay, new Date());
   const startIso = toIsoDate(start);
   const endIsoExclusive = toIsoDate(end);
+
+  // Entitlement model:
+  //   • Full annual entitlement = explicit override on the user row if set,
+  //     otherwise the firm default. The override is the part-time / special
+  //     case escape hatch and is always the user's "real" annual figure.
+  //   • If `pro_rata_first_year` is on AND `employment_start_date` falls
+  //     inside the current holiday window, we apply pro-rata for THIS year
+  //     only. We compute it on the fly so once the window rolls over it
+  //     silently becomes a no-op (start date no longer inside the window)
+  //     and the user reverts to the full annual entitlement without any
+  //     admin intervention.
+  const annualEntitlement = target.holiday_entitlement_days_override != null
+    ? Number(target.holiday_entitlement_days_override)
+    : defaultDays;
+
+  let entitlement = annualEntitlement;
+  let proRated = false;
+  if (
+    target.pro_rata_first_year &&
+    target.employment_start_date &&
+    target.employment_start_date > startIso &&
+    target.employment_start_date < endIsoExclusive
+  ) {
+    const startMs = new Date(target.employment_start_date + 'T12:00:00Z').getTime();
+    const windowStartMs = start.getTime();
+    const windowEndMs = end.getTime(); // exclusive
+    const effectiveStartMs = Math.max(startMs, windowStartMs);
+    const totalDays = Math.max(1, Math.round((windowEndMs - windowStartMs) / 86_400_000));
+    const remainingDays = Math.max(0, Math.round((windowEndMs - effectiveStartMs) / 86_400_000));
+    entitlement = Math.round(((remainingDays / totalDays) * annualEntitlement) * 2) / 2;
+    proRated = true;
+  }
 
   // Approved holidays where ANY part falls within [start, end). We use a
   // loose overlap check on dates to keep the SQL simple.
@@ -80,6 +109,8 @@ export async function GET(req: NextRequest) {
     user_id: userId,
     year: { start: startIso, end: endIsoExclusive, reset_month: resetMonth, reset_day: resetDay },
     entitlement,
+    annual_entitlement: annualEntitlement,
+    pro_rated: proRated,
     used,
     pending: pendingDays,
     remaining: Math.max(0, entitlement - used - pendingDays),

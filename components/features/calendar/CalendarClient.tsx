@@ -116,6 +116,8 @@ export default function CalendarClient() {
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [editingReminder, setEditingReminder] = useState<PersonalReminder | null>(null);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
+  const [teamFilter, setTeamFilter] = useState('');
+  const [teamExpanded, setTeamExpanded] = useState(true);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -223,6 +225,10 @@ export default function CalendarClient() {
 
   // Show only visible members' events
   const visibleEvents = events.filter(e => !e.ownerUserId || !hiddenMembers.has(e.ownerUserId));
+  // Personal reminders only belong to the current user — hide them whenever
+  // "My Calendar" isn't in the visible set (e.g. when the user has filtered
+  // down to a colleague's calendar, their own reminder shouldn't follow).
+  const visibleReminders = userId && !hiddenMembers.has(userId) ? reminders : [];
 
   // Calendar label
   const visibleMembers = members.filter(m => !hiddenMembers.has(m.id));
@@ -400,64 +406,124 @@ export default function CalendarClient() {
         </div>
 
         <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
-          {/* Sidebar: team calendar multi-toggle */}
-          {members.length > 0 && (
-            <div className="w-52 shrink-0 flex flex-col gap-0.5">
-              {/* Header row */}
-              <div className="flex items-center justify-between px-2 mb-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-                  View Team Calendars
-                </p>
-                <button
-                  onClick={() => {
-                    if (hiddenMembers.size === 0) {
-                      // All visible → deselect all
-                      setHiddenMembers(new Set(members.map(m => m.id)));
-                    } else {
-                      // Some or all hidden → select all
-                      setHiddenMembers(new Set());
-                    }
-                  }}
-                  className="text-[10px] text-[var(--accent)] hover:underline shrink-0 ml-1"
-                >
-                  {hiddenMembers.size === 0 ? 'Deselect all' : 'Select all'}
-                </button>
-              </div>
+          {/* Sidebar: My Calendar pinned + collapsible team section with search */}
+          {members.length > 0 && (() => {
+            const me = members.find(m => m.id === userId);
+            const team = members.filter(m => m.id !== userId);
+            const filterLower = teamFilter.trim().toLowerCase();
+            const filteredTeam = filterLower
+              ? team.filter(m => m.name.toLowerCase().includes(filterLower) || m.email.toLowerCase().includes(filterLower))
+              : team;
+            const totalVisible = members.length - hiddenMembers.size;
 
-              {/* My Calendar always first */}
-              {[
-                ...members.filter(m => m.id === userId),
-                ...members.filter(m => m.id !== userId),
-              ].map(m => {
-                const isVisible = !hiddenMembers.has(m.id);
-                const memberBtn = (
-                  <button
-                    key={m.id}
-                    onClick={() => toggleMember(m.id)}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all text-left w-full hover:bg-[var(--bg-nav-hover)]"
+            // Renders the row that selects a single member.
+            const memberRow = (m: MemberInfo, isMe: boolean) => {
+              const isVisible = !hiddenMembers.has(m.id);
+              const row = (
+                <button
+                  onClick={() => toggleMember(m.id)}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all text-left w-full hover:bg-[var(--bg-nav-hover)] ${isVisible ? '' : 'opacity-75'}`}
+                >
+                  <span
+                    className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all"
+                    style={{
+                      backgroundColor: isVisible ? m.color : 'transparent',
+                      borderColor: m.color,
+                    }}
                   >
-                    {/* Coloured checkbox */}
-                    <span
-                      className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all"
-                      style={{
-                        backgroundColor: isVisible ? m.color : 'transparent',
-                        borderColor: m.color,
-                      }}
+                    {isVisible && <Check size={10} color="white" strokeWidth={3} />}
+                  </span>
+                  <span className={`truncate flex-1 transition-colors ${isVisible ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
+                    {isMe ? 'My Calendar' : m.name}
+                  </span>
+                  {!m.connected && <WifiOff size={10} className="text-[var(--text-muted)] shrink-0" />}
+                </button>
+              );
+              return !m.connected
+                ? <Tooltip key={m.id} label={`${isMe ? 'Your' : `${m.name}'s`} calendar is not connected`}>{row}</Tooltip>
+                : <div key={m.id}>{row}</div>;
+            };
+
+            return (
+              <div className="w-56 shrink-0 flex flex-col min-h-0">
+                {/* My Calendar — pinned mini-section */}
+                {me && (
+                  <div className="mb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] px-2 mb-1">Mine</p>
+                    {memberRow(me, true)}
+                  </div>
+                )}
+
+                {/* Team — collapsible section with search */}
+                {team.length > 0 && (
+                  <div className="flex flex-col min-h-0 flex-1">
+                    <div className="flex items-center gap-1 px-2 mb-1">
+                      <button
+                        onClick={() => setTeamExpanded(v => !v)}
+                        className="flex items-center gap-1 group min-w-0"
+                      >
+                        <ChevronDown
+                          size={11}
+                          className={`text-[var(--text-muted)] transition-transform ${teamExpanded ? '' : '-rotate-90'}`}
+                        />
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] group-hover:text-[var(--text-primary)] transition-colors">
+                          Team <span className="opacity-70 normal-case font-normal">({team.length})</span>
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => {
+                          const everyTeamShown = team.every(t => !hiddenMembers.has(t.id));
+                          setHiddenMembers(prev => {
+                            const next = new Set(prev);
+                            if (everyTeamShown) team.forEach(t => next.add(t.id));
+                            else team.forEach(t => next.delete(t.id));
+                            return next;
+                          });
+                        }}
+                        className="ml-auto text-[10px] text-[var(--accent)] hover:underline"
+                      >
+                        {team.every(t => !hiddenMembers.has(t.id)) ? 'Hide all' : 'Show all'}
+                      </button>
+                    </div>
+
+                    {teamExpanded && (
+                      <>
+                        <div className="px-2 mb-1.5">
+                          <input
+                            type="text"
+                            value={teamFilter}
+                            onChange={e => setTeamFilter(e.target.value)}
+                            placeholder="Search team…"
+                            className="w-full text-xs px-2 py-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-content)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] focus:border-[var(--accent)]"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-0.5 overflow-y-auto scrollbar-thin min-h-0 pr-0.5">
+                          {filteredTeam.length === 0 ? (
+                            <p className="px-2 py-2 text-[11px] text-[var(--text-muted)]">No matches</p>
+                          ) : (
+                            filteredTeam.map(m => memberRow(m, false))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer chip — selection summary */}
+                <div className="mt-2 pt-2 border-t border-[var(--border)] px-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                  <span>{totalVisible} of {members.length} selected</span>
+                  {hiddenMembers.size > 0 && (
+                    <button
+                      onClick={() => setHiddenMembers(new Set())}
+                      className="text-[var(--accent)] hover:underline"
                     >
-                      {isVisible && <Check size={10} color="white" strokeWidth={3} />}
-                    </span>
-                    <span className={`truncate transition-colors ${isVisible ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-                      {m.id === userId ? 'My Calendar' : m.name}
-                    </span>
-                    {!m.connected && <WifiOff size={10} className="text-[var(--text-muted)] shrink-0" />}
-                  </button>
-                );
-                return !m.connected
-                  ? <Tooltip key={m.id} label={`${m.id === userId ? 'Your' : `${m.name}'s`} calendar is not connected`}>{memberBtn}</Tooltip>
-                  : memberBtn;
-              })}
-            </div>
-          )}
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Calendar grid */}
           <div className="flex-1 min-w-0 overflow-auto flex flex-col gap-2">
@@ -470,7 +536,7 @@ export default function CalendarClient() {
               <MonthView
                 currentDate={currentDate}
                 events={visibleEvents}
-                reminders={reminders}
+                reminders={visibleReminders}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
@@ -481,7 +547,7 @@ export default function CalendarClient() {
               <WeekView
                 currentDate={currentDate}
                 events={visibleEvents}
-                reminders={reminders}
+                reminders={visibleReminders}
                 onDayClick={handleDayClick}
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
@@ -492,7 +558,7 @@ export default function CalendarClient() {
               <AgendaView
                 currentDate={currentDate}
                 events={visibleEvents}
-                reminders={reminders}
+                reminders={visibleReminders}
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
@@ -798,19 +864,33 @@ function MonthView({
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-7 flex-1 border-t border-l border-[var(--border)]">
+      <div className="grid grid-cols-7 flex-1 border-t border-l border-[var(--border)] bg-[var(--border)] gap-px">
         {cells.map(({ date, isCurrentMonth }, i) => {
           const dayEvents = getEventsForDay(events, date);
           const dayReminders = getRemindersForDay(reminders, date);
           const isToday = isSameDay(date, today);
+          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
           const eventCap = Math.max(0, 3 - dayReminders.length);
+          // Tiered backgrounds with light-violet hues so the grid reads as a
+          // calendar rather than a spreadsheet: today wears a deeper accent
+          // wash, weekday cells take a very faint violet tint, weekends pick
+          // up a slightly cooler lavender, and out-of-month days drop to a
+          // muted slate so the edges of the month still stand out.
+          // Weekday in-month → white, weekend in-month → light purple,
+          // out-of-month → a deeper purple so the month boundaries read at a
+          // glance. Today wears a slightly stronger accent wash on top.
+          const cellBg = !isCurrentMonth
+            ? 'bg-violet-200/70 dark:bg-violet-900/40'
+            : isToday
+              ? 'bg-violet-100 dark:bg-violet-900/40'
+              : isWeekend
+                ? 'bg-violet-50 dark:bg-violet-950/30'
+                : 'bg-white dark:bg-slate-900/30';
           return (
             <div
               key={i}
               onClick={() => onDayClick(date)}
-              className={`border-b border-r border-[var(--border)] p-1 min-h-[90px] min-w-0 overflow-hidden cursor-pointer transition-colors
-                ${isCurrentMonth ? 'bg-[var(--bg-content)]' : 'bg-[var(--bg-nav-hover)]'}
-                hover:bg-[var(--accent-light)]`}
+              className={`p-1 min-h-[90px] min-w-0 overflow-hidden cursor-pointer transition-colors ${cellBg} hover:bg-[var(--accent-light)]`}
             >
               <div className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full mb-0.5
                 ${isToday ? 'bg-[var(--accent)] text-white' : isCurrentMonth ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}
@@ -901,19 +981,27 @@ function WeekView({
   });
 
   return (
-    <div className="grid grid-cols-7 border-t border-l border-[var(--border)]">
+    <div className="grid grid-cols-7 border-t border-l border-[var(--border)] bg-[var(--border)] gap-px">
       {days.map((day, i) => {
         const dayEvents = getEventsForDay(events, day);
         const dayReminders = getRemindersForDay(reminders, day);
         const isToday = isSameDay(day, today);
+        const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+        // Match the month view: today wears a stronger violet, weekends pick
+        // up a light lavender, weekdays stay white.
+        const cellBg = isToday
+          ? 'bg-violet-100 dark:bg-violet-900/40'
+          : isWeekend
+            ? 'bg-violet-50 dark:bg-violet-950/30'
+            : 'bg-white dark:bg-slate-900/30';
         return (
           <div
             key={i}
-            className="border-b border-r border-[var(--border)] min-h-[200px] min-w-0 overflow-hidden cursor-pointer hover:bg-[var(--accent-light)] transition-colors"
+            className={`min-h-[200px] min-w-0 overflow-hidden cursor-pointer transition-colors ${cellBg} hover:bg-violet-100 dark:hover:bg-violet-900/40`}
             onClick={() => onDayClick(day)}
           >
             <div className={`text-center py-2 border-b border-[var(--border)] text-xs font-medium
-              ${isToday ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
+              ${isToday ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)]'}`}
             >
               <div className="text-[11px] uppercase tracking-wide">{DAYS[day.getDay()]}</div>
               <div className={`text-lg font-bold leading-tight ${isToday ? 'text-[var(--accent)]' : ''}`}>
@@ -1024,9 +1112,19 @@ function AgendaView({
 
   return (
     <div className="space-y-4">
-      {groups.filter(g => g.events.length > 0 || g.reminders.length > 0).map((group, i) => (
+      {groups.filter(g => g.events.length > 0 || g.reminders.length > 0).map((group, i) => {
+        const isToday = isSameDay(group.date, today);
+        const isWeekend = group.date.getDay() === 0 || group.date.getDay() === 6;
+        // Same scheme as month/week: today highlighted in violet, weekends a
+        // lighter lavender, weekdays neutral.
+        const labelBg = isToday
+          ? 'bg-violet-100 text-[var(--accent)] dark:bg-violet-900/40'
+          : isWeekend
+            ? 'bg-violet-50 text-[var(--text-secondary)] dark:bg-violet-950/30'
+            : 'bg-white text-[var(--text-muted)] dark:bg-slate-900/30';
+        return (
         <div key={i}>
-          <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-widest mb-2 px-1">
+          <div className={`inline-flex text-xs font-semibold uppercase tracking-widest mb-2 px-2 py-1 rounded-md border border-[var(--border)] ${labelBg}`}>
             {group.label}
           </div>
           <div className="space-y-1.5">
@@ -1087,7 +1185,8 @@ function AgendaView({
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

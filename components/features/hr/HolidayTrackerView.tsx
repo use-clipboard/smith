@@ -238,15 +238,19 @@ export default function HolidayTrackerView({ team, departments, userId, userRole
       unpaid: { month: 0, ytd: 0 },
       other: { month: 0, ytd: 0 },
     };
-    const todayIsoStr = todayIso();
-    const ytdEnd = todayIsoStr < holidayYear.end ? isoNextDay(todayIsoStr) : holidayYear.end;
+    // "YTD" here means the whole holiday year — including future bookings.
+    // Holidays and bank holidays are almost always entered well in advance,
+    // so totalling only up to today would routinely understate the
+    // employee's used allowance. holidayYear.end is exclusive (day after
+    // the final day of the year) which is exactly what daysInWindow wants.
+    const yearEndExclusive = holidayYear.end;
     // Holidays
     for (const h of holidays) {
       if (h.user_id !== memberId) continue;
       if (h.status && h.status !== 'approved') continue;
       const kind: CellKind = h.is_bank_holiday ? 'bank_holiday' : 'holiday';
       out[kind].month += daysInWindow(h, monthStart, isoNextDay(monthEnd));
-      out[kind].ytd   += daysInWindow(h, holidayYear.start, ytdEnd);
+      out[kind].ytd   += daysInWindow(h, holidayYear.start, yearEndExclusive);
     }
     // Absences
     for (const a of absences) {
@@ -262,7 +266,7 @@ export default function HolidayTrackerView({ team, departments, userId, userRole
         decided_at: null, created_at: '', requester: null, manager: null,
       };
       out[kind].month += daysInWindow(synthetic, monthStart, isoNextDay(monthEnd));
-      out[kind].ytd   += daysInWindow(synthetic, holidayYear.start, ytdEnd);
+      out[kind].ytd   += daysInWindow(synthetic, holidayYear.start, yearEndExclusive);
     }
     return out;
   }, [holidays, absences, monthStart, monthEnd, holidayYear, daysInWindow]);
@@ -279,21 +283,48 @@ export default function HolidayTrackerView({ team, departments, userId, userRole
         }
       }
     }
-    // YTD: holidays for this user falling in [holidayYear.start, today]
-    const todayIsoStr = todayIso();
-    const ytdEnd = todayIsoStr < holidayYear.end ? todayIsoStr : prevDayIso(holidayYear.end);
+    // YTD covers the whole holiday year — including future approved
+    // bookings — so Remaining reflects what's actually left rather than
+    // assuming no future leave is on the books. Holidays and bank
+    // holidays are tracked separately because Remaining = entitlement
+    // − holidays − bank holidays (other absence categories don't draw
+    // down annual leave).
     let ytd = 0;
+    let bankYtd = 0;
     for (const h of holidays) {
       if (h.user_id !== memberId) continue;
       if (h.status !== 'approved' && h.status !== undefined) continue;
-      ytd += daysInWindow(h, holidayYear.start, isoNextDay(ytdEnd));
+      const days = daysInWindow(h, holidayYear.start, holidayYear.end);
+      if (h.is_bank_holiday) bankYtd += days;
+      else ytd += days;
     }
-    // Entitlement: per-user override, else firm default, else 28
+    // Entitlement for the CURRENT holiday year. Mirrors the balance API:
+    //   • Annual figure = per-user override, else firm default, else 28.
+    //   • Pro-rata only when `pro_rata_first_year` is on AND the start date
+    //     falls strictly inside the active holiday window. Otherwise the
+    //     full annual figure is used (the flag is a no-op for established
+    //     staff or anyone past their first year).
     const member = team.find(m => m.id === memberId);
-    const entitlement = member?.holiday_entitlement_days_override
-      ?? settings?.default_annual_holiday_days
-      ?? 28;
-    return { month, ytd, entitlement };
+    const annual = Number(
+      member?.holiday_entitlement_days_override
+        ?? settings?.default_annual_holiday_days
+        ?? 28,
+    );
+    let entitlement = annual;
+    let proRated = false;
+    const start = member?.employment_start_date ?? null;
+    if (member?.pro_rata_first_year && start && start > holidayYear.start && start < holidayYear.end) {
+      const startMs = new Date(start + 'T12:00:00Z').getTime();
+      const windowStartMs = new Date(holidayYear.start + 'T12:00:00Z').getTime();
+      const windowEndMs = new Date(holidayYear.end + 'T12:00:00Z').getTime(); // exclusive
+      const effectiveStartMs = Math.max(startMs, windowStartMs);
+      const totalDays = Math.max(1, Math.round((windowEndMs - windowStartMs) / 86_400_000));
+      const remainingDays = Math.max(0, Math.round((windowEndMs - effectiveStartMs) / 86_400_000));
+      entitlement = Math.round(((remainingDays / totalDays) * annual) * 2) / 2;
+      proRated = true;
+    }
+    const remaining = Math.round((entitlement - ytd - bankYtd) * 2) / 2;
+    return { month, ytd, bankYtd, entitlement, annual, proRated, remaining };
   }, [cellMap, holidays, holidayYear, daysInWindow, settings, team]);
 
 
@@ -417,7 +448,7 @@ function TotalsTable({
 }: {
   grouped: Array<{ department: Department | null; members: TeamMember[] }>;
   categoryTotals: (id: string) => Record<CellKind, { month: number; ytd: number }>;
-  memberTotals: (id: string) => { month: number; ytd: number; entitlement: number };
+  memberTotals: (id: string) => { month: number; ytd: number; bankYtd: number; entitlement: number; annual: number; proRated: boolean; remaining: number };
   monthLabel: string;
 }) {
   return (
@@ -434,22 +465,23 @@ function TotalsTable({
                 </span>
                 <div className="grid grid-cols-2 mt-1 border-t border-gray-200" title={monthLabel}>
                   <span className="py-0.5 text-[8px] font-medium uppercase text-[var(--text-muted)] border-r border-gray-200">Month</span>
-                  <span className="py-0.5 text-[8px] font-medium uppercase text-[var(--text-muted)]">YTD</span>
+                  <span className="py-0.5 text-[8px] font-medium uppercase text-[var(--text-muted)]" title="Full holiday year — includes future approved bookings">FY</span>
                 </div>
               </th>
             ))}
             <th className="sticky top-0 z-20 px-2 py-2 text-center font-semibold text-[9px] uppercase text-[var(--text-muted)] bg-gray-50 border-l border-b border-gray-200">Entitlement</th>
+            <th className="sticky top-0 z-20 px-2 py-2 text-center font-semibold text-[9px] uppercase text-[var(--text-muted)] bg-gray-50 border-l border-b border-gray-200">Remaining</th>
           </tr>
         </thead>
         <tbody>
           {grouped.length === 0 ? (
-            <tr><td colSpan={TOTAL_CATEGORIES.length * 2 + 2} className="px-4 py-6 text-center text-[var(--text-muted)] italic">No staff to show in this view.</td></tr>
+            <tr><td colSpan={TOTAL_CATEGORIES.length * 2 + 3} className="px-4 py-6 text-center text-[var(--text-muted)] italic">No staff to show in this view.</td></tr>
           ) : grouped.map(({ department, members }) => {
             const deptColor = department?.color ?? '#94a3b8';
             return (
               <Fragment key={department?.id ?? '__none__'}>
                 <tr className="border-b border-gray-100" style={{ background: deptColor + '12' }}>
-                  <td colSpan={TOTAL_CATEGORIES.length * 2 + 2} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: deptColor }}>
+                  <td colSpan={TOTAL_CATEGORIES.length * 2 + 3} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider" style={{ color: deptColor }}>
                     {department?.name ?? 'No department'}
                   </td>
                 </tr>
@@ -474,8 +506,25 @@ function TotalsTable({
                           </Fragment>
                         );
                       })}
-                      <td className="px-2 text-center text-[var(--text-secondary)] font-medium bg-gray-50/40">
-                        {totals.entitlement}
+                      <td className="px-2 text-center font-medium bg-gray-50/40">
+                        <Tooltip
+                          label={totals.proRated
+                            ? `Pro-rated entitlement for the current holiday year: ${totals.entitlement} of ${totals.annual} day${totals.annual === 1 ? '' : 's'} (first-year starter)`
+                            : `Annual holiday entitlement: ${totals.entitlement} day${totals.entitlement === 1 ? '' : 's'}`}
+                        >
+                          <span className={`cursor-help ${totals.proRated ? 'text-indigo-700' : 'text-[var(--text-secondary)]'}`}>
+                            {totals.entitlement}
+                          </span>
+                        </Tooltip>
+                      </td>
+                      <td className="px-2 text-center font-bold bg-emerald-50/40">
+                        <Tooltip
+                          label={`Remaining = Entitlement (${totals.entitlement}) − Holidays (${formatTotal(totals.ytd) || '0'}) − Bank holidays (${formatTotal(totals.bankYtd) || '0'}). Includes future approved bookings.`}
+                        >
+                          <span className={`cursor-help ${totals.remaining < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                            {formatTotal(totals.remaining)}
+                          </span>
+                        </Tooltip>
                       </td>
                     </tr>
                   );
@@ -496,7 +545,7 @@ function DepartmentBlock({
   members: TeamMember[];
   dayLabels: Array<{ day: number; iso: string; dow: number; isWeekend: boolean; isToday: boolean }>;
   cellMap: Map<string, Map<string, CellEntry>>;
-  memberTotals: (id: string) => { month: number; ytd: number; entitlement: number };
+  memberTotals: (id: string) => { month: number; ytd: number; bankYtd: number; entitlement: number; annual: number; proRated: boolean; remaining: number };
   hoverDay: string | null;
   hoverMember: string | null;
   setHoverDay: (iso: string | null) => void;
@@ -550,13 +599,19 @@ function DepartmentBlock({
               );
             })}
             <td className="px-2 text-center text-emerald-700 font-bold bg-emerald-50/40 border-l border-gray-200">
-              <Tooltip label={`Holiday days this month: ${formatTotal(totals.month) || '0'} · YTD: ${formatTotal(totals.ytd) || '0'} of ${totals.entitlement}`}>
+              <Tooltip label={`Holiday days this month: ${formatTotal(totals.month) || '0'} · Full year: ${formatTotal(totals.ytd) || '0'} of ${totals.entitlement}`}>
                 <span className="cursor-help">{formatTotal(totals.month)}</span>
               </Tooltip>
             </td>
             <td className="px-2 text-center text-[var(--text-secondary)] font-medium bg-gray-50/40">
-              <Tooltip label={`Annual holiday entitlement: ${totals.entitlement} day${totals.entitlement === 1 ? '' : 's'}`}>
-                <span className="cursor-help">{totals.entitlement}</span>
+              <Tooltip
+                label={totals.proRated
+                  ? `Pro-rated entitlement for the current holiday year: ${totals.entitlement} of ${totals.annual} day${totals.annual === 1 ? '' : 's'} (first-year starter)`
+                  : `Annual holiday entitlement: ${totals.entitlement} day${totals.entitlement === 1 ? '' : 's'}`}
+              >
+                <span className={`cursor-help ${totals.proRated ? 'text-indigo-700' : ''}`}>
+                  {totals.entitlement}
+                </span>
               </Tooltip>
             </td>
           </tr>

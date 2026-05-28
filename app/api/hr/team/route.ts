@@ -13,7 +13,7 @@ export async function GET() {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('users')
-    .select('id, full_name, email, role, avatar_url, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override, date_of_birth, show_birthday_to_team')
+    .select('id, full_name, email, role, avatar_url, department_id, manager_id, job_title, job_description, employment_start_date, holiday_entitlement_days_override, pro_rata_first_year, date_of_birth, show_birthday_to_team')
     .eq('firm_id', ctx.firmId)
     .order('full_name', { ascending: true });
 
@@ -31,6 +31,7 @@ export async function GET() {
       ...u,
       employment_start_date: null,
       holiday_entitlement_days_override: null,
+      pro_rata_first_year: false,
       // Hide DOB unless the person opted to share it. When shared, only
       // expose month/day so age can't be inferred.
       date_of_birth: u.show_birthday_to_team && u.date_of_birth

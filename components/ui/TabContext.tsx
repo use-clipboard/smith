@@ -51,6 +51,7 @@ function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
     for (const t of parsed.tabs ?? []) {
       const nav = ROUTE_TO_NAV.get(t.route);
       if (!nav) continue; // unknown route — skip (probably an old/removed module)
+      if (t.route === '/dashboard') continue; // Dashboard is rendered as a permanent tab in TabBar; never store it in the tab list
       if (seenRoutes.has(t.route)) continue; // collapse duplicates
       seenRoutes.add(t.route);
       tabs.push({
@@ -155,6 +156,15 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     // means we'd never see the persisted Dashboard tab and would create a
     // duplicate on every fresh login. See `hydrated` declaration above.
     if (!hydrated) return;
+
+    // Dashboard is rendered as a permanent leading tab in TabBar (activeTabId
+    // === null means it's active). Never create or match a tool tab for it —
+    // otherwise we get a second "Dashboard" pill next to the permanent one.
+    if (pathname === '/dashboard') {
+      if (activeTabId !== null) setActiveTabId(null);
+      reconciledRef.current = true;
+      return;
+    }
 
     // Find an existing tab whose route matches the current URL. Try exact
     // first (cheap, common case), then prefix — so /mtd-it/abc/2026/1 still

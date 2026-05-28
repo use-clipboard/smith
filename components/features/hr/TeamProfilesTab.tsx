@@ -10,9 +10,12 @@ interface Props {
   viewerId: string;
   viewerRole: 'admin' | 'staff';
   team: TeamMember[];
+  /** Bubble a saved row back up to HrClient so the team list reflects the
+   *  new value immediately. */
+  onMemberUpdated?: (member: Partial<TeamMember> & { id: string }) => void;
 }
 
-export default function TeamProfilesTab({ viewerId, viewerRole, team }: Props) {
+export default function TeamProfilesTab({ viewerId, viewerRole, team, onMemberUpdated }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -38,7 +41,7 @@ export default function TeamProfilesTab({ viewerId, viewerRole, team }: Props) {
         <button onClick={() => setSelectedId(null)} className="text-xs text-[var(--accent)] inline-flex items-center gap-1 hover:underline">
           <ChevronLeft size={13} />Back to team profiles
         </button>
-        <ProfileTab userId={selected.id} viewerId={viewerId} viewerRole={viewerRole} team={team} />
+        <ProfileTab userId={selected.id} viewerId={viewerId} viewerRole={viewerRole} team={team} onMemberUpdated={onMemberUpdated} />
       </div>
     );
   }

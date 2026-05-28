@@ -29,6 +29,7 @@ interface TeamMember {
   job_description: string | null;
   employment_start_date: string | null;
   holiday_entitlement_days_override: number | null;
+  pro_rata_first_year: boolean;
 }
 
 interface HrSettings {
@@ -57,6 +58,56 @@ function trimTime(t: string | undefined): string {
   if (!t) return '';
   // Trim '17:30:00' down to '17:30' for the <input type="time"> element.
   return t.length >= 5 ? t.slice(0, 5) : t;
+}
+
+/** ISO YYYY-MM-DD → dd-mm-yyyy. Returns '—' for null/empty. */
+function fmtUkDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** Pro-rata an annual entitlement to the slice of the holiday year still
+ *  remaining from `startIso`. Both `yearStartIso` and `yearEndIso` describe
+ *  the firm's current holiday window; `yearEndIso` is the day BEFORE the
+ *  next reset (i.e. inclusive end). Rounds to the nearest half day so we
+ *  match how everything else in the HR module talks about holidays. */
+function proRataDays(opts: {
+  startIso: string;
+  yearStartIso: string;
+  yearEndIso: string;
+  annualDays: number;
+}): number {
+  const { startIso, yearStartIso, yearEndIso, annualDays } = opts;
+  const startMs = new Date(startIso + 'T12:00:00Z').getTime();
+  const yearStartMs = new Date(yearStartIso + 'T12:00:00Z').getTime();
+  const yearEndMs = new Date(yearEndIso + 'T12:00:00Z').getTime();
+  // Effective working start — never before the holiday year began.
+  const effectiveStartMs = Math.max(startMs, yearStartMs);
+  const totalDays = Math.max(1, Math.round((yearEndMs - yearStartMs) / 86_400_000) + 1);
+  const remainingDays = Math.max(0, Math.round((yearEndMs - effectiveStartMs) / 86_400_000) + 1);
+  const raw = (remainingDays / totalDays) * annualDays;
+  return Math.round(raw * 2) / 2;
+}
+
+/** Current holiday year window given the firm's reset day/month. */
+function currentHolidayYear(resetMonth: number, resetDay: number): { startIso: string; endIso: string } {
+  const today = new Date();
+  const y = today.getFullYear();
+  const thisCycleStart = new Date(Date.UTC(y, resetMonth - 1, resetDay));
+  // If today is before this calendar year's reset, the active window
+  // actually started last year.
+  const startDate = today >= thisCycleStart
+    ? thisCycleStart
+    : new Date(Date.UTC(y - 1, resetMonth - 1, resetDay));
+  const endDate = new Date(startDate);
+  endDate.setUTCFullYear(endDate.getUTCFullYear() + 1);
+  endDate.setUTCDate(endDate.getUTCDate() - 1);
+  return {
+    startIso: startDate.toISOString().slice(0, 10),
+    endIso: endDate.toISOString().slice(0, 10),
+  };
 }
 
 export default function HrSettingsTab({ isAdmin }: Props) {
@@ -617,6 +668,7 @@ function DepartmentsSection({ isAdmin }: { isAdmin: boolean }) {
 function TeamSection({ isAdmin }: { isAdmin: boolean }) {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [hrSettings, setHrSettings] = useState<Pick<HrSettings, 'holiday_reset_month' | 'holiday_reset_day' | 'default_annual_holiday_days'> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -626,18 +678,40 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [tRes, dRes] = await Promise.all([
+      const [tRes, dRes, sRes] = await Promise.all([
         fetch('/api/hr/team'),
         fetch('/api/hr/departments'),
+        fetch('/api/hr/settings'),
       ]);
       if (!tRes.ok) throw new Error('Failed to load team');
       if (!dRes.ok) throw new Error('Failed to load departments');
       setMembers((await tRes.json()).members ?? []);
       setDepartments((await dRes.json()).departments ?? []);
+      // Settings are nice-to-have for the pro-rata helper — failures here
+      // shouldn't block editing roles.
+      if (sRes.ok) {
+        const s = (await sRes.json()).settings as HrSettings | null;
+        if (s) setHrSettings({
+          holiday_reset_month: s.holiday_reset_month,
+          holiday_reset_day: s.holiday_reset_day,
+          default_annual_holiday_days: s.default_annual_holiday_days,
+        });
+      }
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to load'); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  const holidayYear = hrSettings
+    ? currentHolidayYear(hrSettings.holiday_reset_month, hrSettings.holiday_reset_day)
+    : null;
+
+  /** A team member qualifies for the pro-rata helper when their employment
+   *  start date falls strictly inside the firm's current holiday year. */
+  function isMidYearStarter(startIso: string | null | undefined): boolean {
+    if (!startIso || !holidayYear) return false;
+    return startIso > holidayYear.startIso && startIso <= holidayYear.endIso;
+  }
 
   function startEdit(m: TeamMember) {
     setEditingId(m.id);
@@ -648,6 +722,7 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
       job_description: m.job_description,
       employment_start_date: m.employment_start_date,
       holiday_entitlement_days_override: m.holiday_entitlement_days_override,
+      pro_rata_first_year: m.pro_rata_first_year,
     });
   }
   async function saveEdit(id: string) {
@@ -660,6 +735,7 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
         job_description: draft.job_description ?? null,
         employment_start_date: draft.employment_start_date ?? null,
         holiday_entitlement_days_override: draft.holiday_entitlement_days_override ?? null,
+        pro_rata_first_year: !!draft.pro_rata_first_year,
       };
       const res = await fetch(`/api/hr/team/${id}`, {
         method: 'PATCH',
@@ -671,6 +747,26 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Save failed'); }
     finally { setSavingId(null); }
+  }
+
+  /** Quick-toggle the pro-rata flag without entering full edit mode. Only
+   *  available from the Mid Year Start column on a row that actually qualifies. */
+  async function quickTogglePro_rata(id: string, next: boolean) {
+    setSavingId(id); setError(null);
+    // Optimistic flip so the toggle and "This year" column update instantly.
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, pro_rata_first_year: next } : m));
+    try {
+      const res = await fetch(`/api/hr/team/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pro_rata_first_year: next }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+      // Revert on failure.
+      setMembers(prev => prev.map(m => m.id === id ? { ...m, pro_rata_first_year: !next } : m));
+    } finally { setSavingId(null); }
   }
 
   const departmentName = (id: string | null) => id ? (departments.find(d => d.id === id)?.name ?? '—') : '—';
@@ -702,7 +798,11 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
                   <th className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Department</th>
                   <th className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Manager</th>
                   <th className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Start</th>
+                  <th className="text-center px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Mid Year Start
+                  </th>
                   <th className="text-right px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Holiday</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">This Year</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -741,12 +841,73 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
                         <td className="px-3 py-2">
                           {editing ? (
                             <input type="date" value={draft.employment_start_date ?? ''} onChange={e => setDraft(d => ({ ...d, employment_start_date: e.target.value || null }))} className="input-base text-xs" />
-                          ) : <span className="text-xs text-[var(--text-muted)]">{m.employment_start_date ?? '—'}</span>}
+                          ) : <span className="text-xs text-[var(--text-muted)]">{fmtUkDate(m.employment_start_date)}</span>}
+                        </td>
+                        {/* Mid-year start toggle — only meaningful for users whose
+                            start date falls inside the current holiday year. Anyone
+                            else shows a dash to make the column visually quiet. */}
+                        <td className="px-3 py-2 text-center">
+                          {(() => {
+                            const startForRow = editing ? (draft.employment_start_date ?? null) : m.employment_start_date;
+                            const qualifies = isMidYearStarter(startForRow);
+                            if (!qualifies) {
+                              return <span className="text-xs text-gray-300">—</span>;
+                            }
+                            const on = editing ? !!draft.pro_rata_first_year : m.pro_rata_first_year;
+                            const onChange = editing
+                              ? (next: boolean) => setDraft(d => ({ ...d, pro_rata_first_year: next }))
+                              : (next: boolean) => { void quickTogglePro_rata(m.id, next); };
+                            return (
+                              <button
+                                type="button"
+                                disabled={!isAdmin || (savingId === m.id && !editing)}
+                                onClick={() => onChange(!on)}
+                                aria-pressed={on}
+                                title={on ? 'Pro-rata applied for this holiday year only' : 'Toggle pro-rata for the first holiday year'}
+                                className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                              >
+                                <span
+                                  aria-hidden
+                                  className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform ${on ? 'translate-x-4' : 'translate-x-0.5'}`}
+                                />
+                              </button>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-right">
                           {editing ? (
                             <input type="number" min="0" max="366" step="0.5" value={draft.holiday_entitlement_days_override ?? ''} onChange={e => setDraft(d => ({ ...d, holiday_entitlement_days_override: e.target.value === '' ? null : Number(e.target.value) }))} placeholder="default" className="input-base text-xs w-20 text-right" />
                           ) : <span className="text-xs text-[var(--text-muted)]">{m.holiday_entitlement_days_override ?? <span className="italic text-gray-400">default</span>}</span>}
+                        </td>
+                        {/* This-year entitlement — pro-rata applied only when the
+                            user is a mid-year starter AND the toggle is on. Otherwise
+                            equals the full holiday column. We surface this so admins
+                            can see the effective figure that the balance API uses. */}
+                        <td className="px-3 py-2 text-right">
+                          {(() => {
+                            const startForRow = editing ? (draft.employment_start_date ?? null) : m.employment_start_date;
+                            const overrideForRow = editing
+                              ? (draft.holiday_entitlement_days_override ?? null)
+                              : m.holiday_entitlement_days_override;
+                            const toggleOn = editing ? !!draft.pro_rata_first_year : m.pro_rata_first_year;
+                            const annual = overrideForRow != null ? Number(overrideForRow) : hrSettings?.default_annual_holiday_days ?? null;
+                            if (annual == null) return <span className="text-xs text-gray-300">—</span>;
+                            const qualifies = isMidYearStarter(startForRow);
+                            if (qualifies && toggleOn) {
+                              const pro = proRataDays({
+                                startIso: startForRow!,
+                                yearStartIso: holidayYear!.startIso,
+                                yearEndIso: holidayYear!.endIso,
+                                annualDays: annual,
+                              });
+                              return (
+                                <span className="text-xs font-semibold text-indigo-700" title={`Pro-rated from ${fmtUkDate(startForRow)} until ${fmtUkDate(holidayYear!.endIso)}`}>
+                                  {pro}
+                                </span>
+                              );
+                            }
+                            return <span className="text-xs text-[var(--text-muted)]">{annual}</span>;
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           {!isAdmin ? null : editing ? (
@@ -761,15 +922,43 @@ function TeamSection({ isAdmin }: { isAdmin: boolean }) {
                       </tr>
                       {editing && (
                         <tr className="border-b border-gray-100">
-                          <td colSpan={7} className="px-3 pb-3">
-                            <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase mt-1 mb-1">Job description</label>
-                            <textarea
-                              value={draft.job_description ?? ''}
-                              onChange={e => setDraft(d => ({ ...d, job_description: e.target.value }))}
-                              rows={2}
-                              placeholder="Brief description of what this person does"
-                              className="input-base w-full text-xs"
-                            />
+                          <td colSpan={9} className="px-3 pb-3 space-y-3">
+                            {/* Mid-year starter footnote — the toggle in the
+                                Mid Year Start column does the real work; this
+                                just explains what'll happen. */}
+                            {(() => {
+                              const draftStart = draft.employment_start_date;
+                              if (!holidayYear || !hrSettings || !draftStart || !isMidYearStarter(draftStart)) return null;
+                              const annual = draft.holiday_entitlement_days_override ?? hrSettings.default_annual_holiday_days;
+                              const suggested = proRataDays({
+                                startIso: draftStart,
+                                yearStartIso: holidayYear.startIso,
+                                yearEndIso: holidayYear.endIso,
+                                annualDays: annual,
+                              });
+                              return (
+                                <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 flex items-start gap-2 mt-1">
+                                  <Info size={14} className="text-indigo-600 shrink-0 mt-0.5" />
+                                  <div className="flex-1 min-w-0 text-xs text-indigo-900 leading-relaxed">
+                                    <span className="font-semibold">Mid-year starter.</span>{' '}
+                                    Turn on the <em>Mid Year Start</em> toggle to pro-rata {annual} day{annual === 1 ? '' : 's'} from {fmtUkDate(draftStart)} —
+                                    that works out to <span className="font-semibold">{suggested}</span> for the current holiday year ({fmtUkDate(holidayYear.startIso)} → {fmtUkDate(holidayYear.endIso)}).
+                                    The toggle only applies to this first year; the full entitlement resumes automatically once the year rolls over.
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            <div>
+                              <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase mt-1 mb-1">Job description</label>
+                              <textarea
+                                value={draft.job_description ?? ''}
+                                onChange={e => setDraft(d => ({ ...d, job_description: e.target.value }))}
+                                rows={2}
+                                placeholder="Brief description of what this person does"
+                                className="input-base w-full text-xs"
+                              />
+                            </div>
                           </td>
                         </tr>
                       )}

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   RefreshCw, Loader2, ChevronRight, Trash2, XCircle,
-  UserCheck, Check, Users,
+  UserCheck, Check, Users, Building2,
 } from 'lucide-react';
 import DueDatePill from './DueDatePill';
 import { TaskStatusBadge } from './TaskStatusBadge';
@@ -622,15 +622,20 @@ export default function ClientTasksPanel({ clientId }: Props) {
   const [loading, setLoading]       = useState(true);
   const [currentUserId, setCurrentUserId]   = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'staff'>('staff');
+  // task_ids that are tied to a live Companies House deadline via
+  // ch_deadline_task_links. These get peeled off into their own section so
+  // they don't sit in the generic One-off bucket.
+  const [chLinkedTaskIds, setChLinkedTaskIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const [tasksRes, meRes, teamRes] = await Promise.all([
+        const [tasksRes, meRes, teamRes, chLinksRes] = await Promise.all([
           fetch(`/api/tasks?client_id=${clientId}`),
           fetch('/api/users/me'),
           fetch('/api/users/team'),
+          fetch(`/api/ch-secretarial/deadline-links?client_id=${clientId}`),
         ]);
         if (tasksRes.ok) {
           const d = await tasksRes.json();
@@ -644,6 +649,10 @@ export default function ClientTasksPanel({ clientId }: Props) {
         if (teamRes.ok) {
           const d = await teamRes.json();
           setTeamMembers(d.members ?? []);
+        }
+        if (chLinksRes.ok) {
+          const d = await chLinksRes.json() as { links?: Array<{ task_id: string }> };
+          setChLinkedTaskIds(new Set((d.links ?? []).map(l => l.task_id).filter(Boolean)));
         }
       } finally { setLoading(false); }
     }
@@ -698,7 +707,9 @@ export default function ClientTasksPanel({ clientId }: Props) {
   }
 
   const recurringTasks = sortByDue(tasks.filter(t => t.recurrence_type && t.recurrence_type !== 'once'));
-  const oneOffTasks    = sortByDue(tasks.filter(t => !t.recurrence_type || t.recurrence_type === 'once'));
+  const allOneOff      = tasks.filter(t => !t.recurrence_type || t.recurrence_type === 'once');
+  const chLinkedTasks  = sortByDue(allOneOff.filter(t => chLinkedTaskIds.has(t.id)));
+  const oneOffTasks    = sortByDue(allOneOff.filter(t => !chLinkedTaskIds.has(t.id)));
   const isAdmin        = currentUserRole === 'admin';
 
   const commonRowProps = {
@@ -750,6 +761,28 @@ export default function ClientTasksPanel({ clientId }: Props) {
             </span>
           </div>
           {recurringTasks.map(t => (
+            <ClientTaskRow key={t.id} task={t} {...commonRowProps} />
+          ))}
+        </div>
+      )}
+
+      {/* CH Secretarial-linked tasks — confirmation statements, year-end
+          accounts, IDV deadlines and anything else hooked to a live
+          Companies House date via ch_deadline_task_links. */}
+      {chLinkedTasks.length > 0 && (
+        <div className="glass-solid rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[var(--border)]">
+            <div className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-100">
+              <Building2 className="h-3 w-3 text-blue-600" />
+            </div>
+            <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
+              Linked to CH Secretarial
+            </h3>
+            <span className="ml-auto text-xs font-medium text-[var(--text-muted)]">
+              {chLinkedTasks.length} task{chLinkedTasks.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          {chLinkedTasks.map(t => (
             <ClientTaskRow key={t.id} task={t} {...commonRowProps} />
           ))}
         </div>

@@ -24,6 +24,7 @@ interface FormState {
   manager_id: string;
   employment_start_date: string;
   holiday_entitlement_days_override: string;
+  pro_rata_first_year: boolean;
   date_of_birth: string;
   // Probation
   add_probation: boolean;
@@ -37,6 +38,11 @@ const EMPTY: FormState = {
   job_title: '', job_description: '', department_id: '', manager_id: '',
   employment_start_date: new Date().toISOString().slice(0, 10),
   holiday_entitlement_days_override: '',
+  // Almost every new joiner is mid-year, so default this on. The flag is
+  // a no-op for anyone whose start date doesn't fall inside the current
+  // holiday year — leaving it on is therefore safe even for edge cases
+  // like January-1st starts.
+  pro_rata_first_year: true,
   date_of_birth: '',
   add_probation: true,
   probation_end_date: addMonths(new Date(), 3).toISOString().slice(0, 10),
@@ -106,6 +112,7 @@ export default function JoinerWizardModal({ isOpen, onClose, onCreated, team, de
         holiday_entitlement_days_override: form.holiday_entitlement_days_override
           ? Number(form.holiday_entitlement_days_override)
           : null,
+        pro_rata_first_year: form.pro_rata_first_year,
         date_of_birth: form.date_of_birth || null,
       };
       const patchRes = await fetch(`/api/users/${userId}`, {
@@ -240,6 +247,26 @@ export default function JoinerWizardModal({ isOpen, onClose, onCreated, team, de
                   <input type="number" min={0} max={366} value={form.holiday_entitlement_days_override} onChange={e => set('holiday_entitlement_days_override', e.target.value)} className="input-base text-sm w-full" placeholder="Use firm default" />
                 </Field>
               </div>
+              {/* Pro-rata toggle — most new joiners are mid-year so we
+                  surface this right next to their entitlement. The flag
+                  only kicks in for the first holiday year and silently
+                  expires once that year rolls over (the balance API
+                  re-evaluates each request). Safe to leave on even for
+                  Jan-1 starters who happen to land on the reset day. */}
+              <label className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.pro_rata_first_year}
+                  onChange={e => set('pro_rata_first_year', e.target.checked)}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Pro-rata holiday for their first year</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    They&apos;ll only earn a slice of their annual holiday for the partial year between their start date and the next reset. Full entitlement resumes automatically once the holiday year rolls over.
+                  </p>
+                </div>
+              </label>
               <Field label="Date of birth (optional)">
                 <input type="date" value={form.date_of_birth} onChange={e => set('date_of_birth', e.target.value)} className="input-base text-sm w-full" />
               </Field>

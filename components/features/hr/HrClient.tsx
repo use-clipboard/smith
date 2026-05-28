@@ -40,6 +40,11 @@ export interface TeamMember {
   job_description: string | null;
   employment_start_date: string | null;
   holiday_entitlement_days_override: number | null;
+  /** When true and `employment_start_date` falls inside the firm's current
+   *  holiday window, balance/tracker views show the prorated this-year
+   *  entitlement instead of the full annual figure. The flag is a no-op
+   *  once the year rolls over (start date is no longer in window). */
+  pro_rata_first_year: boolean;
   date_of_birth: string | null;
   show_birthday_to_team: boolean;
 }
@@ -78,7 +83,15 @@ export interface HolidayRow {
 export interface BalanceInfo {
   user_id: string;
   year: { start: string; end: string; reset_month: number; reset_day: number };
+  /** Effective entitlement for the CURRENT holiday year. Equals the annual
+   *  figure unless the user is a first-year pro-rata starter. */
   entitlement: number;
+  /** Full annual entitlement (override or firm default). Independent of
+   *  pro-rata. */
+  annual_entitlement?: number;
+  /** True when the entitlement above has been reduced from the annual
+   *  figure because of the first-year pro-rata flag. */
+  pro_rated?: boolean;
   used: number;
   pending: number;
   remaining: number;
@@ -174,6 +187,14 @@ export default function HrClient() {
     ]);
     setTeam(tRes.members ?? []);
     setDepartments(dRes.departments ?? []);
+  }, []);
+
+  // Merge a freshly-saved member back into the team list so the profile
+  // header, list rows, and any subject-prop consumers reflect the new value
+  // immediately — no page refresh needed. The sections call this with the
+  // row the PATCH response returns.
+  const patchMemberInState = useCallback((updated: Partial<TeamMember> & { id: string }) => {
+    setTeam(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } as TeamMember : m));
   }, []);
 
   // Determine if the current user manages anyone, so we can show the Approvals tab.
@@ -348,8 +369,8 @@ export default function HrClient() {
 
       {topTab === 'people' && userId && (
         <>
-          {peopleSub === 'profile'       && <ProfileTab userId={userId} viewerId={userId} viewerRole={userRole} team={team} />}
-          {peopleSub === 'team-profiles' && <TeamProfilesTab viewerId={userId} viewerRole={userRole} team={team} />}
+          {peopleSub === 'profile'       && <ProfileTab userId={userId} viewerId={userId} viewerRole={userRole} team={team} onMemberUpdated={patchMemberInState} />}
+          {peopleSub === 'team-profiles' && <TeamProfilesTab viewerId={userId} viewerRole={userRole} team={team} onMemberUpdated={patchMemberInState} />}
           {peopleSub === 'orgchart'      && (loadingTeam ? <Loader /> : <HrOrgChart team={team} departments={departments} />)}
         </>
       )}

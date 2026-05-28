@@ -13,6 +13,7 @@ const patchSchema = z.object({
   job_description: z.string().nullable().optional(),
   employment_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   holiday_entitlement_days_override: z.number().min(0).max(366).nullable().optional(),
+  pro_rata_first_year: z.boolean().optional(),
   date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   show_birthday_to_team: z.boolean().optional(),
 });
@@ -79,6 +80,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if ('job_description' in parsed.data) publicUpdate.job_description = parsed.data.job_description;
   if ('employment_start_date' in parsed.data) publicUpdate.employment_start_date = parsed.data.employment_start_date;
   if ('holiday_entitlement_days_override' in parsed.data) publicUpdate.holiday_entitlement_days_override = parsed.data.holiday_entitlement_days_override;
+  if ('pro_rata_first_year' in parsed.data) publicUpdate.pro_rata_first_year = parsed.data.pro_rata_first_year;
   if ('date_of_birth' in parsed.data) publicUpdate.date_of_birth = parsed.data.date_of_birth;
   if ('show_birthday_to_team' in parsed.data) publicUpdate.show_birthday_to_team = parsed.data.show_birthday_to_team;
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
-  Calendar as CalIcon, Inbox, Cake, PartyPopper, Plane, Loader2, ChevronRight, ShieldCheck, Clock, FileWarning,
+  Calendar as CalIcon, Inbox, Cake, PartyPopper, Plane, Loader2, ChevronRight, ShieldCheck, Clock, FileWarning, X,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
@@ -98,26 +98,35 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
       .slice(0, 8);
   }, [teamHolidays, today, in7, userId, outToday]);
 
-  // Birthdays + anniversaries in next 14 days
-  const events = useMemo(() => {
+  // Birthdays + anniversaries in the next 12 months, sorted by date. The
+  // dashboard card shows the next two weeks (events14); the "See all"
+  // lightbox renders the full 12-month list.
+  const allUpcomingEvents = useMemo(() => {
     type Evt = { kind: 'birthday' | 'anniversary'; user: TeamMember; date: string; years?: number };
     const list: Evt[] = [];
     for (const m of team) {
       if (m.id === userId) continue; // don't list self
       if (m.show_birthday_to_team && m.date_of_birth) {
         const next = nextOccurrence(m.date_of_birth);
-        if (next && next <= in14) list.push({ kind: 'birthday', user: m, date: next });
+        if (next) list.push({ kind: 'birthday', user: m, date: next });
       }
       if (m.employment_start_date) {
         const next = nextOccurrence(m.employment_start_date);
-        if (next && next <= in14) {
-          const years = (parseInt(next.slice(0, 4), 10) - parseInt(m.employment_start_date.slice(0, 4), 10));
+        if (next) {
+          const years = parseInt(next.slice(0, 4), 10) - parseInt(m.employment_start_date.slice(0, 4), 10);
           if (years > 0) list.push({ kind: 'anniversary', user: m, date: next, years });
         }
       }
     }
-    return list.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
-  }, [team, userId, in14]);
+    return list.sort((a, b) => a.date.localeCompare(b.date));
+  }, [team, userId]);
+
+  const events = useMemo(
+    () => allUpcomingEvents.filter(e => e.date <= in14).slice(0, 6),
+    [allUpcomingEvents, in14],
+  );
+
+  const [showAllEvents, setShowAllEvents] = useState(false);
 
   if (loading && !balance) {
     return <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={18} className="animate-spin inline mr-1.5" />Loading dashboard…</div>;
@@ -133,7 +142,15 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
         <p className="text-sm text-[var(--text-muted)] mt-0.5">Here's what's happening across your HR space today.</p>
         {balance && (
           <div className={`grid grid-cols-2 sm:grid-cols-${toilBalance != null ? 5 : 4} gap-3 mt-4`}>
-            <BalanceCard label="Entitlement" value={balance.entitlement} suffix="days" tone="white" />
+            <BalanceCard
+              label={balance.pro_rated ? 'Entitlement (pro-rata)' : 'Entitlement'}
+              value={balance.entitlement}
+              suffix="days"
+              tone="white"
+              hint={balance.pro_rated && balance.annual_entitlement != null
+                ? `Pro-rated for your first holiday year — your full annual entitlement is ${balance.annual_entitlement} days.`
+                : undefined}
+            />
             <BalanceCard label="Used" value={balance.used} suffix="days" tone="emerald" />
             <BalanceCard label="Pending" value={balance.pending} suffix="days" tone="amber" />
             <BalanceCard label="Remaining" value={balance.remaining} suffix="days" tone="bold" />
@@ -187,7 +204,11 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
         </DashCard>
 
         {/* Birthdays + anniversaries */}
-        <DashCard title="Coming up" icon={PartyPopper}>
+        <DashCard
+          title="Coming up"
+          icon={PartyPopper}
+          cta={allUpcomingEvents.length > 0 ? { label: 'See all', onClick: () => setShowAllEvents(true) } : undefined}
+        >
           {events.length === 0 ? (
             <p className="text-xs text-[var(--text-muted)] italic">No birthdays or work anniversaries in the next two weeks.</p>
           ) : (
@@ -230,6 +251,102 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
 
         {/* Manager: probation reviews due / RTW expiring */}
         {showManagerCards && <PersonnelAlertsCard team={team} userId={userId} userRole={userRole} onJumpTo={onJumpTo} />}
+      </div>
+
+      {showAllEvents && (
+        <UpcomingEventsLightbox
+          events={allUpcomingEvents}
+          onClose={() => setShowAllEvents(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Upcoming events lightbox (12-month birthdays + work anniversaries) ──
+function UpcomingEventsLightbox({
+  events, onClose,
+}: {
+  events: Array<{ kind: 'birthday' | 'anniversary'; user: TeamMember; date: string; years?: number }>;
+  onClose: () => void;
+}) {
+  // Close on Esc.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Group events by month label ("Jun 2026") so a long list scans more
+  // easily than a flat alternating birthday/anniversary stream.
+  const groups: Array<{ label: string; items: typeof events }> = [];
+  for (const e of events) {
+    const label = new Date(e.date + 'T12:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.items.push(e);
+    else groups.push({ label, items: [e] });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.45)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col border border-[var(--border)]"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)] shrink-0">
+          <div className="inline-flex items-center gap-2">
+            <PartyPopper size={15} className="text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              Birthdays & work anniversaries · next 12 months
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-all"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-3 scrollbar-thin flex-1">
+          {events.length === 0 ? (
+            <p className="py-8 text-center text-sm text-[var(--text-muted)] italic">
+              No birthdays or work anniversaries in the next 12 months.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {groups.map(g => (
+                <div key={g.label}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
+                    {g.label}
+                  </p>
+                  <ul className="space-y-1.5">
+                    {g.items.map((e, i) => (
+                      <li key={`${e.user.id}-${e.kind}-${i}`} className="flex items-center gap-3 text-sm py-1.5">
+                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0 ${avatarColour(e.user.id)}`}>
+                          {initials(e.user.full_name, e.user.email)}
+                        </div>
+                        <span className="flex-1 min-w-0 truncate">
+                          {e.kind === 'birthday'
+                            ? <Cake size={12} className="inline text-pink-500 mr-1" />
+                            : <span className="mr-1">🎉</span>}
+                          <span className="font-medium text-[var(--text-primary)]">{e.user.full_name ?? e.user.email}</span>
+                          <span className="text-[var(--text-muted)]"> · {e.kind === 'birthday' ? 'birthday' : `${e.years}-year anniversary`}</span>
+                        </span>
+                        <span className="text-xs text-[var(--text-muted)] tabular-nums shrink-0">{fmtDay(e.date)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -296,7 +413,7 @@ function PersonChips({ holidays, team, showSpan }: { holidays: HolidayRow[]; tea
   );
 }
 
-function BalanceCard({ label, value, suffix, tone }: { label: string; value: number; suffix: string; tone: 'white' | 'emerald' | 'amber' | 'bold' | 'purple' }) {
+function BalanceCard({ label, value, suffix, tone, hint }: { label: string; value: number; suffix: string; tone: 'white' | 'emerald' | 'amber' | 'bold' | 'purple'; hint?: string }) {
   const map: Record<typeof tone, string> = {
     white:   'bg-white text-[var(--accent)] border-white/60',
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -305,9 +422,10 @@ function BalanceCard({ label, value, suffix, tone }: { label: string; value: num
     purple:  'bg-purple-50 text-purple-700 border-purple-200',
   };
   return (
-    <div className={`rounded-xl border p-3 ${map[tone]}`}>
+    <div className={`rounded-xl border p-3 ${map[tone]}`} title={hint}>
       <p className="text-[10px] font-bold uppercase tracking-wide opacity-80">{label}</p>
       <p className="text-2xl font-bold mt-0.5">{value}<span className="text-xs font-medium ml-1 opacity-70">{suffix}</span></p>
+      {hint && <p className="text-[10px] mt-1 opacity-75 leading-snug">{hint}</p>}
     </div>
   );
 }

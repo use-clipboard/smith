@@ -7,6 +7,7 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@/lib/supabase-server';
+import { holidayYearWindow, toIsoDate } from '@/lib/hrHolidays';
 
 export const MAX_MUTATION_ROWS = 5_000;
 export const PREVIEW_SAMPLE_SIZE = 10;
@@ -200,7 +201,54 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'get_client_companies_house',
+    description: 'Fetch live Companies House data cached for a single limited-company client — next accounts due, next CS due, IDV deadlines, status, officers and PSCs. Read-only. Provide ONE of client_id, name_contains, or companies_house_number. Returns null if the client has no Companies House link or no cached row yet.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        client_id: { type: 'string', description: 'Internal SMITH client id (preferred — use search_clients first if you only know the name).' },
+        name_contains: { type: 'string', description: 'Case-insensitive partial match on client name. Only used when client_id is not provided.' },
+        companies_house_number: { type: 'string', description: 'Raw Companies House number, e.g. "09899441". Used when neither id nor name is known.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_user_holiday_balance',
+    description: 'Look up a team member\'s holiday entitlement, used days, pending days, and remaining days for the firm\'s CURRENT holiday year. Honours the per-user mid-year pro-rata flag automatically. Read-only. Provide ONE of user_id, name_contains, or email.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        user_id: { type: 'string', description: 'Internal SMITH user id (preferred when you have it).' },
+        name_contains: { type: 'string', description: 'Case-insensitive partial match on the user\'s full name.' },
+        email: { type: 'string', description: 'Exact email address of the team member.' },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
+
+// Read-only subset surfaced to Ask Smith (and any other context where we
+// want the model to look up firm data without the ability to mutate it).
+// The propose_* tools are deliberately excluded — they stage previews that
+// can be applied via apply_proposed_action, which is a write path. The
+// `render_report` tool depends on Agent Smith's preview pane UI, so it's
+// also out of scope here.
+export const READ_ONLY_TOOL_NAMES = new Set([
+  'search_tasks',
+  'search_clients',
+  'aggregate_tasks',
+  'search_mtd_it_clients',
+  'search_mtd_it_quarters',
+  'aggregate_mtd_it_quarters',
+  'get_client_companies_house',
+  'get_user_holiday_balance',
+]);
+
+export const READ_ONLY_AGENT_TOOLS: Anthropic.Messages.Tool[] = AGENT_TOOLS.filter(
+  t => READ_ONLY_TOOL_NAMES.has(t.name),
+);
 
 // ── Filter schemas (also used by tool handlers) ────────────────────────────
 const TaskFilterSchema = z.object({
@@ -713,6 +761,177 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         chart:   (input.chart as RenderedReport['chart']) ?? undefined,
       };
       return { forModel: { acknowledged: true }, uiUpdate: { kind: 'report', report } };
+    }
+
+    case 'get_client_companies_house': {
+      // Resolve the client first — by id, then by name, then by raw CH number.
+      let clientRow: { id: string; name: string; client_ref: string | null; companies_house_id: string | null } | null = null;
+      if (typeof input.client_id === 'string' && input.client_id.length > 0) {
+        const { data } = await ctx.supabase
+          .from('clients')
+          .select('id, name, client_ref, companies_house_id')
+          .eq('firm_id', ctx.firmId)
+          .eq('id', input.client_id)
+          .maybeSingle();
+        clientRow = data ?? null;
+      } else if (typeof input.name_contains === 'string' && input.name_contains.length > 0) {
+        const { data } = await ctx.supabase
+          .from('clients')
+          .select('id, name, client_ref, companies_house_id')
+          .eq('firm_id', ctx.firmId)
+          .ilike('name', `%${input.name_contains}%`)
+          .limit(2);
+        if ((data ?? []).length > 1) {
+          return { forModel: { error: 'Multiple clients matched that name. Re-call search_clients first and pass an exact client_id.', candidates: data } };
+        }
+        clientRow = data?.[0] ?? null;
+      } else if (typeof input.companies_house_number === 'string' && input.companies_house_number.length > 0) {
+        const norm = input.companies_house_number.trim().toUpperCase().padStart(8, '0');
+        const { data } = await ctx.supabase
+          .from('clients')
+          .select('id, name, client_ref, companies_house_id')
+          .eq('firm_id', ctx.firmId)
+          .ilike('companies_house_id', norm)
+          .limit(1);
+        clientRow = data?.[0] ?? null;
+        // Fall through: even with no client row we can still surface CH-cache data by raw number.
+        if (!clientRow) {
+          const { data: cache } = await ctx.supabase
+            .from('ch_cache')
+            .select('companies')
+            .eq('firm_id', ctx.firmId)
+            .maybeSingle();
+          const companies = Array.isArray(cache?.companies) ? cache!.companies as Array<{ companyNumber?: unknown }> : [];
+          const co = companies.find(c => typeof c?.companyNumber === 'string' && c.companyNumber.trim().toUpperCase().padStart(8, '0') === norm);
+          if (!co) return { forModel: { error: 'No Companies House cache row for that number.' } };
+          return { forModel: { client: null, companies_house: co } };
+        }
+      } else {
+        return { forModel: { error: 'Provide one of client_id, name_contains, or companies_house_number.' } };
+      }
+
+      if (!clientRow) return { forModel: { error: 'No matching client.' } };
+      if (!clientRow.companies_house_id) {
+        return { forModel: { client: clientRow, companies_house: null, note: 'This client has no Companies House number on file.' } };
+      }
+
+      const norm = clientRow.companies_house_id.trim().toUpperCase().padStart(8, '0');
+      const { data: cache } = await ctx.supabase
+        .from('ch_cache')
+        .select('companies, last_refreshed_at')
+        .eq('firm_id', ctx.firmId)
+        .maybeSingle();
+      const companies = Array.isArray(cache?.companies) ? cache!.companies as Array<{ companyNumber?: unknown }> : [];
+      const co = companies.find(c => typeof c?.companyNumber === 'string' && c.companyNumber.trim().toUpperCase().padStart(8, '0') === norm) ?? null;
+      if (!co) {
+        return { forModel: { client: clientRow, companies_house: null, note: 'Companies House cache has not yet refreshed for this client. Tell the user to open the CH Secretarial tool and click Refresh.' } };
+      }
+      return { forModel: { client: clientRow, companies_house: co, last_refreshed_at: cache?.last_refreshed_at ?? null } };
+    }
+
+    case 'get_user_holiday_balance': {
+      // Resolve the user first — by id, name, or email — then mirror the
+      // calculation in /api/hr/holidays/balance so a single source of truth
+      // governs entitlement / pro-rata / used / pending / remaining.
+      let userRow: { id: string; full_name: string | null; email: string; manager_id: string | null; holiday_entitlement_days_override: number | null; employment_start_date: string | null; pro_rata_first_year: boolean } | null = null;
+
+      if (typeof input.user_id === 'string' && input.user_id.length > 0) {
+        const { data } = await ctx.supabase
+          .from('users')
+          .select('id, full_name, email, manager_id, holiday_entitlement_days_override, employment_start_date, pro_rata_first_year')
+          .eq('firm_id', ctx.firmId)
+          .eq('id', input.user_id)
+          .maybeSingle();
+        userRow = data ?? null;
+      } else if (typeof input.email === 'string' && input.email.length > 0) {
+        const { data } = await ctx.supabase
+          .from('users')
+          .select('id, full_name, email, manager_id, holiday_entitlement_days_override, employment_start_date, pro_rata_first_year')
+          .eq('firm_id', ctx.firmId)
+          .ilike('email', input.email)
+          .maybeSingle();
+        userRow = data ?? null;
+      } else if (typeof input.name_contains === 'string' && input.name_contains.length > 0) {
+        const { data } = await ctx.supabase
+          .from('users')
+          .select('id, full_name, email, manager_id, holiday_entitlement_days_override, employment_start_date, pro_rata_first_year')
+          .eq('firm_id', ctx.firmId)
+          .ilike('full_name', `%${input.name_contains}%`)
+          .limit(2);
+        if ((data ?? []).length > 1) {
+          return { forModel: { error: 'Multiple team members matched that name — clarify with the user before retrying.', candidates: data } };
+        }
+        userRow = data?.[0] ?? null;
+      } else {
+        return { forModel: { error: 'Provide one of user_id, name_contains, or email.' } };
+      }
+
+      if (!userRow) return { forModel: { error: 'No matching team member.' } };
+
+      // Pull firm holiday-year settings + default entitlement.
+      const { data: settings } = await ctx.supabase
+        .from('firm_hr_settings')
+        .select('holiday_reset_month, holiday_reset_day, default_annual_holiday_days')
+        .eq('firm_id', ctx.firmId)
+        .maybeSingle();
+      const resetMonth = settings?.holiday_reset_month ?? 1;
+      const resetDay = settings?.holiday_reset_day ?? 1;
+      const defaultDays = Number(settings?.default_annual_holiday_days ?? 28);
+
+      const { start, end } = holidayYearWindow(resetMonth, resetDay, new Date());
+      const startIso = toIsoDate(start);
+      const endIsoExclusive = toIsoDate(end);
+
+      const annualEntitlement = userRow.holiday_entitlement_days_override != null
+        ? Number(userRow.holiday_entitlement_days_override)
+        : defaultDays;
+
+      let entitlement = annualEntitlement;
+      let proRated = false;
+      if (
+        userRow.pro_rata_first_year &&
+        userRow.employment_start_date &&
+        userRow.employment_start_date > startIso &&
+        userRow.employment_start_date < endIsoExclusive
+      ) {
+        const startMs = new Date(userRow.employment_start_date + 'T12:00:00Z').getTime();
+        const windowStartMs = start.getTime();
+        const windowEndMs = end.getTime();
+        const effectiveStartMs = Math.max(startMs, windowStartMs);
+        const totalDays = Math.max(1, Math.round((windowEndMs - windowStartMs) / 86_400_000));
+        const remainingDays = Math.max(0, Math.round((windowEndMs - effectiveStartMs) / 86_400_000));
+        entitlement = Math.round(((remainingDays / totalDays) * annualEntitlement) * 2) / 2;
+        proRated = true;
+      }
+
+      const sumDays = (rows: { total_days: number | null }[] | null) =>
+        (rows ?? []).reduce((acc, r) => acc + Number(r.total_days ?? 0), 0);
+
+      const [{ data: approved }, { data: pendingRows }] = await Promise.all([
+        ctx.supabase.from('hr_holiday_requests')
+          .select('total_days, start_date, end_date, status')
+          .eq('firm_id', ctx.firmId).eq('user_id', userRow.id).eq('status', 'approved')
+          .lt('start_date', endIsoExclusive).gte('end_date', startIso),
+        ctx.supabase.from('hr_holiday_requests')
+          .select('total_days, start_date, end_date, status')
+          .eq('firm_id', ctx.firmId).eq('user_id', userRow.id).eq('status', 'pending')
+          .lt('start_date', endIsoExclusive).gte('end_date', startIso),
+      ]);
+
+      const used = sumDays(approved);
+      const pending = sumDays(pendingRows);
+      const remaining = Math.max(0, entitlement - used - pending);
+
+      return { forModel: {
+        user: { id: userRow.id, full_name: userRow.full_name, email: userRow.email },
+        year: { start: startIso, end: endIsoExclusive, reset_month: resetMonth, reset_day: resetDay },
+        entitlement,
+        annual_entitlement: annualEntitlement,
+        pro_rated: proRated,
+        used,
+        pending,
+        remaining,
+      } };
     }
 
     default:
