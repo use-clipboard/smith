@@ -496,7 +496,13 @@ export default function ComposeModal({
       setAttachedFiles(defaultAttachments ?? []);
     }
     setBcc(defaultBcc ?? []); setShowBcc((defaultBcc?.length ?? 0) > 0);
-    setSelectedClients(defaultClients ?? []);
+    // De-dupe by client id — the thread can carry one allocation entry per
+    // message, but the composer should show each client just once.
+    setSelectedClients(
+      defaultClients
+        ? defaultClients.filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i)
+        : [],
+    );
     setCreateTaskEnabled(false);
     setShowThread(false);
     // Resuming a saved draft: stash the draft id so subsequent saves update
