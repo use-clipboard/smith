@@ -115,11 +115,13 @@ export interface LedgerSchedule {
     depnCarriedForward: number;
     nbv: number;
   };
-  /** Warn-only b/fwd reconciliation: the ledger's Cost/Depn b/fwd balances vs
-   *  the sum of itemised assets' cost / opening accumulated depn. */
+  /** Warn-only reconciliation between the ledger and the itemised assets.
+   *  `cost*` compares total cost across ALL cost movement accounts vs the sum
+   *  of every itemised asset's cost. `depnBfwd*` compares the Depn-b/fwd
+   *  balance vs the sum of opening accumulated depn across all assets. */
   reconciliation: {
-    costBfwdLedger: number;
-    costBfwdAssets: number;
+    costLedger: number;
+    costAssets: number;
     depnBfwdLedger: number;
     depnBfwdAssets: number;
   };
@@ -138,7 +140,10 @@ export async function loadLedgerSchedule(
 ): Promise<LedgerSchedule> {
   await syncAdditionAssets(supabase, bookId, ledger);
 
-  const [assetsRes, settingsRes, chargesRes] = await Promise.all([
+  // Assets + settings first; charges are then fetched scoped to just this
+  // ledger's assets (rather than every charge in the book) so a large book's
+  // unrelated FA categories don't get pulled across the wire and filtered out.
+  const [assetsRes, settingsRes] = await Promise.all([
     supabase
       .from('bookkeeping_assets')
       .select('*')
@@ -151,17 +156,21 @@ export async function loadLedgerSchedule(
       .eq('book_id', bookId)
       .eq('ledger', ledger)
       .order('effective_from', { ascending: true }),
-    supabase
-      .from('bookkeeping_depreciation_charges')
-      .select('*')
-      .eq('book_id', bookId),
   ]);
 
   const assets = (assetsRes.data ?? []) as Asset[];
   const settings = (settingsRes.data ?? []) as LedgerDepreciationSetting[];
-  const allCharges = (chargesRes.data ?? []) as DepreciationCharge[];
-  const assetIds = new Set(assets.map(a => a.id));
-  const charges = allCharges.filter(c => assetIds.has(c.asset_id));
+  const assetIds = assets.map(a => a.id);
+
+  let charges: DepreciationCharge[] = [];
+  if (assetIds.length > 0) {
+    const { data: chargesData } = await supabase
+      .from('bookkeeping_depreciation_charges')
+      .select('*')
+      .eq('book_id', bookId)
+      .in('asset_id', assetIds);
+    charges = (chargesData ?? []) as DepreciationCharge[];
+  }
 
   const rows = assets.map(a => buildScheduleRow(a, settings, charges, periodFrom, periodTo));
 
@@ -182,9 +191,9 @@ export async function loadLedgerSchedule(
 }
 
 /**
- * Warn-only reconciliation between the ledger's aggregate b/fwd accounts and
- * the itemised assets. Compares Cost-b/fwd balance vs Σ b/fwd asset cost, and
- * Depn-b/fwd balance vs Σ opening accumulated depn.
+ * Warn-only reconciliation between the ledger's aggregate accounts and the
+ * itemised assets. Compares total cost across all cost movement accounts vs
+ * Σ every asset's cost, and Depn-b/fwd balance vs Σ opening accumulated depn.
  */
 async function reconcileBfwd(
   supabase: DB,
@@ -197,33 +206,55 @@ async function reconcileBfwd(
     .from('bookkeeping_accounts')
     .select('id, name')
     .eq('book_id', bookId)
-    .eq('ledger', ledger)
-    .in('name', [names.costBfwd, names.depnBfwd]);
+    .eq('ledger', ledger);
 
-  const costAcctId = bfwdAccts?.find(a => a.name === names.costBfwd)?.id;
-  const depnAcctId = bfwdAccts?.find(a => a.name === names.depnBfwd)?.id;
+  // A book can end up with more than one account of the same name — e.g. the
+  // COA seed creates "Depn - b/fwd" and an opening-TB import created a near-twin
+  // with a stray double space ("Depn -  b/fwd"), so the balance sits on one and
+  // the empty duplicate on the other. Match on a whitespace-normalised name and
+  // sum across ALL matches, otherwise picking just one (or an exact-string
+  // filter) can land on the empty duplicate and report a £0 ledger balance.
+  const nrm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const depnName = nrm(names.depnBfwd);
+  const depnAcctIds = (bfwdAccts ?? []).filter(a => nrm(a.name) === depnName).map(a => a.id);
 
-  const balanceOf = async (accountId: string | undefined): Promise<number> => {
-    if (!accountId) return 0;
+  // Cost is reconciled across ALL cost movement accounts, not just "Cost -
+  // b/fwd". On a mid-life migration the opening cost is often imported as a
+  // single lump into Cost-b/fwd even for assets the user tracks as in-year
+  // *additions* (whose cost would normally sit in Cost-additions). Comparing
+  // only Cost-b/fwd against only brought_forward assets then cries "mismatch"
+  // when the totals actually tie out. Summing every cost account (b/fwd +
+  // additions − disposals, all signed via debit−credit) against every itemised
+  // asset's cost reconciles the real position regardless of which cost account
+  // the migration parked the money in.
+  const isCostAcct = (name: string) => nrm(name).startsWith('cost - ');
+  const costAcctIds = (bfwdAccts ?? []).filter(a => isCostAcct(a.name)).map(a => a.id);
+
+  const balanceOf = async (accountIds: string[]): Promise<number> => {
+    if (accountIds.length === 0) return 0;
     const { data } = await supabase
       .from('bookkeeping_transaction_splits')
       .select('debit, credit')
-      .eq('account_id', accountId);
+      .in('account_id', accountIds);
     return (data ?? []).reduce((s, r) => s + Number(r.debit) - Number(r.credit), 0);
   };
 
-  const [costBfwdLedger, depnBfwdLedgerRaw] = await Promise.all([
-    balanceOf(costAcctId),
-    balanceOf(depnAcctId),
+  const [costLedger, depnBfwdLedgerRaw] = await Promise.all([
+    balanceOf(costAcctIds),
+    balanceOf(depnAcctIds),
   ]);
 
-  const bfwdAssets = assets.filter(a => a.source === 'brought_forward');
-  const costBfwdAssets = bfwdAssets.reduce((s, a) => s + a.cost, 0);
-  const depnBfwdAssets = bfwdAssets.reduce((s, a) => s + a.opening_accumulated_depn, 0);
+  // Total itemised cost across every asset in the register (any source).
+  const costAssets = assets.reduce((s, a) => s + a.cost, 0);
+  // Opening accumulated depreciation is a migration figure that any asset can
+  // carry (additions bought in a prior year keep their depn-to-date), so the
+  // Depn-b/fwd tie-out sums over EVERY asset. Current-period additions carry 0
+  // here, so they don't distort the comparison.
+  const depnBfwdAssets = assets.reduce((s, a) => s + a.opening_accumulated_depn, 0);
 
   return {
-    costBfwdLedger: round2(costBfwdLedger),
-    costBfwdAssets: round2(costBfwdAssets),
+    costLedger: round2(costLedger),
+    costAssets: round2(costAssets),
     // Depn b/fwd is a credit balance on a contra-asset account → negate so the
     // sign matches the positive accumulated-depn figure on the assets.
     depnBfwdLedger: round2(-depnBfwdLedgerRaw),

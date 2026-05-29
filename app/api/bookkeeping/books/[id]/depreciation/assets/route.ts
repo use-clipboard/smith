@@ -112,20 +112,50 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .single();
   if (assetErr || !asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
 
-  // Additions mirror their Cost-additions split — only the description is
-  // editable here; cost/date come from the underlying transaction.
+  // Once depreciation has been posted against the asset its cost and opening
+  // accumulated depreciation are baked into journals already on the ledger —
+  // changing them here would silently desync the asset register from the
+  // posted charges. Block those edits and point the user at Un-post first.
+  // (A description-only rename is always harmless.)
+  const changesFinancials =
+    body.cost !== undefined ||
+    body.purchase_date !== undefined ||
+    body.opening_accumulated_depn !== undefined;
+  if (changesFinancials) {
+    const { count } = await supabase
+      .from('bookkeeping_depreciation_charges')
+      .select('id', { count: 'exact', head: true })
+      .eq('asset_id', assetId);
+    if ((count ?? 0) > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'Depreciation has already been posted for this asset. Un-post the affected period(s) before changing its cost, purchase date or opening depreciation.',
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Additions mirror their Cost-additions split — cost & date come from the
+  // underlying transaction and stay locked here. The description is always
+  // editable. Opening accumulated depreciation is a *migration* figure that
+  // isn't derived from the booking split (e.g. an asset bought in a prior
+  // year whose depreciation-to-date was tracked in other software), so it's
+  // editable on additions too — that's how the asset register gets reconciled
+  // to the ledger's "Depn - b/fwd" balance on a mid-life migration.
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (body.description !== undefined) update.description = body.description.trim();
   if (asset.source === 'brought_forward') {
     if (body.purchase_date !== undefined) update.purchase_date = body.purchase_date;
     if (body.cost !== undefined) update.cost = body.cost;
-    if (body.opening_accumulated_depn !== undefined) update.opening_accumulated_depn = body.opening_accumulated_depn;
-  } else if (body.cost !== undefined || body.purchase_date !== undefined || body.opening_accumulated_depn !== undefined) {
+  } else if (body.cost !== undefined || body.purchase_date !== undefined) {
     return NextResponse.json(
       { error: 'Additions take their cost and date from the booking transaction — edit that instead.' },
       { status: 400 },
     );
   }
+  if (body.opening_accumulated_depn !== undefined) update.opening_accumulated_depn = body.opening_accumulated_depn;
 
   const nextCost = (update.cost as number | undefined) ?? asset.cost;
   const nextOpening = (update.opening_accumulated_depn as number | undefined) ?? asset.opening_accumulated_depn;

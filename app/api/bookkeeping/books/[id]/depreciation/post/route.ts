@@ -165,6 +165,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     period_from: body.from,
     period_to: body.to,
     amount: r.periodCharge,
+    // Pin the method/rate actually charged so the schedule display can't drift
+    // if a back-dated settings change is added later.
+    method: r.method,
+    annual_rate: r.annualRate,
     journal_txn_id: txn.id,
     created_by: ctx.userId,
   }));

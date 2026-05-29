@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
-import type { Asset, DepreciationCharge, LedgerDepreciationSetting } from '@/types/bookkeeping';
+import type { Asset, DepreciationCharge, DepreciationMethod, LedgerDepreciationSetting } from '@/types/bookkeeping';
 import {
   DISPOSAL_PL_ACCOUNT,
   chargeExpenseAccountName,
@@ -116,6 +116,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const catchUpFrom = lastChargedTo ? dayAfter(lastChargedTo) : asset.purchase_date;
 
   let catchUp = 0;
+  let catchUpMethod: DepreciationMethod | null = null;
+  let catchUpRate: number | null = null;
   if (catchUpFrom <= body.disposal_date) {
     const computed = computePeriodCharge(
       { cost: asset.cost, purchase_date: asset.purchase_date, disposal_date: body.disposal_date, status: 'active' },
@@ -125,6 +127,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       body.disposal_date,
     );
     catchUp = computed.amount;
+    catchUpMethod = computed.method;
+    catchUpRate = computed.annualRate;
   }
 
   const accumulatedAtDisposal = round2(accumulatedBfwd + catchUp);
@@ -183,7 +187,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { error: chargeErr } = await supabase.from('bookkeeping_depreciation_charges').insert({
       book_id: params.id, asset_id: asset.id,
       period_from: catchUpFrom, period_to: body.disposal_date,
-      amount: catchUp, journal_txn_id: depnTxn.id, created_by: ctx.userId,
+      amount: catchUp, method: catchUpMethod, annual_rate: catchUpRate,
+      journal_txn_id: depnTxn.id, created_by: ctx.userId,
     });
     if (chargeErr) {
       await supabase.from('bookkeeping_transactions').delete().eq('id', depnTxn.id);
@@ -277,4 +282,121 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     nbv,
     profit_or_loss: profit,
   });
+}
+
+// ── DELETE /api/bookkeeping/books/[id]/depreciation/dispose?asset_id=… ────────
+// Reverse a disposal. Undoes everything POST did, in reverse order:
+//   1. Delete the disposal journal (disposal_journal_id).
+//   2. Delete any catch-up depreciation charge booked at the disposal date,
+//      and its journal.
+//   3. Reset the asset back to active, clearing disposal_date / proceeds /
+//      disposal_journal_id.
+// This is the counterpart to the depreciation Un-post — it lets the user
+// correct a wrong disposal date, proceeds or a mistaken disposal entirely.
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = await getBookkeepingContext();
+  if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+
+  const assetId = new URL(req.url).searchParams.get('asset_id');
+  if (!assetId) return NextResponse.json({ error: 'asset_id is required' }, { status: 400 });
+
+  const supabase = createClient();
+  const { data: book, error: bookErr } = await supabase
+    .from('bookkeeping_books')
+    .select('id, firm_id, admin_locked, period_lock_date')
+    .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .single();
+  if (bookErr || !book) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const isAdmin = ctx.userRole === 'admin';
+  if (book.admin_locked && !isAdmin) {
+    return NextResponse.json({ error: 'Book is admin-locked' }, { status: 403 });
+  }
+
+  const { data: asset, error: assetErr } = await supabase
+    .from('bookkeeping_assets')
+    .select('*')
+    .eq('id', assetId)
+    .eq('book_id', params.id)
+    .single<Asset>();
+  if (assetErr || !asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+  if (asset.status !== 'disposed') {
+    return NextResponse.json({ error: 'Asset is not disposed.' }, { status: 400 });
+  }
+
+  if (book.period_lock_date && asset.disposal_date && asset.disposal_date <= book.period_lock_date && !isAdmin) {
+    return NextResponse.json(
+      { error: `Disposal date ${asset.disposal_date} is on or before the period lock (${book.period_lock_date})` },
+      { status: 403 },
+    );
+  }
+
+  // 1. Delete the disposal journal (splits cascade).
+  if (asset.disposal_journal_id) {
+    const { error: delDispErr } = await supabase
+      .from('bookkeeping_transactions')
+      .delete()
+      .eq('id', asset.disposal_journal_id)
+      .eq('book_id', params.id);
+    if (delDispErr) return NextResponse.json({ error: delDispErr.message }, { status: 500 });
+  }
+
+  // 2. Delete the catch-up depreciation charge booked at the disposal date
+  //    (and its journal). Only the charge created by the disposal lands on the
+  //    disposal date — earlier periodic charges keep their own period ends.
+  if (asset.disposal_date) {
+    const { data: catchUpCharges } = await supabase
+      .from('bookkeeping_depreciation_charges')
+      .select('id, journal_txn_id')
+      .eq('asset_id', asset.id)
+      .eq('period_to', asset.disposal_date);
+    const journalIds = Array.from(
+      new Set((catchUpCharges ?? []).map(c => c.journal_txn_id).filter(Boolean) as string[]),
+    );
+    if ((catchUpCharges ?? []).length > 0) {
+      const { error: delChargeErr } = await supabase
+        .from('bookkeeping_depreciation_charges')
+        .delete()
+        .eq('asset_id', asset.id)
+        .eq('period_to', asset.disposal_date);
+      if (delChargeErr) return NextResponse.json({ error: delChargeErr.message }, { status: 500 });
+    }
+    if (journalIds.length > 0) {
+      const { error: delJrnErr } = await supabase
+        .from('bookkeeping_transactions')
+        .delete()
+        .in('id', journalIds)
+        .eq('book_id', params.id);
+      if (delJrnErr) return NextResponse.json({ error: delJrnErr.message }, { status: 500 });
+    }
+  }
+
+  // 3. Reactivate the asset.
+  const { error: updErr } = await supabase
+    .from('bookkeeping_assets')
+    .update({
+      status: 'active',
+      disposal_date: null,
+      disposal_proceeds: null,
+      disposal_journal_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', asset.id);
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  await supabase.from('bookkeeping_audit').insert({
+    book_id: params.id,
+    user_id: ctx.userId,
+    entity_type: 'asset',
+    entity_id: asset.id,
+    action: 'dispose_reverse',
+    diff: {
+      reversed_disposal_date: asset.disposal_date,
+      reversed_proceeds: asset.disposal_proceeds,
+      reversed_journal_id: asset.disposal_journal_id,
+    },
+  });
+
+  return NextResponse.json({ ok: true });
 }

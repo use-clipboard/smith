@@ -317,6 +317,36 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   const fyEndIso   = activePeriod?.fyEndIso   ?? null;
   const isBankLedger = ledger === 'Bank';
   const isFaLedger = isFixedAssetLedger(ledger);
+
+  // ── Depreciation posting status (FA ledgers) ───────────────────────────
+  // Drives the green ✓ on the Depreciation sub-tab so the user can see at a
+  // glance whether this category's charge for the active period is fully
+  // posted — without having to open the tab. Computed from the same schedule
+  // the tab itself builds: 'done' = something is chargeable and nothing is
+  // left to post; 'partial' = a charge exists but some assets are still
+  // unposted (e.g. an asset was added/altered after the last post); 'none' =
+  // nothing to charge yet.
+  const depnFromIso = activePeriod?.fromIso ?? fyStartIso;
+  const depnToIso = activePeriod?.toIso ?? fyEndIso;
+  const [depnStatus, setDepnStatus] = useState<'none' | 'partial' | 'done' | null>(null);
+  const loadDepnStatus = useCallback(async () => {
+    if (!isFaLedger || !depnFromIso || !depnToIso) { setDepnStatus(null); return; }
+    try {
+      const r = await fetch(
+        `/api/bookkeeping/books/${bookId}/depreciation?ledger=${encodeURIComponent(ledger)}&from=${depnFromIso}&to=${depnToIso}`,
+      );
+      if (!r.ok) { setDepnStatus(null); return; }
+      const d = await r.json();
+      const rows = (d.schedules?.[0]?.rows ?? []) as Array<{ periodCharge: number; posted: boolean }>;
+      const chargeable = rows.filter(row => row.periodCharge > 0);
+      if (chargeable.length === 0) setDepnStatus('none');
+      else if (chargeable.every(row => row.posted)) setDepnStatus('done');
+      else setDepnStatus('partial');
+    } catch {
+      setDepnStatus(null);
+    }
+  }, [bookId, ledger, isFaLedger, depnFromIso, depnToIso]);
+  useEffect(() => { void loadDepnStatus(); }, [loadDepnStatus]);
   // Default tab: now identical for Bank and non-Bank ledgers — Bank gained
   // the FY-aware tab set, so "Current year" is the natural landing when a
   // year-end is set, falling back to "All entries" otherwise. The bank-only
@@ -764,6 +794,36 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
     await Promise.all([loadEntries(), loadAccounts()]);
   }
 
+  // ── Opening "balance brought forward" row ──────────────────────────────
+  // The entries endpoint folds every split dated before the active period
+  // into `opening_balance` (and keeps the running-balance walk cumulative),
+  // so an account like "Cost - b/fwd" shows a non-zero balance with zero
+  // in-period rows on the Current-year tab. Rendering a synthetic b/fwd row
+  // means the view reads sensibly — a balance you can see the origin of —
+  // instead of the bare "No entries" empty state. The running-balance column
+  // on the first real entry already includes this opening figure, so the
+  // numbers reconcile down the column.
+  const openingBalance = accountMeta?.openingBalance ?? 0;
+  const hasOpening = Math.abs(openingBalance) > 0.005;
+  // Date the b/fwd against the period start when we're filtering by year;
+  // on the date-less tabs (All / Open) there's no meaningful "as at" date.
+  const bfwdDateLabel =
+    (statusFilter === 'currentYear' || statusFilter === 'openAtYearEnd') && fyStartIso
+      ? formatDateUk(fyStartIso)
+      : '';
+  const bfwdRow = (
+    <tr className="border-b border-slate-100 bg-slate-50/60">
+      <td className="px-3 py-1.5" />
+      <td className="px-3 py-1.5 text-slate-500 tabular-nums">{bfwdDateLabel}</td>
+      <td className="px-3 py-1.5 text-xs text-slate-400">—</td>
+      <td className="px-3 py-1.5 italic text-slate-500">Balance brought forward</td>
+      <td className="px-3 py-1.5" />
+      <td className="px-3 py-1.5" />
+      <td className="px-3 py-1.5" />
+      <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-700">{fmt(openingBalance)}</td>
+    </tr>
+  );
+
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3 items-start">
@@ -1078,7 +1138,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   bookId={bookId}
                   ledger={ledger}
                   isAdmin={isAdmin}
-                  onChanged={() => { void loadEntries(); void loadAccounts(); }}
+                  onChanged={() => { void loadEntries(); void loadAccounts(); void loadDepnStatus(); }}
                 />
               </div>
             ) : statusFilter === 'reconcile' && ledger === 'Bank' && selectedAccountId ? (
@@ -1112,7 +1172,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                 <div className="flex items-center justify-center py-10 text-xs text-slate-400">
                   <Loader2 size={12} className="animate-spin mr-1.5" /> Loading entries…
                 </div>
-              ) : entries.length === 0 ? (
+              ) : entries.length === 0 && !hasOpening ? (
                 <p className="text-xs text-slate-400 italic px-4 py-6 text-center">
                   No {statusFilter === 'open' ? 'open ' : ''}entries on this account.
                 </p>
@@ -1131,6 +1191,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                     </tr>
                   </thead>
                   <tbody>
+                    {hasOpening && bfwdRow}
                     {entries.map(e => {
                       const matched = e.match_id !== null;
                       const recCleared = e.cleared_in_rec_id !== null;
@@ -1341,6 +1402,9 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                 const isActive = statusFilter === t.id;
                 const isBankGroup = t.group === 'bank';
                 const isFaGroup = t.group === 'fa';
+                // The FA Depreciation tab turns green with a ✓ once the active
+                // period's charge is fully posted.
+                const isDepnDone = t.id === 'depreciation' && depnStatus === 'done';
                 // Add a thin vertical divider before the first workflow tab
                 // (bank Reconcile/History or the FA Depreciation tab) so the
                 // visual split between "ledger view" tabs and "workflow" tabs
@@ -1352,8 +1416,12 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                     <button
                       type="button"
                       onClick={() => setStatusFilter(t.id)}
-                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                        isActive
+                      className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        isDepnDone
+                          ? isActive
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                          : isActive
                           ? isBankGroup
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                             : isFaGroup
@@ -1367,6 +1435,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                       }`}
                     >
                       {t.label}
+                      {isDepnDone && <Check size={12} className="text-emerald-600" />}
                     </button>
                   </span>
                 );

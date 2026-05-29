@@ -75,6 +75,11 @@ export function printReport(
         background: white !important;
         overflow: visible !important;
         max-width: 100% !important;
+        /* Some report roots carry a viewport-height min-height for the
+           on-screen layout — reset it so a short schedule doesn't push a
+           blank trailing page. */
+        min-height: 0 !important;
+        height: auto !important;
       }
       .bk-print-root { position: static !important; }
       table { width: 100%; border-collapse: collapse; font-size: 10pt; }

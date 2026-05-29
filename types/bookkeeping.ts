@@ -318,6 +318,10 @@ export interface DepreciationCharge {
   period_from: string;
   period_to: string;
   amount: number;
+  /** Method & rate in force when this charge was posted. Null on legacy rows
+   *  posted before these were captured — callers fall back to the settings. */
+  method?: DepreciationMethod | null;
+  annual_rate?: number | null;
   journal_txn_id: string | null;
   created_at: string;
 }

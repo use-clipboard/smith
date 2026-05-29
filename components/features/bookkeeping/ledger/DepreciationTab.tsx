@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, Trash2, Settings2, AlertTriangle, Check, X, PackageMinus } from 'lucide-react';
+import { Loader2, Plus, Trash2, Settings2, AlertTriangle, Check, X, PackageMinus, Pencil, Undo2, RotateCcw } from 'lucide-react';
 import DateInput, { fromIso, parseUkDateStrict } from '../input/DateInput';
 import Tooltip from '@/components/ui/Tooltip';
 import { depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
@@ -43,7 +43,7 @@ interface ScheduleResponse {
     settings: LedgerDepreciationSetting[];
     rows: AssetScheduleRow[];
     totals: { cost: number; depnBroughtForward: number; periodCharge: number; depnCarriedForward: number; nbv: number };
-    reconciliation: { costBfwdLedger: number; costBfwdAssets: number; depnBfwdLedger: number; depnBfwdAssets: number };
+    reconciliation: { costLedger: number; costAssets: number; depnBfwdLedger: number; depnBfwdAssets: number };
   }>;
 }
 
@@ -76,6 +76,8 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [posting, setPosting] = useState(false);
+  const [unposting, setUnposting] = useState(false);
+  const [reversingId, setReversingId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
 
   const load = useCallback(async () => {
@@ -107,9 +109,17 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
   const [disposeRow, setDisposeRow] = useState<AssetScheduleRow | null>(null);
 
   const recon = data?.reconciliation;
-  const reconCostMismatch = recon && Math.abs(recon.costBfwdLedger - recon.costBfwdAssets) > 0.005;
-  const reconDepnMismatch = recon && Math.abs(recon.depnBfwdLedger - recon.depnBfwdAssets) > 0.005;
-  const reconWarn = !!(reconCostMismatch || reconDepnMismatch);
+  const reconCostMismatch = recon && Math.abs(recon.costLedger - recon.costAssets) > 0.005;
+  // Depn b/fwd tie-out: ledger "Depn - b/fwd" balance vs the sum allocated
+  // across the itemised assets. `diff > 0` → some ledger depn isn't yet
+  // assigned to an asset (under-allocated); `diff < 0` → more allocated than
+  // the ledger holds (over-allocated). Warn-only either way.
+  const depnLedger = recon?.depnBfwdLedger ?? 0;
+  const depnAllocated = recon?.depnBfwdAssets ?? 0;
+  const depnDiff = +(depnLedger - depnAllocated).toFixed(2);
+  const showDepnRecon = !!recon && (Math.abs(depnLedger) > 0.005 || Math.abs(depnAllocated) > 0.005);
+  const depnState: 'ok' | 'under' | 'over' =
+    Math.abs(depnDiff) < 0.005 ? 'ok' : depnDiff > 0 ? 'under' : 'over';
 
   const postable = useMemo(
     () => (data?.rows ?? []).filter(r => r.periodCharge > 0 && !r.posted),
@@ -119,6 +129,21 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
     () => Math.round(postable.reduce((s, r) => s + r.periodCharge, 0) * 100) / 100,
     [postable],
   );
+
+  // Rows already posted for this period — drives the "Un-post" action and the
+  // "done" banner. A period is *fully posted* when something is chargeable and
+  // nothing is left to post (postable is empty). When the user later adds or
+  // changes an asset a fresh unposted charge appears, postable refills, and the
+  // done state automatically drops back to "still to post".
+  const postedRows = useMemo(
+    () => (data?.rows ?? []).filter(r => r.periodCharge > 0 && r.posted),
+    [data],
+  );
+  const chargeableCount = useMemo(
+    () => (data?.rows ?? []).filter(r => r.periodCharge > 0).length,
+    [data],
+  );
+  const fullyPosted = chargeableCount > 0 && postable.length === 0;
 
   async function postDepreciation() {
     if (!periodValid || postable.length === 0) return;
@@ -140,6 +165,63 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
       setError(e instanceof Error ? e.message : 'Post failed');
     } finally {
       setPosting(false);
+    }
+  }
+
+  async function unpostDepreciation() {
+    if (!periodValid || postedRows.length === 0) return;
+    if (!confirm(
+      `Reverse the posted ${noun.toLowerCase()} for this period?\n\n` +
+      `This deletes the ${noun.toLowerCase()} journal and clears the period's charges so you ` +
+      `can add, alter or remove assets and then post again. It can't be undone, but you can re-post at any time.`,
+    )) return;
+    setUnposting(true);
+    setError('');
+    setNotice('');
+    try {
+      const r = await fetch(`/api/bookkeeping/books/${bookId}/depreciation/unpost`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ledger, from: fromIsoVal, to: toIsoVal }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'Reverse failed');
+      setNotice(d.reversed
+        ? `Reversed — ${d.charges_reversed} charge(s) cleared. Make your changes, then post again.`
+        : (d.message ?? 'Nothing to reverse.'));
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reverse failed');
+    } finally {
+      setUnposting(false);
+    }
+  }
+
+  async function reverseDisposal(row: AssetScheduleRow) {
+    if (reversingId) return;
+    if (!confirm(
+      `Reverse the disposal of "${row.asset.description}"?\n\n` +
+      `This deletes the disposal journal and any ${noun.toLowerCase()} catch-up posted to the disposal date, ` +
+      `and returns the asset to active. It can't be undone, but you can dispose of it again.`,
+    )) return;
+    setReversingId(row.asset.id);
+    setError('');
+    setNotice('');
+    try {
+      const r = await fetch(
+        `/api/bookkeeping/books/${bookId}/depreciation/dispose?asset_id=${row.asset.id}`,
+        { method: 'DELETE' },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'Reverse failed');
+      setNotice('Disposal reversed — the asset is active again.');
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reverse failed');
+    } finally {
+      setReversingId(null);
     }
   }
 
@@ -174,11 +256,24 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
               <Plus size={13} /> Brought-forward asset
             </button>
           </Tooltip>
+          {postedRows.length > 0 && (
+            <Tooltip label={`Reverse the posted ${noun.toLowerCase()} for this period so you can change assets and re-post`}>
+              <button
+                type="button"
+                onClick={() => void unpostDepreciation()}
+                disabled={unposting || posting || !periodValid}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {unposting ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+                Un-post
+              </button>
+            </Tooltip>
+          )}
           <Tooltip label={postable.length === 0 ? 'Nothing to post for this period' : `Post the ${noun.toLowerCase()} journal for this period`}>
             <button
               type="button"
               onClick={() => void postDepreciation()}
-              disabled={posting || !periodValid || postable.length === 0}
+              disabled={posting || unposting || !periodValid || postable.length === 0}
               className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {posting ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
@@ -196,6 +291,27 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
       {error && <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</p>}
       {notice && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{notice}</p>}
 
+      {/* Done banner — the period's charge is fully posted. Stays green until an
+          asset is added/altered/removed, which refills `postable` and flips
+          this back to the amber "still to post" hint below. */}
+      {fullyPosted ? (
+        <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 border bg-emerald-50 border-emerald-200 text-emerald-800">
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-600 text-white shrink-0">
+            <Check size={11} />
+          </span>
+          <span className="font-semibold">{noun} posted for this period.</span>
+          <span className="opacity-80">
+            Add, alter or dispose of an asset and a fresh charge appears here to post. Use “Un-post” to reverse and redo the whole period.
+          </span>
+        </div>
+      ) : postable.length > 0 && postedRows.length > 0 ? (
+        <div className="flex items-center gap-2 text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-800">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span className="font-semibold">{postable.length} asset(s) still to post</span>
+          <span className="opacity-80">— assets changed since the last post. Click “Post {noun.toLowerCase()}” to bring this period up to date.</span>
+        </div>
+      ) : null}
+
       {/* ── Settings editor ─────────────────────────────────────────────────── */}
       {showSettings && (
         <SettingsEditor
@@ -208,19 +324,44 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
         />
       )}
 
-      {/* ── B/fwd reconciliation (warn-only) ────────────────────────────────── */}
-      {reconWarn && recon && (
-        <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800">
-          <div className="flex items-center gap-1.5 font-semibold mb-1">
-            <AlertTriangle size={13} /> Brought-forward doesn’t reconcile to the ledger
+      {/* ── B/fwd depreciation reconciliation (warn-only, always shown) ──────
+          Persistent tie-out between the ledger's "Depn - b/fwd" balance and the
+          sum allocated across assets. Green when it balances, amber when there's
+          still ledger depn to assign, rose when over-allocated. Click an asset's
+          {noun} b/fwd cell to allocate. Posting is never blocked. */}
+      {showDepnRecon && (
+        <div
+          className={`text-xs rounded-lg px-3 py-2 border ${
+            depnState === 'ok'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : depnState === 'under'
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 font-semibold">
+            {depnState === 'ok' ? <Check size={13} /> : <AlertTriangle size={13} />}
+            {noun} b/fwd — allocated £{fmt(depnAllocated)} of £{fmt(depnLedger)} in the ledger
+            {depnState === 'under' && <span className="font-normal">· £{fmt(depnDiff)} still to allocate</span>}
+            {depnState === 'over' && <span className="font-normal">· £{fmt(-depnDiff)} more than the ledger holds</span>}
           </div>
-          {reconCostMismatch && (
-            <div>Cost b/fwd: ledger £{fmt(recon.costBfwdLedger)} vs itemised assets £{fmt(recon.costBfwdAssets)} (diff £{fmt(recon.costBfwdLedger - recon.costBfwdAssets)}).</div>
-          )}
-          {reconDepnMismatch && (
-            <div>{noun} b/fwd: ledger £{fmt(recon.depnBfwdLedger)} vs itemised assets £{fmt(recon.depnBfwdAssets)} (diff £{fmt(recon.depnBfwdLedger - recon.depnBfwdAssets)}).</div>
-          )}
-          <div className="text-amber-600 mt-1">This is a warning only — you can still post. Add or edit brought-forward assets to reconcile.</div>
+          <div className="opacity-70 mt-0.5">
+            {depnState === 'ok'
+              ? `Every asset's ${noun.toLowerCase()} b/fwd is assigned and ties to the ledger.`
+              : `Click an asset's "${noun} b/fwd" figure below to set its accumulated ${noun.toLowerCase()} to date. Warning only — you can still post.`}
+          </div>
+        </div>
+      )}
+
+      {/* Cost mismatch — separate warn-only line (only when out). */}
+      {reconCostMismatch && recon && (
+        <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800">
+          <div className="flex items-center gap-1.5 font-semibold">
+            <AlertTriangle size={13} /> Cost doesn’t reconcile
+          </div>
+          <div className="opacity-80 mt-0.5">
+            Ledger £{fmt(recon.costLedger)} vs itemised assets £{fmt(recon.costAssets)} (diff £{fmt(recon.costLedger - recon.costAssets)}). Warning only.
+          </div>
         </div>
       )}
 
@@ -267,12 +408,13 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
                       {methodLabel(r.method)}{r.annualRate ? ` · ${r.annualRate}%` : ''}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-slate-900">{fmt(r.asset.cost)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{fmt(r.depnBroughtForward)}</td>
+                    <BfwdDepnCell row={r} bookId={bookId} noun={noun} onSaved={() => void load()} />
+
                     <td className={`px-3 py-1.5 text-right tabular-nums ${r.posted ? 'text-slate-400' : 'text-slate-900 font-medium'}`}>{fmt(r.periodCharge)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">{fmt(r.depnCarriedForward)}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold text-slate-900">{fmt(r.nbv)}</td>
                     <td className="px-3 py-1.5 text-center">
-                      {!disposed && (
+                      {!disposed ? (
                         <Tooltip label="Dispose of this asset">
                           <button
                             type="button"
@@ -281,6 +423,20 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
                             className="inline-flex items-center justify-center w-6 h-6 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                           >
                             <PackageMinus size={14} />
+                          </button>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip label="Reverse this disposal — return the asset to active">
+                          <button
+                            type="button"
+                            onClick={() => void reverseDisposal(r)}
+                            disabled={reversingId === r.asset.id}
+                            aria-label="Reverse disposal"
+                            className="inline-flex items-center justify-center w-6 h-6 rounded text-slate-400 hover:text-amber-700 hover:bg-amber-50 disabled:opacity-40"
+                          >
+                            {reversingId === r.asset.id
+                              ? <Loader2 size={13} className="animate-spin" />
+                              : <RotateCcw size={14} />}
                           </button>
                         </Tooltip>
                       )}
@@ -324,6 +480,123 @@ export default function DepreciationTab({ bookId, ledger, isAdmin = false, onCha
         />
       )}
     </div>
+  );
+}
+
+// ── Inline-editable opening accumulated depreciation cell ───────────────────
+// Lets the user allocate an asset's depreciation-to-date (its
+// opening_accumulated_depn) directly in the schedule — the common mid-life
+// migration case where prior-year depreciation was run in other software and
+// only the aggregate sits in the ledger's "Depn - b/fwd" account.
+//
+// Editable only while the figure is still "pure" opening depn: nothing posted
+// on top (no prior-period posted charge feeding depnBroughtForward, and this
+// period not yet posted) and the asset isn't disposed. Saving rewrites
+// opening_accumulated_depn, which the engine nets off the reducing-balance
+// base — so the charge + NBV recompute on reload.
+function BfwdDepnCell({
+  row, bookId, noun, onSaved,
+}: {
+  row: AssetScheduleRow;
+  bookId: string;
+  noun: string;
+  onSaved: () => void;
+}) {
+  const opening = row.asset.opening_accumulated_depn;
+  const disposed = row.asset.status === 'disposed';
+  const pure = Math.abs(row.depnBroughtForward - opening) < 0.005 && !row.posted;
+  const editable = !disposed && pure;
+
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  function begin() {
+    if (!editable || busy) return;
+    setVal(opening ? String(opening) : '');
+    setErr('');
+    setEditing(true);
+  }
+
+  async function commit() {
+    const num = val.trim() === '' ? 0 : Number(val);
+    if (Number.isNaN(num) || num < 0 || num > row.asset.cost) {
+      setErr(`Enter 0–${fmt(row.asset.cost)}`);
+      return;
+    }
+    if (Math.abs(num - opening) < 0.005) { setEditing(false); return; }
+    setBusy(true);
+    setErr('');
+    try {
+      const r = await fetch(
+        `/api/bookkeeping/books/${bookId}/depreciation/assets?asset_id=${row.asset.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opening_accumulated_depn: num }),
+        },
+      );
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? 'Save failed');
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <td className="px-3 py-1.5 text-right">
+        <div className="inline-flex flex-col items-end gap-0.5">
+          <input
+            type="number"
+            min={0}
+            max={row.asset.cost}
+            step="0.01"
+            autoFocus
+            value={val}
+            disabled={busy}
+            onChange={e => setVal(e.target.value)}
+            onBlur={() => void commit()}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); void commit(); }
+              if (e.key === 'Escape') { e.preventDefault(); setEditing(false); setErr(''); }
+            }}
+            aria-label={`${noun} brought forward`}
+            className="w-24 text-right border border-indigo-300 rounded px-1.5 py-1 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+          />
+          {err && <span className="text-[10px] text-rose-600">{err}</span>}
+        </div>
+      </td>
+    );
+  }
+
+  if (!editable) {
+    return (
+      <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
+        {fmt(row.depnBroughtForward)}
+      </td>
+    );
+  }
+
+  return (
+    <td className="px-3 py-1.5 text-right">
+      <Tooltip label={`Set ${noun.toLowerCase()} to date — click to edit`}>
+        <button
+          type="button"
+          onClick={begin}
+          aria-label={`Edit ${noun.toLowerCase()} brought forward`}
+          className="inline-flex items-center gap-1 tabular-nums text-slate-700 hover:text-indigo-700 hover:underline decoration-dotted underline-offset-2"
+        >
+          <Pencil size={10} className="opacity-40" />
+          {fmt(row.depnBroughtForward)}
+        </button>
+      </Tooltip>
+    </td>
   );
 }
 

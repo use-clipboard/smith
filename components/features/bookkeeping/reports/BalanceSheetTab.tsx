@@ -96,7 +96,18 @@ function formatUk(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`;
 }
 
-async function fetchBalances(bookId: string, asAt: string | null, includeZero: boolean): Promise<AccountBalance[]> {
+interface BalancesResult {
+  accounts: AccountBalance[];
+  /** Cumulative net profit over P&L accounts up to `asAt`, INCLUDING any
+   *  posted YET. For a closed year this nets to ~0 (the year-end journal has
+   *  already transferred it to reserves); for the open year it is the live
+   *  profit/(loss) not yet carried to reserves. We surface it as a derived
+   *  "Profit/(loss) for the financial year" line so the BS balances without a
+   *  posted year-end journal (VT-style dynamic carry). */
+  netProfit: number;
+}
+
+async function fetchBalances(bookId: string, asAt: string | null, includeZero: boolean): Promise<BalancesResult> {
   const params = new URLSearchParams();
   if (asAt) params.set('to', asAt);
   // Server hides zero-balance accounts by default. Pass include_zero=true
@@ -107,7 +118,10 @@ async function fetchBalances(bookId: string, asAt: string | null, includeZero: b
   const r = await fetch(`/api/bookkeeping/books/${bookId}/balances?${params}`);
   if (!r.ok) throw new Error('Failed to load balances');
   const d = await r.json();
-  return (d.accounts ?? []) as AccountBalance[];
+  return {
+    accounts: (d.accounts ?? []) as AccountBalance[],
+    netProfit: typeof d.net_profit === 'number' ? d.net_profit : 0,
+  };
 }
 
 export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
@@ -122,6 +136,8 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
   const printRootRef = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState<AccountBalance[]>([]);
   const [prior, setPrior]     = useState<AccountBalance[]>([]);
+  const [currentNetProfit, setCurrentNetProfit] = useState(0);
+  const [priorNetProfit, setPriorNetProfit]     = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
 
@@ -129,18 +145,25 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
   const asAtPrior   = period.to ? isoOneYearBefore(period.to) : null;
 
   useEffect(() => {
-    if (!activePeriod.ready) { setCurrent([]); setPrior([]); return; }
+    if (!activePeriod.ready) {
+      setCurrent([]); setPrior([]); setCurrentNetProfit(0); setPriorNetProfit(0);
+      return;
+    }
     let cancelled = false;
     async function go() {
       setLoading(true); setError('');
       try {
         const [cur, pri] = await Promise.all([
           fetchBalances(bookId, asAtCurrent, showZero),
-          asAtPrior ? fetchBalances(bookId, asAtPrior, showZero) : Promise.resolve([] as AccountBalance[]),
+          asAtPrior
+            ? fetchBalances(bookId, asAtPrior, showZero)
+            : Promise.resolve({ accounts: [] as AccountBalance[], netProfit: 0 } as BalancesResult),
         ]);
         if (cancelled) return;
-        setCurrent(cur);
-        setPrior(pri);
+        setCurrent(cur.accounts);
+        setPrior(pri.accounts);
+        setCurrentNetProfit(cur.netProfit);
+        setPriorNetProfit(pri.netProfit);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load');
       } finally {
@@ -218,17 +241,24 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
     const totalAssets       = get('fixed_assets').currentTotal + get('current_assets').currentTotal;
     const totalLiabilities  = get('current_liabilities').currentTotal + get('long_term_liabilities').currentTotal;
     const netAssets         = totalAssets - totalLiabilities;
-    const totalCapital      = get('equity').currentTotal;
+    // Capital and reserves = posted equity ledgers + the current-year profit
+    // that hasn't yet been carried to reserves via a year-end journal. For a
+    // closed year netProfit is ~0 (already transferred), so this is a no-op;
+    // for the open year it's the live result, which is exactly what makes the
+    // BS balance without a posted YET (VT-style dynamic carry).
+    const equityLedgers     = get('equity').currentTotal;
+    const totalCapital      = +(equityLedgers + currentNetProfit).toFixed(2);
     const balanceCheck      = +(netAssets - totalCapital).toFixed(2);
     const priorAssets       = get('fixed_assets').priorTotal + get('current_assets').priorTotal;
     const priorLiabilities  = get('current_liabilities').priorTotal + get('long_term_liabilities').priorTotal;
     const priorNetAssets    = priorAssets - priorLiabilities;
-    const priorCapital      = get('equity').priorTotal;
+    const priorEquityLedgers = get('equity').priorTotal;
+    const priorCapital      = +(priorEquityLedgers + priorNetProfit).toFixed(2);
     return {
       totalAssets, totalLiabilities, netAssets, totalCapital, balanceCheck,
       priorAssets, priorLiabilities, priorNetAssets, priorCapital,
     };
-  }, [sections]);
+  }, [sections, currentNetProfit, priorNetProfit]);
 
   const hasMovement = sections.some(s => s.groups.length > 0);
 
@@ -278,7 +308,15 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
                 }
                 rows.push([s.title, g.ledger, `${g.ledger} total`, g.currentTotal.toFixed(2), g.priorTotal.toFixed(2)]);
               }
-              rows.push([s.title, '', `${s.title} total`, s.currentTotal.toFixed(2), s.priorTotal.toFixed(2)]);
+              // Derived current-year result sits inside Capital and reserves;
+              // its section total must therefore include the profit so it
+              // matches the on-screen "Total capital and reserves".
+              if (s.key === 'equity' && (Math.abs(currentNetProfit) >= 0.005 || Math.abs(priorNetProfit) >= 0.005)) {
+                rows.push([s.title, '', 'Profit/(loss) for the financial year', currentNetProfit.toFixed(2), priorNetProfit.toFixed(2)]);
+              }
+              const sectionCur = s.key === 'equity' ? totals.totalCapital : s.currentTotal;
+              const sectionPri = s.key === 'equity' ? totals.priorCapital : s.priorTotal;
+              rows.push([s.title, '', `${s.title} total`, sectionCur.toFixed(2), sectionPri.toFixed(2)]);
             }
             rows.push(['', '', 'Total assets',      totals.totalAssets.toFixed(2),      totals.priorAssets.toFixed(2)]);
             rows.push(['', '', 'Total liabilities', totals.totalLiabilities.toFixed(2), totals.priorLiabilities.toFixed(2)]);
@@ -364,10 +402,19 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
               </tr>
 
               {/* Capital and reserves */}
-              {sections[4].groups.length > 0 && (
+              {(sections[4].groups.length > 0 || Math.abs(currentNetProfit) >= 0.005 || Math.abs(priorNetProfit) >= 0.005) && (
                 <>
                   <BsTitle title="Capital and reserves" />
                   <BsSection section={sections[4]} onOpenAccount={onOpenAccount} hideSectionLabel />
+                  {/* Derived current-year result — not a posted account. Carries
+                      to reserves only when the year is formally closed (YET). */}
+                  {(Math.abs(currentNetProfit) >= 0.005 || Math.abs(priorNetProfit) >= 0.005) && (
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-6 py-1 pl-12 text-slate-700">Profit/(loss) for the financial year</td>
+                      <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(currentNetProfit)}</td>
+                      <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(priorNetProfit)}</td>
+                    </tr>
+                  )}
                   <tr className="border-t-2 border-slate-300">
                     <td className="px-6 py-3 font-semibold text-slate-900">Total capital and reserves</td>
                     <td className="px-6 py-3 text-right tabular-nums font-bold text-slate-900">{fmt(totals.totalCapital)}</td>

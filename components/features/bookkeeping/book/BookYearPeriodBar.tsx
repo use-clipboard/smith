@@ -12,8 +12,6 @@
  *     list links to a "Year ends…" management dialog.
  *   • Period dropdown — within the selected year: Entire year / one month /
  *     one quarter / a custom range.
- *   • Lock chip — read-only at-a-glance status. Click to open Book Settings
- *     where the period lock date is edited.
  *
  * For now the bar maintains its own selection state. Once Stage D wires the
  * reports up to consume it, the selection will live in BookNavigation so
@@ -22,7 +20,7 @@
 
 import { useEffect, useMemo, useState, useRef, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Lock, Unlock, Calendar } from 'lucide-react';
+import { ChevronDown, Calendar } from 'lucide-react';
 import type { FinancialYear } from '@/types/bookkeeping';
 import type { ActivePeriod } from './BookNavigationContext';
 
@@ -223,7 +221,6 @@ export default function BookYearPeriodBar({
         value={period}
         onChange={setPeriod}
       />
-      <LockChip lockDate={periodLockDate} onClick={onOpenSettings} />
     </div>
   );
 }
@@ -472,23 +469,3 @@ function PeriodDropdown({
   );
 }
 
-// ── Lock chip ──────────────────────────────────────────────────────────────
-function LockChip({ lockDate, onClick }: { lockDate: string | null; onClick?: () => void }) {
-  const locked = !!lockDate;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
-        locked
-          ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
-          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-      }`}
-    >
-      {locked ? <Lock size={10} /> : <Unlock size={10} className="text-slate-400" />}
-      <span className="font-medium">
-        {locked ? `Locked through ${formatDateUk(lockDate)}` : 'No periods are locked'}
-      </span>
-    </button>
-  );
-}

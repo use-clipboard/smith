@@ -236,14 +236,24 @@ function formatRef(type: string, seq: number): string {
   return `${type} ${String(seq).padStart(6, '0')}`;
 }
 
+/** Collapse runs of internal whitespace to a single space and trim the ends.
+ *  VT exports occasionally carry a stray double space inside an account name
+ *  (e.g. "Cost -  b/fwd"). A plain .trim() leaves that internal gap intact, so
+ *  the imported name no longer byte-matches the COA-seed name ("Cost - b/fwd")
+ *  and the dedupe creates a duplicate account. Normalising here kills that
+ *  class of duplicate at the source. */
+function normaliseWs(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 /** Split "Ledger: Account name" → { ledger, accountName }. Accounts without
  *  a colon are treated as ledgerless (rare — VT always prefixes). */
 function splitLedgerAccount(display: string): { ledger: string; accountName: string } {
   const idx = display.indexOf(':');
-  if (idx < 0) return { ledger: '', accountName: display.trim() };
+  if (idx < 0) return { ledger: '', accountName: normaliseWs(display) };
   return {
-    ledger:      display.slice(0, idx).trim(),
-    accountName: display.slice(idx + 1).trim(),
+    ledger:      normaliseWs(display.slice(0, idx)),
+    accountName: normaliseWs(display.slice(idx + 1)),
   };
 }
 

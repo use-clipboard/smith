@@ -7,20 +7,28 @@
  * journal and disposing of an asset happen inside each ledger's own
  * Depreciation/Amortisation sub-tab — click "Open ledger" to drill in.
  *
- * The period is pre-filled from the header's active period but editable.
+ * The period is driven by the header's Year + Period selectors (read-only
+ * here), exactly like the TB / P&L / Balance Sheet reports.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Boxes, ArrowRight } from 'lucide-react';
-import DateInput, { fromIso, parseUkDateStrict } from '../input/DateInput';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Boxes, ArrowRight, Printer, Download, AlertTriangle, Check } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
 import { useBookNavigation } from './BookNavigationContext';
+import { printReport } from '../reports/printReport';
+import { exportRowsAsCsv, type CsvRow } from '../reports/exportReportCsv';
+import ReportPrintHeader from '../reports/ReportPrintHeader';
 import type { AssetScheduleRow, DepreciationMethod, LedgerDepreciationSetting } from '@/types/bookkeeping';
 
 interface Props {
   bookId: string;
   isAdmin?: boolean;
+  /** True while this tab is the visible one. The register lives in a
+   *  `hidden` div (always mounted), so it only fetched once on mount and
+   *  showed stale figures after posting/disposing in a category ledger.
+   *  Re-fetching each time the tab becomes visible keeps it fresh. */
+  active?: boolean;
 }
 
 interface LedgerSchedule {
@@ -28,7 +36,7 @@ interface LedgerSchedule {
   settings: LedgerDepreciationSetting[];
   rows: AssetScheduleRow[];
   totals: { cost: number; depnBroughtForward: number; periodCharge: number; depnCarriedForward: number; nbv: number };
-  reconciliation: { costBfwdLedger: number; costBfwdAssets: number; depnBfwdLedger: number; depnBfwdAssets: number };
+  reconciliation: { costLedger: number; costAssets: number; depnBfwdLedger: number; depnBfwdAssets: number };
 }
 interface ScheduleResponse {
   period: { from: string; to: string };
@@ -49,31 +57,32 @@ function formatDateUk(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y.slice(2)}`;
 }
+function formatDateUkFull(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
 
-export default function FixedAssetsTab({ bookId }: Props) {
+export default function FixedAssetsTab({ bookId, active = true }: Props) {
   const nav = useBookNavigation();
-  const ap = nav?.activePeriod;
+  const ap = nav?.activePeriod ?? {
+    ready: false, fromIso: null, toIso: null, fyStartIso: null, fyEndIso: null, label: '',
+  };
 
-  const defaultFrom = ap?.fromIso ?? ap?.fyStartIso ?? '';
-  const defaultTo = ap?.toIso ?? ap?.fyEndIso ?? '';
-  const [fromUk, setFromUk] = useState(defaultFrom ? fromIso(defaultFrom) : '');
-  const [toUk, setToUk] = useState(defaultTo ? fromIso(defaultTo) : '');
-
-  // Keep the period in sync if the header period arrives/changes while the
-  // tab is mounted but the user hasn't typed their own dates yet.
-  useEffect(() => {
-    if (!fromUk && defaultFrom) setFromUk(fromIso(defaultFrom));
-    if (!toUk && defaultTo) setToUk(fromIso(defaultTo));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultFrom, defaultTo]);
-
-  const fromIsoVal = parseUkDateStrict(fromUk);
-  const toIsoVal = parseUkDateStrict(toUk);
-  const periodValid = !!fromIsoVal && !!toIsoVal && fromIsoVal <= toIsoVal;
+  // Period is driven entirely by the header's Year + Period selectors (same as
+  // every other report) — no manual From/To picking here.
+  const fromIsoVal = ap.fromIso ?? ap.fyStartIso ?? null;
+  const toIsoVal = ap.toIso ?? ap.fyEndIso ?? null;
+  const periodValid = ap.ready && !!fromIsoVal && !!toIsoVal && fromIsoVal <= toIsoVal;
 
   const [schedules, setSchedules] = useState<LedgerSchedule[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const printRootRef = useRef<HTMLDivElement>(null);
+
+  // Human period descriptor for the print header + file names, e.g.
+  // "For the period 01/04/2025 to 31/03/2026".
+  const periodLabel = fromIsoVal && toIsoVal ? `${formatDateUkFull(fromIsoVal)} to ${formatDateUkFull(toIsoVal)}` : '';
 
   const load = useCallback(async () => {
     if (!periodValid) return;
@@ -98,6 +107,14 @@ export default function FixedAssetsTab({ bookId }: Props) {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Refetch whenever the tab becomes visible again — posting or disposing in a
+  // category ledger's Depreciation tab changes the schedule, and this register
+  // is kept mounted (in a `hidden` div) so it wouldn't otherwise pick that up.
+  useEffect(() => {
+    if (active) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   // Combined totals across every FA ledger.
   const combined = useMemo(() => {
     return schedules.reduce(
@@ -118,10 +135,101 @@ export default function FixedAssetsTab({ bookId }: Props) {
     [schedules],
   );
 
+  // Book-wide reconciliation between the ledger balances and the itemised asset
+  // register, summed across every FA category. Mirrors the per-category tie-out
+  // in each ledger's Depreciation tab but rolled up here so the user can spot at
+  // a glance whether the whole register agrees with the nominal ledger. Warn-
+  // only — nothing is blocked, and we list which categories are out so the user
+  // knows where to drill in.
+  const recon = useMemo(() => {
+    const sum = schedules.reduce(
+      (a, s) => ({
+        costLedger: a.costLedger + s.reconciliation.costLedger,
+        costAssets: a.costAssets + s.reconciliation.costAssets,
+        depnBfwdLedger: a.depnBfwdLedger + s.reconciliation.depnBfwdLedger,
+        depnBfwdAssets: a.depnBfwdAssets + s.reconciliation.depnBfwdAssets,
+      }),
+      { costLedger: 0, costAssets: 0, depnBfwdLedger: 0, depnBfwdAssets: 0 },
+    );
+    const round = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const costDiff = round(sum.costLedger - sum.costAssets);
+    const depnDiff = round(sum.depnBfwdLedger - sum.depnBfwdAssets);
+    const costOutLedgers = schedules
+      .filter(s => Math.abs(s.reconciliation.costLedger - s.reconciliation.costAssets) > 0.005)
+      .map(s => s.ledger);
+    const depnOutLedgers = schedules
+      .filter(s => Math.abs(s.reconciliation.depnBfwdLedger - s.reconciliation.depnBfwdAssets) > 0.005)
+      .map(s => s.ledger);
+    return {
+      ...sum,
+      costDiff,
+      depnDiff,
+      costOut: Math.abs(costDiff) > 0.005,
+      depnOut: Math.abs(depnDiff) > 0.005,
+      costOutLedgers,
+      depnOutLedgers,
+    };
+  }, [schedules]);
+
+  const reconShown = ledgersWithAssets.length > 0 && (recon.costOut || recon.depnOut);
+
+  // Build the CSV in the same shape as the on-screen layout: a block per
+  // asset category (ledger header → asset rows → category total), then a
+  // combined total row across every category.
+  function exportCsv() {
+    const rows: CsvRow[] = [[
+      'Category', 'Asset', 'Purchased', 'Cost', 'Depn b/fwd', 'Charge', 'Depn c/fwd', 'NBV',
+    ]];
+    for (const s of ledgersWithAssets) {
+      const noun = depreciationNoun(s.ledger);
+      const current = s.settings[s.settings.length - 1] ?? null;
+      const rate = current ? `${methodLabel(current.method)} · ${current.annual_rate}% · ${noun.toLowerCase()}` : 'No rate set';
+      rows.push([`${s.ledger} (${rate})`, '', '', '', '', '', '', '']);
+      for (const r of s.rows) {
+        rows.push([
+          s.ledger,
+          r.asset.description + (r.asset.status === 'disposed' ? ' (disposed)' : ''),
+          formatDateUk(r.asset.purchase_date),
+          r.asset.cost.toFixed(2),
+          r.depnBroughtForward.toFixed(2),
+          r.periodCharge.toFixed(2),
+          r.depnCarriedForward.toFixed(2),
+          r.nbv.toFixed(2),
+        ]);
+      }
+      rows.push([
+        s.ledger, `${s.ledger} total`, '',
+        s.totals.cost.toFixed(2),
+        s.totals.depnBroughtForward.toFixed(2),
+        s.totals.periodCharge.toFixed(2),
+        s.totals.depnCarriedForward.toFixed(2),
+        s.totals.nbv.toFixed(2),
+      ]);
+    }
+    rows.push([
+      '', 'Total fixed assets', '',
+      combined.cost.toFixed(2),
+      combined.depnBroughtForward.toFixed(2),
+      combined.periodCharge.toFixed(2),
+      combined.depnCarriedForward.toFixed(2),
+      combined.nbv.toFixed(2),
+    ]);
+    exportRowsAsCsv(`Fixed Asset Schedule${periodLabel ? ` — ${periodLabel}` : ''}.csv`, rows);
+  }
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ minHeight: 'calc(100vh - 14rem)' }}>
+    <div
+      ref={printRootRef}
+      className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col bk-print-root bk-print-area"
+      style={{ minHeight: 'calc(100vh - 14rem)' }}
+    >
+      <ReportPrintHeader
+        bookId={bookId}
+        reportTitle="Fixed Asset Schedule"
+        periodDescription={periodLabel ? `For the period ${periodLabel}` : ''}
+      />
       {/* Header */}
-      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap print-hidden">
         <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
           <Boxes size={15} />
         </div>
@@ -132,14 +240,38 @@ export default function FixedAssetsTab({ bookId }: Props) {
           </p>
         </div>
         <div className="flex items-end gap-2">
-          <label className="text-[10px] uppercase tracking-wide font-semibold text-slate-500">
-            From
-            <DateInput value={fromUk} onChange={setFromUk} className="mt-0.5 w-28" />
-          </label>
-          <label className="text-[10px] uppercase tracking-wide font-semibold text-slate-500">
-            To
-            <DateInput value={toUk} onChange={setToUk} className="mt-0.5 w-28" />
-          </label>
+          {periodValid && (
+            <div className="flex items-end gap-4 mr-1">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-slate-500">From</div>
+                <div className="text-sm font-semibold text-slate-800 tabular-nums">{formatDateUkFull(fromIsoVal!)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide font-semibold text-slate-500">To</div>
+                <div className="text-sm font-semibold text-slate-800 tabular-nums">{formatDateUkFull(toIsoVal!)}</div>
+              </div>
+            </div>
+          )}
+          <Tooltip label="Print the fixed-asset schedule">
+            <button
+              type="button"
+              onClick={() => printReport(printRootRef.current, `Fixed Asset Schedule${periodLabel ? ` — ${periodLabel}` : ''}`, { orientation: 'landscape' })}
+              disabled={!periodValid || ledgersWithAssets.length === 0}
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Printer size={12} /> Print
+            </button>
+          </Tooltip>
+          <Tooltip label="Export the schedule as a CSV">
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={!periodValid || ledgersWithAssets.length === 0}
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download size={12} /> Export
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -168,6 +300,39 @@ export default function FixedAssetsTab({ bookId }: Props) {
         </div>
       </div>
 
+      {/* Reconciliation summary — warn-only roll-up of every category's tie-out
+          between the nominal ledger and the itemised register. Hidden on print
+          (it's an on-screen working aid, not part of the schedule). */}
+      {ledgersWithAssets.length > 0 && (
+        <div className="px-4 py-2 border-b border-slate-100 print-hidden">
+          {reconShown ? (
+            <div className="text-xs rounded-lg px-3 py-2 border bg-amber-50 border-amber-200 text-amber-800 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <AlertTriangle size={13} /> Register doesn’t fully reconcile to the ledger
+              </div>
+              {recon.costOut && (
+                <div className="opacity-80">
+                  Cost: ledger £{fmt(recon.costLedger)} vs itemised £{fmt(recon.costAssets)} (diff £{fmt(recon.costDiff)})
+                  {recon.costOutLedgers.length > 0 && <> — {recon.costOutLedgers.join(', ')}</>}.
+                </div>
+              )}
+              {recon.depnOut && (
+                <div className="opacity-80">
+                  Depn b/fwd: ledger £{fmt(recon.depnBfwdLedger)} vs allocated £{fmt(recon.depnBfwdAssets)} (diff £{fmt(recon.depnDiff)})
+                  {recon.depnOutLedgers.length > 0 && <> — {recon.depnOutLedgers.join(', ')}</>}.
+                </div>
+              )}
+              <div className="opacity-70">Warning only — open the category ledger’s Depreciation tab to allocate or correct. You can still post.</div>
+            </div>
+          ) : (
+            <div className="text-xs rounded-lg px-3 py-2 border bg-emerald-50 border-emerald-200 text-emerald-800 flex items-center gap-1.5">
+              <Check size={13} /> <span className="font-semibold">Register reconciles to the ledger</span>
+              <span className="opacity-80">— cost and depreciation b/fwd tie out across every category.</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Per-ledger breakdown */}
       <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-4">
         {error && (
@@ -179,7 +344,7 @@ export default function FixedAssetsTab({ bookId }: Props) {
           </div>
         ) : !periodValid ? (
           <p className="text-xs text-slate-400 italic py-6 text-center">
-            Pick a valid period to build the schedule.
+            Set a year-end on the book to build the schedule — the period follows the year and period selected in the header.
           </p>
         ) : ledgersWithAssets.length === 0 ? (
           <p className="text-xs text-slate-400 italic py-6 text-center">

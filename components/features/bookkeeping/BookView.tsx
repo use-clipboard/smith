@@ -34,6 +34,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
+import YearEndsDialog from './book/YearEndsDialog';
 import BookSideRail from './book/BookSideRail';
 import UniversalInputSheet from './input/UniversalInputSheet';
 import JournalInputSheet from './input/JournalInputSheet';
@@ -109,6 +110,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [yearEndsOpen, setYearEndsOpen] = useState(false);
   /** Book-wide search lightbox — opens from the Search rail button,
    *  Ctrl+K shortcut, or the home tab's "View all" recent-transactions link. */
   const [searchOpen, setSearchOpen] = useState(false);
@@ -390,7 +392,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
                   yearEndMd={book.year_end_md}
                   currentFyId={book.current_fy_id ?? null}
                   onOpenSettings={() => setSettingsOpen(true)}
-                  onOpenYearEnds={() => setSettingsOpen(true)}
+                  onOpenYearEnds={() => setYearEndsOpen(true)}
                   onPeriodChange={setActivePeriod}
                 />
               </div>
@@ -475,7 +477,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           <AccountsLedgerView bookId={bookId} ledger="Suppliers" isAdmin={isAdmin} />
         </div>
         <div hidden={tab !== 'fixed-assets'}>
-          <FixedAssetsTab bookId={bookId} isAdmin={isAdmin} />
+          <FixedAssetsTab bookId={bookId} isAdmin={isAdmin} active={tab === 'fixed-assets'} />
         </div>
         <div hidden={tab !== 'import'}>
           {/* onChanged fires after a successful Post OR Rollback — same
@@ -547,6 +549,16 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         isAdmin={isAdmin}
         onUpdated={next => setBook(next)}
       />
+
+      {/* ── Financial-year management (close / reopen) ──────────────────────── */}
+      {yearEndsOpen && (
+        <YearEndsDialog
+          bookId={bookId}
+          isAdmin={isAdmin}
+          onClose={() => setYearEndsOpen(false)}
+          onChanged={() => { load(); bumpRefresh(); }}
+        />
+      )}
 
       {/* ── Book search lightbox — Ctrl+K / rail Search icon / Home View all */}
       {searchOpen && (

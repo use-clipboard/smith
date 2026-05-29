@@ -132,6 +132,14 @@ export function computePeriodCharge(
     const factor = (setting.annual_rate / 100) * (days / DAYS_IN_YEAR);
     const base = setting.method === 'reducing_balance' ? runningNbv : asset.cost;
     let segCharge = round2(base * factor);
+    // Straight-line: a full year must charge exactly one annual amount. With a
+    // days/365 factor a 366-day leap year would otherwise charge 366/365 ≈
+    // 100.27% of the annual amount, slowly over-depreciating the asset. Cap each
+    // SL segment at its annual amount (base × rate) so a leap year lands bang on.
+    if (setting.method === 'straight_line') {
+      const annualAmount = round2(base * (setting.annual_rate / 100));
+      if (segCharge > annualAmount) segCharge = annualAmount;
+    }
     if (segCharge > runningNbv) segCharge = runningNbv; // never below NBV 0
     if (segCharge <= 0) continue;
 
@@ -174,9 +182,18 @@ export function buildScheduleRow(
   let annualRate: number | null;
   if (postedThisPeriod) {
     periodCharge = postedThisPeriod.amount;
-    const s = settingInForce(settings, maxIso(periodFrom, asset.purchase_date));
-    method = s?.method ?? null;
-    annualRate = s?.annual_rate ?? null;
+    // Prefer the method/rate captured at post time so the display reflects what
+    // was actually charged, even if a back-dated settings change was added
+    // since. Legacy charges (posted before those columns existed) store null —
+    // fall back to the setting that was in force at the period start.
+    if (postedThisPeriod.method != null) {
+      method = postedThisPeriod.method;
+      annualRate = postedThisPeriod.annual_rate ?? null;
+    } else {
+      const s = settingInForce(settings, maxIso(periodFrom, asset.purchase_date));
+      method = s?.method ?? null;
+      annualRate = s?.annual_rate ?? null;
+    }
   } else {
     const computed = computePeriodCharge(asset, settings, depnBroughtForward, periodFrom, periodTo);
     periodCharge = computed.amount;

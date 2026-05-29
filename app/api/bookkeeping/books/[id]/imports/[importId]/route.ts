@@ -99,20 +99,31 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     // ON CONFLICT DO NOTHING via a per-row insert with onConflict-style
     // ignore; PostgREST doesn't support ON CONFLICT natively, so we fetch
     // existing first, then insert only the diff.
+    //
+    // Match on a WHITESPACE-NORMALISED + lower-cased (ledger, name) key rather
+    // than the raw "Ledger: Name" display string. VT exports sometimes carry a
+    // stray double space inside a name ("Cost -  b/fwd"); matching on the raw
+    // string would treat that as a new account and duplicate the COA-seed one
+    // ("Cost - b/fwd"). The DB's unique (book_id, ledger, name) can't catch it
+    // because the two strings genuinely differ. Normalising here means we reuse
+    // the existing account instead of minting a twin.
+    const accKey = (ledger: string | null, name: string) =>
+      `${(ledger ?? '').replace(/\s+/g, ' ').trim().toLowerCase()}:::${name.replace(/\s+/g, ' ').trim().toLowerCase()}`;
+
     const { data: existing } = await supabase
       .from('bookkeeping_accounts')
       .select('id, name, ledger')
       .eq('book_id', params.id);
-    const existingByDisplay = new Map<string, string>(); // "Ledger: Name" → id
+    const existingByKey = new Map<string, string>(); // normalised key → id
     for (const a of existing ?? []) {
-      existingByDisplay.set(`${a.ledger ?? ''}: ${a.name}`, a.id);
+      existingByKey.set(accKey(a.ledger, a.name), a.id);
     }
 
     const coaDetail = (imp.summary as { coa_detail?: Array<{
       display: string; ledger: string; accountName: string;
       inferredAccountType: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
     }> })?.coa_detail ?? [];
-    const toCreate = coaDetail.filter(c => !existingByDisplay.has(c.display));
+    const toCreate = coaDetail.filter(c => !existingByKey.has(accKey(c.ledger, c.accountName)));
 
     if (toCreate.length > 0) {
       // Spread the sort_order so new accounts within a ledger keep parser
@@ -131,7 +142,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         .select('id, name, ledger');
       if (insErr) throw new Error(`Couldn't create accounts: ${insErr.message}`);
       for (const a of inserted ?? []) {
-        existingByDisplay.set(`${a.ledger ?? ''}: ${a.name}`, a.id);
+        existingByKey.set(accKey(a.ledger, a.name), a.id);
       }
     }
 
@@ -246,7 +257,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       const txnId = txnIdByOriginalRef.get(t.originalRef);
       if (!txnId) continue; // shouldn't happen but skip rather than crash
       t.splits.forEach((s, i) => {
-        const accountId = existingByDisplay.get(s.accountDisplay);
+        const accountId = existingByKey.get(accKey(s.ledger, s.accountName));
         if (!accountId) {
           throw new Error(`Account "${s.accountDisplay}" missing after COA seed — aborting.`);
         }
