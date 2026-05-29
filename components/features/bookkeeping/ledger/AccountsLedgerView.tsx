@@ -31,6 +31,8 @@ import BankRecPanel from './BankRecPanel';
 import BankReconcileTab from './BankReconcileTab';
 import BankRecHistoryTab from './BankRecHistoryTab';
 import BankRecDetailModal from './BankRecDetailModal';
+import DepreciationTab from './DepreciationTab';
+import { isFixedAssetLedger, depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
 void BankRecPanel; // retained for fallback / future reference — superseded by BankReconcileTab in the period-first model
 import { useAccountContextMenu } from './AccountContextMenu';
 import MoveEntriesModal from './MoveEntriesModal';
@@ -113,7 +115,8 @@ interface Props {
 type StatusFilter =
   | 'previousYears' | 'currentYear' | 'futureYears'
   | 'open' | 'openAtYearEnd' | 'all'
-  | 'reconcile' | 'history';
+  | 'reconcile' | 'history'
+  | 'depreciation';
 
 /** Returns ISO yyyy-mm-dd N days from the given ISO date. */
 function addDaysIso(iso: string, days: number): string {
@@ -313,6 +316,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
   const fyStartIso = activePeriod?.fyStartIso ?? null;
   const fyEndIso   = activePeriod?.fyEndIso   ?? null;
   const isBankLedger = ledger === 'Bank';
+  const isFaLedger = isFixedAssetLedger(ledger);
   // Default tab: now identical for Bank and non-Bank ledgers — Bank gained
   // the FY-aware tab set, so "Current year" is the natural landing when a
   // year-end is set, falling back to "All entries" otherwise. The bank-only
@@ -909,7 +913,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
           <>
             {/* Top instruction + selection summary — hidden in Reconcile /
                 History modes since the workspace renders its own chrome. */}
-            {statusFilter !== 'reconcile' && statusFilter !== 'history' && (
+            {statusFilter !== 'reconcile' && statusFilter !== 'history' && statusFilter !== 'depreciation' && (
             <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50/40">
               {!actionBarVisible ? (
                 <p className="text-xs text-slate-600">
@@ -1068,7 +1072,16 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
             {/* Reconcile sub-tab — period-first workspace entry point.
                 Decides between empty-state (no active rec) and the resume
                 card. Only mounted for Bank ledger + selected account. */}
-            {statusFilter === 'reconcile' && ledger === 'Bank' && selectedAccountId ? (
+            {statusFilter === 'depreciation' && isFaLedger ? (
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <DepreciationTab
+                  bookId={bookId}
+                  ledger={ledger}
+                  isAdmin={isAdmin}
+                  onChanged={() => { void loadEntries(); void loadAccounts(); }}
+                />
+              </div>
+            ) : statusFilter === 'reconcile' && ledger === 'Bank' && selectedAccountId ? (
               <div className="flex-1 overflow-hidden min-h-0">
                 <BankReconcileTab
                   bookId={bookId}
@@ -1314,19 +1327,25 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                       { id: 'open'          as const, label: 'Open entries',           group: 'generic' as const },
                       { id: 'openAtYearEnd' as const, label: 'Open entries at year end', group: 'generic' as const },
                     ];
-                if (!isBankLedger) return generic;
-                return [
+                if (isBankLedger) return [
                   ...generic,
                   { id: 'reconcile' as const, label: 'Reconcile', group: 'bank' as const },
                   { id: 'history'   as const, label: 'History',   group: 'bank' as const },
                 ];
+                if (isFaLedger) return [
+                  ...generic,
+                  { id: 'depreciation' as const, label: depreciationNoun(ledger), group: 'fa' as const },
+                ];
+                return generic;
               })().map((t, i, arr) => {
                 const isActive = statusFilter === t.id;
                 const isBankGroup = t.group === 'bank';
-                // Add a thin vertical divider before the first bank-only tab
-                // so the visual split between "ledger view" tabs and "bank
-                // workflow" tabs is obvious without extra chrome.
-                const showDivider = isBankGroup && (i === 0 || arr[i - 1].group !== 'bank');
+                const isFaGroup = t.group === 'fa';
+                // Add a thin vertical divider before the first workflow tab
+                // (bank Reconcile/History or the FA Depreciation tab) so the
+                // visual split between "ledger view" tabs and "workflow" tabs
+                // is obvious without extra chrome.
+                const showDivider = (isBankGroup || isFaGroup) && (i === 0 || arr[i - 1].group === 'generic');
                 return (
                   <span key={t.id} className="inline-flex items-center gap-2">
                     {showDivider && <span aria-hidden className="w-px h-4 bg-slate-200 mx-1" />}
@@ -1337,9 +1356,13 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                         isActive
                           ? isBankGroup
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                            : isFaGroup
+                            ? 'bg-violet-100 text-violet-800 border-violet-300'
                             : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                           : isBankGroup
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                            : isFaGroup
+                            ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
                             : 'text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-800'
                       }`}
                     >
@@ -1353,6 +1376,8 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                   ? 'Period-first reconciliation workspace'
                   : statusFilter === 'history'
                   ? 'Completed & abandoned reconciliations'
+                  : statusFilter === 'depreciation'
+                  ? `${depreciationNoun(ledger)} schedule & posting`
                   : `${entries.length} ${statusFilter === 'open' || statusFilter === 'openAtYearEnd' ? 'open' : 'total'}`}
               </span>
             </div>

@@ -207,7 +207,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
   const visibleTools = TOOL_NAV_ITEMS.filter(item =>
     (item.comingSoon || isModuleActive(item.moduleId)) && !favouritedIds.has(item.moduleId)
-  );
+  ).sort((a, b) => a.label.localeCompare(b.label));
   // Coming-soon items are not counted as "inactive modules" — they're not yet
   // available to enable, so showing them in the admin hint would be misleading.
   const inactiveCount = TOOL_NAV_ITEMS.filter(item =>

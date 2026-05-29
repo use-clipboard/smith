@@ -76,6 +76,12 @@ export default function SettingsClient({
   const [displayName, setDisplayName] = useState(userName);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordChanged, setPasswordChanged] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [currentAvatar, setCurrentAvatar] = useState(avatarUrl);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [currentLogo, setCurrentLogo] = useState(firmLogoUrl);
@@ -148,6 +154,40 @@ export default function SettingsClient({
       setTimeout(() => setProfileSaved(false), 2500);
     } finally {
       setSavingProfile(false);
+    }
+  }
+
+  async function handleChangePassword() {
+    setPasswordError(null);
+    if (newPassword.length < 8) {
+      setPasswordError('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPasswordError(data.error ?? 'Failed to update password.');
+        return;
+      }
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordChanged(true);
+      setTimeout(() => setPasswordChanged(false), 2500);
+    } catch {
+      setPasswordError('Something went wrong. Please try again.');
+    } finally {
+      setChangingPassword(false);
     }
   }
 
@@ -347,6 +387,59 @@ export default function SettingsClient({
                 {savingProfile ? 'Saving…' : 'Save Profile'}
               </button>
               {profileSaved && <span className="text-xs text-green-500 font-medium">Saved!</span>}
+            </div>
+          </div>
+
+          <div className="glass-solid rounded-xl p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Change Password</h3>
+              <p className="text-xs text-[var(--text-muted)] mt-1">Enter your current password, then choose a new one.</p>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">Current Password</label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={e => { setCurrentPassword(e.target.value); setPasswordError(null); }}
+                  placeholder="••••••••"
+                  className="input-base mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">New Password</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={e => { setNewPassword(e.target.value); setPasswordError(null); }}
+                  placeholder="At least 8 characters"
+                  className="input-base mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">Confirm New Password</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={e => { setConfirmPassword(e.target.value); setPasswordError(null); }}
+                  placeholder="Re-enter new password"
+                  className="input-base mt-1"
+                />
+              </div>
+            </div>
+            {passwordError && <p className="text-xs text-red-500 font-medium">{passwordError}</p>}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleChangePassword}
+                disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+                className="btn-primary disabled:opacity-50"
+              >
+                {changingPassword ? 'Updating…' : 'Update Password'}
+              </button>
+              {passwordChanged && <span className="text-xs text-green-500 font-medium">Password updated!</span>}
             </div>
           </div>
         </div>

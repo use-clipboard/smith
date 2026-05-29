@@ -79,6 +79,7 @@ export const LTD_COA_SEED: CoaTemplateSeed = {
       accounts: [
         { name: 'Accountancy fees' },
         { name: 'Advertising and PR' },
+        { name: 'Amortisation' },
         { name: 'Amortisation of goodwill' },
         { name: 'Audit fees' },
         { name: 'Bad debts' },
@@ -108,6 +109,7 @@ export const LTD_COA_SEED: CoaTemplateSeed = {
         { name: 'Motor expenses' },
         { name: 'Non-equity dividends' },
         { name: 'Other legal and prof' },
+        { name: 'P/L on disposal of fixed assets' },
         { name: 'P/L on disposal of investments' },
         { name: 'P/L on disposal of land and buildings' },
         { name: 'P/L on disposal of plant and machinery' },

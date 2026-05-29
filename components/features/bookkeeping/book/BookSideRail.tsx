@@ -24,7 +24,7 @@ import {
   Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
-  Upload,
+  Upload, Boxes,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { TransactionType } from '@/types/bookkeeping';
@@ -301,6 +301,11 @@ export default function BookSideRail({
           id: 'suppliers', label: 'Suppliers', tooltip: 'Suppliers ledger + matching',
           icon: Building2, active: activeTab === 'suppliers',
           onClick: () => onSelectTab('suppliers'),
+        })}
+        {railButton({
+          id: 'fixed-assets', label: 'Fixed assets', tooltip: 'Fixed assets — depreciation register',
+          icon: Boxes, active: activeTab === 'fixed-assets',
+          onClick: () => onSelectTab('fixed-assets'),
         })}
         {/* Bulk Import lives on the home-page Quick Actions card now, not
             the rail — it's a deliberate occasional action rather than a

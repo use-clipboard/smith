@@ -269,6 +269,76 @@ export interface VatReturn {
   updated_at: string;
 }
 
+// ── Fixed asset depreciation ─────────────────────────────────────────────────
+
+export type DepreciationMethod = 'straight_line' | 'reducing_balance';
+export type AssetSource = 'addition' | 'brought_forward';
+export type AssetStatus = 'active' | 'disposed';
+
+/** Effective-dated rate/method for one FA ledger. */
+export interface LedgerDepreciationSetting {
+  id: string;
+  book_id: string;
+  ledger: string;
+  effective_from: string;
+  method: DepreciationMethod;
+  /** Annual rate as a percentage, e.g. 25 for 25%. */
+  annual_rate: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** One fixed asset in the register. */
+export interface Asset {
+  id: string;
+  book_id: string;
+  ledger: string;
+  source: AssetSource;
+  /** The Cost-additions split that booked an `addition`; null for b/fwd. */
+  split_id: string | null;
+  description: string;
+  purchase_date: string;
+  cost: number;
+  /** Accumulated depreciation before the register existed (b/fwd only). */
+  opening_accumulated_depn: number;
+  status: AssetStatus;
+  disposal_date: string | null;
+  disposal_proceeds: number | null;
+  disposal_journal_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One posted depreciation charge for an asset in a period. */
+export interface DepreciationCharge {
+  id: string;
+  book_id: string;
+  asset_id: string;
+  period_from: string;
+  period_to: string;
+  amount: number;
+  journal_txn_id: string | null;
+  created_at: string;
+}
+
+/** A computed row in the asset schedule for a given period. */
+export interface AssetScheduleRow {
+  asset: Asset;
+  method: DepreciationMethod;
+  annualRate: number;
+  /** Accumulated depreciation at the start of the period. */
+  depnBroughtForward: number;
+  /** Charge computed for the period (0 once fully depreciated / disposed before it). */
+  periodCharge: number;
+  /** Accumulated depreciation at the end of the period. */
+  depnCarriedForward: number;
+  /** Net book value at the end of the period. */
+  nbv: number;
+  /** Whether this period's charge has already been posted to a journal. */
+  posted: boolean;
+}
+
 // Best-effort mapping from a client's business_type to a sensible default
 // template_type for the create modal. The user can always change it.
 export function defaultTemplateFromBusinessType(bt: string | null | undefined): BookTemplateType {

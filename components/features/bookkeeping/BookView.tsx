@@ -44,6 +44,7 @@ import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
+import FixedAssetsTab from './book/FixedAssetsTab';
 import TransactionTypeListView from './transactions/TransactionTypeListView';
 import ManualBankRecSheet from './ledger/ManualBankRecSheet';
 import BookImportTab from './imports/BookImportTab';
@@ -68,7 +69,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'import';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -143,7 +144,8 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
     initialTabParam === 'vat'   ? 'vat'   :
     initialTabParam === 'bank'      ? 'bank'      :
     initialTabParam === 'customers' ? 'customers' :
-    initialTabParam === 'suppliers' ? 'suppliers' : 'home';
+    initialTabParam === 'suppliers' ? 'suppliers' :
+    initialTabParam === 'fixed-assets' ? 'fixed-assets' : 'home';
   const [tab, setTab] = useState<AnyTab>(initialTab);
 
   // Dynamic tabs (per-account ledger drill-downs AND per-type lists) — both
@@ -471,6 +473,9 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         </div>
         <div hidden={tab !== 'suppliers'}>
           <AccountsLedgerView bookId={bookId} ledger="Suppliers" isAdmin={isAdmin} />
+        </div>
+        <div hidden={tab !== 'fixed-assets'}>
+          <FixedAssetsTab bookId={bookId} isAdmin={isAdmin} />
         </div>
         <div hidden={tab !== 'import'}>
           {/* onChanged fires after a successful Post OR Rollback — same
