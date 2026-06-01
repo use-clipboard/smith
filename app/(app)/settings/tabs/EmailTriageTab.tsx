@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Mail, Wifi, WifiOff, Check, Loader2, ExternalLink, AlertTriangle, RefreshCw, Bold, Italic, Underline, Link } from 'lucide-react';
+import { Mail, Wifi, WifiOff, Check, Loader2, ExternalLink, AlertTriangle, Bold, Italic, Underline, Link } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 
 interface GmailStatus {
@@ -162,19 +162,6 @@ export default function EmailTriageTab() {
         </div>
       </div>
 
-      {/* Reconnect notice — shown for existing connections that predate the gmail.modify scope */}
-      {status?.connected && (
-        <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-          <RefreshCw size={15} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Reconnect required</p>
-            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5 leading-relaxed">
-              Gmail permissions have been updated. Please disconnect and reconnect your account to grant the new permissions and start loading emails.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Gmail connection */}
       <div className="glass-solid rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">My Gmail Account</h3>
@@ -249,7 +236,7 @@ export default function EmailTriageTab() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-[var(--text-primary)]">Group as conversations</p>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">Show emails grouped by thread (recommended)</p>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">Show emails grouped by thread. We recommend keeping this off so each email is listed on its own.</p>
             </div>
             <button
               onClick={() => setShowAsThreads(v => !v)}

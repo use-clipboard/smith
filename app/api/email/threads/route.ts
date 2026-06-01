@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   try {
     const { gmail, accessToken } = await getRefreshedGmailClient(connection.refresh_token);
 
-    const showAsThreads = connection.show_as_threads !== false; // default true
+    const showAsThreads = connection.show_as_threads === true; // default false (ungrouped)
 
     let threads: EmailThread[];
     let nextPageToken: string | null;

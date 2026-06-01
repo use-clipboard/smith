@@ -50,7 +50,7 @@ export default function EmailTriagePage() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [googleEmail, setGoogleEmail] = useState('');
   const [activeLabel, setActiveLabel] = useState('INBOX');
-  const [showAsThreads, setShowAsThreads] = useState(true);
+  const [showAsThreads, setShowAsThreads] = useState(false);
 
   const [labels, setLabels] = useState<GmailLabel[]>([]);
   const [threads, setThreads] = useState<EmailThreadType[]>([]);
@@ -246,7 +246,7 @@ export default function EmailTriagePage() {
       .then((data: { connected: boolean; googleEmail: string; showAsThreads: boolean }) => {
         setConnected(data.connected);
         setGoogleEmail(data.googleEmail ?? '');
-        setShowAsThreads(data.showAsThreads ?? true);
+        setShowAsThreads(data.showAsThreads ?? false);
       })
       .catch(() => setConnected(false));
   }, []);
