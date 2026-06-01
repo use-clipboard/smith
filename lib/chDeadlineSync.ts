@@ -138,12 +138,26 @@ export async function syncCHDeadlineLinks(
 
   // Only consider non-broken links. Broken links are inert until a human
   // intervenes (fixes the link or removes it).
-  const { data: links } = await supabase
-    .from('ch_deadline_task_links')
-    .select('id, firm_id, client_id, task_id, deadline_type, offset_days, last_synced_deadline, linked_company_number, consecutive_failures, status')
-    .eq('firm_id', firmId)
-    .in('status', ['active', 'paused']);
-  if (!links || links.length === 0) return summary;
+  //
+  // PostgREST caps an unbounded select at ~1000 rows, so a firm with more
+  // than 1000 links would silently process only the first page — and worse,
+  // tasks beyond the cap below would look "missing" and get falsely broken.
+  // Paginate explicitly until a short page comes back.
+  const LINK_PAGE = 1000;
+  const links: LinkRow[] = [];
+  for (let from = 0, pages = 0; pages < 50; pages++) {
+    const { data: page } = await supabase
+      .from('ch_deadline_task_links')
+      .select('id, firm_id, client_id, task_id, deadline_type, offset_days, last_synced_deadline, linked_company_number, consecutive_failures, status')
+      .eq('firm_id', firmId)
+      .in('status', ['active', 'paused'])
+      .range(from, from + LINK_PAGE - 1);
+    const rows = (page ?? []) as LinkRow[];
+    links.push(...rows);
+    if (rows.length < LINK_PAGE) break;
+    from += LINK_PAGE;
+  }
+  if (links.length === 0) return summary;
 
   // Build the client_id → companies_house_id (current) map. If the current
   // value differs from the link's snapshot, we know the user changed the
@@ -152,7 +166,7 @@ export async function syncCHDeadlineLinks(
     .from('clients')
     .select('id, companies_house_id')
     .eq('firm_id', firmId)
-    .in('id', Array.from(new Set((links as LinkRow[]).map(l => l.client_id))));
+    .in('id', Array.from(new Set(links.map(l => l.client_id))));
   const currentChByClient = new Map<string, string | null>();
   for (const c of (clientRows ?? []) as { id: string; companies_house_id: string | null }[]) {
     currentChByClient.set(c.id, c.companies_house_id);
@@ -165,16 +179,23 @@ export async function syncCHDeadlineLinks(
     if (co.companyNumber) companyByCh.set(normaliseCompanyNumber(co.companyNumber), co);
   }
 
-  // Pull every referenced task once.
-  const taskIds = Array.from(new Set((links as LinkRow[]).map(l => l.task_id)));
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('id, firm_id, client_id, created_by, template_id, title, description, status, completed_at, due_date, recurrence_type, recurrence_interval_days')
-    .in('id', taskIds);
+  // Pull every referenced task. Chunk the id list: a single .in() with
+  // thousands of ids both overflows the URL and hits PostgREST's ~1000-row
+  // return cap, which previously made tasks past the cap look deleted and
+  // falsely broke their links ("Linked task no longer exists").
+  const taskIds = Array.from(new Set(links.map(l => l.task_id)));
   const taskById = new Map<string, TaskRow>();
-  for (const t of (tasks ?? []) as TaskRow[]) taskById.set(t.id, t);
+  const TASK_CHUNK = 300;
+  for (let i = 0; i < taskIds.length; i += TASK_CHUNK) {
+    const chunk = taskIds.slice(i, i + TASK_CHUNK);
+    const { data: tasks } = await supabase
+      .from('tasks')
+      .select('id, firm_id, client_id, created_by, template_id, title, description, status, completed_at, due_date, recurrence_type, recurrence_interval_days')
+      .in('id', chunk);
+    for (const t of (tasks ?? []) as TaskRow[]) taskById.set(t.id, t);
+  }
 
-  for (const link of links as LinkRow[]) {
+  for (const link of links) {
     try {
       // ── Guard: client's CH number changed since the link was created. ──
       const currentCh = currentChByClient.get(link.client_id) ?? null;
@@ -207,14 +228,14 @@ export async function syncCHDeadlineLinks(
       }
       const rawDeadline = deadlineFor(company, link.deadline_type);
       if (!rawDeadline) {
-        // CH responded but didn't include a deadline of this type — equivalent
-        // to a transient miss. Bumps the same counter; can also trip broken.
-        await bumpFailure(supabase, link, `CH refresh did not include a ${readableDeadlineLabel(link.deadline_type)} value.`);
-        if ((link.consecutive_failures ?? 0) + 1 >= BROKEN_AFTER_FAILURES) {
-          summary.broken += 1;
-        } else {
-          summary.paused += 1;
-        }
+        // CH responded for this company but has no date of this type yet.
+        // This is legitimate, not a failure: IDV statements are often not
+        // posted, and confirmation_statement.next_due can be null on an
+        // overdue/just-filed company. Breaking the link here would throw
+        // away the auto-sync the user wants — so keep it active and simply
+        // wait for CH to post a date. Don't touch the task or last_synced.
+        await markWaiting(supabase, link, `Companies House has no current ${readableDeadlineLabel(link.deadline_type)} date.`);
+        summary.skipped += 1;
         continue;
       }
 
@@ -398,6 +419,25 @@ async function markHealthy(supabase: SupabaseClient, link: LinkRow, deadline: st
       last_synced_at:         new Date().toISOString(),
       last_error:             null,
       updated_at:             new Date().toISOString(),
+    })
+    .eq('id', link.id);
+}
+
+/**
+ * The company was found in the refresh but Companies House has no date of
+ * this type yet (e.g. IDV statement not posted, or a null next_due). Not a
+ * failure — keep the link active, clear the failure counter, and leave the
+ * task + last_synced_deadline untouched so we pick up the real date later.
+ */
+async function markWaiting(supabase: SupabaseClient, link: LinkRow, reason: string): Promise<void> {
+  await supabase
+    .from('ch_deadline_task_links')
+    .update({
+      status:               'active',
+      consecutive_failures: 0,
+      last_error:           reason,
+      last_synced_at:       new Date().toISOString(),
+      updated_at:           new Date().toISOString(),
     })
     .eq('id', link.id);
 }
