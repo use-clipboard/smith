@@ -14,7 +14,9 @@ import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage } from '@/l
 const DraftSchema = z.object({
   /** When set, update the existing Gmail draft. Otherwise create a new one. */
   draftId: z.string().optional(),
-  to:      z.array(z.string()).min(1),
+  // Drafts can be saved before a recipient is chosen — Gmail itself allows
+  // recipient-less drafts, so don't require `to` here (unlike sending).
+  to:      z.array(z.string()).default([]),
   cc:      z.array(z.string()).default([]),
   bcc:     z.array(z.string()).default([]),
   subject: z.string(),

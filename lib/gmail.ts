@@ -243,7 +243,9 @@ export function buildRawMessage(opts: {
   attachments?: Array<{ filename: string; mimeType: string; data: Buffer }>;
 }): string {
   const fromLine = encodeAddressLine(opts.from);
-  const toLine   = opts.to.map(encodeAddressLine).join(', ');
+  // Omit the To header entirely when there are no recipients (e.g. a draft
+  // saved before a recipient is chosen) — an empty `To:` header is invalid.
+  const toLine   = opts.to.length   ? `To: ${opts.to.map(encodeAddressLine).join(', ')}\r\n`   : '';
   const ccLine   = opts.cc?.length  ? `Cc: ${opts.cc.map(encodeAddressLine).join(', ')}\r\n`   : '';
   const bccLine  = opts.bcc?.length ? `Bcc: ${opts.bcc.map(encodeAddressLine).join(', ')}\r\n` : '';
   const subjectEncoded = encodeHeaderValue(opts.subject);
@@ -258,7 +260,7 @@ export function buildRawMessage(opts: {
   if (!opts.attachments?.length) {
     const raw =
       `From: ${fromLine}\r\n` +
-      `To: ${toLine}\r\n` +
+      toLine +
       ccLine +
       bccLine +
       `Subject: ${subjectEncoded}\r\n` +

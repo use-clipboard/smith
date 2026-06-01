@@ -632,16 +632,20 @@ export default function ComposeModal({
           fromName: displayName,
         }),
       });
-      if (res.ok) {
-        const j = await res.json().catch(() => ({})) as { draftId?: string };
-        // Remember the draft id for subsequent saves so we keep editing the
-        // same draft rather than spawning a fresh one each time.
-        if (j.draftId) setDraftId(j.draftId);
+      if (!res.ok) {
+        // Don't claim success on a failed save — that's how drafts silently
+        // went missing (the user saw "Saved" but nothing was created).
+        const j = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(j.error || 'Failed to save draft.');
       }
+      const j = await res.json().catch(() => ({})) as { draftId?: string };
+      // Remember the draft id for subsequent saves so we keep editing the
+      // same draft rather than spawning a fresh one each time.
+      if (j.draftId) setDraftId(j.draftId);
       setDraftSaved(true);
       setTimeout(() => setDraftSaved(false), 2500);
-    } catch {
-      setError('Failed to save draft.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save draft.');
     } finally {
       setSavingDraft(false);
     }
