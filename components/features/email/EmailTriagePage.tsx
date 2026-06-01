@@ -585,9 +585,15 @@ export default function EmailTriagePage() {
     setThreadDetail(null);
     setLoadingDetail(true);
     try {
-      // In non-threaded view, gmailThreadId holds the real thread ID; fall back to id
+      // In non-threaded view, gmailThreadId holds the real thread ID and
+      // thread.id is the specific message ID — pass it so the server scopes
+      // allocations to that message's sub-conversation (Gmail can merge
+      // unrelated same-subject emails into one thread).
       const detailId = thread.gmailThreadId ?? thread.id;
-      const res = await fetch(`/api/email/thread/${detailId}`);
+      const detailUrl = thread.gmailThreadId
+        ? `/api/email/thread/${detailId}?messageId=${encodeURIComponent(thread.id)}`
+        : `/api/email/thread/${detailId}`;
+      const res = await fetch(detailUrl);
       const data = await res.json() as ThreadDetail;
       setThreadDetail(data);
       // Detect replied / forwarded from the full thread messages.
