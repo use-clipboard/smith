@@ -54,6 +54,12 @@ export interface EmailMessage {
   date: string;
   body: string;         // HTML body, or text fallback
   isRead: boolean;
+  /** RFC 2822 Message-ID header (`<...>`), '' when not loaded (metadata fetches). */
+  messageId: string;
+  /** Message-IDs this message replies to / descends from (In-Reply-To + References).
+   *  Used to reconstruct the true reply chain — Gmail's visual threading can merge
+   *  unrelated same-subject emails, but these headers reflect actual replies. */
+  references: string[];
   attachments: { filename: string; mimeType: string; size: number; attachmentId: string; messageId: string }[];
   /** True when mimeType indicates attachments even if parts weren't loaded (metadata format) */
   hasAttachments: boolean;
@@ -161,6 +167,10 @@ export function parseGmailMessage(
   const ccRaw = getHeader(headers, 'cc');
   const dateRaw = getHeader(headers, 'date');
 
+  const messageId = (getHeader(headers, 'message-id').match(/<[^>]+>/)?.[0]) ?? '';
+  const references = `${getHeader(headers, 'in-reply-to')} ${getHeader(headers, 'references')}`
+    .match(/<[^>]+>/g) ?? [];
+
   const body = msg.payload ? decodeBody(msg.payload as Parameters<typeof decodeBody>[0]) : '';
   const attachments = msg.payload ? extractAttachments(msg.payload, msg.id ?? '') : [];
   const labelIds = msg.labelIds ?? [];
@@ -180,6 +190,8 @@ export function parseGmailMessage(
     date: dateRaw || (msg.internalDate ? new Date(Number(msg.internalDate)).toISOString() : ''),
     body,
     isRead: !labelIds.includes('UNREAD'),
+    messageId,
+    references: Array.from(new Set(references.map(r => r.trim()))),
     attachments,
     hasAttachments,
   };
