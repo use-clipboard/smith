@@ -10,8 +10,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, FileText } from 'lucide-react';
+import { X, Loader2, Lock, Unlock, Check, AlertTriangle, CalendarClock, CalendarRange, FileText } from 'lucide-react';
 import type { FinancialYear } from '@/types/bookkeeping';
+import DateInput, { fromIso, toIso } from '../input/DateInput';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface ClosePreviewLine {
   account_id: string;
@@ -62,6 +64,15 @@ function fmtGbp(n: number): string {
   return n < 0 ? `(£${abs})` : `£${abs}`;
 }
 
+/** Whole months spanned by an inclusive start..end period (mirrors the API). */
+function monthsBetween(startIso: string, endIso: string): number {
+  const [sy, sm, sd] = startIso.split('-').map(Number);
+  const [ey, em, ed] = endIso.split('-').map(Number);
+  let months = (ey - sy) * 12 + (em - sm);
+  if (ed >= sd) months += 1;
+  return months;
+}
+
 export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: Props) {
   const [years, setYears] = useState<FinancialYear[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +94,12 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
   const [reopenError, setReopenError] = useState('');
+
+  // Change-year-end lightbox state.
+  const [changeFy, setChangeFy] = useState<FinancialYear | null>(null);
+  const [newEndUk, setNewEndUk] = useState('');
+  const [changing, setChanging] = useState(false);
+  const [changeError, setChangeError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -202,6 +219,59 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
     }
   }
 
+  // ── Change year-end ──────────────────────────────────────────────────────
+  function openChange(fy: FinancialYear) {
+    setError(''); setFlash('');
+    setChangeFy(fy);
+    setNewEndUk(fromIso(fy.end_date)); // prefill with the current end
+    setChangeError('');
+  }
+
+  function cancelChange() {
+    if (changing) return;
+    setChangeFy(null); setNewEndUk(''); setChangeError('');
+  }
+
+  async function confirmChange() {
+    if (!changeFy) return;
+    const iso = toIso(newEndUk);
+    if (!iso) { setChangeError(`"${newEndUk}" isn't a valid date — use dd/mm/yyyy.`); return; }
+    if (iso <= changeFy.start_date) {
+      setChangeError(`The new year-end must be after the year start (${fmtDate(changeFy.start_date)}).`);
+      return;
+    }
+    setChanging(true); setChangeError('');
+    try {
+      const r = await fetch(`/api/bookkeeping/books/${bookId}/years/${changeFy.id}/year-end`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newEndDate: iso }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? 'Could not change the year-end');
+      const warnings = (d.warnings as string[] | undefined) ?? [];
+      setFlash(
+        `Year-end moved to ${fmtDate(d.end_date)} — a ${d.months}-month ${d.period} period.`
+        + (warnings.length ? ` ${warnings.join(' ')}` : ''),
+      );
+      setChangeFy(null); setNewEndUk('');
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setChangeError(e instanceof Error ? e.message : 'Could not change the year-end');
+    } finally {
+      setChanging(false);
+    }
+  }
+
+  // Live preview for the change-year-end lightbox.
+  const changePreviewIso = changeFy ? toIso(newEndUk) : '';
+  const changeValid = !!changeFy && !!changePreviewIso && changePreviewIso > changeFy.start_date;
+  const changeMonths = changeValid ? monthsBetween(changeFy!.start_date, changePreviewIso) : null;
+  const changeKind: 'long' | 'short' | 'unchanged' | null = changeValid
+    ? (changePreviewIso > changeFy!.end_date ? 'long' : changePreviewIso < changeFy!.end_date ? 'short' : 'unchanged')
+    : null;
+
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4" aria-modal="true" role="dialog">
       <button type="button" aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-[1px]" />
@@ -245,33 +315,52 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
                 const busy = busyId === fy.id;
                 const canClose = isAdmin && fy.status !== 'closed' && fy.id === oldestNonClosed;
                 const canReopen = isAdmin && fy.status === 'closed' && fy.id === newestClosed;
+                // Year-end can be changed on any open year (closed years are a
+                // contiguous block at the bottom, so an open year never has a
+                // later closed one). Stretches/shrinks the year into a
+                // long/short period and realigns the years that follow.
+                const canChangeYearEnd = isAdmin && fy.status !== 'closed';
                 return (
                   <li key={fy.id} className="flex items-center gap-3 px-3 py-2.5">
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-900">{yearLabel(fy)}</div>
-                      <div className="text-[11px] text-gray-400">
+                      <div className="text-sm font-medium text-gray-900 whitespace-nowrap">{yearLabel(fy)}</div>
+                      <div className="text-[11px] text-gray-400 whitespace-nowrap">
                         {fmtDate(fy.start_date)} → {fmtDate(fy.end_date)}
                       </div>
                     </div>
-                    <StatusBadge status={fy.status} />
-                    {canClose && (
-                      <button
-                        onClick={() => openClosePreview(fy)}
-                        disabled={busy}
-                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-                      >
-                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Close year
-                      </button>
-                    )}
-                    {canReopen && (
-                      <button
-                        onClick={() => openReopen(fy)}
-                        disabled={busy}
-                        className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-60"
-                      >
-                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Reopen
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <StatusBadge status={fy.status} />
+                      {canChangeYearEnd && (
+                        <Tooltip label="Change year-end">
+                          <button
+                            onClick={() => openChange(fy)}
+                            disabled={busy}
+                            aria-label="Change year-end"
+                            className="w-7 h-7 rounded-lg border border-gray-200 bg-white text-gray-400 hover:bg-gray-50 hover:text-indigo-600 hover:border-indigo-200 flex items-center justify-center disabled:opacity-60 transition-colors"
+                          >
+                            <CalendarRange size={13} />
+                          </button>
+                        </Tooltip>
+                      )}
+                      {canClose && (
+                        <button
+                          onClick={() => openClosePreview(fy)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                        >
+                          {busy ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />} Close year
+                        </button>
+                      )}
+                      {canReopen && (
+                        <button
+                          onClick={() => openReopen(fy)}
+                          disabled={busy}
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                        >
+                          {busy ? <Loader2 size={12} className="animate-spin" /> : <Unlock size={12} />} Reopen
+                        </button>
+                      )}
+                    </div>
                   </li>
                 );
               })}
@@ -421,6 +510,79 @@ export default function YearEndsDialog({ bookId, isAdmin, onClose, onChanged }: 
               >
                 {posting ? <Loader2 size={12} className="animate-spin" /> : <Lock size={12} />}
                 {skipJournal ? 'Mark closed (no journal)' : 'Approve & close year'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Change year-end lightbox ───────────────────────────────────────── */}
+      {changeFy && (
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center p-4" aria-modal="true" role="dialog">
+          <button type="button" aria-label="Cancel" onClick={cancelChange} className="absolute inset-0 bg-black/40" />
+          <div className="relative w-full max-w-md bg-white rounded-xl shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-2">
+                <CalendarRange size={15} className="text-indigo-600" /> Change year-end
+              </h3>
+              <button onClick={cancelChange} disabled={changing} aria-label="Cancel" className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-700 disabled:opacity-40">
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-[11px] text-gray-500">
+                Changing the year currently running{' '}
+                <span className="font-medium text-gray-700">{fmtDate(changeFy.start_date)} → {fmtDate(changeFy.end_date)}</span>.
+                A <span className="font-medium">later</span> date makes it a long period; an{' '}
+                <span className="font-medium">earlier</span> date a short period. Future years follow the new date.
+              </p>
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-gray-600">New year-end date</span>
+                <div className="mt-1">
+                  <DateInput value={newEndUk} onChange={setNewEndUk} />
+                </div>
+              </label>
+
+              {changeKind === 'unchanged' && (
+                <div className="text-[11px] text-gray-500">That&apos;s the current year-end — pick a different date to create a long or short period.</div>
+              )}
+              {changeValid && changeKind !== 'unchanged' && (
+                <div className={`text-xs rounded-lg px-3 py-2 border ${changeKind === 'long' ? 'bg-violet-50 border-violet-200 text-violet-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                  This will be a <span className="font-semibold">{changeMonths}-month {changeKind} period</span>
+                  {' '}({fmtDate(changeFy.start_date)} → {fmtDate(changePreviewIso)}).
+                  {changeMonths !== null && changeMonths > 18 && (
+                    <div className="mt-1 flex items-start gap-1.5">
+                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                      <span>Longer than the 18-month Companies House maximum for a single accounting period.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {changeError && (
+                <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 flex items-start gap-2">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {changeError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+              <button
+                onClick={cancelChange}
+                disabled={changing}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmChange}
+                disabled={changing || !changeValid || changeKind === 'unchanged'}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {changing ? <Loader2 size={12} className="animate-spin" /> : <CalendarRange size={12} />}
+                Change year-end
               </button>
             </div>
           </div>

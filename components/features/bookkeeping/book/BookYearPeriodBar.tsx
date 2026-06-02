@@ -40,6 +40,9 @@ interface Props {
   onOpenSettings?: () => void;
   /** Called when the user picks "Year ends…" from the year dropdown. */
   onOpenYearEnds?: () => void;
+  /** Bump to force the bar to re-fetch its financial years — e.g. after the
+   *  Year Ends dialog closes/reopens/changes a year, or prunes placeholders. */
+  refreshKey?: number;
   /** Pushes the resolved ActivePeriod up to the parent so it can broadcast
    *  via BookNavigation. Reports listen to that context. */
   onPeriodChange?: (active: ActivePeriod) => void;
@@ -72,7 +75,7 @@ function yearLabel(fy: FinancialYear): string {
 }
 
 export default function BookYearPeriodBar({
-  bookId, periodLockDate, yearEndMd, currentFyId, onOpenSettings, onOpenYearEnds, onPeriodChange,
+  bookId, periodLockDate, yearEndMd, currentFyId, onOpenSettings, onOpenYearEnds, onPeriodChange, refreshKey,
 }: Props) {
   const [years, setYears] = useState<FinancialYear[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +116,7 @@ export default function BookYearPeriodBar({
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookId, yearEndMd, currentFyId]);
+  }, [bookId, yearEndMd, currentFyId, refreshKey]);
 
   // Persist year-end selection to the book whenever the user picks one. We
   // only PATCH when the choice actually differs from currentFyId — otherwise

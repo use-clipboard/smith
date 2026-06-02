@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
-import { parseYearEndMd, enumerateFys } from '@/lib/bookkeeping/financialYears';
+import { backfillForwardFys } from '@/lib/bookkeeping/generateFys';
 
 // ── /api/bookkeeping/books/[id]/years ──────────────────────────────────────
 // GET → list every FY row for the book in chronological order. With
@@ -36,64 +36,48 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   // ── Optional back-fill ────────────────────────────────────────────────
   if (shouldGenerate && book.year_end_md) {
-    const pattern = parseYearEndMd(book.year_end_md);
-    if (pattern) {
-      // Decide the "first start" — book.first_period_start when set,
-      // otherwise the earliest transaction date, otherwise today.
-      let firstStart = book.first_period_start as string | null;
-      if (!firstStart) {
-        const { data: firstTxn } = await supabase
-          .from('bookkeeping_transactions')
-          .select('date')
-          .eq('book_id', params.id)
-          .order('date', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        firstStart = firstTxn?.date ?? new Date().toISOString().slice(0, 10);
-        // Persist it so subsequent generations are stable.
-        await supabase
-          .from('bookkeeping_books')
-          .update({ first_period_start: firstStart })
-          .eq('id', params.id);
-      }
-
-      // Generate FYs from firstStart up to whichever is later: the latest
-      // transaction date, or one year past today (so a forward-looking
-      // budget/forecast view has somewhere to live).
-      const { data: lastTxn } = await supabase
+    // Decide the "first start" — book.first_period_start when set, otherwise
+    // the earliest transaction date, otherwise today. Only used to seed a
+    // brand-new book; once any FY row exists, generation anchors on it.
+    let firstStart = book.first_period_start as string | null;
+    if (!firstStart) {
+      const { data: firstTxn } = await supabase
         .from('bookkeeping_transactions')
         .select('date')
         .eq('book_id', params.id)
-        .order('date', { ascending: false })
+        .order('date', { ascending: true })
         .limit(1)
         .maybeSingle();
-      const oneYearForward = new Date();
-      oneYearForward.setUTCFullYear(oneYearForward.getUTCFullYear() + 1);
-      const throughIso = (lastTxn?.date && lastTxn.date > oneYearForward.toISOString().slice(0, 10))
-        ? lastTxn.date
-        : oneYearForward.toISOString().slice(0, 10);
-
-      const desired = enumerateFys(pattern, firstStart, throughIso);
-
-      // Pull existing FYs once; only insert ones that aren't already there.
-      const { data: existing } = await supabase
-        .from('bookkeeping_financial_years')
-        .select('start_date')
-        .eq('book_id', params.id);
-      const existingStarts = new Set((existing ?? []).map(r => r.start_date as string));
-
-      const toInsert = desired
-        .filter(r => !existingStarts.has(r.start))
-        .map(r => ({
-          book_id: params.id,
-          start_date: r.start,
-          end_date:   r.end,
-          status: 'open' as const,
-        }));
-      if (toInsert.length > 0) {
-        await supabase.from('bookkeeping_financial_years').insert(toInsert);
-      }
+      firstStart = firstTxn?.date ?? new Date().toISOString().slice(0, 10);
+      // Persist it so subsequent generations are stable.
+      await supabase
+        .from('bookkeeping_books')
+        .update({ first_period_start: firstStart })
+        .eq('id', params.id);
     }
+
+    // Extend up to whichever is later: the latest transaction date, or today
+    // (the current period). We deliberately do NOT pre-create next year —
+    // later years materialise on demand the moment a transaction is posted
+    // into them (the latest-transaction reach above covers that), so the UI
+    // isn't cluttered with empty future placeholders.
+    const { data: lastTxn } = await supabase
+      .from('bookkeeping_transactions')
+      .select('date')
+      .eq('book_id', params.id)
+      .order('date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const throughIso = (lastTxn?.date && lastTxn.date > todayIso) ? lastTxn.date : todayIso;
+
+    // Anchored generation: never regenerates/shifts existing rows, only
+    // extends forward from the latest stored FY using the current pattern.
+    await backfillForwardFys(supabase, params.id, {
+      yearEndMd: book.year_end_md,
+      firstPeriodStart: firstStart,
+      throughIso,
+    });
   }
 
   const { data: years, error } = await supabase

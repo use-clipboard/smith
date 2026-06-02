@@ -394,6 +394,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
                   onOpenSettings={() => setSettingsOpen(true)}
                   onOpenYearEnds={() => setYearEndsOpen(true)}
                   onPeriodChange={setActivePeriod}
+                  refreshKey={refreshKey}
                 />
               </div>
             </div>
@@ -555,7 +556,10 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         <YearEndsDialog
           bookId={bookId}
           isAdmin={isAdmin}
-          onClose={() => setYearEndsOpen(false)}
+          // Bump on close too: the dialog's own generate=true load may have
+          // pruned empty future placeholders, so re-sync the year dropdown
+          // even when the user didn't explicitly close/reopen/change a year.
+          onClose={() => { setYearEndsOpen(false); bumpRefresh(); }}
           onChanged={() => { load(); bumpRefresh(); }}
         />
       )}
