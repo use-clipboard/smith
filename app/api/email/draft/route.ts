@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage } from '@/lib/gmail';
+import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage, firstInvalidRecipient } from '@/lib/gmail';
 
 // ─── Draft handling ───────────────────────────────────────────────────────
 // GET /api/email/draft?threadId=…   — load the latest draft on that thread
@@ -34,6 +34,18 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = DraftSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid' }, { status: 400 });
+
+  // Drafts may have no recipient yet, but any recipient that IS present must be
+  // a valid address — never let raw header text into the message builder.
+  const badRecipient = firstInvalidRecipient([
+    ...parsed.data.to, ...parsed.data.cc, ...parsed.data.bcc,
+  ]);
+  if (badRecipient) {
+    return NextResponse.json(
+      { error: `Invalid recipient address: "${badRecipient.slice(0, 80)}".` },
+      { status: 400 },
+    );
+  }
 
   const supabase = createClient();
   const { data: connection } = await supabase

@@ -42,6 +42,33 @@ export interface EmailAddress {
   email: string;
 }
 
+/**
+ * Pull the addr-spec out of a recipient entry in either `email` or
+ * `Name <email>` / `"Name" <email>` form. Returns null when the entry isn't a
+ * single plausible email address — e.g. it carries embedded newlines / raw
+ * header text (the "To:…Subject:…" poisoning that produced malformed sends),
+ * has no `@`, or has internal whitespace in the address.
+ */
+export function extractRecipientEmail(entry: string): string | null {
+  if (/[\r\n]/.test(entry)) return null;          // no embedded header breaks
+  const trimmed = entry.trim();
+  if (!trimmed) return null;
+  // `Name <addr>` → take the angle-addr; otherwise treat the whole thing as the address.
+  const angle = trimmed.match(/<([^<>]*)>\s*$/);
+  const addr  = (angle ? angle[1] : trimmed).trim();
+  // Conservative addr-spec: one @, no whitespace, a dotted domain.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) return null;
+  return addr;
+}
+
+/** First entry in the list that isn't a valid recipient, or null if all are OK. */
+export function firstInvalidRecipient(list: string[]): string | null {
+  for (const r of list) {
+    if (!extractRecipientEmail(r)) return r;
+  }
+  return null;
+}
+
 export interface EmailMessage {
   id: string;
   threadId: string;

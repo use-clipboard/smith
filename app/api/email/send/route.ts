@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
+import { getRefreshedGmailClient, buildRawMessage, firstInvalidRecipient } from '@/lib/gmail';
 
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
@@ -64,6 +64,17 @@ export async function POST(req: NextRequest) {
 
   if (!to.length) {
     return NextResponse.json({ error: 'At least one recipient required' }, { status: 400 });
+  }
+
+  // Reject malformed recipients (e.g. raw header text pasted into a field)
+  // before they reach the message builder — a friendly error beats a cryptic
+  // Gmail rejection or a silently broken send.
+  const badRecipient = firstInvalidRecipient([...to, ...cc, ...bcc]);
+  if (badRecipient) {
+    return NextResponse.json(
+      { error: `Invalid recipient address: "${badRecipient.slice(0, 80)}". Please check the To, Cc and Bcc fields.` },
+      { status: 400 },
+    );
   }
 
   try {
