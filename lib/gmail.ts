@@ -207,11 +207,25 @@ export function parseGmailMessage(
  * pure ASCII subjects pass through untouched so the simple case is normal
  * to read on the wire.
  */
-function encodeHeaderValue(value: string): string {
+/**
+ * Strip CR/LF (and other control chars) from a header value. RFC 2822 headers
+ * are single logical lines; an embedded newline in a value injects a premature
+ * line — or a blank line that prematurely ends the whole header block, dumping
+ * the real headers (Subject, etc.) into the body. That's both a malformed-mail
+ * bug (lost subject) and a header-injection vector. Always run header values
+ * through this before interpolating them into a raw message.
+ */
+function stripHeaderBreaks(value: string): string {
   // eslint-disable-next-line no-control-regex
-  const hasNonAscii = /[^\x00-\x7F]/.test(value);
-  if (!hasNonAscii) return value;
-  const b64 = Buffer.from(value, 'utf8').toString('base64');
+  return value.replace(/[\r\n\t\x00-\x1F]+/g, ' ').trim();
+}
+
+function encodeHeaderValue(value: string): string {
+  const clean = stripHeaderBreaks(value);
+  // eslint-disable-next-line no-control-regex
+  const hasNonAscii = /[^\x00-\x7F]/.test(clean);
+  if (!hasNonAscii) return clean;
+  const b64 = Buffer.from(clean, 'utf8').toString('base64');
   return `=?UTF-8?B?${b64}?=`;
 }
 
@@ -222,9 +236,13 @@ function encodeHeaderValue(value: string): string {
  * stay 7-bit ASCII per RFC 5321.
  */
 function encodeAddressLine(addr: string): string {
+  // Strip line breaks first — a recipient value carrying embedded CRLF (e.g.
+  // pasted raw headers) would otherwise inject extra header lines / a blank
+  // line that breaks the whole message.
+  const safe = stripHeaderBreaks(addr);
   // Match an optional display name followed by an angle-addr.
-  const m = addr.match(/^(.+?)\s*<([^>]+)>\s*$/);
-  if (!m) return addr; // bare address — already ASCII-safe
+  const m = safe.match(/^(.+?)\s*<([^>]+)>\s*$/);
+  if (!m) return safe; // bare address
   const rawName = m[1].trim().replace(/^"|"$/g, '');
   const email   = m[2].trim();
   return `${encodeHeaderValue(rawName)} <${email}>`;
@@ -249,8 +267,9 @@ export function buildRawMessage(opts: {
   const ccLine   = opts.cc?.length  ? `Cc: ${opts.cc.map(encodeAddressLine).join(', ')}\r\n`   : '';
   const bccLine  = opts.bcc?.length ? `Bcc: ${opts.bcc.map(encodeAddressLine).join(', ')}\r\n` : '';
   const subjectEncoded = encodeHeaderValue(opts.subject);
-  const refLine = opts.replyToMessageId
-    ? `In-Reply-To: ${opts.replyToMessageId}\r\nReferences: ${opts.replyToMessageId}\r\n`
+  const safeRef = opts.replyToMessageId ? stripHeaderBreaks(opts.replyToMessageId) : '';
+  const refLine = safeRef
+    ? `In-Reply-To: ${safeRef}\r\nReferences: ${safeRef}\r\n`
     : '';
 
   function fold76(b64: string): string {
