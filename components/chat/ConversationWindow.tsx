@@ -4,7 +4,7 @@ import {
   useState, useEffect, useRef, KeyboardEvent, useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Minus, Send, Smile, Zap } from 'lucide-react';
+import { X, Minus, Send, Smile, Zap, Reply, CornerDownRight } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { useChatContext } from './ChatProvider';
 import EmojiPicker from './EmojiPicker';
@@ -30,9 +30,23 @@ export default function ConversationWindow({ conversationId, index }: Props) {
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [unreadBadge, setUnreadBadge] = useState(0);
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to (and briefly highlight) a message — used when clicking a quoted
+  // reply reference.
+  const jumpToMessage = useCallback((id: string) => {
+    const node = messagesRef.current?.querySelector<HTMLElement>(`[data-msg-id="${id}"]`);
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    node.style.transition = 'background-color 0.3s';
+    node.style.backgroundColor = 'var(--accent-light)';
+    node.style.borderRadius = '8px';
+    setTimeout(() => { node.style.backgroundColor = ''; }, 1000);
+  }, []);
 
   const conversation = conversations[conversationId];
   const convMessages = messages[conversationId] || [];
@@ -85,10 +99,12 @@ export default function ConversationWindow({ conversationId, index }: Props) {
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text) return;
+    const replyId = replyingTo?.id ?? null;
     setInput('');
+    setReplyingTo(null);
     setTyping(conversationId, false);
-    await sendMessage(conversationId, text);
-  }, [input, conversationId, sendMessage, setTyping]);
+    await sendMessage(conversationId, text, replyId);
+  }, [input, conversationId, sendMessage, setTyping, replyingTo]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -163,7 +179,7 @@ export default function ConversationWindow({ conversationId, index }: Props) {
       {!isMinimized && (
         <>
           {/* Messages list */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin">
+          <div ref={messagesRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scrollbar-thin">
             {convMessages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full py-10 text-center">
                 <div className="w-12 h-12 rounded-full bg-[var(--bg-page)] flex items-center justify-center mb-3">
@@ -182,12 +198,15 @@ export default function ConversationWindow({ conversationId, index }: Props) {
               <MessageBubble
                 key={msg.id}
                 msg={msg}
+                repliedTo={msg.reply_to_id ? convMessages.find(m => m.id === msg.reply_to_id) ?? null : null}
                 isMine={msg.sender_id === currentUserId}
                 prevMsg={convMessages[i - 1]}
                 isHovered={hoveredMsgId === msg.id}
                 showReactionPicker={reactionPickerFor === msg.id}
                 currentUserId={currentUserId}
                 teamMembers={teamMembers}
+                onReply={() => setReplyingTo(msg)}
+                onJumpTo={jumpToMessage}
                 onHover={() => setHoveredMsgId(msg.id)}
                 onLeave={() => { setHoveredMsgId(null); setReactionPickerFor(null); }}
                 onToggleReactionPicker={() =>
@@ -218,6 +237,27 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 
           {/* Input area */}
           <div className="shrink-0 border-t border-[var(--border)] px-3 py-2.5">
+            {/* Replying-to preview */}
+            {replyingTo && (
+              <div className="flex items-center gap-2 mb-2 pl-2 pr-1 py-1.5 rounded-lg bg-[var(--bg-page)] border-l-2 border-[var(--accent)]">
+                <CornerDownRight size={12} className="text-[var(--accent)] shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold text-[var(--accent)] leading-none">
+                    Replying to {(teamMembers.find(m => m.id === replyingTo.sender_id)?.full_name?.split(' ')[0]) || (replyingTo.sender_id === currentUserId ? 'yourself' : 'them')}
+                  </p>
+                  <p className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">
+                    {replyingTo.type === 'nudge' ? '👋 Nudge' : replyingTo.content}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setReplyingTo(null)}
+                  aria-label="Cancel reply"
+                  className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40"
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            )}
             <div className="flex items-end gap-2">
               {/* Text input */}
               <div className="flex-1 bg-[var(--bg-page)] rounded-xl px-3 py-2 border border-[var(--border-input)]">
@@ -268,17 +308,21 @@ export default function ConversationWindow({ conversationId, index }: Props) {
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({
-  msg, isMine, prevMsg, isHovered, showReactionPicker,
+  msg, repliedTo, isMine, prevMsg, isHovered, showReactionPicker,
   currentUserId, teamMembers,
-  onHover, onLeave, onToggleReactionPicker, onAddReaction, onRemoveReaction,
+  onReply, onJumpTo, onHover, onLeave, onToggleReactionPicker, onAddReaction, onRemoveReaction,
 }: {
   msg: ChatMessage;
+  /** The message this one replies to, resolved from the loaded list (or null). */
+  repliedTo: ChatMessage | null;
   isMine: boolean;
   prevMsg?: ChatMessage;
   isHovered: boolean;
   showReactionPicker: boolean;
   currentUserId: string;
   teamMembers: Array<{ id: string; full_name: string; avatar_url?: string | null }>;
+  onReply: () => void;
+  onJumpTo: (id: string) => void;
   onHover: () => void;
   onLeave: () => void;
   onToggleReactionPicker: () => void;
@@ -302,8 +346,13 @@ function MessageBubble({
     return acc;
   }, {});
 
+  const repliedToSender = repliedTo
+    ? (repliedTo.sender_id === currentUserId ? 'You' : (teamMembers.find(m => m.id === repliedTo.sender_id)?.full_name?.split(' ')[0] ?? 'them'))
+    : '';
+
   return (
     <div
+      data-msg-id={msg.id}
       className={`flex items-end gap-1.5 ${isMine ? 'flex-row-reverse' : 'flex-row'} relative group`}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
@@ -318,6 +367,22 @@ function MessageBubble({
       )}
 
       <div className={`flex flex-col gap-0.5 max-w-[210px] ${isMine ? 'items-end' : 'items-start'}`}>
+        {/* Quoted reference — the message this one replies to */}
+        {repliedTo && (
+          <button
+            onClick={() => onJumpTo(repliedTo.id)}
+            className={`flex items-start gap-1.5 max-w-full text-left px-2 py-1 rounded-lg bg-[var(--bg-page)] border border-[var(--border)] hover:border-[var(--accent)] transition-colors ${isMine ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
+          >
+            <CornerDownRight size={11} className="text-[var(--text-muted)] shrink-0 mt-0.5" />
+            <span className="min-w-0">
+              <span className="block text-[9px] font-semibold text-[var(--accent)] leading-none">{repliedToSender}</span>
+              <span className="block text-[10px] text-[var(--text-muted)] truncate mt-0.5">
+                {repliedTo.type === 'nudge' ? '👋 Nudge' : repliedTo.content}
+              </span>
+            </span>
+          </button>
+        )}
+
         {/* Nudge pill */}
         {isNudge ? (
           <div className="px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-xs text-amber-700 dark:bg-amber-900/30 dark:border-amber-700/40 dark:text-amber-400">
@@ -359,9 +424,18 @@ function MessageBubble({
         )}
       </div>
 
-      {/* Hover: add reaction button */}
+      {/* Hover: reply + add reaction buttons */}
       {isHovered && !isNudge && (
-        <div className={`absolute top-0 ${isMine ? 'left-0 -translate-x-1' : 'right-0 translate-x-1'} z-10`}>
+        <div className={`absolute top-0 ${isMine ? 'left-0 -translate-x-1' : 'right-0 translate-x-1'} z-10 flex items-center gap-1`}>
+          <Tooltip label="Reply">
+            <button
+              onClick={onReply}
+              aria-label="Reply to this message"
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-[var(--bg-card-solid)] border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] shadow-sm transition-all"
+            >
+              <Reply size={11} />
+            </button>
+          </Tooltip>
           <Tooltip label="Add reaction">
             <button
               ref={reactionBtnRef}

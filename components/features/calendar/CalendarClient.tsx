@@ -5,8 +5,8 @@ import {
   ChevronLeft, ChevronRight, Plus, Calendar, RefreshCw,
   CalendarDays, List, WifiOff, Trash2, Loader2, Pencil, EyeOff, Eye, Lock, Check, Bell, ChevronDown,
 } from 'lucide-react';
-import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import { useModules } from '@/components/ui/ModulesProvider';
 import CreateEventModal from './CreateEventModal';
 import EditEventModal from './EditEventModal';
 import ReminderModal, { PersonalReminder } from './ReminderModal';
@@ -36,7 +36,10 @@ interface MemberInfo {
   email: string;
   connected: boolean;
   color: string;
+  department_id?: string | null;
 }
+
+interface Department { id: string; name: string }
 
 type ViewMode = 'month' | 'week' | 'agenda';
 
@@ -97,12 +100,28 @@ export default function CalendarClient() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [members, setMembers] = useState<MemberInfo[]>([]);
+  // HR departments — used to group/bulk-select the team list when the firm has
+  // the HR tool and has set departments up. Empty otherwise (flat list).
+  const { isModuleActive } = useModules();
+  const hrActive = isModuleActive('hr');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  useEffect(() => {
+    if (!hrActive) return;
+    let cancelled = false;
+    fetch('/api/hr/departments')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d?.departments) setDepartments((d.departments as Department[]).map(x => ({ id: x.id, name: x.name }))); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [hrActive]);
   const [loading, setLoading] = useState(true);
   const [calendarConnected, setCalendarConnected] = useState<boolean | null>(null);
   // Set of member IDs whose calendars are hidden (multi-toggle)
   const [hiddenMembers, setHiddenMembers] = useState<Set<string>>(new Set());
   const hiddenInitialized = useRef(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Guests to pre-add when opening the create modal (e.g. "schedule with X").
+  const [prefillAttendees, setPrefillAttendees] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventPopover, setShowEventPopover] = useState(false);
@@ -211,6 +230,21 @@ export default function CalendarClient() {
     setCurrentDate(new Date());
   }
 
+  // Emails of the teammates currently SELECTED (visible) in the sidebar,
+  // excluding yourself — these are pre-invited to any new event you create.
+  function selectedTeamEmails(): string[] {
+    return members
+      .filter(m => m.id !== userId && !hiddenMembers.has(m.id) && !!m.email)
+      .map(m => m.email);
+  }
+
+  // Open New Event, pre-filling the guest list from the selected teammates.
+  function openCreate(date: Date) {
+    setPrefillAttendees(selectedTeamEmails());
+    setSelectedDate(date);
+    setShowCreateModal(true);
+  }
+
   function toggleMember(memberId: string) {
     setHiddenMembers(prev => {
       const next = new Set(prev);
@@ -219,6 +253,18 @@ export default function CalendarClient() {
       } else {
         next.add(memberId);
       }
+      return next;
+    });
+  }
+
+  // Select / deselect a whole department at once. If every member is already
+  // visible we hide them all; otherwise we show them all.
+  function toggleDept(deptMembers: MemberInfo[]) {
+    const allVisible = deptMembers.length > 0 && deptMembers.every(m => !hiddenMembers.has(m.id));
+    setHiddenMembers(prev => {
+      const next = new Set(prev);
+      if (allVisible) deptMembers.forEach(m => next.add(m.id));
+      else deptMembers.forEach(m => next.delete(m.id));
       return next;
     });
   }
@@ -290,8 +336,7 @@ export default function CalendarClient() {
   }
 
   function handleDayClick(day: Date) {
-    setSelectedDate(day);
-    setShowCreateModal(true);
+    openCreate(day);
   }
 
   function handleEventClick(e: React.MouseEvent, event: CalendarEvent) {
@@ -311,8 +356,17 @@ export default function CalendarClient() {
     : `${currentDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} onwards`;
 
   return (
-    <ToolLayout title="Calendar" icon={CalendarDays} iconColor="#0891B2">
-      <div className="flex flex-col h-full gap-4 p-4 overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden p-4 gap-4">
+      {/* Header — full-height layout (replaces ToolLayout, whose auto-height
+          wrapper let the page scroll and the team list stretch the month). */}
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(8,145,178,0.12)' }}>
+          <CalendarDays size={20} style={{ color: '#0891B2' }} />
+        </div>
+        <h2 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">Calendar</h2>
+      </div>
+
+      <div className="flex flex-col flex-1 min-h-0 gap-4 overflow-hidden">
 
         {/* Fetch error banner */}
         {fetchError && (
@@ -324,7 +378,7 @@ export default function CalendarClient() {
         )}
 
         {/* Toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap shrink-0">
           {/* Navigation */}
           <div className="flex items-center gap-1">
             <button onClick={() => navigate(-1)} className="btn-icon" aria-label="Previous">
@@ -369,7 +423,7 @@ export default function CalendarClient() {
           <div className="relative">
             <div className="flex items-stretch rounded-lg overflow-hidden">
               <button
-                onClick={() => { setSelectedDate(new Date()); setShowCreateModal(true); setShowCreateMenu(false); }}
+                onClick={() => { openCreate(new Date()); setShowCreateMenu(false); }}
                 className="btn-primary flex items-center gap-1.5 text-sm rounded-r-none"
               >
                 <Plus size={14} /> New Event
@@ -387,7 +441,7 @@ export default function CalendarClient() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowCreateMenu(false)} />
                 <div className="absolute right-0 mt-1 z-50 w-48 rounded-lg glass-solid border border-[var(--border)] shadow-xl overflow-hidden">
                   <button
-                    onClick={() => { setSelectedDate(new Date()); setShowCreateModal(true); setShowCreateMenu(false); }}
+                    onClick={() => { openCreate(new Date()); setShowCreateMenu(false); }}
                     className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-[var(--bg-nav-hover)]"
                   >
                     <Calendar size={13} className="text-[var(--accent)]" /> New event
@@ -419,29 +473,83 @@ export default function CalendarClient() {
             // Renders the row that selects a single member.
             const memberRow = (m: MemberInfo, isMe: boolean) => {
               const isVisible = !hiddenMembers.has(m.id);
-              const row = (
-                <button
-                  onClick={() => toggleMember(m.id)}
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all text-left w-full hover:bg-[var(--bg-nav-hover)] ${isVisible ? '' : 'opacity-75'}`}
-                >
-                  <span
-                    className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all"
-                    style={{
-                      backgroundColor: isVisible ? m.color : 'transparent',
-                      borderColor: m.color,
-                    }}
+              const inner = (
+                <div className="relative">
+                  <button
+                    onClick={() => toggleMember(m.id)}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-all text-left w-full hover:bg-[var(--bg-nav-hover)] ${isVisible ? '' : 'opacity-75'}`}
                   >
-                    {isVisible && <Check size={10} color="white" strokeWidth={3} />}
-                  </span>
-                  <span className={`truncate flex-1 transition-colors ${isVisible ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-                    {isMe ? 'My Calendar' : m.name}
-                  </span>
-                  {!m.connected && <WifiOff size={10} className="text-[var(--text-muted)] shrink-0" />}
-                </button>
+                    <span
+                      className="w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all"
+                      style={{
+                        backgroundColor: isVisible ? m.color : 'transparent',
+                        borderColor: m.color,
+                      }}
+                    >
+                      {isVisible && <Check size={10} color="white" strokeWidth={3} />}
+                    </span>
+                    <span className={`truncate flex-1 transition-colors ${isVisible ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
+                      {isMe ? 'My Calendar' : m.name}
+                    </span>
+                    {!m.connected && <WifiOff size={10} className="text-[var(--text-muted)] shrink-0" />}
+                  </button>
+                </div>
               );
               return !m.connected
-                ? <Tooltip key={m.id} label={`${isMe ? 'Your' : `${m.name}'s`} calendar is not connected`}>{row}</Tooltip>
-                : <div key={m.id}>{row}</div>;
+                ? <Tooltip key={m.id} label={`${isMe ? 'Your' : `${m.name}'s`} calendar is not connected`}>{inner}</Tooltip>
+                : <div key={m.id}>{inner}</div>;
+            };
+
+            // Group by department when the HR tool is set up; otherwise flat.
+            const useGroups = hrActive && departments.length > 0;
+            const renderTeamList = () => {
+              if (!useGroups) return filteredTeam.map(m => memberRow(m, false));
+              const byDept = new Map<string, MemberInfo[]>();
+              for (const m of filteredTeam) {
+                const key = m.department_id ?? '__none__';
+                const arr = byDept.get(key);
+                if (arr) arr.push(m); else byDept.set(key, [m]);
+              }
+              const groups: { key: string; name: string; members: MemberInfo[] }[] = [];
+              for (const d of departments) {
+                const list = byDept.get(d.id);
+                if (list && list.length) groups.push({ key: d.id, name: d.name, members: list });
+              }
+              // "No department" also catches members whose department_id points
+              // at a department that no longer exists (so nobody is dropped).
+              const known = new Set(departments.map(d => d.id));
+              const noneList: MemberInfo[] = [...(byDept.get('__none__') ?? [])];
+              for (const [key, list] of byDept) {
+                if (key !== '__none__' && !known.has(key)) noneList.push(...list);
+              }
+              if (noneList.length) groups.push({ key: '__none__', name: 'No department', members: noneList });
+
+              return groups.map(g => {
+                const allVisible = g.members.every(m => !hiddenMembers.has(m.id));
+                const someVisible = g.members.some(m => !hiddenMembers.has(m.id));
+                return (
+                  <div key={g.key} className="mb-1.5">
+                    <Tooltip label={allVisible ? `Deselect ${g.name}` : `Select all of ${g.name}`} side="right">
+                      <button
+                        type="button"
+                        onClick={() => toggleDept(g.members)}
+                        className="w-full flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[var(--bg-nav-hover)] transition-colors"
+                      >
+                        <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${allVisible ? 'bg-[var(--accent)] border-[var(--accent)]' : someVisible ? 'border-[var(--accent)]' : 'border-[var(--border-input)]'}`}>
+                          {allVisible
+                            ? <Check size={10} color="white" strokeWidth={3} />
+                            : someVisible ? <span className="block w-2 h-[2px] bg-[var(--accent)] rounded" /> : null}
+                        </span>
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)] truncate flex-1 text-left">{g.name}</span>
+                        <span className="text-[10px] text-[var(--text-muted)] shrink-0">{g.members.length}</span>
+                      </button>
+                    </Tooltip>
+                    <div className="pl-1">
+                      {g.members.map(m => memberRow(m, false))}
+                    </div>
+                  </div>
+                );
+              });
             };
 
             return (
@@ -501,7 +609,7 @@ export default function CalendarClient() {
                           {filteredTeam.length === 0 ? (
                             <p className="px-2 py-2 text-[11px] text-[var(--text-muted)]">No matches</p>
                           ) : (
-                            filteredTeam.map(m => memberRow(m, false))
+                            renderTeamList()
                           )}
                         </div>
                       </>
@@ -509,17 +617,23 @@ export default function CalendarClient() {
                   </div>
                 )}
 
-                {/* Footer chip — selection summary */}
-                <div className="mt-2 pt-2 border-t border-[var(--border)] px-2 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-                  <span>{totalVisible} of {members.length} selected</span>
-                  {hiddenMembers.size > 0 && (
-                    <button
-                      onClick={() => setHiddenMembers(new Set())}
-                      className="text-[var(--accent)] hover:underline"
-                    >
-                      Reset
-                    </button>
-                  )}
+                {/* Footer chip — selection summary + invite hint */}
+                <div className="mt-2 pt-2 border-t border-[var(--border)] px-2 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                    <span>{totalVisible} of {members.length} selected</span>
+                    {hiddenMembers.size > 0 && (
+                      <button
+                        onClick={() => setHiddenMembers(new Set())}
+                        className="text-[var(--accent)] hover:underline"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-[var(--text-muted)] leading-snug flex items-start gap-1">
+                    <CalendarDays size={10} className="mt-0.5 shrink-0 opacity-70" />
+                    Selected teammates are invited to events you create.
+                  </p>
                 </div>
               </div>
             );
@@ -596,11 +710,12 @@ export default function CalendarClient() {
       {showCreateModal && (
         <CreateEventModal
           defaultDate={selectedDate ?? new Date()}
-          onClose={() => { setShowCreateModal(false); setSelectedDate(null); }}
+          onClose={() => { setShowCreateModal(false); setSelectedDate(null); setPrefillAttendees([]); }}
           onCreated={handleEventCreated}
           isAdmin={isAdmin}
           members={members}
           currentUserId={userId}
+          defaultAttendeeEmails={prefillAttendees}
         />
       )}
 
@@ -811,7 +926,7 @@ export default function CalendarClient() {
           </div>
         );
       })()}
-    </ToolLayout>
+    </div>
   );
 }
 

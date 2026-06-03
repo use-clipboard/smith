@@ -22,7 +22,7 @@ interface ChatContextType {
   currentUserId: string;
   openConversationWith: (userId: string) => Promise<void>;
   closeConversation: (conversationId: string) => void;
-  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  sendMessage: (conversationId: string, content: string, replyToId?: string | null) => Promise<void>;
   sendNudge: (conversationId: string) => Promise<void>;
   addReaction: (messageId: string, emoji: string, conversationId: string) => Promise<void>;
   removeReaction: (reactionId: string, conversationId: string) => Promise<void>;
@@ -210,11 +210,11 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
     setOpenConversationIds(prev => prev.filter(id => id !== conversationId));
   }, []);
 
-  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+  const sendMessage = useCallback(async (conversationId: string, content: string, replyToId?: string | null) => {
     const res = await fetch(`/api/messages/${conversationId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, type: 'text' }),
+      body: JSON.stringify({ content, type: 'text', reply_to_id: replyToId ?? null }),
     });
     const data = await res.json();
     // Optimistically add if realtime doesn't catch it fast enough

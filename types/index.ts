@@ -387,6 +387,9 @@ export interface ChatMessage {
   type: 'text' | 'nudge';
   edited_at: string | null;
   created_at: string;
+  /** When set, this message is a reply to an earlier message in the same
+   *  conversation (rendered as a quoted reference). */
+  reply_to_id?: string | null;
   sender?: TeamMember;
   reactions?: MessageReaction[];
 }

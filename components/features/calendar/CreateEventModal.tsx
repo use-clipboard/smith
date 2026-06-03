@@ -19,6 +19,8 @@ interface Props {
   isAdmin?: boolean;
   members?: TeamMember[];
   currentUserId?: string;
+  /** Guests to pre-add (e.g. when scheduling with a specific teammate). */
+  defaultAttendeeEmails?: string[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -109,7 +111,7 @@ type Tab = 'details' | 'visibility';
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CreateEventModal({
-  defaultDate, onClose, onCreated, isAdmin, members = [], currentUserId,
+  defaultDate, onClose, onCreated, isAdmin, members = [], currentUserId, defaultAttendeeEmails = [],
 }: Props) {
   const startDefault = roundUpTo15(defaultDate);
   const endDefault   = new Date(startDefault.getTime() + 60 * 60 * 1000);
@@ -128,7 +130,7 @@ export default function CreateEventModal({
   const [location,      setLocation]      = useState('');
   const [description,   setDescription]   = useState('');
   const [addGoogleMeet, setAddGoogleMeet] = useState(false);
-  const [attendees,     setAttendees]     = useState<string[]>([]);
+  const [attendees,     setAttendees]     = useState<string[]>(defaultAttendeeEmails);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [makeHidden,    setMakeHidden]    = useState(false);
   const [saving,        setSaving]        = useState(false);

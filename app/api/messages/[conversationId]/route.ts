@@ -25,7 +25,7 @@ export async function GET(
   const { data: msgs, error } = await service
     .from('instant_messages')
     .select(`
-      id, conversation_id, sender_id, content, type, edited_at, created_at,
+      id, conversation_id, sender_id, content, type, edited_at, created_at, reply_to_id,
       sender:users!sender_id(id, full_name, email, role),
       reactions:message_reactions(id, message_id, user_id, emoji, created_at)
     `)
@@ -42,6 +42,8 @@ export async function GET(
 const SendSchema = z.object({
   content: z.string().min(1).max(2000),
   type: z.enum(['text', 'nudge']).default('text'),
+  /** Optional id of the message this one replies to. */
+  reply_to_id: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(
@@ -73,9 +75,10 @@ export async function POST(
       sender_id: user.id,
       content: parsed.data.content,
       type: parsed.data.type,
+      reply_to_id: parsed.data.reply_to_id ?? null,
     })
     .select(`
-      id, conversation_id, sender_id, content, type, edited_at, created_at,
+      id, conversation_id, sender_id, content, type, edited_at, created_at, reply_to_id,
       sender:users!sender_id(id, full_name, email, role)
     `)
     .single();

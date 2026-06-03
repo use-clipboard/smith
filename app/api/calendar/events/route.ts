@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   // Get all team members (include role for visibility rules)
   const { data: teamMembers } = await supabase
     .from('users')
-    .select('id, full_name, email, role')
+    .select('id, full_name, email, role, department_id')
     .eq('firm_id', ctx.firmId);
 
   if (!teamMembers?.length) return NextResponse.json({ events: [], members: [] });
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
 
   // Fetch events from each visible connected calendar in parallel
   const allEvents: CalendarEvent[] = [];
-  const membersInfo: { id: string; name: string; email: string; connected: boolean; color: string }[] = [];
+  const membersInfo: { id: string; name: string; email: string; connected: boolean; color: string; department_id: string | null }[] = [];
   const fetchErrors: { memberId: string; error: string }[] = [];
 
   await Promise.all(
@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
         email: member.email ?? '',
         connected: isConnected,
         color,
+        department_id: (member as { department_id?: string | null }).department_id ?? null,
       });
 
       if (!isConnected || !visibleMemberIds.includes(member.id)) return;
