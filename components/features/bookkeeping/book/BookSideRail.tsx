@@ -24,7 +24,8 @@ import {
   Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
-  Upload, Boxes,
+  Upload, Boxes, BarChart3, Clock,
+  type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { TransactionType } from '@/types/bookkeeping';
@@ -81,6 +82,18 @@ const GROUPS: { name: string; icon: React.ComponentType<{ size?: number; classNa
     ],
   },
 ];
+
+// Reports grouped behind a single rail flyout — the rail was getting too long
+// listing each one individually. Aged debtors/creditors live here too.
+const REPORTS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: 'tb',             label: 'Trial Balance',             icon: Scale },
+  { id: 'pnl',            label: 'Profit & Loss',             icon: TrendingUp },
+  { id: 'bs',             label: 'Balance Sheet',             icon: Layers },
+  { id: 'cf',             label: 'Cash Flow',                 icon: BadgePoundSterling },
+  { id: 'aged-debtors',   label: 'Aged Debtors (Customers)',  icon: Clock },
+  { id: 'aged-creditors', label: 'Aged Creditors (Suppliers)', icon: Clock },
+];
+const REPORT_IDS = new Set(REPORTS.map(r => r.id));
 
 export interface LedgerRailTab {
   id: string;
@@ -172,6 +185,43 @@ export default function BookSideRail({
     setActionMenuOpen(false);
   }
 
+  // ── Reports flyout (TB / P&L / BS / CF + aged reports) ──────────────────────
+  const reportsButtonRef = useRef<HTMLButtonElement>(null);
+  const reportsPopoutRef = useRef<HTMLDivElement>(null);
+  const [reportsMenuOpen, setReportsMenuOpen] = useState(false);
+  const [reportsPos, setReportsPos] = useState<{ top: number; left: number } | null>(null);
+  const updateReportsPosition = useCallback(() => {
+    const trigger = reportsButtonRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    setReportsPos({ top: rect.top, left: rect.right + 8 });
+  }, []);
+  useLayoutEffect(() => {
+    if (!reportsMenuOpen) { setReportsPos(null); return; }
+    updateReportsPosition();
+    window.addEventListener('scroll', updateReportsPosition, true);
+    window.addEventListener('resize', updateReportsPosition);
+    return () => {
+      window.removeEventListener('scroll', updateReportsPosition, true);
+      window.removeEventListener('resize', updateReportsPosition);
+    };
+  }, [reportsMenuOpen, updateReportsPosition]);
+  useEffect(() => {
+    if (!reportsMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      const target = e.target as Node;
+      const insideRail = containerRef.current?.contains(target);
+      const insidePopout = reportsPopoutRef.current?.contains(target);
+      if (!insideRail && !insidePopout) setReportsMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [reportsMenuOpen]);
+  function pickReport(id: string) {
+    onSelectTab(id);
+    setReportsMenuOpen(false);
+  }
+
   function railButton({
     id, label, tooltip, icon: Icon, active, onClick, disabled: btnDisabled, accent,
   }: {
@@ -224,7 +274,7 @@ export default function BookSideRail({
         <button
           ref={newTxnButtonRef}
           type="button"
-          onClick={() => !disabled && setActionMenuOpen(o => !o)}
+          onClick={() => { if (!disabled) { setActionMenuOpen(o => !o); setReportsMenuOpen(false); } }}
           disabled={disabled}
           aria-label="New transaction"
           aria-expanded={actionMenuOpen}
@@ -262,26 +312,24 @@ export default function BookSideRail({
           onClick: () => onSelectTab('input'),
           disabled,
         })}
-        {railButton({
-          id: 'tb', label: 'Trial Balance', tooltip: 'Trial Balance',
-          icon: Scale, active: activeTab === 'tb',
-          onClick: () => onSelectTab('tb'),
-        })}
-        {railButton({
-          id: 'pnl', label: 'Profit and Loss', tooltip: 'Profit and Loss',
-          icon: TrendingUp, active: activeTab === 'pnl',
-          onClick: () => onSelectTab('pnl'),
-        })}
-        {railButton({
-          id: 'bs', label: 'Balance Sheet', tooltip: 'Balance Sheet',
-          icon: Layers, active: activeTab === 'bs',
-          onClick: () => onSelectTab('bs'),
-        })}
-        {railButton({
-          id: 'cf', label: 'Cash Flow', tooltip: 'Cash Flow + forecast',
-          icon: BadgePoundSterling, active: activeTab === 'cf',
-          onClick: () => onSelectTab('cf'),
-        })}
+        {/* Reports — single flyout for TB / P&L / BS / CF + aged reports. */}
+        <Tooltip label="Reports" side="right">
+          <button
+            ref={reportsButtonRef}
+            type="button"
+            onClick={() => { setReportsMenuOpen(o => !o); setActionMenuOpen(false); }}
+            aria-label="Reports"
+            aria-expanded={reportsMenuOpen}
+            aria-pressed={REPORT_IDS.has(activeTab)}
+            className={`w-10 h-10 rounded-lg flex items-center justify-center transition-colors ${
+              reportsMenuOpen || REPORT_IDS.has(activeTab)
+                ? 'bg-indigo-50 text-indigo-700'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+            }`}
+          >
+            <BarChart3 size={16} />
+          </button>
+        </Tooltip>
         {railButton({
           id: 'vat', label: 'VAT Return', tooltip: 'VAT Return — quarterly 9-box',
           icon: FileSpreadsheet, active: activeTab === 'vat',
@@ -480,6 +528,42 @@ export default function BookSideRail({
                     ))}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* ── Popout: Reports menu ─────────────────────────────────────────────── */}
+      {reportsMenuOpen && portalReady && reportsPos && createPortal(
+        <div
+          ref={reportsPopoutRef}
+          role="menu"
+          aria-label="Reports"
+          style={{ position: 'fixed', top: reportsPos.top, left: reportsPos.left, width: 236 }}
+          className="rounded-xl border border-slate-200 bg-white shadow-xl z-[1400] overflow-hidden"
+        >
+          <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2">
+            <BarChart3 size={13} className="text-indigo-600" />
+            <span className="text-xs font-semibold text-slate-900">Reports</span>
+          </div>
+          <div className="p-1.5">
+            {REPORTS.map(r => {
+              const Icon = r.icon;
+              const active = activeTab === r.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => pickReport(r.id)}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-colors ${
+                    active ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <Icon size={14} className={active ? 'text-indigo-600' : 'text-slate-400'} />
+                  {r.label}
+                </button>
               );
             })}
           </div>

@@ -41,6 +41,9 @@ interface Props {
   /** Type selector — clicking a non-journal button switches to UniversalInputSheet. */
   onTypeChange: (t: TransactionType) => void;
   onPosted?: (txn: Transaction) => void;
+  /** ISO date the entry should default to — the end of the currently-selected
+   *  accounting period. Falls back to today when not provided (no year set). */
+  defaultDateIso?: string | null;
 }
 
 // Same order as UniversalInputSheet so the muscle memory is preserved.
@@ -106,8 +109,11 @@ function parseAmount(s: string): number {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeChange, onPosted }: Props) {
-  const [date, setDate] = useState(formatDateUk(todayIso()));
+export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeChange, onPosted, defaultDateIso }: Props) {
+  // New entries default to the end of the selected accounting period; today only
+  // when no year is set up.
+  const defaultDateUk = defaultDateIso ? formatDateUk(defaultDateIso) : formatDateUk(todayIso());
+  const [date, setDate] = useState(defaultDateUk);
   const [headerDetails, setHeaderDetails] = useState('');
   const [reversesOn, setReversesOn] = useState(''); // user-typed; only used when type === 'RJN'
   const [lines, setLines] = useState<Line[]>(() => [makeBlankLine(), makeBlankLine()]);
@@ -180,7 +186,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
     setLines(prev => prev.length <= 2 ? prev : prev.filter(l => l.id !== id));
   }
   function reset() {
-    setDate(formatDateUk(todayIso()));
+    setDate(defaultDateUk);
     setHeaderDetails('');
     setReversesOn('');
     setLines([makeBlankLine(), makeBlankLine()]);

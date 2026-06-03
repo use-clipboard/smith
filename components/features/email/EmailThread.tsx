@@ -108,7 +108,13 @@ function attachmentUrl(att: EmailMessage['attachments'][number]): string {
   return `/api/email/attachment?messageId=${encodeURIComponent(att.messageId)}&attachmentId=${encodeURIComponent(att.attachmentId)}&filename=${encodeURIComponent(att.filename)}&mimeType=${encodeURIComponent(att.mimeType)}`;
 }
 
+// Beyond this many attachments we collapse to a single summary pill so a mail
+// with dozens of attachments (e.g. a forwarded batch of invoices) doesn't bury
+// the email body under a wall of chips. The user expands to see the full list.
+const ATTACHMENT_COLLAPSE_THRESHOLD = 3;
+
 function AttachmentChips({ attachments }: { attachments: EmailMessage['attachments'] }) {
+  const [expanded, setExpanded] = useState(false);
   if (!attachments.length) return null;
   // Trigger one download per attachment sequentially. Browsers stagger the
   // save dialogs themselves; we just create an anchor and click it for each.
@@ -129,39 +135,92 @@ function AttachmentChips({ attachments }: { attachments: EmailMessage['attachmen
     });
   }
   const downloadableCount = attachments.filter(a => !!a.attachmentId).length;
-  return (
-    <div className="flex flex-wrap gap-2 items-center">
-      {attachments.map((att, i) => {
-        const canDownload = !!att.attachmentId;
-        const url = canDownload ? attachmentUrl(att) : undefined;
-        const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
-        const chip = (
-          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-700 text-white border border-slate-600 ${canDownload ? 'hover:bg-slate-600 transition-colors cursor-pointer' : ''}`}>
-            <Paperclip size={11} className="shrink-0 opacity-80" />
-            <span className="truncate max-w-[160px]">{att.filename}</span>
-            <span className="opacity-60 font-normal">({Math.round(att.size / 1024)}KB)</span>
-          </div>
-        );
-        return canDownload ? (
-          <a key={i} href={url} target={isInline ? '_blank' : undefined} rel="noopener noreferrer" download={isInline ? undefined : att.filename}>
-            {chip}
-          </a>
-        ) : (
-          <div key={i}>{chip}</div>
-        );
-      })}
-      {downloadableCount > 1 && (
-        <Tooltip label={`Download all ${downloadableCount} attachments`}>
+  const totalKB = Math.round(attachments.reduce((s, a) => s + a.size, 0) / 1024);
+  const collapsed = attachments.length > ATTACHMENT_COLLAPSE_THRESHOLD && !expanded;
+
+  function renderChip(att: EmailMessage['attachments'][number], i: number) {
+    const canDownload = !!att.attachmentId;
+    const url = canDownload ? attachmentUrl(att) : undefined;
+    const isInline = att.mimeType.startsWith('image/') || att.mimeType === 'application/pdf';
+    const chip = (
+      <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-700 text-white border border-slate-600 ${canDownload ? 'hover:bg-slate-600 transition-colors cursor-pointer' : ''}`}>
+        <Paperclip size={11} className="shrink-0 opacity-80" />
+        <span className="truncate max-w-[160px]">{att.filename}</span>
+        <span className="opacity-60 font-normal">({Math.round(att.size / 1024)}KB)</span>
+      </div>
+    );
+    return canDownload ? (
+      <a key={i} href={url} target={isInline ? '_blank' : undefined} rel="noopener noreferrer" download={isInline ? undefined : att.filename}>
+        {chip}
+      </a>
+    ) : (
+      <div key={i}>{chip}</div>
+    );
+  }
+
+  const downloadAllButton = downloadableCount > 1 ? (
+    <Tooltip label={`Download all ${downloadableCount} attachments`}>
+      <button
+        type="button"
+        onClick={downloadAll}
+        aria-label="Download all attachments"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
+      >
+        <FolderDown size={12} /> Download all
+      </button>
+    </Tooltip>
+  ) : null;
+
+  // Collapsed: one summary pill ("N attachments") + Download all, so the body
+  // stays visible. Clicking the pill reveals every attachment.
+  if (collapsed) {
+    return (
+      <div className="flex flex-wrap gap-2 items-center">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={`Show all ${attachments.length} attachments`}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-700 text-white border border-slate-600 hover:bg-slate-600 transition-colors"
+        >
+          <Paperclip size={11} className="shrink-0 opacity-80" />
+          {attachments.length} attachments
+          <span className="opacity-60 font-normal">({totalKB}KB)</span>
+          <ChevronDown size={12} className="opacity-80" />
+        </button>
+        {downloadAllButton}
+      </div>
+    );
+  }
+
+  // Many + expanded: the chip list is capped to a fixed height and scrolls
+  // within itself, while the controls sit OUTSIDE that scroll area so the user
+  // can always collapse / download — never stranded off-screen on a small
+  // viewport (the body below stays reachable too).
+  if (attachments.length > ATTACHMENT_COLLAPSE_THRESHOLD) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap gap-2 items-center max-h-44 overflow-y-auto pr-1">
+          {attachments.map(renderChip)}
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
           <button
             type="button"
-            onClick={downloadAll}
-            aria-label="Download all attachments"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
+            onClick={() => setExpanded(false)}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
           >
-            <FolderDown size={12} /> Download all
+            <ChevronUp size={12} /> Show less
           </button>
-        </Tooltip>
-      )}
+          {downloadAllButton}
+        </div>
+      </div>
+    );
+  }
+
+  // 3 or fewer: simple inline row, unchanged.
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {attachments.map(renderChip)}
+      {downloadAllButton}
     </div>
   );
 }

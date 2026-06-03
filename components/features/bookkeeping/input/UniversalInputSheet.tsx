@@ -49,6 +49,9 @@ interface Props {
   type: TransactionType;
   onTypeChange: (t: TransactionType) => void;
   onPosted?: (txn: Transaction) => void;
+  /** ISO date new rows should default to — the end of the currently-selected
+   *  accounting period. Falls back to today when not provided (no year set). */
+  defaultDateIso?: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,10 +99,10 @@ interface Row {
   includeInNextReturn: boolean;
 }
 
-function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Partial<Row> = {}): Row {
+function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Partial<Row> = {}, defaultDateUk?: string): Row {
   return {
     id: Math.random().toString(36).slice(2),
-    date: seed.date ?? formatDateUk(todayIso()),
+    date: seed.date ?? defaultDateUk ?? formatDateUk(todayIso()),
     primary: seed.primary ?? null,
     details: '',
     totalText: '',
@@ -144,13 +147,16 @@ function familyOf(t: TransactionType): keyof typeof FAMILY_PILL_CLASSES {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function UniversalInputSheet({
-  bookId, vatRegistered, vatLockDate, type, onTypeChange, onPosted,
+  bookId, vatRegistered, vatLockDate, type, onTypeChange, onPosted, defaultDateIso,
 }: Props) {
   const config = getTypeConfig(type) ?? TRANSACTION_TYPE_CONFIG.PAY;
+  // New rows default their date to the end of the currently-selected accounting
+  // period (passed from BookView); today only when no year is set up.
+  const defaultDateUk = defaultDateIso ? formatDateUk(defaultDateIso) : formatDateUk(todayIso());
   const showVatColumn = vatRegistered && config.hasVat;
 
   const [rows, setRows] = useState<Row[]>(() => [
-    makeBlankRow(vatRegistered, config.analysisLedger ?? ''),
+    makeBlankRow(vatRegistered, config.analysisLedger ?? '', {}, defaultDateUk),
   ]);
   const [postingProgress, setPostingProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState('');
@@ -189,7 +195,7 @@ export default function UniversalInputSheet({
 
   // ── Reset rows when type or VAT-status changes ────────────────────────────
   useEffect(() => {
-    setRows([makeBlankRow(vatRegistered, config.analysisLedger ?? '')]);
+    setRows([makeBlankRow(vatRegistered, config.analysisLedger ?? '', {}, defaultDateUk)]);
     setError('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, vatRegistered, config.hasVat, config.analysisLedger]);
@@ -236,7 +242,7 @@ export default function UniversalInputSheet({
       vatTreatment: last.vatTreatment,
       analysisLedger: last.analysisLedger || config.analysisLedger || '',
     } : {};
-    return makeBlankRow(vatRegistered, config.analysisLedger ?? '', seed);
+    return makeBlankRow(vatRegistered, config.analysisLedger ?? '', seed, defaultDateUk);
   }
   function appendRow() {
     setRows(prev => [...prev, makeBlankRow(vatRegistered, config.analysisLedger ?? '', (() => {
@@ -247,13 +253,13 @@ export default function UniversalInputSheet({
         vatTreatment: last.vatTreatment,
         analysisLedger: last.analysisLedger || config.analysisLedger || '',
       } : {};
-    })())]);
+    })(), defaultDateUk)]);
   }
   function removeRow(id: string) {
     setRows(prev => prev.length <= 1 ? prev : prev.filter(r => r.id !== id));
   }
   function resetToBlanks() {
-    setRows([makeBlankRow(vatRegistered, config.analysisLedger ?? '')]);
+    setRows([makeBlankRow(vatRegistered, config.analysisLedger ?? '', {}, defaultDateUk)]);
   }
 
   // ── Per-row VAT calc ─────────────────────────────────────────────────────
@@ -467,7 +473,7 @@ export default function UniversalInputSheet({
     setRows(prev => {
       const lastRow = prev[prev.length - 1];
       const isEmptyTail = lastRow && !lastRow.primary && !lastRow.analysis && !lastRow.totalText && !lastRow.details;
-      if (isEmptyTail) return [...prev.slice(0, -1), cloned, makeBlankRow(vatRegistered, config.analysisLedger ?? '', { date: cloned.date })];
+      if (isEmptyTail) return [...prev.slice(0, -1), cloned, makeBlankRow(vatRegistered, config.analysisLedger ?? '', { date: cloned.date }, defaultDateUk)];
       return [...prev, cloned];
     });
 

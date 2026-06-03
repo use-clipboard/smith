@@ -36,14 +36,16 @@ import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
 import YearEndsDialog from './book/YearEndsDialog';
 import BookSideRail from './book/BookSideRail';
-import UniversalInputSheet from './input/UniversalInputSheet';
-import JournalInputSheet from './input/JournalInputSheet';
+import MultiTypeInputSheet from './input/MultiTypeInputSheet';
+import EntryToastHost, { type EntryToast } from './input/EntryToastHost';
+import { isInputSheetType } from '@/lib/bookkeeping/transactionTypeConfig';
 import TrialBalanceTab from './reports/TrialBalanceTab';
 import ProfitLossTab from './reports/ProfitLossTab';
 import BalanceSheetTab from './reports/BalanceSheetTab';
 import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
+import AgedReportTab from './reports/AgedReportTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
 import FixedAssetsTab from './book/FixedAssetsTab';
 import TransactionTypeListView from './transactions/TransactionTypeListView';
@@ -70,7 +72,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -262,11 +264,39 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
     bumpRefresh();
   }, [bookId, bumpRefresh]);
 
-  // ── Action toolbar — switch to Input sheet and set the type ──────────────
+  // ── Quick-entry toasts ───────────────────────────────────────────────────
+  // Picking a type from the side-rail "+" menu opens a floating entry panel
+  // (bottom-right, minimisable, stackable) hosting the same input grid — rather
+  // than navigating to the full Input tab. The user keeps their current ledger
+  // / report in view while entering. Other entry points (Home tab, "Add
+  // Transaction") still use the Input tab via setInputType/setTab directly.
+  const [entryToasts, setEntryToasts] = useState<EntryToast[]>([]);
+
   function handleAction(type: TransactionType) {
-    setInputType(type);
-    setTab('input');
+    setEntryToasts(prev => [
+      ...prev,
+      { id: Math.random().toString(36).slice(2), type, minimised: false },
+    ]);
   }
+
+  const setEntryToastType = useCallback((id: string, type: TransactionType) => {
+    setEntryToasts(prev => prev.map(t => (t.id === id ? { ...t, type } : t)));
+  }, []);
+  const setEntryToastMinimised = useCallback((id: string, minimised: boolean) => {
+    setEntryToasts(prev => prev.map(t => (t.id === id ? { ...t, minimised } : t)));
+  }, []);
+  const closeEntryToast = useCallback((id: string) => {
+    setEntryToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+  // Bring a panel to the front by moving it to the end of the array (it renders
+  // last → highest z-index in EntryToastHost).
+  const focusEntryToast = useCallback((id: string) => {
+    setEntryToasts(prev => {
+      const found = prev.find(t => t.id === id);
+      if (!found || prev[prev.length - 1]?.id === id) return prev;
+      return [...prev.filter(t => t.id !== id), found];
+    });
+  }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -434,24 +464,17 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           />
         </div>
         <div hidden={tab !== 'input'}>
-          {(inputType === 'JRN' || inputType === 'RJN' || inputType === 'YET' || inputType === 'DVT') ? (
-            <JournalInputSheet
-              bookId={bookId}
-              vatRegistered={book.vat_registered}
-              type={inputType}
-              onTypeChange={setInputType}
-              onPosted={bumpRefresh}
-            />
-          ) : (
-            <UniversalInputSheet
-              bookId={bookId}
-              vatRegistered={book.vat_registered}
-              vatLockDate={book.vat_lock_date}
-              type={inputType}
-              onTypeChange={setInputType}
-              onPosted={bumpRefresh}
-            />
-          )}
+          {/* The Input tab is the VT-style universal sheet: many transactions of
+              different types & dates in one grid. Journals (JRN/RJN/YET/DVT) are
+              entered via the quick-entry toast instead. */}
+          <MultiTypeInputSheet
+            bookId={bookId}
+            vatRegistered={book.vat_registered}
+            vatLockDate={book.vat_lock_date}
+            defaultDateIso={activePeriod.toIso}
+            initialType={isInputSheetType(inputType) ? inputType : 'PAY'}
+            onPosted={bumpRefresh}
+          />
         </div>
         <div hidden={tab !== 'tb'}>
           <TrialBalanceTab bookId={bookId} onOpenAccount={openLedgerTab} />
@@ -467,6 +490,12 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         </div>
         <div hidden={tab !== 'vat'}>
           <VatReturnTab bookId={bookId} isAdmin={isAdmin} />
+        </div>
+        <div hidden={tab !== 'aged-debtors'}>
+          <AgedReportTab bookId={bookId} ledger="Customers" defaultAsAtIso={activePeriod.toIso} />
+        </div>
+        <div hidden={tab !== 'aged-creditors'}>
+          <AgedReportTab bookId={bookId} ledger="Suppliers" defaultAsAtIso={activePeriod.toIso} />
         </div>
         <div hidden={tab !== 'bank'}>
           <AccountsLedgerView bookId={bookId} ledger="Bank" isAdmin={isAdmin} />
@@ -516,7 +545,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
                   bookId={bookId}
                   type={dt.txnType}
                   initialTxnId={dt.initialTxnId}
-                  onNewTransaction={() => { setInputType(dt.txnType); setTab('input'); }}
+                  onNewTransaction={() => handleAction(dt.txnType)}
                 />
               </div>
             );
@@ -576,6 +605,20 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           onClose={() => setSearchOpen(false)}
         />
       )}
+
+      {/* ── Quick-entry toasts (side-rail "+" menu) ─────────────────────────── */}
+      <EntryToastHost
+        toasts={entryToasts}
+        bookId={bookId}
+        vatRegistered={book.vat_registered}
+        vatLockDate={book.vat_lock_date}
+        defaultDateIso={activePeriod.toIso}
+        onTypeChange={setEntryToastType}
+        onMinimise={setEntryToastMinimised}
+        onClose={closeEntryToast}
+        onFocus={focusEntryToast}
+        onPosted={bumpRefresh}
+      />
     </div>
     </BookNavigationProvider>
   );
