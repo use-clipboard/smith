@@ -58,7 +58,11 @@ export async function GET(
 
   const { data: outputs } = await serviceDb
     .from('outputs').select('id, feature, target_software, created_at, user_id')
-    .eq('client_id', params.id).order('created_at', { ascending: false }).limit(50);
+    .eq('client_id', params.id)
+    // timeline_summary rows are an internal cache for the Timeline tab's AI
+    // summary, not user-facing job outputs — keep them out of the Outputs list.
+    .neq('feature', 'timeline_summary')
+    .order('created_at', { ascending: false }).limit(50);
 
   const { data: documents } = await serviceDb
     .from('documents').select('id, file_name, document_type, created_at, drive_file_id')

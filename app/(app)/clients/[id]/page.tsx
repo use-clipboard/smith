@@ -9,6 +9,7 @@ import {
   Archive, CalendarDays, MicVocal, Network, Sparkles, Info, CalendarCheck,
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
+import TimelineSummaryCard from '@/components/features/clients/TimelineSummaryCard';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import Tooltip from '@/components/ui/Tooltip';
 import ScheduleMeetingModal from '@/components/features/calendar/ScheduleMeetingModal';
@@ -1659,6 +1660,9 @@ export default function ClientDetailPage() {
             </div>
           ) : (
             <div className="space-y-6">
+              {/* AI state-of-play summary of the whole timeline */}
+              <TimelineSummaryCard clientId={clientId} noteCount={notes.length} />
+
               {/* Controls */}
               <div className="space-y-3">
                 {/* Top row: Add Note + Vault toggle + count */}
