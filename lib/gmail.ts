@@ -131,27 +131,67 @@ function getHeader(headers: { name: string; value: string }[], name: string): st
   return headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? '';
 }
 
+/** Escape HTML-special chars so plain-text content can't be parsed as markup. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Turn a decoded text/plain body into safe display HTML: escape any angle
+ * brackets / ampersands (so `<hassan@x.com>` or a raw MIME `boundary="…"`
+ * isn't swallowed as a tag) and convert newlines to <br> so the message keeps
+ * its line breaks instead of collapsing into one run-on block when injected
+ * via dangerouslySetInnerHTML.
+ */
+function plainTextToHtml(text: string): string {
+  return escapeHtml(text).replace(/\r\n|\r|\n/g, '<br>');
+}
+
+type DecodedBody = { content: string; isHtml: boolean };
+
 function decodeBody(part: {
   mimeType?: string | null;
+  filename?: string | null;
   body?: { data?: string | null; size?: number | null } | null;
   parts?: unknown[] | null;
-}): string {
+}): DecodedBody {
   if (part.body?.data) {
-    return Buffer.from(part.body.data, 'base64').toString('utf-8');
+    const content = Buffer.from(part.body.data, 'base64').toString('utf-8');
+    return { content, isHtml: part.mimeType === 'text/html' };
   }
   if (part.parts && Array.isArray(part.parts)) {
-    // Prefer HTML part
-    const htmlPart = (part.parts as typeof part[]).find(p => p.mimeType === 'text/html');
-    if (htmlPart) return decodeBody(htmlPart);
-    const textPart = (part.parts as typeof part[]).find(p => p.mimeType === 'text/plain');
-    if (textPart) return decodeBody(textPart);
-    // Try multipart/alternative children
-    for (const child of part.parts as typeof part[]) {
+    const children = part.parts as typeof part[];
+    // Prefer HTML, then plain text — but only when the chosen part actually
+    // yields content. An empty text/plain alternative (which Gmail emits as a
+    // sibling when the real body is HTML nested inside a multipart/related
+    // part, e.g. for inline images) must NOT shadow that populated HTML. So we
+    // fall through on an empty result rather than committing to the first match.
+    const htmlPart = children.find(p => p.mimeType === 'text/html');
+    if (htmlPart) {
+      const html = decodeBody(htmlPart);
+      if (html.content) return html;
+    }
+    const textPart = children.find(p => p.mimeType === 'text/plain');
+    if (textPart) {
+      const text = decodeBody(textPart);
+      if (text.content) return text;
+    }
+    // Recurse into remaining containers (multipart/related, /alternative,
+    // /mixed, message/rfc822, …) and take the first child that yields content.
+    // Skip attachment parts — decoding an inline image / PDF's base64 here
+    // would dump binary garbage into the message body.
+    for (const child of children) {
+      if (child.filename && child.filename.trim()) continue;
       const result = decodeBody(child);
-      if (result) return result;
+      if (result.content) return result;
     }
   }
-  return '';
+  return { content: '', isHtml: false };
 }
 
 type GmailMessagePayload = {
@@ -198,7 +238,12 @@ export function parseGmailMessage(
   const references = `${getHeader(headers, 'in-reply-to')} ${getHeader(headers, 'references')}`
     .match(/<[^>]+>/g) ?? [];
 
-  const body = msg.payload ? decodeBody(msg.payload as Parameters<typeof decodeBody>[0]) : '';
+  const decoded = msg.payload
+    ? decodeBody(msg.payload as Parameters<typeof decodeBody>[0])
+    : { content: '', isHtml: false };
+  // HTML bodies are rendered as-is; plain-text bodies are escaped and have
+  // their newlines turned into <br> so they don't render as one run-on block.
+  const body = decoded.isHtml ? decoded.content : plainTextToHtml(decoded.content);
   const attachments = msg.payload ? extractAttachments(msg.payload, msg.id ?? '') : [];
   const labelIds = msg.labelIds ?? [];
   // multipart/mixed reliably indicates attachments; used as fallback when parts aren't loaded (metadata format)
