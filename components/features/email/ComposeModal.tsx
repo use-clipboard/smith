@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  ChevronDown, ChevronUp, Smile, Minus,
+  ChevronDown, ChevronUp, Smile, Minus, AlertCircle,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
@@ -97,13 +97,30 @@ const TEXT_COLOURS = [
   { label: 'Purple',  value: '#7C3AED' },
 ];
 
+/** Permissive email check — mirrors the server's zod `.email()` so the client
+ *  flags exactly the addresses the API would reject, before a send is attempted. */
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 function RecipientTag({ r, onRemove }: { r: SelectedRecipient; onRemove: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/20">
+  const invalid = !isValidEmail(r.email);
+  const tag = (
+    <span className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs border ${
+      invalid
+        ? 'bg-red-50 text-red-600 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
+        : 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/20'
+    }`}>
+      {invalid && <AlertCircle size={11} className="shrink-0" />}
       {r.name || r.email}
-      <button onClick={onRemove} className="hover:text-red-500 ml-0.5"><X size={11} /></button>
+      <button onClick={onRemove} className="hover:text-red-500 ml-0.5" aria-label="Remove recipient"><X size={11} /></button>
     </span>
   );
+  // Invalid addresses get a red pill + an explanatory tooltip on hover, so the
+  // user can see exactly which recipient is wrong without a blocking banner.
+  return invalid
+    ? <Tooltip label={`"${r.email}" is not a valid email address`}>{tag}</Tooltip>
+    : tag;
 }
 
 function RecipientInput({
@@ -720,6 +737,9 @@ export default function ComposeModal({
   if (!open) return null;
 
   const toEmails = to.map(r => r.email).filter(Boolean);
+  // Any malformed address in To/Cc/Bcc blocks the send — the offending tag is
+  // shown in red so the user knows which one to fix.
+  const hasInvalidRecipient = [...to, ...cc, ...bcc].some(r => !isValidEmail(r.email));
 
   return (
     <>
@@ -1018,6 +1038,18 @@ export default function ComposeModal({
               </div>
             )}
 
+            {/* Status row — errors and recipient warnings live on their own
+                full-width line that wraps freely, so a long message can never
+                push the Send button off the edge of the window (the old bug). */}
+            {(error || hasInvalidRecipient) && (
+              <div className="flex items-start gap-1.5 px-3 pt-2.5 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle size={13} className="shrink-0 mt-px" />
+                <span className="leading-snug">
+                  {error ?? 'One or more recipients have an invalid email address — hover the red recipient to see which.'}
+                </span>
+              </div>
+            )}
+
             {/* Action row */}
             <div className="flex items-center gap-1.5 px-3 py-2.5">
 
@@ -1087,7 +1119,6 @@ export default function ComposeModal({
               <div className="flex-1" />
 
               {/* Right: status + Save Draft icon + Send */}
-              {error && <span className="text-xs text-red-500 shrink-0 max-w-xs leading-tight">{error}</span>}
               {draftSaved && (
                 <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
                   <Check size={11} /> Saved
@@ -1102,13 +1133,16 @@ export default function ComposeModal({
                   {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
                 </button>
               </Tooltip>
-              <button
-                onClick={handleSend} disabled={sending || to.length === 0}
-                className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
-              >
-                {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                {sending ? 'Sending…' : 'Send'}
-              </button>
+              <Tooltip label={hasInvalidRecipient ? 'Fix the invalid recipient (shown in red) before sending' : 'Send'} side="top">
+                <button
+                  onClick={handleSend} disabled={sending || to.length === 0 || hasInvalidRecipient}
+                  aria-label="Send"
+                  className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                >
+                  {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </Tooltip>
             </div>
           </div>
         </div>

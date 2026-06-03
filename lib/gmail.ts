@@ -343,7 +343,7 @@ export function buildRawMessage(opts: {
 
   const raw =
     `From: ${fromLine}\r\n` +
-    `To: ${toLine}\r\n` +
+    toLine +
     ccLine +
     bccLine +
     `Subject: ${subjectEncoded}\r\n` +
