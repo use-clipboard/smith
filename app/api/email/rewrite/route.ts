@@ -9,11 +9,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Module not active' }, { status: 403 });
   }
 
-  const { subject, body, myName, mode } = await req.json() as {
+  const { subject, body, myName, mode, instruction, threadSummary } = await req.json() as {
     subject: string;
     body: string;
     myName: string;
-    mode: 'rewrite' | 'recommend';
+    mode: 'rewrite' | 'recommend' | 'instruct';
+    /** Free-text "help me write" instruction (mode === 'instruct'). */
+    instruction?: string;
+    /** Plain-text summary of the thread being replied to, for context. */
+    threadSummary?: string;
   };
 
   const anthropic = await getAnthropicForFirm(ctx.firmId);
@@ -25,7 +29,20 @@ Use British English spelling. Format output as plain HTML paragraphs (just <p> t
 
   let userPrompt = '';
 
-  if (mode === 'recommend') {
+  if (mode === 'instruct') {
+    // "Help me write" — draft an email from a free-text instruction, using the
+    // current draft and (on replies) the thread as context.
+    const plainBody = (body ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000);
+    const plainThread = (threadSummary ?? '').replace(/\s+/g, ' ').trim().slice(0, 2500);
+    userPrompt = `Write a professional email body based on this instruction.
+
+Instruction: ${instruction ?? ''}
+${subject ? `\nSubject: ${subject}` : ''}
+${plainThread ? `\nYou are replying to this email thread (most recent last):\n${plainThread}` : ''}
+${plainBody ? `\nThe user's current draft so far (build on or replace it as the instruction implies):\n${plainBody}` : ''}
+
+Write the complete email body that fulfils the instruction. Be concise and professional.${myName ? ` It is being sent by ${myName}.` : ''}`;
+  } else if (mode === 'recommend') {
     const plainBody = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000);
     userPrompt = `Draft a professional reply to the following email.
 

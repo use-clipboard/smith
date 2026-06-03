@@ -4,11 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  ChevronDown, ChevronUp, Smile, Minus, AlertCircle,
+  ChevronDown, ChevronUp, Smile, Minus, AlertCircle, PenLine,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
 import Tooltip from '@/components/ui/Tooltip';
+import { useSmartCompose, stripGhostHtml } from './useSmartCompose';
 import type { ComposeSnapshot } from './ComposeWindowProvider';
 
 interface RecipientResult {
@@ -101,6 +102,43 @@ const TEXT_COLOURS = [
  *  flags exactly the addresses the API would reject, before a send is attempted. */
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+// ── Smart Compose: greeting → recipient name ─────────────────────────────────
+/** First word of a name, capitalised (e.g. "agia marina" → "Agia"). */
+function firstNameOf(full: string): string {
+  const w = (full || '').trim().split(/\s+/)[0] ?? '';
+  return w ? w.charAt(0).toUpperCase() + w.slice(1) : '';
+}
+
+const NAME_PREFIXES = new Set(['fr', 'mr', 'mrs', 'ms', 'miss', 'dr', 'sir', 'rev', 'prof']);
+/** First real name word on a line, skipping honorific prefixes (fr/mr/dr…). */
+function firstRealName(line: string): string {
+  for (const w of line.trim().split(/\s+/)) {
+    const clean = w.replace(/[^A-Za-z'’.-]/g, '');
+    if (clean && !NAME_PREFIXES.has(clean.toLowerCase())) return clean;
+  }
+  return '';
+}
+
+/** Pull the name someone signed off with from an email body (the LAST sign-off
+ *  wins — that's the actual closing, not one quoted mid-thread). */
+function extractSignOffName(html: string): string {
+  const plain = (html || '').replace(/<[^>]+>/g, '\n').replace(/&nbsp;/g, ' ');
+  const re = /\b(?:kind regards|kindest regards|warm regards|best regards|many thanks|thank you|thanks|best wishes|regards|yours sincerely|yours faithfully|cheers)[,!.\s]*\n+\s*([^\n]+)/gi;
+  let last = '';
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain)) !== null) last = m[1];
+  return firstRealName(last);
+}
+
+/** If the text typed so far ends in a greeting with no name yet, return the
+ *  name to suggest (with a leading space if needed); otherwise ''. */
+function greetingCompletion(context: string, recipientName: string): string {
+  if (!recipientName) return '';
+  if (!/(?:^|\n|\s)(dear|hi|hello|hey|good morning|good afternoon|good evening)[ \t]*$/i.test(context)) return '';
+  const needsSpace = !/[ \t]$/.test(context);
+  return (needsSpace ? ' ' : '') + recipientName;
 }
 
 function RecipientTag({ r, onRemove }: { r: SelectedRecipient; onRemove: () => void }) {
@@ -365,6 +403,22 @@ export default function ComposeModal({
   const [error, setError] = useState<string | null>(null);
   const [suggestingReply, setSuggestingReply] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  // "Help me write" — free-text instruction → drafted email.
+  const [helpWriteOpen, setHelpWriteOpen] = useState(false);
+  const [helpWriteText, setHelpWriteText] = useState('');
+  const [helpWriting, setHelpWriting] = useState(false);
+  // Smart Compose (inline Tab-to-accept suggestions) — on by default, remembered.
+  const [smartComposeOn, setSmartComposeOn] = useState(true);
+  useEffect(() => {
+    try { const v = localStorage.getItem('smith.smartCompose'); if (v !== null) setSmartComposeOn(v === '1'); } catch { /* ignore */ }
+  }, []);
+  function toggleSmartCompose() {
+    setSmartComposeOn(v => {
+      const next = !v;
+      try { localStorage.setItem('smith.smartCompose', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   // Attachments
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -542,7 +596,7 @@ export default function ComposeModal({
 
   async function handleSend() {
     if (to.length === 0) return;
-    const htmlBody = bodyRef.current?.innerHTML ?? '';
+    const htmlBody = readBody();
     setSending(true);
     setError(null);
     try {
@@ -629,7 +683,7 @@ export default function ComposeModal({
     setSavingDraft(true);
     setError(null);
     try {
-      const htmlBody = bodyRef.current?.innerHTML ?? '';
+      const htmlBody = readBody();
       const res = await fetch('/api/email/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -669,7 +723,7 @@ export default function ComposeModal({
   }
 
   async function handleRewrite() {
-    const currentHtml = bodyRef.current?.innerHTML ?? '';
+    const currentHtml = readBody();
     setRewriting(true);
     setError(null);
     try {
@@ -696,6 +750,38 @@ export default function ComposeModal({
     }
   }
 
+  // "Help me write" — turn a free-text instruction into a drafted email body,
+  // using the current draft + (on replies) the thread as context.
+  async function handleHelpWrite() {
+    const instruction = helpWriteText.trim();
+    if (!instruction || helpWriting) return;
+    const currentHtml = readBody();
+    setHelpWriting(true);
+    setError(null);
+    try {
+      const threadSummary = replyTo ? replyTo.body.replace(/<[^>]+>/g, ' ').slice(0, 2500) : undefined;
+      const res = await fetch('/api/email/rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, body: currentHtml, myName: displayName, mode: 'instruct', instruction, threadSummary }),
+      });
+      const data = await res.json() as { result?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      if (data.result && bodyRef.current) {
+        const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
+        // Preserve any quoted reply thread that was already in the editor.
+        const quoted = currentHtml.includes('<blockquote') ? '<br/>' + currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        bodyRef.current.innerHTML = data.result + sig + quoted;
+        setHelpWriteText('');
+        setHelpWriteOpen(false);
+      }
+    } catch {
+      setError('Couldn’t draft that — please try again.');
+    } finally {
+      setHelpWriting(false);
+    }
+  }
+
   async function handleSuggestReply() {
     if (!replyTo) return;
     setSuggestingReply(true);
@@ -713,7 +799,7 @@ export default function ComposeModal({
       const data = await res.json() as { reply?: string };
       if (data.reply && bodyRef.current) {
         const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
-        const currentHtml = bodyRef.current.innerHTML;
+        const currentHtml = readBody();
         const quoted = currentHtml.includes('<blockquote') ? currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
         bodyRef.current.innerHTML = `<p>${data.reply.replace(/\n/g, '<br/>')}</p>${sig}${quoted ? '<br/>' + quoted : ''}`;
       }
@@ -733,6 +819,47 @@ export default function ComposeModal({
     }
     setAttachedFiles(prev => [...prev, ...incoming]);
   }
+
+  // Read the editor HTML with any Smart Compose ghost text stripped — never let
+  // an unaccepted suggestion leak into a sent/saved email. Strip on a clone of
+  // the DOM (robust to the ghost's nested hint chip), with a regex guard too.
+  function readBody() {
+    const el = bodyRef.current;
+    if (!el) return '';
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('[data-sc-ghost]').forEach(n => n.remove());
+    return stripGhostHtml(clone.innerHTML);
+  }
+
+  // Smart Compose prediction source — the text typed up to the caret + context.
+  async function predictSmart(context: string): Promise<string> {
+    try {
+      const threadSummary = replyTo ? replyTo.body.replace(/<[^>]+>/g, ' ').slice(0, 800) : undefined;
+      const res = await fetch('/api/email/smart-compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, subject, threadSummary }),
+      });
+      if (!res.ok) return '';
+      const data = await res.json() as { suggestion?: string };
+      return data.suggestion ?? '';
+    } catch { return ''; }
+  }
+
+  // Who to address — how they signed off the last email, else the sender's
+  // name, else the To recipient. Drives the instant greeting → name suggestion.
+  const recipientName = firstNameOf(
+    replyTo
+      ? (extractSignOffName(replyTo.body) || replyTo.from?.name || '')
+      : (to[0]?.name || ''),
+  );
+
+  useSmartCompose(bodyRef, {
+    enabled: smartComposeOn,
+    active: open,
+    predict: predictSmart,
+    localComplete: (context) => greetingCompletion(context, recipientName),
+  });
 
   if (!open) return null;
 
@@ -789,7 +916,7 @@ export default function ComposeModal({
                     onClick={() => {
                       onMinimise({
                         to, cc, bcc, showCc, showBcc, subject,
-                        bodyHtml: bodyRef.current?.innerHTML ?? '',
+                        bodyHtml: readBody(),
                         attachedFiles, selectedClients, createTaskEnabled,
                       });
                     }}
@@ -934,6 +1061,25 @@ export default function ComposeModal({
                 </div>
               )}
             </div>
+
+            {/* Smart Compose toggle — inline Tab-to-accept suggestions */}
+            <div className="ml-auto">
+              <Tooltip label={smartComposeOn ? 'Smart suggestions on — press → (right arrow) to accept (click to turn off)' : 'Smart suggestions off (click to turn on)'} side="top">
+                <button
+                  type="button"
+                  onClick={toggleSmartCompose}
+                  aria-label="Toggle smart suggestions"
+                  aria-pressed={smartComposeOn}
+                  className={`flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                    smartComposeOn
+                      ? 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)]'
+                  }`}
+                >
+                  <Sparkles size={12} /> Suggestions
+                </button>
+              </Tooltip>
+            </div>
           </div>
 
           {/* Body — the modal itself sizes to its content (capped at 85vh)
@@ -1050,8 +1196,36 @@ export default function ComposeModal({
               </div>
             )}
 
-            {/* Action row */}
-            <div className="flex items-center gap-1.5 px-3 py-2.5">
+            {/* Help me write — instruction bar */}
+            {helpWriteOpen && (
+              <div className="flex items-center gap-2 px-3 pt-2.5">
+                <PenLine size={14} className="text-purple-500 shrink-0" />
+                <input
+                  type="text"
+                  autoFocus
+                  value={helpWriteText}
+                  onChange={e => setHelpWriteText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { e.preventDefault(); void handleHelpWrite(); }
+                    if (e.key === 'Escape') setHelpWriteOpen(false);
+                  }}
+                  placeholder="Describe the email… e.g. “polite chase for the tax code, needed by Friday”"
+                  className="flex-1 text-sm bg-[var(--bg-page)] border border-[var(--border-input)] rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-purple-400 text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                />
+                <button
+                  onClick={() => void handleHelpWrite()}
+                  disabled={!helpWriteText.trim() || helpWriting}
+                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 shrink-0 font-medium"
+                >
+                  {helpWriting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {helpWriting ? 'Writing…' : 'Draft it'}
+                </button>
+              </div>
+            )}
+
+            {/* Action row — wraps to a second line on narrow widths (e.g. the
+                docked reply panel) so the buttons never overlap. */}
+            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5">
 
               {/* Group 1: Attach — icon-only */}
               <Tooltip label="Attach files">
@@ -1071,6 +1245,19 @@ export default function ComposeModal({
               <div className="w-px h-5 bg-[var(--border)] mx-0.5 shrink-0" />
 
               {/* Group 2: AI actions — purple-tinted */}
+              <Tooltip label="Help me write — describe the email and let AI draft it">
+                <button
+                  onClick={() => setHelpWriteOpen(o => !o)}
+                  aria-label="Help me write"
+                  className={`text-xs flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors font-medium shrink-0 ${
+                    helpWriteOpen
+                      ? 'border-purple-400 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+                      : 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/30'
+                  }`}
+                >
+                  <PenLine size={11} /> Help me write
+                </button>
+              </Tooltip>
               {replyTo && (
                 <button
                   onClick={handleSuggestReply} disabled={suggestingReply || rewriting}
@@ -1115,34 +1302,34 @@ export default function ComposeModal({
                 </Tooltip>
               )}
 
-              {/* Spacer */}
-              <div className="flex-1" />
-
-              {/* Right: status + Save Draft icon + Send */}
-              {draftSaved && (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
-                  <Check size={11} /> Saved
-                </span>
-              )}
-              <Tooltip label="Save draft" side="top">
-                <button
-                  onClick={handleSaveDraft} disabled={savingDraft || sending}
-                  aria-label="Save draft"
-                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
-                >
-                  {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                </button>
-              </Tooltip>
-              <Tooltip label={hasInvalidRecipient ? 'Fix the invalid recipient (shown in red) before sending' : 'Send'} side="top">
-                <button
-                  onClick={handleSend} disabled={sending || to.length === 0 || hasInvalidRecipient}
-                  aria-label="Send"
-                  className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
-                >
-                  {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                  {sending ? 'Sending…' : 'Send'}
-                </button>
-              </Tooltip>
+              {/* Right: status + Save Draft icon + Send. ml-auto pins this group
+                  to the right; on a wrapped row it sits at the right of its line. */}
+              <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                {draftSaved && (
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
+                    <Check size={11} /> Saved
+                  </span>
+                )}
+                <Tooltip label="Save draft" side="top">
+                  <button
+                    onClick={handleSaveDraft} disabled={savingDraft || sending}
+                    aria-label="Save draft"
+                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
+                  >
+                    {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label={hasInvalidRecipient ? 'Fix the invalid recipient (shown in red) before sending' : 'Send'} side="top">
+                  <button
+                    onClick={handleSend} disabled={sending || to.length === 0 || hasInvalidRecipient}
+                    aria-label="Send"
+                    className="btn-primary text-sm flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                  >
+                    {sending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    {sending ? 'Sending…' : 'Send'}
+                  </button>
+                </Tooltip>
+              </div>
             </div>
           </div>
         </div>

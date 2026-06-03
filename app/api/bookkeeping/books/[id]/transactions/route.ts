@@ -313,9 +313,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     entry_details: s.entry_details ?? null,
     notes: s.notes ?? null,
   }));
-  const { error: splitsErr } = await supabase
+  const { data: insertedSplits, error: splitsErr } = await supabase
     .from('bookkeeping_transaction_splits')
-    .insert(splitRows);
+    .insert(splitRows)
+    .select('id, line_no');
   if (splitsErr) {
     // Rollback the header — splits failed, the transaction is inconsistent.
     await supabase.from('bookkeeping_transactions').delete().eq('id', txn.id);
@@ -378,9 +379,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           entry_details: s.entry_details ?? null,
           notes: s.notes ?? null,
         }));
-        const { error: revSplitsErr } = await supabase
+        const { data: revInserted, error: revSplitsErr } = await supabase
           .from('bookkeeping_transaction_splits')
-          .insert(reversedRows);
+          .insert(reversedRows)
+          .select('id, line_no');
         if (revSplitsErr) {
           // Roll back JUST the reversal header — the original journal stays
           await supabase.from('bookkeeping_transactions').delete().eq('id', revTxn.id);
@@ -394,6 +396,44 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             action: 'create',
             diff: { type: 'RJN', ref_no: revRefNo, reverses: refNo, total: body.total },
           });
+
+          // ── Auto-match the pair ─────────────────────────────────────────
+          // Each original line and its reversal counterpart sit on the same
+          // account, equal-and-opposite, so they net to zero there. Match them
+          // per line (one match per account touched) so the ledger shows the
+          // accrual/prepayment and its reversal as cleared rather than two open
+          // items. Best-effort — a failure here never fails the post.
+          const origIdByLine = new Map<number, string>(
+            (insertedSplits ?? []).map(s => [s.line_no as number, s.id as string]),
+          );
+          for (const rev of revInserted ?? []) {
+            const origId = origIdByLine.get(rev.line_no as number);
+            if (!origId) continue;
+            const { data: matchHeader, error: matchErr } = await supabase
+              .from('bookkeeping_matches')
+              .insert({
+                book_id: params.id,
+                status: 'full',
+                notes: `Auto-matched reversing journal (${refNo} ↔ ${revRefNo})`,
+                created_by: ctx.userId,
+              })
+              .select('id')
+              .single();
+            if (matchErr || !matchHeader) {
+              console.error('[bookkeeping] RJN auto-match header failed', matchErr);
+              continue;
+            }
+            const { error: matchLinesErr } = await supabase
+              .from('bookkeeping_match_lines')
+              .insert([
+                { match_id: matchHeader.id, split_id: origId },
+                { match_id: matchHeader.id, split_id: rev.id as string },
+              ]);
+            if (matchLinesErr) {
+              console.error('[bookkeeping] RJN auto-match lines failed', matchLinesErr);
+              await supabase.from('bookkeeping_matches').delete().eq('id', matchHeader.id);
+            }
+          }
         }
       }
     }

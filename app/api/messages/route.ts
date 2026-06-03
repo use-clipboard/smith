@@ -60,7 +60,39 @@ export async function GET() {
     })
   );
 
-  return NextResponse.json({ conversations: results.filter(Boolean) });
+  // Collapse duplicate direct conversations with the same person into one entry
+  // so the panel shows a single window per colleague. We keep the conversation
+  // with the most recent message (the canonical one the POST handler also
+  // resolves to) and sum the unread counts across the duplicates.
+  type ConvResult = {
+    id: string; type?: string;
+    otherMember: { id: string } | null;
+    lastMessage: { created_at: string } | null;
+    unreadCount: number;
+  };
+  const filtered = results.filter(Boolean) as ConvResult[];
+  const byOther = new Map<string, ConvResult>();
+  const deduped: ConvResult[] = [];
+  for (const c of filtered) {
+    if (c.type === 'direct' && c.otherMember?.id) {
+      const existing = byOther.get(c.otherMember.id);
+      if (!existing) {
+        byOther.set(c.otherMember.id, c);
+        deduped.push(c);
+        continue;
+      }
+      existing.unreadCount += c.unreadCount;
+      // Adopt the more recent conversation's id + last message as canonical.
+      if ((c.lastMessage?.created_at ?? '') > (existing.lastMessage?.created_at ?? '')) {
+        existing.id = c.id;
+        existing.lastMessage = c.lastMessage;
+      }
+    } else {
+      deduped.push(c);
+    }
+  }
+
+  return NextResponse.json({ conversations: deduped });
 }
 
 // POST /api/messages — find or create a direct conversation
@@ -83,30 +115,53 @@ export async function POST(request: Request) {
     .from('users').select('firm_id').eq('id', user.id).single();
   if (!profile?.firm_id) return NextResponse.json({ error: 'No firm' }, { status: 400 });
 
-  // Look for existing DM between these two users
-  const { data: myMemberships } = await service
+  // Look for an existing DM between these two users. We fetch ALL shared direct
+  // conversations (historically, races / a fragile lookup let duplicates get
+  // created) and deterministically pick the canonical one: the conversation
+  // that holds the most recent message, falling back to the oldest. This means
+  // "open chat with X" always reuses the conversation that actually has the
+  // history, instead of landing on an empty duplicate.
+  const { data: myMems } = await service
     .from('conversation_members')
-    .select('conversation_id, conversations!inner(type)')
-    .eq('user_id', user.id)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter('conversations.type', 'eq', 'direct') as any;
+    .select('conversation_id')
+    .eq('user_id', user.id);
+  const myIds: string[] = (myMems ?? []).map((m: { conversation_id: string }) => m.conversation_id);
 
-  if (myMemberships?.length) {
-    const myIds: string[] = myMemberships.map((m: { conversation_id: string }) => m.conversation_id);
-    const { data: existing } = await service
+  if (myIds.length) {
+    const { data: shared } = await service
       .from('conversation_members')
       .select('conversation_id')
       .eq('user_id', other_user_id)
-      .in('conversation_id', myIds)
-      .limit(1);
+      .in('conversation_id', myIds);
+    const sharedIds = [...new Set((shared ?? []).map((s: { conversation_id: string }) => s.conversation_id))];
 
-    if (existing?.length) {
-      const cid = existing[0].conversation_id;
-      const [convRes, otherRes] = await Promise.all([
-        service.from('conversations').select('*').eq('id', cid).single(),
-        service.from('users').select('id, full_name, email, role').eq('id', other_user_id).single(),
-      ]);
-      return NextResponse.json({ conversation: { ...convRes.data, otherMember: otherRes.data } });
+    if (sharedIds.length) {
+      const { data: convs } = await service
+        .from('conversations')
+        .select('id, created_at, type')
+        .in('id', sharedIds);
+      const directConvs = ((convs ?? []) as { id: string; created_at: string; type: string }[])
+        .filter(c => c.type === 'direct')
+        .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '')); // oldest first
+
+      if (directConvs.length) {
+        const directIds = directConvs.map(c => c.id);
+        let cid = directConvs[0].id; // default: oldest
+        // Prefer whichever conversation has the most recent message.
+        const { data: lastMsg } = await service
+          .from('instant_messages')
+          .select('conversation_id, created_at')
+          .in('conversation_id', directIds)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (lastMsg?.length) cid = lastMsg[0].conversation_id;
+
+        const [convRes, otherRes] = await Promise.all([
+          service.from('conversations').select('*').eq('id', cid).single(),
+          service.from('users').select('id, full_name, email, role').eq('id', other_user_id).single(),
+        ]);
+        return NextResponse.json({ conversation: { ...convRes.data, otherMember: otherRes.data } });
+      }
     }
   }
 

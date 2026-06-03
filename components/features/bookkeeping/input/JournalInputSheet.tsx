@@ -107,18 +107,110 @@ function parseAmount(s: string): number {
   return parseFloat(s.replace(/[,£\s]/g, '')) || 0;
 }
 
+const round2 = (n: number) => +n.toFixed(2);
+/** ISO date + N days → ISO date (UTC-safe). */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+/** Inclusive day count between two ISO dates (a..b). */
+function daysInclusive(aIso: string, bIso: string): number {
+  const [ay, am, ad] = aIso.split('-').map(Number);
+  const [by, bm, bd] = bIso.split('-').map(Number);
+  return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000) + 1;
+}
+
+/** Minimal account shape from the accounts endpoint — used to auto-locate the
+ *  Accruals / Prepayments control accounts for the accrual/prepayment aid. */
+interface AccountLite { id: string; name: string; ledger: string | null; account_type: BookAccountRef['account_type'] }
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeChange, onPosted, defaultDateIso }: Props) {
   // New entries default to the end of the selected accounting period; today only
   // when no year is set up.
   const defaultDateUk = defaultDateIso ? formatDateUk(defaultDateIso) : formatDateUk(todayIso());
+  // Reversals default to the first day AFTER the selected period (period end +
+  // 1 day = start of the next year/period) — the standard reversal date for a
+  // period-end accrual/prepayment.
+  const defaultReverseUk = formatDateUk(addDaysIso(defaultDateIso ?? todayIso(), 1));
   const [date, setDate] = useState(defaultDateUk);
   const [headerDetails, setHeaderDetails] = useState('');
-  const [reversesOn, setReversesOn] = useState(''); // user-typed; only used when type === 'RJN'
+  const [reversesOn, setReversesOn] = useState(defaultReverseUk);
   const [lines, setLines] = useState<Line[]>(() => [makeBlankLine(), makeBlankLine()]);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState('');
+
+  // ── Accrual / Prepayment aid (RJN only) ────────────────────────────────────
+  const [aidKind, setAidKind] = useState<'accrual' | 'prepayment'>('accrual');
+  const [aidTotal, setAidTotal] = useState('');
+  const [aidFrom, setAidFrom] = useState('');
+  const [aidTo, setAidTo] = useState('');
+  const [aidExpense, setAidExpense] = useState<BookAccountRef | null>(null);
+  const [accounts, setAccounts] = useState<AccountLite[]>([]);
+
+  // Pull the COA so we can auto-locate the Accruals / Prepayments accounts.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/accounts?pickable_only=true`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d) setAccounts((d.accounts ?? []) as AccountLite[]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
+
+  function findControlAccount(name: string, ledger: string): AccountLite | null {
+    const n = name.toLowerCase();
+    return accounts.find(a => a.ledger === ledger && a.name.toLowerCase() === n)
+      ?? accounts.find(a => a.ledger === ledger && a.name.toLowerCase().includes(n))
+      ?? null;
+  }
+
+  // Apportion the total by days into the current period (up to & including the
+  // journal date) vs the next period (after it).
+  const aidCalc = useMemo(() => {
+    const total = parseAmount(aidTotal);
+    const fromIso = parseUkDateStrict(aidFrom);
+    const toIso = parseUkDateStrict(aidTo);
+    const boundaryIso = parseUkDateStrict(date) || defaultDateIso || todayIso();
+    if (!total || total <= 0 || !fromIso || !toIso || toIso < fromIso) return null;
+    const totalDays = daysInclusive(fromIso, toIso);
+    let currentDays: number;
+    if (toIso <= boundaryIso) currentDays = totalDays;
+    else if (fromIso > boundaryIso) currentDays = 0;
+    else currentDays = daysInclusive(fromIso, boundaryIso);
+    const currentAmount = round2((total * currentDays) / totalDays);
+    const nextAmount = round2(total - currentAmount);
+    return { total, totalDays, currentDays, nextDays: totalDays - currentDays, currentAmount, nextAmount };
+  }, [aidTotal, aidFrom, aidTo, date, defaultDateIso]);
+
+  const aidControl = findControlAccount(
+    aidKind === 'prepayment' ? 'Prepayments' : 'Accruals',
+    aidKind === 'prepayment' ? 'Debtors' : 'Creditors',
+  );
+
+  // Build the two balanced journal lines from the aid and drop them into the grid.
+  function applyAid() {
+    if (!aidCalc || !aidExpense) return;
+    // Prepayment moves the NEXT-period portion out of this year (deferred);
+    // an accrual brings the CURRENT-period portion into this year.
+    const amount = aidKind === 'prepayment' ? aidCalc.nextAmount : aidCalc.currentAmount;
+    const amtStr = amount.toFixed(2);
+    const desc = headerDetails.trim() || (aidKind === 'prepayment' ? 'Prepayment' : 'Accrual');
+    const controlRef: BookAccountRef | null = aidControl
+      ? { id: aidControl.id, name: aidControl.name, ledger: aidControl.ledger, account_type: aidControl.account_type }
+      : null;
+    const expLine = { ...makeBlankLine(), account: aidExpense, ledger: aidExpense.ledger ?? '', description: desc };
+    const ctlLine = { ...makeBlankLine(), account: controlRef, ledger: controlRef?.ledger ?? (aidKind === 'prepayment' ? 'Debtors' : 'Creditors'), description: desc };
+    if (aidKind === 'prepayment') {
+      // DR Prepayments, CR Expense
+      setLines([{ ...ctlLine, debitText: amtStr }, { ...expLine, creditText: amtStr }]);
+    } else {
+      // DR Expense, CR Accruals
+      setLines([{ ...expLine, debitText: amtStr }, { ...ctlLine, creditText: amtStr }]);
+    }
+    if (!headerDetails.trim()) setHeaderDetails(desc);
+  }
   /** Rec-lock warning state. When set, handlePost is paused on the modal
    *  and doPost runs on confirm. */
   const [recLockHits, setRecLockHits] = useState<RecLockHit[]>([]);
@@ -188,9 +280,10 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
   function reset() {
     setDate(defaultDateUk);
     setHeaderDetails('');
-    setReversesOn('');
+    setReversesOn(defaultReverseUk);
     setLines([makeBlankLine(), makeBlankLine()]);
     setError('');
+    setAidTotal(''); setAidFrom(''); setAidTo(''); setAidExpense(null);
   }
 
   // ── Post ─────────────────────────────────────────────────────────────────
@@ -390,6 +483,79 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
           />
         </div>
       </div>
+
+      {/* Accrual / Prepayment aid — apportions a cost across periods and fills
+          the journal. Only shown for reversing journals. */}
+      {type === 'RJN' && (
+        <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 space-y-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 mr-1">Accrual / Prepayment aid</span>
+            <div className="inline-flex rounded-lg border border-amber-300 overflow-hidden text-xs font-semibold">
+              <button type="button" onClick={() => setAidKind('accrual')}
+                className={`px-3 py-1.5 transition-colors ${aidKind === 'accrual' ? 'bg-amber-600 text-white' : 'text-amber-700 hover:bg-amber-100'}`}>
+                Accrual
+              </button>
+              <button type="button" onClick={() => setAidKind('prepayment')}
+                className={`px-3 py-1.5 transition-colors ${aidKind === 'prepayment' ? 'bg-amber-600 text-white' : 'text-amber-700 hover:bg-amber-100'}`}>
+                Prepayment
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[8rem_9rem_9rem_1fr] gap-2">
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Total £</label>
+              <input type="text" inputMode="decimal" value={aidTotal} onChange={e => setAidTotal(e.target.value)} placeholder="0.00"
+                className="w-full text-sm px-2 py-1 border border-gray-200 rounded text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Cost relates from</label>
+              <DateInput value={aidFrom} onChange={setAidFrom} className="px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">to</label>
+              <DateInput value={aidTo} onChange={setAidTo} className="px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-amber-500" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Expense account</label>
+              <AccountPicker
+                bookId={bookId}
+                value={aidExpense?.id ?? null}
+                valueDisplay={aidExpense?.name}
+                onChange={setAidExpense}
+                placeholder="Pick expense account…"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            {aidCalc ? (
+              <span className="text-slate-700">
+                Current period: <strong className="tabular-nums">£{aidCalc.currentAmount.toFixed(2)}</strong>
+                {' · '}Next period: <strong className="tabular-nums">£{aidCalc.nextAmount.toFixed(2)}</strong>
+                {' '}
+                <span className="text-amber-700">
+                  ({aidKind === 'prepayment'
+                    ? `£${aidCalc.nextAmount.toFixed(2)} prepaid into next period`
+                    : `£${aidCalc.currentAmount.toFixed(2)} accrued into this period`})
+                </span>
+              </span>
+            ) : (
+              <span className="text-slate-500">Enter a total and the date range the cost covers — the split across periods is worked out for you.</span>
+            )}
+            <div className="flex-1" />
+            {aidCalc && aidExpense && !aidControl && (
+              <span className="text-rose-600">
+                No &ldquo;{aidKind === 'prepayment' ? 'Debtors: Prepayments' : 'Creditors: Accruals'}&rdquo; account found — that line will be left blank to pick.
+              </span>
+            )}
+            <button type="button" onClick={applyAid} disabled={!aidCalc || !aidExpense}
+              className="btn-primary text-xs disabled:opacity-50">
+              Fill journal
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Entries header + inline actions (Excel-style toolbar above the grid) */}
       <div className="flex items-center gap-3 flex-wrap text-xs">

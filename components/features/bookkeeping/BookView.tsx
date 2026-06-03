@@ -46,6 +46,7 @@ import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
 import AgedReportTab from './reports/AgedReportTab';
+import BookReviewTab from './reports/BookReviewTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
 import FixedAssetsTab from './book/FixedAssetsTab';
 import TransactionTypeListView from './transactions/TransactionTypeListView';
@@ -72,7 +73,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -496,6 +497,9 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         </div>
         <div hidden={tab !== 'aged-creditors'}>
           <AgedReportTab bookId={bookId} ledger="Suppliers" defaultAsAtIso={activePeriod.toIso} />
+        </div>
+        <div hidden={tab !== 'ai-review'}>
+          <BookReviewTab bookId={bookId} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
         </div>
         <div hidden={tab !== 'bank'}>
           <AccountsLedgerView bookId={bookId} ledger="Bank" isAdmin={isAdmin} />

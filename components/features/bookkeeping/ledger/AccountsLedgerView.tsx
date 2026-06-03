@@ -1475,6 +1475,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       {/* Un-match modal */}
       {unmatchModalMatchId && (
         <UnmatchModal
+          bookId={bookId}
           matchId={unmatchModalMatchId}
           entries={entries.filter(e => e.match_id === unmatchModalMatchId)}
           onClose={() => setUnmatchModalMatchId(null)}
@@ -1521,9 +1522,22 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
 
 // ── Un-match modal ────────────────────────────────────────────────────────────
 
+/** The fields the allocation modal renders. Entry satisfies this, as does the
+ *  /matches/[matchId] GET payload (which spans all periods). */
+type AllocationLine = {
+  split_id: string;
+  ref_no: string;
+  date: string;
+  details: string | null;
+  entry_details: string | null;
+  debit: number;
+  credit: number;
+};
+
 function UnmatchModal({
-  matchId, entries, onClose, onUnmatchAll, onUnmatchSelected,
+  bookId, matchId, entries, onClose, onUnmatchAll, onUnmatchSelected,
 }: {
+  bookId: string;
   matchId: string;
   entries: Entry[];
   onClose: () => void;
@@ -1532,6 +1546,20 @@ function UnmatchModal({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // The ledger only holds the currently-selected period's splits in memory, so
+  // an allocation that straddles periods (a reversing journal + its reversal in
+  // the next year) would show only one leg. Fetch the FULL match — every leg,
+  // any period — and render that. Seed with the in-memory entries so there's no
+  // empty flash while the fetch lands.
+  const [rows, setRows] = useState<AllocationLine[]>(entries);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/matches/${matchId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && Array.isArray(d?.lines) && d.lines.length) setRows(d.lines as AllocationLine[]); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId, matchId]);
 
   function toggle(id: string) {
     setSelected(prev => {
@@ -1541,15 +1569,15 @@ function UnmatchModal({
     });
   }
   function toggleAll() {
-    setSelected(prev => prev.size === entries.length ? new Set() : new Set(entries.map(e => e.split_id)));
+    setSelected(prev => prev.size === rows.length ? new Set() : new Set(rows.map(e => e.split_id)));
   }
 
-  const allSelected = selected.size === entries.length && entries.length > 0;
+  const allSelected = selected.size === rows.length && rows.length > 0;
   const someSelected = selected.size > 0;
 
   // If the user picks every entry, "remove selected" would leave 0 lines and
   // delete the match anyway — show that explicitly via a single button.
-  const willDeleteMatch = allSelected || entries.length - selected.size < 2;
+  const willDeleteMatch = allSelected || rows.length - selected.size < 2;
 
   return (
     <div
@@ -1571,7 +1599,7 @@ function UnmatchModal({
             </div>
             <div>
               <h2 id={`unmatch-${matchId}-title`} className="text-sm font-semibold text-slate-900">Allocation</h2>
-              <p className="text-[11px] text-slate-500">{entries.length} entries matched together · tick the ones you want to release.</p>
+              <p className="text-[11px] text-slate-500">{rows.length} entries matched together · tick the ones you want to release.</p>
             </div>
           </div>
           <button
@@ -1603,7 +1631,7 @@ function UnmatchModal({
             {allSelected ? 'Deselect all' : 'Select all'}
           </button>
           <ul className="space-y-0.5 mt-1">
-            {entries.map(e => {
+            {rows.map(e => {
               const isChecked = selected.has(e.split_id);
               return (
                 <li key={e.split_id}>

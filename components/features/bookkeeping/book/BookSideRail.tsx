@@ -24,7 +24,7 @@ import {
   Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
-  Upload, Boxes, BarChart3, Clock,
+  Upload, Boxes, BarChart3, Clock, Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -92,6 +92,7 @@ const REPORTS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'cf',             label: 'Cash Flow',                 icon: BadgePoundSterling },
   { id: 'aged-debtors',   label: 'Aged Debtors (Customers)',  icon: Clock },
   { id: 'aged-creditors', label: 'Aged Creditors (Suppliers)', icon: Clock },
+  { id: 'ai-review',      label: 'AI Book Review',            icon: Sparkles },
 ];
 const REPORT_IDS = new Set(REPORTS.map(r => r.id));
 
