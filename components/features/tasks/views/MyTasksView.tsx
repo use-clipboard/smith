@@ -9,7 +9,7 @@ import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
 import { type SortDir } from '../SortHeader';
 import TaskTable, { type TaskColumn } from '../TaskTable';
-import { useIncrementalList } from '../useIncrementalList';
+import { useIncrementalList } from '@/hooks/useIncrementalList';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 

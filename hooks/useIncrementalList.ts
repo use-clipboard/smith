@@ -10,12 +10,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * each time a sentinel near the end of the list scrolls into view. The DOM
  * grows as the user scrolls rather than all at once.
  *
- * Works inside a bounded scroll container (like TaskTable's): the sentinel
- * auto-detects its nearest scrollable ancestor and uses it as the observer
- * root, so it fires correctly even though the page itself doesn't scroll.
+ * Works for BOTH page-scrolled lists and bounded scroll containers: the
+ * sentinel auto-detects its nearest *actually scrollable* ancestor and uses it
+ * as the observer root (falling back to the viewport). IntersectionObserver
+ * clips the target by intermediate scroll containers, so a viewport-rooted
+ * observer still fires correctly inside a bounded container too.
  *
  * Usage:
- *   const { visible, sentinelRef, hasMore } = useIncrementalList(sortedTasks);
+ *   const { visible, sentinelRef, hasMore } = useIncrementalList(sortedRows);
  *   ...visible.map(renderRow)
  *   {hasMore && <tr ref={sentinelRef}><td/></tr>}
  *
@@ -39,13 +41,16 @@ export function useIncrementalList<T>(
 
   const observerRef = useRef<IntersectionObserver | null>(null);
 
-  // Find the nearest scrollable ancestor so the observer root matches the
-  // element that actually scrolls (the bounded table container), not the page.
+  // Only treat an ancestor as the scroll root if it is BOTH styled scrollable
+  // AND actually taller than its viewport. This avoids false positives like an
+  // `overflow-x-auto` wrapper (whose computed overflow-y resolves to `auto` but
+  // which never scrolls vertically) — in that case we fall through to `null`
+  // (the page viewport), which is correct for page-scrolled tables.
   function findScrollParent(el: HTMLElement | null): HTMLElement | null {
     let node = el?.parentElement ?? null;
     while (node) {
       const oy = getComputedStyle(node).overflowY;
-      if (oy === 'auto' || oy === 'scroll') return node;
+      if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) return node;
       node = node.parentElement;
     }
     return null;

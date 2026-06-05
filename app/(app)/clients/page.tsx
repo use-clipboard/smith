@@ -6,6 +6,7 @@ import ClientImportModal from '@/components/ui/ClientImportModal';
 import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { Users } from 'lucide-react';
+import { useIncrementalList } from '@/hooks/useIncrementalList';
 
 // Business-type metadata for the inline expandable filter pill.
 // Keeping label + icon together makes adding new types a one-line edit.
@@ -303,6 +304,10 @@ export default function ClientsPage() {
   }, [showColPicker]);
 
   const sortedClients = sortClients(clients, sort);
+  // Render rows in incremental batches so a large client book paints fast and
+  // only grows the DOM as the user scrolls. Full list still drives counts /
+  // select-all below.
+  const { visible: visibleClients, sentinelRef: rowSentinelRef, hasMore: hasMoreRows } = useIncrementalList(sortedClients);
   const allSelected = sortedClients.length > 0 && sortedClients.every(c => selectedIds.has(c.id));
   const someSelected = sortedClients.some(c => selectedIds.has(c.id));
 
@@ -644,7 +649,7 @@ export default function ClientsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
-                  {sortedClients.map(c => {
+                  {visibleClients.map(c => {
                     const checked = selectedIds.has(c.id);
                     return (
                       <tr
@@ -672,6 +677,13 @@ export default function ClientsPage() {
                       </tr>
                     );
                   })}
+                  {hasMoreRows && (
+                    <tr ref={rowSentinelRef} aria-hidden>
+                      <td colSpan={(isAdmin ? 1 : 0) + visibleColumns.length + 1} className="px-4 py-3 text-center text-xs text-[var(--text-muted)]">
+                        Loading more…
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
