@@ -9,6 +9,7 @@ import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
 import { type SortDir } from '../SortHeader';
 import TaskTable, { type TaskColumn } from '../TaskTable';
+import { useIncrementalList } from '../useIncrementalList';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
@@ -97,6 +98,10 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
     setSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
   }
 
+  // List view renders in incremental batches so a few-hundred-row list paints
+  // fast and only grows the DOM as the user scrolls toward the end.
+  const { visible: visibleRows, sentinelRef, hasMore } = useIncrementalList(sortedTasks);
+
   // Grid view still groups by status, with active sort applied within each group
   const grouped = useMemo(() => {
     const map = new Map<TaskStatus, Task[]>();
@@ -138,9 +143,16 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
           onToggleSort={toggleSort}
         >
           <tbody>
-            {sortedTasks.map(t => (
+            {visibleRows.map(t => (
               <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
             ))}
+            {hasMore && (
+              <tr ref={sentinelRef} aria-hidden>
+                <td colSpan={ALL_TASKS_COLUMNS.length} className="py-3 text-center text-[11px] text-gray-400">
+                  Loading more…
+                </td>
+              </tr>
+            )}
           </tbody>
         </TaskTable>
       ) : (

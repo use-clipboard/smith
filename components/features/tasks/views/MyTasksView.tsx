@@ -9,6 +9,7 @@ import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
 import { type SortDir } from '../SortHeader';
 import TaskTable, { type TaskColumn } from '../TaskTable';
+import { useIncrementalList } from '../useIncrementalList';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
 import type { Task, TaskStatus, TaskStep } from '@/types';
 
@@ -119,6 +120,9 @@ export default function MyTasksView({ tasks, currentUserId, search, onSearchChan
     return map;
   }, [sortedTasks]);
 
+  // List view renders in incremental batches for a fast first paint.
+  const { visible: visibleRows, sentinelRef, hasMore } = useIncrementalList(sortedTasks);
+
   return (
     <div>
       <div className="sticky top-0 z-30 bg-gray-50 pb-3">
@@ -156,9 +160,16 @@ export default function MyTasksView({ tasks, currentUserId, search, onSearchChan
           onToggleSort={toggleSort}
         >
           <tbody>
-            {sortedTasks.map(t => (
+            {visibleRows.map(t => (
               <TaskListRow key={t.id} task={t} currentUserId={currentUserId} onClick={() => onTaskClick(t)} onStepUpdate={onStepUpdate} onTaskUpdate={onTaskUpdate} isAdmin={isAdmin} teamMembers={teamMembers} onDelete={onDelete} onStopRecurrence={onStopRecurrence} />
             ))}
+            {hasMore && (
+              <tr ref={sentinelRef} aria-hidden>
+                <td colSpan={MY_TASKS_COLUMNS.length} className="py-3 text-center text-[11px] text-gray-400">
+                  Loading more…
+                </td>
+              </tr>
+            )}
           </tbody>
         </TaskTable>
       ) : (
