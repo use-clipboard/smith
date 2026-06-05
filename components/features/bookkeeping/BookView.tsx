@@ -34,6 +34,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
+import VatThresholdBanner from './book/VatThresholdBanner';
 import YearEndsDialog from './book/YearEndsDialog';
 import BookSideRail from './book/BookSideRail';
 import MultiTypeInputSheet from './input/MultiTypeInputSheet';
@@ -47,6 +48,7 @@ import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
 import AgedReportTab from './reports/AgedReportTab';
 import BookReviewTab from './reports/BookReviewTab';
+import BookAssistantTab from './reports/BookAssistantTab';
 import AccountsLedgerView from './ledger/AccountsLedgerView';
 import FixedAssetsTab from './book/FixedAssetsTab';
 import TransactionTypeListView from './transactions/TransactionTypeListView';
@@ -73,7 +75,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -448,6 +450,11 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           </div>
         </div>
 
+        {/* VAT threshold warnings — yellow approaching, red once passed. */}
+        <div className="mb-3">
+          <VatThresholdBanner bookId={bookId} key={`vat-thresh-${refreshKey}`} />
+        </div>
+
         {/* ── Tab content — kept mounted, toggled via display ─────────────── */}
         <div>
         <div hidden={tab !== 'home'}>
@@ -458,6 +465,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
             onImport={() => setTab('import')}
             onOpenSearch={() => setSearchOpen(true)}
             refreshKey={refreshKey}
+            onChanged={bumpRefresh}
             onOpenAccount={openLedgerTab}
             onOpenTypeList={openTypeListTab}
             currentUserId={currentUserId}
@@ -471,6 +479,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           <MultiTypeInputSheet
             bookId={bookId}
             vatRegistered={book.vat_registered}
+            vatScheme={book.vat_scheme}
             vatLockDate={book.vat_lock_date}
             defaultDateIso={activePeriod.toIso}
             initialType={isInputSheetType(inputType) ? inputType : 'PAY'}
@@ -490,7 +499,13 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           <CashFlowTab bookId={bookId} />
         </div>
         <div hidden={tab !== 'vat'}>
-          <VatReturnTab bookId={bookId} isAdmin={isAdmin} />
+          <VatReturnTab
+            bookId={bookId}
+            isAdmin={isAdmin}
+            activePeriodLabel={activePeriod.label}
+            activePeriodFromIso={activePeriod.fromIso}
+            activePeriodToIso={activePeriod.toIso}
+          />
         </div>
         <div hidden={tab !== 'aged-debtors'}>
           <AgedReportTab bookId={bookId} ledger="Customers" defaultAsAtIso={activePeriod.toIso} />
@@ -499,7 +514,10 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           <AgedReportTab bookId={bookId} ledger="Suppliers" defaultAsAtIso={activePeriod.toIso} />
         </div>
         <div hidden={tab !== 'ai-review'}>
-          <BookReviewTab bookId={bookId} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
+          <BookReviewTab bookId={bookId} bookName={book.name} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
+        </div>
+        <div hidden={tab !== 'ai-adviser'}>
+          <BookAssistantTab bookId={bookId} bookName={book.name} onPosted={bumpRefresh} active={tab === 'ai-adviser'} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
         </div>
         <div hidden={tab !== 'bank'}>
           <AccountsLedgerView bookId={bookId} ledger="Bank" isAdmin={isAdmin} />
@@ -518,7 +536,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
               bumpRefresh used by the input sheets, so the Home tab's recent-
               transactions feed + Key Information balances refresh straight
               away without a page reload. */}
-          <BookImportTab bookId={bookId} isAdmin={isAdmin} onChanged={bumpRefresh} />
+          <BookImportTab bookId={bookId} isAdmin={isAdmin} bookName={book.name} firstPeriodStart={book.first_period_start} onChanged={bumpRefresh} />
         </div>
         {dynamicTabs.map(dt => {
           if (dt.kind === 'ledger') {
@@ -581,7 +599,9 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         onClose={() => setSettingsOpen(false)}
         book={book}
         isAdmin={isAdmin}
-        onUpdated={next => setBook(next)}
+        // Bump the refresh key too so VAT-status-dependent chrome (the threshold
+        // banner, the header VAT badge) re-reads after a change is recorded.
+        onUpdated={next => { setBook(next); bumpRefresh(); }}
       />
 
       {/* ── Financial-year management (close / reopen) ──────────────────────── */}
@@ -615,6 +635,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         toasts={entryToasts}
         bookId={bookId}
         vatRegistered={book.vat_registered}
+        vatScheme={book.vat_scheme}
         vatLockDate={book.vat_lock_date}
         defaultDateIso={activePeriod.toIso}
         onTypeChange={setEntryToastType}

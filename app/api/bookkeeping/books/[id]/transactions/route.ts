@@ -35,6 +35,9 @@ const CreateBody = z.object({
    *  in a filed VAT period and wants its VAT to be carried into the next
    *  return. The server sets vat_period_override accordingly. */
   late_entry: z.boolean().optional(),
+  /** Flat Rate Scheme — purchase is a reclaimable capital asset (input VAT
+   *  recoverable into Box 4 despite FRS). */
+  frs_capital_reclaim: z.boolean().optional(),
 });
 
 /** Add one day to a YYYY-MM-DD string. */
@@ -47,7 +50,7 @@ function addOneDay(iso: string): string {
 const TX_SELECT = `
   id, book_id, type, ref_no, ref_seq, date, payee_text, details,
   total, vat_total, vat_rate, vat_treatment, vat_period_override,
-  primary_account_id, status, created_by, created_at, updated_at, posted_at,
+  primary_account_id, frs_capital_reclaim, status, created_by, created_at, updated_at, posted_at,
   primary_account:bookkeeping_accounts!bookkeeping_transactions_primary_account_id_fkey(id, name, ledger, account_type),
   splits:bookkeeping_transaction_splits(
     id, transaction_id, line_no, account_id, debit, credit, entry_details, notes,
@@ -293,6 +296,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       vat_treatment: body.vat_treatment ?? null,
       vat_period_override: vatPeriodOverride,
       primary_account_id: body.primary_account_id ?? null,
+      frs_capital_reclaim: body.frs_capital_reclaim ?? false,
       status: 'posted',
       created_by: ctx.userId,
       posted_at: new Date().toISOString(),

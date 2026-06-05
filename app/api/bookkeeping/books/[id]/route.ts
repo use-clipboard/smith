@@ -15,6 +15,7 @@ const PatchBody = z.object({
   vat_registered: z.boolean().optional(),
   vat_scheme: z.enum(VAT_SCHEMES).nullable().optional(),
   vat_number: z.string().max(50).nullable().optional(),
+  flat_rate_percentage: z.number().min(0).max(100).nullable().optional(),
   admin_locked: z.boolean().optional(),
   archived: z.boolean().optional(),
   period_lock_date: z.string().nullable().optional(),
@@ -33,7 +34,7 @@ const PatchBody = z.object({
 
 const BOOK_SELECT = `
   id, firm_id, client_id, name, template_type, base_currency,
-  vat_registered, vat_scheme, vat_number, period_lock_date, vat_lock_date,
+  vat_registered, vat_scheme, vat_number, flat_rate_percentage, period_lock_date, vat_lock_date,
   year_end_md, first_period_start, retained_earnings_account_id, current_fy_id,
   admin_locked, archived, created_by, created_at, updated_at,
   client:clients(id, name, client_ref),
@@ -114,6 +115,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.vat_registered !== undefined)   patch.vat_registered = body.vat_registered;
   if (body.vat_scheme !== undefined)       patch.vat_scheme = body.vat_scheme;
   if (body.vat_number !== undefined)       patch.vat_number = body.vat_number;
+  if (body.flat_rate_percentage !== undefined) patch.flat_rate_percentage = body.flat_rate_percentage;
   if (body.admin_locked !== undefined)     patch.admin_locked = body.admin_locked;
   if (body.archived !== undefined)         patch.archived = body.archived;
   if (body.period_lock_date !== undefined) patch.period_lock_date = body.period_lock_date;
@@ -126,6 +128,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (patch.vat_registered === false) {
     patch.vat_scheme = null;
     patch.vat_number = null;
+    patch.flat_rate_percentage = null;
+  }
+  // Flat rate % only applies under the flat-rate scheme.
+  if (patch.vat_scheme !== undefined && patch.vat_scheme !== 'flat_rate') {
+    patch.flat_rate_percentage = null;
   }
 
   patch.updated_at = new Date().toISOString();

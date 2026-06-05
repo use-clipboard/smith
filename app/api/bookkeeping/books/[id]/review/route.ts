@@ -16,7 +16,7 @@ import type { TransactionType } from '@/types/bookkeeping';
 // overdrawn bank accounts. Body: { from?, to? } (ISO) — scopes to the period.
 
 type Severity = 'high' | 'medium' | 'low';
-type Category = 'suspense' | 'bank' | 'duplicate' | 'depreciation' | 'reconciliation' | 'balances';
+type Category = 'suspense' | 'bank' | 'duplicate' | 'depreciation' | 'reconciliation' | 'balances' | 'dla' | 'tax' | 'interest';
 interface Finding {
   id: string;
   category: Category;
@@ -26,7 +26,7 @@ interface Finding {
   /** Source account (for account-based findings) — drives the ledger link. */
   account?: { id: string; name: string; ledger: string | null };
   /** Source transactions (for the duplicate finding) — drives the ref links. */
-  refTxns?: { id: string; type: TransactionType; ref_no: string }[];
+  refTxns?: { id: string; type: TransactionType; ref_no: string; date?: string }[];
   /** Linked accounts + amounts (e.g. the customers/suppliers with balances). */
   items?: { account: { id: string; name: string; ledger: string | null }; amount: number }[];
 }
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const supabase = createClient();
   const { data: book, error: bookErr } = await supabase
     .from('bookkeeping_books')
-    .select('id, name, firm_id, vat_registered')
+    .select('id, name, firm_id, vat_registered, template_type')
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
@@ -124,14 +124,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (to) txQ = txQ.lte('date', to);
   const { data: txns } = await txQ;
   type TxnLite = { id: string; type: TransactionType; ref_no: string; date: string; total: number; payee_text: string | null; details: string | null };
-  const groups = new Map<string, { txns: { id: string; type: TransactionType; ref_no: string }[]; total: number; label: string }>();
+  const groups = new Map<string, { txns: { id: string; type: TransactionType; ref_no: string; date?: string }[]; total: number; label: string }>();
   for (const t of (txns ?? []) as TxnLite[]) {
     const total = Number(t.total);
     if (!total) continue;
     const label = (t.payee_text || t.details || '').trim();
     const key = `${t.date}|${total.toFixed(2)}|${label.toLowerCase()}`;
     const g = groups.get(key) ?? { txns: [], total, label: label || '(no description)' };
-    g.txns.push({ id: t.id, type: t.type, ref_no: t.ref_no });
+    g.txns.push({ id: t.id, type: t.type, ref_no: t.ref_no, date: t.date });
     groups.set(key, g);
   }
   for (const g of groups.values()) {
@@ -224,13 +224,67 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
   }
 
+  // Net profit (positive = profit). Income carries a credit (negative) balance,
+  // expenses a debit (positive) balance, so profit = −income − expense.
+  const incomeBal = r2(accounts.filter(a => a.account_type === 'income').reduce((s, a) => s + a.balance, 0));
+  const expenseBal = r2(accounts.filter(a => a.account_type === 'expense').reduce((s, a) => s + a.balance, 0));
+  const netProfit = r2(-incomeBal - expenseBal);
+
+  // 7) Overdrawn director's loan account (debit balance = director owes the
+  //    company). Carries s455 tax + possible benefit-in-kind exposure.
+  for (const a of accounts) {
+    const isDla = /director'?s?\s*loan|\bDLA\b|loan.*director|director.*current/i.test(a.name)
+      || /director'?s?\s*loan|\bDLA\b/i.test(a.ledger ?? '');
+    if (isDla && a.balance > 0.01) {
+      findings.push({
+        id: `dla:${a.id}`, category: 'dla', severity: 'high',
+        title: `${a.ledger ? a.ledger + ': ' : ''}${a.name} is overdrawn by ${gbp(a.balance)}`,
+        detail: `A debit balance means the director owes the company ${gbp(a.balance)}. If not repaid within 9 months of the year end this attracts s455 tax, and a balance over £10,000 can create a benefit-in-kind. Confirm the position and whether a repayment, dividend or salary clears it.`,
+        account: { id: a.id, name: a.name, ledger: a.ledger },
+      });
+    }
+  }
+
+  // 8) Profit made but no corporation tax recognised (limited companies).
+  if (book.template_type === 'ltd' && netProfit > 100) {
+    const ctAccounts = accounts.filter(a => /corporation tax|\bCT\b/i.test(a.name));
+    const ctRecognised = ctAccounts.some(a => Math.abs(a.balance) >= 0.01);
+    if (!ctRecognised) {
+      findings.push({
+        id: 'tax:no-ct', category: 'tax', severity: 'medium',
+        title: `Profit of ${gbp(netProfit)} but no corporation tax recognised`,
+        detail: `The period shows a profit of ${gbp(netProfit)} but there's no corporation tax charge or provision in the accounts. If this is the year-end position, a CT provision is likely required. (Posted at year end — ignore if the period isn't yet complete.)`,
+      });
+    }
+  }
+
+  // 9) Loans / external finance on the balance sheet but no interest expense.
+  //    Director's loans are excluded — they're commonly interest-free.
+  const financeAccts = accounts.filter(a =>
+    a.account_type === 'liability'
+    && /\bloan|mortgage|hire[- ]?purchase|\bHP\b|finance lease|financ|overdraft/i.test(a.name)
+    && !/director/i.test(a.name)
+    && !/director/i.test(a.ledger ?? '')
+    && Math.abs(a.balance) >= 100,
+  );
+  if (financeAccts.length > 0) {
+    const hasInterest = accounts.some(a => a.account_type === 'expense' && /interest|finance (charge|cost)/i.test(a.name) && Math.abs(a.balance) >= 0.01);
+    if (!hasInterest) {
+      const names = financeAccts.map(a => a.name).join(', ');
+      findings.push({
+        id: 'interest:none', category: 'interest', severity: 'medium',
+        title: `Finance on the balance sheet but no interest expense`,
+        detail: `${names} ${financeAccts.length === 1 ? 'carries a balance' : 'carry balances'} but no interest or finance cost has been posted for the period. Check whether interest should be accrued or posted from the loan statement.`,
+        items: financeAccts.map(a => ({ account: { id: a.id, name: a.name, ledger: a.ledger }, amount: a.balance })),
+      });
+    }
+  }
+
   // ── Book summary for the AI's overall assessment ────────────────────────────
-  const sum = (pred: (a: typeof accounts[number]) => boolean) => r2(accounts.filter(pred).reduce((s, a) => s + a.balance, 0));
-  const income = sum(a => a.account_type === 'income');
-  const expense = sum(a => a.account_type === 'expense');
   const summary = {
     period: from && to ? `${from} to ${to}` : 'whole book',
-    netProfit: r2(-income - expense), // income balance is negative (Cr), expense positive (Dr)
+    netProfit, // computed above (positive = profit)
+    entityType: book.template_type,
     accountsWithActivity: accounts.length,
     vatRegistered: book.vat_registered,
   };
@@ -241,17 +295,38 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let observations: string[] = [];
   try {
     const anthropic = await getAnthropicForFirm(ctx.firmId);
-    const systemPrompt = `You are an assistant to a UK accountancy practice reviewing a client's bookkeeping. You are given (a) a set of issues already detected deterministically by the system, and (b) a short summary of the book. Your job is to add professional judgement — NOT to do any arithmetic or invent figures.
+    // Compact account-balance breakdown so the AI can reason about COMPLETENESS
+    // (what's missing given what's present) — not just the pre-detected issues.
+    const materialAccounts = accounts
+      .filter(a => Math.abs(a.balance) >= 1)
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+      .slice(0, 90)
+      .map(a => `${a.ledger ? a.ledger + ' / ' : ''}${a.name} [${a.account_type}]: ${a.balance >= 0 ? '' : '-'}${gbp(a.balance)}`);
+
+    const systemPrompt = `You are an assistant to a UK accountancy practice reviewing a client's bookkeeping. You are given (a) issues already detected deterministically by the system, (b) a short summary, and (c) the account balances for the period. Add professional judgement — do NOT do arithmetic or invent figures.
+
+Most importantly, look for COMPLETENESS gaps — things that are MISSING given what IS in the accounts. Reason like a reviewer doing a year-end file:
+- Profit but no corporation tax provision (limited companies).
+- Loans / HP / mortgages / finance on the balance sheet but no interest or finance cost in the P&L.
+- An overdrawn director's loan account (a debit balance the director owes the company) — s455 / benefit-in-kind risk.
+- Wages or salaries but no PAYE/NIC control or pension creditor.
+- Significant turnover but no cost of sales, or motor/travel with no fuel, etc.
+- Fixed asset additions but no depreciation, or rent received with no related property costs.
+- VAT-registered but the VAT control account looks wrong or missing.
+Only raise a gap when the balances genuinely support it. Don't restate issues already in the detected list.
 
 Return ONLY valid JSON (no markdown fences) in this shape:
 {
   "overview": "2-3 sentence plain-English assessment of the book's health for this period",
   "notes": { "<finding id>": "one sentence: why it matters and the suggested fix" },
-  "observations": ["up to 3 extra things worth checking, based ONLY on the summary provided — e.g. unusually thin/large figures. Omit if nothing stands out."]
+  "observations": ["up to 5 completeness gaps or things worth checking, each a specific, actionable sentence. Omit if nothing stands out."]
 }
-Use British English. Be specific and practical. Do not repeat the finding's title verbatim in its note. Do not invent issues that aren't supported by the data given.`;
+Use British English. Be specific and practical. Do not repeat a finding's title verbatim in its note. Do not invent issues unsupported by the data.`;
     const userPrompt = `Book: ${book.name}
 Summary: ${JSON.stringify(summary)}
+
+Account balances (period; debit positive, credit negative):
+${materialAccounts.length ? materialAccounts.join('\n') : '(no material balances)'}
 
 Detected issues:
 ${findings.length ? findings.map(f => `- [${f.id}] (${f.severity}) ${f.title}`).join('\n') : '(none detected by the automated checks)'}
@@ -259,7 +334,7 @@ ${findings.length ? findings.map(f => `- [${f.id}] (${f.severity}) ${f.title}`).
 Return the JSON.`;
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
+      max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });

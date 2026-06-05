@@ -87,6 +87,7 @@ interface TabContextValue {
   openInNewTab: (tab: Tab) => void;   // always opens in a fresh slot; never replaces current tab
   addTab: () => string;               // opens a blank new-tab picker
   closeTab: (id: string) => string;   // returns route to navigate to after close
+  reorderTab: (fromIndex: number, toIndex: number) => void; // drag-to-rearrange tool tabs
   setActiveTabId: (id: string | null) => void;
   /** Imperatively update the active tab's `currentRoute` (the URL it should
    *  return to). Tool-tab components use this when they swap views via
@@ -102,6 +103,7 @@ const TabContext = createContext<TabContextValue>({
   openInNewTab: () => {},
   addTab: () => '/dashboard',
   closeTab: () => '/dashboard',
+  reorderTab: () => {},
   setActiveTabId: () => {},
   setActiveTabCurrentRoute: () => {},
 });
@@ -272,6 +274,23 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     return active?.currentRoute ?? active?.route ?? '/dashboard';
   }, [tabs, activeTabId]);
 
+  // Move a tool tab from one position to another (drag-to-rearrange). The
+  // Dashboard tab lives outside `tabs` (it's a permanent leading tab), so all
+  // indices here refer to tool tabs only and it can never be moved.
+  const reorderTab = useCallback((fromIndex: number, toIndex: number) => {
+    setTabs(prev => {
+      if (
+        fromIndex < 0 || fromIndex >= prev.length ||
+        toIndex < 0 || toIndex >= prev.length ||
+        fromIndex === toIndex
+      ) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, []);
+
   // Imperative update used by tool-tab components when their internal nav
   // changes the URL via history.replaceState (which Next.js's pathname hook
   // doesn't observe). Keeps tab.currentRoute in sync so the next click on
@@ -283,7 +302,7 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   }, [activeTabId]);
 
   return (
-    <TabContext.Provider value={{ tabs, activeTabId, openTab, openInNewTab, addTab, closeTab, setActiveTabId, setActiveTabCurrentRoute }}>
+    <TabContext.Provider value={{ tabs, activeTabId, openTab, openInNewTab, addTab, closeTab, reorderTab, setActiveTabId, setActiveTabCurrentRoute }}>
       {children}
     </TabContext.Provider>
   );

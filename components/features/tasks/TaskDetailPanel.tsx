@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   X, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
   Play, Pause, Plus, Trash2, ExternalLink, Loader2, AlertCircle, Puzzle,
@@ -289,6 +289,21 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
     setBatchTarget('');
   }
 
+  // The list endpoint (GET /api/tasks) sends a TRIMMED steps payload — enough
+  // to render cards and this panel's checklist/flowchart, but without the heavy
+  // per-step config JSON (email reminders, client instructions, triggers). The
+  // workflow editor needs the full objects, so we hydrate the full task once on
+  // open via onTaskRefetch. A step is "trimmed" if it lacks a full-only key.
+  const firstStep = task.steps?.[0];
+  const stepsTrimmed = firstStep ? !('client_instructions' in firstStep) : false;
+  const hydratedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (stepsTrimmed && onTaskRefetch && hydratedFor.current !== task.id) {
+      hydratedFor.current = task.id;
+      void onTaskRefetch(task.id);
+    }
+  }, [task.id, stepsTrimmed, onTaskRefetch]);
+
   const edges = task.edges ?? [];
   const steps = sortStepsByWorkflow(task.steps ?? [], edges);
   const selectedStep = steps.find(s => s.id === selectedStepId) ?? null;
@@ -575,14 +590,20 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
               {label}
             </button>
           ))}
-          {/* Edit workflow — admin only, on Workflow tab */}
+          {/* Edit workflow — admin only, on Workflow tab. Disabled until the
+              full step config has hydrated, so the editor never opens with the
+              trimmed list payload (which would risk wiping step config on save). */}
           {isAdmin && activeTab === 'workflow' && (
-            <button
-              onClick={() => setShowWorkflowEditor(true)}
-              className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg my-1.5 transition-colors"
-            >
-              <Pencil className="h-3 w-3" /> Edit workflow
-            </button>
+            <Tooltip label={stepsTrimmed ? 'Loading workflow…' : 'Edit this task’s workflow'} className="ml-auto">
+              <button
+                onClick={() => setShowWorkflowEditor(true)}
+                disabled={stepsTrimmed}
+                aria-label="Edit workflow"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg my-1.5 transition-colors disabled:opacity-50 disabled:cursor-wait"
+              >
+                {stepsTrimmed ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pencil className="h-3 w-3" />} Edit workflow
+              </button>
+            </Tooltip>
           )}
         </div>
 

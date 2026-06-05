@@ -16,14 +16,16 @@
  * (no lower or upper bound).
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CalendarDays } from 'lucide-react';
-import DateInput, { fromIso, toIso } from '../input/DateInput';
+import DateInput, { fromIso, parseUkDateStrict } from '../input/DateInput';
 
 export interface DateRange {
   from: string | null;
   to: string | null;
 }
+
+type Preset = 'this_month' | 'last_month' | 'this_quarter' | 'this_fy' | 'last_fy' | 'all_time' | 'custom';
 
 interface Props {
   bookId: string;
@@ -32,9 +34,12 @@ interface Props {
   /** UK financial year start month (1–12). Defaults to April (4). Used by the
    *  "This FY" / "Last FY" presets. */
   fyStartMonth?: number;
+  /** Restrict which quick presets are shown. Defaults to all. The VAT screen
+   *  passes ['custom'] so only Custom remains alongside its Obligations button. */
+  presetIds?: Preset[];
+  /** Extra control rendered after the presets (e.g. the VAT "Obligations" button). */
+  rightSlot?: ReactNode;
 }
-
-type Preset = 'this_month' | 'last_month' | 'this_quarter' | 'this_fy' | 'last_fy' | 'all_time' | 'custom';
 
 const PRESETS: { id: Preset; label: string }[] = [
   { id: 'this_month',   label: 'This month'   },
@@ -95,7 +100,8 @@ function storageKey(bookId: string) {
   return `smith.bookkeeping.${bookId}.period`;
 }
 
-export default function PeriodSelector({ bookId, value, onChange, fyStartMonth = 4 }: Props) {
+export default function PeriodSelector({ bookId, value, onChange, fyStartMonth = 4, presetIds, rightSlot }: Props) {
+  const visiblePresets = presetIds ? PRESETS.filter(p => presetIds.includes(p.id)) : PRESETS;
   const [preset, setPreset] = useState<Preset>('this_fy');
 
   // Hydrate from localStorage on mount.
@@ -133,13 +139,29 @@ export default function PeriodSelector({ bookId, value, onChange, fyStartMonth =
     }
   }
 
-  function setFrom(v: string) {
+  // The date inputs keep their VISIBLE text locally so partial typing (e.g.
+  // "01/05") survives — we only push a value up to the parent once the date is
+  // complete and valid (or the field is cleared). Round-tripping every keystroke
+  // through ISO would wipe partial input.
+  const [fromText, setFromText] = useState(() => fromIso(value.from ?? ''));
+  const [toText, setToText] = useState(() => fromIso(value.to ?? ''));
+  // Sync the visible text when the range changes externally (presets, obligation).
+  useEffect(() => { setFromText(fromIso(value.from ?? '')); }, [value.from]);
+  useEffect(() => { setToText(fromIso(value.to ?? '')); }, [value.to]);
+
+  function handleFromText(uk: string) {
+    setFromText(uk);
     setPreset('custom');
-    onChange({ ...value, from: v || null });
+    if (uk.trim() === '') { onChange({ ...value, from: null }); return; }
+    const iso = parseUkDateStrict(uk);
+    if (iso) onChange({ ...value, from: iso }); // partial/invalid → keep typing
   }
-  function setTo(v: string) {
+  function handleToText(uk: string) {
+    setToText(uk);
     setPreset('custom');
-    onChange({ ...value, to: v || null });
+    if (uk.trim() === '') { onChange({ ...value, to: null }); return; }
+    const iso = parseUkDateStrict(uk);
+    if (iso) onChange({ ...value, to: iso });
   }
 
   return (
@@ -152,22 +174,22 @@ export default function PeriodSelector({ bookId, value, onChange, fyStartMonth =
             API. Empty input clears the bound to null via the existing setters. */}
         <div className="w-32">
           <DateInput
-            value={fromIso(value.from ?? '')}
-            onChange={uk => setFrom(toIso(uk))}
+            value={fromText}
+            onChange={handleFromText}
             className="px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
         <span className="text-gray-300">→</span>
         <div className="w-32">
           <DateInput
-            value={fromIso(value.to ?? '')}
-            onChange={uk => setTo(toIso(uk))}
+            value={toText}
+            onChange={handleToText}
             className="px-2 py-1 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
       </div>
       <div className="flex items-center gap-1 flex-wrap">
-        {PRESETS.map(p => {
+        {visiblePresets.map(p => {
           const active = p.id === preset;
           return (
             <button
@@ -184,6 +206,7 @@ export default function PeriodSelector({ bookId, value, onChange, fyStartMonth =
             </button>
           );
         })}
+        {rightSlot}
       </div>
     </div>
   );

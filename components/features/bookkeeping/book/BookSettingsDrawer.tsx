@@ -14,10 +14,11 @@ import {
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import DateInput, { fromIso, toIso } from '../input/DateInput';
-import {
-  VAT_SCHEME_OPTIONS, BASE_CURRENCY_OPTIONS,
-  type Book, type VatScheme,
-} from '@/types/bookkeeping';
+import { BASE_CURRENCY_OPTIONS, type Book } from '@/types/bookkeeping';
+import BookVatSettings from './BookVatSettings';
+import BookTimeline from './BookTimeline';
+
+type SettingsTab = 'general' | 'vat' | 'timeline';
 
 interface Props {
   open: boolean;
@@ -54,11 +55,9 @@ function autoFormatDm(raw: string): string {
 export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpdated }: Props) {
   const lockedForMe = book.admin_locked && !isAdmin;
 
+  const [settingsTab, setSettingsTab]     = useState<SettingsTab>('general');
   const [name, setName]                   = useState(book.name);
   const [baseCurrency, setBaseCurrency]   = useState(book.base_currency);
-  const [vatRegistered, setVatRegistered] = useState(book.vat_registered);
-  const [vatScheme, setVatScheme]         = useState<VatScheme>((book.vat_scheme ?? 'standard') as VatScheme);
-  const [vatNumber, setVatNumber]         = useState(book.vat_number ?? '');
   // The DB stores MM-DD for trivial sort/parse; the UI shows DD-MM because
   // that's the UK convention the rest of the module uses for dates.
   const [yearEndDm, setYearEndDm]               = useState(mdToDm(book.year_end_md));
@@ -77,11 +76,9 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
   // Reset form state whenever the drawer (re)opens or the book changes.
   useEffect(() => {
     if (!open) return;
+    setSettingsTab('general');
     setName(book.name);
     setBaseCurrency(book.base_currency);
-    setVatRegistered(book.vat_registered);
-    setVatScheme((book.vat_scheme ?? 'standard') as VatScheme);
-    setVatNumber(book.vat_number ?? '');
     setYearEndDm(mdToDm(book.year_end_md));
     setFirstPeriodStartUk(fromIso(book.first_period_start ?? ''));
     setError('');
@@ -118,12 +115,11 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
       // Build the patch payload. Year-end / first-period only included
       // when not locked AND something actually changed — otherwise the API
       // would re-run FY generation unnecessarily.
+      // VAT status is no longer edited here — it's managed via the effective-
+      // dated flow in the VAT tab (BookVatSettings → /vat-status).
       const payload: Record<string, unknown> = {
         name: name.trim(),
         base_currency: baseCurrency,
-        vat_registered: vatRegistered,
-        vat_scheme: vatRegistered ? vatScheme : null,
-        vat_number: vatRegistered ? (vatNumber.trim() || null) : null,
       };
       if (!yearEndLocked) {
         // Convert the displayed DD-MM back to the DB's MM-DD for the API.
@@ -200,6 +196,44 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
           </button>
         </div>
 
+        {/* Tab bar */}
+        <div className="flex items-stretch gap-1 px-3 pt-2 border-b border-gray-200" role="tablist">
+          {([
+            { id: 'general', label: 'General' },
+            { id: 'vat', label: 'VAT' },
+            { id: 'timeline', label: 'Timeline' },
+          ] as { id: SettingsTab; label: string }[]).map(t => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={settingsTab === t.id}
+              onClick={() => setSettingsTab(t.id)}
+              className={`px-3 py-1.5 text-sm rounded-t-md -mb-px border-b-2 transition-colors ${
+                settingsTab === t.id
+                  ? 'border-indigo-600 text-indigo-700 font-medium'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* VAT tab */}
+        {settingsTab === 'vat' && (
+          <div className="flex-1 overflow-y-auto p-5">
+            <BookVatSettings book={book} disabled={lockedForMe} onUpdated={onUpdated} />
+          </div>
+        )}
+
+        {/* Timeline tab */}
+        {settingsTab === 'timeline' && (
+          <div className="flex-1 overflow-y-auto p-5">
+            <BookTimeline bookId={book.id} />
+          </div>
+        )}
+
+        {settingsTab === 'general' && (
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {lockedForMe && (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 flex items-center gap-2">
@@ -231,15 +265,6 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
                     {BASE_CURRENCY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={vatRegistered}
-                    onChange={e => setVatRegistered(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  VAT registered
-                </label>
                 <div className="space-y-3 p-3 rounded bg-indigo-50/40 border border-indigo-100">
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-wide font-semibold text-indigo-900">Year-end &amp; periods</p>
@@ -281,30 +306,9 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
                   </p>
                 </div>
 
-                {vatRegistered && (
-                  <div className="space-y-3 p-3 rounded bg-gray-50 border border-gray-100">
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">VAT scheme</label>
-                      <select
-                        value={vatScheme}
-                        onChange={e => setVatScheme(e.target.value as VatScheme)}
-                        className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        {VAT_SCHEME_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">VAT number</label>
-                      <input
-                        type="text"
-                        value={vatNumber}
-                        onChange={e => setVatNumber(e.target.value)}
-                        placeholder="GB123456789"
-                        className="w-full text-sm px-3 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-                )}
+                <p className="text-[11px] text-gray-400">
+                  VAT registration, scheme and flat rate are managed in the <strong>VAT</strong> tab.
+                </p>
               </div>
 
               {error && (
@@ -363,6 +367,7 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

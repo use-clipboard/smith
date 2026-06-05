@@ -64,8 +64,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   return NextResponse.json({
     from, to,
-    vat_registered: book.vat_registered,
-    vat_scheme: book.vat_scheme,
+    // Resolved as-of the period end from the effective-dated VAT history (falls
+    // back to the book's current fields when there's no history).
+    vat_registered: figures.vat_registered,
+    vat_scheme: figures.scheme,
+    flat_rate: figures.flat_rate,
+    warnings: figures.warnings,
     vat_lock_date: book.vat_lock_date,
     boxes: {
       box1: { label: 'VAT due in this period on sales and other outputs', value: figures.box1 },

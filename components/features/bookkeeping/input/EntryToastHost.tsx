@@ -48,6 +48,7 @@ interface Props {
   toasts: EntryToast[];
   bookId: string;
   vatRegistered: boolean;
+  vatScheme?: string | null;
   vatLockDate?: string | null;
   /** ISO date new entries default to — the end of the currently-selected
    *  accounting period. Falls back to today when null. */
@@ -63,7 +64,7 @@ interface Props {
 }
 
 export default function EntryToastHost({
-  toasts, bookId, vatRegistered, vatLockDate, defaultDateIso,
+  toasts, bookId, vatRegistered, vatScheme, vatLockDate, defaultDateIso,
   onTypeChange, onMinimise, onClose, onFocus, onPosted,
 }: Props) {
   if (toasts.length === 0) return null;
@@ -86,7 +87,7 @@ export default function EntryToastHost({
         return (
           <div
             key={t.id}
-            className="fixed w-[min(95vw,1060px)] flex flex-col bg-white rounded-xl shadow-2xl border border-slate-200"
+            className="fixed w-[min(96vw,1440px)] flex flex-col bg-white rounded-xl shadow-2xl border border-slate-200"
             style={{
               bottom: bottomBase + depth * 26,
               right: 16 + depth * 26,
@@ -138,6 +139,7 @@ export default function EntryToastHost({
                 <UniversalInputSheet
                   bookId={bookId}
                   vatRegistered={vatRegistered}
+                  vatScheme={vatScheme}
                   vatLockDate={vatLockDate}
                   type={t.type}
                   onTypeChange={next => onTypeChange(t.id, next)}

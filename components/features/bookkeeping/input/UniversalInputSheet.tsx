@@ -27,6 +27,7 @@ import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
+import Tooltip from '@/components/ui/Tooltip';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink, AccountLink } from '../book/BookNavigationContext';
 import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
@@ -42,6 +43,8 @@ import RecLockWarningModal from '../ledger/RecLockWarningModal';
 interface Props {
   bookId: string;
   vatRegistered: boolean;
+  /** Book VAT scheme — 'flat_rate' shows the capital-reclaim toggle on purchases. */
+  vatScheme?: string | null;
   /** Soft VAT lock — transactions dated on/before this need to be flagged as
    *  late entries (vat_period_override set server-side). The next VAT return
    *  then picks them up. */
@@ -97,6 +100,8 @@ interface Row {
    *  next return. Default true on rows where the date falls in the VAT lock.
    *  User can untick to force a hard rejection (the server will reply 409). */
   includeInNextReturn: boolean;
+  /** FRS — purchase flagged as a reclaimable capital asset. */
+  frsCapital: boolean;
 }
 
 function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Partial<Row> = {}, defaultDateUk?: string): Row {
@@ -112,6 +117,7 @@ function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Part
     entryDetails: '',
     notes: '',
     includeInNextReturn: true,  // default ticked; ignored unless row triggers late-entry
+    frsCapital: seed.frsCapital ?? false,
   };
 }
 
@@ -147,9 +153,11 @@ function familyOf(t: TransactionType): keyof typeof FAMILY_PILL_CLASSES {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function UniversalInputSheet({
-  bookId, vatRegistered, vatLockDate, type, onTypeChange, onPosted, defaultDateIso,
+  bookId, vatRegistered, vatScheme, vatLockDate, type, onTypeChange, onPosted, defaultDateIso,
 }: Props) {
   const config = getTypeConfig(type) ?? TRANSACTION_TYPE_CONFIG.PAY;
+  // FRS purchase rows get a capital-reclaim toggle (whole sheet is one type).
+  const showCapital = vatScheme === 'flat_rate' && ['PIN', 'PAY', 'CHQ', 'PCR'].includes(type);
   // New rows default their date to the end of the currently-selected accounting
   // period (passed from BookView); today only when no year is set up.
   const defaultDateUk = defaultDateIso ? formatDateUk(defaultDateIso) : formatDateUk(todayIso());
@@ -383,6 +391,7 @@ export default function UniversalInputSheet({
             primary_account_id: r.primary!.id,
             splits,
             late_entry: lateEntry,
+            frs_capital_reclaim: showCapital ? r.frsCapital : false,
           }),
         });
         if (!res.ok) {
@@ -467,6 +476,8 @@ export default function UniversalInputSheet({
       analysis: analysisRef,
       entryDetails: analysisSplit?.entry_details ?? '',
       notes: analysisSplit?.notes ?? '',
+      includeInNextReturn: true,
+      frsCapital: Boolean(last.frs_capital_reclaim),
     };
 
     // Replace a trailing fully-empty row if there is one, otherwise append.
@@ -624,6 +635,7 @@ export default function UniversalInputSheet({
               {showVatColumn && <th className="px-2 py-1.5 text-right w-24 border-r border-slate-300">Net</th>}
               <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Ledger</th>
               <th className="px-2 py-1.5 text-left w-56 border-r border-slate-300">{config.analysisLabel}</th>
+              {showCapital && <th className="px-2 py-1.5 text-center w-16 border-r border-slate-300" title="Reclaimable capital asset (Flat Rate Scheme)">Capital</th>}
               <th className="px-2 py-1.5 text-left">Entry details</th>
             </tr>
           </thead>
@@ -761,6 +773,23 @@ export default function UniversalInputSheet({
                       className="!border-none"
                     />
                   </td>
+
+                  {/* FRS capital-reclaim toggle */}
+                  {showCapital && (
+                    <td className="px-2 py-0 border-r border-slate-200 align-middle">
+                      <div className="flex items-center justify-center">
+                        <Tooltip label="Reclaimable capital asset (>£2,000) — input VAT recoverable into Box 4 despite FRS">
+                          <input
+                            type="checkbox"
+                            checked={r.frsCapital}
+                            onChange={e => updateRow(r.id, { frsCapital: e.target.checked })}
+                            aria-label="Reclaimable capital asset"
+                            className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                          />
+                        </Tooltip>
+                      </div>
+                    </td>
+                  )}
 
                   {/* Entry details — Tab off this cell on the last row appends a new line */}
                   <td className="px-0 py-0">

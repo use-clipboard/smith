@@ -30,10 +30,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Loader2, Printer, Download, Copy, BadgePoundSterling,
-  AlertTriangle, CheckCircle2, Send, X, Lock, Plus, Search,
+  AlertTriangle, CheckCircle2, Send, X, Lock, Plus, Search, Sparkles, Building2, CalendarClock, PencilLine,
 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import MarkAsFiledModal from './MarkAsFiledModal';
+import VatReturnReviewPanel from './VatReturnReviewPanel';
+import MtdSubmitModal from './MtdSubmitModal';
+import VatObligationsPanel from './VatObligationsPanel';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink } from '../book/BookNavigationContext';
 import type { Transaction, TransactionType } from '@/types/bookkeeping';
@@ -94,6 +97,8 @@ interface VatReturnResponse {
   to: string;
   vat_registered: boolean;
   vat_scheme: string | null;
+  flat_rate: number | null;
+  warnings?: string[];
   vat_lock_date: string | null;
   boxes: {
     box1: BoxFigure; box2: BoxFigure; box3: BoxFigure;
@@ -108,9 +113,14 @@ interface VatReturnResponse {
 interface Props {
   bookId: string;
   isAdmin?: boolean;
+  /** The book's currently-selected financial-year period (from the header
+   *  year/period bar) — drives a quick "snap to this period" preset. */
+  activePeriodLabel?: string;
+  activePeriodFromIso?: string | null;
+  activePeriodToIso?: string | null;
 }
 
-type SubTab = 'summary' | 'journal' | 'outputs' | 'inputs' | 'backup';
+type SubTab = 'summary' | 'journal' | 'outputs' | 'inputs' | 'backup' | 'ai_review';
 type Mode = 'compute' | 'view';
 
 // ── Date helpers ────────────────────────────────────────────────────────────
@@ -154,7 +164,7 @@ function rateLabel(row: BreakdownRow): string {
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
-export default function VatReturnTab({ bookId, isAdmin }: Props) {
+export default function VatReturnTab({ bookId, isAdmin, activePeriodLabel, activePeriodFromIso, activePeriodToIso }: Props) {
   // List state
   const [filings, setFilings] = useState<FiledReturn[]>([]);
   const [filingsLoading, setFilingsLoading] = useState(false);
@@ -175,6 +185,8 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
   const [copied, setCopied] = useState(false);
 
   const [fileModalOpen, setFileModalOpen] = useState(false);
+  const [mtdOpen, setMtdOpen] = useState(false);
+  const [obligationsOpen, setObligationsOpen] = useState(false);
 
   // Lazy-loaded closing journal (for the Double entry tab)
   const [journal, setJournal] = useState<FilingJournal | null>(null);
@@ -471,30 +483,56 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
             </div>
           </div>
 
-          {/* Compute-new entry */}
-          <button
-            type="button"
-            onClick={selectCompute}
-            className={`w-full flex items-center gap-2 px-3 py-2 text-xs border-b border-slate-100 transition-colors ${
-              mode === 'compute'
-                ? 'bg-indigo-50 text-indigo-700 border-l-2 border-l-indigo-600'
-                : 'text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            <Plus size={12} />
-            <span className="font-medium">Compute new return</span>
-          </button>
+          {/* New-return area — contextual: a "you are here" indicator while
+              drafting, or a clickable "New return" button when viewing a filed
+              one (so it never looks like a pre-pressed button on open). */}
+          <div className="p-2 border-b border-slate-100">
+            {mode === 'compute' ? (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-indigo-50/70 border border-indigo-100">
+                <PencilLine size={14} className="text-indigo-600 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">Working on now</p>
+                  <p className="text-xs font-medium text-indigo-900 tabular-nums mt-0.5">
+                    {period.from && period.to
+                      ? `${formatDateUk(period.from)} – ${formatDateUk(period.to)}`
+                      : 'Set a period above'}
+                  </p>
+                  <p className="text-[10px] text-indigo-500/90 mt-0.5">Not filed yet — it’ll appear below once you file it.</p>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={selectCompute}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 font-medium transition-colors"
+              >
+                <Plus size={13} /> New VAT return
+              </button>
+            )}
+          </div>
 
           {/* List — fills remaining card height and scrolls internally */}
           <div className="flex-1 overflow-y-auto min-h-0">
+            {!filingsLoading && filteredFilings.length > 0 && (
+              <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Filed returns · {filings.length}
+              </p>
+            )}
             {filingsLoading ? (
               <div className="p-3 text-xs text-slate-400 flex items-center gap-2">
                 <Loader2 size={11} className="animate-spin" /> Loading…
               </div>
             ) : filteredFilings.length === 0 ? (
-              <p className="px-3 py-4 text-xs text-slate-400">
-                {searchQuery ? 'No returns match.' : 'No filings yet. Use "Compute new return" to file your first.'}
-              </p>
+              <div className="px-3 py-6 text-center">
+                {searchQuery ? (
+                  <p className="text-xs text-slate-400">No returns match.</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-slate-500">No returns filed yet</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Your filed VAT returns will appear here once you submit or mark one as filed.</p>
+                  </>
+                )}
+              </div>
             ) : (
               <ul>
                 {filteredFilings.map(f => {
@@ -568,8 +606,15 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
                 : (filings.find(f => f.id === selectedFilingId)?.ref_no ?? 'VAT Return')}
             </h2>
             <span className="text-[11px] text-slate-500">
-              {mode === 'compute' ? 'Live recompute · accrual basis' : 'Filed return'}
+              {mode === 'compute'
+                ? (data?.vat_scheme === 'flat_rate'
+                    ? `Live recompute · flat rate ${data?.flat_rate ?? 0}% of gross`
+                    : 'Live recompute · accrual basis')
+                : 'Filed return'}
             </span>
+            {data?.vat_scheme === 'flat_rate' && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">Flat Rate {data?.flat_rate ?? 0}%</span>
+            )}
           </div>
           <button
             type="button"
@@ -600,10 +645,20 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
               type="button"
               onClick={() => setFileModalOpen(true)}
               disabled={!data || !data.vat_registered || isFiledForThisPeriod}
-              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send size={12} />
               {isFiledForThisPeriod ? 'Already filed' : 'Mark as filed'}
+            </button>
+          )}
+          {mode === 'compute' && (
+            <button
+              type="button"
+              onClick={() => setMtdOpen(true)}
+              disabled={!data || !data.vat_registered}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Building2 size={13} /> Submit to HMRC
             </button>
           )}
         </div>
@@ -611,7 +666,37 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
         {/* Optional sub-header: period selector OR filed banner */}
         {mode === 'compute' && (
           <div className="px-4 py-2 border-b border-slate-100 print:hidden">
-            <PeriodSelector bookId={bookId} value={period} onChange={setPeriod} />
+            <PeriodSelector
+              bookId={bookId}
+              value={period}
+              onChange={setPeriod}
+              presetIds={['custom']}
+              rightSlot={
+                <>
+                  {activePeriodFromIso && activePeriodToIso && (
+                    <button
+                      type="button"
+                      onClick={() => setPeriod({ from: activePeriodFromIso, to: activePeriodToIso })}
+                      title={`Snap to the book's selected period (${activePeriodLabel ?? ''})`}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${
+                        period.from === activePeriodFromIso && period.to === activePeriodToIso
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-indigo-200 hover:text-indigo-700'
+                      }`}
+                    >
+                      {activePeriodLabel || 'Selected period'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setObligationsOpen(true)}
+                    className="text-[11px] px-2 py-1 rounded-md inline-flex items-center gap-1 bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                  >
+                    <CalendarClock size={12} /> Obligations
+                  </button>
+                </>
+              }
+            />
           </div>
         )}
         {filedReturn && (
@@ -637,6 +722,16 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
             min-h-0 is required so the flex child can shrink below its
             intrinsic content size, otherwise overflow-auto never kicks in. */}
         <div className="flex-1 overflow-auto p-4 min-h-0">
+          {data?.warnings && data.warnings.length > 0 && (
+            <div className="mb-3 space-y-1.5 print:hidden">
+              {data.warnings.map((w, i) => (
+                <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {mode === 'compute' && (!period.from || !period.to) ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-sm text-slate-500 text-center print:hidden">
               Pick a period above (try <span className="font-medium text-slate-700">This quarter</span>) to compute a new VAT return.
@@ -767,6 +862,23 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
               {subTab === 'outputs' && renderBreakdownTable(data.breakdown.outputs)}
               {subTab === 'inputs'  && renderBreakdownTable(data.breakdown.inputs)}
               {subTab === 'backup'  && <BackupReport data={data} filing={filedReturn} journal={journal} />}
+              {subTab === 'ai_review' && (
+                <VatReturnReviewPanel
+                  bookId={bookId}
+                  from={data.from}
+                  to={data.to}
+                  vatScheme={data.vat_scheme}
+                  vatRegistered={data.vat_registered}
+                  boxes={{
+                    box1: data.boxes.box1.value, box2: data.boxes.box2.value, box3: data.boxes.box3.value,
+                    box4: data.boxes.box4.value, box5: data.boxes.box5.value, box6: data.boxes.box6.value,
+                    box7: data.boxes.box7.value, box8: data.boxes.box8.value, box9: data.boxes.box9.value,
+                  }}
+                  lateEntryVat={data.late_entry_vat}
+                  outputs={data.breakdown.outputs}
+                  inputs={data.breakdown.inputs}
+                />
+              )}
 
               {/* Print-only backup view: always render BackupReport when printing. */}
               <div className="hidden print:block">
@@ -785,19 +897,26 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
               { id: 'outputs' as const, label: `Outputs (${data.breakdown.outputs.length})` },
               { id: 'inputs'  as const, label: `Inputs (${data.breakdown.inputs.length})` },
               { id: 'backup'  as const, label: 'Backup report' },
+              { id: 'ai_review' as const, label: 'AI review' },
             ]).map(t => {
               const active = subTab === t.id;
+              const isAi = t.id === 'ai_review';
               return (
                 <button
                   key={t.id}
                   type="button"
                   onClick={() => setSubTab(t.id)}
-                  className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
-                    active
-                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                      : 'text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-800'
+                  className={`text-xs px-2.5 py-1 rounded-md border transition-colors inline-flex items-center gap-1 ${
+                    isAi
+                      ? (active
+                          ? 'bg-amber-100 text-amber-800 border-amber-300'
+                          : 'text-amber-700 border-amber-200 bg-amber-50/60 hover:bg-amber-50')
+                      : (active
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                          : 'text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-800')
                   }`}
                 >
+                  {isAi && <Sparkles size={11} />}
                   {t.label}
                 </button>
               );
@@ -820,6 +939,36 @@ export default function VatReturnTab({ bookId, isAdmin }: Props) {
             lateEntryVat={data.late_entry_vat}
             onFiled={() => { setFileModalOpen(false); setRefreshKey(k => k + 1); }}
           />
+        )}
+
+        {/* MTD submission */}
+        {mtdOpen && data && (
+          <MtdSubmitModal
+            bookId={bookId}
+            fromIso={data.from}
+            toIso={data.to}
+            boxes={{
+              box1: data.boxes.box1.value, box2: data.boxes.box2.value, box3: data.boxes.box3.value,
+              box4: data.boxes.box4.value, box5: data.boxes.box5.value, box6: data.boxes.box6.value,
+              box7: data.boxes.box7.value, box8: data.boxes.box8.value, box9: data.boxes.box9.value,
+            }}
+            lateEntryVat={data.late_entry_vat}
+            onClose={() => setMtdOpen(false)}
+            onSubmitted={() => setRefreshKey(k => k + 1)}
+          />
+        )}
+
+        {/* Open obligations lightbox — pick a period HMRC has open. */}
+        {obligationsOpen && (
+          <div className="fixed inset-0 z-[1100] flex items-start justify-center bg-slate-900/40 p-4 overflow-y-auto print:hidden" onMouseDown={() => setObligationsOpen(false)}>
+            <div className="w-full max-w-2xl my-10 relative rounded-2xl bg-white shadow-2xl p-5" onMouseDown={e => e.stopPropagation()}>
+              <button type="button" onClick={() => setObligationsOpen(false)} aria-label="Close" className="absolute top-3 right-3 text-slate-400 hover:text-slate-700"><X size={18} /></button>
+              <VatObligationsPanel
+                bookId={bookId}
+                onUsePeriod={(from, to) => { setMode('compute'); setSelectedFilingId(null); setPeriod({ from, to }); setSubTab('summary'); setObligationsOpen(false); }}
+              />
+            </div>
+          </div>
         )}
 
         {/* Right-click row actions on the Outputs / Inputs breakdown rows */}

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  ChevronDown, ChevronUp, Smile, Minus, AlertCircle, PenLine,
+  Smile, Minus, AlertCircle, PenLine,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
@@ -384,7 +384,7 @@ export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
   defaultSubject, defaultAttachments,
   defaultDraftId, defaultBcc, defaultHtmlBody,
-  threadMessages, signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
+  signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
   onMinimise, initialSnapshot,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
@@ -443,9 +443,6 @@ export default function ComposeModal({
 
   // Create Task after send
   const [createTaskEnabled, setCreateTaskEnabled] = useState(false);
-
-  // Thread history preview (in reply mode)
-  const [showThread, setShowThread] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -522,7 +519,6 @@ export default function ComposeModal({
       setAttachedFiles(initialSnapshot.attachedFiles);
       setSelectedClients(initialSnapshot.selectedClients);
       setCreateTaskEnabled(initialSnapshot.createTaskEnabled);
-      setShowThread(false);
       requestAnimationFrame(() => {
         if (bodyRef.current) bodyRef.current.innerHTML = initialSnapshot.bodyHtml;
       });
@@ -575,7 +571,6 @@ export default function ComposeModal({
         : [],
     );
     setCreateTaskEnabled(false);
-    setShowThread(false);
     // Resuming a saved draft: stash the draft id so subsequent saves update
     // the same Gmail draft. Bumps the "draft saved" indicator off — that's
     // a transient confirmation, not the resume state.
@@ -1104,41 +1099,6 @@ export default function ComposeModal({
               style={{ minHeight: 160, maxHeight: '50vh' }}
             />
           </div>
-
-          {/* Thread history (reply/forward mode — shows prior messages collapsed) */}
-          {replyTo && threadMessages && threadMessages.length > 0 && (
-            <div className="border-t border-[var(--border)] shrink-0">
-              <button
-                onClick={() => setShowThread(v => !v)}
-                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-secondary)] transition-colors"
-              >
-                {showThread ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                {showThread ? 'Hide' : 'Show'} thread history ({threadMessages.length} message{threadMessages.length !== 1 ? 's' : ''})
-              </button>
-              {showThread && (
-                <div className="max-h-52 overflow-y-auto bg-[var(--bg-page)] border-t border-[var(--border)] divide-y divide-[var(--border)]">
-                  {threadMessages.map(msg => (
-                    <div key={msg.id} className="px-4 py-3">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-xs font-medium text-[var(--text-secondary)]">
-                          {msg.from.name || msg.from.email}
-                        </span>
-                        <span className="text-[10px] text-[var(--text-muted)]">{msg.date}</span>
-                      </div>
-                      {msg.body ? (
-                        <div
-                          className="text-xs text-[var(--text-muted)] line-clamp-3 [&_a]:text-[var(--accent)] [&_img]:hidden"
-                          dangerouslySetInnerHTML={{ __html: msg.body }}
-                        />
-                      ) : (
-                        <p className="text-xs text-[var(--text-muted)] italic">{msg.snippet}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Attached files */}
           {(attachedFiles.length > 0 || fetchingAttachments) && (

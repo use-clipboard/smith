@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import {
-  Zap, Sliders, Plus, Layers, Pencil, Upload, Sparkles,
+  Zap, Plus, Upload, Sparkles, HelpCircle,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 
@@ -36,12 +36,15 @@ interface ActionDef {
 }
 
 interface Props {
-  onAddTransaction: () => void;
-  /** Switches the workspace to the Import tab. Defined here on the home
-   *  page (rather than the side rail) because bulk imports are an
+  /** Opens the quick add-account modal. */
+  onAddAccount?: () => void;
+  /** Switches the workspace to the Import & Migrate tab. Defined here on the
+   *  home page (rather than the side rail) because bulk imports are an
    *  occasional, deliberate action — not something the user wants taking
    *  up rail real estate next to the day-to-day reports. */
   onImport?: () => void;
+  /** Opens the Help & how-to overlay (Getting Started topics). */
+  onHelp?: () => void;
 }
 
 const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
@@ -53,53 +56,33 @@ const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
   sky:     { bg: 'bg-sky-50',     text: 'text-sky-600'     },
 };
 
-export default function QuickActionsCard({ onAddTransaction, onImport }: Props) {
+export default function QuickActionsCard({ onAddAccount, onImport, onHelp }: Props) {
   const [comingHint, setComingHint] = useState<string | null>(null);
 
   const actions: ActionDef[] = [
-    {
-      id: 'set_up_assistants',
-      label: 'Set Up Assistants',
-      description: 'Guided opening balances + initial setup wizards',
-      icon: Zap,
-      tone: 'amber',
-    },
-    {
-      id: 'customise_view',
-      label: 'Customise View',
-      description: 'Choose what shows on the Home page Key items panel',
-      icon: Sliders,
-      tone: 'violet',
-    },
     {
       id: 'add_account',
       label: 'Add Account',
       description: 'Create a new account in an existing ledger',
       icon: Plus,
       tone: 'emerald',
-    },
-    {
-      id: 'add_ledger',
-      label: 'Add Ledger',
-      description: 'Create a new ledger (admin only)',
-      icon: Layers,
-      tone: 'rose',
-    },
-    {
-      id: 'add_transaction',
-      label: 'Add Transaction',
-      description: 'Open the input sheet ready to post',
-      icon: Pencil,
-      tone: 'indigo',
-      onClick: onAddTransaction,
+      onClick: onAddAccount,
     },
     {
       id: 'import_data',
-      label: 'Import Data',
-      description: 'Bulk-import transactions from a VT Transaction Report (admin only)',
+      label: 'Import & Migrate',
+      description: 'Bring a client’s books into SMITH — opening balances or full history from another tool (admin only)',
       icon: Upload,
       tone: 'sky',
       onClick: onImport,
+    },
+    {
+      id: 'help',
+      label: 'Help & how-to',
+      description: 'How the bookkeeping tool works and how to navigate it',
+      icon: HelpCircle,
+      tone: 'violet',
+      onClick: onHelp,
     },
   ];
 

@@ -9,17 +9,18 @@
  * per issue. Nothing is auto-posted — this is advisory.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Sparkles, Loader2, RefreshCw, AlertTriangle, Wallet, Copy, ShieldCheck,
-  TrendingDown, Scale, Users,
+  TrendingDown, Scale, Users, UserMinus, Landmark, Percent, Printer,
 } from 'lucide-react';
 import { AccountLink, TxnRefLink } from '../book/BookNavigationContext';
+import { printReport } from './printReport';
 import { formatMoney } from '@/lib/bookkeeping/formatMoney';
 import type { TransactionType } from '@/types/bookkeeping';
 
 type Severity = 'high' | 'medium' | 'low';
-type Category = 'suspense' | 'bank' | 'duplicate' | 'depreciation' | 'reconciliation' | 'balances';
+type Category = 'suspense' | 'bank' | 'duplicate' | 'depreciation' | 'reconciliation' | 'balances' | 'dla' | 'tax' | 'interest';
 interface Finding {
   id: string;
   category: Category;
@@ -28,7 +29,7 @@ interface Finding {
   detail: string;
   note?: string;
   account?: { id: string; name: string; ledger: string | null };
-  refTxns?: { id: string; type: TransactionType; ref_no: string }[];
+  refTxns?: { id: string; type: TransactionType; ref_no: string; date?: string }[];
   items?: { account: { id: string; name: string; ledger: string | null }; amount: number }[];
 }
 interface ReviewResult {
@@ -51,12 +52,16 @@ const CAT_ICON: Record<Category, typeof AlertTriangle> = {
   depreciation: TrendingDown,
   reconciliation: Scale,
   balances: Users,
+  dla: UserMinus,
+  tax: Landmark,
+  interest: Percent,
 };
 
-export default function BookReviewTab({ bookId, fromIso, toIso }: { bookId: string; fromIso: string | null; toIso: string | null }) {
+export default function BookReviewTab({ bookId, bookName, fromIso, toIso }: { bookId: string; bookName?: string; fromIso: string | null; toIso: string | null }) {
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const printRef = useRef<HTMLDivElement>(null);
 
   async function run() {
     setLoading(true);
@@ -78,23 +83,34 @@ export default function BookReviewTab({ bookId, fromIso, toIso }: { bookId: stri
   }
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 max-w-4xl mx-auto">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-base font-semibold text-slate-900 inline-flex items-center gap-2">
             <Sparkles size={15} className="text-indigo-600" /> AI Book Review
           </h2>
-          <p className="text-xs text-slate-500">Checks for suspense balances, duplicate entries and overdrawn bank accounts, with AI commentary.</p>
+          <p className="text-xs text-slate-500">Checks for suspense balances, duplicates, overdrawn bank &amp; director loan accounts, missing tax/interest and other completeness gaps, with AI commentary.</p>
         </div>
-        <button
-          type="button"
-          onClick={run}
-          disabled={loading}
-          className="btn-primary text-sm disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : result ? <RefreshCw size={14} /> : <Sparkles size={14} />}
-          {loading ? 'Reviewing…' : result ? 'Re-run review' : 'Run review'}
-        </button>
+        <div className="flex items-center gap-2 ml-auto">
+          {result && (
+            <button
+              type="button"
+              onClick={() => printRef.current && printReport(printRef.current, `AI Book Review — ${bookName ?? 'Book'}`)}
+              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+            >
+              <Printer size={12} /> Print
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={run}
+            disabled={loading}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : result ? <RefreshCw size={14} /> : <Sparkles size={14} />}
+            {loading ? 'Reviewing…' : result ? 'Re-run review' : 'Run review'}
+          </button>
+        </div>
       </div>
 
       {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>}
@@ -110,7 +126,13 @@ export default function BookReviewTab({ bookId, fromIso, toIso }: { bookId: stri
       )}
 
       {result && (
-        <>
+        <div ref={printRef} className="bk-print-root bk-print-area space-y-4">
+          {/* Print-only header */}
+          <div className="bk-print-only hidden mb-2">
+            <h1 className="text-lg font-bold text-slate-900">AI Book Review{bookName ? ` — ${bookName}` : ''}</h1>
+            <p className="text-xs text-slate-500">Period reviewed: {result.period} · Generated {new Date(result.generatedAt).toLocaleString('en-GB')}</p>
+          </div>
+
           {/* Overview */}
           {result.overview && (
             <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 px-4 py-3">
@@ -185,7 +207,7 @@ export default function BookReviewTab({ bookId, fromIso, toIso }: { bookId: stri
           <p className="text-[11px] text-slate-400">
             Reviewed {result.period} · AI-assisted — always verify against the book. Nothing has been changed or posted.
           </p>
-        </>
+        </div>
       )}
     </div>
   );

@@ -305,6 +305,9 @@ function UniversalEditForm({
     return () => { cancelled = true; };
   }, [bookId]);
 
+  const [frsCapital, setFrsCapital] = useState(Boolean(txn.frs_capital_reclaim));
+  const isPurchase = ['PIN', 'PAY', 'CHQ', 'PCR'].includes(type);
+
   const total = parseAmount(totalText);
   const rate = showVatColumn ? rateFor(vatTreatment) : 0;
   const { vat, net } = splitVatFromGross(total, rate);
@@ -348,6 +351,7 @@ function UniversalEditForm({
         primary_account_id: primary.id,
         splits,
         late_entry: isLateEntry && includeInNextReturn,
+        frs_capital_reclaim: isPurchase ? frsCapital : false,
       };
 
       const url = mode === 'edit'
@@ -474,6 +478,22 @@ function UniversalEditForm({
           className="w-full text-sm px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
       </Field>
+
+      {/* Flat Rate Scheme — reclaimable capital asset (purchases only) */}
+      {showVatColumn && isPurchase && (
+        <label className="flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={frsCapital}
+            onChange={e => setFrsCapital(e.target.checked)}
+            className="mt-0.5 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+          />
+          <div className="text-[11px] text-violet-900">
+            <div className="font-medium">Reclaimable capital asset (Flat Rate Scheme)</div>
+            <div>Tick if this is a capital asset over £2,000 whose input VAT is recoverable into Box 4 despite FRS. Ignored on non-flat-rate books.</div>
+          </div>
+        </label>
+      )}
 
       {/* Late entry chip */}
       {isLateEntry && (

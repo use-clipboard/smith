@@ -17,6 +17,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Loader2, X, Printer, Download, Search } from 'lucide-react';
 import KeyInformationCard from './KeyInformationCard';
 import QuickActionsCard from './QuickActionsCard';
+import AddAccountModal from './AddAccountModal';
+import GettingStartedCard from './GettingStartedCard';
 import BookWhiteboardCard from './BookWhiteboardCard';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { printReport } from '../reports/printReport';
@@ -43,6 +45,9 @@ interface Props {
   onOpenSearch?: () => void;
   /** Re-render trigger — bumped by the parent when a new transaction is posted. */
   refreshKey?: number;
+  /** Fired after the home tab itself posts something (e.g. the Opening
+   *  Balances wizard) so the parent can bump the shared refresh key. */
+  onChanged?: () => void;
   /** Click handler on an account name in a Primary / Analysis cell. Opens the
    *  matching ledger drill-down tab in the rail. */
   onOpenAccount?: (account: { id: string; name: string; ledger: string | null }) => void;
@@ -62,9 +67,11 @@ function formatDateUk(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-export default function BookHomeTab({ book, onDelete, onAddTransaction, onImport, onOpenSearch, refreshKey, onOpenAccount, onOpenTypeList, currentUserId, currentUserName }: Props) {
+export default function BookHomeTab({ book, onDelete, onImport, onOpenSearch, refreshKey, onChanged, onOpenAccount, onOpenTypeList, currentUserId, currentUserName }: Props) {
   const bookId = book.id;
   const vatRegistered = book.vat_registered;
+  const [addAccountOpen, setAddAccountOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [recent, setRecent] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllModal, setShowAllModal] = useState(false);
@@ -118,7 +125,7 @@ export default function BookHomeTab({ book, onDelete, onAddTransaction, onImport
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3" style={{ height: 'calc(100vh - 32rem)', minHeight: '20rem' }}>
         <div className="lg:col-span-5 flex flex-col gap-3 min-h-0">
           {/* Quick Actions takes its natural compact height; Key Info fills the rest and scrolls. */}
-          <QuickActionsCard onAddTransaction={onAddTransaction} onImport={onImport} />
+          <QuickActionsCard onAddAccount={() => setAddAccountOpen(true)} onImport={onImport} onHelp={() => setHelpOpen(true)} />
           <KeyInformationCard book={book} refreshKey={refreshKey} className="flex-1 min-h-0" />
         </div>
         <div className="lg:col-span-7 min-h-0">
@@ -322,6 +329,32 @@ export default function BookHomeTab({ book, onDelete, onAddTransaction, onImport
       )}
 
       {rowActions.menus}
+
+      {/* Quick add-account modal. */}
+      {addAccountOpen && (
+        <AddAccountModal
+          bookId={bookId}
+          onClose={() => setAddAccountOpen(false)}
+          onCreated={() => onChanged?.()}
+        />
+      )}
+
+      {/* Help & how-to overlay — the Getting Started topics in a roomy reader. */}
+      {helpOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/40 p-4" onMouseDown={() => setHelpOpen(false)}>
+          <div className="w-full max-w-3xl h-[82vh] relative" onMouseDown={e => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setHelpOpen(false)}
+              aria-label="Close help"
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-white shadow-md border border-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center"
+            >
+              <X size={16} />
+            </button>
+            <GettingStartedCard className="h-full" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

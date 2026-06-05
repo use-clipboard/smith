@@ -29,6 +29,8 @@ const PatchBody = z.object({
    *  edited date lands in a filed VAT period and wants the VAT carried into
    *  the next return. */
   late_entry: z.boolean().optional(),
+  /** Flat Rate Scheme — purchase is a reclaimable capital asset. */
+  frs_capital_reclaim: z.boolean().optional(),
 });
 
 /** Add one day to a YYYY-MM-DD string. */
@@ -41,7 +43,7 @@ function addOneDay(iso: string): string {
 const TX_SELECT = `
   id, book_id, type, ref_no, ref_seq, date, payee_text, details,
   total, vat_total, vat_rate, vat_treatment, vat_period_override,
-  primary_account_id, status, created_by, created_at, updated_at, posted_at,
+  primary_account_id, frs_capital_reclaim, status, created_by, created_at, updated_at, posted_at,
   primary_account:bookkeeping_accounts!bookkeeping_transactions_primary_account_id_fkey(id, name, ledger, account_type),
   splits:bookkeeping_transaction_splits(
     id, transaction_id, line_no, account_id, debit, credit, entry_details, notes,
@@ -242,6 +244,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.vat_rate !== undefined)           patch.vat_rate = body.vat_rate;
   if (body.vat_treatment !== undefined)      patch.vat_treatment = body.vat_treatment;
   if (body.primary_account_id !== undefined) patch.primary_account_id = body.primary_account_id;
+  if (body.frs_capital_reclaim !== undefined) patch.frs_capital_reclaim = body.frs_capital_reclaim;
   if (vatPeriodOverride !== undefined)       patch.vat_period_override = vatPeriodOverride;
   patch.updated_at = new Date().toISOString();
 

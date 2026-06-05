@@ -47,6 +47,9 @@ export interface Book {
   vat_registered: boolean;
   vat_scheme: VatScheme | null;
   vat_number: string | null;
+  /** Flat Rate Scheme percentage (e.g. 14.50). Only meaningful when
+   *  vat_scheme === 'flat_rate'. */
+  flat_rate_percentage: number | null;
   period_lock_date: string | null;
   /** Soft VAT lock — auto-set to the latest filed VAT return's period_to.
    *  Transactions dated on/before this can still be posted, but they must be
@@ -222,6 +225,8 @@ export interface Transaction {
   vat_period_override: string | null;
   primary_account_id: string | null;
   primary_account?: BookAccountRef | null;
+  /** FRS — purchase flagged as a reclaimable capital asset. */
+  frs_capital_reclaim?: boolean;
   status: TransactionStatus;
   created_by: string | null;
   created_at: string;

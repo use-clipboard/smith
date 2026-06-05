@@ -130,58 +130,67 @@ export async function GET(req: NextRequest) {
       }
       return out;
     }
+    // Split an id list into BATCH-sized slices. Batches are then fetched in
+    // PARALLEL (Promise.all) rather than sequentially — for a few hundred tasks
+    // that turns ~7 serial round-trips into one parallel wave, which is the
+    // bulk of this endpoint's latency. Order doesn't matter: everything is
+    // regrouped by task_id / id afterwards.
+    function sliceIds(ids: string[]): string[][] {
+      const out: string[][] = [];
+      for (let i = 0; i < ids.length; i += BATCH) out.push(ids.slice(i, i + BATCH));
+      return out;
+    }
+    // List view only needs enough per step to render cards, the checklist and
+    // the workflow flowchart — NOT the heavy config JSON (email_reminder_config,
+    // start_trigger_config, end_config, client_instructions, …). Trimming these
+    // off is the bulk of the payload reduction. The detail panel re-hydrates the
+    // full step objects on open (see TaskDetailPanel's onTaskRefetch effect).
+    const STEP_LIST_FIELDS =
+      'id, task_id, step_key, title, description, status, step_type, ' +
+      'assignee_id, is_client_step, tool_module_id, due_date, ' +
+      'position_x, position_y, template_step_id, completed_at, ' +
+      'assignee:users(id, full_name, email)';
     async function fetchAllSteps() {
-      const all: Record<string, unknown>[] = [];
-      for (let i = 0; i < taskIds.length; i += BATCH) {
-        const slice = taskIds.slice(i, i + BATCH);
-        const rows = await fetchAllRowsByTaskIds('task_steps', slice, '*, assignee:users(id, full_name, email)');
-        all.push(...rows);
-      }
-      // Diagnostic: count distinct task_ids that came back and compare to
-      // how many we asked for. Any drift here is the truncation we've
-      // been chasing — prints to the dev server terminal.
-      const distinctTaskIdsWithSteps = new Set(all.map(r => (r as { task_id: string }).task_id)).size;
-      const missing = taskIds.filter(id => !all.some(r => (r as { task_id: string }).task_id === id)).length;
-      console.log(`[GET /api/tasks] steps fetched=${all.length} distinct_tasks_with_steps=${distinctTaskIdsWithSteps} total_tasks=${taskIds.length} tasks_missing_steps=${missing}`);
+      const batches = await Promise.all(
+        sliceIds(taskIds).map(slice =>
+          fetchAllRowsByTaskIds('task_steps', slice, STEP_LIST_FIELDS)),
+      );
       void taskIdSet;
-      return all;
+      return batches.flat();
     }
     async function fetchAllEdges() {
-      const all: Record<string, unknown>[] = [];
-      for (let i = 0; i < taskIds.length; i += BATCH) {
-        const slice = taskIds.slice(i, i + BATCH);
-        // Same .range() loop as steps so a busy template (~10 edges/task)
-        // never trips the 1000-row PostgREST cap.
-        const rows = await fetchAllRowsByTaskIds('task_step_edges', slice, '*');
-        all.push(...rows);
-      }
-      return all;
+      // Same .range() loop as steps so a busy template (~10 edges/task) never
+      // trips the 1000-row PostgREST cap.
+      const batches = await Promise.all(
+        sliceIds(taskIds).map(slice => fetchAllRowsByTaskIds('task_step_edges', slice, '*')),
+      );
+      return batches.flat();
     }
     async function fetchClients() {
-      const all: Record<string, unknown>[] = [];
-      for (let i = 0; i < clientIds.length; i += BATCH) {
-        const slice = clientIds.slice(i, i + BATCH);
-        const { data, error } = await supabase
-          .from('clients')
-          .select('id, name, client_ref, contact_email, status')
-          .in('id', slice);
-        if (error) console.error(`[GET /api/tasks] clients batch ${i} failed:`, error.message);
-        if (data) all.push(...data);
-      }
-      return all;
+      const batches = await Promise.all(
+        sliceIds(clientIds).map(async slice => {
+          const { data, error } = await supabase
+            .from('clients')
+            .select('id, name, client_ref, contact_email, status')
+            .in('id', slice);
+          if (error) console.error('[GET /api/tasks] clients batch failed:', error.message);
+          return (data ?? []) as Record<string, unknown>[];
+        }),
+      );
+      return batches.flat();
     }
     async function fetchCreators() {
-      const all: Record<string, unknown>[] = [];
-      for (let i = 0; i < creatorIds.length; i += BATCH) {
-        const slice = creatorIds.slice(i, i + BATCH);
-        const { data, error } = await supabase
-          .from('users')
-          .select('id, full_name, email')
-          .in('id', slice);
-        if (error) console.error(`[GET /api/tasks] creators batch ${i} failed:`, error.message);
-        if (data) all.push(...data);
-      }
-      return all;
+      const batches = await Promise.all(
+        sliceIds(creatorIds).map(async slice => {
+          const { data, error } = await supabase
+            .from('users')
+            .select('id, full_name, email')
+            .in('id', slice);
+          if (error) console.error('[GET /api/tasks] creators batch failed:', error.message);
+          return (data ?? []) as Record<string, unknown>[];
+        }),
+      );
+      return batches.flat();
     }
 
     const [allSteps, allEdges, clientRows, creatorRows] = await Promise.all([

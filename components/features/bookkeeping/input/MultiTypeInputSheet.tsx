@@ -31,6 +31,7 @@ import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
+import Tooltip from '@/components/ui/Tooltip';
 import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
 import {
   VAT_TREATMENT_OPTIONS,
@@ -53,6 +54,8 @@ const TYPE_GROUPS: { label: string; types: SingleType[] }[] = [
 interface Props {
   bookId: string;
   vatRegistered: boolean;
+  /** Book VAT scheme — when 'flat_rate', purchase rows get a capital-reclaim toggle. */
+  vatScheme?: string | null;
   vatLockDate?: string | null;
   /** End of the currently-selected period — new rows default their date here. */
   defaultDateIso?: string | null;
@@ -96,6 +99,8 @@ interface Row {
   entryDetails: string;
   notes: string;
   includeInNextReturn: boolean;
+  /** FRS — purchase flagged as a reclaimable capital asset. */
+  frsCapital: boolean;
 }
 
 function makeBlankRow(vatRegistered: boolean, type: SingleType, defaultDateUk: string, seed: Partial<Row> = {}): Row {
@@ -113,6 +118,7 @@ function makeBlankRow(vatRegistered: boolean, type: SingleType, defaultDateUk: s
     entryDetails: seed.entryDetails ?? '',
     notes: '',
     includeInNextReturn: true,
+    frsCapital: seed.frsCapital ?? false,
   };
 }
 
@@ -248,12 +254,15 @@ function parseImport(
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function MultiTypeInputSheet({
-  bookId, vatRegistered, vatLockDate, defaultDateIso, initialType = 'PAY', onPosted,
+  bookId, vatRegistered, vatScheme, vatLockDate, defaultDateIso, initialType = 'PAY', onPosted,
 }: Props) {
   const defaultDateUk = defaultDateIso ? formatDateUk(defaultDateIso) : formatDateUk(todayIso());
   // Book-level: show the VAT/Net columns at all. Per row, the cell is only
   // editable when that row's type carries VAT.
   const showVatColumns = vatRegistered;
+  // Flat Rate Scheme books get a capital-reclaim column on purchase rows.
+  const isFrs = vatScheme === 'flat_rate';
+  const PURCHASE_TYPES = new Set(['PIN', 'PAY', 'CHQ', 'PCR']);
 
   const [rows, setRows] = useState<Row[]>(() => [makeBlankRow(vatRegistered, initialType, defaultDateUk)]);
   const [postingProgress, setPostingProgress] = useState<{ done: number; total: number } | null>(null);
@@ -478,6 +487,7 @@ export default function MultiTypeInputSheet({
             primary_account_id: r.primary!.id,
             splits,
             late_entry: lateEntry,
+            frs_capital_reclaim: isFrs && PURCHASE_TYPES.has(r.type) ? r.frsCapital : false,
           }),
         });
         if (!res.ok) {
@@ -514,7 +524,7 @@ export default function MultiTypeInputSheet({
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const posting = postingProgress !== null;
-  const colSpanBase = showVatColumns ? 11 : 9;
+  const colSpanBase = (showVatColumns ? 11 : 9) + (isFrs ? 1 : 0);
 
   return (
     <div onKeyDown={handleKey} className="space-y-3">
@@ -580,6 +590,7 @@ export default function MultiTypeInputSheet({
               {showVatColumns && <th className="px-2 py-1.5 text-right w-24 border-r border-slate-300">Net</th>}
               <th className="px-2 py-1.5 text-left w-40 border-r border-slate-300">Analysis ledger</th>
               <th className="px-2 py-1.5 text-left w-52 border-r border-slate-300">Analysis account</th>
+              {isFrs && <th className="px-2 py-1.5 text-center w-16 border-r border-slate-300" title="Reclaimable capital asset (Flat Rate Scheme)">Capital</th>}
               <th className="px-2 py-1.5 text-left">Entry details</th>
             </tr>
           </thead>
@@ -716,6 +727,27 @@ export default function MultiTypeInputSheet({
                       className="!border-none"
                     />
                   </td>
+
+                  {/* FRS capital-reclaim toggle (purchase rows only) */}
+                  {isFrs && (
+                    <td className="px-2 py-0 border-r border-slate-200 align-middle">
+                      <div className="flex items-center justify-center">
+                        {PURCHASE_TYPES.has(r.type) ? (
+                          <Tooltip label="Reclaimable capital asset (>£2,000) — input VAT recoverable into Box 4 despite FRS">
+                            <input
+                              type="checkbox"
+                              checked={r.frsCapital}
+                              onChange={e => updateRow(r.id, { frsCapital: e.target.checked })}
+                              aria-label="Reclaimable capital asset"
+                              className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                            />
+                          </Tooltip>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </div>
+                    </td>
+                  )}
 
                   {/* Entry details — Tab off last row appends a line */}
                   <td className="px-0 py-0">

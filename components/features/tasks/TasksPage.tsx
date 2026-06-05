@@ -142,30 +142,18 @@ export default function TasksPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      // Use allSettled so one failing route doesn't crash the whole page
-      const [tasksRes, templatesRes, teamRes, clientsRes, profileRes, deptRes] = await Promise.allSettled([
+      // CRITICAL PATH — only the two things the task list needs to render:
+      // the tasks themselves, and the current user's profile (drives the "My
+      // Tasks" view + permission gating). We unblock the UI as soon as these
+      // land instead of waiting on the four heavier/secondary fetches below.
+      // allSettled so one failure doesn't crash the page.
+      const [tasksRes, profileRes] = await Promise.allSettled([
         fetch('/api/tasks'),
-        fetch('/api/tasks/templates'),
-        fetch('/api/users/team'),
-        fetch('/api/clients'),
         fetch('/api/users/me'),
-        fetch('/api/tasks/departments'),
       ]);
 
       if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
         const d = await tasksRes.value.json(); setTasks(d.tasks ?? []);
-      }
-      if (templatesRes.status === 'fulfilled' && templatesRes.value.ok) {
-        const d = await templatesRes.value.json(); setTemplates(d.templates ?? []);
-      }
-      if (teamRes.status === 'fulfilled' && teamRes.value.ok) {
-        const d = await teamRes.value.json(); setTeamMembers(d.members ?? []);
-      }
-      if (clientsRes.status === 'fulfilled' && clientsRes.value.ok) {
-        const d = await clientsRes.value.json(); setClients(d.clients ?? []);
-      }
-      if (deptRes.status === 'fulfilled' && deptRes.value.ok) {
-        const d = await deptRes.value.json(); setDepartments(d.departments ?? []);
       }
       if (profileRes.status === 'fulfilled' && profileRes.value.ok) {
         const d = await profileRes.value.json();
@@ -177,6 +165,27 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
+
+    // SECONDARY — templates, team, clients and department counts only feed
+    // filters, the sidebar badges and the create/edit modals. The task cards
+    // carry their own embedded client + assignee data, so none of this blocks
+    // the list. Fire them in the background and populate as each arrives.
+    fetch('/api/tasks/templates')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setTemplates(d.templates ?? []); })
+      .catch(() => { /* non-critical */ });
+    fetch('/api/users/team')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setTeamMembers(d.members ?? []); })
+      .catch(() => { /* non-critical */ });
+    fetch('/api/clients')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setClients(d.clients ?? []); })
+      .catch(() => { /* non-critical */ });
+    fetch('/api/tasks/departments')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setDepartments(d.departments ?? []); })
+      .catch(() => { /* non-critical */ });
   }
 
   useEffect(() => { loadAll(); }, []);
