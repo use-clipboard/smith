@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { isHmrcConfigured } from '@/lib/hmrc/config';
-import { getHmrcConnection, hmrcRequest, hmrcErrorMessage } from '@/lib/hmrc/api';
+import { getHmrcConnection, hmrcRequest, hmrcErrorMessage, type HmrcConnection } from '@/lib/hmrc/api';
 import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { normaliseNino } from '@/lib/hmrc/mtdItServer';
 import { computeMtdItCumulative, type BusinessSource, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
-import { buildSelfEmploymentCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
+import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
 import type { MtdItQuarterType } from '@/types';
 
 // ── POST /api/mtd-it/quarters/[id]/submit ────────────────────────────────────
@@ -17,6 +17,39 @@ import type { MtdItQuarterType } from '@/types';
 type SourceResult =
   | { name: string; typeOfBusiness: TypeOfBusiness; status: 'submitted'; businessId: string; reference: string | null }
   | { name: string; typeOfBusiness: TypeOfBusiness; status: 'skipped' | 'error'; reason: string };
+
+interface OblPeriod { start: string; end: string; status: string }
+
+/**
+ * Fetch the client's HMRC obligation periods for the tax year, grouped by
+ * businessId and sorted by period end. Lets us file the cumulative update
+ * against the correct period (HMRC validates periodDates against an obligation).
+ * Best-effort — returns an empty map on any failure so the caller falls back to
+ * the computed quarter dates.
+ */
+async function fetchObligationPeriods(
+  conn: HmrcConnection, nino: string, fraudHeaders: Record<string, string>,
+  testScenario: string | undefined, taxYearInt: number,
+): Promise<Map<string, OblPeriod[]>> {
+  const map = new Map<string, OblPeriod[]>();
+  try {
+    const r = await hmrcRequest(conn, `/obligations/details/${nino}/income-and-expenditure`, { version: '3.0', fraudHeaders, testScenario });
+    if (r.status < 200 || r.status >= 300) return map;
+    const yearStart = `${taxYearInt}-04-06`, yearEnd = `${taxYearInt + 1}-04-05`;
+    const groups = ((r.json as { obligations?: unknown[] } | null)?.obligations ?? []) as Array<Record<string, unknown>>;
+    for (const g of groups) {
+      const bid = (g.businessId ?? g.referenceNumber) as string | undefined;
+      if (!bid) continue;
+      const details = (g.obligationDetails ?? g.details ?? []) as Array<Record<string, unknown>>;
+      const periods = details
+        .map(d => ({ start: String(d.periodStartDate ?? ''), end: String(d.periodEndDate ?? ''), status: String(d.status ?? '') }))
+        .filter(p => p.start && p.end && p.start >= yearStart && p.end <= yearEnd)
+        .sort((a, b) => (a.end < b.end ? -1 : a.end > b.end ? 1 : 0));
+      if (periods.length) map.set(bid, periods);
+    }
+  } catch { /* fall back to computed dates */ }
+  return map;
+}
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
@@ -58,13 +91,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ...(props ?? []).map(p => ({ kind: 'property' as const, id: p.id as string, hmrcBusinessId: (p.hmrc_business_id as string | null) ?? null, typeOfBusiness: (p.property_type === 'foreign' ? 'foreign-property' : 'uk-property') as TypeOfBusiness, name: p.address as string })),
   ];
 
+  // Real HMRC obligation periods (best-effort) so we file against the right one.
+  const obligationsByBusiness = await fetchObligationPeriods(conn, nino, fraudHeaders, body.testScenario || undefined, quarter.tax_year as number);
+
   const results: SourceResult[] = [];
   let submitted = 0, errors = 0;
 
   for (const source of sources) {
-    // Property submission is held until its field codelist is verified.
-    if (source.typeOfBusiness !== 'self-employment') {
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'skipped', reason: 'Property submission is not enabled yet.' });
+    // Self-employment + UK property file now. Foreign property is held (needs
+    // per-country codes + a distinct body shape, verified separately).
+    if (source.typeOfBusiness === 'foreign-property') {
+      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'skipped', reason: 'Foreign property filing is coming soon.' });
       continue;
     }
     if (!source.hmrcBusinessId) {
@@ -73,7 +110,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const figures = await computeMtdItCumulative(service, { clientId: client.id as string, taxYear: quarter.tax_year as number, quarterType, uptoQuarter, source });
-    const payload = buildSelfEmploymentCumulativeBody(figures, Boolean(body.useConsolidated));
+
+    // File against the actual HMRC obligation period when we have it: the
+    // cumulative window runs from the first obligation's start to the chosen
+    // quarter's obligation end. Falls back to the computed dates otherwise.
+    const periods = obligationsByBusiness.get(source.hmrcBusinessId) ?? [];
+    if (periods.length > 0) {
+      figures.periodStartDate = periods[0].start;
+      figures.periodEndDate = (periods[uptoQuarter - 1] ?? periods[periods.length - 1]).end;
+    }
+
+    const payload = source.typeOfBusiness === 'self-employment'
+      ? buildSelfEmploymentCumulativeBody(figures, Boolean(body.useConsolidated))
+      : buildUkPropertyCumulativeBody(figures, Boolean(body.useConsolidated));
     const path = cumulativePath(nino, source.hmrcBusinessId, source.typeOfBusiness, taxYearStr);
 
     const r = await hmrcRequest(conn, path, {

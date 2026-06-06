@@ -73,7 +73,7 @@ const SECTIONS: Section[] = [
     body: (
       <>
         <p>Open a client&apos;s quarter, add/import the income &amp; expense entries, and review. Send the figures to the client for <strong>approval</strong>; once approved, the <strong>Submit to HMRC</strong> button appears.</p>
-        <p>Submission files the <strong>year-to-date cumulative</strong> figures for each self-employment source (property filing is coming). Figures are recomputed server-side from the approved entries, so what&apos;s filed matches what was approved. A receipt is recorded and the quarter is marked <strong>submitted</strong>.</p>
+        <p>Submission files the <strong>year-to-date cumulative</strong> figures for each self-employment and UK property source (foreign property is coming). Figures are recomputed server-side from the approved entries, so what&apos;s filed matches what was approved. A receipt is recorded and the quarter is marked <strong>submitted</strong>.</p>
       </>
     ),
   },

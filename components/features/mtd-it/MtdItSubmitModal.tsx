@@ -137,7 +137,7 @@ export default function MtdItSubmitModal({
     } finally { setSubmitting(false); }
   }
 
-  const submittable = (preview ?? []).filter(s => s.typeOfBusiness === 'self-employment' && s.businessId);
+  const submittable = (preview ?? []).filter(s => s.typeOfBusiness !== 'foreign-property' && s.businessId);
   const alreadyFiled = quarterStatus === 'submitted';
 
   // Post-submit result state.
@@ -186,9 +186,9 @@ export default function MtdItSubmitModal({
             <p className="text-sm text-gray-400">No business sources found for this client.</p>
           ) : (
             <>
-              <p className="text-xs text-gray-500">Year-to-date cumulative figures, recomputed from the approved entries. Self-employment is filed now; property is shown for reference (filing pending).</p>
+              <p className="text-xs text-gray-500">Year-to-date cumulative figures, recomputed from the approved entries. Self-employment and UK property are filed now; foreign property is shown for reference (coming soon).</p>
               {preview.map((s, i) => {
-                const held = s.typeOfBusiness !== 'self-employment';
+                const held = s.typeOfBusiness === 'foreign-property';
                 const unmapped = !s.businessId;
                 return (
                   <div key={i} className={`rounded-lg border p-3 ${held || unmapped ? 'border-gray-200 bg-gray-50' : 'border-indigo-100 bg-indigo-50/30'}`}>
@@ -201,7 +201,7 @@ export default function MtdItSubmitModal({
                       <span>Expenses <strong className="tabular-nums">{gbp(s.consolidatedExpenses)}</strong></span>
                       <span className="text-slate-400">{uk(s.periodStartDate)}–{uk(s.periodEndDate)} · {s.rowCount} rows</span>
                     </div>
-                    {held && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Property filing not enabled yet.</p>}
+                    {held && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Foreign property filing coming soon.</p>}
                     {unmapped && !held && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Not linked to an HMRC business — map it on the HMRC setup screen.</p>}
                     {s.warnings.map((w, j) => <p key={j} className="text-[11px] text-amber-700 mt-1 inline-flex items-start gap-1"><AlertTriangle size={10} className="mt-0.5" /> {w}</p>)}
                   </div>

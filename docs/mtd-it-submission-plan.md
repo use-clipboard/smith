@@ -17,10 +17,12 @@
 >   - DONE: category map (`lib/mtdIt/categoryMap.ts`, SE fields verified); cumulative
 >     YTD compute (`lib/mtdIt/computeUpdate.ts`, mirrors the approved P&L exactly);
 >     read-only preview endpoint (`quarters/[id]/update-preview`).
->   - TODO: the submit endpoint's HMRC PUT envelope (confirm exact body shape against
->     the sandbox/OAS first — isolate in one builder); property itemised field codelist
->     (currently consolidated-expenses only); `mtd_it_submissions` receipt write +
->     status→`submitted`; the "Submit to HMRC" UI/modal in the review phase.
+>   - DONE: SE submit confirmed against sandbox (HTTP 204, no reference); receipts +
+>     status→`submitted`; submit modal + result/summary lightboxes; report regen.
+>   - DONE: file against the real HMRC obligation period (fallback to computed dates).
+>   - DONE: UK property submission (Property Business v6.0, non-FHL) — category map +
+>     `buildUkPropertyCumulativeBody` (envelope to confirm in sandbox).
+>   - TODO: FOREIGN property (per-country `countryCode` + distinct body shape) — held.
 >
 > ⚠️ Deploy order: apply `20260626_mtd_it_hmrc.sql` BEFORE pushing — the OAuth callback
 > writes the new `service`/`client_id` columns (shared DB).

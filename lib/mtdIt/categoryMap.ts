@@ -60,7 +60,29 @@ export const SE_EXPENSE_LABEL: Record<SeExpenseField, string> = {
   professionalFees: 'Professional fees', depreciation: 'Depreciation', otherExpenses: 'Other expenses',
 };
 
-// PROPERTY (Property Business API v6.0) — field codelists not yet verified at
-// build time. Until confirmed against the OAS, property submissions use a single
-// `consolidatedExpenses` total. The income side is a single rents/period amount.
-// TODO(phase-c): add verified UK non-FHL + foreign property field maps.
+// ── Property (Property Business API v6.0) ───────────────────────────────────
+// UK property expense fields (FHL abolished April 2025, so non-FHL only).
+export type PropertyExpenseField =
+  | 'premisesRunningCosts' | 'repairsAndMaintenance' | 'financialCosts'
+  | 'professionalFees' | 'costOfServices' | 'travelCosts' | 'other';
+
+const PROPERTY_RULES: { field: PropertyExpenseField; keywords: string[] }[] = [
+  { field: 'repairsAndMaintenance', keywords: ['repair', 'maintenance', 'renewal', 'decorat'] },
+  { field: 'financialCosts',        keywords: ['mortgage', 'interest', 'loan', 'finance'] },
+  { field: 'professionalFees',      keywords: ['accountan', 'legal', 'solicitor', 'letting agent', 'management fee', 'agent fee', 'professional'] },
+  { field: 'costOfServices',        keywords: ['service', 'cleaning', 'garden', 'wages', 'staff'] },
+  { field: 'travelCosts',           keywords: ['travel', 'mileage', 'motor'] },
+  { field: 'premisesRunningCosts',  keywords: ['rent', 'rate', 'council tax', 'ground rent', 'service charge', 'insurance', 'utilit', 'electric', 'gas', 'water', 'premises'] },
+];
+
+/** Classify a property expense category to its HMRC field. */
+export function classifyPropertyExpense(category: string | null | undefined): PropertyExpenseField {
+  const c = (category ?? '').toLowerCase();
+  for (const rule of PROPERTY_RULES) if (rule.keywords.some(k => c.includes(k))) return rule.field;
+  return 'other';
+}
+
+export const PROPERTY_EXPENSE_FIELDS: PropertyExpenseField[] = [
+  'premisesRunningCosts', 'repairsAndMaintenance', 'financialCosts',
+  'professionalFees', 'costOfServices', 'travelCosts', 'other',
+];

@@ -12,7 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MtdItQuarterType } from '@/types';
 import { getQuarterDates } from './quarters';
-import { classifySeExpense, type SeExpenseField } from './categoryMap';
+import { classifySeExpense, classifyPropertyExpense } from './categoryMap';
 
 export type TypeOfBusiness = 'self-employment' | 'uk-property' | 'foreign-property';
 
@@ -31,8 +31,9 @@ export interface CumulativeResult {
   periodStartDate: string;     // YYYY-MM-DD (tax-year start)
   periodEndDate: string;       // YYYY-MM-DD (selected quarter end)
   income: number;              // total income (GBP), → turnover / rents
-  /** Self-employment: itemised expense totals by HMRC field. Empty for property. */
-  expensesByField: Partial<Record<SeExpenseField, number>>;
+  /** Itemised expense totals keyed by the HMRC field name (self-employment or
+   *  property fields, depending on the source type). */
+  expensesByField: Record<string, number>;
   /** Single consolidated expense total (used for property, or SE if requested). */
   consolidatedExpenses: number;
   rowCount: number;
@@ -101,7 +102,7 @@ export async function computeMtdItCumulative(
   for (const q of quarters ?? []) fxByQuarter.set(q.id as string, (q.fx_rates as Record<string, number>) ?? {});
   const quarterIds = (quarters ?? []).map(q => q.id as string);
 
-  const expensesByField: Partial<Record<SeExpenseField, number>> = {};
+  const expensesByField: Record<string, number> = {};
   let income = 0, consolidatedExpenses = 0, rowCount = 0, sharedRows = 0;
 
   if (quarterIds.length > 0) {
@@ -144,10 +145,10 @@ export async function computeMtdItCumulative(
         income += value;
       } else {
         consolidatedExpenses += value;
-        if (source.typeOfBusiness === 'self-employment') {
-          const field = classifySeExpense(e.category);
-          expensesByField[field] = round2((expensesByField[field] ?? 0) + value);
-        }
+        const field = source.typeOfBusiness === 'self-employment'
+          ? classifySeExpense(e.category)
+          : classifyPropertyExpense(e.category);
+        expensesByField[field] = round2((expensesByField[field] ?? 0) + value);
       }
     }
   }

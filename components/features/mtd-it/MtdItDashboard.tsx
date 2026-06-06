@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, ShieldCheck, HelpCircle, X,
+  Users as UsersIcon, ShieldCheck, HelpCircle, X, History,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -26,6 +26,7 @@ import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItClientRow, { type MtdItColumnKey } from './MtdItClientRow';
 import MtdItHelpModal from './MtdItHelpModal';
+import MtdItHistoryModal from './MtdItHistoryModal';
 import MtdItQuarterStats from './MtdItQuarterStats';
 import AddMtdClientModal from './AddMtdClientModal';
 import BulkImportMtdModal from './BulkImportMtdModal';
@@ -115,6 +116,7 @@ export default function MtdItDashboard() {
   // HMRC agent connection status — drives the "HMRC setup" button's connected state.
   const [hmrc, setHmrc] = useState<{ connected: boolean; connectedAt: string | null; connectedBy: string | null } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const loadHmrc = useCallback(() => {
     fetch('/api/mtd-it/agent/status').then(r => r.ok ? r.json() : null).then(d => { if (d) setHmrc(d); }).catch(() => {});
   }, []);
@@ -529,6 +531,14 @@ export default function MtdItDashboard() {
               alongside Add client rather than inside the dashboard table.
               Calculator opens an in-memory P&L calculator; Demo spins up
               a sandboxed client with sample data the user can play with. */}
+          <Tooltip label="Activity history — drafts saved, emails sent, client approvals and HMRC submissions across the firm.">
+            <button
+              onClick={() => setShowHistory(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg shadow-sm border bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+            >
+              <History size={14} /> History
+            </button>
+          </Tooltip>
           <Tooltip label="How MTD IT works — authorising, discovering, mapping and submitting.">
             <button
               onClick={() => setShowHelp(true)}
@@ -683,6 +693,7 @@ export default function MtdItDashboard() {
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
       {showHelp && <MtdItHelpModal onClose={() => setShowHelp(false)} />}
+      {showHistory && <MtdItHistoryModal onClose={() => setShowHistory(false)} />}
       {showAdd && (
         <AddMtdClientModal
           onClose={() => setShowAdd(false)}

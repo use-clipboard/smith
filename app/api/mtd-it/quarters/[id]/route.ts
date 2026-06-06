@@ -17,25 +17,25 @@ const PatchSchema = z.object({
   notes:                z.string().nullable().optional(),
 }).strict();
 
-async function checkQuarterFirmAccess(quarterId: string, firmId: string): Promise<boolean> {
+async function loadQuarterForFirm(quarterId: string, firmId: string): Promise<{ client_id: string; quarter: number; tax_year: number } | null> {
   const supabase = createClient();
   const { data } = await supabase
     .from('mtd_it_quarters')
-    .select('client_id, clients!inner(firm_id)')
+    .select('client_id, quarter, tax_year, clients!inner(firm_id)')
     .eq('id', quarterId)
     .maybeSingle();
-  if (!data) return false;
-  // Supabase typings make this loose — coerce defensively
+  if (!data) return null;
   const c = (data as unknown as { clients?: { firm_id?: string } }).clients;
-  return c?.firm_id === firmId;
+  if (c?.firm_id !== firmId) return null;
+  return { client_id: data.client_id as string, quarter: data.quarter as number, tax_year: data.tax_year as number };
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
-  const ok = await checkQuarterFirmAccess(params.id, ctx.firmId);
-  if (!ok) return NextResponse.json({ error: 'Quarter not found' }, { status: 404 });
+  const qmeta = await loadQuarterForFirm(params.id, ctx.firmId);
+  if (!qmeta) return NextResponse.json({ error: 'Quarter not found' }, { status: 404 });
 
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
@@ -51,6 +51,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (error) {
     console.error('PATCH /api/mtd-it/quarters/[id]', error);
     return NextResponse.json({ error: 'Failed to update quarter' }, { status: 500 });
+  }
+
+  // Log status transitions to the activity feed (drafts, completes, reopens…).
+  if (parsed.data.status) {
+    createServiceClient().from('mtd_it_activity').insert({
+      firm_id: ctx.firmId, client_id: qmeta.client_id, quarter_id: params.id,
+      quarter: qmeta.quarter, tax_year: qmeta.tax_year, user_id: ctx.userId,
+      kind: 'status_change', detail: parsed.data.status,
+    }).then(() => {}, () => {});
   }
 
   // Source-doc cleanup on 'complete' is handled out-of-band by the
@@ -78,8 +87,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: 'Only firm admins can delete a quarter' }, { status: 403 });
   }
 
-  const ok = await checkQuarterFirmAccess(params.id, ctx.firmId);
-  if (!ok) return NextResponse.json({ error: 'Quarter not found' }, { status: 404 });
+  const qmeta = await loadQuarterForFirm(params.id, ctx.firmId);
+  if (!qmeta) return NextResponse.json({ error: 'Quarter not found' }, { status: 404 });
 
   const service = createServiceClient();
 

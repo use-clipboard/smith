@@ -42,6 +42,36 @@ export function buildSelfEmploymentCumulativeBody(
   };
 }
 
+export interface UkPropertyCumulativeBody {
+  fromDate: string;
+  toDate: string;
+  ukProperty: { income: { periodAmount: number }; expenses: Record<string, number> };
+}
+
+/**
+ * Build the UK Property Cumulative Period Summary body (Property Business API
+ * v6.0, non-FHL — FHL abolished April 2025). ISOLATED like the SE builder: the
+ * exact cumulative envelope (wrapper key + date fields) is confirmed against the
+ * sandbox; if HMRC rejects the shape, adjust here only.
+ */
+export function buildUkPropertyCumulativeBody(
+  r: CumulativeResult,
+  useConsolidated: boolean,
+): UkPropertyCumulativeBody {
+  const expenses: Record<string, number> = useConsolidated
+    ? { consolidatedExpenses: round2(r.consolidatedExpenses) }
+    : Object.fromEntries(
+        Object.entries(r.expensesByField)
+          .filter(([, v]) => typeof v === 'number' && v !== 0)
+          .map(([k, v]) => [k, round2(v as number)]),
+      );
+  return {
+    fromDate: r.periodStartDate,
+    toDate: r.periodEndDate,
+    ukProperty: { income: { periodAmount: round2(r.income) }, expenses },
+  };
+}
+
 /** HMRC path for a cumulative period summary PUT, by business type. */
 export function cumulativePath(nino: string, businessId: string, typeOfBusiness: CumulativeResult['typeOfBusiness'], hmrcTaxYear: string): string {
   if (typeOfBusiness === 'self-employment') {
