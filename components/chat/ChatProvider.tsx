@@ -72,7 +72,8 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
     if (!userId) return;
     fetch('/api/users/team')
       .then(r => r.json())
-      .then(data => { if (data.members) setTeamMembers(data.members); });
+      .then(data => { if (data.members) setTeamMembers(data.members); })
+      .catch(() => { /* transient network/navigation error — non-critical */ });
   }, [userId]);
 
   // Load existing conversations
@@ -90,7 +91,8 @@ export function ChatProvider({ children, userId, firmId }: ChatProviderProps) {
         });
         setConversations(convMap);
         setUnreadCounts(unreadMap);
-      });
+      })
+      .catch(() => { /* transient network/navigation error — non-critical */ });
   }, [userId]);
 
   // Set up presence channel

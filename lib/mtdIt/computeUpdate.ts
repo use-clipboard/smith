@@ -41,6 +41,9 @@ export interface CumulativeResult {
 
 interface EntryRow {
   quarter_id: string;
+  stream: string;
+  trade_id: string | null;
+  property_id: string | null;
   entry_type: string;
   category: string | null;
   gross_amount: number | null;
@@ -51,6 +54,10 @@ interface EntryRow {
   flagged_reason: string | null;
   flag_dismissed: boolean | null;
 }
+
+const STREAM_FOR_TYPE: Record<TypeOfBusiness, 'sole' | 'uk_rental' | 'foreign_rental'> = {
+  'self-employment': 'sole', 'uk-property': 'uk_rental', 'foreign-property': 'foreign_rental',
+};
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 
@@ -98,16 +105,38 @@ export async function computeMtdItCumulative(
   let income = 0, consolidatedExpenses = 0, rowCount = 0, sharedRows = 0;
 
   if (quarterIds.length > 0) {
-    // Entries for this source across the YTD quarters.
-    const col = source.kind === 'trade' ? 'trade_id' : 'property_id';
+    const stream = STREAM_FOR_TYPE[source.typeOfBusiness];
+    // How many active sources of this stream the client has. With a single
+    // source, UNALLOCATED entries on that stream belong to it (this matches the
+    // review-phase P&L stream total). With several, only entries explicitly
+    // allocated to this source count.
+    let siblingCount = 0;
+    if (source.kind === 'trade') {
+      const { count } = await supabase.from('mtd_it_trades').select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId).eq('active', true);
+      siblingCount = count ?? 0;
+    } else {
+      const ptype = source.typeOfBusiness === 'foreign-property' ? 'foreign' : 'uk';
+      const { count } = await supabase.from('mtd_it_properties').select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId).eq('active', true).eq('property_type', ptype);
+      siblingCount = count ?? 0;
+    }
+    const onlySource = siblingCount <= 1;
+
+    // Pull all of this stream's entries across the YTD quarters, then attribute.
     const { data: entries } = await supabase
       .from('mtd_it_entries')
-      .select('quarter_id, entry_type, category, gross_amount, gbp_amount, currency, fx_rate, share_pct, flagged_reason, flag_dismissed')
-      .in('quarter_id', quarterIds).eq(col, source.id);
+      .select('quarter_id, stream, trade_id, property_id, entry_type, category, gross_amount, gbp_amount, currency, fx_rate, share_pct, flagged_reason, flag_dismissed')
+      .in('quarter_id', quarterIds).eq('stream', stream);
 
     for (const e of (entries ?? []) as EntryRow[]) {
       // Exclude unresolved flagged entries — same as the P&L's clean totals.
       if (e.flagged_reason && !e.flag_dismissed) continue;
+      // Does this entry belong to this source? Allocated to it, or unallocated
+      // when this is the only source of the stream.
+      const alloc = source.kind === 'trade' ? e.trade_id : e.property_id;
+      const belongs = alloc === source.id || (alloc == null && onlySource);
+      if (!belongs) continue;
       const value = round2(gbp(e, fxByQuarter.get(e.quarter_id) ?? {}));
       if (e.share_pct != null && e.share_pct < 100) sharedRows++;
       rowCount++;

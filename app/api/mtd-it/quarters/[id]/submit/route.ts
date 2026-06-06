@@ -15,7 +15,7 @@ import type { MtdItQuarterType } from '@/types';
 // server-side (never trust the client). Self-employment is submitted now;
 // property is held until its field codelist is verified.
 type SourceResult =
-  | { name: string; typeOfBusiness: TypeOfBusiness; status: 'submitted'; businessId: string }
+  | { name: string; typeOfBusiness: TypeOfBusiness; status: 'submitted'; businessId: string; reference: string | null }
   | { name: string; typeOfBusiness: TypeOfBusiness; status: 'skipped' | 'error'; reason: string };
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -31,13 +31,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!quarter) return NextResponse.json({ error: 'Quarter not found.' }, { status: 404 });
 
   const { data: client } = await service
-    .from('clients').select('id, name, nino, mtd_it_quarter_type').eq('id', quarter.client_id).eq('firm_id', ctx.firmId).single();
+    .from('clients').select('id, name, national_insurance_number, mtd_it_quarter_type').eq('id', quarter.client_id).eq('firm_id', ctx.firmId).single();
   if (!client) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
 
-  if (quarter.status !== 'approved') {
-    return NextResponse.json({ error: 'This quarter must be client-approved before submitting to HMRC.' }, { status: 400 });
+  if (quarter.status === 'not_started') {
+    return NextResponse.json({ error: 'Add the quarter’s entries before submitting to HMRC.' }, { status: 400 });
   }
-  const nino = normaliseNino(client.nino as string | null);
+  const nino = normaliseNino(client.national_insurance_number as string | null);
   if (!nino) return NextResponse.json({ error: "Set the client's National Insurance number first." }, { status: 400 });
 
   const conn = await getHmrcConnection(service, 'mtd_it', ctx.firmId, { clientId: client.id as string });
@@ -89,19 +89,24 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (r.status >= 200 && r.status < 300) {
       submitted++;
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'submitted', businessId: source.hmrcBusinessId });
+      const resp = (r.json ?? {}) as Record<string, unknown>;
+      const reference = (resp.transactionReference ?? resp.submissionId ?? resp.calculationId ?? null) as string | null;
+      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'submitted', businessId: source.hmrcBusinessId, reference });
     } else {
       errors++;
       results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'error', reason: hmrcErrorMessage(r.json) });
     }
   }
 
-  // Flip the quarter to 'submitted' only when something was filed and nothing errored.
+  // Flip the quarter to 'submitted' ONLY when EVERY stream was filed
+  // successfully — nothing errored and nothing was skipped (unmapped, or
+  // property pending). A partial filing leaves the status as-is.
+  const skipped = results.filter(r => r.status === 'skipped').length;
   let quarterStatus = quarter.status as string;
-  if (submitted > 0 && errors === 0) {
+  if (submitted > 0 && errors === 0 && skipped === 0) {
     await service.from('mtd_it_quarters').update({ status: 'submitted', updated_at: new Date().toISOString() }).eq('id', quarter.id);
     quarterStatus = 'submitted';
   }
 
-  return NextResponse.json({ results, submitted, errors, quarterStatus });
+  return NextResponse.json({ results, submitted, errors, skipped, quarterStatus });
 }

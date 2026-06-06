@@ -72,6 +72,14 @@ export default function MtdItOnboarding() {
     else if (p) setBanner({ kind: 'err', text: `HMRC connection ${p.replace(/_/g, ' ')}.` });
   }, [loadStatus, loadClients]);
 
+  // The login opens in a new tab; refresh connection state when the user
+  // returns here so the UI reflects a connection made in the other tab.
+  useEffect(() => {
+    function onVisible() { if (document.visibilityState === 'visible') { void loadStatus(); void loadClients(); } }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadStatus, loadClients]);
+
   function setEdit(id: string, field: 'nino' | 'utr', value: string) {
     setEdits(e => ({ ...e, [id]: { ...e[id], [field]: value } }));
   }
@@ -195,7 +203,7 @@ export default function MtdItOnboarding() {
               className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700"
             ><Unplug size={13} /> Disconnect</button>
           ) : (
-            <a href="/api/hmrc/connect?service=mtd_it&kind=agent" className="btn-primary inline-flex items-center gap-1.5 text-sm"><Plug size={13} /> Connect HMRC agent</a>
+            <a href="/api/hmrc/connect?service=mtd_it&kind=agent" target="_blank" rel="noopener noreferrer" className="btn-primary inline-flex items-center gap-1.5 text-sm"><Plug size={13} /> Connect HMRC agent</a>
           ))}
         </div>
       </section>

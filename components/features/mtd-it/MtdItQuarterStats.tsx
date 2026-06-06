@@ -18,7 +18,9 @@ type Bucket = 'not_started' | MtdItQuarterStatus;
 // omitted — it's not yet user-reachable, and showing it alongside the gray
 // 'Not started' swatch was misread as a duplicate. Add it back here once
 // submission is implemented end-to-end.
-const BUCKET_ORDER: Bucket[] = ['not_started', 'draft', 'sent', 'approved', 'complete'];
+// 'complete' is no longer reachable (the Save & complete step was merged into
+// Save & Submit), so it's omitted from the legend/donut.
+const BUCKET_ORDER: Bucket[] = ['not_started', 'draft', 'sent', 'approved', 'submitted'];
 
 const CLIENT_STATUS_STYLE: Record<Row['status'], { pill: string; dot: string; label: string }> = {
   active:   { pill: 'bg-green-100 text-green-700', dot: 'bg-green-500', label: 'Active'   },
@@ -29,10 +31,10 @@ const CLIENT_STATUS_STYLE: Record<Row['status'], { pill: string; dot: string; la
 const BUCKET_STYLE: Record<Bucket, { label: string; fill: string; chip: string }> = {
   not_started: { label: 'Not started', fill: '#e5e7eb', chip: 'bg-gray-200'  },   // gray-200
   draft:       { label: 'Draft',       fill: '#fcd34d', chip: 'bg-amber-300' },   // amber-300
-  complete:    { label: 'Complete',    fill: '#86efac', chip: 'bg-green-300' },   // green-300
+  complete:    { label: 'Complete',    fill: '#bbf7d0', chip: 'bg-green-200' },   // green-200 (intermediate)
   sent:        { label: 'Sent',        fill: '#7dd3fc', chip: 'bg-sky-300'   },   // sky-300
   approved:    { label: 'Approved',    fill: '#c4b5fd', chip: 'bg-violet-300' },  // violet-300 — distinct from sky 'Sent'
-  submitted:   { label: 'Submitted',   fill: '#9ca3af', chip: 'bg-gray-400' },    // gray-400
+  submitted:   { label: 'Submitted',   fill: '#22c55e', chip: 'bg-green-500' },   // green-500 — filed with HMRC
 };
 
 interface Props {

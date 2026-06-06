@@ -306,6 +306,17 @@ handful of exceptions — instead of touching every client individually.
 
 ---
 
+## 9a. TODO — agent authorisation (sandbox + production)
+- **Sandbox**: a fresh Agent test user has no relationship to a test Individual, so
+  agent calls return `CLIENT_OR_AGENT_NOT_AUTHORISED`. Need to establish the
+  test agent↔client relationship (HMRC agent-authorisation/test tooling) to
+  exercise the agent path. Individual self-access works without it.
+- **Production**: build the digital-handshake invitation flow (Agent Authorisation
+  API) so firms can authorise *new* clients in-app (roadmap item #9).
+- **Per-client connection toggle (built):** each client can use the firm agent
+  connection or its own individual connection — `getHmrcConnection` prefers the
+  client's individual connection when present, else the firm agent.
+
 ## 10. Open decisions / risks
 - Confirm property v6.0 field codelists at Phase C start.
 - Confirm consolidated-expenses threshold figure for 2025/26.

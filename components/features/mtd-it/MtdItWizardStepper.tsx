@@ -5,7 +5,7 @@ import { Upload, Sparkles, ClipboardList, Save, Mail, ShieldCheck, Check } from 
 // The MTD IT lifecycle, top-to-bottom in the order the user moves through it.
 // The first four steps are driven by the per-quarter page; the last two are
 // post-prep states (Stage C and the future HMRC submission integration).
-export type WizardStep = 'setup' | 'analyse' | 'review' | 'save' | 'send' | 'submit';
+export type WizardStep = 'setup' | 'analyse' | 'review' | 'save' | 'send';
 
 interface StepDef { key: WizardStep; label: string; sub: string; Icon: typeof Upload }
 
@@ -14,8 +14,7 @@ const STEPS: StepDef[] = [
   { key: 'analyse',  label: 'Analyse',          sub: 'AI scans each document',              Icon: Sparkles       },
   { key: 'review',   label: 'Review & adjust',  sub: 'Edit entries, flag, categorise',      Icon: ClipboardList  },
   { key: 'send',     label: 'Send to client',   sub: 'PDF approval pack + email',           Icon: Mail           },
-  { key: 'save',     label: 'Save quarter',     sub: 'Draft or mark complete',              Icon: Save           },
-  { key: 'submit',   label: 'Submit to HMRC',   sub: 'Via MTD API (coming later)',          Icon: ShieldCheck    },
+  { key: 'save',     label: 'Save & Submit',    sub: 'Save the quarter and file it to HMRC', Icon: ShieldCheck    },
 ];
 
 interface Props {
@@ -29,7 +28,7 @@ interface Props {
   navigable?: WizardStep[];
 }
 
-export default function MtdItWizardStepper({ current, notYetAvailable = ['review', 'send', 'submit'], onStepClick, navigable }: Props) {
+export default function MtdItWizardStepper({ current, notYetAvailable = ['review', 'send'], onStepClick, navigable }: Props) {
   const currentIdx = STEPS.findIndex(s => s.key === current);
   // If navigable is omitted, default to every step that's before-or-equal to
   // the current step (so "back" navigation is always allowed).

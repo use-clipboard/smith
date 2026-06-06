@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, ShieldCheck, HelpCircle,
+  Users as UsersIcon, ShieldCheck, HelpCircle, X,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -34,17 +34,29 @@ import { selectableTaxYears, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { evaluateThreshold } from '@/lib/mtdIt/thresholds';
 import type { MtdItClientRow as Row } from '@/types';
 
-type StatusFilter = 'all' | 'active' | 'hold' | 'inactive';
+type StatusFilter = 'all' | 'not_discovered' | 'unmapped' | 'ready';
 type ThresholdFilter = 'all' | 'flagged' | 'unflagged';
 type SortKey = 'name' | 'client_ref' | 'status' | 'utr_number' | 'national_insurance_number' | 'date_of_birth' | 'address' | 'contact_email';
 type SortDir = 'asc' | 'desc';
 
 const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
-  { value: 'all',      label: 'All statuses' },
-  { value: 'active',   label: 'Active'       },
-  { value: 'hold',     label: 'On Hold'      },
-  { value: 'inactive', label: 'Inactive'     },
+  { value: 'all',            label: 'All HMRC statuses' },
+  { value: 'not_discovered', label: 'Not discovered'    },
+  { value: 'unmapped',       label: 'Unmapped'          },
+  { value: 'ready',          label: 'Ready'             },
 ];
+
+// HMRC-setup status for a client, from its source-mapping progress.
+function hmrcStatusKey(c: Row): 'not_discovered' | 'unmapped' | 'ready' {
+  const t = c.sources?.total ?? 0, m = c.sources?.mapped ?? 0;
+  if (t > 0 && m === t) return 'ready';
+  if (t > 0) return 'unmapped';
+  return 'not_discovered';
+}
+const HMRC_STATUS_LABEL: Record<string, string> = {
+  not_discovered: 'Not discovered', unmapped: 'Unmapped', ready: 'Ready',
+};
+const HMRC_STATUS_ORDER: Record<string, number> = { not_discovered: 0, unmapped: 1, ready: 2 };
 
 const COLUMN_OPTIONS: Array<{ key: MtdItColumnKey; label: string; defaultVisible: boolean }> = [
   { key: 'client_ref',                 label: 'Code',      defaultVisible: true  },
@@ -61,7 +73,6 @@ const COLUMN_OPTIONS: Array<{ key: MtdItColumnKey; label: string; defaultVisible
 // v3: leaner default columns — NI Number + Email on the row, UTR/DOB/Address in the panel.
 const COLUMN_PREF_KEY = 'smith.mtd_it.dashboard.columns.v3';
 
-const STATUS_LABEL: Record<string, string> = { active: 'Active', hold: 'On Hold', inactive: 'Inactive' };
 const QUARTER_STATUS_LABEL: Record<string, string> = {
   not_started: 'Not started', draft: 'Draft', complete: 'Complete', sent: 'Sent', approved: 'Approved', submitted: 'Submitted',
 };
@@ -104,11 +115,10 @@ export default function MtdItDashboard() {
   // HMRC agent connection status — drives the "HMRC setup" button's connected state.
   const [hmrc, setHmrc] = useState<{ connected: boolean; connectedAt: string | null; connectedBy: string | null } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch('/api/mtd-it/agent/status').then(r => r.ok ? r.json() : null).then(d => { if (alive && d) setHmrc(d); }).catch(() => {});
-    return () => { alive = false; };
+  const loadHmrc = useCallback(() => {
+    fetch('/api/mtd-it/agent/status').then(r => r.ok ? r.json() : null).then(d => { if (d) setHmrc(d); }).catch(() => {});
   }, []);
+  useEffect(() => { loadHmrc(); }, [loadHmrc]);
   useEffect(() => {
     const computed = selectableTaxYears();
     setTaxYears(computed);
@@ -193,6 +203,14 @@ export default function MtdItDashboard() {
 
   useEffect(() => { void load(taxYear); }, [taxYear, load]);
 
+  // HMRC login opens in a new tab — refresh connection + client state when the
+  // user returns to this tab so a connection made elsewhere shows up here.
+  useEffect(() => {
+    function onVisible() { if (document.visibilityState === 'visible') { loadHmrc(); void load(taxYear); } }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadHmrc, load, taxYear]);
+
   // ── Unread approval notifications, grouped by client + quarter ──────
   // Drives the "NEW APPROVAL" badge on each row and (via the same API) the
   // sidebar dot in AppShell. Polled on mount; refreshed when the user
@@ -233,7 +251,7 @@ export default function MtdItDashboard() {
         const hay = `${c.name} ${c.client_ref ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+      if (statusFilter !== 'all' && hmrcStatusKey(c) !== statusFilter) return false;
       if (thresholdFilter !== 'all') {
         const t = evaluateThreshold(c.mtd_it_prior_year_income, taxYear);
         if (thresholdFilter === 'flagged'   && !t.belowThreshold) return false;
@@ -244,8 +262,9 @@ export default function MtdItDashboard() {
     // Sort in-place on a copy. DOB is stored YYYY-MM-DD (lexically sortable);
     // status uses the visible label so 'On Hold' sorts where the user expects.
     return [...list].sort((a, b) => {
-      const av = sortKey === 'status' ? STATUS_LABEL[a.status] ?? a.status : (a as Record<SortKey, string | null>)[sortKey];
-      const bv = sortKey === 'status' ? STATUS_LABEL[b.status] ?? b.status : (b as Record<SortKey, string | null>)[sortKey];
+      // The 'status' column now shows HMRC-setup status — sort by its rank.
+      const av = sortKey === 'status' ? String(HMRC_STATUS_ORDER[hmrcStatusKey(a)]) : (a as Record<SortKey, string | null>)[sortKey];
+      const bv = sortKey === 'status' ? String(HMRC_STATUS_ORDER[hmrcStatusKey(b)]) : (b as Record<SortKey, string | null>)[sortKey];
       return compareValues(av, bv, sortDir);
     });
   }, [clients, search, statusFilter, thresholdFilter, taxYear, sortKey, sortDir]);
@@ -280,7 +299,7 @@ export default function MtdItDashboard() {
     // captures the per-quarter status no matter which info columns are hidden.
     const headers: string[] = ['Client'];
     if (visibleCols.has('client_ref'))                headers.push('Code');
-    if (visibleCols.has('status'))                    headers.push('Status');
+    if (visibleCols.has('status'))                    headers.push('HMRC status');
     if (visibleCols.has('utr_number'))                headers.push('UTR');
     if (visibleCols.has('national_insurance_number')) headers.push('NI Number');
     if (visibleCols.has('date_of_birth'))             headers.push('DOB');
@@ -292,7 +311,7 @@ export default function MtdItDashboard() {
     const rows = filtered.map(c => {
       const row: (string | null)[] = [c.name];
       if (visibleCols.has('client_ref'))                row.push(c.client_ref ?? '');
-      if (visibleCols.has('status'))                    row.push(STATUS_LABEL[c.status] ?? c.status);
+      if (visibleCols.has('status'))                    row.push(HMRC_STATUS_LABEL[hmrcStatusKey(c)]);
       if (visibleCols.has('utr_number'))                row.push(c.utr_number ?? '');
       if (visibleCols.has('national_insurance_number')) row.push(c.national_insurance_number ?? '');
       if (visibleCols.has('date_of_birth'))             row.push(c.date_of_birth ?? '');
@@ -361,6 +380,34 @@ export default function MtdItDashboard() {
           />
         </div>
 
+        {/* Active filter pills — obvious when filters are applied; they stack. */}
+        {statusFilter !== 'all' && (
+          <span className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30">
+            HMRC: {HMRC_STATUS_LABEL[statusFilter] ?? statusFilter}
+            <button
+              onClick={() => setStatusFilter('all')}
+              aria-label="Clear HMRC status filter"
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--accent)]/20"
+            ><X size={11} /></button>
+          </span>
+        )}
+        {thresholdFilter !== 'all' && (
+          <span className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30">
+            {thresholdFilter === 'flagged' ? `Below ${taxYearLabel(taxYear)} threshold` : `Above ${taxYearLabel(taxYear)} threshold`}
+            <button
+              onClick={() => setThresholdFilter('all')}
+              aria-label="Clear threshold filter"
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--accent)]/20"
+            ><X size={11} /></button>
+          </span>
+        )}
+        {(statusFilter !== 'all' && thresholdFilter !== 'all') && (
+          <button
+            onClick={() => { setStatusFilter('all'); setThresholdFilter('all'); }}
+            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] underline underline-offset-2"
+          >Clear all</button>
+        )}
+
         {/* ── Pill toolbar (next to search) ─────────────────────────────── */}
         {/* All four buttons share the same w-7 h-7 box and inline-flex centring
             so the icons sit on a single baseline regardless of their natural
@@ -369,10 +416,10 @@ export default function MtdItDashboard() {
 
           {/* Status filter */}
           <div className="relative" ref={statusPopRef}>
-            <Tooltip label={statusFilter === 'all' ? 'All statuses' : `Status: ${STATUS_LABEL[statusFilter] ?? statusFilter}`}>
+            <Tooltip label={statusFilter === 'all' ? 'Filter by HMRC status' : `HMRC status: ${HMRC_STATUS_LABEL[statusFilter] ?? statusFilter}`}>
               <button
                 onClick={() => { setStatusPopOpen(o => !o); setThresholdPopOpen(false); setColPickerOpen(false); }}
-                aria-label="Filter by status"
+                aria-label="Filter by HMRC status"
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${statusFilter !== 'all' || statusPopOpen ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
               >
                 <TrafficLight size={15} />
@@ -380,7 +427,7 @@ export default function MtdItDashboard() {
             </Tooltip>
             {statusPopOpen && (
               <div className="absolute left-0 top-full mt-2 z-20 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-2 w-44">
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-2 mb-1">Status</p>
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-2 mb-1">HMRC status</p>
                 {STATUS_FILTER_OPTIONS.map(o => (
                   <button
                     key={o.value}

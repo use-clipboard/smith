@@ -92,6 +92,13 @@ export default function MtdSubmitModal({
   }
   useEffect(() => { void loadStatus(); }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // HMRC login opens in a new tab — refresh status when the user returns here.
+  useEffect(() => {
+    function onVisible() { if (document.visibilityState === 'visible') void loadStatus(); }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [bookId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const vrnOk = !!status?.vatNumber && /^\d{9}$/.test(status.vatNumber.replace(/\s/g, ''));
   const connected = status?.connection?.status === 'connected';
 
@@ -157,7 +164,8 @@ export default function MtdSubmitModal({
   }
 
   function connect(kind: 'agent' | 'business') {
-    window.location.href = `/api/hmrc/connect?kind=${kind}&bookId=${encodeURIComponent(bookId)}`;
+    // Open the HMRC gateway login in a new tab so the user keeps their place.
+    window.open(`/api/hmrc/connect?kind=${kind}&bookId=${encodeURIComponent(bookId)}`, '_blank', 'noopener,noreferrer');
   }
   async function disconnect() {
     if (!status?.connection) return;

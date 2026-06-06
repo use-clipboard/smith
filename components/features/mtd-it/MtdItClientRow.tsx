@@ -11,6 +11,7 @@ import { getQuartersForYear, type QuarterRange } from '@/lib/mtdIt/quarters';
 import { evaluateThreshold } from '@/lib/mtdIt/thresholds';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import ClientEmailLink from './ClientEmailLink';
+import MtdItSubmissionSummaryModal from './MtdItSubmissionSummaryModal';
 import type { MtdItClientRow as Row, MtdItQuarterStatus, MtdItQuarterType } from '@/types';
 
 // Module-level set so expanded state survives parent re-renders / prop updates.
@@ -49,6 +50,10 @@ const STATUS_STYLES: Record<NonNullable<Row['status']>, { pill: string; label: s
   inactive: { pill: 'bg-gray-100 text-gray-500',   label: 'Inactive', dot: 'bg-gray-400'   },
 };
 
+const SOURCE_TYPE_LABEL: Record<'self-employment' | 'uk-property' | 'foreign-property', string> = {
+  'self-employment': 'Sole trade', 'uk-property': 'UK property', 'foreign-property': 'Foreign property',
+};
+
 // HMRC-setup status from income-source mapping progress.
 function hmrcSetup(sources?: { total: number; mapped: number }): { key: 'ready' | 'unmapped' | 'not_discovered'; label: string; pill: string; dot: string } {
   const total = sources?.total ?? 0, mapped = sources?.mapped ?? 0;
@@ -72,7 +77,7 @@ function MiniSquare({ status, editedAfterApproval }: { status: MtdItQuarterStatu
     complete:  { bg: 'bg-green-100 border-green-300',  icon: <Check className="w-2 h-2 text-green-700" strokeWidth={4} />,   label: 'Complete' },
     sent:      { bg: 'bg-sky-100 border-sky-300',      icon: <Mail className="w-2 h-2 text-sky-700" strokeWidth={3} />,      label: 'Sent to client' },
     approved:  { bg: 'bg-violet-100 border-violet-300', icon: <CheckCircle2 className="w-2 h-2 text-violet-700" strokeWidth={3} />, label: 'Approved' },
-    submitted: { bg: 'bg-gray-200 border-gray-400',    icon: <Lock className="w-2 h-2 text-gray-700" strokeWidth={3} />,     label: 'Submitted' },
+    submitted: { bg: 'bg-green-500 border-green-600',   icon: <CheckCircle2 className="w-2 h-2 text-white" strokeWidth={3} />,  label: 'Submitted to HMRC' },
   };
   const s = map[status];
   const tooltipLabel = editedAfterApproval ? `${s.label} — edited since approval (consider re-sending)` : s.label;
@@ -103,7 +108,7 @@ function BigSquare({
     complete:  { bg: 'bg-green-50',      border: 'border-green-300', icon: <Check className="w-5 h-5 text-green-700" strokeWidth={3} />,        ring: 'hover:ring-2 hover:ring-green-300' },
     sent:      { bg: 'bg-sky-50',        border: 'border-sky-300',   icon: <Mail className="w-4 h-4 text-sky-700" />,                           ring: 'hover:ring-2 hover:ring-sky-300' },
     approved:  { bg: 'bg-violet-50',     border: 'border-violet-300', icon: <CheckCircle2 className="w-5 h-5 text-violet-700" strokeWidth={2.5} />, ring: 'hover:ring-2 hover:ring-violet-300' },
-    submitted: { bg: 'bg-gray-100',      border: 'border-gray-400',  icon: <Lock className="w-4 h-4 text-gray-700" />,                          ring: 'hover:ring-2 hover:ring-gray-300' },
+    submitted: { bg: 'bg-green-500',     border: 'border-green-600', icon: <CheckCircle2 className="w-5 h-5 text-white" strokeWidth={2.5} />,    ring: 'hover:ring-2 hover:ring-green-300' },
   };
   const key: Exclude<MtdItQuarterStatus, 'not_started'> | 'empty' = (!status || status === 'not_started') ? 'empty' : status;
   const c = colour[key];
@@ -134,10 +139,19 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
   const [expanded, setExpanded] = useState(() => expandedIds.has(client.id) || !!forceExpand);
   const rowRef = useRef<HTMLTableRowElement>(null);
   const setup = hmrcSetup(client.sources);
+  // Streams toggled on (manually) that have no linked HMRC source of that type.
+  const sourceTypes = new Set((client.source_list ?? []).filter(s => s.business_id).map(s => s.type));
+  const streamWarnings: string[] = [];
+  if (client.mtd_it_streams.sole && !sourceTypes.has('self-employment')) streamWarnings.push('Sole Trader');
+  if (client.mtd_it_streams.uk_rental && !sourceTypes.has('uk-property')) streamWarnings.push('UK Rental');
+  if (client.mtd_it_streams.foreign_rental && !sourceTypes.has('foreign-property')) streamWarnings.push('Foreign Rental');
 
   // HMRC discover + auto-map, run from the expanded panel for this one client.
   const [hmrcBusy, setHmrcBusy] = useState(false);
   const [hmrcMsg, setHmrcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Filing-summary lightbox for an already-submitted quarter.
+  const [summaryQuarter, setSummaryQuarter] = useState<{ id: string; label: string; quarter: 1 | 2 | 3 | 4 } | null>(null);
+  const taxYearLabel = `${taxYear}/${String((taxYear + 1) % 100).padStart(2, '0')}`;
   async function discoverAndMap() {
     setHmrcBusy(true); setHmrcMsg(null);
     try {
@@ -163,6 +177,19 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
       const linked = md.linked?.length ?? 0, created = md.created?.length ?? 0, attn = md.mismatches?.length ?? 0;
       const parts = [linked ? `linked ${linked}` : '', created ? `created ${created}` : ''].filter(Boolean);
       setHmrcMsg({ kind: 'ok', text: `${parts.length ? parts.join(' · ') : 'Nothing to link'}${attn ? ` · ${attn} to review` : ''}.` });
+      onRefresh?.();
+    } finally { setHmrcBusy(false); }
+  }
+  // Drop this client's own connection so it falls back to the firm agent.
+  async function switchToAgent() {
+    setHmrcBusy(true); setHmrcMsg(null);
+    try {
+      const r = await fetch('/api/hmrc/disconnect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: 'mtd_it', kind: 'individual', clientId: client.id }),
+      });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setHmrcMsg({ kind: 'err', text: d.error ?? 'Could not switch.' }); return; }
+      setHmrcMsg({ kind: 'ok', text: 'Now using the firm agent connection.' });
       onRefresh?.();
     } finally { setHmrcBusy(false); }
   }
@@ -370,7 +397,15 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                       range={r}
                       status={client.quarters[r.quarter]}
                       editedAfterApproval={client.quarters_edited_after_approval?.[r.quarter] ?? false}
-                      onClick={() => onOpenQuarter(client.id, r.quarter)}
+                      onClick={() => {
+                        // A submitted quarter opens its filing summary, not the editor.
+                        const qid = client.quarter_ids?.[r.quarter];
+                        if (client.quarters[r.quarter] === 'submitted' && qid) {
+                          setSummaryQuarter({ id: qid, label: `Q${r.quarter}`, quarter: r.quarter });
+                        } else {
+                          onOpenQuarter(client.id, r.quarter);
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -430,15 +465,55 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                         </button>
                       </Tooltip>
                     )}
-                    {setup.key === 'ready' && (
-                      <span className="text-[11px] text-gray-500 inline-flex items-center gap-1"><Check size={11} className="text-green-600" /> All sources linked.</span>
-                    )}
                   </div>
+
+                  {/* Which income sources are linked to which HMRC business. */}
+                  {(client.source_list && client.source_list.length > 0) && (
+                    <ul className="mt-1.5 space-y-0.5">
+                      {client.source_list.map((s, i) => (
+                        <li key={i} className="text-[11px] flex items-center gap-1.5">
+                          {s.business_id
+                            ? <Check size={11} className="text-green-600 shrink-0" />
+                            : <AlertTriangle size={11} className="text-amber-500 shrink-0" />}
+                          <span className="text-gray-700">{s.name}</span>
+                          <span className="text-gray-400">{SOURCE_TYPE_LABEL[s.type]}</span>
+                          {s.business_id
+                            ? <span className="font-mono text-gray-500">{s.business_id}</span>
+                            : <span className="text-amber-700">not linked</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {/* Streams switched on manually but with no linked HMRC source. */}
+                  {streamWarnings.length > 0 && (
+                    <p className="text-[11px] text-amber-700 mt-1 inline-flex items-start gap-1">
+                      <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                      {streamWarnings.join(', ')} {streamWarnings.length === 1 ? 'is' : 'are'} switched on but not linked to an HMRC business.
+                    </p>
+                  )}
                   {hmrcMsg && (
                     <p className={`text-[11px] mt-1.5 inline-flex items-start gap-1 ${hmrcMsg.kind === 'ok' ? 'text-emerald-700' : 'text-rose-700'}`}>
                       {hmrcMsg.kind === 'ok' ? <Check size={11} className="mt-0.5" /> : <AlertTriangle size={11} className="mt-0.5" />} {hmrcMsg.text}
                     </p>
                   )}
+                  {/* Authorise via the firm agent connection, or this client's own login. */}
+                  <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+                    <span>Authorise via:</span>
+                    <span className="font-medium text-gray-700">{client.has_individual_connection ? 'This client’s own login' : 'Firm agent connection'}</span>
+                    {client.has_individual_connection ? (
+                      <button
+                        onClick={switchToAgent}
+                        disabled={hmrcBusy}
+                        className="text-indigo-700 hover:underline disabled:opacity-50"
+                      >Switch to firm agent</button>
+                    ) : (
+                      <a
+                        href={`/api/hmrc/connect?service=mtd_it&kind=individual&clientId=${client.id}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-indigo-700 hover:underline"
+                      >Use this client’s own login</a>
+                    )}
+                  </div>
                 </div>
 
                 {/* Shared notes */}
@@ -473,6 +548,20 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
       )}
 
       {/* ── Remove-confirm modal (rendered alongside the row, outside the table) ── */}
+      {summaryQuarter && (
+        <tr><td colSpan={totalCols} className="p-0" onClick={e => e.stopPropagation()}>
+          <MtdItSubmissionSummaryModal
+            quarterId={summaryQuarter.id}
+            quarter={summaryQuarter.quarter}
+            clientName={client.name}
+            quarterLabel={summaryQuarter.label}
+            taxYearLabel={taxYearLabel}
+            onClose={() => setSummaryQuarter(null)}
+            onReopen={(q) => { setSummaryQuarter(null); onOpenQuarter(client.id, q); }}
+          />
+        </td></tr>
+      )}
+
       {confirmRemove && (
         <tr><td colSpan={totalCols} className="p-0">
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => !removing && setConfirmRemove(false)}>

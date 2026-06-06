@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Loader2, Landmark, AlertTriangle, CheckCircle2, Building2, CalendarClock } from 'lucide-react';
+import { X, Loader2, Landmark, AlertTriangle, CheckCircle2, Building2, CalendarClock, Download } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { collectFraudData, HMRC_OBLIGATION_SCENARIOS } from '@/lib/hmrc/clientFraudData';
 
@@ -27,7 +27,7 @@ interface PreviewSource {
   warnings: string[];
 }
 type SubmitResult =
-  | { name: string; typeOfBusiness: string; status: 'submitted'; businessId: string }
+  | { name: string; typeOfBusiness: string; status: 'submitted'; businessId: string; reference: string | null }
   | { name: string; typeOfBusiness: string; status: 'skipped' | 'error'; reason: string };
 
 interface PastSubmission {
@@ -140,6 +140,32 @@ export default function MtdItSubmitModal({
   const submittable = (preview ?? []).filter(s => s.typeOfBusiness === 'self-employment' && s.businessId);
   const alreadyFiled = quarterStatus === 'submitted';
 
+  // Post-submit result state.
+  const done = results !== null;
+  const filed = results?.filter(r => r.status === 'submitted') ?? [];
+  const errored = results?.filter(r => r.status === 'error') ?? [];
+  const skipped = results?.filter(r => r.status === 'skipped') ?? [];
+  const outcome: 'success' | 'partial' | 'failed' =
+    !done ? 'failed'
+    : errored.length === 0 && skipped.length === 0 && filed.length > 0 ? 'success'
+    : filed.length > 0 ? 'partial' : 'failed';
+
+  function downloadReceipt() {
+    const lines = [
+      'MTD IT — submission receipt',
+      `Generated: ${new Date().toLocaleString('en-GB')}`,
+      '',
+      ...(results ?? []).map(r => r.status === 'submitted'
+        ? `FILED    ${TYPE_LABEL[r.typeOfBusiness] ?? r.typeOfBusiness} · ${r.name}${r.reference ? ` · HMRC ref ${r.reference}` : ''}`
+        : `${r.status.toUpperCase().padEnd(8)} ${TYPE_LABEL[r.typeOfBusiness] ?? r.typeOfBusiness} · ${r.name} · ${r.reason}`),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'mtd-it-submission-receipt.txt'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/40">
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
@@ -154,7 +180,7 @@ export default function MtdItSubmitModal({
           )}
           {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
-          {preview === null ? (
+          {!done && (preview === null ? (
             <p className="text-sm text-gray-400 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Computing year-to-date figures…</p>
           ) : preview.length === 0 ? (
             <p className="text-sm text-gray-400">No business sources found for this client.</p>
@@ -182,9 +208,10 @@ export default function MtdItSubmitModal({
                 );
               })}
             </>
-          )}
+          ))}
 
           {/* HMRC obligations (deadlines + open/fulfilled) */}
+          {!done && (
           <div className="rounded-lg border border-slate-200 p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">HMRC obligations</p>
@@ -212,23 +239,56 @@ export default function MtdItSubmitModal({
                 </ul>
               ))}
           </div>
+          )}
 
-          {results && (
-            <div className="rounded-lg border border-slate-200 p-3 space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Submission result</p>
-              {results.map((r, i) => (
-                <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-slate-700">{r.name}</span>
-                  {r.status === 'submitted'
-                    ? <span className="text-emerald-700 inline-flex items-center gap-1"><CheckCircle2 size={12} /> Filed</span>
-                    : <span className={r.status === 'error' ? 'text-rose-700' : 'text-slate-400'}>{r.status === 'error' ? r.reason : r.reason}</span>}
+          {/* Result panel — shown after submitting. */}
+          {done && results && (
+            <div className="space-y-3">
+              <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${
+                outcome === 'success' ? 'border-emerald-200 bg-emerald-50' :
+                outcome === 'partial' ? 'border-amber-200 bg-amber-50' :
+                                        'border-rose-200 bg-rose-50'}`}>
+                {outcome === 'success'
+                  ? <CheckCircle2 size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                  : <AlertTriangle size={20} className={`shrink-0 mt-0.5 ${outcome === 'partial' ? 'text-amber-600' : 'text-rose-600'}`} />}
+                <div>
+                  <p className={`text-sm font-semibold ${outcome === 'success' ? 'text-emerald-800' : outcome === 'partial' ? 'text-amber-800' : 'text-rose-800'}`}>
+                    {outcome === 'success' ? 'Submitted to HMRC' : outcome === 'partial' ? 'Partially submitted' : 'Submission failed'}
+                  </p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {outcome === 'success' ? `${filed.length} update${filed.length === 1 ? '' : 's'} filed successfully.`
+                      : outcome === 'partial' ? `${filed.length} filed, ${errored.length} failed${skipped.length ? `, ${skipped.length} skipped` : ''}.`
+                      : `Nothing was filed${errored.length ? ` — ${errored.length} error${errored.length === 1 ? '' : 's'}` : ''}.`}
+                  </p>
                 </div>
-              ))}
+              </div>
+
+              <ul className="rounded-lg border border-slate-200 divide-y divide-slate-100">
+                {results.map((r, i) => (
+                  <li key={i} className="px-3 py-2.5 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-sm text-slate-800">{r.name}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400 ml-1.5">{TYPE_LABEL[r.typeOfBusiness] ?? r.typeOfBusiness}</span>
+                      {r.status === 'submitted' && r.reference && (
+                        <div className="text-[11px] text-slate-500 mt-0.5">HMRC ref <span className="font-mono">{r.reference}</span></div>
+                      )}
+                      {r.status !== 'submitted' && (
+                        <div className={`text-[11px] mt-0.5 ${r.status === 'error' ? 'text-rose-700' : 'text-slate-500'}`}>{r.reason}</div>
+                      )}
+                    </div>
+                    {r.status === 'submitted'
+                      ? <span className="shrink-0 text-emerald-700 inline-flex items-center gap-1 text-xs"><CheckCircle2 size={13} /> Filed</span>
+                      : r.status === 'error'
+                        ? <span className="shrink-0 text-rose-700 inline-flex items-center gap-1 text-xs"><AlertTriangle size={13} /> Failed</span>
+                        : <span className="shrink-0 text-slate-400 text-xs">Skipped</span>}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
-          {/* Previous submissions (audit trail) */}
-          {history && history.length > 0 && (
+          {/* Previous submissions (audit trail) — hidden while showing a result. */}
+          {!done && history && history.length > 0 && (
             <div className="rounded-lg border border-slate-200">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 px-3 pt-2.5">Previous submissions</p>
               <ul className="divide-y divide-slate-100 mt-1">
@@ -250,25 +310,39 @@ export default function MtdItSubmitModal({
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
-              <input type="checkbox" checked={useConsolidated} onChange={e => setUseConsolidated(e.target.checked)} className="rounded border-gray-300" />
-              Consolidated expenses
-            </label>
-            <Tooltip label="Sandbox only — controls HMRC's test data. Ignored in production.">
-              <select value={testScenario} onChange={e => setTestScenario(e.target.value)} className="text-xs px-2 py-1 border border-gray-200 rounded bg-white">
-                {HMRC_OBLIGATION_SCENARIOS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </Tooltip>
+        {done ? (
+          <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2">
+            {filed.length > 0 && (
+              <button onClick={downloadReceipt} className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">
+                <Download size={13} /> Download receipt
+              </button>
+            )}
+            {outcome !== 'success' && (
+              <button onClick={() => { setResults(null); setError(''); }} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Try again</button>
+            )}
+            <button onClick={onClose} className="btn-primary text-sm">Done</button>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
-            <button onClick={() => void submit()} disabled={submitting || submittable.length === 0} className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:opacity-50">
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} Submit {submittable.length ? `(${submittable.length})` : ''}
-            </button>
+        ) : (
+          <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={useConsolidated} onChange={e => setUseConsolidated(e.target.checked)} className="rounded border-gray-300" />
+                Consolidated expenses
+              </label>
+              <Tooltip label="Sandbox only — controls HMRC's test data. Ignored in production.">
+                <select value={testScenario} onChange={e => setTestScenario(e.target.value)} className="text-xs px-2 py-1 border border-gray-200 rounded bg-white">
+                  {HMRC_OBLIGATION_SCENARIOS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </Tooltip>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
+              <button onClick={() => void submit()} disabled={submitting || submittable.length === 0} className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:opacity-50">
+                {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} Submit {submittable.length ? `(${submittable.length})` : ''}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -491,7 +491,7 @@ export default function MtdItReviewPhase({
 
   // ── Save (bulk creates / updates / deletes) ──────────────────────────
   const [saving, setSaving] = useState<null | 'draft' | 'complete'>(null);
-  async function save(target: 'draft' | 'complete', opts?: { skipNav?: boolean }) {
+  async function save(target: 'draft' | 'complete', opts?: { skipNav?: boolean; skipStatus?: boolean }) {
     setSaving(target); setError(null);
     try {
       // Split the editor state into a bulk-save payload. Manual rules:
@@ -519,21 +519,31 @@ export default function MtdItReviewPhase({
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? 'Save failed');
       }
-      // Bump the quarter status + consolidated flag in one go
-      await fetch(`/api/mtd-it/quarters/${quarterId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: target, consolidated }),
-      });
-      // After a successful "complete" save, prompt the user to file the
-      // deliverables to Drive / Vault. They can dismiss to navigate away
-      // and trigger it later via the toolbar button. Drafts skip the
-      // prompt since nothing is final yet.
-      if (target === 'complete' && (driveActiveForSave || vaultActiveForSave)) {
-        setSaveRecordsOpen(true);
-        setPendingFinishedStatus(target);
-      } else if (!opts?.skipNav) {
-        onFinished(target);
+      // skipStatus: persist entries only, leaving the quarter status untouched
+      // (used by "Save & Submit", which must not advance the quarter just to
+      // open the submit modal). Otherwise bump status + consolidated flag.
+      if (opts?.skipStatus) {
+        // Keep the consolidated flag in sync without touching status.
+        await fetch(`/api/mtd-it/quarters/${quarterId}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ consolidated }),
+        });
+      } else {
+        await fetch(`/api/mtd-it/quarters/${quarterId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: target, consolidated }),
+        });
+        // After a successful "complete" save, prompt the user to file the
+        // deliverables to Drive / Vault. They can dismiss to navigate away
+        // and trigger it later via the toolbar button. Drafts skip the
+        // prompt since nothing is final yet.
+        if (target === 'complete' && (driveActiveForSave || vaultActiveForSave)) {
+          setSaveRecordsOpen(true);
+          setPendingFinishedStatus(target);
+        } else if (!opts?.skipNav) {
+          onFinished(target);
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
@@ -624,8 +634,10 @@ export default function MtdItReviewPhase({
           </Tooltip>
         )}
 
-        {/* Submit to HMRC — appears once the client has approved the figures. */}
-        {(quarterStatus === 'approved' || quarterStatus === 'submitted') && (
+        {/* Submit to HMRC — available once the quarter has entries (any status
+            beyond not_started). Status only advances to 'submitted' on a fully
+            successful filing. */}
+        {quarterStatus !== 'not_started' && (
           <Tooltip label={quarterStatus === 'submitted' ? 'Filed with HMRC. Open to review or amend the cumulative figures.' : 'File this quarter’s cumulative update with HMRC (Making Tax Digital for Income Tax).'}>
             <button
               onClick={() => setSubmitOpen(true)}
@@ -830,12 +842,12 @@ export default function MtdItReviewPhase({
                 Save as draft
               </button>
               <button
-                onClick={() => save('complete')}
+                onClick={async () => { if (dirty) await save('draft', { skipNav: true, skipStatus: true }); setSubmitOpen(true); }}
                 disabled={saving !== null}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg disabled:opacity-50"
               >
-                {saving === 'complete' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Save &amp; complete
+                {saving !== null ? <Loader2 size={14} className="animate-spin" /> : <Landmark size={14} />}
+                Submit to HMRC
               </button>
             </>
           )}

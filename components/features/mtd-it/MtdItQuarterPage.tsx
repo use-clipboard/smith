@@ -535,7 +535,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
               phase === 'save'      ? 'save'    :
               /* done */              'review'
             ) as WizardStep}
-            notYetAvailable={['submit']}
+            notYetAvailable={[]}
             navigable={['setup', 'analyse', 'review', 'send', 'save']}
             onStepClick={(step) => {
               // Step navigation — covers Stages A/B/C/D/E.

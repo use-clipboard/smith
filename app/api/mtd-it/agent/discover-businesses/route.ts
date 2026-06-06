@@ -35,10 +35,6 @@ export async function POST(req: NextRequest) {
   catch (e) { return NextResponse.json({ error: 'Invalid payload', detail: String(e) }, { status: 400 }); }
 
   const service = createServiceClient();
-  const conn = await getHmrcConnection(service, 'mtd_it', ctx.firmId, {});
-  if (!conn || conn.kind !== 'agent') {
-    return NextResponse.json({ error: 'Connect your HMRC agent account (Income Tax) first.' }, { status: 400 });
-  }
 
   // Resolve the client set: explicit ids, else all MTD-IT-flagged firm clients.
   let q = service.from('clients').select('id, name, national_insurance_number').eq('firm_id', ctx.firmId);
@@ -50,14 +46,18 @@ export async function POST(req: NextRequest) {
   const fraudHeaders = fraudData ? buildFraudHeaders(req, fraudData) : {};
   const testScenario = body.testScenario || undefined;
 
-  // Sequential sweep: the first call refreshes the shared agent token if needed
-  // (hmrcRequest mutates `conn` in place), so subsequent calls reuse it without
-  // re-refreshing. Safe for the single-use refresh-token model.
+  // Sequential sweep. Each client uses its OWN connection if it has one
+  // (kind='individual'), otherwise the firm agent connection — resolved per
+  // client via getHmrcConnection. Re-reading per client picks up any token
+  // refreshed/persisted by a previous iteration (no single-use double-refresh).
   const results: Outcome[] = [];
   for (const c of clients ?? []) {
     const name = c.name as string;
     const nino = normaliseNino(c.national_insurance_number as string | null);
     if (!nino) { results.push({ clientId: c.id as string, name, status: 'missing_nino' }); continue; }
+
+    const conn = await getHmrcConnection(service, 'mtd_it', ctx.firmId, { clientId: c.id as string });
+    if (!conn) { results.push({ clientId: c.id as string, name, status: 'needs_auth', error: 'Not connected — connect the firm agent, or this client individually.' }); continue; }
 
     const r = await hmrcRequest(conn, `/individuals/business/details/${nino}/list`, {
       version: '2.0', fraudHeaders, testScenario,

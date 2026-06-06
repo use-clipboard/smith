@@ -865,12 +865,21 @@ export interface MtdItClientRow {
   mtd_it_notes: string | null;
   /** Per-quarter status for the currently-selected tax year. Keyed by quarter (1..4). */
   quarters: Partial<Record<1 | 2 | 3 | 4, MtdItQuarterStatus>>;
+  /** Per-quarter row id for the selected tax year — used to open a submitted
+   *  quarter's filing summary. */
+  quarter_ids?: Partial<Record<1 | 2 | 3 | 4, string>>;
   /** Quarters that were approved by the client but have since been edited.
    *  Drives a warning indicator on the dashboard's quarter squares. */
   quarters_edited_after_approval?: Partial<Record<1 | 2 | 3 | 4, true>>;
   /** HMRC income-source mapping progress: total trades+properties and how many
    *  are linked to an HMRC business. Drives the dashboard's HMRC-setup status. */
   sources?: { total: number; mapped: number };
+  /** Per income source: name, HMRC business type, and the linked businessId
+   *  (null = not yet mapped). Drives the "which sources are linked" display. */
+  source_list?: { name: string; type: 'self-employment' | 'uk-property' | 'foreign-property'; business_id: string | null }[];
+  /** True when this client has its own (individual) HMRC connection — otherwise
+   *  it uses the firm agent connection. */
+  has_individual_connection?: boolean;
 }
 
 export interface MtdItTrade {
