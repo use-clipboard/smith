@@ -35,12 +35,13 @@ export interface HmrcTokens {
   token_type: string;
 }
 
-/** The HMRC hosted login + consent screen. */
-export function buildAuthorizeUrl(state: string, redirectUri: string): string {
+/** The HMRC hosted login + consent screen. `scope` defaults to the VAT scopes
+ *  for back-compat; MTD-IT passes the self-assessment scope set. */
+export function buildAuthorizeUrl(state: string, redirectUri: string, scope: string = HMRC_SCOPES): string {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: hmrcClientId(),
-    scope: HMRC_SCOPES,
+    scope,
     state,
     redirect_uri: redirectUri,
   });

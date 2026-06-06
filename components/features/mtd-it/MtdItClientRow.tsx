@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   ChevronRight, Pencil, Check, Mail, CheckCircle2, Lock, AlertTriangle, Trash2,
-  Briefcase, House, Globe2, StickyNote, Loader2, X, type LucideIcon,
+  Briefcase, House, Globe2, StickyNote, Loader2, X, Search, ShieldCheck, type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import { collectFraudData } from '@/lib/hmrc/clientFraudData';
 import { getQuartersForYear, type QuarterRange } from '@/lib/mtdIt/quarters';
 import { evaluateThreshold } from '@/lib/mtdIt/thresholds';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
@@ -34,6 +35,8 @@ interface Props {
   onRemove: (clientId: string) => Promise<void>;
   /** Push the latest notes value back up so the dashboard's state stays in sync. */
   onNotesSaved: (clientId: string, notes: string | null) => void;
+  /** Reload the dashboard after HMRC discovery/mapping changes a client's sources. */
+  onRefresh?: () => void;
   /** When true, the row mounts expanded and scrolls into view. Used by the
    *  client → MTD IT deep-link so the user lands directly on the right
    *  expanded panel without scrolling + clicking. */
@@ -45,6 +48,14 @@ const STATUS_STYLES: Record<NonNullable<Row['status']>, { pill: string; label: s
   hold:     { pill: 'bg-amber-100 text-amber-700', label: 'On Hold',  dot: 'bg-amber-500'  },
   inactive: { pill: 'bg-gray-100 text-gray-500',   label: 'Inactive', dot: 'bg-gray-400'   },
 };
+
+// HMRC-setup status from income-source mapping progress.
+function hmrcSetup(sources?: { total: number; mapped: number }): { key: 'ready' | 'unmapped' | 'not_discovered'; label: string; pill: string; dot: string } {
+  const total = sources?.total ?? 0, mapped = sources?.mapped ?? 0;
+  if (total > 0 && mapped === total) return { key: 'ready',         label: 'Ready',          pill: 'bg-green-100 text-green-700', dot: 'bg-green-500' };
+  if (total > 0)                     return { key: 'unmapped',      label: 'Unmapped',       pill: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' };
+  return                                    { key: 'not_discovered', label: 'Not discovered', pill: 'bg-rose-100 text-rose-700',  dot: 'bg-rose-500' };
+}
 
 // DOB display — defers to the shared dd-mm-yyyy helper.
 function formatDob(iso: string | null): string {
@@ -119,9 +130,42 @@ function BigSquare({
 }
 
 // ── Main row ───────────────────────────────────────────────────────────────
-export default function MtdItClientRow({ client, taxYear, fallbackType = 'calendar', visibleCols, totalCols, unreadApprovals = 0, onOpenQuarter, onEdit, onRemove, onNotesSaved, forceExpand }: Props) {
+export default function MtdItClientRow({ client, taxYear, fallbackType = 'calendar', visibleCols, totalCols, unreadApprovals = 0, onOpenQuarter, onEdit, onRemove, onNotesSaved, onRefresh, forceExpand }: Props) {
   const [expanded, setExpanded] = useState(() => expandedIds.has(client.id) || !!forceExpand);
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const setup = hmrcSetup(client.sources);
+
+  // HMRC discover + auto-map, run from the expanded panel for this one client.
+  const [hmrcBusy, setHmrcBusy] = useState(false);
+  const [hmrcMsg, setHmrcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  async function discoverAndMap() {
+    setHmrcBusy(true); setHmrcMsg(null);
+    try {
+      const fraudData = collectFraudData();
+      const dr = await fetch('/api/mtd-it/agent/discover-businesses', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientIds: [client.id], fraudData }),
+      });
+      const dd = await dr.json().catch(() => ({}));
+      if (!dr.ok) { setHmrcMsg({ kind: 'err', text: dd.error ?? 'Discovery failed.' }); return; }
+      const o = (dd.results ?? [])[0] as { status?: string; businesses?: { businessId?: string; typeOfBusiness?: string; tradingName?: string }[]; error?: string } | undefined;
+      if (!o || o.status !== 'ok') {
+        setHmrcMsg({ kind: 'err', text: o?.status === 'needs_auth' ? 'Not authorised for this client at HMRC.' : o?.status === 'missing_nino' ? 'Add a NINO first (edit pencil).' : (o?.error ?? 'No businesses found.') });
+        return;
+      }
+      if (!o.businesses?.length) { setHmrcMsg({ kind: 'err', text: 'No HMRC businesses found for this client.' }); return; }
+      const mr = await fetch('/api/mtd-it/agent/auto-map', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: client.id, businesses: o.businesses }),
+      });
+      const md = await mr.json().catch(() => ({}));
+      if (!mr.ok) { setHmrcMsg({ kind: 'err', text: md.error ?? 'Mapping failed.' }); return; }
+      const linked = md.linked?.length ?? 0, created = md.created?.length ?? 0, attn = md.mismatches?.length ?? 0;
+      const parts = [linked ? `linked ${linked}` : '', created ? `created ${created}` : ''].filter(Boolean);
+      setHmrcMsg({ kind: 'ok', text: `${parts.length ? parts.join(' · ') : 'Nothing to link'}${attn ? ` · ${attn} to review` : ''}.` });
+      onRefresh?.();
+    } finally { setHmrcBusy(false); }
+  }
 
   // Honour forceExpand on first mount and any time it flips true. Also
   // scroll the row into view so the user sees the deep-linked client
@@ -215,14 +259,26 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
           </div>
         </td>
         {visibleCols.has('client_ref') && (
-          <td className="px-3 py-2.5 text-gray-600 text-xs font-mono">{client.client_ref ?? '—'}</td>
+          <td className="px-3 py-2.5 text-gray-600 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono">{client.client_ref ?? '—'}</span>
+              <Tooltip label={`Client status: ${statusStyle.label}`}>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${statusStyle.pill}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
+                  {statusStyle.label}
+                </span>
+              </Tooltip>
+            </div>
+          </td>
         )}
         {visibleCols.has('status') && (
           <td className="px-3 py-2.5">
-            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusStyle.pill}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`} />
-              {statusStyle.label}
-            </span>
+            <Tooltip label={setup.key === 'ready' ? 'All income sources linked to HMRC — ready to file' : setup.key === 'unmapped' ? 'Has income sources not yet linked to an HMRC business — expand to map' : 'No HMRC businesses discovered/mapped yet — expand to discover'}>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${setup.pill}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${setup.dot}`} />
+                {setup.label}{client.sources && client.sources.total > 0 ? ` ${client.sources.mapped}/${client.sources.total}` : ''}
+              </span>
+            </Tooltip>
           </td>
         )}
         {visibleCols.has('utr_number') && (
@@ -320,8 +376,23 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                 </div>
               </div>
 
-              {/* Right: income streams + shared notes */}
+              {/* Right: details + income streams + HMRC + shared notes */}
               <div className="flex-1 min-w-0 flex flex-col gap-3">
+                {/* Client details (moved off the row to keep it uncluttered) */}
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2 font-semibold">Client details</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+                    <div><span className="text-gray-400 block text-[10px] uppercase tracking-wide">UTR</span><span className="text-gray-700">{client.utr_number ?? '—'}</span></div>
+                    <div><span className="text-gray-400 block text-[10px] uppercase tracking-wide">NI Number</span><span className="text-gray-700">{client.national_insurance_number ?? '—'}</span></div>
+                    <div><span className="text-gray-400 block text-[10px] uppercase tracking-wide">DOB</span><span className="text-gray-700">{formatDob(client.date_of_birth)}</span></div>
+                    <div className="min-w-0"><span className="text-gray-400 block text-[10px] uppercase tracking-wide">Email</span>
+                      {client.contact_email
+                        ? <ClientEmailLink email={client.contact_email} client={client} className="hover:underline text-[var(--accent)] text-left truncate block max-w-full" />
+                        : <span className="text-gray-700">—</span>}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Income streams */}
                 <div>
                   <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2 font-semibold">Income streams</div>
@@ -333,6 +404,39 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                   {!client.mtd_it_streams.sole && !client.mtd_it_streams.uk_rental && !client.mtd_it_streams.foreign_rental && (
                     <p className="text-[11px] text-gray-500 mt-1.5">
                       No streams selected yet — set them via the <Pencil size={10} className="inline -mt-0.5" /> edit pencil.
+                    </p>
+                  )}
+                </div>
+
+                {/* HMRC mapping */}
+                <div>
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-2 font-semibold flex items-center gap-1.5">
+                    <ShieldCheck size={11} /> HMRC mapping
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${setup.pill}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${setup.dot}`} />
+                      {setup.label}{client.sources && client.sources.total > 0 ? ` · ${client.sources.mapped}/${client.sources.total} sources` : ''}
+                    </span>
+                    {setup.key !== 'ready' && (
+                      <Tooltip label="Fetch this client's HMRC businesses and link them to their trades/properties. Requires the agent connection.">
+                        <button
+                          onClick={discoverAndMap}
+                          disabled={hmrcBusy}
+                          className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                        >
+                          {hmrcBusy ? <Loader2 size={12} className="animate-spin" /> : setup.key === 'unmapped' ? <Check size={12} /> : <Search size={12} />}
+                          {setup.key === 'unmapped' ? 'Map remaining' : 'Discover & map'}
+                        </button>
+                      </Tooltip>
+                    )}
+                    {setup.key === 'ready' && (
+                      <span className="text-[11px] text-gray-500 inline-flex items-center gap-1"><Check size={11} className="text-green-600" /> All sources linked.</span>
+                    )}
+                  </div>
+                  {hmrcMsg && (
+                    <p className={`text-[11px] mt-1.5 inline-flex items-start gap-1 ${hmrcMsg.kind === 'ok' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {hmrcMsg.kind === 'ok' ? <Check size={11} className="mt-0.5" /> : <AlertTriangle size={11} className="mt-0.5" />} {hmrcMsg.text}
                     </p>
                   )}
                 </div>

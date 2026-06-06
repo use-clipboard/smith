@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
-  Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward,
+  Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward, Landmark,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
@@ -11,6 +11,7 @@ import MtdItSourceViewerModal from './MtdItSourceViewerModal';
 import MtdItPnLModal from './MtdItPnLModal';
 import MtdItSendApprovalModal from './MtdItSendApprovalModal';
 import MtdItSaveToRecordsModal from './MtdItSaveToRecordsModal';
+import MtdItSubmitModal from './MtdItSubmitModal';
 import { applyAutoFlags } from '@/lib/mtdIt/flags';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import { CONSOLIDATED_REPORTING_LIMIT } from '@/lib/mtdIt/categories';
@@ -290,6 +291,7 @@ export default function MtdItReviewPhase({
   }, [quarterId, saveRecordsOpen]);
 
   // ── Send-for-approval modal ──────────────────────────────────────────
+  const [submitOpen, setSubmitOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sentToast, setSentToast] = useState<{ recipient: string; viaCompose?: boolean } | null>(null);
   const [preparingSend, setPreparingSend] = useState(false);
@@ -622,6 +624,18 @@ export default function MtdItReviewPhase({
           </Tooltip>
         )}
 
+        {/* Submit to HMRC — appears once the client has approved the figures. */}
+        {(quarterStatus === 'approved' || quarterStatus === 'submitted') && (
+          <Tooltip label={quarterStatus === 'submitted' ? 'Filed with HMRC. Open to review or amend the cumulative figures.' : 'File this quarter’s cumulative update with HMRC (Making Tax Digital for Income Tax).'}>
+            <button
+              onClick={() => setSubmitOpen(true)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium shadow-sm ${quarterStatus === 'submitted' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-700'}`}
+            >
+              <Landmark size={12} /> {quarterStatus === 'submitted' ? 'Filed with HMRC' : 'Submit to HMRC'}
+            </button>
+          </Tooltip>
+        )}
+
         {overThreshold && (
           <span className="inline-flex items-center gap-1 px-3 py-1.5 text-[11px] bg-amber-50 text-amber-800 border border-amber-200 rounded-full shadow-sm">
             <AlertTriangle size={11} />
@@ -894,6 +908,17 @@ export default function MtdItReviewPhase({
               onFinished(s);
             }
           }}
+        />
+      )}
+
+      {/* Submit-to-HMRC modal */}
+      {submitOpen && (
+        <MtdItSubmitModal
+          quarterId={quarterId}
+          clientId={clientId}
+          quarterStatus={quarterStatus}
+          onClose={() => setSubmitOpen(false)}
+          onSubmitted={() => setRefreshTick(t => t + 1)}
         />
       )}
 

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, Calculator,
+  Users as UsersIcon, ShieldCheck, HelpCircle,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -25,6 +25,7 @@ function TrafficLight({ size = 15 }: { size?: number }) {
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItClientRow, { type MtdItColumnKey } from './MtdItClientRow';
+import MtdItHelpModal from './MtdItHelpModal';
 import MtdItQuarterStats from './MtdItQuarterStats';
 import AddMtdClientModal from './AddMtdClientModal';
 import BulkImportMtdModal from './BulkImportMtdModal';
@@ -47,15 +48,18 @@ const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
 
 const COLUMN_OPTIONS: Array<{ key: MtdItColumnKey; label: string; defaultVisible: boolean }> = [
   { key: 'client_ref',                 label: 'Code',      defaultVisible: true  },
-  { key: 'status',                     label: 'Status',    defaultVisible: true  },
-  { key: 'utr_number',                 label: 'UTR',       defaultVisible: true  },
+  { key: 'status',                     label: 'HMRC status', defaultVisible: true  },
+  // Identity/reference fields default to the expandable panel to keep the row
+  // uncluttered — toggle them back on here if you want them as columns.
+  { key: 'utr_number',                 label: 'UTR',       defaultVisible: false },
   { key: 'national_insurance_number',  label: 'NI Number', defaultVisible: true  },
-  { key: 'date_of_birth',              label: 'DOB',       defaultVisible: true  },
-  { key: 'address',                    label: 'Address',   defaultVisible: true  },
-  { key: 'contact_email',              label: 'Email',     defaultVisible: false },
+  { key: 'date_of_birth',              label: 'DOB',       defaultVisible: false },
+  { key: 'address',                    label: 'Address',   defaultVisible: false },
+  { key: 'contact_email',              label: 'Email',     defaultVisible: true  },
 ];
 
-const COLUMN_PREF_KEY = 'smith.mtd_it.dashboard.columns';
+// v3: leaner default columns — NI Number + Email on the row, UTR/DOB/Address in the panel.
+const COLUMN_PREF_KEY = 'smith.mtd_it.dashboard.columns.v3';
 
 const STATUS_LABEL: Record<string, string> = { active: 'Active', hold: 'On Hold', inactive: 'Inactive' };
 const QUARTER_STATUS_LABEL: Record<string, string> = {
@@ -97,6 +101,14 @@ export default function MtdItDashboard() {
   const expandClientId = searchParams?.get('expand') ?? null;
   const [taxYears, setTaxYears] = useState<number[]>(INITIAL_TAX_YEARS);
   const [taxYear,  setTaxYear]  = useState<number>(INITIAL_TAX_YEAR);
+  // HMRC agent connection status — drives the "HMRC setup" button's connected state.
+  const [hmrc, setHmrc] = useState<{ connected: boolean; connectedAt: string | null; connectedBy: string | null } | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/mtd-it/agent/status').then(r => r.ok ? r.json() : null).then(d => { if (alive && d) setHmrc(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     const computed = selectableTaxYears();
     setTaxYears(computed);
@@ -470,12 +482,24 @@ export default function MtdItDashboard() {
               alongside Add client rather than inside the dashboard table.
               Calculator opens an in-memory P&L calculator; Demo spins up
               a sandboxed client with sample data the user can play with. */}
-          <Tooltip label="Run a quick MTD IT P&L calculation without saving anything — optionally load a real quarter's data and see how changes would affect it.">
+          <Tooltip label="How MTD IT works — authorising, discovering, mapping and submitting.">
             <button
-              onClick={() => router.push('/mtd-it/calculator')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 shadow-sm"
+              onClick={() => setShowHelp(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg shadow-sm border bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
             >
-              <Calculator size={14} /> Calculator
+              <HelpCircle size={14} /> Help
+            </button>
+          </Tooltip>
+          <Tooltip label={hmrc?.connected
+            ? `Connected to HMRC${hmrc.connectedAt ? ` on ${new Date(hmrc.connectedAt).toLocaleDateString('en-GB')}` : ''}${hmrc.connectedBy ? ` by ${hmrc.connectedBy}` : ''} — click to manage clients, discovery & mapping.`
+            : 'Connect your HMRC agent account and bulk-set up clients for Making Tax Digital for Income Tax (NINOs, business discovery and mapping).'}>
+            <button
+              onClick={() => router.push('/mtd-it/onboarding')}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg shadow-sm border ${hmrc?.connected
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
+            >
+              <ShieldCheck size={14} /> {hmrc?.connected ? 'HMRC connected' : 'HMRC setup'}
             </button>
           </Tooltip>
           {/* Add + bulk actions */}
@@ -538,7 +562,7 @@ export default function MtdItDashboard() {
               <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
               <SortHeader label="Client"    field="name"                          className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />
               {visibleCols.has('client_ref')                && <SortHeader label="Code"      field="client_ref"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('status')                    && <SortHeader label="Status"    field="status"                    className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('status')                    && <SortHeader label="HMRC"      field="status"                    className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
               {visibleCols.has('utr_number')                && <SortHeader label="UTR"       field="utr_number"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
               {visibleCols.has('national_insurance_number') && <SortHeader label="NI Number" field="national_insurance_number" className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
               {visibleCols.has('date_of_birth')             && <SortHeader label="DOB"       field="date_of_birth"             className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
@@ -591,6 +615,7 @@ export default function MtdItDashboard() {
                     onNotesSaved={(id, notes) =>
                       setClients(prev => prev.map(x => x.id === id ? { ...x, mtd_it_notes: notes } : x))
                     }
+                    onRefresh={() => void load(taxYear)}
                     forceExpand={c.id === expandClientId}
                   />
                 ))
@@ -610,6 +635,7 @@ export default function MtdItDashboard() {
       </div>
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
+      {showHelp && <MtdItHelpModal onClose={() => setShowHelp(false)} />}
       {showAdd && (
         <AddMtdClientModal
           onClose={() => setShowAdd(false)}

@@ -18,8 +18,20 @@ export const HMRC_BASE_URL = HMRC_ENV === 'production'
   ? 'https://api.service.hmrc.gov.uk'
   : 'https://test-api.service.hmrc.gov.uk';
 
-/** OAuth scopes required for MTD VAT. */
-export const HMRC_SCOPES = 'read:vat write:vat';
+/** The HMRC services SMITH integrates with. */
+export type HmrcService = 'vat' | 'mtd_it';
+
+/** OAuth scopes per service. VAT and Income Tax use distinct scope sets. */
+export const HMRC_VAT_SCOPES = 'read:vat write:vat';
+export const HMRC_MTD_IT_SCOPES = 'read:self-assessment write:self-assessment';
+
+/** OAuth scopes required for MTD VAT. Kept for back-compat (defaults to VAT). */
+export const HMRC_SCOPES = HMRC_VAT_SCOPES;
+
+/** Resolve the OAuth scope string for a given HMRC service. */
+export function scopesForService(service: HmrcService): string {
+  return service === 'mtd_it' ? HMRC_MTD_IT_SCOPES : HMRC_VAT_SCOPES;
+}
 
 /** True once the firm-level (vendor) software credentials are configured.
  *  The redirect URI auto-derives from the request host (see resolveRedirectUri),

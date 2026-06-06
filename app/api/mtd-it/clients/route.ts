@@ -126,11 +126,28 @@ export async function GET(req: NextRequest) {
     editedFlags.set(row.client_id, m);
   }
 
+  // Income-source counts per client (trades + properties) and how many are
+  // mapped to an HMRC business — drives the dashboard's HMRC-setup status.
+  const sourcesByClient = new Map<string, { total: number; mapped: number }>();
+  if (clientIds.length > 0) {
+    const [{ data: trades }, { data: props }] = await Promise.all([
+      supabase.from('mtd_it_trades').select('client_id, hmrc_business_id').in('client_id', clientIds).eq('active', true),
+      supabase.from('mtd_it_properties').select('client_id, hmrc_business_id').in('client_id', clientIds).eq('active', true),
+    ]);
+    for (const row of [...(trades ?? []), ...(props ?? [])] as Array<{ client_id: string; hmrc_business_id: string | null }>) {
+      const s = sourcesByClient.get(row.client_id) ?? { total: 0, mapped: 0 };
+      s.total += 1;
+      if (row.hmrc_business_id) s.mapped += 1;
+      sourcesByClient.set(row.client_id, s);
+    }
+  }
+
   const clients = allClients.map(c => ({
     id: c.id,
     name: c.name,
     client_ref: c.client_ref,
     status: c.status ?? 'active',
+    sources: sourcesByClient.get(c.id) ?? { total: 0, mapped: 0 },
     address: c.address,
     utr_number: c.utr_number,
     national_insurance_number: c.national_insurance_number,

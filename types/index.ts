@@ -868,6 +868,9 @@ export interface MtdItClientRow {
   /** Quarters that were approved by the client but have since been edited.
    *  Drives a warning indicator on the dashboard's quarter squares. */
   quarters_edited_after_approval?: Partial<Record<1 | 2 | 3 | 4, true>>;
+  /** HMRC income-source mapping progress: total trades+properties and how many
+   *  are linked to an HMRC business. Drives the dashboard's HMRC-setup status. */
+  sources?: { total: number; mapped: number };
 }
 
 export interface MtdItTrade {
