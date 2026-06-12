@@ -100,7 +100,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       {!isUser && (
         <div className="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center mt-0.5">
-          <Sparkles className="h-3.5 w-3.5 text-white" />
+          <Sparkles className="h-3.5 w-3.5 text-[var(--text-primary)]" />
         </div>
       )}
       <div className={`max-w-[85%] space-y-1.5 ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
@@ -335,7 +335,7 @@ export default function AITemplateBuilder({ existingTemplate, onOpenInEditor, on
               {isStreaming && messages[messages.length - 1]?.content === '' && (
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center mt-0.5">
-                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                    <Sparkles className="h-3.5 w-3.5 text-[var(--text-primary)]" />
                   </div>
                   <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3.5 py-3 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />

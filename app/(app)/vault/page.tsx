@@ -739,7 +739,7 @@ function ClientSidebar({ selectedClient, onSelect }: ClientSidebarProps) {
   }, [search]);
 
   return (
-    <div className="w-64 border-r border-[var(--border)] flex flex-col shrink-0">
+    <div className="w-64 border-r border-[var(--border)] flex flex-col shrink-0 bg-white">
       {/* Search box */}
       <div className="px-3 py-2 border-b border-[var(--border)] shrink-0">
         <div className="relative">
@@ -757,7 +757,7 @@ function ClientSidebar({ selectedClient, onSelect }: ClientSidebarProps) {
       <div className="overflow-y-auto flex-1 min-h-0">
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <RefreshCw size={16} className="animate-spin text-[var(--text-muted)]" />
+            <RefreshCw size={16} className="animate-spin text-[#5b21b6]" />
           </div>
         ) : sidebarClients.length === 0 ? (
           <p className="p-4 text-xs text-[var(--text-muted)]">No clients found.</p>
@@ -769,7 +769,7 @@ function ClientSidebar({ selectedClient, onSelect }: ClientSidebarProps) {
                 <li key={c.id}>
                   <button
                     onClick={() => onSelect(isActive ? null : c)}
-                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 hover:bg-[var(--bg-page)] transition-colors ${isActive ? 'bg-[var(--bg-page)]' : ''}`}
+                    className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 hover:bg-[var(--bg-nav-hover)] transition-colors ${isActive ? 'bg-[var(--accent-light)]' : ''}`}
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
@@ -1205,8 +1205,10 @@ export default function VaultPage() {
   if (neverSynced && !loadingDocs) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-8">
-        <Archive size={48} className="text-[var(--text-muted)] mb-4" />
-        <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Your Document Vault</h1>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 bg-white border border-[var(--border)] backdrop-blur-sm">
+          <Archive size={30} className="text-[var(--text-primary)]" />
+        </div>
+        <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-2">Your Document Vault</h1>
         <p className="text-[var(--text-secondary)] max-w-md mb-8">
           Connect your Google Drive to get started. SMITH will index your documents and use AI to tag them automatically.
         </p>
@@ -1214,14 +1216,14 @@ export default function VaultPage() {
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] shadow-md disabled:opacity-50"
           >
             <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Connecting…' : 'Connect Google Drive'}
           </button>
           <button
             onClick={() => { setUploadPreselectedClient(null); setShowUpload(true); }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] font-medium hover:bg-[var(--bg-page)]"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] font-medium hover:bg-[var(--bg-nav-hover)] transition-colors shadow-md"
           >
             <Upload size={16} /> Upload a document
           </button>
@@ -1240,23 +1242,25 @@ export default function VaultPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Page header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] shrink-0">
-        <div className="flex items-center gap-2">
-          <Archive size={20} className="text-[var(--accent)]" />
-          <h1 className="text-lg font-bold text-[var(--text-primary)]">Document Vault</h1>
-          {total > 0 && <span className="text-sm text-[var(--text-muted)]">· {total.toLocaleString()} documents</span>}
+      <div className="flex items-center justify-between px-6 py-4 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-white border border-[var(--border)] backdrop-blur-sm">
+            <Archive size={20} className="text-[var(--text-primary)]" />
+          </div>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight drop-shadow-sm">Document Vault</h1>
+          {total > 0 && <span className="text-sm font-medium text-[var(--text-secondary)]">· {total.toLocaleString()} documents</span>}
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setUploadPreselectedClient(null); setShowUpload(true); }}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)]"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-[var(--accent)] text-white font-medium hover:bg-[var(--accent-hover)] shadow-md"
           >
             <Upload size={14} /> Upload
           </button>
           <button
             onClick={handleSync}
             disabled={syncing}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)] disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors shadow-md disabled:opacity-50"
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Syncing…' : 'Sync Drive'}
@@ -1265,10 +1269,10 @@ export default function VaultPage() {
       </div>
 
       {/* Sync status bar */}
-      <div className="px-6 py-2 bg-[var(--bg-page)] border-b border-[var(--border)] text-xs text-[var(--text-muted)] flex items-center gap-3 shrink-0">
+      <div className="px-6 pb-2 text-xs font-medium text-[var(--text-secondary)] flex items-center gap-3 shrink-0">
         {syncStatus?.syncState ? (
           <>
-            <CheckCircle2 size={12} className="text-green-500" />
+            <CheckCircle2 size={12} className="text-emerald-300" />
             <span>Last synced: {timeAgo(syncStatus.syncState.last_sync_at)}</span>
             <span>·</span>
             <span>{total.toLocaleString()} documents indexed</span>
@@ -1310,12 +1314,12 @@ export default function VaultPage() {
       )}
 
       {/* Tabs */}
-      <div className="px-6 border-b border-[var(--border)] flex gap-0 shrink-0">
+      <div className="px-6 border-b border-[var(--border)]/15 flex gap-0 shrink-0">
         {(['all', 'clients'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => { setActiveTab(tab); setPage(1); }}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors drop-shadow-sm ${activeTab === tab ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
           >
             {tab === 'all' ? 'All Documents' : 'Client Files'}
           </button>
@@ -1333,29 +1337,29 @@ export default function VaultPage() {
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Search + filters */}
-          <div className="px-5 py-3 border-b border-[var(--border)] space-y-2 shrink-0">
+          <div className="px-5 py-3 space-y-2 shrink-0">
             {/* Search row */}
             <div className="flex items-center gap-2">
-              <div className="relative flex-1">
+              <div className="relative w-full max-w-md">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   value={searchInput}
                   onChange={e => setSearchInput(e.target.value)}
                   placeholder="Search documents…"
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-white dark:bg-[var(--bg-card-solid)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+                  className="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition shadow-md focus:border-[var(--accent)] focus:bg-white"
                 />
               </div>
               {activeTab === 'clients' && selectedClient && (
                 <button
                   onClick={() => { setUploadPreselectedClient(selectedClient.id); setShowUpload(true); }}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-page)] whitespace-nowrap"
+                  className="ml-auto flex items-center gap-1.5 px-3 h-9 text-sm font-medium rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors shadow-md whitespace-nowrap"
                 >
                   <Upload size={14} /> Upload for {selectedClient.name}
                 </button>
               )}
-              <div className="flex gap-1">
-                <button onClick={() => setViewMode('list')} className={`p-2 rounded ${viewMode === 'list' ? 'bg-[var(--bg-page)]' : 'hover:bg-[var(--bg-page)]'}`}><List size={14} /></button>
-                <button onClick={() => setViewMode('grid')} className={`p-2 rounded ${viewMode === 'grid' ? 'bg-[var(--bg-page)]' : 'hover:bg-[var(--bg-page)]'}`}><Grid3X3 size={14} /></button>
+              <div className="flex gap-1 ml-auto">
+                <button onClick={() => setViewMode('list')} className={`p-2 h-9 rounded-lg border border-[var(--border)] text-[var(--text-primary)] shadow-md transition-colors ${viewMode === 'list' ? 'bg-[var(--bg-nav-hover)]' : 'bg-white hover:bg-[var(--bg-nav-hover)]'}`}><List size={14} /></button>
+                <button onClick={() => setViewMode('grid')} className={`p-2 h-9 rounded-lg border border-[var(--border)] text-[var(--text-primary)] shadow-md transition-colors ${viewMode === 'grid' ? 'bg-[var(--bg-nav-hover)]' : 'bg-white hover:bg-[var(--bg-nav-hover)]'}`}><Grid3X3 size={14} /></button>
               </div>
             </div>
 
@@ -1431,10 +1435,10 @@ export default function VaultPage() {
           )}
 
           {/* Document list / grid */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto mx-5 mb-5 rounded-xl border border-[var(--border)] bg-white/[0.78] backdrop-blur-md">
             {loadingDocs ? (
               <div className="flex items-center justify-center h-32">
-                <RefreshCw size={20} className="animate-spin text-[var(--text-muted)]" />
+                <RefreshCw size={20} className="animate-spin text-[#5b21b6]" />
               </div>
             ) : docs.length === 0 ? (
               <EmptyState
@@ -1447,7 +1451,7 @@ export default function VaultPage() {
             ) : viewMode === 'list' ? (
               <table className="w-full text-left min-w-[900px]">
                 <thead>
-                  <tr className="border-b border-[var(--border)] bg-[var(--bg-page)] sticky top-0 z-10">
+                  <tr className="border-b border-[var(--border)] bg-white/90 backdrop-blur-md sticky top-0 z-10">
                     <th className="w-10 px-3 py-2">
                       <input
                         type="checkbox"

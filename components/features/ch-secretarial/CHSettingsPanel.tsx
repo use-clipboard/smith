@@ -54,10 +54,10 @@ export default function CHSettingsPanel({ isAdmin }: CHSettingsPanelProps) {
   }
 
   return (
-    <div className="glass-solid rounded-xl border border-[var(--border)] overflow-hidden">
+    <div className="bg-white/[0.78] backdrop-blur-md rounded-xl border border-[var(--border)] overflow-hidden">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[var(--bg-nav-hover)] transition-colors"
+        className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--bg-nav-hover)] transition-colors"
       >
         <div className="flex items-center gap-3">
           <Key size={15} className="text-[var(--accent)]" />

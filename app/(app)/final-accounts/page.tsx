@@ -9,7 +9,7 @@ import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
-import { ClipboardCheck, FileText, Download, Undo2, Redo2, ArrowLeft } from 'lucide-react';
+import { ClipboardCheck, FileText, Download, Undo2, Redo2, ArrowLeft, TrendingUp, Scale, Calculator, Check } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import { generateReportHtml } from '@/utils/finalAccountsReport';
 import type { ReviewPoint, WorkingPaper } from '@/types';
@@ -61,12 +61,32 @@ function BackToHistory({ onBack }: { onBack: () => void }) {
   return (
     <button
       onClick={onBack}
-      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
     >
       <ArrowLeft size={13} />
       Back to history
     </button>
   );
+}
+
+/**
+ * Break a dense explanation block into a few readable paragraphs.
+ * Honours explicit line breaks if the model returned them; otherwise splits on
+ * sentence boundaries — but never where the full stop sits inside a number
+ * (e.g. £1,772.27 or 33.75%), so financial figures are never mangled. Splits
+ * are grouped ~2 sentences per paragraph so the text breathes without becoming
+ * a choppy list.
+ */
+function toParagraphs(text: string): string[] {
+  const t = (text ?? '').trim();
+  if (!t) return [];
+  if (/\n/.test(t)) return t.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const sentences = t.split(/(?<=[^\d][.!?])\s+(?=[A-Z£"(])/);
+  const paras: string[] = [];
+  for (let i = 0; i < sentences.length; i += 2) {
+    paras.push(sentences.slice(i, i + 2).join(' ').trim());
+  }
+  return paras.filter(Boolean);
 }
 
 function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; onBack: () => void }) {
@@ -154,6 +174,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
   const workingPapers = workingPapersHistory[wpHistoryIndex] || [];
   const allFiles = [currentYearPL, currentYearBS, currentYearTB, priorYearPL, priorYearBS, priorYearTB].filter((f): f is File => f !== null);
   const canProcess = !!(businessType && periodStart && periodEnd && currentYearPL && currentYearBS && currentYearTB);
+  const requiredUploaded = [currentYearPL, currentYearBS, currentYearTB].filter(Boolean).length;
   const serious = reviewPoints.filter(p => p.severity === 'Serious');
   const minor = reviewPoints.filter(p => p.severity === 'Minor');
 
@@ -219,7 +240,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
     );
   }
   if (appState === 'error') return (
-    <ToolLayout title="Accounts Review" icon={ClipboardCheck} iconColor="#7C3AED">
+    <ToolLayout title="Accounts Review" icon={ClipboardCheck} iconColor="#7C3AED" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
@@ -251,19 +272,21 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
   };
 
   return (
-    <ToolLayout title="Accounts Review" description="Review financial statements against UK GAAP, produce review points with suggested journals, and generate working papers." icon={ClipboardCheck} iconColor="#7C3AED">
+    <ToolLayout title="Accounts Review" description="Review financial statements against UK GAAP, produce review points with suggested journals, and generate working papers." icon={ClipboardCheck} iconColor="#7C3AED" wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
-          <div className="glass-solid rounded-xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Client Details</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-[var(--text-secondary)]">Link to client record</span>
-              <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
+          <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Client Details</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Link to client record</span>
+                <ClientSelector value={selectedClient} onSelect={setSelectedClient} align="right" />
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="Business Name" className="input-base" />
-              <select value={businessType} onChange={e => setBusinessType(e.target.value)} className="input-base">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-2.5">
+              <input value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="Business Name" className="input-base py-1.5 text-sm" />
+              <select value={businessType} onChange={e => setBusinessType(e.target.value)} className="input-base py-1.5 text-sm">
                 <option value="">-- Select Business Type *</option>
                 <option value="sole_trader">Sole Trader</option>
                 <option value="partnership">Partnership</option>
@@ -273,38 +296,54 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                 <option value="charity">Charity</option>
                 <option value="other">Other</option>
               </select>
+              <input value={preparerName} onChange={e => setPreparerName(e.target.value)} placeholder="Preparer Name (Optional)" className="input-base py-1.5 text-sm" />
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Accounts Start Date *</label>
-                <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="input-base w-full" />
+                <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-0.5">Accounts Start Date <span className="text-red-500">*</span></label>
+                <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="input-base py-1.5 text-sm w-full" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Accounts End Date *</label>
-                <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="input-base w-full" />
+                <label className="block text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-0.5">Accounts End Date <span className="text-red-500">*</span></label>
+                <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="input-base py-1.5 text-sm w-full" />
               </div>
-              <input value={preparerName} onChange={e => setPreparerName(e.target.value)} placeholder="Preparer Name (Optional)" className="input-base" />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center gap-3">
                 <span className="text-sm font-medium text-[var(--text-secondary)]">VAT Registered?</span>
                 <button type="button" onClick={() => setIsVatRegistered(v => !v)}
                   className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
                   <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>
               </div>
-            </div>
-            <textarea value={relevantContext} onChange={e => setRelevantContext(e.target.value)} placeholder="Any other relevant context? (Optional)" rows={2} className="input-base resize-none" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div className="space-y-4">
-              <FileUpload title="Current Year P&L *" onFileChange={setCurrentYearPL} accept="application/pdf" existingFiles={currentYearPL ? [currentYearPL] : []} />
-              <FileUpload title="Current Year Balance Sheet *" onFileChange={setCurrentYearBS} accept="application/pdf" existingFiles={currentYearBS ? [currentYearBS] : []} />
-              <FileUpload title="Current Year Trial Balance *" onFileChange={setCurrentYearTB} accept="application/pdf" existingFiles={currentYearTB ? [currentYearTB] : []} />
-            </div>
-            <div className="space-y-4">
-              <FileUpload title="Prior Year P&L" onFileChange={setPriorYearPL} accept="application/pdf" optional existingFiles={priorYearPL ? [priorYearPL] : []} />
-              <FileUpload title="Prior Year Balance Sheet" onFileChange={setPriorYearBS} accept="application/pdf" optional existingFiles={priorYearBS ? [priorYearBS] : []} />
-              <FileUpload title="Prior Year Trial Balance" onFileChange={setPriorYearTB} accept="application/pdf" optional existingFiles={priorYearTB ? [priorYearTB] : []} />
+              <textarea value={relevantContext} onChange={e => setRelevantContext(e.target.value)} placeholder="Any other relevant context? (Optional)" rows={1} className="input-base py-1.5 text-sm resize-none self-center sm:col-span-2 lg:col-span-2" />
             </div>
           </div>
-          <div className="flex justify-end">
+          <div>
+            <h3 className="text-sm font-bold text-white drop-shadow-sm mb-2 flex items-center gap-2">
+              Current Year <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Required</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <FileUpload title="Profit &amp; Loss" required icon={<TrendingUp size={14} />} onFileChange={setCurrentYearPL} accept="application/pdf" existingFiles={currentYearPL ? [currentYearPL] : []} />
+              <FileUpload title="Balance Sheet" required icon={<Scale size={14} />} onFileChange={setCurrentYearBS} accept="application/pdf" existingFiles={currentYearBS ? [currentYearBS] : []} />
+              <FileUpload title="Trial Balance" required icon={<Calculator size={14} />} onFileChange={setCurrentYearTB} accept="application/pdf" existingFiles={currentYearTB ? [currentYearTB] : []} />
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white drop-shadow-sm mb-2 flex items-center gap-2">
+              Prior Year <span className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Optional</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <FileUpload title="Profit &amp; Loss" icon={<TrendingUp size={14} />} onFileChange={setPriorYearPL} accept="application/pdf" optional existingFiles={priorYearPL ? [priorYearPL] : []} />
+              <FileUpload title="Balance Sheet" icon={<Scale size={14} />} onFileChange={setPriorYearBS} accept="application/pdf" optional existingFiles={priorYearBS ? [priorYearBS] : []} />
+              <FileUpload title="Trial Balance" icon={<Calculator size={14} />} onFileChange={setPriorYearTB} accept="application/pdf" optional existingFiles={priorYearTB ? [priorYearTB] : []} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              requiredUploaded === 3
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-[var(--text-secondary)] border-[var(--border)]'
+            }`}>
+              {requiredUploaded === 3 && <Check size={12} />}
+              {requiredUploaded} of 3 required uploaded
+            </span>
             <button onClick={handleProcess} disabled={!canProcess} className="btn-primary"><ClipboardCheck size={15} />Analyse Documents</button>
           </div>
         </div>
@@ -312,25 +351,36 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
       {appState === 'success' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex gap-2">
-              <button onClick={() => setActiveTab('review')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'review' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Review Points ({reviewPoints.length})</button>
-              <button onClick={() => setActiveTab('papers')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'papers' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Working Papers ({workingPapers.length})</button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={() => setActiveTab('review')} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${activeTab === 'review' ? 'bg-[#2e3062] text-white border-[#2e3062]' : 'bg-[#dde4f3] text-[#2e3062] border-[#c7d2ea] hover:bg-[#cfd9ee]'}`}>Review Points ({reviewPoints.length})</button>
+              <button onClick={() => setActiveTab('papers')} className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${activeTab === 'papers' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>Working Papers ({workingPapers.length})</button>
+              <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-white/[0.78] backdrop-blur-md border border-white/40">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800">
+                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                  <span className="text-xs font-semibold text-red-700 dark:text-red-400">{serious.length} Serious</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">{minor.length} Minor</span>
+                </div>
+                <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">{reviewPoints.length} total</span>
+              </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {activeTab === 'review' && (
-                <button onClick={() => setSaveModalOpen(true)} className="btn-secondary">
+                <button onClick={() => setSaveModalOpen(true)} className="btn-secondary bg-white text-[var(--text-primary)] border-white hover:bg-white/90 hover:text-[var(--text-primary)] hover:border-white shadow-sm">
                   <Download size={14} />Save Report
                 </button>
               )}
               {activeTab === 'papers' && workingPapers.length > 0 && (
-                <button onClick={() => setWpSaveModalOpen(true)} className="btn-secondary">
+                <button onClick={() => setWpSaveModalOpen(true)} className="btn-secondary bg-white text-[var(--text-primary)] border-white hover:bg-white/90 hover:text-[var(--text-primary)] hover:border-white shadow-sm">
                   <Download size={14} />Save Working Papers
                 </button>
               )}
-              <button onClick={handleGenerateWorkingPapers} disabled={isGeneratingPapers || reviewPoints.length === 0} className="btn-secondary">
+              <button onClick={handleGenerateWorkingPapers} disabled={isGeneratingPapers || reviewPoints.length === 0} className="btn-secondary bg-white text-[var(--text-primary)] border-white hover:bg-white/90 hover:text-[var(--text-primary)] hover:border-white shadow-sm">
                 <FileText size={14} />{isGeneratingPapers ? 'Regenerating…' : 'Regenerate Working Papers'}
               </button>
-              <button onClick={() => setAppState('idle')} className="btn-secondary">New Review</button>
+              <button onClick={() => setAppState('idle')} className="btn-primary">New Review</button>
             </div>
           </div>
 
@@ -364,18 +414,6 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
 
           {activeTab === 'review' && (
             <div className="space-y-3">
-              {/* Summary row */}
-              <div className="flex items-center gap-3 pb-1">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800">
-                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                  <span className="text-xs font-semibold text-red-700 dark:text-red-400">{serious.length} Serious</span>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">{minor.length} Minor</span>
-                </div>
-                <span className="text-xs text-[var(--text-muted)]">{reviewPoints.length} points total</span>
-              </div>
 
               {[...reviewPoints].sort((a, b) => (a.severity === 'Serious' ? -1 : 1) - (b.severity === 'Serious' ? -1 : 1)).map((p, i) => {
                 const hasJournal = p.suggestedJournal &&
@@ -383,7 +421,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                   p.suggestedJournal.debitAccount !== 'None' &&
                   (p.suggestedJournal.amount ?? 0) > 0;
                 return (
-                  <div key={i} className={`glass-solid rounded-xl border overflow-hidden ${p.severity === 'Serious' ? 'border-red-200 dark:border-red-900/40' : 'border-[var(--border)]'}`}>
+                  <div key={i} className={`bg-white/[0.78] backdrop-blur-md rounded-xl border overflow-hidden ${p.severity === 'Serious' ? 'border-red-200 dark:border-red-900/40' : 'border-[var(--border)]'}`}>
                     {/* Card header — left accent bar + area + title + badge */}
                     <div className={`flex items-start gap-4 p-5 border-l-4 ${p.severity === 'Serious' ? 'border-l-red-500' : 'border-l-amber-400'}`}>
                       <div className="flex-1 min-w-0">
@@ -400,12 +438,12 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                     {/* Card body */}
                     <div className="px-5 pb-5 space-y-3 border-t border-[var(--border)]">
                       {/* Explanation callout */}
-                      <div className={`mt-4 rounded-lg px-4 py-3 text-sm leading-relaxed ${
+                      <div className={`mt-4 rounded-lg px-4 py-3.5 text-sm leading-relaxed space-y-2.5 ${
                         p.severity === 'Serious'
                           ? 'bg-red-50 dark:bg-red-900/10 text-red-900 dark:text-red-200'
                           : 'bg-[var(--accent-light)] text-[var(--text-secondary)]'
                       }`}>
-                        {p.explanation}
+                        {toParagraphs(p.explanation).map((para, idx) => <p key={idx}>{para}</p>)}
                       </div>
 
                       {/* Suggested journal */}
@@ -455,7 +493,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                   onClick={() => setWpHistoryIndex(i => i - 1)}
                   disabled={wpHistoryIndex <= 1}
                   aria-label="Undo"
-                  className="btn-secondary py-1.5 px-3 disabled:opacity-40"
+                  className="btn-secondary py-1.5 px-3 text-white border-white/40 hover:text-white hover:bg-white/15 disabled:opacity-40"
                 ><Undo2 size={14} /></button>
               </Tooltip>
               <Tooltip label="Redo">
@@ -463,10 +501,10 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                   onClick={() => setWpHistoryIndex(i => i + 1)}
                   disabled={wpHistoryIndex >= workingPapersHistory.length - 1}
                   aria-label="Redo"
-                  className="btn-secondary py-1.5 px-3 disabled:opacity-40"
+                  className="btn-secondary py-1.5 px-3 text-white border-white/40 hover:text-white hover:bg-white/15 disabled:opacity-40"
                 ><Redo2 size={14} /></button>
               </Tooltip>
-              <span className="text-xs text-[var(--text-muted)]">
+              <span className="text-xs font-semibold text-white/90 drop-shadow-sm">
                 {wpHistoryIndex <= 1 ? 'No edits yet' : `Edit ${wpHistoryIndex - 1}`}
               </span>
             </div>
@@ -474,7 +512,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
           {activeTab === 'papers' && (
             <div className="flex flex-col gap-3">
               {workingPapers.length === 0 && (
-                <div className="glass-solid rounded-xl p-12 text-center lg:col-span-2">
+                <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-12 text-center lg:col-span-2">
                   <p className="text-sm text-[var(--text-muted)] mb-3">Working papers were not included in this analysis result. Click Regenerate to produce them.</p>
                   <button onClick={handleGenerateWorkingPapers} disabled={isGeneratingPapers} className="btn-primary mx-auto">
                     <FileText size={14} />{isGeneratingPapers ? 'Generating…' : 'Regenerate Working Papers'}

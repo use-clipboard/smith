@@ -6,6 +6,7 @@ import TaskCard from '../TaskCard';
 import TaskListRow from '../TaskListRow';
 import TaskTable, { type TaskColumn } from '../TaskTable';
 import ExportTasksButton from '../ExportTasksButton';
+import ViewModeToggle from '../ViewModeToggle';
 
 const MY_MONTH_COLUMNS: TaskColumn[] = [
   { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200 },
@@ -118,8 +119,12 @@ export default function MyMonthView({ tasks, currentUserId, onTaskClick, onStepU
   return (
     <div>
       {/* Month navigator — sticky */}
-      <div className="sticky top-0 z-20 bg-gray-50 pb-3">
-        <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-2.5">
+      <div className="sticky top-0 z-20 backdrop-blur-md pb-3">
+        <div className="flex justify-end gap-2 mb-2">
+          <ExportTasksButton tasks={myTasks} filename="my-month" label={`Export ${myTasks.length > 0 ? `(${myTasks.length})` : ''}`} />
+          <ViewModeToggle />
+        </div>
+        <div className="flex items-center justify-between bg-white/[0.78] backdrop-blur-md border border-[var(--border)] shadow-md rounded-xl px-4 py-2.5">
           <button
             onClick={() => setMonthOffset(m => m - 1)}
             className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
@@ -149,14 +154,11 @@ export default function MyMonthView({ tasks, currentUserId, onTaskClick, onStepU
             <ChevronRight className="h-4 w-4 text-gray-500" />
           </button>
         </div>
-        <div className="flex justify-end mt-2">
-          <ExportTasksButton tasks={myTasks} filename="my-month" label={`Export ${myTasks.length > 0 ? `(${myTasks.length})` : ''}`} />
-        </div>
       </div>
 
       {myTasks.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-sm">No tasks due this month.</p>
+        <div className="text-center py-16">
+          <p className="text-sm font-bold text-[var(--text-primary)]">No tasks due this month.</p>
         </div>
       ) : viewMode === 'list' ? (
         <TaskTable viewKey="myMonth" columns={MY_MONTH_COLUMNS}>

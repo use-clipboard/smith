@@ -360,8 +360,8 @@ export default function CalendarClient() {
       {/* Header — full-height layout (replaces ToolLayout, whose auto-height
           wrapper let the page scroll and the team list stretch the month). */}
       <div className="flex items-center gap-3 shrink-0">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(8,145,178,0.12)' }}>
-          <CalendarDays size={20} style={{ color: '#0891B2' }} />
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-[var(--accent-light)] border border-[var(--border)]">
+          <CalendarDays size={20} className="text-[var(--accent)]" />
         </div>
         <h2 className="text-xl font-semibold text-[var(--text-primary)] tracking-tight">Calendar</h2>
       </div>
@@ -381,21 +381,21 @@ export default function CalendarClient() {
         <div className="flex items-center gap-3 flex-wrap shrink-0">
           {/* Navigation */}
           <div className="flex items-center gap-1">
-            <button onClick={() => navigate(-1)} className="btn-icon" aria-label="Previous">
+            <button onClick={() => navigate(-1)} className="btn-icon text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]" aria-label="Previous">
               <ChevronLeft size={16} />
             </button>
             <button onClick={goToday} className="btn-secondary text-sm px-3 py-1.5">Today</button>
-            <button onClick={() => navigate(1)} className="btn-icon" aria-label="Next">
+            <button onClick={() => navigate(1)} className="btn-icon text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]" aria-label="Next">
               <ChevronRight size={16} />
             </button>
           </div>
 
-          <h2 className="text-sm font-semibold text-[var(--text-primary)] flex-1 min-w-0 truncate">
+          <h2 className="text-sm font-bold text-[var(--text-primary)] flex-1 min-w-0 truncate">
             {titleLabel}
           </h2>
 
           {/* View switcher */}
-          <div className="flex items-center rounded-lg border border-[var(--border)] overflow-hidden shrink-0">
+          <div className="flex items-center rounded-lg border border-[var(--border)] overflow-hidden shrink-0 bg-white">
             {(['month', 'week', 'agenda'] as ViewMode[]).map(v => (
               <button
                 key={v}
@@ -403,7 +403,7 @@ export default function CalendarClient() {
                 className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors
                   ${viewMode === v
                     ? 'bg-[var(--accent)] text-white'
-                    : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                    : 'bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
                   }`}
               >
                 {v === 'agenda' ? <List size={13} /> : v}
@@ -414,7 +414,7 @@ export default function CalendarClient() {
           <button
             onClick={fetchEvents}
             disabled={loading}
-            className="btn-icon"
+            className="btn-icon text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]"
             aria-label="Refresh"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -553,7 +553,7 @@ export default function CalendarClient() {
             };
 
             return (
-              <div className="w-56 shrink-0 flex flex-col min-h-0">
+              <div className="w-56 shrink-0 flex flex-col min-h-0 glass rounded-xl p-2">
                 {/* My Calendar — pinned mini-section */}
                 {me && (
                   <div className="mb-2">
@@ -643,7 +643,7 @@ export default function CalendarClient() {
           <div className="flex-1 min-w-0 overflow-auto flex flex-col gap-2">
             {/* Calendar label */}
             <div className="flex items-center gap-2 px-1">
-              <span className="text-sm font-semibold text-[var(--text-primary)]">{calendarLabel}</span>
+              <span className="text-sm font-bold text-[var(--text-primary)]">{calendarLabel}</span>
             </div>
 
             {viewMode === 'month' && (
@@ -972,7 +972,7 @@ function MonthView({
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {DAYS.map(d => (
-          <div key={d} className="text-center text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)] py-1">
+          <div key={d} className="text-center text-[11px] font-bold uppercase tracking-widest text-[var(--text-secondary)] py-1">
             {d}
           </div>
         ))}
@@ -995,12 +995,12 @@ function MonthView({
           // out-of-month → a deeper purple so the month boundaries read at a
           // glance. Today wears a slightly stronger accent wash on top.
           const cellBg = !isCurrentMonth
-            ? 'bg-violet-200/70 dark:bg-violet-900/40'
+            ? 'bg-violet-200/50 dark:bg-violet-900/40'
             : isToday
-              ? 'bg-violet-100 dark:bg-violet-900/40'
+              ? 'bg-violet-100/70 dark:bg-violet-900/40'
               : isWeekend
-                ? 'bg-violet-50 dark:bg-violet-950/30'
-                : 'bg-white dark:bg-slate-900/30';
+                ? 'bg-violet-50/55 dark:bg-violet-950/30'
+                : 'bg-white/55 dark:bg-slate-900/30';
           return (
             <div
               key={i}
@@ -1105,10 +1105,10 @@ function WeekView({
         // Match the month view: today wears a stronger violet, weekends pick
         // up a light lavender, weekdays stay white.
         const cellBg = isToday
-          ? 'bg-violet-100 dark:bg-violet-900/40'
+          ? 'bg-violet-100/70 dark:bg-violet-900/40'
           : isWeekend
-            ? 'bg-violet-50 dark:bg-violet-950/30'
-            : 'bg-white dark:bg-slate-900/30';
+            ? 'bg-violet-50/55 dark:bg-violet-950/30'
+            : 'bg-white/55 dark:bg-slate-900/30';
         return (
           <div
             key={i}
@@ -1226,17 +1226,17 @@ function AgendaView({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 glass rounded-xl p-4">
       {groups.filter(g => g.events.length > 0 || g.reminders.length > 0).map((group, i) => {
         const isToday = isSameDay(group.date, today);
         const isWeekend = group.date.getDay() === 0 || group.date.getDay() === 6;
         // Same scheme as month/week: today highlighted in violet, weekends a
         // lighter lavender, weekdays neutral.
         const labelBg = isToday
-          ? 'bg-violet-100 text-[var(--accent)] dark:bg-violet-900/40'
+          ? 'bg-violet-100/80 text-[var(--accent)] dark:bg-violet-900/40'
           : isWeekend
-            ? 'bg-violet-50 text-[var(--text-secondary)] dark:bg-violet-950/30'
-            : 'bg-white text-[var(--text-muted)] dark:bg-slate-900/30';
+            ? 'bg-violet-50/70 text-[var(--text-secondary)] dark:bg-violet-950/30'
+            : 'bg-white/70 text-[var(--text-muted)] dark:bg-slate-900/30';
         return (
         <div key={i}>
           <div className={`inline-flex text-xs font-semibold uppercase tracking-widest mb-2 px-2 py-1 rounded-md border border-[var(--border)] ${labelBg}`}>
@@ -1270,7 +1270,7 @@ function AgendaView({
                   className={`flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] cursor-pointer transition-colors
                     ${isMasked
                       ? 'bg-[var(--bg-nav-hover)] opacity-50 hover:opacity-70'
-                      : 'bg-[var(--bg-content)] hover:border-[var(--accent)]'
+                      : 'bg-white/70 hover:border-[var(--accent)]'
                     }`}
                 >
                   <div

@@ -37,6 +37,71 @@ export async function getRefreshedGmailClient(refreshToken: string): Promise<{
   };
 }
 
+// ── Rate-limit resilience ────────────────────────────────────────────────────
+
+/** True when a Google/Gmail API error is a rate-limit (429) or quota error. */
+export function isGmailRateLimitError(err: unknown): boolean {
+  const e = err as {
+    code?: number; status?: number;
+    response?: { status?: number; data?: { error?: { errors?: { reason?: string }[] } } };
+    errors?: { reason?: string }[];
+    message?: string;
+  };
+  const status = e?.code ?? e?.status ?? e?.response?.status;
+  if (status === 429) return true;
+  // Google also signals rate limits as 403 with a rateLimitExceeded reason.
+  const reasons = (e?.response?.data?.error?.errors ?? e?.errors ?? [])
+    .map(x => String(x?.reason ?? ''));
+  if (status === 403 && reasons.some(r => /rateLimitExceeded|userRateLimitExceeded|quotaExceeded/i.test(r))) return true;
+  if (typeof e?.message === 'string' && /rate limit|quota exceeded|too many requests/i.test(e.message)) return true;
+  return false;
+}
+
+/** True for transient 5xx server errors worth retrying. */
+function isTransientServerError(err: unknown): boolean {
+  const e = err as { code?: number; status?: number; response?: { status?: number } };
+  const status = e?.code ?? e?.status ?? e?.response?.status;
+  return typeof status === 'number' && status >= 500 && status < 600;
+}
+
+/**
+ * Retry a Gmail API call on rate-limit / transient errors with exponential
+ * back-off + jitter. Non-retryable errors throw immediately.
+ */
+export async function gmailRetry<T>(fn: () => Promise<T>, attempts = 3, baseMs = 400): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if ((!isGmailRateLimitError(err) && !isTransientServerError(err)) || i === attempts - 1) throw err;
+      await new Promise(r => setTimeout(r, baseMs * 2 ** i + Math.random() * 200));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Run an async mapper over `items` with a bounded concurrency so we don't fire
+ * (e.g.) 50 Gmail requests at once — a common trigger for per-user rate limits.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: T[], limit: number, fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) || 1 }, worker));
+  return results;
+}
+
 export interface EmailAddress {
   name: string;
   email: string;
@@ -112,6 +177,9 @@ export interface GmailLabel {
   type: 'system' | 'user';
   messagesUnread?: number;
   messagesTotal?: number;
+  /** Conversation count — triage categories are per thread, so the Untriaged
+   *  maths must subtract from threads, not messages. */
+  threadsTotal?: number;
 }
 
 function parseAddress(raw: string): EmailAddress {
@@ -331,6 +399,8 @@ export function buildRawMessage(opts: {
   replyToMessageId?: string;
   threadId?: string;
   attachments?: Array<{ filename: string; mimeType: string; data: Buffer }>;
+  /** 'high' adds Outlook/Gmail high-importance headers. */
+  importance?: 'high' | 'normal';
 }): string {
   const fromLine = encodeAddressLine(opts.from);
   // Omit the To header entirely when there are no recipients (e.g. a draft
@@ -342,6 +412,10 @@ export function buildRawMessage(opts: {
   const safeRef = opts.replyToMessageId ? stripHeaderBreaks(opts.replyToMessageId) : '';
   const refLine = safeRef
     ? `In-Reply-To: ${safeRef}\r\nReferences: ${safeRef}\r\n`
+    : '';
+  // High-importance headers understood by Gmail, Outlook, and most clients.
+  const priorityLines = opts.importance === 'high'
+    ? `Importance: High\r\nX-Priority: 1 (Highest)\r\nPriority: urgent\r\n`
     : '';
 
   function fold76(b64: string): string {
@@ -356,6 +430,7 @@ export function buildRawMessage(opts: {
       bccLine +
       `Subject: ${subjectEncoded}\r\n` +
       refLine +
+      priorityLines +
       `MIME-Version: 1.0\r\n` +
       `Content-Type: text/html; charset=UTF-8\r\n` +
       `\r\n` +
@@ -393,6 +468,7 @@ export function buildRawMessage(opts: {
     bccLine +
     `Subject: ${subjectEncoded}\r\n` +
     refLine +
+    priorityLines +
     `MIME-Version: 1.0\r\n` +
     `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n` +
     parts;

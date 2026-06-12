@@ -534,7 +534,7 @@ export default function TaskListRow({
                     className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
                       ${allRSelected ? 'bg-indigo-500 border-indigo-500' : someRSelected ? 'bg-indigo-200 border-indigo-400' : 'border-gray-300 hover:border-indigo-400 bg-white'}`}
                   >
-                    {allRSelected && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                    {allRSelected && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                     {someRSelected && !allRSelected && <div className="w-2 h-0.5 bg-indigo-600 rounded" />}
                   </button>
                   <span className="text-xs text-indigo-600 font-medium">
@@ -573,7 +573,7 @@ export default function TaskListRow({
                           className={`flex-shrink-0 mt-1 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
                             ${isSelected ? 'bg-indigo-500 border-indigo-500' : canReassign ? 'border-gray-300 hover:border-indigo-400 cursor-pointer bg-white' : 'border-gray-200 opacity-25 cursor-default bg-white'}`}
                         >
-                          {isSelected && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                          {isSelected && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                         </button>
                       )}
 
@@ -591,9 +591,9 @@ export default function TaskListRow({
                             ${isDone ? 'bg-green-500 border-green-500' : isEndStep ? 'border-indigo-400 bg-white hover:bg-indigo-50' : 'border-gray-300 bg-white hover:border-indigo-400'}
                             ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
-                          {isUpdating ? <Loader2 className="h-3 w-3 text-white animate-spin" /> :
+                          {isUpdating ? <Loader2 className="h-3 w-3 text-[var(--text-primary)] animate-spin" /> :
                            isDone ? (
-                            <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg className="h-3 w-3 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="2,6 5,9 10,3" />
                             </svg>
                           ) : null}
@@ -665,7 +665,7 @@ export default function TaskListRow({
               {isAdmin && reassignMode && selectedStepIds.size > 0 && (
                 <div className="flex items-center gap-3 px-4 py-3 bg-indigo-600 border-t border-indigo-500">
                   <UserCheck className="h-4 w-4 text-indigo-200 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-white whitespace-nowrap">
+                  <span className="text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap">
                     Reassign {selectedStepIds.size} step{selectedStepIds.size !== 1 ? 's' : ''}
                   </span>
                   <div className="flex-1" />
@@ -686,7 +686,7 @@ export default function TaskListRow({
                     {applying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                     Apply
                   </button>
-                  <button onClick={exitReassign} className="text-indigo-300 hover:text-white transition-colors text-xs">
+                  <button onClick={exitReassign} className="text-indigo-300 hover:text-[var(--text-primary)] transition-colors text-xs">
                     Cancel
                   </button>
                 </div>

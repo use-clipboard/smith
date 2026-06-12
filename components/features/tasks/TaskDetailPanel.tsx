@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
@@ -750,7 +750,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                               className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
                                 ${allSel ? 'bg-indigo-500 border-indigo-500' : someSel ? 'bg-indigo-200 border-indigo-400' : 'border-gray-300 hover:border-indigo-400 bg-white'}`}
                             >
-                              {allSel && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                              {allSel && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                               {someSel && !allSel && <div className="w-2 h-0.5 bg-indigo-600 rounded" />}
                             </button>
                             <span className="text-xs text-indigo-600">
@@ -810,7 +810,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                 className={`flex-shrink-0 mt-0.5 h-4 w-4 rounded border-2 flex items-center justify-center transition-all
                                   ${selectedStepIds.has(s.id) ? 'bg-indigo-500 border-indigo-500' : s.is_client_step ? 'border-gray-200 opacity-25 cursor-default bg-white' : 'border-gray-300 hover:border-indigo-400 cursor-pointer bg-white'}`}
                               >
-                                {selectedStepIds.has(s.id) && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                                {selectedStepIds.has(s.id) && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                               </button>
                             )}
 
@@ -829,9 +829,9 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                                 ${isUpdating ? 'opacity-50 cursor-wait' : reassignMode ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                             >
                               {isUpdating ? (
-                                <Loader2 className="h-3 w-3 text-white animate-spin" />
+                                <Loader2 className="h-3 w-3 text-[var(--text-primary)] animate-spin" />
                               ) : isDone ? (
-                                <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg className="h-3 w-3 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                   <polyline points="2,6 5,9 10,3" />
                                 </svg>
                               ) : null}
@@ -990,7 +990,7 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                     {isAdmin && reassignMode && selectedStepIds.size > 0 && (
                       <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-indigo-600 border-t border-indigo-500">
                         <UserCheck className="h-4 w-4 text-indigo-200 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-white whitespace-nowrap">
+                        <span className="text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap">
                           {selectedStepIds.size} step{selectedStepIds.size !== 1 ? 's' : ''}
                         </span>
                         <select

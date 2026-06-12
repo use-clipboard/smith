@@ -19,7 +19,7 @@ import MtdItTradesEditor from './MtdItTradesEditor';
 import MtdItWizardStepper, { type WizardStep } from './MtdItWizardStepper';
 import MtdItReviewPhase from './MtdItReviewPhase';
 import MtdItDeleteQuarterModal from './MtdItDeleteQuarterModal';
-import ClientEmailLink from './ClientEmailLink';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import MtdItCoOwnerImportModal, { type ImportableSource } from './MtdItCoOwnerImportModal';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
@@ -454,7 +454,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         <div className="flex items-center gap-1">
           <button
             onClick={() => router.push('/mtd-it')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white drop-shadow-sm hover:bg-white/15 rounded-lg"
           ><ArrowLeft size={14} /> Back to dashboard</button>
           {/* Admin-only overflow menu — Delete quarter (and future admin
               actions) live here. Non-admins don't see the button at all. */}
@@ -466,7 +466,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
                   aria-label="Quarter actions"
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
-                  className="p-1.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg"
+                  className="p-1.5 text-white drop-shadow-sm hover:text-white hover:bg-white/15 rounded-lg"
                 ><MoreVertical size={16} /></button>
               </Tooltip>
               {menuOpen && (
@@ -489,7 +489,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           with a thin divider between them. Always visible regardless of
           phase, so the user can refer to or edit client details at any
           stage of the workflow. */}
-      <div className="relative bg-white border border-gray-200 rounded-xl mb-4 shadow-sm overflow-hidden">
+      <div className="relative bg-white/85 backdrop-blur-md border border-gray-200 rounded-xl mb-4 shadow-sm overflow-hidden">
         {/* Left accent stripe — full height of the merged card */}
         <div aria-hidden className="absolute left-0 top-0 bottom-0 w-1" style={{ background: 'var(--accent)' }} />
 
@@ -787,7 +787,7 @@ function SetupPhase(props: {
                 className={`group relative flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all duration-200 ${
                   active
                     ? `${M.colour} shadow-sm`
-                    : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-sm'
+                    : 'bg-white/85 backdrop-blur-md border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-sm'
                 }`}
               >
                 <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${active ? 'bg-white/70' : 'bg-gray-50 group-hover:bg-gray-100'}`}>
@@ -837,7 +837,7 @@ function SetupPhase(props: {
         })}
 
         {activeStreams.length === 0 && (
-          <div className="bg-white border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center">
+          <div className="bg-white/85 backdrop-blur-md border border-dashed border-gray-300 rounded-xl px-6 py-10 text-center">
             <p className="text-sm text-gray-500">Pick at least one income stream above to configure this quarter.</p>
           </div>
         )}
@@ -848,7 +848,7 @@ function SetupPhase(props: {
           and the bar is anchored with `mr-auto` so it never collides with
           the bottom-right Ask Smith floating button. */}
       <div className="sticky bottom-0 z-10 -mx-6 px-6 py-3 mt-6 pointer-events-none">
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(640px,calc(100%-9rem))] mr-auto">
+        <div className="flex items-center gap-3 bg-white/85 backdrop-blur-md border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(640px,calc(100%-9rem))] mr-auto">
           {/* Status block */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-[var(--accent-light)] text-[var(--accent)] flex items-center justify-center shrink-0">
@@ -931,7 +931,7 @@ function StreamPanel(props: {
   const hasEntries = summary.count > 0;
 
   return (
-    <section className={`bg-white border-2 ${STREAM_BORDER[stream]} rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200`}>
+    <section className={`bg-white/85 backdrop-blur-md border-2 ${STREAM_BORDER[stream]} rounded-xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200`}>
       {/* Panel header — full coloured stripe so each stream's section reads
           as a distinct visual zone, not just another white card. When the
           stream already has entries saved on it, we add an inline totals
@@ -1108,8 +1108,8 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   return (
     <div className="mb-4">
       <div className="mb-2">
-        <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
-        {hint && <p className="text-xs text-gray-500 mt-0.5">{hint}</p>}
+        <h3 className="text-sm font-bold text-white drop-shadow-sm">{title}</h3>
+        {hint && <p className="text-xs text-white/80 drop-shadow-sm mt-0.5">{hint}</p>}
       </div>
       {children}
     </div>

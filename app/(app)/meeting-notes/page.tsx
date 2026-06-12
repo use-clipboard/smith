@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
 import MeetingNotesClient, { type MeetingNotesSeed } from '@/components/features/meeting-notes/MeetingNotesClient';
 import MeetingNotesHistory from '@/components/features/meeting-notes/MeetingNotesHistory';
 import { peekPendingClient } from '@/lib/pendingClient';
@@ -45,18 +44,5 @@ export default function MeetingNotesPage() {
     );
   }
 
-  return (
-    <div className="relative">
-      <div className="px-6 pt-4">
-        <button
-          onClick={() => { setSeed(null); setView('history'); }}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
-        >
-          <ArrowLeft size={13} />
-          Back to history
-        </button>
-      </div>
-      <MeetingNotesClient seed={seed} />
-    </div>
-  );
+  return <MeetingNotesClient seed={seed} onBack={() => { setSeed(null); setView('history'); }} />;
 }

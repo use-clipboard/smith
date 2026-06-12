@@ -422,7 +422,7 @@ function ClientPortalLightbox({ step, templateName, onClose, onContinue }: Clien
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
               <div className="bg-indigo-600 px-5 py-4">
                 <p className="text-indigo-200 text-xs font-medium uppercase tracking-wide mb-1">Action required from you</p>
-                <h2 className="text-white text-lg font-bold leading-snug">{step.title}</h2>
+                <h2 className="text-[var(--text-primary)] text-lg font-bold leading-snug">{step.title}</h2>
                 {step.time_estimate_minutes && (
                   <p className="text-indigo-200 text-xs mt-1.5 flex items-center gap-1">
                     <Clock className="h-3 w-3" /> Estimated: {step.time_estimate_minutes < 60 ? `${step.time_estimate_minutes} minutes` : `${Math.floor(step.time_estimate_minutes / 60)} hour${Math.floor(step.time_estimate_minutes / 60) > 1 ? 's' : ''}`}

@@ -22,6 +22,7 @@ import TabProvider, { useTabContext } from './TabContext';
 import { TabActivityProvider } from './TabActivityContext';
 import { ModulesProvider } from './ModulesProvider';
 import { FavouritesProvider } from './FavouritesProvider';
+import { DashboardLayoutProvider } from './DashboardLayoutProvider';
 import { ChatProvider, useChatContext } from '@/components/chat/ChatProvider';
 import ConversationWindow from '@/components/chat/ConversationWindow';
 import Avatar from '@/components/ui/Avatar';
@@ -36,6 +37,7 @@ interface AppShellProps {
   firmId: string;
   activeModules: string[];
   initialFavourites: string[];
+  initialDashboardLayout: string[] | null;
   showOnboarding?: boolean;
   hasApiKey?: boolean;
 }
@@ -116,7 +118,7 @@ function FocusModeExitChip() {
   );
 }
 
-type AppShellInnerProps = Omit<AppShellProps, 'firmId' | 'activeModules' | 'initialFavourites' | 'showOnboarding'>;
+type AppShellInnerProps = Omit<AppShellProps, 'firmId' | 'activeModules' | 'initialFavourites' | 'initialDashboardLayout' | 'showOnboarding'>;
 
 // Inner layout — runs inside all providers so it can read TabContext and TabActivityContext
 function AppShellInner({
@@ -129,7 +131,10 @@ function AppShellInner({
   const isToolTabActive = !!activeTab && TOOL_ROUTES.has(activeTab.route);
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-[var(--bg-page)] ${screenNudgeActive ? 'animate-nudge' : ''}`}>
+    <div className={`h-screen p-3 bg-transparent ${screenNudgeActive ? 'animate-nudge' : ''}`}>
+      {/* Floating app panel — the whole app sits on one rounded glass panel with
+          the colour gradient showing through the margin around it. */}
+      <div className="flex h-full w-full overflow-hidden rounded-[20px] shadow-2xl ring-1 ring-white/25">
       <Sidebar
         userName={userName}
         userEmail={userEmail}
@@ -137,7 +142,18 @@ function AppShellInner({
         avatarUrl={avatarUrl}
       />
 
-      <div className="flex flex-col flex-1 min-w-0 h-screen overflow-hidden">
+      <div
+        className="flex flex-col flex-1 min-w-0 h-full overflow-hidden"
+        style={{
+          // Soft near-white backdrop for the whole main area — faint blue glow
+          // top-right, faint lavender glow bottom-left (replicated in CSS so it
+          // scales crisply and doesn't bleed the saturated app gradient through).
+          background:
+            'radial-gradient(100% 95% at 92% 4%, rgba(96, 150, 255, 0.44) 0%, rgba(96, 150, 255, 0) 48%),' +
+            'radial-gradient(92% 90% at 4% 102%, rgba(197, 150, 255, 0.50) 0%, rgba(197, 150, 255, 0) 50%),' +
+            '#f3f3fc',
+        }}
+      >
         <TopBar userName={userName} avatarUrl={avatarUrl} />
         {!hasApiKey && <ApiKeyBanner userRole={userRole ?? 'staff'} />}
         {/* Reminder banner — renders as a slim strip when a meeting is due.
@@ -159,12 +175,13 @@ function AppShellInner({
           <TabPanels />
         </div>
       </div>
+      </div>
     </div>
   );
 }
 
 export default function AppShell({
-  children, userName, userEmail, userRole, avatarUrl, userId, firmId, activeModules, initialFavourites, showOnboarding, hasApiKey,
+  children, userName, userEmail, userRole, avatarUrl, userId, firmId, activeModules, initialFavourites, initialDashboardLayout, showOnboarding, hasApiKey,
 }: AppShellProps) {
   const [onboardingVisible, setOnboardingVisible] = useState(showOnboarding ?? false);
 
@@ -180,6 +197,7 @@ export default function AppShell({
   return (
     <ModulesProvider activeModules={activeModules}>
       <FavouritesProvider initialFavourites={initialFavourites}>
+      <DashboardLayoutProvider initialLayout={initialDashboardLayout}>
       <ChatProvider userId={userId} firmId={firmId}>
         <TabProvider>
           <TabActivityProvider>
@@ -214,6 +232,7 @@ export default function AppShell({
           </TabActivityProvider>
         </TabProvider>
       </ChatProvider>
+      </DashboardLayoutProvider>
       </FavouritesProvider>
     </ModulesProvider>
   );

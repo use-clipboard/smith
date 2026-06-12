@@ -7,6 +7,7 @@ import TaskFilters from '../TaskFilters';
 import { TaskStatusBadge } from '../TaskStatusBadge';
 import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
+import ViewModeToggle from '../ViewModeToggle';
 import { type SortDir } from '../SortHeader';
 import TaskTable, { type TaskColumn } from '../TaskTable';
 import { useIncrementalList } from '@/hooks/useIncrementalList';
@@ -112,7 +113,7 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
 
   return (
     <div>
-      <div className="sticky top-0 z-30 bg-gray-50 pb-3">
+      <div className="sticky top-0 z-30 backdrop-blur-md pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
           <TaskFilters
             search={search} onSearchChange={onSearchChange}
@@ -122,8 +123,9 @@ export default function AllTasksView({ tasks, currentUserId, search, onSearchCha
             clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
           />
           <div className="flex items-center gap-2">
-            <p className="text-xs text-gray-400">{sortedTasks.length} of {filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs font-bold text-[var(--text-primary)]">{sortedTasks.length} of {filtered.length} task{filtered.length !== 1 ? 's' : ''}</p>
             <ExportTasksButton tasks={sortedTasks} filename="all-tasks" />
+            <ViewModeToggle />
           </div>
         </div>
         <DueWindowChips value={dueFilter} onChange={setDueFilter} totalCount={filtered.length} counts={dueCounts} />

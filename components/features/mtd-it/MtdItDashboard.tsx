@@ -165,25 +165,49 @@ export default function MtdItDashboard() {
   // ── Column visibility (persisted) ──────────────────────────────────────
   // Start with the static defaults so SSR + first client render match, then
   // hydrate from localStorage in an effect to avoid React hydration warnings.
+  // The preference is keyed by the signed-in user's id so two people sharing
+  // a browser keep their own column choices. `userId` is null until /me
+  // resolves; until then we fall back to the legacy shared key.
+  const [colPrefUserId, setColPrefUserId] = useState<string | null>(null);
+  const colPrefKey = useCallback(
+    (uid: string | null) => (uid ? `${COLUMN_PREF_KEY}.${uid}` : COLUMN_PREF_KEY),
+    [],
+  );
   const [visibleCols, setVisibleCols] = useState<Set<MtdItColumnKey>>(
     () => new Set(COLUMN_OPTIONS.filter(c => c.defaultVisible).map(c => c.key))
   );
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLUMN_PREF_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw) as MtdItColumnKey[];
-      if (!Array.isArray(arr)) return;
-      const valid = new Set(COLUMN_OPTIONS.map(c => c.key));
-      setVisibleCols(new Set(arr.filter(k => valid.has(k))));
-    } catch { /* ignore corrupt JSON */ }
-  }, []);
+    let cancelled = false;
+    fetch('/api/users/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled) return;
+        const uid: string | null = d?.userId ?? null;
+        setColPrefUserId(uid);
+        try {
+          const valid = new Set(COLUMN_OPTIONS.map(c => c.key));
+          const userKey = colPrefKey(uid);
+          // Prefer the per-user preference; if absent, migrate the legacy
+          // shared one across so nobody loses their existing layout.
+          let raw = window.localStorage.getItem(userKey);
+          if (!raw && uid) {
+            const legacy = window.localStorage.getItem(COLUMN_PREF_KEY);
+            if (legacy) { raw = legacy; window.localStorage.setItem(userKey, legacy); }
+          }
+          if (!raw) return;
+          const arr = JSON.parse(raw) as MtdItColumnKey[];
+          if (Array.isArray(arr)) setVisibleCols(new Set(arr.filter(k => valid.has(k))));
+        } catch { /* ignore corrupt JSON */ }
+      })
+      .catch(() => {/* ignore — keep defaults */});
+    return () => { cancelled = true; };
+  }, [colPrefKey]);
   function toggleCol(key: MtdItColumnKey) {
     setVisibleCols(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      try { window.localStorage.setItem(COLUMN_PREF_KEY, JSON.stringify([...next])); } catch { /* quota / disabled */ }
+      try { window.localStorage.setItem(colPrefKey(colPrefUserId), JSON.stringify([...next])); } catch { /* quota / disabled */ }
       return next;
     });
   }
@@ -612,24 +636,24 @@ export default function MtdItDashboard() {
 
       {/* ── Table (HR-Tracker style: bounded scroll container so sticky <th>
               cells pin to the top of THIS box, not the page) ──────────── */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh-220px)]">
+      <div className="bg-white/85 backdrop-blur-md border border-gray-200 rounded-xl overflow-auto max-h-[calc(100vh-220px)]">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left">
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <SortHeader label="Client"    field="name"                          className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />
-              {visibleCols.has('client_ref')                && <SortHeader label="Code"      field="client_ref"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('status')                    && <SortHeader label="HMRC"      field="status"                    className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('utr_number')                && <SortHeader label="UTR"       field="utr_number"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('national_insurance_number') && <SortHeader label="NI Number" field="national_insurance_number" className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('date_of_birth')             && <SortHeader label="DOB"       field="date_of_birth"             className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('address')                   && <SortHeader label="Address"   field="address"                   className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              {visibleCols.has('contact_email')             && <SortHeader label="Email"     field="contact_email"             className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Quarters</th>
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Streams</th>
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <SortHeader label="Client"    field="name"                          className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />
+              {visibleCols.has('client_ref')                && <SortHeader label="Code"      field="client_ref"                className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('status')                    && <SortHeader label="HMRC"      field="status"                    className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('utr_number')                && <SortHeader label="UTR"       field="utr_number"                className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('national_insurance_number') && <SortHeader label="NI Number" field="national_insurance_number" className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('date_of_birth')             && <SortHeader label="DOB"       field="date_of_birth"             className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('address')                   && <SortHeader label="Address"   field="address"                   className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              {visibleCols.has('contact_email')             && <SortHeader label="Email"     field="contact_email"             className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Quarters</th>
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Streams</th>
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
             </tr>
           </thead>
             <tbody>

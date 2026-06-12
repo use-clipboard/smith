@@ -414,7 +414,7 @@ function ClientTaskRow({
                         : 'border-gray-300 hover:border-indigo-400 bg-white'}`}
                 >
                   {allSelected && (
-                    <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="2,6 5,9 10,3" />
                     </svg>
                   )}
@@ -462,7 +462,7 @@ function ClientTaskRow({
                                 : 'border-gray-200 opacity-25 cursor-default bg-white'}`}
                         >
                           {isSelected && (
-                            <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="2,6 5,9 10,3" />
                             </svg>
                           )}
@@ -496,7 +496,7 @@ function ClientTaskRow({
                         ? <Loader2 className="h-3 w-3 text-gray-400 animate-spin" />
                         : isDone
                           ? (
-                            <svg className="h-3 w-3 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <svg className="h-3 w-3 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="2,6 5,9 10,3" />
                             </svg>
                           )
@@ -576,7 +576,7 @@ function ClientTaskRow({
             {isAdmin && reassignMode && selectedStepIds.size > 0 && (
               <div className="flex items-center gap-3 px-5 py-3 bg-indigo-600 border-t border-indigo-500">
                 <UserCheck className="h-4 w-4 text-indigo-200 flex-shrink-0" />
-                <span className="text-xs font-semibold text-white whitespace-nowrap">
+                <span className="text-xs font-semibold text-[var(--text-primary)] whitespace-nowrap">
                   Reassign {selectedStepIds.size} step{selectedStepIds.size !== 1 ? 's' : ''}
                 </span>
                 <div className="flex-1" />
@@ -748,7 +748,7 @@ export default function ClientTasksPanel({ clientId }: Props) {
 
       {/* Recurring tasks */}
       {recurringTasks.length > 0 && (
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[var(--border)]">
             <div className="flex items-center justify-center h-6 w-6 rounded-full bg-indigo-100">
               <RefreshCw className="h-3 w-3 text-indigo-600" />
@@ -770,7 +770,7 @@ export default function ClientTasksPanel({ clientId }: Props) {
           accounts, IDV deadlines and anything else hooked to a live
           Companies House date via ch_deadline_task_links. */}
       {chLinkedTasks.length > 0 && (
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[var(--border)]">
             <div className="flex items-center justify-center h-6 w-6 rounded-full bg-blue-100">
               <Building2 className="h-3 w-3 text-blue-600" />
@@ -790,7 +790,7 @@ export default function ClientTasksPanel({ clientId }: Props) {
 
       {/* One-off tasks */}
       {oneOffTasks.length > 0 && (
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[var(--border)]">
             <div className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-100">
               <Check className="h-3 w-3 text-gray-500" />

@@ -44,12 +44,15 @@ const ROUTE_TITLES: Record<string, string> = {
   '/risk-assessment': 'Risk Assessment',
   '/summarise':       'Summarise Documents',
   '/ch-secretarial':  'CH Secretarial',
+  '/email':           'Email Triage',
+  '/vault':           'Document Vault',
   '/calendar':        'Calendar',
   '/meeting-notes':   'Meeting Notes',
   '/staff-hire':      'Staff Hire',
   '/hr':              'HR',
   '/policies':        'Policies & Procedures',
   '/clients':         'Clients',
+  '/tasks':           'Tasks',
   '/help':            'Help',
   '/settings':        'Settings',
 };
@@ -140,17 +143,46 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const notifRef = useRef<HTMLDivElement>(null);
   const notifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Notification toasts — behave exactly like the email toasts (slide in
+  // bottom-right, auto-dismiss, click to open), but with a red tint. The first
+  // fetch establishes a baseline so existing notifications don't all pop on load.
+  const [notifToasts, setNotifToasts] = useState<Notification[]>([]);
+  const seenNotifIdsRef = useRef<Set<string>>(new Set());
+  const notifInitialisedRef = useRef(false);
+  const NOTIF_TOAST_DISMISS_MS = 10_000;
+
+  const dismissNotifToast = useCallback((id: string) => {
+    setNotifToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications');
       if (!res.ok) return;
       const data = await res.json();
-      setNotifications(data.notifications ?? []);
+      const list: Notification[] = data.notifications ?? [];
+      setNotifications(list);
       setUnreadCount(data.unreadCount ?? 0);
+
+      // Surface newly-arrived unread notifications as toasts.
+      if (!notifInitialisedRef.current) {
+        list.forEach(n => seenNotifIdsRef.current.add(n.id));
+        notifInitialisedRef.current = true;
+      } else {
+        const fresh = list.filter(n => !seenNotifIdsRef.current.has(n.id));
+        fresh.forEach(n => seenNotifIdsRef.current.add(n.id));
+        const freshUnread = fresh.filter(n => !n.read);
+        if (freshUnread.length > 0) {
+          setNotifToasts(prev => [...prev, ...freshUnread]);
+          freshUnread.forEach(n =>
+            setTimeout(() => dismissNotifToast(n.id), NOTIF_TOAST_DISMISS_MS)
+          );
+        }
+      }
     } catch {
       // silently ignore — notifications are non-critical
     }
-  }, []);
+  }, [dismissNotifToast]);
 
   // Fetch on mount and poll every 30 seconds
   useEffect(() => {
@@ -160,6 +192,25 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
       if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
     };
   }, [fetchNotifications]);
+
+  // Let other parts of the app (e.g. the dashboard's notifications tile) open
+  // this dropdown via a window event.
+  useEffect(() => {
+    const openNotifs = () => { setNotifOpen(true); setSearchOpen(false); fetchNotifications(); };
+    window.addEventListener('smith:open-notifications', openNotifs);
+    return () => window.removeEventListener('smith:open-notifications', openNotifs);
+  }, [fetchNotifications]);
+
+  function handleNotifToastClick(n: Notification) {
+    dismissNotifToast(n.id);
+    const taskLink = (n.data as { task_link?: string } | null)?.task_link ?? null;
+    if (taskLink) {
+      navigate(taskLink);
+    } else {
+      setNotifOpen(true);
+      setSearchOpen(false);
+    }
+  }
 
   async function handleMarkAllRead() {
     try {
@@ -266,47 +317,33 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
   return (
     <header className="glass-topbar relative h-14 flex items-center px-6 gap-4 shrink-0 z-40">
-      {/* Page title */}
-      <h1 className="flex-1 text-base font-semibold text-[var(--text-primary)] tracking-tight truncate">
+      {/* Page title — takes the left, pushing search + actions to the right */}
+      <h1 className="flex-1 min-w-0 text-base font-semibold text-[var(--text-primary)] tracking-tight truncate">
         {title}
       </h1>
 
-      {/* Right actions */}
-      <div className="flex items-center gap-2">
+      {/* Search bar */}
+      <div className="relative w-80 shrink-0" ref={searchRef}>
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+        <input
+          ref={searchInputRef}
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onFocus={() => { setSearchOpen(true); setNotifOpen(false); }}
+          placeholder="Search clients, documents, tools…"
+          className="w-full h-9 pl-9 pr-8 rounded-lg bg-black/[0.04] border border-black/10 text-[var(--text-primary)] placeholder-[var(--text-muted)] text-sm outline-none transition focus:border-[var(--accent)] focus:bg-white"
+        />
+        {query && (
+          <button onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <X size={14} />
+          </button>
+        )}
 
-        {/* Search */}
-        <div className="relative" ref={searchRef}>
-          <Tooltip label="Search">
-            <button
-              onClick={() => { setSearchOpen(v => !v); setNotifOpen(false); }}
-              aria-label="Search"
-              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-                searchOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              <Search size={16} />
-            </button>
-          </Tooltip>
-
-          {searchOpen && (
-            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-[1000]">
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)]">
-                <Search size={14} className="text-[var(--text-muted)] shrink-0" />
-                <input
-                  ref={searchInputRef}
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder="Search tools, clients…"
-                  className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
-                />
-                {query && (
-                  <button onClick={() => setQuery('')} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-
-              <div className="max-h-80 overflow-y-auto">
+        {searchOpen && (
+          <div
+            className="absolute left-0 right-0 top-[calc(100%+8px)] rounded-xl border border-[var(--border)] bg-white shadow-dropdown overflow-hidden z-[1000]"
+          >
+            <div className="max-h-80 overflow-y-auto">
                 {/* Tools */}
                 {filteredTools.length > 0 && (
                   <div>
@@ -316,7 +353,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
                       return (
                         <button key={t.href} onClick={() => navigate(t.href)}
                           className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[var(--bg-nav-hover)] transition-colors text-left">
-                          <Icon size={14} className="text-[var(--accent)] shrink-0" />
+                          <Icon size={14} className="text-[var(--text-muted)] shrink-0" />
                           <span className="text-sm text-[var(--text-primary)]">{t.label}</span>
                         </button>
                       );
@@ -357,6 +394,9 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           )}
         </div>
 
+      {/* Right actions */}
+      <div className="flex items-center gap-2 shrink-0">
+
         {/* Team Messages */}
         <div className="relative">
           <Tooltip label="Team Messages">
@@ -366,7 +406,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
               className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all relative ${
                 isPanelOpen
                   ? 'bg-[var(--accent)] text-white'
-                  : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               <MessageSquare size={16} />
@@ -385,7 +425,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           <button
             onClick={toggleFocusMode}
             aria-label="Enter focus mode"
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-all"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-all"
           >
             <Maximize2 size={16} />
           </button>
@@ -401,7 +441,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
               onClick={() => { setNotifOpen(v => !v); setSearchOpen(false); }}
               aria-label="Notifications"
               className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-all ${
-                notifOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+                notifOpen ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               <Bell size={16} />
@@ -414,7 +454,9 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           </Tooltip>
 
           {notifOpen && (
-            <div className="absolute right-0 top-10 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-xl overflow-hidden z-[1000]">
+            <div
+              className="absolute right-0 top-10 w-80 rounded-xl border border-[var(--border)] bg-white shadow-dropdown overflow-hidden z-[1000]"
+            >
               {/* Panel header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Notifications</p>
@@ -502,6 +544,47 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
           <Avatar name={userName} avatarUrl={avatarUrl} size={32} />
         </div>
       </div>
+
+      {/* Notification toasts — mirror the email toast, with a light red tint. */}
+      {notifToasts.length > 0 && (
+        <div className="fixed bottom-5 right-5 z-[101] flex flex-col gap-3 pointer-events-none">
+          {notifToasts.map(n => (
+            <button
+              key={n.id}
+              onClick={() => handleNotifToastClick(n)}
+              className="glass pointer-events-auto w-[26rem] text-left rounded-xl text-[var(--text-primary)] shadow-dropdown p-4 flex items-start gap-3 transition-all hover:brightness-105"
+              style={{ animation: 'notifToastIn 0.3s ease-out', background: 'rgba(239, 68, 68, 0.14)' }}
+            >
+              <div className="w-10 h-10 rounded-xl bg-red-200/80 flex items-center justify-center shrink-0">
+                <Bell size={18} className="text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-red-700">
+                    New notification
+                  </p>
+                  <span
+                    onClick={e => { e.stopPropagation(); dismissNotifToast(n.id); }}
+                    className="shrink-0 p-1 -m-1 rounded hover:bg-red-200/60 cursor-pointer"
+                    role="button"
+                    aria-label="Dismiss"
+                  >
+                    <X size={14} className="text-red-700/70" />
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-[var(--text-primary)] truncate mt-0.5">{n.title}</p>
+                {n.body && <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-2">{n.body}</p>}
+              </div>
+            </button>
+          ))}
+          <style jsx>{`
+            @keyframes notifToastIn {
+              from { transform: translateX(120%); opacity: 0; }
+              to   { transform: translateX(0);     opacity: 1; }
+            }
+          `}</style>
+        </div>
+      )}
     </header>
   );
 }

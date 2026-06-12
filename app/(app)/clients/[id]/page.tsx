@@ -25,6 +25,7 @@ import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import CreateTaskModal, { type CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from '@/components/features/tasks/TemplateBuilder';
 import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import type { TaskTemplate } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -221,9 +222,12 @@ interface EmailGroup {
   sortDate: string;
 }
 
-function EmailThreadGroupCard({ group, onPin }: {
+function EmailThreadGroupCard({ group, onPin, isAdmin, onReallocateGroup }: {
   group: EmailGroup;
   onPin: (id: string, pinned: boolean) => Promise<void>;
+  /** Admins can move the whole thread group to another client's timeline. */
+  isAdmin?: boolean;
+  onReallocateGroup?: (group: EmailGroup) => void;
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpenIds(prev => {
@@ -254,7 +258,7 @@ function EmailThreadGroupCard({ group, onPin }: {
   }
 
   return (
-    <div className={`glass-solid rounded-xl border overflow-hidden transition-all group ${allPinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
+    <div className={`glass rounded-xl borderoverflow-hidden transition-all group ${allPinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 border-b border-[var(--border)]">
         <div className="flex-1 min-w-0">
@@ -283,6 +287,14 @@ function EmailThreadGroupCard({ group, onPin }: {
               {allPinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
           </Tooltip>
+          {isAdmin && onReallocateGroup && (
+            <Tooltip label="Reallocate thread to another client">
+              <button onClick={() => onReallocateGroup(group)} aria-label="Reallocate thread to another client"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
+                <ArrowLeftRight size={13} />
+              </button>
+            </Tooltip>
+          )}
         </div>
       </div>
 
@@ -378,12 +390,15 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode; mono
 // ── Note Card ──────────────────────────────────────────────────────────────────
 
 function NoteCard({
-  note, onUpdate, onDelete, onPin,
+  note, onUpdate, onDelete, onPin, isAdmin, onReallocate,
 }: {
   note: TimelineNote;
   onUpdate: (id: string, data: Partial<TimelineNote>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onPin: (id: string, pinned: boolean) => Promise<void>;
+  /** Admins can move a misallocated entry to another client's timeline. */
+  isAdmin?: boolean;
+  onReallocate?: (note: TimelineNote) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -534,7 +549,7 @@ function NoteCard({
     const previewText = (emailData.snippet || '').trim()
       || (emailData.bodyText ? emailData.bodyText.replace(/\s+/g, ' ').trim().slice(0, 160) : '');
     return (
-      <div className={`glass-solid rounded-xl border transition-all group overflow-hidden ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
+      <div className={`glass rounded-xl bordertransition-all group overflow-hidden ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
         {/* Padded header — type badge, date, user, pinned + actions */}
         <div className="flex items-start justify-between gap-3 px-4 pt-4 pb-3">
           <div className="flex-1 min-w-0">
@@ -560,6 +575,14 @@ function NoteCard({
                 {note.is_pinned ? <PinOff size={13} /> : <Pin size={13} />}
               </button>
             </Tooltip>
+            {isAdmin && onReallocate && (
+              <Tooltip label="Reallocate to another client">
+                <button onClick={() => onReallocate(note)} aria-label="Reallocate to another client"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
+                  <ArrowLeftRight size={13} />
+                </button>
+              </Tooltip>
+            )}
           </div>
         </div>
 
@@ -632,7 +655,7 @@ function NoteCard({
   const md = parsedMd;
 
   return (
-    <div className={`glass-solid rounded-xl border transition-all group ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
+    <div className={`glass rounded-xl bordertransition-all group ${note.is_pinned ? 'border-[var(--accent)]/40 bg-[var(--accent-light)]/30' : 'border-[var(--border)]'}`}>
       {/* ── Header row ── */}
       <div className="flex items-start justify-between gap-3 p-4">
         <div className="flex-1 min-w-0">
@@ -709,6 +732,14 @@ function NoteCard({
               <button onClick={startEdit} aria-label="Edit note"
                 className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
                 <Pencil size={13} />
+              </button>
+            </Tooltip>
+          )}
+          {isAdmin && onReallocate && (
+            <Tooltip label="Reallocate to another client">
+              <button onClick={() => onReallocate(note)} aria-label="Reallocate to another client"
+                className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors">
+                <ArrowLeftRight size={13} />
               </button>
             </Tooltip>
           )}
@@ -948,6 +979,80 @@ export default function ClientDetailPage() {
   const [showVaultItems, setShowVaultItems] = useState(true);
   const [timelineSearch, setTimelineSearch] = useState('');
   const [timelineTypeFilter, setTimelineTypeFilter] = useState<string | null>(null);
+
+  // Admin-only: reallocate timeline entries to another client (fix misallocations).
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  useEffect(() => {
+    fetch('/api/users/me')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { userRole?: string } | null) => setIsAdminUser(d?.userRole === 'admin'))
+      .catch(() => {});
+  }, []);
+  // The entry/entries being reallocated (a thread group moves all its emails).
+  const [reallocTarget, setReallocTarget] = useState<{ noteIds: string[]; label: string } | null>(null);
+  const [reallocClient, setReallocClient] = useState<SearchableClient | null>(null);
+  const [reallocating, setReallocating] = useState(false);
+  const [reallocError, setReallocError] = useState<string | null>(null);
+  const [timelineToast, setTimelineToast] = useState<{ kind: 'success' | 'error'; message: string; undo?: () => void; undoMs?: number } | null>(null);
+  function showTimelineToast(kind: 'success' | 'error', message: string, undo?: () => void, durationMs?: number) {
+    const ms = durationMs ?? 5000;
+    setTimelineToast({ kind, message, undo, undoMs: undo ? ms : undefined });
+    window.setTimeout(() => setTimelineToast(null), ms);
+  }
+  function openReallocateNote(note: TimelineNote) {
+    setReallocClient(null); setReallocError(null);
+    setReallocTarget({ noteIds: [note.id], label: note.title });
+  }
+  function openReallocateGroup(group: EmailGroup) {
+    setReallocClient(null); setReallocError(null);
+    setReallocTarget({ noteIds: group.emails.map(e => e.id), label: group.subject });
+  }
+  async function handleReallocate() {
+    if (!reallocTarget || !reallocClient || reallocating) return;
+    setReallocating(true);
+    setReallocError(null);
+    try {
+      for (const noteId of reallocTarget.noteIds) {
+        const res = await fetch(`/api/clients/${clientId}/notes/${noteId}/reallocate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetClientId: reallocClient.id }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(typeof d.error === 'string' ? d.error : 'Failed to reallocate');
+        }
+      }
+      const movedIds = [...reallocTarget.noteIds];
+      const targetId = reallocClient.id;
+      const moved = new Set(movedIds);
+      setNotes(prev => prev.filter(n => !moved.has(n.id)));
+      // Undo = run the same reallocation in reverse (target → this client),
+      // then re-fetch the timeline so the entries reappear in the right order.
+      const undo = () => {
+        void (async () => {
+          try {
+            for (const noteId of movedIds) {
+              const res = await fetch(`/api/clients/${targetId}/notes/${noteId}/reallocate`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetClientId: clientId }),
+              });
+              if (!res.ok) throw new Error('undo failed');
+            }
+            await fetchTimeline();
+            showTimelineToast('success', 'Reallocation undone');
+          } catch {
+            showTimelineToast('error', 'Could not undo — please refresh');
+          }
+        })();
+      };
+      showTimelineToast('success', `${movedIds.length === 1 ? 'Entry' : `${movedIds.length} entries`} moved to ${reallocClient.name}`, undo, 3000);
+      setReallocTarget(null);
+    } catch (err) {
+      setReallocError(err instanceof Error ? err.message : 'Failed to reallocate');
+    } finally {
+      setReallocating(false);
+    }
+  }
 
   // Links
   const [links, setLinks] = useState<ClientLink[]>([]);
@@ -1327,7 +1432,7 @@ export default function ClientDetailPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  if (loading) return <ToolLayout title="Client" icon={Users} iconColor="#4F46E5"><div className="py-16 text-center"><p className="text-[var(--text-muted)] text-sm">Loading…</p></div></ToolLayout>;
+  if (loading) return <ToolLayout title="Client" icon={Users} iconColor="#4F46E5" wide><div className="py-16 text-center"><p className="text-[var(--text-muted)] text-sm">Loading…</p></div></ToolLayout>;
   if (!client) return null;
 
   const type = client.business_type;
@@ -1429,26 +1534,28 @@ export default function ClientDetailPage() {
   const years = Object.keys(yearGroups).sort((a, b) => Number(b) - Number(a));
 
   return (
-    <ToolLayout title={client.name} icon={Users} iconColor="#4F46E5">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="space-y-1.5">
-          <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+    <ToolLayout title={client.name} icon={Users} iconColor="#4F46E5" wide>
+      {/* Header: back link + badges */}
+      <div className="space-y-1.5 mb-4">
+          <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm transition-colors">
             <ArrowLeft size={14} />All Clients
           </button>
           <div className="flex items-center gap-2 flex-wrap">
-            {client.client_ref && <span className="px-2 py-0.5 bg-[var(--bg-nav-hover)] text-[var(--text-muted)] text-xs font-mono rounded border border-[var(--border)]">{client.client_ref}</span>}
+            {client.client_ref && <span className="px-2.5 py-1 bg-white border border-[var(--border)] rounded-lg shadow-md text-xs font-mono font-semibold text-[var(--text-primary)]">{client.client_ref}</span>}
             {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[var(--border)] shadow-sm text-xs font-semibold text-[var(--text-primary)]">
+                <span className={`w-2 h-2 rounded-full ${s.dot}`} />
                 {s.label}
               </span>
             ); })()}
-            {client.risk_rating && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
-            {client.business_type && <span className="text-xs text-[var(--text-muted)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
+            {client.risk_rating && <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
+            {client.business_type && <span className="text-xs font-medium text-[var(--text-secondary)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
           </div>
         </div>
-        {/* Combined pill: favourites on the left, actions on the right */}
+
+      {/* Tabs + actions row */}
+      <div className="flex items-center gap-2 mb-5 flex-wrap">
+        {/* Actions — right-aligned, in line with the tabs */}
         {(() => {
           const btype = client.business_type;
           const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active' };
@@ -1471,7 +1578,7 @@ export default function ClientDetailPage() {
           const activeTools = quickTools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
 
           return (
-            <div className="flex items-center gap-1 p-1 rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] shadow-sm">
+            <div className="order-last ml-auto flex items-center gap-1 p-1 rounded-xl bg-white border border-[var(--border)] shadow-sm">
 
               {/* ── Left: Favourited quick-launch tools ── */}
               {activeTools.length > 0 && (
@@ -1479,114 +1586,104 @@ export default function ClientDetailPage() {
                   {activeTools.map(tool => {
                     const Icon = tool.icon;
                     return (
-                      <button
-                        key={tool.route}
-                        onClick={() => {
-                          setPendingClient(tool.route, pendingClient);
-                          openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
-                          window.history.replaceState(null, '', tool.route);
-                        }}
-                        className={`group relative p-2 rounded-lg text-[var(--text-muted)] ${tool.hoverText} ${tool.hoverBg} transition-all`}
-                      >
-                        <Icon size={17} style={{ color: 'currentColor' }} className="transition-colors" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                          {tool.label}
-                        </span>
-                      </button>
+                      <Tooltip key={tool.route} label={tool.label} side="top">
+                        <button
+                          aria-label={tool.label}
+                          onClick={() => {
+                            setPendingClient(tool.route, pendingClient);
+                            openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
+                            window.history.replaceState(null, '', tool.route);
+                          }}
+                          className={`p-2 rounded-lg text-[var(--text-primary)] ${tool.hoverText} ${tool.hoverBg} transition-all`}
+                        >
+                          <Icon size={17} strokeWidth={2.25} style={{ color: 'currentColor' }} className="transition-colors" />
+                        </button>
+                      </Tooltip>
                     );
                   })}
                   {/* Divider between favourites and actions */}
-                  <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
+                  <div className="w-px h-5 bg-[var(--bg-nav-hover)] mx-0.5" />
                 </>
               )}
 
               {/* ── Right: Context actions ── */}
               {isModuleActive('google-calendar') && (
-                <button
-                  onClick={() => setShowScheduleMeeting(true)}
-                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-blue-600 hover:bg-blue-50 transition-all"
-                >
-                  <CalendarDays size={17} />
-                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                    Schedule Meeting
-                  </span>
-                </button>
+                <Tooltip label="Schedule Meeting" side="top">
+                  <button
+                    aria-label="Schedule Meeting"
+                    onClick={() => setShowScheduleMeeting(true)}
+                    className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-blue-600 hover:bg-blue-50 transition-all"
+                  >
+                    <CalendarDays size={17} strokeWidth={2.25} />
+                  </button>
+                </Tooltip>
               )}
               {isModuleActive('email-triage') && client?.contact_email && (
-                <button
-                  onClick={openCompose}
-                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-sky-600 hover:bg-sky-50 transition-all"
-                >
-                  <Mail size={17} />
-                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                    Email Client
-                  </span>
-                </button>
+                <Tooltip label="Email Client" side="top">
+                  <button
+                    aria-label="Email Client"
+                    onClick={openCompose}
+                    className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-sky-600 hover:bg-sky-50 transition-all"
+                  >
+                    <Mail size={17} strokeWidth={2.25} />
+                  </button>
+                </Tooltip>
               )}
               {isModuleActive('tasks') && (
-                <button
-                  onClick={openTaskTypeSelector}
-                  className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
-                >
-                  <CheckSquare size={17} />
-                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                    Create Task
-                  </span>
-                </button>
+                <Tooltip label="Create Task" side="top">
+                  <button
+                    aria-label="Create Task"
+                    onClick={openTaskTypeSelector}
+                    className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                  >
+                    <CheckSquare size={17} strokeWidth={2.25} />
+                  </button>
+                </Tooltip>
               )}
               {/* Divider before edit/delete */}
-              <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
-              <button
-                onClick={startEdit}
-                className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-slate-700 hover:bg-slate-100 transition-all"
-              >
-                <Pencil size={17} />
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                  Edit Client
-                </span>
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="group relative p-2 rounded-lg text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 transition-all"
-              >
-                <Trash2 size={17} />
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-gray-900 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-                  Delete Client
-                </span>
-              </button>
+              <div className="w-px h-5 bg-[var(--bg-nav-hover)] mx-0.5" />
+              <Tooltip label="Edit Client" side="top">
+                <button
+                  aria-label="Edit Client"
+                  onClick={startEdit}
+                  className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-slate-700 hover:bg-slate-100 transition-all"
+                >
+                  <Pencil size={17} strokeWidth={2.25} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Delete Client" side="top">
+                <button
+                  aria-label="Delete Client"
+                  onClick={() => setConfirmDelete(true)}
+                  className="p-2 rounded-lg text-[var(--text-secondary)] hover:text-red-600 hover:bg-red-50 transition-all"
+                >
+                  <Trash2 size={17} strokeWidth={2.25} />
+                </button>
+              </Tooltip>
             </div>
           );
         })()}
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-5 flex-wrap">
         {([
-          ['outputs',   Sparkles, `AI Outputs (${outputs.length})`],
-          ['documents', FileText, `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}`],
-          ['timeline',  Clock,    `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}`],
-          ['details',   Info,     'Details'],
-        ] as const).map(([tab, Icon, label]) => (
+          ['details',   Info,        'Details'],
+          ['timeline',  Clock,       `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}`],
+          ['tasks',     CheckSquare, 'Tasks'],
+          ['outputs',   Sparkles,    `AI Outputs (${outputs.length})`],
+          ['documents', FileText,    `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}`],
+        ] as const)
+          .filter(([tab]) => tab !== 'tasks' || isModuleActive('tasks'))
+          .map(([tab, Icon, label]) => (
           <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'documents') void fetchDocumentsTab(); if (tab === 'timeline') void fetchTimeline(); if (tab === 'details') void fetchLinks(); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === tab ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}>
-            <Icon size={14} />
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${activeTab === tab ? 'bg-[var(--accent)] text-white shadow-md' : 'bg-white border border-[var(--border)] shadow-sm text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}`}>
+            <Icon size={14} strokeWidth={2.5} />
             {label}
           </button>
         ))}
-        {isModuleActive('tasks') && (
-          <button
-            onClick={() => setActiveTab('tasks')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'tasks' ? 'bg-[var(--accent)] text-white' : 'glass-solid text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'}`}
-          >
-            <CheckSquare size={14} />
-            Tasks
-          </button>
-        )}
       </div>
 
       {/* ── Outputs Tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'outputs' && (
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           {outputs.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-[var(--text-muted)] text-sm">No AI outputs recorded for this client yet.</p>
@@ -1613,7 +1710,7 @@ export default function ClientDetailPage() {
 
       {/* ── Documents Tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'documents' && (
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           {docsTabLoading ? (
             <div className="py-12 text-center">
               <Clock size={20} className="mx-auto text-[var(--text-muted)] opacity-40 mb-2 animate-spin" />
@@ -1660,25 +1757,23 @@ export default function ClientDetailPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* AI state-of-play summary of the whole timeline */}
-              <TimelineSummaryCard clientId={clientId} noteCount={notes.length} />
-
               {/* Controls */}
               <div className="space-y-3">
                 {/* Top row: Add Note + Vault toggle + count */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <button onClick={() => setShowAddNote(v => !v)}
-                      className={`btn-primary ${showAddNote ? 'opacity-80' : ''}`}>
+                      className={`btn-primary shadow-md ${showAddNote ? 'opacity-80' : ''}`}>
                       <Plus size={14} />Add Note
                     </button>
                     <button onClick={() => setShowVaultItems(v => !v)}
-                      className={`btn-secondary text-xs py-1.5 ${showVaultItems ? '' : 'opacity-60'}`}>
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors ${showVaultItems ? '' : 'opacity-70'}`}>
                       <FileText size={12} />
                       {showVaultItems ? 'Hide Vault Docs' : 'Show Vault Docs'}
                     </button>
+                    <TimelineSummaryCard clientId={clientId} noteCount={notes.length} />
                   </div>
-                  <p className="text-xs text-[var(--text-muted)]">
+                  <p className="text-xs text-[var(--text-secondary)]">
                     {filteredNotes.length !== notes.length
                       ? `${filteredNotes.length} of ${notes.length} note${notes.length !== 1 ? 's' : ''}`
                       : `${notes.length} note${notes.length !== 1 ? 's' : ''}`}
@@ -1690,15 +1785,15 @@ export default function ClientDetailPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Keyword search */}
                   <div className="relative flex-1 min-w-[180px] max-w-xs">
-                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+                    <Search size={13} strokeWidth={2.5} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
                     <input
                       value={timelineSearch}
                       onChange={e => setTimelineSearch(e.target.value)}
                       placeholder="Search notes by title…"
-                      className="input-base w-full pl-8 text-sm py-1.5"
+                      className="w-full pl-8 pr-8 text-sm font-medium py-1.5 rounded-lg bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] placeholder:font-medium outline-none transition focus:border-[var(--accent)] focus:bg-white"
                     />
                     {timelineSearch && (
-                      <button onClick={() => setTimelineSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                      <button onClick={() => setTimelineSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                         <X size={12} />
                       </button>
                     )}
@@ -1708,10 +1803,10 @@ export default function ClientDetailPage() {
                   <div className="flex items-center gap-1 flex-wrap">
                     <button
                       onClick={() => setTimelineTypeFilter(null)}
-                      className={`px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-md transition-colors ${
                         timelineTypeFilter === null
                           ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                          : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                          : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
                       }`}
                     >
                       All
@@ -1720,10 +1815,10 @@ export default function ClientDetailPage() {
                       <button
                         key={opt.key}
                         onClick={() => setTimelineTypeFilter(timelineTypeFilter === opt.key ? null : opt.key)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-semibold shadow-md transition-colors ${
                           timelineTypeFilter === opt.key
                             ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
-                            : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+                            : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
                         }`}
                       >
                         {opt.icon}
@@ -1751,7 +1846,8 @@ export default function ClientDetailPage() {
                     if (item.kind === 'note') {
                       return (
                         <NoteCard key={`pin-note-${item.data.id}`} note={item.data}
-                          onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
+                          onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote}
+                          isAdmin={isAdminUser} onReallocate={openReallocateNote} />
                       );
                     }
                     return (
@@ -1759,6 +1855,8 @@ export default function ClientDetailPage() {
                         key={`pin-group-${item.data.groupKey}`}
                         group={item.data}
                         onPin={handlePinNote}
+                        isAdmin={isAdminUser}
+                        onReallocateGroup={openReallocateGroup}
                       />
                     );
                   })}
@@ -1767,7 +1865,7 @@ export default function ClientDetailPage() {
 
               {/* Empty state */}
               {timelineItems.length === 0 && pinnedItems.length === 0 && !showAddNote && (
-                <div className="glass-solid rounded-xl py-16 text-center">
+                <div className="glass rounded-xl py-16 text-center">
                   <FileText size={28} className="mx-auto text-[var(--text-muted)] opacity-30 mb-3" />
                   <p className="text-sm text-[var(--text-muted)]">No timeline activity yet for this client.</p>
                   <p className="text-xs text-[var(--text-muted)] mt-1 opacity-70">Add a note above, or sync documents in the Document Vault.</p>
@@ -1778,8 +1876,8 @@ export default function ClientDetailPage() {
               {years.map(year => (
                 <div key={year}>
                   <div className="flex items-center gap-3 mb-4">
-                    <span className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)]">{year}</span>
-                    <div className="flex-1 h-px bg-[var(--border)]" />
+                    <span className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">{year}</span>
+                    <div className="flex-1 h-px bg-[var(--bg-nav-hover)]" />
                     <span className="text-xs text-[var(--text-muted)]">
                       {yearGroups[year].length} item{yearGroups[year].length !== 1 ? 's' : ''}
                     </span>
@@ -1810,7 +1908,8 @@ export default function ClientDetailPage() {
                               {railDateLabel}
                               <div className="shrink-0 w-4 h-4 rounded-full border-2 border-[var(--accent)] bg-[var(--bg-card-solid)] mt-3 z-10" />
                               <div className="flex-1 min-w-0">
-                                <NoteCard note={note} onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote} />
+                                <NoteCard note={note} onUpdate={handleUpdateNote} onDelete={handleDeleteNote} onPin={handlePinNote}
+                                  isAdmin={isAdminUser} onReallocate={openReallocateNote} />
                               </div>
                             </li>
                           );
@@ -1822,7 +1921,8 @@ export default function ClientDetailPage() {
                               {railDateLabel}
                               <div className="shrink-0 w-4 h-4 rounded-full border-2 border-amber-400 bg-[var(--bg-card-solid)] mt-3 z-10" />
                               <div className="flex-1 min-w-0">
-                                <EmailThreadGroupCard group={group} onPin={handlePinNote} />
+                                <EmailThreadGroupCard group={group} onPin={handlePinNote}
+                                  isAdmin={isAdminUser} onReallocateGroup={openReallocateGroup} />
                               </div>
                             </li>
                           );
@@ -1837,7 +1937,7 @@ export default function ClientDetailPage() {
                           <li key={`vault-${doc.id}`} className="flex gap-3 items-start">
                             {railDateLabel}
                             <div className="shrink-0 w-4 h-4 rounded-full border-2 border-[var(--border)] bg-[var(--bg-card-solid)] mt-3 z-10" />
-                            <div className="flex-1 min-w-0 glass-solid rounded-xl p-3.5 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors group">
+                            <div className="flex-1 min-w-0 glass rounded-xl p-3.5 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-colors group">
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -1880,13 +1980,15 @@ export default function ClientDetailPage() {
       {activeTab === 'details' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="glass-solid rounded-xl p-6">
+          <div className="glass rounded-xl p-6">
             <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Client Information</h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               <InfoRow label="Client Name" value={client.name} />
               <InfoRow label="Client Reference" value={client.client_ref} mono />
               <InfoRow label="Client Type" value={client.business_type ? CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type : null} />
-              <InfoRow label="Contact Email" value={client.contact_email} />
+              <InfoRow label="Contact Email" value={client.contact_email
+                ? <ClientEmailLink email={client.contact_email} client={client} className="text-[var(--accent)] hover:underline text-left break-all" />
+                : null} />
               <InfoRow label="Contact Number" value={client.contact_number} />
               <div>
                 <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Status</dt>
@@ -1917,7 +2019,7 @@ export default function ClientDetailPage() {
             </dl>
           </div>
 
-          <div className="glass-solid rounded-xl p-6">
+          <div className="glass rounded-xl p-6">
             <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Regulatory &amp; Tax Details</h3>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               {showFor('utr_number', type) && <InfoRow label="UTR Number" value={client.utr_number} mono />}
@@ -1957,7 +2059,7 @@ export default function ClientDetailPage() {
           </div>
 
           {/* Linked Clients — full width */}
-          <div className="glass-solid rounded-xl p-6">
+          <div className="glass rounded-xl p-6">
             <div className="flex items-center justify-between mb-4 gap-4">
               <div className="flex items-center gap-2 min-w-0">
                 <Link2 size={16} className="text-[var(--accent)]" />
@@ -2146,7 +2248,7 @@ export default function ClientDetailPage() {
                     {([
                       ['active',   'Active',   'bg-green-600 text-white'],
                       ['hold',     'On Hold',  'bg-amber-500 text-white'],
-                      ['inactive', 'Inactive', 'bg-gray-500 text-white'],
+                      ['inactive', 'Inactive', 'bg-gray-500 text-[var(--text-primary)]'],
                     ] as [ClientStatus, string, string][]).map(([val, label, activeCls]) => (
                       <button key={val} type="button" onClick={() => setEditStatus(val)}
                         className={`flex-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${editStatus === val ? activeCls : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
@@ -2384,6 +2486,95 @@ export default function ClientDetailPage() {
           defaultClientId={client.id}
           defaultClientName={client.name}
         />
+      )}
+
+      {/* Admin: reallocate timeline entry to another client */}
+      {reallocTarget && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { if (!reallocating) setReallocTarget(null); }}
+        >
+          <div
+            className="w-full max-w-md bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <ArrowLeftRight size={14} className="text-[var(--accent)]" />
+                Reallocate to another client
+              </h3>
+              <button
+                onClick={() => { if (!reallocating) setReallocTarget(null); }}
+                aria-label="Close"
+                className="p-1 rounded hover:bg-[var(--bg-nav-hover)] transition-colors"
+              >
+                <X size={15} className="text-[var(--text-muted)]" />
+              </button>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mb-3">
+              {reallocTarget.noteIds.length === 1
+                ? <>Moving <span className="font-medium text-[var(--text-secondary)]">“{reallocTarget.label}”</span> off this timeline.</>
+                : <>Moving <span className="font-medium text-[var(--text-secondary)]">{reallocTarget.noteIds.length} emails</span> in “{reallocTarget.label}” off this timeline.</>}
+            </p>
+            <ClientSearchInput
+              value={reallocClient?.id ?? ''}
+              valueName={reallocClient?.name}
+              onChange={(id, name, clientRef) => {
+                if (!id) { setReallocClient(null); setReallocError(null); return; }
+                if (id === clientId) { setReallocError('The entry is already on this client'); return; }
+                setReallocError(null);
+                setReallocClient({ id, name, client_ref: clientRef, business_type: null });
+              }}
+              placeholder="Search for the correct client…"
+            />
+            {reallocError && <p className="text-xs text-red-600 mt-2">{reallocError}</p>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setReallocTarget(null)}
+                disabled={reallocating}
+                className="btn-secondary text-xs py-1.5"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleReallocate()}
+                disabled={reallocating || !reallocClient}
+                className="btn-primary text-xs py-1.5 disabled:opacity-50"
+              >
+                {reallocating ? 'Moving…' : `Move ${reallocTarget.noteIds.length === 1 ? 'entry' : 'entries'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Timeline toast */}
+      {timelineToast && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 ${
+          timelineToast.kind === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+        }`}>
+          {timelineToast.message}
+          {timelineToast.undo && (
+            <button
+              onClick={() => { timelineToast.undo!(); setTimelineToast(null); }}
+              className="ml-1 pl-1.5 pr-2 py-0.5 rounded-md bg-white/20 hover:bg-white/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+            >
+              {/* Countdown donut — empties clockwise over the undo window */}
+              <svg width="14" height="14" viewBox="0 0 16 16" className="-rotate-90 shrink-0">
+                <circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
+                <circle
+                  cx="8" cy="8" r="6.5" fill="none" stroke="white" strokeWidth="3"
+                  strokeDasharray="40.84"
+                  style={{ animation: `smith-undo-countdown ${timelineToast.undoMs ?? 5000}ms linear forwards` }}
+                />
+              </svg>
+              Undo
+            </button>
+          )}
+          <button onClick={() => setTimelineToast(null)} className="ml-1 opacity-80 hover:opacity-100" aria-label="Dismiss">
+            <X size={14} />
+          </button>
+        </div>
       )}
     </ToolLayout>
   );

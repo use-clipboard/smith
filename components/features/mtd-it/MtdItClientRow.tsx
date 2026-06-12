@@ -10,7 +10,7 @@ import { collectFraudData } from '@/lib/hmrc/clientFraudData';
 import { getQuartersForYear, type QuarterRange } from '@/lib/mtdIt/quarters';
 import { evaluateThreshold } from '@/lib/mtdIt/thresholds';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
-import ClientEmailLink from './ClientEmailLink';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import MtdItSubmissionSummaryModal from './MtdItSubmissionSummaryModal';
 import type { MtdItClientRow as Row, MtdItQuarterStatus, MtdItQuarterType } from '@/types';
 

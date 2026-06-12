@@ -20,7 +20,7 @@ import {
   AlertCircle, RefreshCw, X, Plus, Trash2, Check,
   FileText, Zap, ListChecks, Vote, BookText, PenLine,
   Phone, Video, PersonStanding, MonitorSpeaker, Monitor,
-  Upload, Film, FolderOpen, CheckSquare,
+  Upload, Film, FolderOpen, CheckSquare, MicVocal, ArrowLeft,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -122,7 +122,7 @@ function TabPill({ label, icon, active, onClick }: {
       className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
         active
           ? 'bg-[var(--accent)] text-white'
-          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
+          : 'text-white/90 font-semibold drop-shadow-sm hover:text-white hover:bg-white/15'
       }`}>
       {icon}{label}
     </button>
@@ -154,9 +154,27 @@ export interface MeetingNotesSeed {
 
 interface MeetingNotesClientProps {
   seed?: MeetingNotesSeed | null;
+  /** Return to the history dashboard. Renders the "Back to history" link under the header. */
+  onBack?: () => void;
 }
 
-export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {}) {
+// Shown under the page header (matches the Accounts Review layout).
+const MEETING_NOTES_DESC = 'Record or write up a meeting and turn it into professional minutes, actions and decisions.';
+
+function BackToHistory({ onBack }: { onBack?: () => void }) {
+  if (!onBack) return null;
+  return (
+    <button
+      onClick={onBack}
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+    >
+      <ArrowLeft size={13} />
+      Back to history
+    </button>
+  );
+}
+
+export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientProps = {}) {
   const { isModuleActive } = useModules();
   const tasksModuleActive = isModuleActive('tasks');
 
@@ -839,7 +857,8 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
   if (phase === 'saved') {
     return (
-      <ToolLayout title="Meeting Notes">
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+        <BackToHistory onBack={onBack} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center text-center gap-6">
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
             <CheckCircle2 size={32} className="text-green-600" />
@@ -850,7 +869,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
               {meetingTitle || 'Untitled Meeting'} · {new Date(meetingDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <div className="w-full glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3 text-left">
+          <div className="w-full bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3 text-left">
             {selectedClient && (
               <div className="flex items-center gap-2 text-sm">
                 <Users2 size={14} className="text-[var(--text-muted)]" />
@@ -884,7 +903,8 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
   if (phase === 'uploading') {
     return (
-      <ToolLayout title="Meeting Notes">
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+        <BackToHistory onBack={onBack} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center gap-6">
           <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center">
             <Upload size={28} className="text-indigo-600" />
@@ -923,7 +943,8 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
   if (phase === 'processing') {
     return (
-      <ToolLayout title="Meeting Notes">
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+        <BackToHistory onBack={onBack} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center gap-6">
           <div className="w-16 h-16 rounded-full bg-[var(--accent-light)] flex items-center justify-center">
             <Loader2 size={28} className="text-[var(--accent)] animate-spin" />
@@ -944,17 +965,18 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
     const originalContent = entryMode === 'manual' ? manualDescription : (transcript + (supplementalNotes ? `\n\n${supplementalNotes}` : ''));
 
     return (
-      <ToolLayout title="Meeting Notes">
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
+      <BackToHistory onBack={onBack} />
         <div className="space-y-6 pb-8">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">{meetingTitle || 'Untitled Meeting'}</h2>
-              <p className="text-sm text-[var(--text-muted)] mt-0.5 flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-white drop-shadow-sm">{meetingTitle || 'Untitled Meeting'}</h2>
+              <p className="text-sm font-semibold text-white/90 drop-shadow-sm mt-0.5 flex items-center gap-2 flex-wrap">
                 <span className="flex items-center gap-1"><Calendar size={12} />{formatDateDisplay(meetingDate)}</span>
                 {meetingTime && <span className="flex items-center gap-1"><Clock size={12} />{meetingTime}</span>}
                 {duration > 0 && <span className="flex items-center gap-1"><Mic size={12} />{formatDuration(duration)}</span>}
                 {originOption && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 bg-[var(--bg-nav-hover)] rounded text-xs">
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-white/20 border border-white/25 rounded text-xs text-white font-medium">
                     {originOption.icon}{originOption.label}
                   </span>
                 )}
@@ -967,16 +989,16 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPhase('setup')} className="btn-ghost text-sm flex items-center gap-1.5">
+              <button onClick={() => setPhase('setup')} className="btn-ghost text-sm flex items-center gap-1.5 text-white hover:text-white hover:bg-white/15">
                 <RefreshCw size={14} />Back
               </button>
-              <button onClick={() => void handleSummarise(true)} className="btn-ghost text-sm flex items-center gap-1.5">
+              <button onClick={() => void handleSummarise(true)} className="btn-ghost text-sm flex items-center gap-1.5 text-white hover:text-white hover:bg-white/15">
                 <Zap size={14} />Re-analyse
               </button>
               {tasksModuleActive && editActions.length > 0 && (
                 <button
                   onClick={() => setShowQuickTask(true)}
-                  className="btn-secondary text-sm flex items-center gap-1.5"
+                  className="btn-primary text-sm flex items-center gap-1.5"
                 >
                   <CheckSquare size={14} />Create Task
                 </button>
@@ -987,7 +1009,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
             <div className="xl:col-span-2 space-y-4">
               {/* Meta */}
-              <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3">
+              <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3">
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Meeting Details</p>
                 {selectedClient && <div className="flex items-center gap-2 text-sm"><Users2 size={13} className="text-[var(--text-muted)]" /><span className="font-medium">{selectedClient.name}</span></div>}
                 {location && <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]"><MapPin size={13} className="text-[var(--text-muted)]" />{location}</div>}
@@ -1002,7 +1024,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
               </div>
 
               {/* Original content */}
-              <div className="glass-solid rounded-xl border border-[var(--border)] p-4">
+              <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4">
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">
                   {entryMode === 'manual' ? 'Original Description' : 'Transcript'}
                 </p>
@@ -1012,7 +1034,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
               </div>
 
               {/* Save */}
-              <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3">
+              <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3">
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Download</p>
 
                 {/* Add to timeline option — only shown when a client is linked */}
@@ -1123,11 +1145,11 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
               {activeTab === 'summary' && (
                 <div className="space-y-4">
-                  <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-2">
+                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
                     <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Executive Summary</label>
                     <textarea value={editSummary} onChange={e => setEditSummary(e.target.value)} rows={5} className="input-base w-full resize-none text-sm leading-relaxed" />
                   </div>
-                  <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3">
+                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Key Discussion Points</label>
                       <button onClick={() => setEditKeyPoints(prev => [...prev, ''])} className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"><Plus size={12} />Add</button>
@@ -1141,7 +1163,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                     ))}
                   </div>
                   {editNext && (
-                    <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-2">
+                    <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
                       <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Next Meeting</label>
                       <input value={editNext} onChange={e => setEditNext(e.target.value)} className="input-base w-full text-sm" />
                     </div>
@@ -1149,7 +1171,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                 </div>
               )}
               {activeTab === 'actions' && (
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Action Items</label>
                     <button onClick={() => setEditActions(prev => [...prev, { action: '', owner: '', deadline: '' }])} className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"><Plus size={12} />Add</button>
@@ -1173,7 +1195,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                 </div>
               )}
               {activeTab === 'decisions' && (
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-3">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Decisions Made</label>
                     <button onClick={() => setEditDecisions(prev => [...prev, ''])} className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"><Plus size={12} />Add</button>
@@ -1189,7 +1211,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                 </div>
               )}
               {activeTab === 'minutes' && (
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-2">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
                   <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Formal Minutes (UK Professional Format)</label>
                   <textarea value={editMinutes} onChange={e => setEditMinutes(e.target.value)} rows={20} className="input-base w-full resize-none text-sm leading-relaxed font-mono" spellCheck />
                 </div>
@@ -1260,8 +1282,9 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
     : transcript.trim().length > 0 || phase === 'recording';
 
   return (
-    <ToolLayout title="Meeting Notes">
-      <div className="max-w-4xl space-y-5 pb-8">
+    <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
+      <BackToHistory onBack={onBack} />
+      <div className="space-y-5 pb-8">
 
         {/* Calendar hint */}
         {!hintDismissed && calendarHint && (
@@ -1294,7 +1317,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
           {/* ── Left: meeting details ─── */}
           <div className="lg:col-span-3 space-y-4">
-            <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-4">
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
               <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Meeting Details</p>
 
               <div>
@@ -1413,7 +1436,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                 </div>
 
                 {/* Screen recording controls */}
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-4">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Screen Recording</p>
                     {isScreenRecording && (
@@ -1488,7 +1511,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
                 {/* Live transcript during screen recording */}
                 {(isScreenRecording || transcript) && (
-                  <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-2">
+                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
                     <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Your voice (live transcript)</p>
                     <div className="text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
                       {transcript || <span className="text-[var(--text-muted)] italic">Listening for your voice…</span>}
@@ -1499,7 +1522,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
                 {/* Supplemental notes — shown after recording stops */}
                 {!isScreenRecording && recordingChunks.current.length > 0 && (
-                  <div className="glass-solid rounded-xl border border-[var(--border)] p-4 space-y-2">
+                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
                     <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Additional Notes (optional)</label>
                     <p className="text-xs text-[var(--text-muted)]">
                       Add key points from the other party, decisions made, or anything your microphone may have missed.
@@ -1526,7 +1549,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                     <button onClick={() => setMeetingOrigin('in_person')} className="underline font-medium ml-1">Switch to manual entry</button>
                   </div>
                 )}
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-4">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Recording</p>
                     {isRecording && (
@@ -1573,7 +1596,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
                     <MonitorSpeaker size={12} />Tip: for remote calls, play audio through speakers near your mic for best results.
                   </p>
                 </div>
-                <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-3">
+                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-3">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Live Transcript</p>
                     {transcript && <button onClick={() => { setTranscript(''); transcriptRef.current = ''; setInterim(''); }} className="text-xs text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1"><Trash2 size={11} />Clear</button>}
@@ -1598,7 +1621,7 @@ export default function MeetingNotesClient({ seed }: MeetingNotesClientProps = {
 
             {/* ── MANUAL ENTRY ─── */}
             {isManualMode && (
-              <div className="glass-solid rounded-xl border border-[var(--border)] p-5 space-y-4">
+              <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center shrink-0">
                     <PenLine size={16} className="text-[var(--accent)]" />

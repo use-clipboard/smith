@@ -42,7 +42,7 @@ export default function ChatPanel() {
   return (
     <div
       ref={panelRef}
-      className="absolute top-full right-0 mt-2 w-72 rounded-2xl shadow-2xl border border-[var(--border)] bg-[var(--bg-card-solid)] overflow-hidden z-50"
+      className="absolute top-full right-0 mt-2 w-72 rounded-2xl bg-white shadow-dropdown border border-[var(--border)] overflow-hidden z-50"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
@@ -60,7 +60,7 @@ export default function ChatPanel() {
 
       {/* Search */}
       <div className="px-3 py-2 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2 bg-[var(--bg-page)] rounded-lg px-2.5 py-1.5">
+        <div className="flex items-center gap-2 bg-black/[0.04] border border-[var(--border)] rounded-lg px-2.5 py-1.5">
           <Search size={12} className="text-[var(--text-muted)] shrink-0" />
           <input
             type="text"
@@ -77,7 +77,7 @@ export default function ChatPanel() {
         {online.length > 0 && (
           <div>
             <div className="px-4 pt-3 pb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
                 Online — {online.length}
               </span>
             </div>
@@ -152,7 +152,7 @@ function MemberRow({
         </p>
       </div>
       {unread > 0 && (
-        <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[var(--accent)] text-white text-[9px] font-bold px-1">
+        <span className="shrink-0 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-[var(--accent)] text-white text-[9px] font-bold px-1 shadow-sm">
           {unread > 9 ? '9+' : unread}
         </span>
       )}

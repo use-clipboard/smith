@@ -316,7 +316,7 @@ export default function ClientTaskPortal({ token }: Props) {
           {/* Step header */}
           <div className="bg-indigo-600 px-6 py-5">
             <p className="text-indigo-200 text-xs font-medium mb-1 uppercase tracking-wide">Action required from you</p>
-            <h1 className="text-white text-xl font-bold leading-snug">{step.title}</h1>
+            <h1 className="text-[var(--text-primary)] text-xl font-bold leading-snug">{step.title}</h1>
             {step.due_date && (
               <p className="text-indigo-200 text-xs mt-2 flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" />

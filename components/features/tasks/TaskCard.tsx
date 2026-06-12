@@ -107,8 +107,8 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
   return (
     <div
       onClick={!confirmDelete ? onClick : undefined}
-      className={`relative bg-white border rounded-lg p-4 transition-all group
-        ${confirmDelete ? 'border-red-300 bg-red-50/30 cursor-default' : 'border-gray-200 cursor-pointer hover:border-indigo-400 hover:shadow-sm'}`}
+      className={`relative bg-white/[0.78] backdrop-blur-md border rounded-lg p-4 transition-all group
+        ${confirmDelete ? 'border-red-300 bg-red-50/40 cursor-default' : 'border-[var(--border)] shadow-sm cursor-pointer hover:border-indigo-400 hover:shadow-md'}`}
     >
       {/* Admin action buttons — top-right, hover-reveal */}
       {isAdmin && !confirmDelete && (
@@ -250,7 +250,7 @@ export default function TaskCard({ task, onClick, currentUserId, isAdmin = false
               {steps.some(s => s.is_client_step) && (
                 <Tooltip label="Client step" side="top">
                   <div className="h-6 w-6 rounded-full bg-amber-400 border-2 border-white flex items-center justify-center">
-                    <User className="h-3 w-3 text-white" />
+                    <User className="h-3 w-3 text-[var(--text-primary)]" />
                   </div>
                 </Tooltip>
               )}

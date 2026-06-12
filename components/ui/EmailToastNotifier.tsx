@@ -23,6 +23,22 @@ interface Toast {
   subject: string;
   snippet: string;
   count: number; // >1 for grouped
+  email?: RecentEmail; // present only for single-email toasts → enables deep-link
+}
+
+/** Event + sessionStorage handoff used to tell a (possibly not-yet-mounted)
+ * Email Triage page which thread to open when a single-email toast is clicked. */
+export const EMAIL_OPEN_THREAD_EVENT = 'smith:email-open-thread';
+export const EMAIL_OPEN_THREAD_KEY = 'smith:open-email-thread';
+export interface OpenEmailThreadPayload {
+  threadId: string;
+  id: string;
+  fromName: string;
+  fromEmail: string;
+  subject: string;
+  snippet: string;
+  internalDate: number;
+  isUnread: boolean;
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -55,6 +71,27 @@ export default function EmailToastNotifier() {
     dismiss(key);
     openTab({ id: 'email-triage', title: 'Email Triage', route: '/email', icon: Mail });
     router.push('/email');
+  }, [dismiss, openTab, router]);
+
+  // Single-email toast: open the email tool *and* the specific thread. The
+  // page may not be mounted yet, so we hand off via sessionStorage (drained on
+  // mount) AND dispatch an event (caught if it's already mounted).
+  const openSingleEmail = useCallback((key: string, email: RecentEmail) => {
+    dismiss(key);
+    const payload: OpenEmailThreadPayload = {
+      threadId: email.threadId,
+      id: email.id,
+      fromName: email.fromName,
+      fromEmail: email.fromEmail,
+      subject: email.subject,
+      snippet: email.snippet,
+      internalDate: email.internalDate,
+      isUnread: email.isUnread,
+    };
+    try { sessionStorage.setItem(EMAIL_OPEN_THREAD_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
+    openTab({ id: 'email-triage', title: 'Email Triage', route: '/email', icon: Mail });
+    router.push('/email');
+    window.dispatchEvent(new CustomEvent<OpenEmailThreadPayload>(EMAIL_OPEN_THREAD_EVENT, { detail: payload }));
   }, [dismiss, openTab, router]);
 
   useEffect(() => {
@@ -103,6 +140,7 @@ export default function EmailToastNotifier() {
               subject: e.subject,
               snippet: e.snippet,
               count: 1,
+              email: e,
             }]);
             setTimeout(() => dismiss(key), AUTO_DISMISS_MS);
           });
@@ -128,8 +166,8 @@ export default function EmailToastNotifier() {
       {toasts.map(t => (
         <button
           key={t.key}
-          onClick={() => openEmailTool(t.key)}
-          className="pointer-events-auto w-[26rem] text-left rounded-xl bg-violet-50 dark:bg-violet-950/60 text-[var(--text-primary)] shadow-2xl ring-1 ring-violet-300/70 dark:ring-violet-700/60 p-4 flex items-start gap-3 hover:bg-violet-100 dark:hover:bg-violet-900/60 hover:ring-violet-400 transition-all"
+          onClick={() => t.email ? openSingleEmail(t.key, t.email) : openEmailTool(t.key)}
+          className="glass pointer-events-auto w-[26rem] text-left rounded-xl text-[var(--text-primary)] shadow-dropdown p-4 flex items-start gap-3 hover:bg-white/55 transition-all"
           style={{ animation: 'emailToastIn 0.3s ease-out' }}
         >
           <div className="w-10 h-10 rounded-xl bg-violet-200 dark:bg-violet-800/70 flex items-center justify-center shrink-0">

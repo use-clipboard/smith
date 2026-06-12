@@ -35,8 +35,15 @@ export function generateReportHtml(
     G: 'Expenses', H: 'Other Notes',
   };
 
+  // Drop empty working papers (no table rows and no written content) so blank
+  // sections never appear in the document.
+  const hasContent = (p: WorkingPaper) =>
+    (!!p.table && p.table.rows.length > 0) ||
+    (typeof p.content === 'string' && p.content.trim().length > 0);
+  const filledPapers = workingPapers.filter(hasContent);
+
   const wpGroups: Record<string, WorkingPaper[]> = {};
-  workingPapers.forEach(p => {
+  filledPapers.forEach(p => {
     const m = p.title.match(/^([A-Z])\d/);
     const letter = m ? m[1] : 'Z';
     if (!wpGroups[letter]) wpGroups[letter] = [];
@@ -186,7 +193,7 @@ export function generateReportHtml(
     .toc-code { font-size: 11px; font-weight: 700; color: #1C73D1; width: 32px; flex-shrink: 0; }
     .toc-entry-name { font-size: 12px; color: #4b5563; }
     .section-divider { background: #EDF5FF; border-left: 3px solid #1C73D1; padding: 12px 16px; margin: 36px 0 20px; display: flex; align-items: center; gap: 14px; }
-    .sd-letter { font-size: 13px; font-weight: 900; color: #fff; background: #1C73D1; padding: 4px 10px; border-radius: 4px; flex-shrink: 0; }
+    .sd-letter { font-size: 13px; font-weight: 900; color: #fff; background: #1C73D1; width: 28px; height: 28px; line-height: 28px; text-align: center; border-radius: 4px; flex-shrink: 0; }
     .sd-name { font-size: 15px; font-weight: 800; color: #12458F; }
     .sd-sub { font-size: 11px; color: #9ca3af; margin-top: 2px; font-weight: 500; }
     .review-summary { display: flex; gap: 14px; margin-bottom: 20px; margin-top: 16px; }
@@ -213,7 +220,7 @@ export function generateReportHtml(
     .journal-table td { padding: 5px 12px; border-bottom: 1px solid #f3f4f6; }
     .paper { margin-bottom: 28px; page-break-inside: avoid; break-inside: avoid; }
     .paper-title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 14px; background: #EDF5FF; border-left: 3px solid #1C73D1; }
-    .paper-code { font-size: 10px; font-weight: 700; color: #fff; background: #1C73D1; padding: 3px 9px; border-radius: 3px; flex-shrink: 0; }
+    .paper-code { font-size: 10px; font-weight: 700; color: #fff; background: #1C73D1; display: inline-block; min-width: 26px; height: 20px; line-height: 20px; text-align: center; padding: 0 6px; border-radius: 3px; flex-shrink: 0; }
     .paper-name { font-size: 13px; font-weight: 700; color: #12458F; }
     .wp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .wp-table th { text-align: left; padding: 7px 10px; background: #1C73D1; color: #fff; font-weight: 700; border: 1px solid #1C73D1; }

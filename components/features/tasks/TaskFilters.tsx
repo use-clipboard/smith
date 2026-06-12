@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, X, ChevronDown, Loader2 } from 'lucide-react';
+import GlassSelect from '@/components/ui/GlassSelect';
 import type { TaskStatus } from '@/types';
 
 interface ClientOption {
@@ -120,42 +121,40 @@ export default function TaskFilters({
     <div className="flex flex-wrap items-center gap-2">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--text-muted)]" strokeWidth={2.5} />
         <input
           type="text"
           placeholder="Search task, client, or code…"
           value={search}
           onChange={e => onSearchChange(e.target.value)}
-          className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-md w-52 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+          className="pl-8 pr-3 py-1.5 text-sm font-medium rounded-md w-52 bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] placeholder:font-medium outline-none transition focus:border-[var(--accent)] focus:bg-white"
         />
       </div>
 
       {/* Status */}
-      <select
+      <GlassSelect
+        ariaLabel="Filter by status"
         value={statusFilter}
-        onChange={e => onStatusChange(e.target.value as TaskStatus | 'all')}
-        className="py-1.5 pl-2.5 pr-7 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-      >
-        {STATUS_OPTIONS.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+        onChange={v => onStatusChange(v as TaskStatus | 'all')}
+        options={STATUS_OPTIONS}
+        className="min-w-[150px]"
+      />
 
       {/* Client live-search picker */}
       <div ref={clientRef} className="relative">
         <button
           type="button"
           onClick={openClientDrop}
-          className={`flex items-center gap-2 py-1.5 pl-2.5 pr-2 text-sm border rounded-md bg-white transition-colors min-w-[160px] max-w-[260px] ${
-            clientFilter ? 'border-indigo-400 text-indigo-700' : 'border-gray-200 text-gray-700'
-          } hover:border-indigo-400`}
+          className={`flex items-center gap-2 py-1.5 pl-2.5 pr-2 text-sm font-semibold border rounded-md bg-white shadow-md transition-colors min-w-[160px] max-w-[260px] hover:bg-[var(--bg-nav-hover)] ${
+            clientFilter ? 'border-[var(--border)] text-[var(--text-primary)]' : 'border-[var(--border)] text-[var(--text-secondary)]'
+          }`}
         >
           <span className="flex-1 text-left truncate">{clientLabel}</span>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-[var(--text-secondary)] flex-shrink-0" strokeWidth={2.5} />
         </button>
 
         {clientOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden w-80">
+          <div className="absolute top-full left-0 mt-1 bg-white/95 backdrop-blur-2xl border border-[var(--border)] rounded-xl shadow-xl z-50 overflow-hidden w-80">
             {/* Search input */}
             <div className="p-2 border-b border-gray-100">
               <div className="flex items-center gap-2 px-2 py-1 border border-gray-200 rounded-lg bg-gray-50">
@@ -219,18 +218,20 @@ export default function TaskFilters({
       </div>
 
       {/* Assignee */}
-      <select
+      <GlassSelect
+        ariaLabel="Filter by assignee"
         value={assigneeFilter}
-        onChange={e => onAssigneeChange(e.target.value)}
-        className="py-1.5 pl-2.5 pr-7 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-      >
-        <option value="">All Team Members</option>
-        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name ?? m.email}</option>)}
-      </select>
+        onChange={onAssigneeChange}
+        options={[
+          { value: '', label: 'All Team Members' },
+          ...teamMembers.map(m => ({ value: m.id, label: m.full_name ?? m.email })),
+        ]}
+        className="min-w-[160px]"
+      />
 
       {hasFilters && (
-        <button onClick={onClear} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 py-1.5 px-2 rounded hover:bg-gray-100">
-          <X className="h-3.5 w-3.5" /> Clear
+        <button onClick={onClear} className="flex items-center gap-1 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm py-1.5 px-2 rounded hover:bg-white transition-colors">
+          <X className="h-3.5 w-3.5" strokeWidth={2.5} /> Clear
         </button>
       )}
     </div>

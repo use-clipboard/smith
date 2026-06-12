@@ -5,9 +5,17 @@ import { getUserContext } from '@/lib/getUserContext';
 import { getRefreshedGmailClient } from '@/lib/gmail';
 
 const ModifySchema = z.object({
-  threadId: z.string().min(1),
+  // Pass threadId to label the whole conversation, or messageId to label just
+  // one message. messageId is required for stars in the flat (ungrouped) inbox:
+  // Gmail merges same-subject senders (e.g. GoCardless) into one thread, so a
+  // later message's id is NOT a valid thread id — threads.modify would 404 and
+  // the star wouldn't stick. At least one of the two must be present.
+  threadId: z.string().optional(),
+  messageId: z.string().optional(),
   addLabelIds: z.array(z.string()).default([]),
   removeLabelIds: z.array(z.string()).default([]),
+}).refine(d => !!d.threadId || !!d.messageId, {
+  message: 'threadId or messageId is required',
 });
 
 export async function POST(req: NextRequest) {
@@ -31,14 +39,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
-    await gmail.users.threads.modify({
-      userId: 'me',
-      id: parsed.data.threadId,
-      requestBody: {
-        addLabelIds: parsed.data.addLabelIds,
-        removeLabelIds: parsed.data.removeLabelIds,
-      },
-    });
+    const requestBody = {
+      addLabelIds: parsed.data.addLabelIds,
+      removeLabelIds: parsed.data.removeLabelIds,
+    };
+    // messageId → label just that message; otherwise label the whole thread.
+    if (parsed.data.messageId) {
+      await gmail.users.messages.modify({ userId: 'me', id: parsed.data.messageId, requestBody });
+    } else {
+      await gmail.users.threads.modify({ userId: 'me', id: parsed.data.threadId!, requestBody });
+    }
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -4,10 +4,18 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Loader2, RefreshCw, Paperclip, AlertTriangle, Reply, Forward,
   UserPlus, CheckSquare, Search, Star, Trash2, X, Pin,
-  SlidersHorizontal, MailOpen, Square,
+  SlidersHorizontal, MailOpen, Square, Printer, Download, Tag,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { EmailThread } from '@/lib/gmail';
+
+// Deterministic hue (0–359) from a label name so each Gmail label always gets
+// the same colour without us having to fetch Gmail's per-label colour settings.
+function labelHue(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+  return h;
+}
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '';
@@ -47,6 +55,12 @@ interface Props {
   /** Forward each selected thread as its own email (one Send call per thread,
    *  attachments preserved). Returns success/failure totals for toast UX. */
   onBulkForward?: (ids: string[], to: string[], cc: string[], note: string) => Promise<{ success: number; failed: number } | void>;
+  /** Allocate every selected thread to the same client(s). */
+  onBulkAllocate?: (ids: string[]) => void;
+  /** Open a print view (print / save as PDF) for the selected threads. */
+  onBulkPrint?: (ids: string[]) => void;
+  /** Download all attachments across the selected threads. */
+  onBulkDownloadAttachments?: (ids: string[]) => void;
   /** Controlled: true = only unread emails are fetched server-side */
   unreadOnly: boolean;
   onUnreadOnlyChange: (v: boolean) => void;
@@ -58,16 +72,20 @@ interface Props {
   onAllocatedOnlyChange: (v: boolean) => void;
   /** Active Gmail label — used to flip the "from" column to recipients in SENT */
   activeLabel?: string;
+  /** The firm's user-created Gmail labels (id + name) so each row can show a
+   *  little coloured tag chip for any of these labels applied to the thread. */
+  userLabels?: { id: string; name: string }[];
 }
 
 export default function EmailList({
   threads, activeThreadId, loading, error, threadMeta, searchQuery, onSearch,
   onSelect, onRefresh, onStar, onDelete, onMarkRead, hasNextPage, onLoadMore, loadingMore,
   pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead, onBulkForward,
+  onBulkAllocate, onBulkPrint, onBulkDownloadAttachments,
   unreadOnly, onUnreadOnlyChange,
   taskLinkedOnly, onTaskLinkedOnlyChange,
   allocatedOnly, onAllocatedOnlyChange,
-  activeLabel,
+  activeLabel, userLabels,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -78,6 +96,8 @@ export default function EmailList({
 
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Anchor row for shift-range selection.
+  const lastIndexRef = useRef<number>(-1);
 
   // Close filter dropdown on outside click
   useEffect(() => {
@@ -101,13 +121,43 @@ export default function EmailList({
     setSearchOpen(o => !o);
   }
 
-  function toggleSelect(id: string, e: React.MouseEvent) {
+  function toggleSelect(id: string, index: number, e: React.MouseEvent) {
     e.stopPropagation();
+    lastIndexRef.current = index;
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  // Add every row between two indices (inclusive) to the selection.
+  function selectRange(a: number, b: number) {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    const ids = displayThreads.slice(lo, hi + 1).map(t => t.id);
+    setSelectedIds(prev => new Set([...prev, ...ids]));
+  }
+
+  // Row click: shift = range-select from the anchor, ctrl/cmd = toggle this row,
+  // plain click = open the thread.
+  function handleRowClick(thread: EmailThread, index: number, e: React.MouseEvent) {
+    if (e.shiftKey && lastIndexRef.current >= 0) {
+      e.preventDefault();
+      selectRange(lastIndexRef.current, index);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault();
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(thread.id)) next.delete(thread.id); else next.add(thread.id);
+        return next;
+      });
+      lastIndexRef.current = index;
+      return;
+    }
+    lastIndexRef.current = index;
+    onSelect(thread);
   }
 
   function selectAll() {
@@ -378,6 +428,17 @@ export default function EmailList({
               <MailOpen size={13} />
             </button>
           </Tooltip>
+          {onBulkAllocate && (
+            <Tooltip label="Allocate to client">
+              <button
+                onClick={() => onBulkAllocate([...selectedIds])}
+                aria-label="Allocate selected to client"
+                className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+              >
+                <UserPlus size={13} />
+              </button>
+            </Tooltip>
+          )}
           {onBulkForward && (
             <Tooltip label="Forward each as a separate email">
               <button
@@ -386,6 +447,28 @@ export default function EmailList({
                 className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
               >
                 <Forward size={13} />
+              </button>
+            </Tooltip>
+          )}
+          {onBulkPrint && (
+            <Tooltip label="Print / save as PDF">
+              <button
+                onClick={() => onBulkPrint([...selectedIds])}
+                aria-label="Print selected"
+                className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+              >
+                <Printer size={13} />
+              </button>
+            </Tooltip>
+          )}
+          {onBulkDownloadAttachments && (
+            <Tooltip label="Download attachments">
+              <button
+                onClick={() => onBulkDownloadAttachments([...selectedIds])}
+                aria-label="Download attachments from selected"
+                className="p-1.5 rounded-lg hover:bg-[var(--accent)]/10 text-[var(--text-secondary)] hover:text-[var(--accent)] transition-colors"
+              >
+                <Download size={13} />
               </button>
             </Tooltip>
           )}
@@ -412,7 +495,7 @@ export default function EmailList({
 
       {/* Thread list — small padding on all sides so the active row's drop-shadow
           has breathing room and isn't clipped at the panel edges (incl. top/bottom). */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
         {error ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4 gap-3">
             <AlertTriangle size={20} className="text-amber-500 shrink-0" />
@@ -438,7 +521,7 @@ export default function EmailList({
             </p>
             {unreadOnly && threads.length > 0 && (
               <button
-                onClick={() => setUnreadOnly(false)}
+                onClick={() => onUnreadOnlyChange(false)}
                 className="text-xs text-[var(--accent)] hover:underline"
               >
                 Show all
@@ -447,7 +530,7 @@ export default function EmailList({
           </div>
         ) : (
           <>
-            {displayThreads.map(thread => {
+            {displayThreads.map((thread, rowIndex) => {
               const isActive = thread.id === activeThreadId;
               const isSelected = selectedIds.has(thread.id);
               const hasAttachments = thread.messages.some(m => m.hasAttachments || m.attachments.length > 0);
@@ -491,18 +574,31 @@ export default function EmailList({
               const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedThreadIds?.get(realThreadId)   || latestAnySent || undefined) : undefined;
               const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedThreadIds?.get(realThreadId) || latestAnySent || undefined) : undefined;
 
+              // User-created Gmail labels applied to this thread → little tag chips.
+              const threadUserLabels = (userLabels ?? []).filter(l => thread.labelIds.includes(l.id));
+
               return (
                 <div
                   key={thread.id}
+                  draggable
+                  onDragStart={e => {
+                    // If this row is part of a multi-selection, drag them all;
+                    // otherwise drag just this one.
+                    const ids = (isSelected && selectedIds.size > 1) ? [...selectedIds] : [thread.id];
+                    e.dataTransfer.setData('application/x-smith-emails', JSON.stringify(ids));
+                    e.dataTransfer.setData('application/x-smith-email', thread.id);
+                    e.dataTransfer.setData('text/plain', thread.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
                   className={`w-full text-left border-b border-[var(--border)] transition-all duration-150 relative group flex items-stretch
                     ${isSelected
                       ? 'bg-[var(--accent-light)]'
                       : isActive
-                        // Active row: elevated card look — soft indigo-tinted shadow,
-                        // subtle ring, and z-10 so the shadow isn't clipped by neighbours.
-                        ? 'bg-[var(--bg-card-solid)] hover:bg-[var(--bg-nav-hover)] shadow-[0_4px_16px_rgba(99,102,241,0.25)] ring-1 ring-indigo-300/60 dark:ring-indigo-500/40 z-10'
+                        // Active (open) row: indigo-tinted card so it's clearly distinct from the white unread rows.
+                        ? 'bg-[rgba(79,70,229,0.13)] hover:bg-[rgba(79,70,229,0.17)] shadow-[0_2px_12px_rgba(99,102,241,0.18)] ring-1 ring-indigo-300/70 z-10'
                         : !thread.isRead
-                          ? 'bg-indigo-100 dark:bg-indigo-900/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+                          // Unread: subtle white "card" tint (the bold text + accent dot do the heavy lifting).
+                          ? 'bg-white/55 hover:bg-white/70'
                           : 'hover:bg-[var(--bg-nav-hover)]'
                     }`}
                 >
@@ -522,7 +618,7 @@ export default function EmailList({
                   {/* Checkbox column */}
                   <Tooltip label={isSelected ? 'Deselect' : 'Select'} side="right" className="shrink-0">
                     <button
-                      onClick={e => toggleSelect(thread.id, e)}
+                      onClick={e => toggleSelect(thread.id, rowIndex, e)}
                       aria-label={isSelected ? 'Deselect' : 'Select'}
                       className={`flex items-center pl-2 pr-1 transition-opacity
                         ${isSelected || selectedIds.size > 0 ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
@@ -536,11 +632,14 @@ export default function EmailList({
 
                   {/* Main clickable area */}
                   <button
-                    onClick={() => onSelect(thread)}
+                    onClick={e => handleRowClick(thread, rowIndex, e)}
                     className="flex-1 text-left px-3 py-3 min-w-0"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className={`text-sm truncate flex-1 ${!thread.isRead ? 'font-semibold text-[var(--text-primary)]' : 'font-normal text-[var(--text-secondary)]'}`}>
+                      {!thread.isRead && (
+                        <span aria-hidden className="mt-[7px] w-2 h-2 rounded-full bg-[var(--accent)] shrink-0" />
+                      )}
+                      <span className={`text-sm truncate flex-1 ${isActive ? 'font-semibold text-[var(--accent)]' : !thread.isRead ? 'font-semibold text-[var(--text-primary)]' : 'font-normal text-[var(--text-secondary)]'}`}>
                         {(() => {
                           // In Sent, the user is always the sender — show the
                           // recipient instead so each row is meaningful.
@@ -625,8 +724,23 @@ export default function EmailList({
                     </p>
 
                     {/* Status chips */}
-                    {(isReplied || isForwarded || (meta?.reactions?.length ?? 0) > 0) && (
+                    {(isReplied || isForwarded || (meta?.reactions?.length ?? 0) > 0 || threadUserLabels.length > 0) && (
                       <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {/* Gmail label chips — little tag-shaped icon, full name on hover. */}
+                        {threadUserLabels.map(l => {
+                          const hue = labelHue(l.name);
+                          return (
+                            <Tooltip key={l.id} label={l.name} side="top">
+                              <span
+                                aria-label={l.name}
+                                className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-[4px] shrink-0"
+                                style={{ backgroundColor: `hsl(${hue} 70% 45% / 0.14)`, color: `hsl(${hue} 65% 38%)` }}
+                              >
+                                <Tag size={10} />
+                              </span>
+                            </Tooltip>
+                          );
+                        })}
                         {isReplied && (
                           <span className="inline-flex items-center gap-0.5 text-[10px] text-[var(--text-muted)]">
                             <Reply size={9} /> Replied{repliedAt && ` · ${formatDate(repliedAt)}`}

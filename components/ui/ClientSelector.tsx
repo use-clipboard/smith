@@ -17,6 +17,10 @@ export interface SelectedClient {
 interface ClientSelectorProps {
   value: SelectedClient | null;
   onSelect: (client: SelectedClient | null) => void;
+  /** Which edge of the trigger the dropdown aligns to. Use 'right' when the
+   *  trigger sits near the right edge of the screen so the menu opens leftward
+   *  and doesn't overflow the viewport. Defaults to 'left'. */
+  align?: 'left' | 'right';
 }
 
 interface ClientRow {
@@ -44,7 +48,7 @@ function StatusPill({ status }: { status: ClientStatus }) {
   );
 }
 
-export default function ClientSelector({ value, onSelect }: ClientSelectorProps) {
+export default function ClientSelector({ value, onSelect, align = 'left' }: ClientSelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -131,7 +135,7 @@ export default function ClientSelector({ value, onSelect }: ClientSelectorProps)
       )}
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-dropdown overflow-hidden animate-slide-up">
+        <div className={`absolute top-full ${align === 'right' ? 'right-0' : 'left-0'} mt-1 z-50 w-80 glass-solid rounded-xl border border-[var(--border)] shadow-dropdown overflow-hidden animate-slide-up`}>
           <div className="p-2 border-b border-[var(--border)]">
             <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--bg-input)] rounded-lg border border-[var(--border-input)]">
               <Search size={13} className="text-[var(--text-muted)] shrink-0" />

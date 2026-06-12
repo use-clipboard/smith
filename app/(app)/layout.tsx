@@ -41,6 +41,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Column doesn't exist yet — use empty array
   }
 
+  // Fetch the user's dashboard layout separately (graceful pre-migration).
+  // null = never customised → DashboardLayoutProvider falls back to the default.
+  let initialDashboardLayout: string[] | null = null;
+  try {
+    const { data: dashRow } = await supabase
+      .from('users')
+      .select('dashboard_layout')
+      .eq('id', user.id)
+      .single();
+    initialDashboardLayout = (dashRow?.dashboard_layout as string[] | null) ?? null;
+  } catch {
+    // Column doesn't exist yet — provider uses the default layout
+  }
+
   // Fetch firm data separately — gracefully handles pre-migration state
   let activeModules: string[] = OPTIONAL_MODULE_IDS;
   let hasApiKey = false;
@@ -76,6 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       firmId={profile?.firm_id ?? ''}
       activeModules={activeModules}
       initialFavourites={initialFavourites}
+      initialDashboardLayout={initialDashboardLayout}
       showOnboarding={showOnboarding ?? false}
       hasApiKey={hasApiKey}
     >

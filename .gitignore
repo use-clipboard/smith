@@ -36,3 +36,7 @@ yarn-error.log*
 next-env.d.ts
 
 .vercel
+
+# local-only files (never commit - settings.local.json can contain secrets)
+.claude/settings.local.json
+.next-dev.log

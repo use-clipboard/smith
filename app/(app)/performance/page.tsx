@@ -241,7 +241,7 @@ function BackToHistory({ onBack }: { onBack: () => void }) {
   return (
     <button
       onClick={onBack}
-      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors"
+      className="inline-flex items-center gap-1.5 mb-3 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm transition-colors"
     >
       <ArrowLeft size={13} />
       Back to history
@@ -474,7 +474,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
     );
   }
   if (appState === 'error') return (
-    <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669">
+    <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
@@ -508,15 +508,17 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
   };
 
   return (
-    <ToolLayout title="Performance Analysis" description="Analyse management accounts and produce a business performance report with KPI ratios." icon={TrendingUp} iconColor="#059669">
+    <ToolLayout title="Performance Analysis" description="Analyse management accounts and produce a business performance report with KPI ratios." icon={TrendingUp} iconColor="#059669" wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
-          <div className="glass-solid rounded-xl p-5 space-y-4">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Business Details</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-[var(--text-secondary)]">Client</span>
-              <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
+          <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Business Details</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Link to client record</span>
+                <ClientSelector value={selectedClient} onSelect={setSelectedClient} align="right" />
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <input value={paBusinessName} onChange={e => setPaBusinessName(e.target.value)} placeholder="* Business Name" className="input-base" />
@@ -557,7 +559,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             <textarea value={paRelevantInfo} onChange={e => setPaRelevantInfo(e.target.value)} placeholder="Any other relevant info or key business priorities?" rows={2} className="input-base resize-none w-full" />
           </div>
           {/* Report sections checklist */}
-          <div className="glass-solid rounded-xl p-5 space-y-3">
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Report Sections</h3>
@@ -587,7 +589,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
                       <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
                         active ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-[var(--border-input)]'
                       }`}>
-                        {active && <Check size={10} className="text-white" />}
+                        {active && <Check size={10} className="text-[var(--text-primary)]" />}
                       </div>
                       <div>
                         <div className={`text-xs font-semibold leading-tight ${active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{section.label}</div>
@@ -603,9 +605,17 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <FileUpload title="* Management Accounts" onFilesChange={setManagementAccounts} multiple accept="application/pdf" helpText="P&L, Balance Sheet for the current period." existingFiles={managementAccounts} />
-            <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-[var(--text-primary)] mb-2 flex items-center gap-2">
+              Management Accounts <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Required</span>
+            </h3>
+            <FileUpload title="Management Accounts" onFilesChange={setManagementAccounts} multiple accept="application/pdf" helpText="P&L, Balance Sheet for the current period." existingFiles={managementAccounts} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-[var(--text-primary)] mb-2 flex items-center gap-2">
+              Prior Period <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Optional</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FileUpload title="Prior Period Accounts" onFilesChange={setPriorAccounts} multiple accept="application/pdf" optional helpText="For comparative analysis." existingFiles={priorAccounts} />
               <FileUpload title="Prior Analysis/Reports" onFilesChange={setPriorAnalysis} multiple accept="application/pdf" optional helpText="For context and follow-up." existingFiles={priorAnalysis} />
             </div>
@@ -642,7 +652,15 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+              managementAccounts.length > 0
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-[var(--text-secondary)] border-[var(--border)]'
+            }`}>
+              {managementAccounts.length > 0 && <Check size={12} />}
+              {managementAccounts.length > 0 ? 1 : 0} of 1 required uploaded
+            </span>
             <button onClick={handleProcess} disabled={!canProcess} className="btn-primary"><TrendingUp size={15} />Analyse Documents</button>
           </div>
         </div>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -6,6 +6,7 @@ import {
   BookTemplate, Loader2, RefreshCw, FileStack, PlayCircle, List,
   CalendarDays, CalendarRange, History, ChevronDown, ChevronRight,
 } from 'lucide-react';
+import { ViewModeProvider } from './ViewModeToggle';
 import MyTasksView from './views/MyTasksView';
 import HistoryView from './views/HistoryView';
 import DepartmentView from './views/DepartmentView';
@@ -467,9 +468,10 @@ export default function TasksPage() {
   return (
     <TaskDeadlineLinksProvider>
     <TaskClientStatusPolicyProvider>
-    <div className="flex h-full bg-gray-50">
+    <ViewModeProvider viewMode={viewMode} setViewMode={handleSetViewMode}>
+    <div className="flex h-full">
       {/* Sidebar nav */}
-      <aside className="w-52 border-r border-gray-200 bg-white flex flex-col flex-shrink-0">
+      <aside className="w-52 border-r border-[var(--border)] bg-white/[0.78] backdrop-blur-md flex flex-col flex-shrink-0">
         <div className="px-4 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2 mb-3">
             <CheckSquare className="h-5 w-5 text-indigo-600" />
@@ -627,47 +629,14 @@ export default function TasksPage() {
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* Main content — the card/list toggle now lives inside each view's
+          toolbar (next to Export) via <ViewModeToggle/>, so no separate row. */}
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Fixed top bar: grid/list toggle — never scrolls */}
-        {!loading && !['templates', 'drafts', 'history', 'department'].includes(view) && (
-          <div className="flex-shrink-0 flex justify-end px-6 pt-5 pb-3 bg-gray-50">
-            <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5">
-              <Tooltip label="Card view">
-                <button
-                  onClick={() => handleSetViewMode('grid')}
-                  aria-label="Card view"
-                  className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
-                    viewMode === 'grid'
-                      ? 'bg-white text-indigo-600 shadow-sm'
-                      : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-              </Tooltip>
-              <Tooltip label="List view">
-                <button
-                  onClick={() => handleSetViewMode('list')}
-                  aria-label="List view"
-                  className={`flex items-center justify-center h-7 w-7 rounded-md transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-white text-indigo-600 shadow-sm'
-                      : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-        )}
-
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+        <div className="flex-1 overflow-y-auto px-6 pt-5 pb-6">
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+            <Loader2 className="h-6 w-6 animate-spin text-[#5b21b6]" />
           </div>
         ) : (
           <>
@@ -839,6 +808,7 @@ export default function TasksPage() {
       )}
 
     </div>
+    </ViewModeProvider>
     </TaskClientStatusPolicyProvider>
     </TaskDeadlineLinksProvider>
   );
@@ -879,10 +849,10 @@ function DraftsView({ tasks, clients, onActivate, onDelete }: DraftsViewProps) {
 
   if (tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-gray-400">
-        <FileStack className="h-10 w-10 mb-3 opacity-30" />
-        <p className="text-sm font-medium">No draft tasks</p>
-        <p className="text-xs mt-1">Tasks created via Bulk Tasks in draft mode will appear here</p>
+      <div className="flex flex-col items-center justify-center py-24 text-[var(--text-primary)]">
+        <FileStack className="h-10 w-10 mb-3 opacity-60" />
+        <p className="text-sm font-bold">No draft tasks</p>
+        <p className="text-xs mt-1 text-[var(--text-secondary)] font-medium">Tasks created via Bulk Tasks in draft mode will appear here</p>
       </div>
     );
   }
@@ -891,8 +861,8 @@ function DraftsView({ tasks, clients, onActivate, onDelete }: DraftsViewProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">Draft Tasks</h2>
-          <p className="text-xs text-gray-500 mt-0.5">{tasks.length} task{tasks.length !== 1 ? 's' : ''} awaiting activation</p>
+          <h2 className="text-base font-bold text-[var(--text-primary)]">Draft Tasks</h2>
+          <p className="text-xs font-medium text-[var(--text-secondary)] mt-0.5">{tasks.length} task{tasks.length !== 1 ? 's' : ''} awaiting activation</p>
         </div>
         <button
           onClick={handleActivateAll}
@@ -904,10 +874,10 @@ function DraftsView({ tasks, clients, onActivate, onDelete }: DraftsViewProps) {
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white/[0.78] backdrop-blur-md rounded-xl border border-[var(--border)] shadow-md overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
+            <tr className="border-b border-gray-200/60 bg-white/40">
               <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Task</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Client</th>
               <th className="text-left px-4 py-3 font-semibold text-gray-600 text-xs uppercase tracking-wide">Due Date</th>

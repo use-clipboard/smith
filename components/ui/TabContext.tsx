@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { LucideIcon, Plus } from 'lucide-react';
+import { LucideIcon, Plus, X, AlertTriangle } from 'lucide-react';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS, DASHBOARD_ITEM } from '@/config/navItems';
 
 export interface Tab {
@@ -84,7 +84,10 @@ interface TabContextValue {
   tabs: Tab[];
   activeTabId: string | null; // null = dashboard is active
   openTab: (tab: Tab) => void;        // opens or switches to tool; replaces current tab if one is active
-  openInNewTab: (tab: Tab) => void;   // always opens in a fresh slot; never replaces current tab
+  /** Always opens in a fresh slot; never replaces the current tab. Returns
+   *  false when the tab limit blocked it (a warning toast is shown) — callers
+   *  that navigate afterwards should skip the navigation in that case. */
+  openInNewTab: (tab: Tab) => boolean;
   addTab: () => string;               // opens a blank new-tab picker
   closeTab: (id: string) => string;   // returns route to navigate to after close
   reorderTab: (fromIndex: number, toIndex: number) => void; // drag-to-rearrange tool tabs
@@ -100,7 +103,7 @@ const TabContext = createContext<TabContextValue>({
   tabs: [],
   activeTabId: null,
   openTab: () => {},
-  openInNewTab: () => {},
+  openInNewTab: () => false,
   addTab: () => '/dashboard',
   closeTab: () => '/dashboard',
   reorderTab: () => {},
@@ -142,6 +145,17 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchString = searchParams ? searchParams.toString() : '';
+
+  // Shown when the MAX_TABS cap silently blocks a new tab — without it the
+  // click appears to do nothing and the user has no idea why.
+  const [limitWarning, setLimitWarning] = useState(false);
+  const limitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showLimitWarning = useCallback(() => {
+    setLimitWarning(true);
+    if (limitTimerRef.current) clearTimeout(limitTimerRef.current);
+    limitTimerRef.current = setTimeout(() => setLimitWarning(false), 6000);
+  }, []);
+  useEffect(() => () => { if (limitTimerRef.current) clearTimeout(limitTimerRef.current); }, []);
 
   // Reconcile saved state with the URL. Runs on every pathname change so that
   // when a sub-route loads (e.g. /mtd-it/abc/2026/1) we activate the parent
@@ -215,7 +229,7 @@ export default function TabProvider({ children }: { children: ReactNode }) {
 
     if (activeTabId === null || tabs.length === 0) {
       // Dashboard is active (or no tabs yet) — create a new tab
-      if (tabs.length >= MAX_TABS) return; // at limit; navigation still happens via Link
+      if (tabs.length >= MAX_TABS) { showLimitWarning(); return; } // at limit; navigation still happens via Link
       const newId = `tab-${Date.now()}`;
       setTabs(prev => [...prev, { ...tab, id: newId }]);
       setActiveTabId(newId);
@@ -225,21 +239,22 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     // An existing tool tab is active — replace its content in-place
     setTabs(prev => prev.map(t => t.id === activeTabId ? { ...tab, id: t.id } : t));
     // activeTabId stays the same — same tab slot, new tool
-  }, [tabs, activeTabId]);
+  }, [tabs, activeTabId, showLimitWarning]);
 
   // Always open in a fresh tab slot — never replaces the currently active tab.
   // If the tool is already open, just switch to it (no duplicates).
-  const openInNewTab = useCallback((tab: Tab) => {
+  const openInNewTab = useCallback((tab: Tab): boolean => {
     const existing = tabs.find(t => t.route === tab.route);
     if (existing) {
       setActiveTabId(existing.id);
-      return;
+      return true;
     }
-    if (tabs.length >= MAX_TABS) return;
+    if (tabs.length >= MAX_TABS) { showLimitWarning(); return false; }
     const newId = `tab-${Date.now()}`;
     setTabs(prev => [...prev, { ...tab, id: newId }]);
     setActiveTabId(newId);
-  }, [tabs]);
+    return true;
+  }, [tabs, showLimitWarning]);
 
   // Open a new blank tab (route: /newtab) — the user picks a tool from there.
   // If a New Tab is already open, switch to it rather than creating a duplicate.
@@ -250,13 +265,14 @@ export default function TabProvider({ children }: { children: ReactNode }) {
       return '/newtab';
     }
     if (tabs.length >= MAX_TABS) {
+      showLimitWarning();
       return tabs.find(t => t.id === activeTabId)?.route ?? '/dashboard';
     }
     const newId = `tab-${Date.now()}`;
     setTabs(prev => [...prev, { id: newId, title: 'New Tab', route: '/newtab', icon: Plus }]);
     setActiveTabId(newId);
     return '/newtab';
-  }, [tabs, activeTabId]);
+  }, [tabs, activeTabId, showLimitWarning]);
 
   // Remove a tab and return the route to navigate to. Prefers each tab's
   // last-known deep URL so closing a tab returns the user to where they
@@ -304,6 +320,17 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   return (
     <TabContext.Provider value={{ tabs, activeTabId, openTab, openInNewTab, addTab, closeTab, reorderTab, setActiveTabId, setActiveTabCurrentRoute }}>
       {children}
+      {/* Tab-limit warning — rendered here so every openTab/openInNewTab/addTab
+          caller anywhere in the app gets it without wiring their own toast. */}
+      {limitWarning && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 bg-amber-600 text-white">
+          <AlertTriangle size={15} className="shrink-0" />
+          Tab limit reached ({MAX_TABS} max) — close a tab to open a new one.
+          <button onClick={() => setLimitWarning(false)} className="ml-1 opacity-80 hover:opacity-100" aria-label="Dismiss">
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </TabContext.Provider>
   );
 }

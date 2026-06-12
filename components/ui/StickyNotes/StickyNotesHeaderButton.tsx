@@ -75,7 +75,7 @@ export default function StickyNotesHeaderButton() {
         <button
           onClick={handlePrimaryClick}
           aria-label={primaryTooltip}
-          className="relative w-8 h-8 flex items-center justify-center rounded-l-lg transition-all text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]"
+          className="relative w-8 h-8 flex items-center justify-center rounded-l-lg transition-all text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]"
         >
           <PrimaryIcon size={16} />
           {notes.length > 0 && (
@@ -94,7 +94,7 @@ export default function StickyNotesHeaderButton() {
           className={`w-5 h-8 flex items-center justify-center rounded-r-lg transition-all border-l border-[var(--border)] ${
             menuOpen
               ? 'bg-[var(--bg-nav-hover)] text-[var(--text-primary)]'
-              : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
           }`}
         >
           <ChevronDown size={11} />
@@ -102,12 +102,15 @@ export default function StickyNotesHeaderButton() {
       </Tooltip>
 
       {menuOpen && (
-        <div className="absolute right-0 top-10 w-64 glass-solid rounded-lg border border-[var(--border)] shadow-xl overflow-hidden z-50">
+        <div
+          className="glass-sidebar absolute right-0 top-10 w-64 rounded-lg border border-[var(--border)] shadow-dropdown overflow-hidden z-50"
+          style={{ background: 'linear-gradient(180deg, rgba(46, 48, 98, 0.9), rgba(46, 48, 98, 0.95))' }}
+        >
           <button
             onClick={() => { setMenuOpen(false); addNote(); }}
             className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-[var(--bg-nav-hover)] text-[var(--text-primary)]"
           >
-            <Plus size={13} className="text-[var(--accent)]" />
+            <Plus size={13} className="text-white" />
             New sticky note
           </button>
           <button
@@ -155,7 +158,7 @@ export default function StickyNotesHeaderButton() {
           <button
             onClick={handleDeleteAll}
             disabled={notes.length === 0}
-            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-left hover:bg-red-500/15 text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Trash2 size={13} />
             Delete all

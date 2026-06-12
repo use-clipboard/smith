@@ -1,19 +1,33 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   FileSearch, ArrowLeftRight, House, ClipboardCheck,
   TrendingUp, Receipt, ShieldAlert, FileText, BookOpen,
   Users, Activity, Wifi, ExternalLink, Archive, Building2,
   CalendarDays, MicVocal, UserPlus, CheckSquare, X, MessageSquare,
-  HeartHandshake, FileSignature,
+  HeartHandshake, FileSignature, GripVertical, Plus, Pencil, Check, LayoutGrid,
 } from 'lucide-react';
+import { useDashboardLayout } from '@/components/ui/DashboardLayoutProvider';
+import { DASHBOARD_WIDGETS, DASHBOARD_WIDGET_BY_ID } from '@/config/dashboardWidgets';
+import TasksWidget from '@/components/features/dashboard/widgets/TasksWidget';
+import CalendarWidget from '@/components/features/dashboard/widgets/CalendarWidget';
+import MtdItWidget from '@/components/features/dashboard/widgets/MtdItWidget';
+import HrWidget from '@/components/features/dashboard/widgets/HrWidget';
+import EmailTriageWidget from '@/components/features/dashboard/widgets/EmailTriageWidget';
+import VaultWidget from '@/components/features/dashboard/widgets/VaultWidget';
+import ProposalsWidget from '@/components/features/dashboard/widgets/ProposalsWidget';
+import UpcomingDeadlinesWidget from '@/components/features/dashboard/widgets/UpcomingDeadlinesWidget';
+import NeedsAttentionWidget from '@/components/features/dashboard/widgets/NeedsAttentionWidget';
+import NotesWidget from '@/components/features/dashboard/widgets/NotesWidget';
 import Avatar from '@/components/ui/Avatar';
 import Tooltip from '@/components/ui/Tooltip';
 import { useTabContext, Tab } from '@/components/ui/TabContext';
 import { useModules } from '@/components/ui/ModulesProvider';
 import Whiteboard from '@/components/features/whiteboard/Whiteboard';
+import DashboardHero from '@/components/features/dashboard/DashboardHero';
+import DashboardDataProvider from '@/components/features/dashboard/DashboardDataProvider';
 import { createClient } from '@/lib/supabase';
 import { useChatContext } from '@/components/chat/ChatProvider';
 
@@ -53,6 +67,48 @@ const FEATURE_META: Record<string, { label: string; icon: React.ElementType; col
   meeting_notes:         { label: 'Meeting Notes',     icon: MicVocal,       color: '#7C3AED', route: '/meeting-notes'   },
 };
 
+/** Friendly title for a feature key that has no FEATURE_META entry — keeps every
+ *  Recent Activity row uniform (e.g. "timeline_summary" → "Timeline Summary"). */
+function formatFeatureLabel(feature: string): string {
+  return feature.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── Grid placement (Customise mode) ──────────────────────────────────────────
+// Simulates the 3-column auto-flow so we can render drop-zone outlines in the
+// empty cells that the flow leaves behind (the gaps you can drag widgets into).
+type GridCell =
+  | { type: 'widget'; id: string }
+  | { type: 'empty'; afterId: string | null; key: string };
+
+function widgetSpan(id: string): number {
+  const s = DASHBOARD_WIDGET_BY_ID.get(id)?.size;
+  return s === 'large' ? 3 : s === 'medium' ? 2 : 1;
+}
+
+/** Walk the ordered widgets, injecting `empty` cells wherever the row wraps.
+ *  `startCol` lets the caller reserve leading columns (e.g. the 2-col hero that
+ *  occupies the start of row 1), so the flow + drop-zones line up beside it. */
+function computeGridCells(order: string[], startCol = 0): GridCell[] {
+  const cells: GridCell[] = [];
+  let col = startCol;
+  for (let i = 0; i < order.length; i++) {
+    const span = widgetSpan(order[i]);
+    if (col + span > 3) {
+      const afterId = i > 0 ? order[i - 1] : null;
+      for (let c = col; c < 3; c++) cells.push({ type: 'empty', afterId, key: `e-${i}-${c}` });
+      col = 0;
+    }
+    cells.push({ type: 'widget', id: order[i] });
+    col += span;
+    if (col >= 3) col = 0;
+  }
+  if (col > 0 && col < 3) {
+    const afterId = order[order.length - 1] ?? null;
+    for (let c = col; c < 3; c++) cells.push({ type: 'empty', afterId, key: `e-end-${c}` });
+  }
+  return cells;
+}
+
 function formatTimeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -84,6 +140,7 @@ interface TeamMember {
   email: string;
   role?: string;
   last_sign_in_at?: string | null;
+  avatar_url?: string | null;
 }
 
 interface Props {
@@ -160,9 +217,6 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
     return (a.full_name || a.email).localeCompare(b.full_name || b.email);
   });
 
-  // Dashboard panel: show 4 (online-priority already sorted above)
-  const panelTeam = sortedTeam.slice(0, 4);
-
   const greeting = !now ? '' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const today = now
     ? now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -170,204 +224,388 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
 
   const activeTools = ALL_TOOLS.filter(tool => isModuleActive(tool.moduleId));
 
-  return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
-      {/* Welcome bar */}
-      <div className="glass rounded-xl px-6 py-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-[var(--text-primary)]">
-            {greeting}, {displayName.charAt(0).toUpperCase() + displayName.slice(1)}
-          </h2>
-          <p className="text-sm text-[var(--text-muted)] mt-0.5">Here&apos;s your workspace overview.</p>
-        </div>
-        <p className="text-sm text-[var(--text-muted)] hidden sm:block">{today}</p>
-      </div>
+  // Current user's role (admins can delete any noticeboard note).
+  const isAdmin = teamMembers.find(m => m.id === currentUserId)?.role === 'admin';
+  // user_id → avatar URL, so sticky notes can show the author's profile picture.
+  const avatarUrls: Record<string, string | null> = Object.fromEntries(
+    teamMembers.map(m => [m.id, m.avatar_url ?? null])
+  );
 
-      {/* Team Whiteboard */}
-      <div className="relative">
-        <Whiteboard
-          initialMessages={whiteboardMessages}
-          currentUserId={currentUserId}
-          firmId={firmId}
-          currentUserName={currentUserName}
-        />
-      </div>
+  // ── Customizable layout ─────────────────────────────────────────────────────
+  const { layout, updateLayout } = useDashboardLayout();
+  const [editMode, setEditMode] = useState(false);
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+  // Visible widgets in saved order (skip unknown ids + module-gated widgets off).
+  const visibleWidgets = layout.filter(id => {
+    const def = DASHBOARD_WIDGET_BY_ID.get(id);
+    if (!def) return false;
+    return def.moduleId ? isModuleActive(def.moduleId) : true;
+  });
+  // Widgets available to add: registered, not shown, module active.
+  const hiddenWidgets = DASHBOARD_WIDGETS.filter(def =>
+    !layout.includes(def.id) && (def.moduleId ? isModuleActive(def.moduleId) : true)
+  );
 
-        {/* Recent Clients */}
-        <div className="glass rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
-                <Users size={15} className="text-[var(--accent)]" />
-              </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">Recent Clients</span>
-            </div>
-            <Link
-              href="/clients"
-              onClick={() => openTab({
-                id: 'clients',
-                title: 'Clients',
-                route: '/clients',
-                icon: Users as Tab['icon'],
-              })}
-              className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
-            >
-              View all <ExternalLink size={10} />
-            </Link>
-          </div>
-          {recentClients.length === 0 ? (
-            <EmptyState icon={<Users size={20} />} text="No clients yet. Add your first client." />
-          ) : (
-            <ul className="space-y-3">
-              {recentClients.map(c => (
-                <li key={c.id} className="flex items-center justify-between group">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
-                    {c.client_ref && <p className="text-xs text-[var(--text-muted)]">{c.client_ref}</p>}
-                  </div>
-                  <Link
-                    href={`/clients/${c.id}`}
-                    className="text-xs text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity ml-2 px-2 py-1 rounded hover:bg-[var(--accent-light)]"
-                  >
-                    Open
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+  // Drag-to-reorder (mirrors the favourites reorder UX, horizontal).
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [overPos, setOverPos] = useState<'before' | 'after'>('before');
+  const [overEmpty, setOverEmpty] = useState<string | null>(null);
 
-        {/* Recent Activity */}
-        <div className="glass rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
-                <Activity size={15} className="text-[var(--accent)]" />
-              </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">Recent Activity</span>
-            </div>
-            <button
-              onClick={openActivityModal}
-              className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
-            >
-              View all <ExternalLink size={10} />
-            </button>
-          </div>
-          {recentOutputs.length === 0 ? (
-            <EmptyState icon={<Activity size={20} />} text="No recent activity. Run a tool to get started." />
-          ) : (
-            <ul className="space-y-3">
-              {recentOutputs.map(o => {
-                const meta = FEATURE_META[o.feature];
-                const Icon = meta?.icon ?? Activity;
-                const color = meta?.color ?? '#6B7280';
-                return (
-                  <li key={o.id} className="flex items-center gap-3">
-                    <div
-                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: `${color}18` }}
-                    >
-                      <Icon size={13} style={{ color }} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                        {meta?.label || o.feature}
-                      </p>
-                      <p className="text-xs text-[var(--text-muted)] truncate">
-                        {o.clients?.name
-                          ? `${o.clients.name}${o.clients.client_ref ? ` · ${o.clients.client_ref}` : ''}`
-                          : 'No client'
-                        } · {formatTimeAgo(o.created_at)}
-                      </p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+  // Drop a widget into an empty grid cell → reorder it to sit just after the
+  // widget that precedes the gap (so the flow places it in that cell).
+  function onDropEmpty(afterId: string | null) {
+    const from = dragId;
+    setDragId(null); setOverId(null); setOverEmpty(null);
+    if (!from) return;
+    const ids = layout.filter(x => x !== from);
+    const insertAt = afterId ? ids.indexOf(afterId) + 1 : 0;
+    ids.splice(insertAt, 0, from);
+    updateLayout(ids);
+  }
 
-        {/* Team */}
-        <div className="glass rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
-                <Wifi size={15} className="text-[var(--accent)]" />
-              </div>
-              <span className="text-sm font-semibold text-[var(--text-primary)]">Team</span>
-            </div>
-            <button
-              onClick={() => setTeamOpen(true)}
-              className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
-            >
-              View all <ExternalLink size={10} />
-            </button>
-          </div>
-          {panelTeam.length === 0 ? (
-            <EmptyState icon={<Wifi size={20} />} text="No team members found." />
-          ) : (
-            <ul className="space-y-2.5">
-              {panelTeam.map(m => {
-                const isOnline = onlineIds.has(m.id);
-                return (
-                  <li key={m.id} className="flex items-center gap-2.5">
-                    <Avatar name={m.full_name || m.email} size={28} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                        {m.full_name || m.email.split('@')[0]}
-                      </p>
-                    </div>
-                    <Tooltip label={isOnline ? 'Online' : 'Offline'} side="left" className="shrink-0">
-                      <div
-                        className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-[var(--text-muted)] opacity-30'}`}
-                      />
-                    </Tooltip>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      </div>
+  function onWidgetDragOver(e: React.DragEvent, id: string) {
+    if (!dragId || dragId === id) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos: 'before' | 'after' = (e.clientX - rect.left) < rect.width / 2 ? 'before' : 'after';
+    if (overId !== id) setOverId(id);
+    if (overPos !== pos) setOverPos(pos);
+  }
+  function onWidgetDrop(targetId: string) {
+    const from = dragId;
+    const pos = overPos;
+    setDragId(null); setOverId(null);
+    if (!from || from === targetId) return;
+    const ids = [...layout];
+    const fromIdx = ids.indexOf(from);
+    const overIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || overIdx < 0) return;
+    ids.splice(fromIdx, 1);
+    const insertIdx = pos === 'before'
+      ? (fromIdx < overIdx ? overIdx - 1 : overIdx)
+      : (fromIdx < overIdx ? overIdx : overIdx + 1);
+    ids.splice(insertIdx, 0, from);
+    updateLayout(ids);
+  }
+  function removeWidget(id: string) { updateLayout(layout.filter(x => x !== id)); }
+  function addWidget(id: string) { updateLayout([...layout, id]); }
 
-      {/* Quick Launch */}
-      {activeTools.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
-            Quick Launch
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-10 gap-3">
-            {activeTools.map(tool => {
-              const Icon = tool.icon;
-              return (
+  // Fixed footprints: small = 1 col, medium = 2 cols (same height as small),
+  // large = full width with self-sizing height (the noticeboard). Heights only
+  // apply at md+ so widgets stack cleanly (auto height) on narrow screens.
+  const SIZE_CLASS: Record<string, { span: string; height: string }> = {
+    small:  { span: 'md:col-span-1', height: 'md:h-[260px]' },
+    medium: { span: 'md:col-span-2', height: 'md:h-[260px]' },
+    large:  { span: 'md:col-span-3', height: '' },
+  };
+
+  /** Render a widget's content by id. The grid applies the col-span + edit chrome. */
+  function renderWidget(id: string) {
+    switch (id) {
+      case 'whiteboard':
+        return (
+          <Whiteboard
+            initialMessages={whiteboardMessages}
+            currentUserId={currentUserId}
+            firmId={firmId}
+            currentUserName={currentUserName}
+            isAdmin={isAdmin}
+            avatarUrls={avatarUrls}
+          />
+        );
+
+      case 'recent-clients':
+        return (
+          <FillPanel
+            icon={<Users size={15} className="text-[var(--accent)]" />}
+            title="Recent Clients"
+            action={
+              <Link
+                href="/clients"
+                onClick={() => openTab({ id: 'clients', title: 'Clients', route: '/clients', icon: Users as Tab['icon'] })}
+                className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1"
+              >
+                View all <ExternalLink size={10} />
+              </Link>
+            }
+            items={recentClients}
+            listClassName="space-y-3"
+            itemClassName="flex items-center justify-between group"
+            keyFor={c => c.id}
+            renderItem={c => (
+              <>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
+                  {c.client_ref && <p className="text-xs text-[var(--text-muted)]">{c.client_ref}</p>}
+                </div>
                 <Link
-                  key={tool.href}
-                  href={tool.href}
-                  onClick={() => openTab({
-                    id: tool.moduleId,
-                    title: tool.label,
-                    route: tool.href,
-                    icon: Icon as Tab['icon'],
-                  })}
-                  aria-label={tool.desc}
-                  className="glass rounded-xl p-4 flex flex-col items-center gap-2 text-center hover:border-[var(--accent)] hover:shadow-card group transition-all duration-150 hover:-translate-y-0.5"
+                  href={`/clients/${c.id}`}
+                  className="text-xs text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity ml-2 px-2 py-1 rounded hover:bg-[var(--accent-light)]"
                 >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
-                    style={{ background: `${tool.color}18` }}
-                  >
-                    <Icon size={20} style={{ color: tool.color }} />
-                  </div>
-                  <span className="text-xs font-medium text-[var(--text-primary)] leading-tight line-clamp-2">
-                    {tool.label}
-                  </span>
+                  Open
                 </Link>
+              </>
+            )}
+            empty={<EmptyState icon={<Users size={20} />} text="No clients yet. Add your first client." />}
+          />
+        );
+
+      case 'recent-activity':
+        return (
+          <FillPanel
+            icon={<Activity size={15} className="text-[var(--accent)]" />}
+            title="Recent Activity"
+            action={
+              <button onClick={openActivityModal} className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">
+                View all <ExternalLink size={10} />
+              </button>
+            }
+            items={recentOutputs}
+            listClassName="space-y-3"
+            itemClassName="flex items-center gap-3"
+            keyFor={o => o.id}
+            renderItem={o => {
+              const meta = FEATURE_META[o.feature];
+              const Icon = meta?.icon ?? Activity;
+              const color = meta?.color ?? '#6B7280';
+              return (
+                <>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}18` }}>
+                    <Icon size={13} style={{ color }} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{meta?.label || formatFeatureLabel(o.feature)}</p>
+                    <p className="text-xs text-[var(--text-muted)] truncate">
+                      {o.clients?.name
+                        ? `${o.clients.name}${o.clients.client_ref ? ` · ${o.clients.client_ref}` : ''}`
+                        : 'No client'} · {formatTimeAgo(o.created_at)}
+                    </p>
+                  </div>
+                </>
               );
-            })}
+            }}
+            empty={<EmptyState icon={<Activity size={20} />} text="No recent activity. Run a tool to get started." />}
+          />
+        );
+
+      case 'team':
+        // Scrollable list of the WHOLE team (not fit-to-height) so every member
+        // is reachable within the panel.
+        return (
+          <div className="glass rounded-xl p-5 h-full flex flex-col">
+            <div className="flex items-center justify-between mb-4 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
+                  <Wifi size={15} className="text-[var(--accent)]" />
+                </div>
+                <span className="text-sm font-semibold text-[var(--text-primary)]">Team</span>
+              </div>
+              <button onClick={() => setTeamOpen(true)} className="text-xs text-[var(--accent)] hover:underline flex items-center gap-1">
+                View all <ExternalLink size={10} />
+              </button>
+            </div>
+            {sortedTeam.length === 0 ? (
+              <EmptyState icon={<Wifi size={20} />} text="No team members found." />
+            ) : (
+              <ul className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-2.5 -mx-1 px-1">
+                {sortedTeam.map(m => {
+                  const isOnline = onlineIds.has(m.id);
+                  return (
+                    <li key={m.id} className="flex items-center gap-2.5">
+                      <Avatar name={m.full_name || m.email} size={28} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                          {m.full_name || m.email.split('@')[0]}
+                        </p>
+                      </div>
+                      <Tooltip label={isOnline ? 'Online' : 'Offline'} side="left" className="shrink-0">
+                        <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-[var(--text-muted)] opacity-30'}`} />
+                      </Tooltip>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
+        );
+
+      case 'quick-launch':
+        return (
+          <div className="glass rounded-xl p-5 h-full flex flex-col">
+            <div className="flex items-center gap-2 mb-4 shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
+                <LayoutGrid size={15} className="text-[var(--accent)]" />
+              </div>
+              <span className="text-sm font-semibold text-[var(--text-primary)]">Quick Launch</span>
+            </div>
+            {activeTools.length === 0 ? (
+              <EmptyState icon={<Activity size={20} />} text="No tools enabled yet." />
+            ) : (
+              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin -mx-1 px-1">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {activeTools.map(tool => {
+                    const Icon = tool.icon;
+                    return (
+                      <Link
+                        key={tool.href}
+                        href={tool.href}
+                        onClick={() => openTab({ id: tool.moduleId, title: tool.label, route: tool.href, icon: Icon as Tab['icon'] })}
+                        aria-label={tool.desc}
+                        className="rounded-lg p-2.5 flex flex-col items-center gap-1.5 text-center bg-white/50 border border-[var(--border)] hover:bg-white/75 hover:border-[var(--accent)] group transition-all duration-150"
+                      >
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110" style={{ background: `${tool.color}1f` }}>
+                          <Icon size={16} style={{ color: tool.color }} />
+                        </div>
+                        <span className="text-[11px] font-medium text-[var(--text-primary)] leading-tight line-clamp-2">{tool.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'tasks':
+        return <TasksWidget />;
+      case 'calendar':
+        return <CalendarWidget />;
+      case 'mtd-it':
+        return <MtdItWidget />;
+      case 'hr':
+        return <HrWidget />;
+      case 'email-triage':
+        return <EmailTriageWidget />;
+      case 'document-vault':
+        return <VaultWidget />;
+      case 'proposals':
+        return <ProposalsWidget />;
+      case 'upcoming-deadlines':
+        return <UpcomingDeadlinesWidget />;
+      case 'needs-attention':
+        return <NeedsAttentionWidget />;
+      case 'notes':
+        return <NotesWidget storageKey={`smith-notes-${currentUserId}`} />;
+
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <DashboardDataProvider>
+    <div className="p-6 sm:p-8 space-y-6">
+      {/* Welcome + customise toggle */}
+      <div className="px-1 pt-1 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[var(--text-primary)] leading-tight">
+            {greeting ? `${greeting}, ` : ''}{displayName.charAt(0).toUpperCase() + displayName.slice(1)}.
+          </h1>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Here&apos;s what&apos;s happening with your team and clients today.
+            {today && <span className="text-[var(--text-muted)]"> · {today}</span>}
+          </p>
+        </div>
+        <button
+          onClick={() => setEditMode(v => !v)}
+          className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-white hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] border border-[var(--border)] shadow-sm transition-colors"
+        >
+          {editMode ? <><Check size={14} /> Done</> : <><Pencil size={14} /> Customise</>}
+        </button>
+      </div>
+
+      {editMode && (
+        <p className="text-xs text-[var(--text-muted)] px-1">
+          Drag widgets to reorder, remove the ones you don&apos;t need, or add more below.
+        </p>
+      )}
+
+      {/* Widget grid — rendered in the user's saved order. The hero is a fixed
+          2-col cell at the start of the grid (both views), so the first widget
+          flows in beside it. In Customise mode the empty cells the flow leaves
+          behind render as drop zones (computed with a 2-col offset for the hero). */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+        <div className="md:col-span-2">
+          <DashboardHero />
+        </div>
+        {(editMode ? computeGridCells(visibleWidgets, 2) : visibleWidgets.map(id => ({ type: 'widget', id } as GridCell))).map(cell => {
+          if (cell.type === 'empty') {
+            return (
+              <div
+                key={cell.key}
+                onDragOver={e => { if (dragId) { e.preventDefault(); if (overEmpty !== cell.key) setOverEmpty(cell.key); } }}
+                onDragLeave={() => setOverEmpty(prev => (prev === cell.key ? null : prev))}
+                onDrop={e => { e.preventDefault(); onDropEmpty(cell.afterId); }}
+                className={`hidden md:flex md:col-span-1 md:h-[260px] rounded-xl border-2 border-dashed items-center justify-center transition-colors
+                  ${overEmpty === cell.key
+                    ? 'border-[var(--accent)] bg-[rgba(79,70,229,0.16)]'
+                    : 'border-[rgba(79,70,229,0.4)] bg-[var(--bg-nav-hover)]'}`}
+              >
+                <span className="text-xs font-semibold text-[var(--accent)] pointer-events-none">Drop here</span>
+              </div>
+            );
+          }
+          const id = cell.id;
+          const def = DASHBOARD_WIDGET_BY_ID.get(id)!;
+          const sz = SIZE_CLASS[def.size] ?? SIZE_CLASS.small;
+          const isDropTarget = editMode && overId === id && dragId && dragId !== id;
+          return (
+            <div
+              key={id}
+              draggable={editMode}
+              onDragStart={() => { if (editMode) setDragId(id); }}
+              onDragOver={e => onWidgetDragOver(e, id)}
+              onDrop={e => { if (editMode) { e.preventDefault(); onWidgetDrop(id); } }}
+              onDragEnd={() => { setDragId(null); setOverId(null); }}
+              className={`${sz.span} ${sz.height} relative flex flex-col transition-all
+                ${editMode ? 'cursor-grab active:cursor-grabbing rounded-xl' : ''}
+                ${dragId === id ? 'opacity-40' : ''}
+                ${isDropTarget ? 'ring-2 ring-[var(--accent)] ring-offset-2 rounded-xl' : ''}`}
+            >
+              {editMode && (
+                <div className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-white backdrop-blur-sm border border-[var(--border)] shrink-0">
+                  <GripVertical size={14} className="text-[var(--text-secondary)] shrink-0" />
+                  <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{def.label} · {def.size}</span>
+                  <button
+                    onClick={() => removeWidget(id)}
+                    className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-1.5 py-0.5 rounded hover:bg-white/20"
+                  >
+                    <X size={12} /> Remove
+                  </button>
+                </div>
+              )}
+              <div className={`flex-1 min-h-0 ${editMode ? 'pointer-events-none select-none' : ''}`}>
+                {renderWidget(id)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add-widget panel (edit mode) */}
+      {editMode && (
+        <div className="glass rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Plus size={15} className="text-[var(--accent)]" />
+            <span className="text-sm font-semibold text-[var(--text-primary)]">Add a widget</span>
+          </div>
+          {hiddenWidgets.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)]">All available widgets are already on your dashboard.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {hiddenWidgets.map(def => (
+                <button
+                  key={def.id}
+                  onClick={() => addWidget(def.id)}
+                  title={def.description}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--border-input)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text-primary)] hover:bg-[var(--accent-light)] transition-colors"
+                >
+                  <Plus size={12} /> {def.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -414,7 +652,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                         </Link>
                       ) : (
                         <p className="text-sm font-medium text-[var(--text-primary)]">
-                          {o.feature}
+                          {formatFeatureLabel(o.feature)}
                         </p>
                       )}
                       {o.clients?.name ? (
@@ -510,6 +748,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
         </Lightbox>
       )}
     </div>
+    </DashboardDataProvider>
   );
 }
 
@@ -557,6 +796,81 @@ function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
     <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
       <div className="text-[var(--text-muted)] opacity-40">{icon}</div>
       <p className="text-xs text-[var(--text-muted)]">{text}</p>
+    </div>
+  );
+}
+
+// ─── Fill-to-height list panel ────────────────────────────────────────────────
+// Renders as many list items as fit the panel's available height, recomputing
+// on resize (responsive to screen + the widget's own size). Avoids the dead
+// gap a fixed item count leaves in a fixed-height widget.
+
+/** Measures the container and returns how many items of the current row height fit. */
+function useFillCount(len: number): readonly [React.RefObject<HTMLDivElement>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [count, setCount] = useState(len);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const avail = el.clientHeight;
+      const kids = el.querySelectorAll('[data-fill-item]');
+      if (avail <= 0 || kids.length === 0) return;
+      const firstRect = (kids[0] as HTMLElement).getBoundingClientRect();
+      const itemH = firstRect.height;
+      // Stride (item height + gap) from the gap between the first two items;
+      // falls back to itemH when only one is rendered.
+      const stride = kids.length > 1
+        ? (kids[1] as HTMLElement).getBoundingClientRect().top - firstRect.top
+        : itemH;
+      if (itemH <= 0 || stride <= 0) return;
+      const fit = Math.max(1, Math.floor((avail - itemH) / stride) + 1);
+      setCount(Math.min(len, fit));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [len]);
+
+  return [ref, count] as const;
+}
+
+function FillPanel<T>({
+  icon, title, action, items, listClassName, itemClassName, keyFor, renderItem, empty,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  action?: React.ReactNode;
+  items: T[];
+  listClassName: string;
+  itemClassName: string;
+  keyFor: (item: T) => string;
+  renderItem: (item: T) => React.ReactNode;
+  empty: React.ReactNode;
+}) {
+  const [ref, count] = useFillCount(items.length);
+  return (
+    <div className="glass rounded-xl p-5 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">{icon}</div>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">{title}</span>
+        </div>
+        {action}
+      </div>
+      {items.length === 0 ? empty : (
+        <div ref={ref} className="flex-1 min-h-0 overflow-hidden">
+          <ul className={listClassName}>
+            {items.slice(0, count).map(item => (
+              <li key={keyFor(item)} data-fill-item className={itemClassName}>
+                {renderItem(item)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

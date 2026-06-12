@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
   ClipboardList, Plus, Search, Download, FolderOpen, Trash2, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, SlidersHorizontal, User as UserIcon,
@@ -142,24 +143,14 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    () => new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
+  const [visibleCols, setVisibleCols] = usePersistedColumns(
+    COLUMN_PREF_KEY,
+    COLUMNS.map(c => c.key),
+    COLUMNS.filter(c => c.defaultVisible).map(c => c.key),
   );
-  const [colsHydrated, setColsHydrated] = useState(false);
   const [showColMenu, setShowColMenu] = useState(false);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(COLUMN_PREF_KEY);
-      if (stored) setVisibleCols(new Set(JSON.parse(stored) as string[]));
-    } catch {/* ignore */}
-    setColsHydrated(true);
-  }, []);
 
-  useEffect(() => {
-    if (!colsHydrated) return;
-    try { window.localStorage.setItem(COLUMN_PREF_KEY, JSON.stringify([...visibleCols])); } catch {/* ignore */}
-  }, [visibleCols, colsHydrated]);
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -464,7 +455,7 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
     <ToolLayout title="Meeting Notes" icon={ClipboardList} iconColor="#6D28D9" wide>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-[240px]">
+        <div className="relative w-full max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           <input
             type="text"
@@ -484,7 +475,7 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
           <button
             onClick={() => setMineOnly(v => !v)}
             aria-label="Toggle mine only"
-            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-semibold transition-colors ${
               mineOnly ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
                        : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
             }`}
@@ -498,7 +489,7 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
           <button
             onClick={() => setShowFilters(v => !v)}
             aria-label="Toggle filters"
-            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-semibold transition-colors ${
               showFilters || hasActiveFilters
                 ? 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/30'
                 : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
@@ -515,7 +506,7 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
             <button
               onClick={() => setShowColMenu(v => !v)}
               aria-label="Show or hide columns"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] text-xs font-medium transition-colors"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] text-xs font-semibold transition-colors"
             >
               <SlidersHorizontal size={13} />
               <span>Columns</span>
@@ -611,10 +602,10 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
         </div>
       )}
 
-      <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="bg-white/85 backdrop-blur-md border border-[var(--border)] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-[var(--border)]">
+            <thead className="bg-gray-50/80 border-b border-[var(--border)]">
               <tr>
                 <th className="px-2 py-3 w-7"></th>
                 <th className="px-3 py-3 w-9">

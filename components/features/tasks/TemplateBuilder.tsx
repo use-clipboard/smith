@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
@@ -318,7 +318,7 @@ function EmailEditorModal({ step, templateName, onUpdate, onClose }: EmailEditor
               </div>
               <div className="border border-t-0 border-gray-200 rounded-b-lg overflow-hidden">
                 <div className="bg-indigo-600 px-5 py-4">
-                  <h1 className="text-white text-base font-semibold m-0">SMITH — Task Reminder</h1>
+                  <h1 className="text-[var(--text-primary)] text-base font-semibold m-0">SMITH — Task Reminder</h1>
                 </div>
                 <div className="px-5 py-4 space-y-3 bg-white">
                   <p className="text-gray-900 text-sm">Hello {toName},</p>
@@ -436,7 +436,7 @@ function ClientPortalEditorModal({ step, templateName, onUpdate, onClose }: Clie
                   <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                     <div className="bg-indigo-600 px-4 py-3">
                       <p className="text-indigo-200 text-xs font-medium uppercase tracking-wide mb-0.5">Action required from you</p>
-                      <h2 className="text-white text-base font-bold">{step.title}</h2>
+                      <h2 className="text-[var(--text-primary)] text-base font-bold">{step.title}</h2>
                       {step.time_estimate_minutes && (
                         <p className="text-indigo-200 text-xs mt-1 flex items-center gap-1">
                           <Clock className="h-3 w-3" /> Estimated: {step.time_estimate_minutes < 60 ? `${step.time_estimate_minutes} minutes` : `${Math.floor(step.time_estimate_minutes / 60)}h`}

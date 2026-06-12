@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import PreferencesTab from './tabs/PreferencesTab';
+import DashboardSettingsTab from './tabs/DashboardSettingsTab';
 import ModulesTab from './tabs/ModulesTab';
 import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
@@ -23,7 +24,7 @@ import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping';
 
 interface Props {
   userId: string;
@@ -94,6 +95,7 @@ export default function SettingsClient({
   type TabGroup = 'general' | 'tools';
   const ALL_TABS = [
     { id: 'preferences' as Tab, label: 'Preferences', icon: SlidersHorizontal, adminOnly: false, hidden: false, group: 'general' as TabGroup },
+    { id: 'dashboard' as Tab,   label: 'Dashboard',   icon: LayoutDashboard,   adminOnly: false, hidden: false, group: 'general' as TabGroup },
     { id: 'profile' as Tab,     label: 'Profile',     icon: User,              adminOnly: false, hidden: false, group: 'general' as TabGroup },
     { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false, hidden: false, group: 'general' as TabGroup },
     { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
@@ -341,6 +343,9 @@ export default function SettingsClient({
 
       {/* Preferences tab */}
       {activeTab === 'preferences' && <PreferencesTab />}
+
+      {/* Dashboard tab */}
+      {activeTab === 'dashboard' && <DashboardSettingsTab />}
 
       {/* Profile tab */}
       {activeTab === 'profile' && (

@@ -765,7 +765,7 @@ export default function MtdItReviewPhase({
           Save as draft / Save & complete. The save logic is shared across
           stages so a status PATCH from any of them keeps things consistent. */}
       <div className="sticky bottom-0 z-10 -mx-6 px-6 py-3 mt-6 pointer-events-none">
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(820px,calc(100%-9rem))] mr-auto">
+        <div className="flex items-center gap-3 bg-white/85 backdrop-blur-md border border-gray-200 rounded-xl p-3 shadow-lg pointer-events-auto w-fit max-w-[min(820px,calc(100%-9rem))] mr-auto">
           <button
             onClick={view === 'edit' ? onBackToSetup : view === 'send' ? onBackToReview : onBackToSend}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
@@ -1112,7 +1112,7 @@ function MtdItSendPreview({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="rounded-xl border border-gray-200 bg-white/85 backdrop-blur-md p-4">
         <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-2 flex items-center gap-1.5">
           <Mail size={11} /> Approval email
         </div>
@@ -1241,7 +1241,7 @@ function MtdItSaveSummary({
           You have unsaved edits in Review. Save as draft to lock those changes in before completing the quarter.
         </div>
       )}
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="rounded-xl border border-gray-200 bg-white/85 backdrop-blur-md p-4">
         <div className="flex items-baseline justify-between mb-3">
           <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Quarter summary</div>
           <div className="text-[11px] text-gray-500">

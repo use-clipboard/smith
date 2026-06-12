@@ -107,7 +107,7 @@ function InsertableEdge({
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); edgeData?.onCondition?.(source, target); }}
-                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full shadow-md transition-colors whitespace-nowrap text-white"
+                className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full shadow-md transition-colors whitespace-nowrap text-[var(--text-primary)]"
                 style={{ backgroundColor: edgeColor }}
               >
                 {hasCondition ? 'Change Condition' : '⚠ Add Condition'}
@@ -125,7 +125,7 @@ function InsertableEdge({
           ) : (
             <Tooltip label={hasCondition ? CONDITION_LABELS[conditionType!] : 'No condition set — click to add'}>
               <div
-                className="w-4 h-4 rounded-full border-2 border-white shadow"
+                className="w-4 h-4 rounded-full border-2 border-[var(--border)] shadow"
                 style={{ backgroundColor: edgeColor }}
               />
             </Tooltip>

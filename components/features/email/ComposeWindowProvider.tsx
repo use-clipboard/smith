@@ -60,6 +60,10 @@ interface ComposeWindowState {
   mode:        Mode;
   ctx:         ComposeOpenContext | null;
   snapshot:    ComposeSnapshot | null;
+  /** True during the 3s undo-send countdown: the window is minimised with its
+   *  snapshot retained (so Undo can restore it), but the minimised chip is
+   *  hidden and open() is ignored until the send resolves. */
+  pendingSend: boolean;
   /** Sender identity — fetched lazily the first time the user opens compose. */
   signature:   string | null;
   googleEmail: string;
@@ -77,6 +81,7 @@ interface ComposeWindowValue extends ComposeWindowState {
   minimise: (snap: ComposeSnapshot) => void;
   restore: () => void;
   close:   (force?: boolean) => void;
+  setPendingSend: (v: boolean) => void;
   /** Optimistic update of identity (e.g. after the user changes their signature) */
   setIdentity: (patch: Partial<{ signature: string | null; googleEmail: string; displayName: string }>) => void;
   tasksModuleActive: boolean;
@@ -100,6 +105,7 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
     mode:        'closed',
     ctx:         null,
     snapshot:    null,
+    pendingSend: false,
     signature:   null,
     googleEmail: '',
     displayName: userName ?? '',
@@ -135,6 +141,12 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
     fetchIdentity();
     let restored = false;
     setState(s => {
+      // A send countdown is running — its snapshot must stay untouched so
+      // Undo can restore it. Ignore opens for these ~3 seconds.
+      if (s.pendingSend) {
+        restored = true;
+        return s;
+      }
       // If a minimised draft exists, restore it and ignore the new args.
       // (The user can close it with X if they want to start fresh.)
       if (s.mode === 'minimised' && s.snapshot) {
@@ -162,8 +174,12 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
           return s;
         }
       }
-      return { ...s, mode: 'closed', ctx: null, snapshot: null };
+      return { ...s, mode: 'closed', ctx: null, snapshot: null, pendingSend: false };
     });
+  }, []);
+
+  const setPendingSend = useCallback((v: boolean) => {
+    setState(s => ({ ...s, pendingSend: v }));
   }, []);
 
   const setIdentity = useCallback((patch: Partial<{ signature: string | null; googleEmail: string; displayName: string }>) => {
@@ -179,7 +195,7 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
     <ComposeWindowContext.Provider value={{
       ...state,
       tasksModuleActive,
-      open, minimise, restore, close, setIdentity,
+      open, minimise, restore, close, setIdentity, setPendingSend,
     }}>
       {children}
     </ComposeWindowContext.Provider>

@@ -69,7 +69,7 @@ export default function TaskTable<SortField extends string>({
   const tableId = useId();
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl">
+    <div className="bg-white/[0.78] backdrop-blur-md border border-[var(--border)] rounded-xl">
       {(toolbar || true) && (
         <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-gray-100 bg-gray-50/50 rounded-t-xl">
           <div className="flex-1 min-w-0">{toolbar}</div>
@@ -100,7 +100,7 @@ export default function TaskTable<SortField extends string>({
             <tr>
               {columns.map(c => {
                 const w = widths[c.id] ?? c.defaultWidth;
-                const baseTh = 'sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide select-none';
+                const baseTh = 'sticky top-0 z-10 bg-gray-50/85 backdrop-blur-sm border-b border-[var(--border)] px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide select-none';
                 const alignCls = c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left';
                 const thStyle: CSSProperties = { width: w, minWidth: w };
                 if (c.sortField && onToggleSort && sortField !== undefined) {

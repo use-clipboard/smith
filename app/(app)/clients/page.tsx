@@ -5,6 +5,8 @@ import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, Che
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
+import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import { Users } from 'lucide-react';
 
 // Business-type metadata for the inline expandable filter pill.
@@ -98,7 +100,9 @@ const COLUMNS: ColDef[] = [
   },
   {
     key: 'contact_email', label: 'Email',
-    render: c => <span className="text-[var(--text-muted)]">{c.contact_email ?? '—'}</span>,
+    render: c => c.contact_email
+      ? <ClientEmailLink email={c.contact_email} client={c} className="text-[var(--accent)] hover:underline text-left truncate max-w-full" />
+      : <span className="text-[var(--text-muted)]">—</span>,
   },
   {
     key: 'risk_rating', label: 'Risk', sortKey: 'risk_rating',
@@ -172,7 +176,7 @@ const COLUMNS: ColDef[] = [
   },
 ];
 
-const DEFAULT_VISIBLE = new Set(COLUMNS.filter(c => !c.defaultHidden).map(c => c.key));
+const CLIENTS_COLUMN_PREF_KEY = 'smith.clients.list.columns';
 
 function sortClients(clients: Client[], sort: SortConfig): Client[] {
   return [...clients].sort((a, b) => {
@@ -237,7 +241,11 @@ export default function ClientsPage() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [typeFilterOpen]);
   const [sort, setSort] = useState<SortConfig>({ key: 'name', dir: 'asc' });
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(DEFAULT_VISIBLE);
+  const [visibleCols, setVisibleCols] = usePersistedColumns(
+    CLIENTS_COLUMN_PREF_KEY,
+    COLUMNS.map(c => c.key),
+    COLUMNS.filter(c => !c.defaultHidden).map(c => c.key),
+  );
   const [showColPicker, setShowColPicker] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
 
@@ -396,38 +404,35 @@ export default function ClientsPage() {
   }
 
   return (
-    <ToolLayout title="Clients" description="All client records for your firm." icon={Users} iconColor="#4F46E5">
+    <ToolLayout title="Clients" description="All client records for your firm." icon={Users} iconColor="#4F46E5" wide>
       <div className="space-y-4">
 
         {/* Active client count */}
         {totalActiveCount !== null && (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-50 border border-green-200 text-green-700 text-xs font-medium">
-              <Circle size={7} className="fill-green-500 text-green-500" />
+            <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white border border-[var(--border)] shadow-sm text-sm font-semibold text-[var(--text-primary)]">
+              <Circle size={8} className="fill-emerald-400 text-emerald-400" />
               {totalActiveCount} active client{totalActiveCount !== 1 ? 's' : ''}
             </span>
           </div>
         )}
 
-        {/* Row 1: Search + actions */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 flex-1 max-w-sm px-3 py-2 glass-solid rounded-lg border border-[var(--border-input)]">
-            <Search size={14} className="text-[var(--text-muted)] shrink-0" />
+        {/* Row 1: Search + filters + actions */}
+        <div className="relative z-30 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-1 max-w-sm px-3 h-10 bg-white border border-[var(--border)] shadow-sm rounded-lg transition-colors focus-within:bg-[var(--bg-nav-hover)] focus-within:border-[var(--border)]">
+            <Search size={15} strokeWidth={2.5} className="text-[var(--text-muted)] shrink-0" />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or ref…"
-              className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none" />
+              className="flex-1 bg-transparent text-sm font-medium text-[var(--text-primary)] placeholder:text-[var(--text-muted)] placeholder:font-medium outline-none" />
           </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <div className="flex items-center gap-1 glass-solid rounded-full border border-[var(--border)] px-2 py-1 shadow-sm">
-              <div className="relative group/tip" ref={colPickerRef}>
-                <button onClick={() => setShowColPicker(v => !v)} aria-label="Show / hide columns"
-                  className={`p-1.5 rounded-full transition-colors ${showColPicker ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}>
-                  <SlidersHorizontal size={15} />
-                </button>
-                {!showColPicker && (
-                  <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
-                    Show / hide columns
-                  </span>
-                )}
+          <div className="flex items-center gap-2 ml-auto order-last">
+            <div className="flex items-center gap-1 bg-white border border-[var(--border)] shadow-sm rounded-full px-2 py-1">
+              <div className="relative" ref={colPickerRef}>
+                <Tooltip label="Show / hide columns">
+                  <button onClick={() => setShowColPicker(v => !v)} aria-label="Show / hide columns"
+                    className={`p-1.5 rounded-full transition-colors ${showColPicker ? 'bg-[var(--bg-nav-hover)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}>
+                    <SlidersHorizontal size={15} strokeWidth={2.5} />
+                  </button>
+                </Tooltip>
                 {showColPicker && (
                   <div className="absolute right-0 top-full mt-2 z-20 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-3 w-48 space-y-1">
                     <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-1 mb-2">Show / Hide Columns</p>
@@ -440,56 +445,45 @@ export default function ClientsPage() {
                   </div>
                 )}
               </div>
-              <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
-              <div className="relative group/tip">
+              <span aria-hidden className="w-px h-4 bg-[var(--bg-nav-hover)]" />
+              <Tooltip label="Export to CSV">
                 <button onClick={() => exportToCsv(sortedClients)} aria-label="Export to CSV"
-                  className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
-                  <Download size={15} />
+                  className="p-1.5 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <Download size={15} strokeWidth={2.5} />
                 </button>
-                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
-                  Export to CSV
-                </span>
-              </div>
-              <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
-              <div className="relative group/tip">
+              </Tooltip>
+              <span aria-hidden className="w-px h-4 bg-[var(--bg-nav-hover)]" />
+              <Tooltip label="Import from CSV">
                 <button onClick={() => setShowImport(true)} aria-label="Import from CSV"
-                  className="p-1.5 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
-                  <Upload size={15} />
+                  className="p-1.5 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <Upload size={15} strokeWidth={2.5} />
                 </button>
-                <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
-                  Import from CSV
-                </span>
-              </div>
+              </Tooltip>
             </div>
-            <div className="relative group/tip">
+            <Tooltip label="Add a new client">
               <button onClick={() => { setShowModal(true); setFormError(null); }} aria-label="Add a new client"
-                className="p-2.5 rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-sm">
+                className="p-2.5 rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-md">
                 <Plus size={16} />
               </button>
-              <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-2 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity z-30 shadow-lg">
-                Add a new client
-              </span>
-            </div>
+            </Tooltip>
           </div>
-        </div>
 
-        {/* Row 2: Filters */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1 glass-solid rounded-lg border border-[var(--border)] p-1">
+          {/* Filters — sit just right of the search bar */}
+          <div className="flex items-center gap-1 bg-white border border-[var(--border)] shadow-sm rounded-lg p-1">
             {([
               ['all',      'All',      'bg-[var(--accent)] text-white'],
               ['active',   'Active',   'bg-green-600 text-white'],
               ['hold',     'On Hold',  'bg-amber-500 text-white'],
-              ['inactive', 'Inactive', 'bg-gray-500 text-white'],
+              ['inactive', 'Inactive', 'bg-gray-500 text-[var(--text-primary)]'],
             ] as [StatusFilter, string, string][]).map(([val, label, activeCls]) => (
               <button key={val} onClick={() => setStatusFilter(val)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${statusFilter === val ? activeCls : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${statusFilter === val ? activeCls : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
                 {label}
               </button>
             ))}
 
             {/* Divider between status filter and type filter */}
-            <span className="w-px h-5 bg-[var(--border)] mx-1" aria-hidden />
+            <span className="w-px h-5 bg-[var(--bg-nav-hover)] mx-1" aria-hidden />
 
             {/* Inline expandable type-filter pill */}
             <div ref={typeFilterRef} className="flex items-center">
@@ -501,14 +495,14 @@ export default function ClientsPage() {
                     <button
                       onClick={() => setTypeFilterOpen(true)}
                       aria-label="Filter by type"
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors
                         ${selected
                           ? 'bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                     >
-                      <SelectedIcon size={12} />
+                      <SelectedIcon size={12} strokeWidth={2.5} />
                       {selected ? selected.label : 'All Types'}
-                      <ChevronDown size={11} className="opacity-70" />
+                      <ChevronDown size={11} strokeWidth={2.5} className="opacity-80" />
                     </button>
                   );
                 }
@@ -517,12 +511,12 @@ export default function ClientsPage() {
                   <div className="flex items-center gap-0.5 animate-in fade-in duration-150">
                     <button
                       onClick={() => { setTypeFilter(''); setTypeFilterOpen(false); }}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-colors
                         ${!typeFilter
                           ? 'bg-[var(--accent)] text-white'
-                          : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
                     >
-                      <Filter size={11} /> All
+                      <Filter size={11} strokeWidth={2.5} /> All
                     </button>
                     {CLIENT_TYPE_OPTIONS.map(({ value, label, Icon }) => {
                       const active = typeFilter === value;
@@ -531,12 +525,12 @@ export default function ClientsPage() {
                           <button
                             onClick={() => { setTypeFilter(value); setTypeFilterOpen(false); }}
                             aria-label={label}
-                            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors
+                            className={`inline-flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-semibold transition-colors
                               ${active
                                 ? 'bg-[var(--accent)] text-white'
-                                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
                           >
-                            <Icon size={12} />
+                            <Icon size={12} strokeWidth={2.5} />
                             <span className="hidden xl:inline">{label}</span>
                           </button>
                         </Tooltip>
@@ -545,9 +539,9 @@ export default function ClientsPage() {
                     <button
                       onClick={() => setTypeFilterOpen(false)}
                       aria-label="Close"
-                      className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]"
+                      className="p-1 rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]"
                     >
-                      <X size={11} />
+                      <X size={11} strokeWidth={2.5} />
                     </button>
                   </div>
                 );
@@ -555,7 +549,7 @@ export default function ClientsPage() {
             </div>
           </div>
           {hasActiveFilters && (
-            <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors px-2 py-1.5">
+            <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm transition-colors px-2 py-1.5">
               <X size={12} />Clear filters
             </button>
           )}
@@ -595,7 +589,7 @@ export default function ClientsPage() {
         )}
 
         {/* Table */}
-        <div className="glass-solid rounded-xl overflow-hidden">
+        <div className="glass rounded-xl overflow-hidden">
           {loading ? (
             <div className="py-16 text-center text-[var(--text-muted)] text-sm">Loading clients…</div>
           ) : sortedClients.length === 0 ? (
@@ -678,7 +672,7 @@ export default function ClientsPage() {
           )}
         </div>
 
-        <p className="text-xs text-[var(--text-muted)]">
+        <p className="text-xs font-bold text-[var(--text-primary)]">
           {sortedClients.length} client{sortedClients.length !== 1 ? 's' : ''}
           {hasActiveFilters ? ' matching filters' : ''}
           {isAdmin && someSelected && ` · ${selectedIds.size} selected`}

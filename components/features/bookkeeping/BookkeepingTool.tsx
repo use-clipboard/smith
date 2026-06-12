@@ -116,7 +116,7 @@ export default function BookkeepingTool() {
   }
   if (!me) {
     return (
-      <div className="p-8 text-sm text-slate-500 inline-flex items-center gap-2">
+      <div className="p-8 text-sm text-[#5b21b6] inline-flex items-center gap-2">
         <Loader2 size={14} className="animate-spin" /> Loading bookkeeping…
       </div>
     );

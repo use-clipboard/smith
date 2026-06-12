@@ -63,7 +63,7 @@ function TableSection({ paper, onChange }: Props) {
   }
 
   return (
-    <div className="glass-solid rounded-xl overflow-hidden">
+    <div className="bg-white/[0.72] backdrop-blur-md rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-[var(--border)]">
         <h4 className="text-sm font-semibold text-[var(--text-primary)]">{paper.title}</h4>
       </div>
@@ -135,7 +135,7 @@ function TableSection({ paper, onChange }: Props) {
           onChange={e => updateNotes(e.target.value)}
           rows={3}
           placeholder="Enter any additional notes for this section here..."
-          className="input-base text-xs resize-y w-full font-mono"
+          className="input-base bg-white/55 text-xs resize-y w-full font-mono"
         />
       </div>
     </div>
@@ -144,13 +144,13 @@ function TableSection({ paper, onChange }: Props) {
 
 function TextSection({ paper, onChange }: Props) {
   return (
-    <div className="glass-solid rounded-xl p-5">
+    <div className="bg-white/[0.72] backdrop-blur-md rounded-xl p-5">
       <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-2">{paper.title}</h4>
       <textarea
         value={paper.content}
         onChange={e => onChange({ ...paper, content: e.target.value })}
         rows={8}
-        className="input-base font-mono text-xs resize-y w-full"
+        className="input-base bg-white/55 font-mono text-xs resize-y w-full"
       />
     </div>
   );

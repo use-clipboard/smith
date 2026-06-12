@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
@@ -348,10 +348,7 @@ function MessageCard({
         {/* Body */}
         <div className="px-5 py-5 bg-white dark:bg-[var(--bg-card-solid)]">
           {message.body ? (
-            <div
-              className="prose prose-sm max-w-none text-[var(--text-primary)] text-sm [&_a]:text-[var(--accent)] [&_a]:underline"
-              dangerouslySetInnerHTML={{ __html: message.body }}
-            />
+            <EmailBodyFrame html={message.body} />
           ) : (
             <p className="text-sm text-[var(--text-muted)] italic">No body content</p>
           )}
@@ -438,10 +435,7 @@ function MessageCard({
 
           <div className="px-4 py-4 bg-white dark:bg-[var(--bg-card-solid)]">
             {message.body ? (
-              <div
-                className="prose prose-sm max-w-none text-[var(--text-primary)] text-sm [&_a]:text-[var(--accent)] [&_a]:underline"
-                dangerouslySetInnerHTML={{ __html: message.body }}
-              />
+              <EmailBodyFrame html={message.body} />
             ) : (
               <p className="text-sm text-[var(--text-muted)] italic">No body content</p>
             )}
@@ -499,6 +493,11 @@ export default function EmailThread({
   onRestore, onMarkUnread, onRemoveAllocation, onRemoveTaskLink,
   isPinned, onPin, existingReactions, onReacted,
 }: Props) {
+  // Defensive: a thread can briefly arrive without its messages populated
+  // (e.g. selected from the list before the full thread has loaded). Normalise
+  // to an array so reads never throw — downstream `lastMessage` usages are all
+  // guarded, so an empty thread simply renders its header.
+  const messages = thread.messages ?? [];
   const [deleting, setDeleting]       = useState(false);
   const [archiving, setArchiving]     = useState(false);
   const [starring, setStarring]       = useState(false);
@@ -577,7 +576,10 @@ export default function EmailThread({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          threadId: thread.id,
+          // Flat view: thread.id is a message id (gmailThreadId holds the real
+          // thread id) — star the message so it persists even on Gmail-merged
+          // threads. Grouped view: star the thread.
+          ...(thread.gmailThreadId ? { messageId: thread.id } : { threadId: thread.id }),
           addLabelIds:    newStarred ? ['STARRED'] : [],
           removeLabelIds: newStarred ? [] : ['STARRED'],
         }),
@@ -647,7 +649,7 @@ export default function EmailThread({
 
   async function handleReact(messageId: string, emoji: string) {
     // Send the emoji as an actual email reply to the sender
-    const message = thread.messages.find(m => m.id === messageId);
+    const message = messages.find(m => m.id === messageId);
     if (!message) return;
     try {
       const formData = new FormData();
@@ -673,14 +675,14 @@ export default function EmailThread({
 
   // In non-threaded view use the targeted message; otherwise use the last message in the thread
   const lastMessage = targetMessageId
-    ? (thread.messages.find(m => m.id === targetMessageId) ?? thread.messages[thread.messages.length - 1])
-    : thread.messages[thread.messages.length - 1];
+    ? (messages.find(m => m.id === targetMessageId) ?? messages[messages.length - 1])
+    : messages[messages.length - 1];
   const moveTargets  = labels.filter(l => l.type === 'user' || ['STARRED', 'IMPORTANT', 'SPAM'].includes(l.id));
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[var(--bg-page)]">
+    <div className="flex flex-col h-full overflow-hidden bg-transparent">
       {/* Thread header */}
-      <div className="px-5 py-4 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+      <div className="px-5 py-4 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card)]">
         <h2 className="text-base font-semibold text-[var(--text-primary)] leading-snug">{thread.subject}</h2>
 
         {/* Action bar */}
@@ -918,48 +920,15 @@ export default function EmailThread({
           </div>
         )}
 
-        {/* Allocation badges — per-message rows collapsed to one chip per client */}
-        {allocations.length > 0 && (() => {
-          const seen = new Set<string>();
-          const uniqueAllocations = allocations.filter(a => {
-            if (seen.has(a.client_id)) return false;
-            seen.add(a.client_id);
-            return true;
-          });
-          return (
-            <div className="mt-3 flex flex-wrap gap-1.5 items-center">
-              <span className="text-[11px] font-medium text-[var(--text-muted)]">Allocated to:</span>
-              {uniqueAllocations.map(a => (
-                <span key={a.client_id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  {a.clients?.name ?? 'Client'}
-                  {a.clients?.client_ref && <span className="opacity-60">· {a.clients.client_ref}</span>}
-                  <button onClick={() => onRemoveAllocation(a.client_id)} className="ml-0.5 hover:text-red-500 transition-colors"><X size={10} /></button>
-                </span>
-              ))}
-            </div>
-          );
-        })()}
-
-        {/* Task link badges */}
-        {taskLinks.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5 items-center">
-            <span className="text-[11px] font-medium text-[var(--text-muted)]">Linked tasks:</span>
-            {taskLinks.map(tl => (
-              <span key={tl.task_id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-[11px] font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                <CheckSquare size={10} />
-                {tl.tasks?.title ?? 'Task'}
-                <button onClick={() => onRemoveTaskLink(tl.task_id)} className="ml-0.5 hover:text-red-500 transition-colors"><X size={10} /></button>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Allocation + linked-task context now lives in the right context panel
+            (EmailContextPanel); the reader keeps just the actions. */}
       </div>
 
       {/* Messages */}
-      <div className={`flex-1 overflow-y-auto ${targetMessageId ? '' : 'px-5 py-4 space-y-3'}`}>
+      <div className={`flex-1 overflow-y-auto scrollbar-thin ${targetMessageId ? '' : 'px-5 py-4 space-y-3'}`}>
         {(targetMessageId
-          ? thread.messages.filter(m => m.id === targetMessageId)
-          : thread.messages
+          ? messages.filter(m => m.id === targetMessageId)
+          : messages
         ).map((msg, idx, arr) => {
           // Emoji-only messages are reactions — render as a small chip instead of a full card
           if (isEmojiOnlyMessage(msg.body)) {
@@ -991,5 +960,45 @@ export default function EmailThread({
         })}
       </div>
     </div>
+  );
+}
+
+// ─── Isolated email body ──────────────────────────────────────────────────────
+// Render the email HTML inside a sandboxed iframe so the sender's own CSS/fonts
+// (e.g. a marketing email that sets body{font-family:…}) cannot leak out and
+// restyle SMITH's own UI. No allow-scripts → the email cannot run JavaScript.
+function EmailBodyFrame({ html }: { html: string }) {
+  const ref = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(160);
+
+  const srcDoc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
+    html,body{margin:0;padding:0;background:#fff;}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111827;word-break:break-word;overflow-wrap:anywhere;}
+    img{max-width:100%;height:auto;}
+    a{color:#4F46E5;}
+    table{max-width:100%;}
+    p{margin:8px 0;}
+    ul{list-style:disc;padding-left:24px;margin:8px 0;} ol{list-style:decimal;padding-left:24px;margin:8px 0;}
+    ul ul{list-style:circle;} ol ol{list-style:lower-alpha;} li{margin:2px 0;}
+    blockquote{border-left:2px solid #e5e7eb;padding-left:12px;margin:8px 0;opacity:.85;}
+  </style></head><body>${html}</body></html>`, [html]);
+
+  function resize() {
+    const doc = ref.current?.contentWindow?.document;
+    if (!doc) return;
+    const h = Math.max(doc.documentElement?.scrollHeight ?? 0, doc.body?.scrollHeight ?? 0);
+    if (h > 0) setHeight(h + 8);
+  }
+
+  return (
+    <iframe
+      ref={ref}
+      title="Email content"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      srcDoc={srcDoc}
+      onLoad={() => { resize(); setTimeout(resize, 200); setTimeout(resize, 800); }}
+      className="w-full block"
+      style={{ height, border: "none" }}
+    />
   );
 }

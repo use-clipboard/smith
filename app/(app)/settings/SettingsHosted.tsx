@@ -36,7 +36,7 @@ export default function SettingsHosted() {
   }, []);
 
   if (error) return <div className="p-6 text-sm text-red-700">Failed to load settings: {error}</div>;
-  if (!data) return <div className="p-12 text-center text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading settings…</div>;
+  if (!data) return <div className="p-12 text-center text-sm text-[#5b21b6]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading settings…</div>;
 
   return (
     <SettingsClient

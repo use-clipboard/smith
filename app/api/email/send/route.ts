@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   let htmlBody = '';
   let replyToMessageId: string | undefined;
   let threadId: string | undefined;
+  let importance: 'high' | undefined;
   let attachments: Array<{ filename: string; mimeType: string; data: Buffer }> = [];
 
   const contentType = req.headers.get('content-type') ?? '';
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     htmlBody = (formData.get('htmlBody') as string) || '';
     replyToMessageId = (formData.get('replyToMessageId') as string) || undefined;
     threadId = (formData.get('threadId') as string) || undefined;
+    importance = (formData.get('importance') as string) === 'high' ? 'high' : undefined;
     const files = formData.getAll('attachments') as File[];
     attachments = await Promise.all(
       files.map(async f => ({
@@ -60,6 +62,7 @@ export async function POST(req: NextRequest) {
     htmlBody = (body.htmlBody as string) ?? '';
     replyToMessageId = body.replyToMessageId as string | undefined;
     threadId = body.threadId as string | undefined;
+    importance = body.importance === 'high' ? 'high' : undefined;
   }
 
   if (!to.length) {
@@ -86,6 +89,7 @@ export async function POST(req: NextRequest) {
       subject: subject || '(no subject)',
       htmlBody,
       replyToMessageId,
+      importance,
       attachments: attachments.length > 0 ? attachments : undefined,
     });
 

@@ -129,7 +129,7 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
   const [showAllEvents, setShowAllEvents] = useState(false);
 
   if (loading && !balance) {
-    return <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={18} className="animate-spin inline mr-1.5" />Loading dashboard…</div>;
+    return <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={18} className="animate-spin inline mr-1.5" />Loading dashboard…</div>;
   }
 
   return (

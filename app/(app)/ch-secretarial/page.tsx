@@ -698,53 +698,8 @@ export default function CHSecretarialPage() {
         {/* Settings panel */}
         <CHSettingsPanel isAdmin={userRole === 'admin'} />
 
-        {/* Cache status banner */}
-        {cacheStatus?.refreshedAt && (
-          <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm border ${
-            cacheStatus.status === 'failed'
-              ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
-              : cacheStatus.status === 'partial'
-                ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'
-                : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400'
-          }`}>
-            {cacheStatus.status === 'failed'
-              ? <AlertTriangle size={13} className="shrink-0" />
-              : cacheStatus.status === 'partial'
-                ? <AlertTriangle size={13} className="shrink-0" />
-                : <CheckCircle size={13} className="shrink-0" />
-            }
-            <span>
-              Last refreshed <strong>{timeAgo(cacheStatus.refreshedAt)}</strong>
-              {cacheStatus.companiesFetched !== null && cacheStatus.companiesTotal !== null && (
-                <> · {cacheStatus.companiesFetched}/{cacheStatus.companiesTotal} companies</>
-              )}
-              {cacheStatus.status === 'partial' && cacheStatus.error && (
-                <> · {errorToString(cacheStatus.error)}</>
-              )}
-              {cacheStatus.status === 'failed' && (
-                <> · All companies failed — check your API key</>
-              )}
-            </span>
-            <div className="ml-auto flex items-center gap-2 shrink-0">
-              {/* Manual / Scheduled badge */}
-              {cacheStatus.refreshType === 'scheduled' ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
-                  <Clock size={10} />Scheduled
-                </span>
-              ) : cacheStatus.refreshType === 'manual' ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">
-                  <RefreshCw size={10} />Manual
-                </span>
-              ) : null}
-              {cacheStatus.status === 'success' && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Success</span>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Source toggle + controls */}
-        <div className="glass-solid rounded-xl p-4 space-y-3">
+        <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-4 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="flex items-center gap-1 p-1 bg-[var(--bg-nav-hover)] rounded-xl shrink-0">
               {(['clients', 'custom'] as const).map(mode => (
@@ -771,6 +726,32 @@ export default function CHSecretarialPage() {
             )}
 
             <div className="flex items-center gap-2 sm:ml-auto shrink-0 relative">
+              {/* Compact last-refresh status — folded in from the old banner to save space */}
+              {cacheStatus?.refreshedAt && (
+                <Tooltip label={
+                  cacheStatus.status === 'failed'
+                    ? 'Last refresh failed — all companies failed, check your API key'
+                    : cacheStatus.status === 'partial'
+                      ? `Partial refresh${cacheStatus.error ? ` · ${errorToString(cacheStatus.error)}` : ''}`
+                      : `Last refreshed successfully${cacheStatus.refreshType === 'scheduled' ? ' (scheduled)' : cacheStatus.refreshType === 'manual' ? ' (manual)' : ''}`
+                }>
+                  <span className={`flex items-center gap-1.5 text-xs font-medium mr-1 whitespace-nowrap ${
+                    cacheStatus.status === 'failed' ? 'text-red-600 dark:text-red-400'
+                    : cacheStatus.status === 'partial' ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-[var(--text-muted)]'
+                  }`}>
+                    {cacheStatus.status === 'success'
+                      ? <CheckCircle size={12} className="text-emerald-500 shrink-0" />
+                      : <AlertTriangle size={12} className="shrink-0" />}
+                    {timeAgo(cacheStatus.refreshedAt)}
+                    {cacheStatus.companiesFetched !== null && cacheStatus.companiesTotal !== null && (
+                      <span className="text-[var(--text-muted)]">· {cacheStatus.companiesFetched}/{cacheStatus.companiesTotal}</span>
+                    )}
+                    {cacheStatus.refreshType === 'scheduled' && <Clock size={10} className="text-blue-500 shrink-0" />}
+                  </span>
+                </Tooltip>
+              )}
+
               {companies.length > 0 && (
                 <button
                   onClick={() => exportCHWorkbook(filteredCompanies, `ch_secretarial_${new Date().toISOString().slice(0, 10)}.xlsx`)}
@@ -969,7 +950,7 @@ export default function CHSecretarialPage() {
 
         {/* Loading progress */}
         {loading && loadingProgress && (
-          <div className={`glass-solid rounded-xl p-4 space-y-2 ${rateLimitCountdown !== null ? 'border border-amber-300 dark:border-amber-700' : ''}`}>
+          <div className={`bg-white/[0.78] backdrop-blur-md rounded-xl p-4 space-y-2 ${rateLimitCountdown !== null ? 'border border-amber-300 dark:border-amber-700' : ''}`}>
             <div className="flex items-center justify-between text-sm gap-3">
               {rateLimitCountdown !== null ? (
                 <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium">
@@ -1005,7 +986,7 @@ export default function CHSecretarialPage() {
             metricFilter to its bucket; clicking the active panel again
             clears the filter. */}
         {companies.length > 0 && !loading && (
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] overflow-hidden">
+          <div className="rounded-xl border border-[var(--border)] bg-white/[0.78] backdrop-blur-md overflow-hidden">
             <button
               type="button"
               onClick={() => setStatsCollapsed(v => !v)}
@@ -1139,14 +1120,14 @@ export default function CHSecretarialPage() {
         {/* Table toolbar */}
         {companies.length > 0 && (
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-            <div className="relative flex-1 max-w-xs">
+            <div className="relative flex-1 max-w-md">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder={sourceMode === 'clients' ? 'Search by name, number, or client code…' : 'Search by name or number…'}
-                className="input-base w-full pl-9 text-sm"
+                className="w-full h-9 pl-9 pr-9 text-sm rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition shadow-md focus:border-[var(--accent)] focus:bg-white"
               />
               {search && (
                 <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
@@ -1155,14 +1136,14 @@ export default function CHSecretarialPage() {
               )}
             </div>
             <div className="flex items-center gap-2 sm:ml-auto">
-              <span className="text-xs text-[var(--text-muted)]">
+              <span className="text-xs font-semibold text-[var(--text-primary)]">
                 {filteredCompanies.length} of {companies.length} companies
                 {lastFetched && <> · Refreshed {lastFetched.toLocaleTimeString()}</>}
               </span>
               <div className="relative">
                 <button
                   onClick={() => setColMenuOpen(v => !v)}
-                  className="btn-secondary flex items-center gap-1.5 text-sm"
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 h-9 rounded-lg bg-white border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors shadow-md"
                 >
                   <SlidersHorizontal size={13} /> Columns
                 </button>
@@ -1191,7 +1172,7 @@ export default function CHSecretarialPage() {
         {/* Table */}
         {companies.length > 0 && (
           <div
-            className="glass-solid rounded-xl border border-[var(--border)] overflow-hidden"
+            className="bg-white/[0.78] backdrop-blur-md rounded-xl border border-[var(--border)] overflow-hidden"
             onClick={() => { setColMenuOpen(false); setShowSchedulePanel(false); }}
           >
             <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -1328,7 +1309,7 @@ export default function CHSecretarialPage() {
 
         {/* Empty state */}
         {companies.length === 0 && !loading && !error && (
-          <div className="glass-solid rounded-xl p-12 text-center space-y-3">
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-12 text-center space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto">
               <Building2 size={28} className="text-blue-600 dark:text-blue-400" />
             </div>

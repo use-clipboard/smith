@@ -8,6 +8,7 @@ import { type SortDir } from '../SortHeader';
 import { useTaskClientStatusPolicy } from '../TaskClientStatusPolicyProvider';
 import { isHiddenByClientStatus, isExcludedFromOverdueCounts, countsHiddenByClientStatus } from '../applyClientStatusVisibility';
 import Tooltip from '@/components/ui/Tooltip';
+import GlassSelect from '@/components/ui/GlassSelect';
 import { TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import { exportTaskGroupsXlsx } from '@/utils/taskExport';
 import type { Task, TaskStatus, TaskStep, TaskTemplate } from '@/types';
@@ -312,31 +313,31 @@ export default function DepartmentView({
   return (
     <div>
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-30 bg-gray-50 pb-3 space-y-3">
+      <div className="sticky top-0 z-30 backdrop-blur-md pb-3 space-y-3">
         {/* Title row */}
         <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{label}</h2>
-            <p className="text-xs text-gray-500">Department overview · {stats.total} task{stats.total !== 1 ? 's' : ''} in view</p>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">{label}</h2>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">Department overview · {stats.total} task{stats.total !== 1 ? 's' : ''} in view</p>
           </div>
           {/* Summary chips */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-gray-200">
-              Total <span className="font-semibold text-gray-900">{stats.total}</span>
+          <div className="flex items-center gap-2 flex-wrap text-xs font-semibold">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
+              Total <span className="font-bold">{stats.total}</span>
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
-              Done <span className="font-semibold">{stats.completed}</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
+              Done <span className="font-bold text-emerald-300">{stats.completed}</span>
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-700">
-              Overdue <span className="font-semibold">{stats.overdue}</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
+              Overdue <span className="font-bold text-red-300">{stats.overdue}</span>
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700">
-              Due in 7d <span className="font-semibold">{stats.dueThisWeek}</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
+              Due in 7d <span className="font-bold text-amber-300">{stats.dueThisWeek}</span>
             </span>
             {stats.nextDue && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)]">
                 <CalendarDays size={11} />
-                Next due in <span className="font-semibold">{daysBetween(todayUTC(), stats.nextDue)}d</span>
+                Next due in <span className="font-bold">{daysBetween(todayUTC(), stats.nextDue)}d</span>
               </span>
             )}
           </div>
@@ -345,32 +346,32 @@ export default function DepartmentView({
         {/* Filter bar */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" strokeWidth={2.5} />
             <input
               type="text"
               placeholder="Search task, client, or code…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="text-sm pl-7 pr-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-56"
+              className="text-sm font-medium pl-7 pr-3 py-2 rounded-lg w-56 bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] placeholder:font-medium outline-none transition focus:border-[var(--accent)] focus:bg-white"
             />
           </div>
 
-          <select
+          <GlassSelect
+            ariaLabel="Filter by status"
             value={status}
-            onChange={e => setStatus(e.target.value as TaskStatus | 'all' | 'open')}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {STATUS_FILTERS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+            onChange={v => setStatus(v as TaskStatus | 'all' | 'open')}
+            options={STATUS_FILTERS.map(o => ({ value: o.id, label: o.label }))}
+          />
 
-          <select
+          <GlassSelect
+            ariaLabel="Filter by assignee"
             value={assignee}
-            onChange={e => setAssignee(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All assignees</option>
-            {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name || m.email}</option>)}
-          </select>
+            onChange={setAssignee}
+            options={[
+              { value: '', label: 'All assignees' },
+              ...teamMembers.map(m => ({ value: m.id, label: m.full_name || m.email })),
+            ]}
+          />
 
           {/* Date range + padlock — firm-wide */}
           {(() => {
@@ -384,8 +385,8 @@ export default function DepartmentView({
               ? `Latest due date — locked firm-wide${lockedByName ? ` by ${lockedByName}` : ''}`
               : 'Latest due date to include';
             return (
-              <div className={`flex items-center gap-1.5 border rounded-lg px-2 py-1 ${dateLocked ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
-                <span className="text-[11px] uppercase font-semibold tracking-wide text-gray-500">Due</span>
+              <div className={`flex items-center gap-1.5 border rounded-lg px-2 py-1 shadow-md ${dateLocked ? 'bg-amber-400/20 border-amber-200/50' : 'bg-white border-[var(--border)]'}`}>
+                <span className="text-[11px] uppercase font-bold tracking-wide text-[var(--text-secondary)]">Due</span>
                 <Tooltip label={fromTooltip}>
                   <input
                     type="date"
@@ -393,10 +394,10 @@ export default function DepartmentView({
                     onChange={e => saveFilter({ date_from: e.target.value || null })}
                     disabled={dateLocked && !isAdmin}
                     aria-label={fromTooltip}
-                    className="text-sm border-0 bg-transparent focus:outline-none disabled:text-gray-500 disabled:cursor-not-allowed"
+                    className="text-sm font-medium border-0 bg-transparent text-[var(--text-primary)] [color-scheme:dark] focus:outline-none disabled:text-[var(--text-muted)] disabled:cursor-not-allowed"
                   />
                 </Tooltip>
-                <span className="text-xs text-gray-400">→</span>
+                <span className="text-xs text-[var(--text-muted)]">→</span>
                 <Tooltip label={toTooltip}>
                   <input
                     type="date"
@@ -404,10 +405,10 @@ export default function DepartmentView({
                     onChange={e => saveFilter({ date_to: e.target.value || null })}
                     disabled={dateLocked && !isAdmin}
                     aria-label={toTooltip}
-                    className="text-sm border-0 bg-transparent focus:outline-none disabled:text-gray-500 disabled:cursor-not-allowed"
+                    className="text-sm font-medium border-0 bg-transparent text-[var(--text-primary)] [color-scheme:dark] focus:outline-none disabled:text-[var(--text-muted)] disabled:cursor-not-allowed"
                   />
                 </Tooltip>
-                {savingFilter && <Loader2 size={12} className="animate-spin text-gray-400" />}
+                {savingFilter && <Loader2 size={12} className="animate-spin text-[var(--text-muted)]" />}
                 <Tooltip label={lockTooltip}>
                   <button
                     onClick={toggleLock}
@@ -415,11 +416,11 @@ export default function DepartmentView({
                     aria-label={dateLocked ? 'Unlock filter' : 'Lock filter'}
                     className={`p-1.5 rounded transition-colors ${
                       dateLocked
-                        ? 'text-amber-600 hover:bg-amber-100'
-                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                        ? 'text-amber-600 hover:bg-amber-400/30'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
                     } disabled:opacity-40 disabled:cursor-not-allowed`}
                   >
-                    {dateLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                    {dateLocked ? <Lock size={15} strokeWidth={2.5} /> : <Unlock size={15} strokeWidth={2.5} />}
                   </button>
                 </Tooltip>
               </div>
@@ -429,9 +430,9 @@ export default function DepartmentView({
           {(search || status !== 'open' || assignee) && (
             <button
               onClick={() => { setSearch(''); setStatus('open'); setAssignee(''); }}
-              className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              className="text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm flex items-center gap-1"
             >
-              <RefreshCw size={11} /> Reset
+              <RefreshCw size={11} strokeWidth={2.5} /> Reset
             </button>
           )}
 
@@ -452,10 +453,10 @@ export default function DepartmentView({
                 {(hidden.onHold > 0 || showOnHold) && (
                   <button
                     onClick={() => setShowOnHold(!showOnHold)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full border shadow-md transition-colors flex items-center gap-1 ${
                       showOnHold
-                        ? 'bg-amber-100 border-amber-300 text-amber-800'
-                        : 'bg-white border-amber-200 text-amber-700 hover:bg-amber-50'
+                        ? 'bg-amber-300 border-amber-300 text-amber-900'
+                        : 'bg-white border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
                     }`}
                   >
                     {showOnHold ? 'Hide' : 'Show'} on-hold
@@ -465,10 +466,10 @@ export default function DepartmentView({
                 {(hidden.inactive > 0 || showInactive) && (
                   <button
                     onClick={() => setShowInactive(!showInactive)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full border shadow-md transition-colors flex items-center gap-1 ${
                       showInactive
-                        ? 'bg-gray-200 border-gray-300 text-gray-700'
-                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                        ? 'bg-white border-[var(--border)] text-[#2e3062]'
+                        : 'bg-white border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
                     }`}
                   >
                     {showInactive ? 'Hide' : 'Show'} inactive
@@ -487,41 +488,35 @@ export default function DepartmentView({
                 onClick={handleExport}
                 disabled={tasksMatchingFilters.length === 0}
                 aria-label="Export department to Excel"
-                className="flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-indigo-600 bg-white hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)] bg-white hover:bg-[var(--bg-nav-hover)] border border-[var(--border)] shadow-md px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3.5 w-3.5" strokeWidth={2.5} />
                 Export
               </button>
             </Tooltip>
           </div>
         </div>
 
-        {dateLocked && (
-          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1 inline-flex items-center gap-1">
-            <Lock size={11} /> Date range locked firm-wide{lockedByName ? ` by ${lockedByName}` : ''}.
-          </div>
-        )}
-
         {/* Tabs */}
-        <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1 border-b border-gray-200">
+        <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 pb-1 border-b border-[var(--border)]">
           <button
             onClick={() => setActiveTemplateId('all')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-t-md border-b-2 transition-colors whitespace-nowrap drop-shadow-sm ${
               activeTemplateId === 'all'
-                ? 'border-indigo-500 text-indigo-700'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-[var(--accent)] text-[var(--accent)]'
+                : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
           >
-            All templates <span className="ml-1 opacity-60">{tasksMatchingFilters.length}</span>
+            All templates <span className="ml-1 opacity-70">{tasksMatchingFilters.length}</span>
           </button>
           {templatesInCategory.map(tpl => (
             <button
               key={tpl.id}
               onClick={() => setActiveTemplateId(tpl.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-t-md border-b-2 transition-colors whitespace-nowrap drop-shadow-sm ${
                 activeTemplateId === tpl.id
-                  ? 'border-indigo-500 text-indigo-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
               }`}
             >
               {tpl.name} <span className="ml-1 opacity-60">{countsByTemplate.get(tpl.id) ?? 0}</span>
@@ -532,7 +527,7 @@ export default function DepartmentView({
 
       {/* ── Body ─────────────────────────────────────────────────────────────── */}
       {filteredTasks.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">
+        <div className="text-center py-16 text-sm font-semibold text-[var(--text-secondary)]">
           {(() => {
             const hasDateFilter = !!(filter.date_from || filter.date_to);
             const tasksInCategory = tasks.filter(t => t.template_id && templates.find(tpl => tpl.id === t.template_id && tpl.category === category)).length;

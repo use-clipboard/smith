@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Settings, HelpCircle, ChevronLeft, ChevronRight,
   LogOut, Puzzle, Loader2, Check, Plus, Star, AlertCircle,
+  LayoutGrid, Search, X,
 } from 'lucide-react';
 import { useTabActivityContext } from './TabActivityContext';
 import { TOOL_ROUTES } from './TabPanels';
@@ -31,6 +32,10 @@ interface SidebarProps {
 export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  // Tools flyout — keeps the main rail uncluttered: favourites show individually,
+  // every other tool lives behind a single "Tools" button that opens this panel.
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolSearch, setToolSearch] = useState('');
   const [untaggedCount, setUntaggedCount] = useState(0);
   const [todayEventCount, setTodayEventCount] = useState(0);
   const [emailUnreadCount, setEmailUnreadCount] = useState(0);
@@ -44,7 +49,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const { openTab, openInNewTab, setActiveTabId, tabs, activeTabId } = useTabContext();
   const { getActivity, resetIfDone } = useTabActivityContext();
   const { isModuleActive } = useModules();
-  const { favourites } = useFavourites();
+  const { favourites, updateFavourites } = useFavourites();
   const supabase = createClient();
   const isAdmin = userRole === 'admin';
   const vaultActive = isModuleActive('document-vault');
@@ -58,18 +63,41 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       .catch(() => {});
   }, [vaultActive]);
 
-  // Fetch unread email count for the Email Triage badge
+  // Email Triage badge = the Untriaged count. Two sources, broadcast-first:
+  // while the Email Triage page is mounted it broadcasts its card count (on
+  // every change and on each of its 60s polls), and that value is the badge —
+  // an exact mirror. The sidebar's own poll only applies when no broadcast has
+  // been heard recently (i.e. the triage page isn't open), so the two never
+  // fight and show different numbers.
+  const lastEmailBroadcastRef = useRef(0);
   useEffect(() => {
     if (!emailActive) return;
     function fetchUnread() {
       fetch('/api/email/unread')
-        .then(r => r.ok ? r.json() : { count: 0 })
-        .then(d => setEmailUnreadCount(d.count ?? 0))
+        .then(r => r.ok ? r.json() : { untriaged: 0 })
+        .then(d => {
+          // A broadcast in the last 90s means the triage page owns the badge.
+          if (Date.now() - lastEmailBroadcastRef.current < 90_000) return;
+          setEmailUnreadCount(d.untriaged ?? 0);
+        })
         .catch(() => {});
     }
     fetchUnread();
-    const id = setInterval(fetchUnread, 60_000);
+    // Skip polling Gmail for the count while the tab is hidden — saves quota.
+    const id = setInterval(() => { if (!document.hidden) fetchUnread(); }, 60_000);
     return () => clearInterval(id);
+  }, [emailActive]);
+  useEffect(() => {
+    if (!emailActive) return;
+    function onUntriaged(e: Event) {
+      const count = (e as CustomEvent<number>).detail;
+      if (typeof count === 'number') {
+        lastEmailBroadcastRef.current = Date.now();
+        setEmailUnreadCount(count);
+      }
+    }
+    window.addEventListener('smith:email-untriaged', onUntriaged);
+    return () => window.removeEventListener('smith:email-untriaged', onUntriaged);
   }, [emailActive]);
 
   // Fetch active task count assigned to the current user for the Tasks badge
@@ -205,9 +233,6 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   // Set of moduleIds already shown in Favourites — exclude from Tools & Workspace sections
   const favouritedIds = new Set(activeFavouriteItems.map(i => i.moduleId));
 
-  const visibleTools = TOOL_NAV_ITEMS.filter(item =>
-    (item.comingSoon || isModuleActive(item.moduleId)) && !favouritedIds.has(item.moduleId)
-  ).sort((a, b) => a.label.localeCompare(b.label));
   // Coming-soon items are not counted as "inactive modules" — they're not yet
   // available to enable, so showing them in the admin hint would be misleading.
   const inactiveCount = TOOL_NAV_ITEMS.filter(item =>
@@ -230,15 +255,13 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   }
 
   /** Tool item (tab-based active state, open-in-new-tab affordance) */
-  function renderToolItem(item: NavItem, isFavourite = false) {
+  function renderToolItem(item: NavItem) {
     const Icon = item.icon;
     const isActive = tabs.find(t => t.id === activeTabId)?.route === item.href;
     const colorClass = isActive
       ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
-      : isFavourite
-        ? 'bg-[var(--accent-light)] text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-        : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
-    const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`;
+      : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
+    const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-[var(--text-nav-active)]' : 'text-[var(--text-muted)]'}`;
 
     const isCalendar = item.moduleId === 'google-calendar';
     const calBadge   = isCalendar && todayEventCount > 0;
@@ -266,7 +289,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       const collapsedLabel =
         item.comingSoon ? `${item.label} · Coming soon`
         : calBadge   ? `${item.label} · ${todayEventCount} event${todayEventCount !== 1 ? 's' : ''} today`
-        : emailBadge ? `${item.label} · ${emailUnreadCount} unread`
+        : emailBadge ? `${item.label} · ${emailUnreadCount} untriaged`
         : taskBadge  ? `${item.label} · ${myTaskCount} active task${myTaskCount !== 1 ? 's' : ''} assigned to you`
         : hrBadge    ? `${item.label} · ${hrBadgeCount} item${hrBadgeCount !== 1 ? 's' : ''} needing attention`
         : mtdItBadge ? `${item.label} · ${mtdItUnreadCount} new client response${mtdItUnreadCount !== 1 ? 's' : ''}`
@@ -285,21 +308,21 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           {calBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
-                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {calLabel}
             </span>
           )}
           {emailBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
-                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {emailLabel}
             </span>
           )}
           {taskBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
-                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {taskLabel}
             </span>
           )}
@@ -320,14 +343,14 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           {hrBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
-                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {hrLabel}
             </span>
           )}
           {mtdItBadge && (
             <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-0.5 rounded-full
                              text-[9px] font-bold flex items-center justify-center pointer-events-none
-                             ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                             ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
               {mtdItLabel}
             </span>
           )}
@@ -360,23 +383,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="flex items-center shrink-0 pr-2 gap-1">
             {isInBackgroundTab && (
               <span className="group-hover:hidden flex items-center">
-                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span></Tooltip>}
-                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-emerald-500" /></span></Tooltip>}
-                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" /></Tooltip>}
+                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-white" /></span></Tooltip>}
+                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-white" /></span></Tooltip>}
+                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-white opacity-80" /></Tooltip>}
               </span>
-            )}
-            {isFavourite && (
-              <Star
-                size={9}
-                className="text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
-                fill="currentColor"
-              />
             )}
             <Tooltip label="Open in new tab">
               <button
                 onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
                 aria-label="Open in new tab"
-                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-white hover:bg-white/20 transition-colors"
               >
                 <Plus size={10} />
               </button>
@@ -393,7 +409,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         {calBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
-                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {calLabel}
           </span>
         )}
@@ -401,7 +417,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         {emailBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
-                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {emailLabel}
           </span>
         )}
@@ -419,7 +435,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         {taskBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
-                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {taskLabel}
           </span>
         )}
@@ -427,7 +443,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         {hrBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
-                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {hrLabel}
           </span>
         )}
@@ -435,7 +451,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         {mtdItBadge && (
           <span className={`shrink-0 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold
                            flex items-center justify-center mr-2
-                           ${isActive ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+                           ${isActive ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--accent)] shadow-sm'}`}>
             {mtdItLabel}
           </span>
         )}
@@ -444,17 +460,15 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   }
 
   /** Workspace item (pathname-based active state, with + new-tab affordance) */
-  function renderWorkspaceItem(item: NavItem, isFavourite = false) {
+  function renderWorkspaceItem(item: NavItem) {
     const Icon = item.icon;
     const isActive = pathname.startsWith(item.href);
     const isInBackgroundTab = !isActive && tabs.some(t => t.route === item.href);
     const activity = isInBackgroundTab ? getActivity(item.href) : 'idle';
     const colorClass = isActive
       ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
-      : isFavourite
-        ? 'bg-[var(--accent-light)] text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
-        : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
-    const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`;
+      : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
+    const iconClass = `shrink-0 transition-colors duration-150 ${isActive ? 'text-[var(--text-nav-active)]' : 'text-[var(--text-muted)]'}`;
 
     if (collapsed) {
       // Wrap in a block-level div so the workspace icons stack vertically.
@@ -497,23 +511,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           <span className="flex items-center shrink-0 pr-2 gap-1">
             {isInBackgroundTab && (
               <span className="group-hover:hidden flex items-center">
-                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-[var(--accent)]" /></span></Tooltip>}
-                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-emerald-500" /></span></Tooltip>}
-                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-[var(--accent)] opacity-60" /></Tooltip>}
+                {activity === 'processing' && <Tooltip label="Processing"><span><Loader2 size={11} className="animate-spin text-white" /></span></Tooltip>}
+                {activity === 'done'       && <Tooltip label="Done"><span><Check size={11} className="text-white" /></span></Tooltip>}
+                {activity === 'idle'       && <Tooltip label="Open in tab"><span className="block w-1.5 h-1.5 rounded-full bg-white opacity-80" /></Tooltip>}
               </span>
-            )}
-            {isFavourite && (
-              <Star
-                size={9}
-                className="text-[var(--accent)] opacity-50 group-hover:opacity-0 transition-opacity pointer-events-none"
-                fill="currentColor"
-              />
             )}
             <Tooltip label="Open in new tab">
               <button
                 onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); }}
                 aria-label="Open in new tab"
-                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--accent)] hover:bg-[var(--accent-light)] transition-colors"
+                className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-white hover:bg-white/20 transition-colors"
               >
                 <Plus size={10} />
               </button>
@@ -526,9 +533,25 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
   /** Dispatch to the correct renderer based on item type */
   function renderFavouriteItem(item: NavItem) {
-    if (WORKSPACE_MODULE_IDS.has(item.moduleId)) return renderWorkspaceItem(item, true);
-    return renderToolItem(item, true);
+    if (WORKSPACE_MODULE_IDS.has(item.moduleId)) return renderWorkspaceItem(item);
+    return renderToolItem(item);
   }
+
+  /** Pin / unpin a tool from the flyout */
+  function toggleFavourite(moduleId: string) {
+    if (favourites.includes(moduleId)) {
+      updateFavourites(favourites.filter(id => id !== moduleId));
+    } else {
+      updateFavourites([...favourites, moduleId]);
+    }
+  }
+
+  // All tools available to surface in the flyout (active modules + coming-soon),
+  // filtered by the search box and sorted alphabetically.
+  const flyoutTools = TOOL_NAV_ITEMS
+    .filter(item => item.comingSoon || isModuleActive(item.moduleId))
+    .filter(item => item.label.toLowerCase().includes(toolSearch.trim().toLowerCase()))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
   // ── Dashboard item ─────────────────────────────────────────────────────────
   const dashIsActive = pathname === '/dashboard' && activeTabId === null;
@@ -538,15 +561,16 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const DashIcon = DASHBOARD_ITEM.icon;
 
   return (
+    <>
     <aside
       style={{ width, minWidth: width }}
-      className="glass-sidebar flex flex-col h-screen sticky top-0 z-40 transition-[width] duration-200 ease-in-out overflow-hidden"
+      className="glass-sidebar flex flex-col h-full z-40 transition-[width] duration-200 ease-in-out overflow-hidden"
     >
       {/* Logo */}
-      <div className={`flex items-center h-14 px-4 border-b border-[var(--border)] shrink-0 ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
+      <div className={`flex items-center h-14 px-4 shrink-0 ${collapsed ? 'justify-center' : 'gap-2.5'}`}>
         <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="SMITH" className="w-7 h-7 rounded shrink-0 dark:invert" />
+          <img src="/logo.png" alt="SMITH" className="w-7 h-7 rounded shrink-0 brightness-0 invert" />
           {!collapsed && (
             <span className="font-bold text-base text-[var(--text-primary)] whitespace-nowrap tracking-tight">
               SMITH
@@ -570,7 +594,7 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
             >
               <DashIcon
                 size={18}
-                className={`shrink-0 transition-colors duration-150 ${dashIsActive ? 'text-white' : 'text-[var(--text-muted)] group-hover:text-[var(--accent)]'}`}
+                className={`shrink-0 transition-colors duration-150 ${dashIsActive ? 'text-[var(--text-nav-active)]' : 'text-[var(--text-muted)]'}`}
               />
               {!collapsed && <span className="text-sm font-medium truncate">Dashboard</span>}
             </Link>
@@ -578,47 +602,43 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
           return collapsed ? <Tooltip label="Dashboard" side="right">{dashLink}</Tooltip> : dashLink;
         })()}
 
-        {/* ── Favourites section (only shown when user has active favourites) */}
-        {activeFavouriteItems.length > 0 && (
-          <>
-            {sectionLabel('Favourites')}
-            {activeFavouriteItems.map(item => renderFavouriteItem(item))}
-          </>
-        )}
+        {/* ── Favourites — shown individually, directly under Dashboard.
+              No section label, no star, no coloured background (per design). */}
+        {activeFavouriteItems.map(item => renderFavouriteItem(item))}
 
-        {/* ── Tools section ──────────────────────────────────────────────── */}
-        {visibleTools.length > 0 && (
-          <>
-            {sectionLabel('Tools')}
-            {visibleTools.map(item => renderToolItem(item))}
-          </>
-        )}
-
-        {/* Admin hint: inactive modules */}
-        {isAdmin && !collapsed && inactiveCount > 0 && (
-          <Link
-            href="/settings?tab=modules"
-            className="flex items-center gap-2 px-3 py-2 mt-1 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-nav-hover)] transition-all duration-150 group"
-          >
-            <Puzzle size={13} className="shrink-0 group-hover:text-[var(--accent)]" />
-            <span>{inactiveCount} inactive module{inactiveCount !== 1 ? 's' : ''} — Manage</span>
-          </Link>
-        )}
+        {/* ── Tools — a single entry; clicking opens the flyout list of every
+              other tool, keeping the rail uncluttered. ─────────────────────── */}
+        {(() => {
+          const toolsBtn = (
+            <button
+              onClick={() => setToolsOpen(o => !o)}
+              aria-label="Tools"
+              aria-expanded={toolsOpen}
+              className={`flex items-center gap-3 w-full rounded-lg transition-all duration-150 group
+                ${collapsed ? 'justify-center px-0 h-11' : 'px-3 h-11'}
+                ${toolsOpen
+                  ? 'bg-[var(--bg-nav-hover)] text-[var(--text-primary)]'
+                  : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}`}
+            >
+              <LayoutGrid
+                size={18}
+                className="shrink-0 transition-colors duration-150 text-[var(--text-muted)]"
+              />
+              {!collapsed && <span className="text-sm font-medium truncate flex-1 text-left">Tools</span>}
+              {!collapsed && (
+                <ChevronRight
+                  size={14}
+                  className={`shrink-0 transition-transform duration-150 text-[var(--text-muted)] ${toolsOpen ? 'translate-x-0.5' : ''}`}
+                />
+              )}
+            </button>
+          );
+          return collapsed ? <Tooltip label="Tools" side="right">{toolsBtn}</Tooltip> : toolsBtn;
+        })()}
 
         {/* ── Workspace section ───────────────────────────────────────────── */}
         {visibleWorkspace.length > 0 && sectionLabel('Workspace')}
         {visibleWorkspace.map(item => renderWorkspaceItem(item))}
-
-        {/* Shortcut to manage favourites — collapsed: star icon, expanded: text link */}
-        {!collapsed && (
-          <Link
-            href="/settings?tab=preferences"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--bg-nav-hover)] transition-all duration-150 group"
-          >
-            <Star size={12} className="shrink-0 group-hover:text-[var(--accent)]" />
-            <span>Manage favourites</span>
-          </Link>
-        )}
       </nav>
 
       {/* User Profile */}
@@ -663,5 +683,152 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
         </Tooltip>
       </div>
     </aside>
+
+    {/* ── Tools flyout ──────────────────────────────────────────────────────
+          Slides out from the rail's right edge with the full tool list. Lives
+          outside the <aside> (which clips overflow) and uses fixed positioning
+          anchored to the current sidebar width. */}
+    {toolsOpen && (
+      <>
+        {/* Click-catcher to dismiss */}
+        <div
+          className="fixed inset-0 z-[48]"
+          onClick={() => { setToolsOpen(false); setToolSearch(''); }}
+        />
+        <div
+          style={{ left: 12 + width, top: 12, bottom: 12, backdropFilter: 'none', WebkitBackdropFilter: 'none' }}
+          className="fixed z-[49] isolate w-[300px] glass-sidebar shadow-dropdown flex flex-col animate-fade-in rounded-r-[20px] overflow-hidden"
+        >
+          {/* Backdrop layer — the very same app gradient the sidebar shows,
+              viewport-fixed so it lines up exactly, and blurred to match the
+              sidebar's backdrop-filter. Sits behind the content (-z-10) so the
+              flyout reads as the sidebar background flowing straight through. */}
+          <div
+            aria-hidden
+            className="absolute -z-10 pointer-events-none"
+            style={{
+              inset: 0,
+              backgroundColor: '#c2c9e9',
+              // Match the body's exact stack so the sidebar's gradient continues:
+              // sidebar dark overlay (0.28→0.40) · the body's 15% white wash · the
+              // app-background image. Viewport-fixed so it lines up pixel-for-pixel
+              // with what the sidebar reveals. (No blur filter — it would break
+              // background-attachment:fixed and is imperceptible on this smooth
+              // gradient anyway.)
+              backgroundImage:
+                'linear-gradient(180deg, rgba(46, 48, 98, 0.28), rgba(46, 48, 98, 0.40)),' +
+                'linear-gradient(rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.15)),' +
+                'url(/app-background.png)',
+              backgroundSize: 'cover, cover, cover',
+              backgroundPosition: 'center, center, center',
+              backgroundAttachment: 'fixed, fixed, fixed',
+            }}
+          />
+          {/* Header */}
+          <div className="flex items-center justify-between h-14 px-4 border-b border-[var(--border)] shrink-0">
+            <div className="flex items-center gap-2">
+              <LayoutGrid size={16} className="text-white" />
+              <span className="text-sm font-semibold text-[var(--text-primary)]">Tools</span>
+            </div>
+            <button
+              onClick={() => { setToolsOpen(false); setToolSearch(''); }}
+              aria-label="Close tools"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-all"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Search */}
+          <div className="px-3 py-3 shrink-0">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
+              <input
+                value={toolSearch}
+                onChange={e => setToolSearch(e.target.value)}
+                placeholder="Search tools…"
+                autoFocus
+                className="w-full h-9 pl-8 pr-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/55 text-sm outline-none transition focus:border-white/40 focus:bg-white/[0.16]"
+              />
+            </div>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin px-2 pb-3 space-y-0.5">
+            {flyoutTools.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)] text-center py-8">
+                No tools match &ldquo;{toolSearch}&rdquo;.
+              </p>
+            ) : flyoutTools.map(item => {
+              const Icon = item.icon;
+              const isPinned = favourites.includes(item.moduleId);
+              const isActiveTab = tabs.find(t => t.id === activeTabId)?.route === item.href;
+              return (
+                <div
+                  key={item.href}
+                  className={`relative flex items-center h-11 rounded-lg group transition-all duration-150
+                    ${isActiveTab
+                      ? 'bg-[var(--bg-nav-active)] text-[var(--text-nav-active)]'
+                      : 'text-[var(--text-nav-inactive)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}`}
+                >
+                  <button
+                    onClick={() => { handleNavClick(item); setToolsOpen(false); setToolSearch(''); }}
+                    className="flex items-center gap-3 flex-1 min-w-0 h-full px-3"
+                  >
+                    <Icon size={18} className={`shrink-0 ${isActiveTab ? 'text-[var(--text-nav-active)]' : 'text-[var(--text-muted)]'}`} />
+                    <span className="text-sm font-medium truncate text-left">{item.label}</span>
+                    {item.comingSoon && (
+                      <span className="shrink-0 ml-auto px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200">
+                        Soon
+                      </span>
+                    )}
+                  </button>
+                  {!item.comingSoon && (
+                    <div className="shrink-0 flex items-center gap-0.5 mr-2">
+                      <Tooltip label="Open in new tab">
+                        <button
+                          onClick={e => { e.stopPropagation(); handleOpenInNewTab(item); setToolsOpen(false); setToolSearch(''); }}
+                          aria-label="Open in new tab"
+                          className="w-6 h-6 flex items-center justify-center rounded-md transition-all text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-white"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={isPinned ? 'Unpin from sidebar' : 'Pin to sidebar'}>
+                        <button
+                          onClick={e => { e.stopPropagation(); toggleFavourite(item.moduleId); }}
+                          aria-label={isPinned ? 'Unpin from sidebar' : 'Pin to sidebar'}
+                          className={`w-6 h-6 flex items-center justify-center rounded-md transition-all
+                            ${isActiveTab
+                              ? 'text-white opacity-80 hover:opacity-100'
+                              : isPinned
+                                ? 'text-amber-300'
+                                : 'text-[var(--text-muted)] opacity-0 group-hover:opacity-100 hover:text-white'}`}
+                        >
+                          <Star size={13} fill={isPinned ? 'currentColor' : 'none'} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer — admin shortcut to enable more modules */}
+          {isAdmin && inactiveCount > 0 && (
+            <Link
+              href="/settings?tab=modules"
+              onClick={() => { setToolsOpen(false); setToolSearch(''); }}
+              className="flex items-center gap-2 px-4 py-3 border-t border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0"
+            >
+              <Puzzle size={13} className="shrink-0" />
+              <span>{inactiveCount} inactive module{inactiveCount !== 1 ? 's' : ''} — Manage</span>
+            </Link>
+          )}
+        </div>
+      </>
+    )}
+    </>
   );
 }

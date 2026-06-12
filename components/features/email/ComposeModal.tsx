@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  X, Send, Loader2, Sparkles, Check, Save, UserPlus, CheckSquare,
+  X, Send, Loader2, Sparkles, Check, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  Smile, Minus, AlertCircle, PenLine,
+  Smile, Minus, AlertCircle, PenLine, Flag, Trash2,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
@@ -70,12 +71,20 @@ interface Props {
   onReplySent?: (originalThreadId: string) => void;
   /** Called after a successful send when the user ticked "Create Task" */
   onCreateTaskFromSent?: (emailData: { subject: string; plainBody: string; toEmail: string; toName: string }) => void;
+  /** Called after the user discards the draft (bin button) — lets the parent
+   *  refresh the Drafts folder so the deleted draft drops out of the list. */
+  onDiscarded?: () => void;
   /** When set, called instead of onClose when the user clicks the minimise button.
    *  The handler receives a snapshot of the current draft for later restoration. */
   onMinimise?: (snap: ComposeSnapshot) => void;
   /** When provided alongside open=true, the modal restores the snapshot instead
    *  of rebuilding the body from replyTo/forwardOf. Cleared on the next open. */
   initialSnapshot?: ComposeSnapshot | null;
+  /** Re-open the minimised window (used by undo-send to bring the email back). */
+  onRestore?: () => void;
+  /** Signals the provider that a 3s undo-send countdown is running, so the
+   *  minimised chip stays hidden and open() is ignored until it resolves. */
+  onPendingSendChange?: (pending: boolean) => void;
 }
 
 const RECIPIENT_STATUS_COLOURS: Record<string, string> = {
@@ -141,10 +150,30 @@ function greetingCompletion(context: string, recipientName: string): string {
   return (needsSpace ? ' ' : '') + recipientName;
 }
 
-function RecipientTag({ r, onRemove }: { r: SelectedRecipient; onRemove: () => void }) {
+type RecipientField = 'to' | 'cc' | 'bcc';
+/** Drag payload for moving a recipient pill between To / Cc / Bcc. */
+const RECIPIENT_DRAG_MIME = 'application/x-smith-recipient';
+
+function readDraggedRecipient(e: React.DragEvent): { r: SelectedRecipient; from: RecipientField } | null {
+  try {
+    const raw = e.dataTransfer.getData(RECIPIENT_DRAG_MIME);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { r?: SelectedRecipient; from?: RecipientField };
+    if (!parsed.r?.email || !parsed.from) return null;
+    return { r: parsed.r, from: parsed.from };
+  } catch { return null; }
+}
+
+function RecipientTag({ r, field, onRemove }: { r: SelectedRecipient; field: RecipientField; onRemove: () => void }) {
   const invalid = !isValidEmail(r.email);
   const tag = (
-    <span className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs border ${
+    <span
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData(RECIPIENT_DRAG_MIME, JSON.stringify({ r, from: field }));
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full text-xs border cursor-grab active:cursor-grabbing ${
       invalid
         ? 'bg-red-50 text-red-600 border-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
         : 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/20'
@@ -162,12 +191,15 @@ function RecipientTag({ r, onRemove }: { r: SelectedRecipient; onRemove: () => v
 }
 
 function RecipientInput({
-  label, recipients, onAdd, onRemove,
+  label, field, recipients, onAdd, onRemove, onDropRecipient,
 }: {
   label: string;
+  field: RecipientField;
   recipients: SelectedRecipient[];
   onAdd: (r: SelectedRecipient) => void;
   onRemove: (email: string) => void;
+  /** A pill from another field was dropped here — move it to this field. */
+  onDropRecipient?: (payload: { r: SelectedRecipient; from: RecipientField }, target: RecipientField) => void;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RecipientResult[]>([]);
@@ -212,12 +244,32 @@ function RecipientInput({
     }
   }
 
+  const [recipientDragOver, setRecipientDragOver] = useState(false);
+
   return (
     <div className="relative">
-      <div className="flex items-center gap-1 flex-wrap border-b border-[var(--border)] py-2 px-1 min-h-[38px]">
+      <div
+        onDragOver={onDropRecipient ? e => {
+          if (!e.dataTransfer.types.includes(RECIPIENT_DRAG_MIME)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (!recipientDragOver) setRecipientDragOver(true);
+        } : undefined}
+        onDragLeave={onDropRecipient ? () => setRecipientDragOver(false) : undefined}
+        onDrop={onDropRecipient ? e => {
+          const payload = readDraggedRecipient(e);
+          setRecipientDragOver(false);
+          if (!payload) return;
+          e.preventDefault();
+          onDropRecipient(payload, field);
+        } : undefined}
+        className={`flex items-center gap-1 flex-wrap border-b py-2 px-1 min-h-[38px] transition-colors ${
+          recipientDragOver ? 'border-[var(--accent)] bg-[var(--accent-light)]/40 rounded-md' : 'border-[var(--border)]'
+        }`}
+      >
         <span className="text-xs font-medium text-[var(--text-muted)] w-5 shrink-0">{label}</span>
         {recipients.map(r => (
-          <RecipientTag key={r.email} r={r} onRemove={() => onRemove(r.email)} />
+          <RecipientTag key={r.email} r={r} field={field} onRemove={() => onRemove(r.email)} />
         ))}
         <input
           type="text"
@@ -385,15 +437,27 @@ export default function ComposeModal({
   defaultSubject, defaultAttachments,
   defaultDraftId, defaultBcc, defaultHtmlBody,
   signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
-  onMinimise, initialSnapshot,
+  onDiscarded, onMinimise, initialSnapshot, onRestore, onPendingSendChange,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
   const [bcc, setBcc] = useState<SelectedRecipient[]>([]);
   const [showCc, setShowCc] = useState(false);
   const [showBcc, setShowBcc] = useState(false);
+  // Drag a recipient pill between To / Cc / Bcc — remove from the source
+  // field, add to the target (deduped), revealing the target row if hidden.
+  const recipientSetters: Record<RecipientField, React.Dispatch<React.SetStateAction<SelectedRecipient[]>>> = { to: setTo, cc: setCc, bcc: setBcc };
+  function moveRecipient(payload: { r: SelectedRecipient; from: RecipientField }, target: RecipientField) {
+    if (payload.from === target) return;
+    recipientSetters[payload.from](prev => prev.filter(x => x.email !== payload.r.email));
+    recipientSetters[target](prev => prev.find(x => x.email === payload.r.email) ? prev : [...prev, payload.r]);
+    if (target === 'cc') setShowCc(true);
+    if (target === 'bcc') setShowBcc(true);
+  }
   const [subject, setSubject] = useState('');
+  const [important, setImportant] = useState(false);
   const [sending, setSending] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   // Tracks the Gmail draft id when this compose window is editing a saved
@@ -508,6 +572,11 @@ export default function ComposeModal({
 
   useEffect(() => {
     if (!open) return;
+    // Guards the async attachment fetch below: if the compose context changes
+    // (a new compose / reply / forward, or the window closes) before the fetch
+    // resolves, we must NOT write its files onto the now-different compose —
+    // otherwise the previous email's attachments leak into the new one.
+    let cancelled = false;
     // Restore from a minimised snapshot — skip the rebuild-from-context path
     if (initialSnapshot) {
       setTo(initialSnapshot.to);
@@ -529,6 +598,7 @@ export default function ComposeModal({
       setSubject(forwardOf.subject.startsWith('Fwd:') ? forwardOf.subject : `Fwd: ${forwardOf.subject}`);
       // Fetch downloadable attachments from the original message
       setAttachedFiles([]);
+      setFetchingAttachments(false);
       const downloadable = forwardOf.attachments.filter(a => a.attachmentId);
       if (downloadable.length > 0) {
         setFetchingAttachments(true);
@@ -540,6 +610,7 @@ export default function ComposeModal({
             return new File([blob], att.filename, { type: att.mimeType || 'application/octet-stream' });
           })
         ).then(results => {
+          if (cancelled) return; // a different compose has since opened — don't leak these attachments
           setAttachedFiles(
             results
               .filter((r): r is PromiseFulfilledResult<File> => r.status === 'fulfilled')
@@ -553,14 +624,22 @@ export default function ComposeModal({
       setCc(replyAllRecipients.cc);
       setShowCc(replyAllRecipients.cc.length > 0);
       if (replyTo) setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
+      // This modal stays mounted between composes (it lives at AppShell level),
+      // so attachment state from the previous compose/forward survives unless
+      // each path explicitly resets it. Replies never start with attachments.
+      setAttachedFiles([]);
+      setFetchingAttachments(false);
     } else if (replyTo) {
       setTo([{ name: replyTo.from.name, email: replyTo.from.email }]);
       setCc([]); setShowCc(false);
       setSubject(replyTo.subject.startsWith('Re:') ? replyTo.subject : `Re: ${replyTo.subject}`);
+      setAttachedFiles([]);
+      setFetchingAttachments(false);
     } else {
       setTo(defaultTo ?? []); setCc([]); setShowCc(false);
       setSubject(defaultSubject ?? '');
       setAttachedFiles(defaultAttachments ?? []);
+      setFetchingAttachments(false);
     }
     setBcc(defaultBcc ?? []); setShowBcc((defaultBcc?.length ?? 0) > 0);
     // De-dupe by client id — the thread can carry one allocation entry per
@@ -586,24 +665,60 @@ export default function ComposeModal({
           : buildInitialBody(replyTo, prefilledBody, forwardOf);
       }
     });
+    // Cancel any in-flight forward attachment fetch when the context changes/closes.
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, replyTo, replyAllRecipients, forwardOf, prefilledBody, signature, defaultDraftId, defaultBcc, defaultHtmlBody]);
 
-  async function handleSend() {
-    if (to.length === 0) return;
-    const htmlBody = readBody();
-    setSending(true);
+  // ── Undo-send: Send starts a 3s countdown, not the send itself ────────────
+  // The window minimises (snapshot retained by the provider) and a toast with
+  // a countdown donut offers Undo. Undo restores the window with everything
+  // intact; if the timer runs out, the captured snapshot is actually sent.
+  const [sendCountdown, setSendCountdown] = useState(false);
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (sendTimerRef.current) clearTimeout(sendTimerRef.current); }, []);
+
+  function handleSend() {
+    if (to.length === 0 || sending || sendCountdown) return;
+    // Cancel any pending auto-save — the draft is deleted on a successful send.
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     setError(null);
+    // Capture everything NOW — the body editor unmounts while minimised.
+    const snap: ComposeSnapshot = {
+      to, cc, bcc, showCc, showBcc, subject,
+      bodyHtml: readBody(),
+      attachedFiles, selectedClients, createTaskEnabled,
+    };
+    onMinimise?.(snap);
+    onPendingSendChange?.(true);
+    setSendCountdown(true);
+    sendTimerRef.current = setTimeout(() => {
+      setSendCountdown(false);
+      void performSend(snap);
+    }, 3000);
+  }
+
+  function undoSend() {
+    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
+    setSendCountdown(false);
+    onPendingSendChange?.(false);
+    // Bring the window back with the snapshot intact for further edits.
+    onRestore?.();
+  }
+
+  async function performSend(snap: ComposeSnapshot) {
+    setSending(true);
     try {
       const formData = new FormData();
-      formData.append('to', JSON.stringify(to.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
-      formData.append('cc', JSON.stringify(cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
-      formData.append('bcc', JSON.stringify(bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
-      formData.append('subject', subject || '(no subject)');
-      formData.append('htmlBody', htmlBody);
+      formData.append('to', JSON.stringify(snap.to.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('cc', JSON.stringify(snap.cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('bcc', JSON.stringify(snap.bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
+      formData.append('subject', snap.subject || '(no subject)');
+      formData.append('htmlBody', snap.bodyHtml);
+      if (important) formData.append('importance', 'high');
       if (replyTo?.id) formData.append('replyToMessageId', replyTo.id);
       if (replyTo?.threadId) formData.append('threadId', replyTo.threadId);
-      attachedFiles.forEach(f => formData.append('attachments', f));
+      snap.attachedFiles.forEach(f => formData.append('attachments', f));
 
       const res = await fetch('/api/email/send', { method: 'POST', body: formData });
       if (!res.ok) {
@@ -623,7 +738,7 @@ export default function ComposeModal({
       }
 
       const jobs: Promise<unknown>[] = [];
-      if (selectedClients.length > 0 && sentThreadId) {
+      if (snap.selectedClients.length > 0 && sentThreadId) {
         jobs.push(fetch('/api/email/allocate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -633,19 +748,19 @@ export default function ComposeModal({
             // sent so it lands as its own row on the client timeline,
             // even when replying on a thread that's already allocated.
             messageId: sentMessageId || undefined,
-            subject: subject || '(no subject)',
+            subject: snap.subject || '(no subject)',
             snippet: '', date: new Date().toISOString(),
             fromName: displayName, fromEmail: googleEmail,
-            clientIds: selectedClients.map(c => c.id),
+            clientIds: snap.selectedClients.map(c => c.id),
           }),
         }));
       }
       await Promise.allSettled(jobs);
 
       // Capture email data BEFORE closing (for Create Task flow)
-      const plainBody = htmlBody.replace(/<[^>]+>/g, ' ').slice(0, 3000);
-      const firstTo   = to[0] ?? { name: '', email: '' };
-      const shouldCreateTask = createTaskEnabled;
+      const plainBody = snap.bodyHtml.replace(/<[^>]+>/g, ' ').slice(0, 3000);
+      const firstTo   = snap.to[0] ?? { name: '', email: '' };
+      const shouldCreateTask = snap.createTaskEnabled;
 
       onSent?.(sentThreadId);
       // If this was a forward, notify the parent so it can mark the original thread
@@ -656,27 +771,81 @@ export default function ComposeModal({
       if (replyTo?.threadId && !forwardOf) {
         onReplySent?.(replyTo.threadId);
       }
+      onPendingSendChange?.(false);
       onClose();
 
       // Open Create Task flow after modal closes
       if (shouldCreateTask && onCreateTaskFromSent) {
         onCreateTaskFromSent({
-          subject: subject || '(no subject)',
+          subject: snap.subject || '(no subject)',
           plainBody,
           toEmail: firstTo.email,
           toName:  firstTo.name,
         });
       }
     } catch (err) {
+      // Send failed after the countdown — bring the window back with the
+      // content intact and surface the error so the user can retry.
+      onPendingSendChange?.(false);
+      onRestore?.();
       setError(err instanceof Error ? err.message : 'Failed to send email. Please try again.');
     } finally {
       setSending(false);
     }
   }
 
-  async function handleSaveDraft() {
+  // Discard the draft and close the window. Deletes the saved Gmail draft (if
+  // one exists) so it drops out of the Drafts folder; if nothing's been saved
+  // yet this just throws away the in-progress content and closes.
+  async function handleDiscardDraft() {
+    if (sending || discarding) return;
+    // Stop any pending auto-save from re-creating the draft we're deleting.
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    setDiscarding(true);
+    try {
+      if (draftId) {
+        await fetch(`/api/email/draft?draftId=${encodeURIComponent(draftId)}`, { method: 'DELETE' })
+          .catch(() => { /* non-fatal — worst case the draft lingers */ });
+        onDiscarded?.();
+      }
+    } finally {
+      setDiscarding(false);
+      onClose();
+    }
+  }
+
+  // ── Auto-save draft (Gmail-style) ──────────────────────────────────────────
+  // The window saves itself to a Gmail draft a short moment after every edit,
+  // updating the same draft each time (and creating it on the first save), so
+  // there's no manual "Save Draft" step.
+  const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaving      = useRef(false);  // a save is in flight
+  const autoSaveDirty   = useRef(false);  // an edit landed mid-save → re-save
+  const autoSaveReady   = useRef(false);  // skip the initial prefill render
+  const saveDraftNowRef = useRef<() => Promise<void>>(async () => {});
+
+  const scheduleAutoSave = useCallback(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    setDraftSaved(false);
+    autoSaveTimer.current = setTimeout(() => { void saveDraftNowRef.current(); }, 1200);
+  }, []);
+
+  // Cancel any pending save when the window unmounts.
+  useEffect(() => () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); }, []);
+
+  function composeIsEmpty() {
+    const text = readBody().replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+    return to.length === 0 && cc.length === 0 && bcc.length === 0 && subject.trim() === '' && text === '';
+  }
+
+  async function saveDraftNow() {
+    if (!open || sending) return;
+    if (composeIsEmpty()) return;             // never create a blank draft
+    // Don't run two saves at once — note the edit and re-save when the current
+    // one finishes, so the first save's new draftId is reused (no duplicates).
+    if (autoSaving.current) { autoSaveDirty.current = true; return; }
+    autoSaving.current = true;
     setSavingDraft(true);
-    setError(null);
     try {
       const htmlBody = readBody();
       const res = await fetch('/api/email/draft', {
@@ -684,8 +853,7 @@ export default function ComposeModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           // When draftId is set the server updates this existing Gmail draft
-          // instead of creating a new one — that's what keeps "Save → close
-          // → open again from Drafts" round-tripping the same draft.
+          // instead of creating a new one.
           draftId: draftId ?? undefined,
           to: to.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
           cc: cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
@@ -698,24 +866,35 @@ export default function ComposeModal({
           fromName: displayName,
         }),
       });
-      if (!res.ok) {
-        // Don't claim success on a failed save — that's how drafts silently
-        // went missing (the user saw "Saved" but nothing was created).
-        const j = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(j.error || 'Failed to save draft.');
+      if (res.ok) {
+        const j = await res.json().catch(() => ({})) as { draftId?: string };
+        if (j.draftId) setDraftId(j.draftId);
+        setDraftSaved(true);
       }
-      const j = await res.json().catch(() => ({})) as { draftId?: string };
-      // Remember the draft id for subsequent saves so we keep editing the
-      // same draft rather than spawning a fresh one each time.
-      if (j.draftId) setDraftId(j.draftId);
-      setDraftSaved(true);
-      setTimeout(() => setDraftSaved(false), 2500);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save draft.');
+      // Auto-save stays silent on failure — we don't interrupt typing with an
+      // error; the next edit retries.
+    } catch {
+      /* silent — retried on the next edit */
     } finally {
+      autoSaving.current = false;
       setSavingDraft(false);
+      if (autoSaveDirty.current) { autoSaveDirty.current = false; scheduleAutoSave(); }
     }
   }
+  // Keep the ref pointing at the freshest closure so the debounced timer always
+  // saves the latest recipients/subject (body is read live from the editor).
+  saveDraftNowRef.current = saveDraftNow;
+
+  // Reset the "skip prefill" guard whenever the window opens / re-seeds.
+  useEffect(() => { autoSaveReady.current = false; }, [open]);
+  // Auto-save when recipients or the subject change. Body edits trigger via the
+  // editor's onInput. The first run after a prefill is skipped so an untouched
+  // reply isn't saved as a draft until the user actually edits it.
+  useEffect(() => {
+    if (!open) return;
+    if (!autoSaveReady.current) { autoSaveReady.current = true; return; }
+    scheduleAutoSave();
+  }, [open, to, cc, bcc, subject, scheduleAutoSave]);
 
   async function handleRewrite() {
     const currentHtml = readBody();
@@ -856,7 +1035,31 @@ export default function ComposeModal({
     localComplete: (context) => greetingCompletion(context, recipientName),
   });
 
-  if (!open) return null;
+  // Undo-send toast — same look as the triage undo toast, with the countdown
+  // donut. Portalled to <body> so it shows while the window itself is hidden
+  // (the modal stays mounted with open=false during the countdown).
+  const sendToast = sendCountdown && typeof document !== 'undefined' ? createPortal(
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 bg-emerald-600 text-white">
+      Sending email…
+      <button
+        onClick={undoSend}
+        className="ml-1 pl-1.5 pr-2 py-0.5 rounded-md bg-white/20 hover:bg-white/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" className="-rotate-90 shrink-0">
+          <circle cx="8" cy="8" r="6.5" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
+          <circle
+            cx="8" cy="8" r="6.5" fill="none" stroke="white" strokeWidth="3"
+            strokeDasharray="40.84"
+            style={{ animation: 'smith-undo-countdown 3000ms linear forwards' }}
+          />
+        </svg>
+        Undo
+      </button>
+    </div>,
+    document.body,
+  ) : null;
+
+  if (!open) return sendToast;
 
   const toEmails = to.map(r => r.email).filter(Boolean);
   // Any malformed address in To/Cc/Bcc blocks the send — the offending tag is
@@ -867,7 +1070,7 @@ export default function ComposeModal({
     <>
       <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none">
         <div
-          className="relative w-full max-w-2xl bg-[var(--bg-card-solid)] rounded-xl shadow-2xl border border-[var(--border)] pointer-events-auto flex flex-col"
+          className="relative w-full max-w-2xl bg-white/75 backdrop-blur-xl rounded-xl shadow-2xl border border-[var(--border-card)] pointer-events-auto flex flex-col"
           style={{ maxHeight: '85vh' }}
           onDragEnter={e => {
             // Only react when the drag carries actual files — ignore the
@@ -931,35 +1134,50 @@ export default function ComposeModal({
           </div>
 
           {/* Recipients */}
-          <div className="px-4 shrink-0 bg-[var(--bg-card-solid)]">
+          <div className="px-4 shrink-0 bg-transparent">
             <RecipientInput
-              label="To" recipients={to}
+              label="To" field="to" recipients={to}
               onAdd={r => setTo(prev => [...prev, r])}
               onRemove={email => setTo(prev => prev.filter(x => x.email !== email))}
+              onDropRecipient={moveRecipient}
             />
             {showCc ? (
               <RecipientInput
-                label="Cc" recipients={cc}
+                label="Cc" field="cc" recipients={cc}
                 onAdd={r => setCc(prev => [...prev, r])}
                 onRemove={email => setCc(prev => prev.filter(x => x.email !== email))}
+                onDropRecipient={moveRecipient}
               />
             ) : null}
             {showBcc ? (
               <RecipientInput
-                label="Bcc" recipients={bcc}
+                label="Bcc" field="bcc" recipients={bcc}
                 onAdd={r => setBcc(prev => [...prev, r])}
                 onRemove={email => setBcc(prev => prev.filter(x => x.email !== email))}
+                onDropRecipient={moveRecipient}
               />
             ) : null}
             {(!showCc || !showBcc) && (
               <div className="flex gap-2 py-1.5 px-1">
+                {/* The +Cc / +Bcc links are also drop targets: dropping a pill
+                    on one reveals that row and moves the recipient into it. */}
                 {!showCc && (
-                  <button onClick={() => setShowCc(true)} className="text-xs text-[var(--accent)] hover:underline">
+                  <button
+                    onClick={() => setShowCc(true)}
+                    onDragOver={e => { if (e.dataTransfer.types.includes(RECIPIENT_DRAG_MIME)) e.preventDefault(); }}
+                    onDrop={e => { const p = readDraggedRecipient(e); if (p) { e.preventDefault(); moveRecipient(p, 'cc'); } }}
+                    className="text-xs text-[var(--accent)] hover:underline"
+                  >
                     + Cc
                   </button>
                 )}
                 {!showBcc && (
-                  <button onClick={() => setShowBcc(true)} className="text-xs text-[var(--accent)] hover:underline">
+                  <button
+                    onClick={() => setShowBcc(true)}
+                    onDragOver={e => { if (e.dataTransfer.types.includes(RECIPIENT_DRAG_MIME)) e.preventDefault(); }}
+                    onDrop={e => { const p = readDraggedRecipient(e); if (p) { e.preventDefault(); moveRecipient(p, 'bcc'); } }}
+                    className="text-xs text-[var(--accent)] hover:underline"
+                  >
                     + Bcc
                   </button>
                 )}
@@ -968,7 +1186,7 @@ export default function ComposeModal({
           </div>
 
           {/* Subject */}
-          <div className="px-4 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+          <div className="px-4 border-b border-[var(--border)] shrink-0 bg-transparent">
             <input
               type="text" value={subject} onChange={e => setSubject(e.target.value)}
               placeholder="Subject (optional)"
@@ -977,7 +1195,7 @@ export default function ComposeModal({
           </div>
 
           {/* Formatting toolbar */}
-          <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+          <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)] shrink-0 bg-transparent">
             <FmtBtn title="Bold" onActivate={() => fmt('bold')}><Bold size={13} /></FmtBtn>
             <FmtBtn title="Italic" onActivate={() => fmt('italic')}><Italic size={13} /></FmtBtn>
             <FmtBtn title="Underline" onActivate={() => fmt('underline')}><Underline size={13} /></FmtBtn>
@@ -1057,8 +1275,25 @@ export default function ComposeModal({
               )}
             </div>
 
-            {/* Smart Compose toggle — inline Tab-to-accept suggestions */}
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-1">
+              {/* Mark as important (high priority) */}
+              <Tooltip label={important ? 'High importance — flagged for the recipient (click to turn off)' : 'Mark as important'} side="top">
+                <button
+                  type="button"
+                  onClick={() => setImportant(v => !v)}
+                  aria-label="Mark as important"
+                  aria-pressed={important}
+                  className={`flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium transition-colors ${
+                    important
+                      ? 'text-red-600 bg-red-50'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)]'
+                  }`}
+                >
+                  <Flag size={12} className={important ? 'fill-current' : ''} /> Important
+                </button>
+              </Tooltip>
+
+              {/* Smart Compose toggle — inline Tab-to-accept suggestions */}
               <Tooltip label={smartComposeOn ? 'Smart suggestions on — press → (right arrow) to accept (click to turn off)' : 'Smart suggestions off (click to turn on)'} side="top">
                 <button
                   type="button"
@@ -1094,15 +1329,37 @@ export default function ComposeModal({
                 const ne = e.nativeEvent as InputEvent;
                 if (ne.isComposing) return;
                 runAutoCorrect(e.currentTarget);
+                scheduleAutoSave();
               }}
-              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1"
+              onKeyDown={e => {
+                // Tab indents instead of leaving the field. Inside a list it
+                // nests/un-nests (sub-bullets / sub-numbers); in plain text it
+                // inserts an indent. Skip if smart-compose already used Tab to
+                // accept an inline suggestion (it preventDefaults first).
+                if (e.key !== 'Tab' || e.defaultPrevented) return;
+                e.preventDefault();
+                let node = window.getSelection()?.anchorNode as Node | null;
+                let inList = false;
+                while (node && node !== bodyRef.current) {
+                  if (node.nodeName === 'LI') { inList = true; break; }
+                  node = node.parentNode;
+                }
+                if (inList) {
+                  document.execCommand(e.shiftKey ? 'outdent' : 'indent');
+                } else if (e.shiftKey) {
+                  document.execCommand('outdent');
+                } else {
+                  document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
+                }
+              }}
+              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_ul_ul]:list-[circle] [&_ol_ol]:list-[lower-alpha]"
               style={{ minHeight: 160, maxHeight: '50vh' }}
             />
           </div>
 
           {/* Attached files */}
           {(attachedFiles.length > 0 || fetchingAttachments) && (
-            <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-[var(--border)] shrink-0 bg-[var(--bg-card-solid)]">
+            <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-[var(--border)] shrink-0 bg-transparent">
               {fetchingAttachments && (
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs text-[var(--text-muted)] bg-[var(--bg-nav-hover)] border border-[var(--border)]">
                   <Loader2 size={10} className="animate-spin" /> Fetching attachments…
@@ -1265,20 +1522,31 @@ export default function ComposeModal({
               {/* Right: status + Save Draft icon + Send. ml-auto pins this group
                   to the right; on a wrapped row it sits at the right of its line. */}
               <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                {draftSaved && (
-                  <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
-                    <Check size={11} /> Saved
-                  </span>
+                {/* Discard draft — sits to the LEFT of the status text, well
+                    clear of Send to avoid misclicks. Only shown once a draft has
+                    actually been saved. Deletes it and closes the window. */}
+                {draftId && (
+                  <Tooltip label="Discard draft" side="top">
+                    <button
+                      type="button"
+                      onClick={handleDiscardDraft}
+                      disabled={sending || discarding}
+                      aria-label="Discard draft"
+                      className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50 shrink-0"
+                    >
+                      {discarding ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                    </button>
+                  </Tooltip>
                 )}
-                <Tooltip label="Save draft" side="top">
-                  <button
-                    onClick={handleSaveDraft} disabled={savingDraft || sending}
-                    aria-label="Save draft"
-                    className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/40 transition-colors disabled:opacity-50 shrink-0"
-                  >
-                    {savingDraft ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                  </button>
-                </Tooltip>
+                {/* Fixed-width, always-present slot so the saving indicator
+                    appearing/changing never reflows the footer (no jump). */}
+                <span className="text-xs text-[var(--text-muted)] inline-flex items-center justify-end gap-1 shrink-0 whitespace-nowrap min-w-[88px]">
+                  {savingDraft ? (
+                    <><Loader2 size={11} className="animate-spin" /> Saving…</>
+                  ) : draftSaved ? (
+                    <><Check size={11} className="text-emerald-600 dark:text-emerald-400" /> Draft saved</>
+                  ) : null}
+                </span>
                 <Tooltip label={hasInvalidRecipient ? 'Fix the invalid recipient (shown in red) before sending' : 'Send'} side="top">
                   <button
                     onClick={handleSend} disabled={sending || to.length === 0 || hasInvalidRecipient}

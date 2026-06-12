@@ -31,7 +31,7 @@ export async function GET() {
     // labels.list doesn't reliably return message counts — fetch them individually
     // for the labels we display counts on (INBOX unread, DRAFT total, STARRED total)
     const COUNT_LABELS = ['INBOX', 'DRAFT', 'STARRED', 'SENT', 'SPAM', 'TRASH'];
-    const detailedCounts: Record<string, { messagesUnread: number; messagesTotal: number }> = {};
+    const detailedCounts: Record<string, { messagesUnread: number; messagesTotal: number; threadsTotal: number }> = {};
     await Promise.allSettled(
       COUNT_LABELS.map(async id => {
         try {
@@ -39,6 +39,7 @@ export async function GET() {
           detailedCounts[id] = {
             messagesUnread: detail.data.messagesUnread ?? 0,
             messagesTotal:  detail.data.messagesTotal  ?? 0,
+            threadsTotal:   detail.data.threadsTotal   ?? 0,
           };
         } catch { /* ignore missing labels */ }
       })
@@ -54,6 +55,7 @@ export async function GET() {
           type: (l.type === 'user' ? 'user' : 'system') as 'system' | 'user',
           messagesUnread: detailed?.messagesUnread ?? l.messagesUnread ?? 0,
           messagesTotal:  detailed?.messagesTotal  ?? l.messagesTotal  ?? 0,
+          threadsTotal:   detailed?.threadsTotal   ?? l.threadsTotal   ?? 0,
         };
       })
       .sort((a, b) => {

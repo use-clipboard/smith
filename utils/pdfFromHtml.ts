@@ -26,22 +26,30 @@ export async function generatePdfBlob(
 
   const A4_W_MM   = 210;
   const A4_H_MM   = 297;
-  // PDF page height matches the editor preview's page-break bands (every
-  // 1123px on a 794px-wide paper, i.e. full A4 with no extra margin).
-  // The "margin" the user sees in the PDF comes from the editor paper's own
-  // 48px inner padding which is preserved in the clone.
-  const PAGE_H_PX = 1123;
   // Hard cap to prevent a runaway canvas from generating a 100MB+ PDF.
   // Legitimate performance reports are ~10-40 pages; anything beyond
   // SANITY_MAX_PAGES indicates a layout bug in the source DOM.
   const SANITY_MAX_PAGES = 100;
   const SCALE = 1.5;
+  const CONTENT_W_PX = 794;
 
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;';
 
   let captureTarget: HTMLElement;
   const livePaper = paperRef?.current ?? null;
+
+  // String-HTML reports (no live editor clone) get a clean printed margin on
+  // every page so text never runs to the paper edge. The live-editor path
+  // keeps a zero PDF margin so the page-break bands the user sees while
+  // editing line up exactly with the rendered output.
+  const MARGIN_MM  = livePaper ? 0 : 10;
+  const PRINT_W_MM = A4_W_MM - MARGIN_MM * 2;
+  const PRINT_H_MM = A4_H_MM - MARGIN_MM * 2;
+  // One printable page height in px, derived so the captured content keeps the
+  // A4 aspect ratio when mapped onto the printable area (no vertical squish).
+  // With MARGIN_MM = 0 this is the original 1123px.
+  const PAGE_H_PX  = Math.round((PRINT_H_MM * CONTENT_W_PX) / PRINT_W_MM);
 
   if (livePaper) {
     const clone = livePaper.cloneNode(true) as HTMLDivElement;
@@ -94,31 +102,41 @@ export async function generatePdfBlob(
       if (!inserted) break;
     }
 
-    // Phase 2: prevent .paper sections from spanning page boundaries
-    for (let pass = 0; pass < 30; pass++) {
-      let inserted = false;
-      void captureTarget.offsetHeight;
-      const originY = captureTarget.getBoundingClientRect().top;
+    // Phase 2: keep content off page boundaries. Push any element of the given
+    // selector that straddles a page break (and still fits on one page) onto
+    // the next page by inserting a spacer before it.
+    const avoidSplit = (selector: string, maxPasses: number) => {
+      for (let pass = 0; pass < maxPasses; pass++) {
+        let inserted = false;
+        void captureTarget.offsetHeight;
+        const originY = captureTarget.getBoundingClientRect().top;
 
-      for (const el of Array.from(captureTarget.querySelectorAll('.paper')) as HTMLElement[]) {
-        const rect     = el.getBoundingClientRect();
-        const elTop    = Math.round(rect.top  - originY);
-        const elBottom = Math.round(rect.bottom - originY);
-        const elH      = elBottom - elTop;
-        const pageStart = Math.floor(elTop    / PAGE_H_PX);
-        const pageEnd   = Math.floor((elBottom - 1) / PAGE_H_PX);
-        if (pageStart < pageEnd && elH <= PAGE_H_PX) {
-          const pageOffset = elTop % PAGE_H_PX;
-          const pushBy     = PAGE_H_PX - pageOffset;
-          const spacer     = document.createElement('div');
-          spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
-          el.parentNode!.insertBefore(spacer, el);
-          inserted = true;
-          break;
+        for (const el of Array.from(captureTarget.querySelectorAll(selector)) as HTMLElement[]) {
+          const rect     = el.getBoundingClientRect();
+          const elTop    = Math.round(rect.top  - originY);
+          const elBottom = Math.round(rect.bottom - originY);
+          const elH      = elBottom - elTop;
+          const pageStart = Math.floor(elTop    / PAGE_H_PX);
+          const pageEnd   = Math.floor((elBottom - 1) / PAGE_H_PX);
+          if (pageStart < pageEnd && elH <= PAGE_H_PX) {
+            const pushBy = PAGE_H_PX - (elTop % PAGE_H_PX);
+            const spacer = document.createElement('div');
+            spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
+            el.parentNode!.insertBefore(spacer, el);
+            inserted = true;
+            break;
+          }
         }
+        if (!inserted) break;
       }
-      if (!inserted) break;
-    }
+    };
+
+    // 2a — keep each WHOLE working paper / review point on a single page first,
+    // so a section is never split when it fits on one page.
+    avoidSplit('.paper, .review-point', 100);
+    // 2b — for papers genuinely taller than a page, at least keep their inner
+    // text blocks (paragraphs, monospace, notes, journals) from being cut.
+    avoidSplit('.wp-para, pre, .wp-notes, .journal-section', 100);
 
     const canvas = await html2canvas(captureTarget, {
       scale: SCALE,
@@ -165,7 +183,7 @@ export async function generatePdfBlob(
 
       const sliceImgData = sliceCanvas.toDataURL('image/png');
       if (i > 0) pdf.addPage();
-      pdf.addImage(sliceImgData, 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+      pdf.addImage(sliceImgData, 'PNG', MARGIN_MM, MARGIN_MM, PRINT_W_MM, PRINT_H_MM);
     }
 
     return pdf.output('blob');

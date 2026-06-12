@@ -139,12 +139,16 @@ export default function Tooltip({ label, side = 'bottom', bubbleClassName = '', 
         <div
           ref={bubbleRef}
           role="tooltip"
-          // Render off-screen for the first paint so we can measure its size,
-          // then pop into place once positioned. Avoids a flash at (0,0).
+          // Measure the bubble on the first paint while it's still hidden, then
+          // pop it into place once positioned. We park it at 0,0 (not a large
+          // negative offset) because a `position: fixed` node placed far
+          // off-screen extends the document's scrollable region and triggers a
+          // spurious horizontal scrollbar on hover. `visibility: hidden` keeps
+          // it invisible during the measure pass, so there's no flash.
           style={{
             position: 'fixed',
-            top: pos?.top ?? -9999,
-            left: pos?.left ?? -9999,
+            top: pos?.top ?? 0,
+            left: pos?.left ?? 0,
             visibility: pos ? 'visible' : 'hidden',
             pointerEvents: 'none',
             zIndex: 9999,

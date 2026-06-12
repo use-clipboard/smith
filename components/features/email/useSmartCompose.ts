@@ -30,6 +30,22 @@ interface Options {
   localComplete?: (context: string) => string;
 }
 
+/**
+ * Whether a suggestion needs a leading space so it doesn't glue onto the
+ * preceding text. True when the caret sits right after a word character or a
+ * sentence-ending mark (no space yet) and the suggestion starts with a word —
+ * e.g. "How" + "can…" → "How can…", "done." + "Next…" → "done. Next…".
+ * Stays false when the previous char is already whitespace, or the suggestion
+ * begins with punctuation that should hug the previous word (", . ' etc.).
+ */
+function needsLeadingSpace(prevChar: string, suggestion: string): boolean {
+  if (!suggestion) return false;
+  if (prevChar === '' || /\s/.test(prevChar)) return false;
+  if (/\s/.test(suggestion[0])) return false;
+  if (/[,.!?;:)'"%»]/.test(suggestion[0])) return false;
+  return true;
+}
+
 /** Plain text within `root` from its start up to a collapsed caret. */
 function precedingText(root: HTMLElement, range: Range): string {
   const r = range.cloneRange();
@@ -76,6 +92,11 @@ export function useSmartCompose(editorRef: React.RefObject<HTMLElement>, opts: O
       if (!sel || !sel.isCollapsed || sel.rangeCount === 0) return;
       const r = sel.getRangeAt(0);
       if (!el || !el.contains(r.startContainer)) return;
+      // Add a leading space when the suggestion would otherwise run straight
+      // into the preceding word or full stop.
+      if (needsLeadingSpace(precedingText(el, r).slice(-1), suggestion)) {
+        suggestion = ' ' + suggestion;
+      }
       const span = document.createElement('span');
       span.setAttribute(GHOST_ATTR, 'true');
       span.setAttribute('contenteditable', 'false');

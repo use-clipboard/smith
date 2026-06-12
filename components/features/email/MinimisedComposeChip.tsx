@@ -8,9 +8,11 @@ import { useComposeWindow } from './ComposeWindowProvider';
  * Lives at AppShell level so it persists across navigation.
  */
 export default function MinimisedComposeChip() {
-  const { mode, snapshot, ctx, restore, close } = useComposeWindow();
+  const { mode, snapshot, ctx, restore, close, pendingSend } = useComposeWindow();
 
-  if (mode !== 'minimised' || !snapshot) return null;
+  // During the undo-send countdown the window is technically minimised (so
+  // Undo can restore it), but the user sees the send toast instead of a chip.
+  if (mode !== 'minimised' || !snapshot || pendingSend) return null;
 
   const label =
     snapshot.subject.trim() ||

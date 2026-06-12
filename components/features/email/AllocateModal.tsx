@@ -22,6 +22,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   thread?: EmailThreadType | null;
+  /** Bulk mode: allocate all of these threads to the chosen client(s) at once. */
+  bulkThreads?: EmailThreadType[] | null;
   existingAllocations?: Allocation[];
   /** Called in thread mode after successful API save */
   onAllocated?: (clientIds: string[]) => void;
@@ -40,7 +42,7 @@ const STATUS_COLOURS: Record<string, string> = {
 };
 
 export default function AllocateModal({
-  open, onClose, thread, existingAllocations = [], onAllocated, onSelect, suggestEmails, preSelectedIds,
+  open, onClose, thread, bulkThreads, existingAllocations = [], onAllocated, onSelect, suggestEmails, preSelectedIds,
 }: Props) {
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [query, setQuery] = useState('');
@@ -90,12 +92,17 @@ export default function AllocateModal({
 
         // Build email set from thread messages or suggestEmails prop
         const emailsToMatch = new Set<string>();
-        if (thread) {
-          thread.messages.forEach(m => {
+        const collectFrom = (msgs: EmailThreadType['messages']) => {
+          msgs.forEach(m => {
             if (m.from.email) emailsToMatch.add(m.from.email.toLowerCase());
             m.to.forEach(a => a.email && emailsToMatch.add(a.email.toLowerCase()));
             m.cc.forEach(a => a.email && emailsToMatch.add(a.email.toLowerCase()));
           });
+        };
+        if (thread) {
+          collectFrom(thread.messages);
+        } else if (bulkThreads && bulkThreads.length) {
+          bulkThreads.forEach(th => collectFrom(th.messages));
         } else if (suggestEmails) {
           suggestEmails.forEach(e => emailsToMatch.add(e.toLowerCase()));
         }
@@ -126,7 +133,7 @@ export default function AllocateModal({
       .catch(() => {});
 
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, [open, thread, suggestEmails]);
+  }, [open, thread, bulkThreads, suggestEmails]);
 
   const alreadyAllocated = new Set(existingAllocations.map(a => a.client_id));
 
@@ -159,6 +166,38 @@ export default function AllocateModal({
         .filter((c): c is Client => !!c);
       onSelect!(selectedClients);
       onClose();
+      return;
+    }
+
+    // Bulk mode — allocate every selected thread to the chosen client(s).
+    if (bulkThreads && bulkThreads.length) {
+      setSaving(true);
+      setError(null);
+      try {
+        await Promise.all(bulkThreads.map(th => {
+          const lastMsg = th.messages[th.messages.length - 1];
+          return fetch('/api/email/allocate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              threadId: th.gmailThreadId ?? th.id,
+              messageId: lastMsg?.id,
+              subject: th.subject,
+              snippet: th.snippet,
+              date: lastMsg?.date ?? '',
+              fromName: lastMsg?.from?.name ?? '',
+              fromEmail: lastMsg?.from?.email ?? '',
+              clientIds: Array.from(selected),
+            }),
+          });
+        }));
+        onAllocated?.(Array.from(selected));
+        onClose();
+      } catch {
+        setError('Failed to allocate. Please try again.');
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -209,7 +248,10 @@ export default function AllocateModal({
             <div>
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Allocate to Client</h3>
               <p className="text-xs text-[var(--text-muted)] truncate max-w-xs">
-                {thread?.subject ?? 'Select clients to allocate this email to'}
+                {thread?.subject
+                  ?? (bulkThreads && bulkThreads.length
+                    ? `Allocate ${bulkThreads.length} email${bulkThreads.length !== 1 ? 's' : ''} to the same client(s)`
+                    : 'Select clients to allocate this email to')}
               </p>
             </div>
           </div>

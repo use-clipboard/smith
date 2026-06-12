@@ -14,9 +14,8 @@ import { useComposeWindow } from '@/components/features/email/ComposeWindowProvi
  *   - Triage inactive → falls back to a plain mailto: link that hands off
  *                       to the user's preferred email app.
  *
- * Use this anywhere we render `client.contact_email` inside MTD IT so the
- * behaviour is consistent across the dashboard row, the quarter header,
- * etc.
+ * Use this anywhere we render `client.contact_email` (MTD IT rows, the
+ * Clients list, client detail, etc.) so the behaviour is consistent.
  */
 interface Props {
   email: string;

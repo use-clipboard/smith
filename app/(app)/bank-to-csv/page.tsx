@@ -275,14 +275,14 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
   }
 
   if (appState === 'error') return (
-    <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2">
+    <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
 
   if (appState === 'scan_results') return (
-    <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2">
+    <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2" wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
@@ -295,12 +295,12 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
   );
 
   return (
-    <ToolLayout title="Bank to CSV" description="Extract transactions from bank statements and produce a clean CSV." icon={ArrowLeftRight} iconColor="#0891B2">
+    <ToolLayout title="Bank to CSV" description="Extract transactions from bank statements and produce a clean CSV." icon={ArrowLeftRight} iconColor="#0891B2" wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5 space-y-4">
+            <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-4">
               <div>
                 <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
                 <div className="flex items-center gap-2 mb-3">
@@ -369,7 +369,7 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
             initialClient={selectedClient}
             onClose={() => setSaveModalOpen(false)}
           />
-          <div className="glass-solid rounded-xl overflow-x-auto">
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-[var(--border)]">
                 <tr>{['Date', 'Description', 'Money In', 'Money Out', 'Balance'].map(h => (

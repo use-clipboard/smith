@@ -138,7 +138,7 @@ const ChangesView = forwardRef<ChangesViewHandle, ChangesViewProps>(function Cha
   return (
     <div>
       {!hideHeader && (
-        <div className="sticky top-0 z-30 bg-gray-50 pb-3">
+        <div className="sticky top-0 z-30 backdrop-blur-md pb-3">
           <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
             <input
               type="text"

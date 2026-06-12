@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
   TrendingUp, Plus, Search, Download, FolderOpen, Trash2, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, SlidersHorizontal, User as UserIcon,
@@ -115,24 +116,14 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
   const [sortKey, setSortKey] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(
-    () => new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key))
+  const [visibleCols, setVisibleCols] = usePersistedColumns(
+    COLUMN_PREF_KEY,
+    COLUMNS.map(c => c.key),
+    COLUMNS.filter(c => c.defaultVisible).map(c => c.key),
   );
-  const [colsHydrated, setColsHydrated] = useState(false);
   const [showColMenu, setShowColMenu] = useState(false);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(COLUMN_PREF_KEY);
-      if (stored) setVisibleCols(new Set(JSON.parse(stored) as string[]));
-    } catch {/* ignore */}
-    setColsHydrated(true);
-  }, []);
 
-  useEffect(() => {
-    if (!colsHydrated) return;
-    try { window.localStorage.setItem(COLUMN_PREF_KEY, JSON.stringify([...visibleCols])); } catch {/* ignore */}
-  }, [visibleCols, colsHydrated]);
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -416,7 +407,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
     <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669" wide>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 min-w-[240px]">
+        <div className="relative w-full max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           <input
             type="text"
@@ -436,7 +427,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
           <button
             onClick={() => setMineOnly(v => !v)}
             aria-label="Toggle mine only"
-            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-semibold transition-colors ${
               mineOnly ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
                        : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
             }`}
@@ -450,7 +441,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
           <button
             onClick={() => setShowFilters(v => !v)}
             aria-label="Toggle filters"
-            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-full border text-xs font-semibold transition-colors ${
               showFilters || hasActiveFilters
                 ? 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]/30'
                 : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
@@ -467,7 +458,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
             <button
               onClick={() => setShowColMenu(v => !v)}
               aria-label="Show or hide columns"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] text-xs font-medium transition-colors"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] text-xs font-semibold transition-colors"
             >
               <SlidersHorizontal size={13} />
               <span>Columns</span>
@@ -550,10 +541,10 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
         </div>
       )}
 
-      <div className="bg-white border border-[var(--border)] rounded-xl overflow-hidden">
+      <div className="bg-white/85 backdrop-blur-md border border-[var(--border)] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-[var(--border)]">
+            <thead className="bg-gray-50/80 border-b border-[var(--border)]">
               <tr>
                 <th className="px-2 py-3 w-7"></th>
                 <th className="px-3 py-3 w-9">
@@ -565,7 +556,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
                         : someVisibleSelected ? 'bg-[var(--accent-light)] border-[var(--accent)]'
                         : 'border-gray-300 hover:border-[var(--accent)] bg-white'}`}
                   >
-                    {allVisibleSelected && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                    {allVisibleSelected && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                     {someVisibleSelected && !allVisibleSelected && <div className="w-2 h-0.5 bg-[var(--accent)] rounded" />}
                   </button>
                 </th>
@@ -638,7 +629,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
                           className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-all
                             ${isSelected ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-gray-300 hover:border-[var(--accent)] bg-white'}`}
                         >
-                          {isSelected && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
+                          {isSelected && <svg className="h-2.5 w-2.5 text-[var(--text-primary)]" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="2,6 5,9 10,3" /></svg>}
                         </button>
                       </td>
                       {colVisible('date') && (
@@ -649,7 +640,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
                           {row.user ? (
                             <Tooltip label={userName}>
                               <div className="inline-flex items-center gap-2">
-                                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${avatarColour(row.user.id)}`}>
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--text-primary)] ${avatarColour(row.user.id)}`}>
                                   {initials(row.user.full_name, row.user.email)}
                                 </div>
                                 <span className="text-sm text-[var(--text-secondary)] truncate max-w-[120px]">

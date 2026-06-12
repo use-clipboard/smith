@@ -60,20 +60,26 @@ export async function GET() {
   today.setHours(0, 0, 0, 0);
   const weekOut = new Date(today);
   weekOut.setDate(weekOut.getDate() + 7);
+  const monthOut = new Date(today);
+  monthOut.setDate(monthOut.getDate() + 30);
 
   let overdue = 0;
   let dueWithin7 = 0;
+  let dueWithin30 = 0;
   for (const t of tasks) {
     if (t.status === 'complete') continue;
     if (!t.due_date) continue;
     const due = new Date(t.due_date);
-    if (due < today) overdue++;
-    else if (due <= weekOut) dueWithin7++;
+    if (due < today) { overdue++; continue; }
+    // Nested upcoming buckets: within-30 includes within-7.
+    if (due <= monthOut) dueWithin30++;
+    if (due <= weekOut) dueWithin7++;
   }
 
   return NextResponse.json({
     count: tasks.length,
     overdue,
     dueWithin7,
+    dueWithin30,
   });
 }

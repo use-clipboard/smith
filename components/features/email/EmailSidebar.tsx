@@ -32,13 +32,19 @@ interface Props {
   activeLabel: string;
   onSelectLabel: (id: string) => void;
   onLabelCreated: (label: GmailLabel) => void;
+  /** Drop an email (by thread id) onto a folder/label — star, spam, trash, or label it. */
+  onDropThread?: (threadId: string, label: GmailLabel) => void;
 }
 
-export default function EmailSidebar({ labels, activeLabel, onSelectLabel, onLabelCreated }: Props) {
+/** Folders/labels you can drop an email onto. */
+const DROP_SYSTEM = ['STARRED', 'SPAM', 'TRASH', 'INBOX'];
+
+export default function EmailSidebar({ labels, activeLabel, onSelectLabel, onLabelCreated, onDropThread }: Props) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const systemLabels = labels.filter(l => l.type === 'system' && SHOWN_SYSTEM.includes(l.id));
   const userLabels = labels.filter(l => l.type === 'user');
@@ -74,13 +80,27 @@ export default function EmailSidebar({ labels, activeLabel, onSelectLabel, onLab
       ? (label.messagesTotal ?? 0)
       : (label.messagesUnread ?? 0);
 
+    // Droppable when a drop handler is wired and this folder/label is a valid target.
+    const droppable = !!onDropThread && (DROP_SYSTEM.includes(label.id) || label.type === 'user');
+    const isDragOver = dragOverId === label.id;
+
     return (
       <button
         onClick={() => onSelectLabel(label.id)}
+        onDragOver={droppable ? e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== label.id) setDragOverId(label.id); } : undefined}
+        onDragLeave={droppable ? () => setDragOverId(prev => (prev === label.id ? null : prev)) : undefined}
+        onDrop={droppable ? e => {
+          e.preventDefault();
+          setDragOverId(null);
+          const id = e.dataTransfer.getData('application/x-smith-email') || e.dataTransfer.getData('text/plain');
+          if (id) onDropThread!(id, label);
+        } : undefined}
         className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left
-          ${isActive
-            ? 'bg-[var(--accent-light)] text-[var(--accent)] font-medium'
-            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+          ${isDragOver
+            ? 'ring-2 ring-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)] font-medium'
+            : isActive
+              ? 'bg-[var(--accent-light)] text-[var(--accent)] font-medium'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
           }`}
       >
         <Icon size={15} className="shrink-0" />

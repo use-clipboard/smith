@@ -446,7 +446,7 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
 }
 
 function Loader() {
-  return <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={18} className="animate-spin inline mr-1.5" />Loading…</div>;
+  return <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={18} className="animate-spin inline mr-1.5" />Loading…</div>;
 }
 
 // ── My Holidays ────────────────────────────────────────────────────────

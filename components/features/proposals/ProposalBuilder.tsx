@@ -383,7 +383,7 @@ export default function ProposalBuilder({ proposalId }: Props) {
   }
 
   if (loading || !proposal) {
-    return <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading proposal…</div>;
+    return <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading proposal…</div>;
   }
 
   const readonly = proposal.status === 'accepted' || proposal.status === 'declined';

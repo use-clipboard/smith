@@ -5,6 +5,8 @@ import { useComposeWindow } from './ComposeWindowProvider';
 
 /** Window-level event names other components can listen to. */
 export const EMAIL_SENT_EVENT = 'smith:email-sent';
+/** Fired when the user discards a draft from the compose window. */
+export const EMAIL_DRAFT_DISCARDED_EVENT = 'smith:email-draft-discarded';
 
 interface SentDetail {
   threadId:         string;
@@ -30,6 +32,11 @@ export default function GlobalComposeWindow() {
     rememberLocally('email-forwarded-ids', originalThreadId);
     notifySent({ threadId: originalThreadId, originalThreadId, kind: 'forward' });
   }
+  function handleDiscarded() {
+    try {
+      window.dispatchEvent(new CustomEvent(EMAIL_DRAFT_DISCARDED_EVENT));
+    } catch { /* ignore */ }
+  }
   function handleCreateTaskFromSent(data: { subject: string; plainBody: string; toEmail: string; toName: string }) {
     // The Create Task flow lives on the email page. If the user sent from
     // outside it, we fire an event the email page can pick up next mount,
@@ -45,6 +52,8 @@ export default function GlobalComposeWindow() {
       open={cw.mode === 'open'}
       onClose={() => cw.close(true)}
       onMinimise={cw.minimise}
+      onRestore={cw.restore}
+      onPendingSendChange={cw.setPendingSend}
       initialSnapshot={cw.snapshot}
       replyTo={cw.ctx?.replyTo ?? null}
       replyAllRecipients={cw.ctx?.replyAllRecipients ?? null}
@@ -66,6 +75,7 @@ export default function GlobalComposeWindow() {
       onReplySent={handleReplySent}
       onForwardSent={handleForwardSent}
       onCreateTaskFromSent={handleCreateTaskFromSent}
+      onDiscarded={handleDiscarded}
     />
   );
 }

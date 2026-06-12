@@ -102,8 +102,8 @@ function StartNode({ data, selected }: NodeProps) {
 
       {/* Header band with lucide Rocket icon */}
       <div className="bg-green-500 px-3 py-2 flex items-center gap-2">
-        <Rocket className="h-4 w-4 text-white flex-shrink-0" />
-        <span className="text-sm font-bold text-white tracking-wide truncate">{d.label || 'Start'}</span>
+        <Rocket className="h-4 w-4 text-[var(--text-primary)] flex-shrink-0" />
+        <span className="text-sm font-bold text-[var(--text-primary)] tracking-wide truncate">{d.label || 'Start'}</span>
       </div>
 
       {/* Trigger description */}
@@ -159,8 +159,8 @@ function EndNode({ data, selected }: NodeProps) {
 
       {/* Header band with lucide Flag icon */}
       <div className="bg-purple-600 px-3 py-2 flex items-center gap-2">
-        <Flag className="h-4 w-4 text-white flex-shrink-0" />
-        <span className="text-sm font-bold text-white tracking-wide truncate">{d.label || 'Complete'}</span>
+        <Flag className="h-4 w-4 text-[var(--text-primary)] flex-shrink-0" />
+        <span className="text-sm font-bold text-[var(--text-primary)] tracking-wide truncate">{d.label || 'Complete'}</span>
       </div>
 
       {/* Notification info */}

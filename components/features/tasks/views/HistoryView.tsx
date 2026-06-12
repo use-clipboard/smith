@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar, Activity, Layers } from 'lucide-react';
+import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar, Activity, Layers, Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Task, TaskStep } from '@/types';
+import { exportToCsv } from '@/utils/fileUtils';
 import ChangesView, { type ChangesViewHandle } from './ChangesView';
 
 interface HistoryTask extends Task {
@@ -108,10 +109,26 @@ export default function HistoryView() {
     total:     visibleTasks.length,
   }), [visibleTasks]);
 
+  function handleExportCsv() {
+    const rows = visibleTasks.map(t => ({
+      Task:        t.title ?? '',
+      Client:      t.client?.name ?? '',
+      'Client Ref': t.client?.client_ref ?? '',
+      Status:      t.deleted_at ? 'Deleted' : t.status === 'complete' ? 'Completed' : (t.status ?? ''),
+      'Created By': userDisplay(t.created_by_user, ''),
+      'Created At': fmtDateTime(t.created_at),
+      'Completed At': fmtDateTime(t.completed_at),
+      'Completed By': userDisplay(t.completed_by_user, ''),
+      'Deleted At': fmtDateTime(t.deleted_at),
+      'Deleted By': userDisplay(t.deleted_by_user, ''),
+    }));
+    exportToCsv(rows, `tasks-history-${filter}-${new Date().toISOString().slice(0, 10)}`);
+  }
+
   return (
     <div>
       {/* Sticky header */}
-      <div className="sticky top-0 z-30 bg-gray-50 pt-5 pb-3">
+      <div className="sticky top-0 z-30 backdrop-blur-md pt-5 pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2 pb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <input
@@ -121,7 +138,7 @@ export default function HistoryView() {
                 : 'Search task, client, or code…'}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-80"
+              className="text-sm font-medium rounded-lg px-3 py-2 w-80 bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] placeholder:font-medium outline-none transition focus:border-[var(--accent)] focus:bg-white"
             />
             {FILTERS.map(f => {
               const Icon = f.icon;
@@ -129,13 +146,13 @@ export default function HistoryView() {
                 <button
                   key={f.id}
                   onClick={() => setFilter(f.id)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border shadow-md transition-colors flex items-center gap-1.5 ${
                     filter === f.id
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-600 hover:bg-gray-50 border-gray-200'
+                      ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                      : 'bg-white text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'
                   }`}
                 >
-                  <Icon size={11} />
+                  <Icon size={11} strokeWidth={2.5} />
                   {f.label}
                   {!isAudit && f.id === 'completed' && <span className="ml-0.5 opacity-70">{counts.completed}</span>}
                   {!isAudit && f.id === 'deleted'   && <span className="ml-0.5 opacity-70">{counts.deleted}</span>}
@@ -144,9 +161,19 @@ export default function HistoryView() {
               );
             })}
           </div>
-          <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700">
-            <RefreshCw size={12} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {!isAudit && visibleTasks.length > 0 && (
+              <button
+                onClick={handleExportCsv}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)] bg-white hover:bg-[var(--bg-nav-hover)] border border-[var(--border)] shadow-md px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Download size={13} strokeWidth={2.5} /> Export CSV
+              </button>
+            )}
+            <button onClick={load} className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] py-1.5 px-2 rounded-lg hover:bg-white transition-colors">
+              <RefreshCw size={12} strokeWidth={2.5} /> Refresh
+            </button>
+          </div>
         </div>
       </div>
 
@@ -157,11 +184,11 @@ export default function HistoryView() {
           <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
         </div>
       ) : visibleTasks.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 text-sm">
+        <div className="text-center py-16 text-sm font-bold text-[var(--text-primary)]">
           {search ? 'No results match your search.' : 'No history yet.'}
         </div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
+        <div className="bg-white/[0.78] backdrop-blur-md border border-[var(--border)] shadow-md rounded-xl divide-y divide-gray-200/60">
           {visibleTasks.map(t => {
             const isOpen = expanded.has(t.id);
             const isDeleted = !!t.deleted_at;

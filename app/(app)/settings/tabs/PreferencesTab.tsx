@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { GripVertical, Star, Plus, X, Mic, Video, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
-import { useTheme } from '@/components/ui/ThemeProvider';
 import { useFavourites } from '@/components/ui/FavouritesProvider';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { FAVOURITABLE_ITEMS } from '@/config/navItems';
@@ -19,7 +18,6 @@ function PermissionBadge({ state }: { state: PermState }) {
 }
 
 export default function PreferencesTab() {
-  const { theme, setTheme } = useTheme();
   const { favourites, updateFavourites } = useFavourites();
   const { isModuleActive } = useModules();
 
@@ -154,32 +152,6 @@ export default function PreferencesTab() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-
-      {/* ── Appearance ─────────────────────────────────────────────────── */}
-      <div className="glass-solid rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Appearance</h3>
-        <p className="text-xs text-[var(--text-muted)] mb-4">
-          Choose how SMITH looks. &apos;System&apos; follows your device preference.
-        </p>
-        <div className="flex gap-3">
-          {(['light', 'dark', 'system'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTheme(t)}
-              className={`flex flex-col items-center gap-2 px-5 py-4 rounded-xl border-2 transition-all duration-150 min-w-[80px]
-                ${theme === t
-                  ? 'border-[var(--accent)] bg-[var(--accent-light)]'
-                  : 'border-[var(--border)] hover:border-[var(--accent)] bg-[var(--bg-card)]'
-                }`}
-            >
-              <div className={`w-10 h-7 rounded-md border border-[var(--border-input)] overflow-hidden
-                ${t === 'light' ? 'bg-white' : t === 'dark' ? 'bg-[#0D0D14]' : 'bg-gradient-to-r from-white to-[#0D0D14]'}`}
-              />
-              <span className="text-xs font-medium capitalize text-[var(--text-primary)]">{t}</span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* ── Device Permissions ─────────────────────────────────────────── */}
       <div className="glass-solid rounded-xl p-6">

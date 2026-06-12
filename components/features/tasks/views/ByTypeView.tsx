@@ -7,6 +7,7 @@ import TaskListRow from '../TaskListRow';
 import TaskFilters from '../TaskFilters';
 import ExportTasksButton from '../ExportTasksButton';
 import DueWindowChips from '../DueWindowChips';
+import ViewModeToggle from '../ViewModeToggle';
 import { type SortDir } from '../SortHeader';
 import TaskTable, { type TaskColumn } from '../TaskTable';
 import { type DueWindow, classifyTasks, applyDueFilter } from '../dueWindow';
@@ -115,7 +116,7 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
 
   return (
     <div>
-      <div className="sticky top-0 z-20 bg-gray-50 pb-3">
+      <div className="sticky top-0 z-20 backdrop-blur-md pb-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <TaskFilters
             search={search} onSearchChange={onSearchChange}
@@ -124,7 +125,10 @@ export default function ByTypeView({ tasks, currentUserId, search, onSearchChang
             assigneeFilter={assigneeFilter} onAssigneeChange={onAssigneeChange}
             clients={clients} teamMembers={teamMembers} onClear={onClearFilters}
           />
-          <ExportTasksButton tasks={dueFiltered} filename="tasks-by-type" />
+          <div className="flex items-center gap-2">
+            <ExportTasksButton tasks={dueFiltered} filename="tasks-by-type" />
+            <ViewModeToggle />
+          </div>
         </div>
       </div>
 

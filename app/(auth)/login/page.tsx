@@ -58,7 +58,7 @@ function LoginContent() {
 
   if (magicLinkSent) {
     return (
-      <div className="glass-solid rounded-2xl p-10 w-full max-w-sm text-center border border-[var(--border)]">
+      <div className="glass rounded-2xl p-10 w-full max-w-sm text-center">
         <div className="w-14 h-14 rounded-2xl bg-[var(--accent-light)] flex items-center justify-center mx-auto mb-5">
           <Mail size={24} className="text-[var(--accent)]" />
         </div>
@@ -79,13 +79,13 @@ function LoginContent() {
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2.5 mb-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl dark:invert" />
-          <span className="text-xl font-bold text-[var(--text-primary)] tracking-tight">SMITH</span>
+          <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl brightness-0 invert" />
+          <span className="text-xl font-bold text-white tracking-tight drop-shadow-sm">SMITH</span>
         </div>
-        <p className="text-sm text-[var(--text-muted)]">AI-powered accounting workflow tools</p>
+        <p className="text-sm text-white/80 drop-shadow-sm">AI-powered accounting workflow tools</p>
       </div>
 
-      <div className="glass-solid rounded-2xl p-8 border border-[var(--border)]">
+      <div className="glass rounded-2xl p-8">
         <h2 className="text-base font-semibold text-[var(--text-primary)] mb-6">Sign in to your account</h2>
 
         {error && (

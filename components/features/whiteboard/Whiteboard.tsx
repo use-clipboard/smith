@@ -27,6 +27,7 @@ import {
   Plus, X, Pencil, Loader2, StickyNote as StickyNoteIcon, PenTool, AlertTriangle,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import Avatar from '@/components/ui/Avatar';
 import { createClient } from '@/lib/supabase';
 
 type StickyColor = 'yellow' | 'pink' | 'blue' | 'green';
@@ -86,6 +87,10 @@ interface Props {
   currentUserId: string;
   firmId: string;
   currentUserName: string;
+  /** Admins can delete any note (not just their own). */
+  isAdmin: boolean;
+  /** Map of user_id → avatar URL, for showing the author's photo on stickies. */
+  avatarUrls: Record<string, string | null>;
 }
 
 type Mode = 'normal' | 'add_marker';
@@ -98,7 +103,7 @@ interface PendingDelete { id: string; kind: 'sticky' | 'marker'; preview: string
 // below for the 3D pinned-to-board feel.
 const BOARD_HEIGHT_PX = 360;
 
-export default function Whiteboard({ initialMessages, currentUserId, firmId, currentUserName }: Props) {
+export default function Whiteboard({ initialMessages, currentUserId, firmId, currentUserName, isAdmin, avatarUrls }: Props) {
   const [messages, setMessages] = useState<WhiteboardMessage[]>(initialMessages);
   const [mode, setMode] = useState<Mode>('normal');
   const [stickyModalOpen, setStickyModalOpen] = useState(false);
@@ -196,7 +201,8 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
     if (!board) return;
     const startNote = messages.find(m => m.id === noteId);
     if (!startNote) return;
-    if (startNote.user_id !== currentUserId) return; // only owner can drag
+    // Anyone in the firm can move notes around the board (edit/delete are gated
+    // separately). No owner check here.
 
     const rect = board.getBoundingClientRect();
     const startMouseX = ((e.clientX - rect.left) / rect.width)  * 100;
@@ -405,7 +411,7 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
           className={`relative rounded-b-xl ${cursorStyle}`}
           style={{
             height: `${BOARD_HEIGHT_PX}px`,
-            backgroundColor: '#ffffff',
+            backgroundColor: 'rgba(255, 255, 255, 0.4)',
             backgroundImage:
               'repeating-linear-gradient(45deg, transparent, transparent 28px, rgba(148,163,184,0.03) 28px, rgba(148,163,184,0.03) 29px)',
             overflow: 'visible',
@@ -417,6 +423,8 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
                 key={m.id}
                 message={m}
                 isOwn={m.user_id === currentUserId}
+                isAdmin={isAdmin}
+                avatarUrl={avatarUrls[m.user_id] ?? null}
                 onStartDrag={e => startDrag(m.id, e)}
                 onPatch={patch => patchNote(m.id, patch)}
                 onRequestDelete={() => requestDelete(m)}
@@ -427,6 +435,8 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
                 message={m}
                 mode={mode}
                 isOwn={m.user_id === currentUserId}
+                isAdmin={isAdmin}
+                avatarUrl={avatarUrls[m.user_id] ?? null}
                 onStartDrag={e => startDrag(m.id, e)}
                 onPatch={patch => patchNote(m.id, patch)}
                 onRequestDelete={() => requestDelete(m)}
@@ -479,10 +489,12 @@ export default function Whiteboard({ initialMessages, currentUserId, firmId, cur
 
 // ── Sticky note view ────────────────────────────────────────────────────────
 function StickyView({
-  message, isOwn, onStartDrag, onPatch, onRequestDelete,
+  message, isOwn, isAdmin, avatarUrl, onStartDrag, onPatch, onRequestDelete,
 }: {
   message: WhiteboardMessage;
   isOwn: boolean;
+  isAdmin: boolean;
+  avatarUrl: string | null;
   onStartDrag: (e: React.MouseEvent) => void;
   onPatch: (patch: Partial<WhiteboardMessage>) => void;
   onRequestDelete: () => void;
@@ -512,10 +524,10 @@ function StickyView({
       }}
       className="select-none"
     >
-      {/* Magnet — drag handle (owner only) */}
+      {/* Magnet — drag handle (anyone in the firm can move notes) */}
       <div
-        onMouseDown={isOwn ? onStartDrag : undefined}
-        className={`mx-auto ${isOwn ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+        onMouseDown={onStartDrag}
+        className="mx-auto cursor-grab active:cursor-grabbing"
         style={{
           width: 28, height: 13, borderRadius: 13,
           background: MAGNET_GRADIENTS[message.color as StickyColor] ?? MAGNET_GRADIENTS.yellow,
@@ -539,14 +551,16 @@ function StickyView({
           cursor: editing ? 'text' : 'default',
         }}
       >
-        {isOwn && !editing && (
+        {(isOwn || isAdmin) && !editing && (
           <div className="absolute top-1.5 right-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Tooltip label="Edit note">
-              <button onClick={() => setEditing(true)} aria-label="Edit note" className="rounded-full hover:bg-black/10 p-0.5">
-                <Pencil size={10} style={{ color: '#9ca3af' }} />
-              </button>
-            </Tooltip>
-            <Tooltip label="Remove note">
+            {isOwn && (
+              <Tooltip label="Edit note">
+                <button onClick={() => setEditing(true)} aria-label="Edit note" className="rounded-full hover:bg-black/10 p-0.5">
+                  <Pencil size={10} style={{ color: '#9ca3af' }} />
+                </button>
+              </Tooltip>
+            )}
+            <Tooltip label={isOwn ? 'Remove note' : 'Remove note (admin)'}>
               <button onClick={onRequestDelete} aria-label="Remove note" className="rounded-full hover:bg-black/10 p-0.5">
                 <X size={11} style={{ color: '#9ca3af' }} />
               </button>
@@ -596,11 +610,17 @@ function StickyView({
                 color: '#6b7280',
                 lineHeight: 1.4,
               }}
+              className="flex items-end justify-between gap-2"
             >
-              <p style={{ fontWeight: 600 }} className="truncate">{message.author_name || '—'}</p>
-              {message.created_at && (
-                <p style={{ fontSize: '0.7rem', opacity: 0.8 }} className="truncate">{formatUkDate(message.created_at)}</p>
-              )}
+              <div className="min-w-0">
+                <p style={{ fontWeight: 600 }} className="truncate">{message.author_name || '—'}</p>
+                {message.created_at && (
+                  <p style={{ fontSize: '0.7rem', opacity: 0.8 }} className="truncate">{formatUkDate(message.created_at)}</p>
+                )}
+              </div>
+              <div className="shrink-0">
+                <Avatar name={message.author_name} avatarUrl={avatarUrl} size={22} />
+              </div>
             </div>
           </>
         )}
@@ -611,11 +631,13 @@ function StickyView({
 
 // ── Marker view — handwritten free text ─────────────────────────────────────
 function MarkerView({
-  message, mode, isOwn, onStartDrag, onPatch, onRequestDelete,
+  message, mode, isOwn, isAdmin, avatarUrl, onStartDrag, onPatch, onRequestDelete,
 }: {
   message: WhiteboardMessage;
   mode: Mode;
   isOwn: boolean;
+  isAdmin: boolean;
+  avatarUrl: string | null;
   onStartDrag: (e: React.MouseEvent) => void;
   onPatch: (patch: Partial<WhiteboardMessage>) => void;
   onRequestDelete: () => void;
@@ -637,8 +659,7 @@ function MarkerView({
       onMouseDown={e => {
         if (editing) return;
         if (mode !== 'normal') return;
-        if (!isOwn) return;
-        onStartDrag(e);
+        onStartDrag(e); // anyone in the firm can move notes
       }}
       style={{
         position: 'absolute',
@@ -646,7 +667,7 @@ function MarkerView({
         top:  `${message.pos_y}%`,
         transform: 'translate(-50%, -50%)',
         zIndex: editing ? 30 : 4,
-        cursor: editing ? 'text' : (isOwn && mode === 'normal') ? 'grab' : 'default',
+        cursor: editing ? 'text' : mode === 'normal' ? 'grab' : 'default',
         maxWidth: 280,
       }}
       className="group select-none"
@@ -677,12 +698,14 @@ function MarkerView({
         />
       ) : (
         <>
-          {isOwn && mode === 'normal' && (
+          {(isOwn || isAdmin) && mode === 'normal' && (
             <div className="absolute -top-3.5 right-0 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/80 rounded px-0.5">
-              <button onMouseDown={e => e.stopPropagation()} onClick={() => setEditing(true)} aria-label="Edit marker" className="p-0.5 rounded hover:bg-black/10">
-                <Pencil size={10} className="text-slate-500" />
-              </button>
-              <button onMouseDown={e => e.stopPropagation()} onClick={onRequestDelete} aria-label="Delete marker" className="p-0.5 rounded hover:bg-black/10">
+              {isOwn && (
+                <button onMouseDown={e => e.stopPropagation()} onClick={() => setEditing(true)} aria-label="Edit marker" className="p-0.5 rounded hover:bg-black/10">
+                  <Pencil size={10} className="text-slate-500" />
+                </button>
+              )}
+              <button onMouseDown={e => e.stopPropagation()} onClick={onRequestDelete} aria-label={isOwn ? 'Delete marker' : 'Delete marker (admin)'} className="p-0.5 rounded hover:bg-black/10">
                 <X size={11} className="text-slate-500" />
               </button>
             </div>
@@ -702,6 +725,29 @@ function MarkerView({
           >
             {message.content || <span style={{ opacity: 0.4, fontStyle: 'italic' }}>(empty)</span>}
           </p>
+          {/* Footer — line + author name + date + profile pic, like the stickies */}
+          <div
+            style={{
+              borderTop: '1px solid rgba(0,0,0,0.12)',
+              marginTop: 4,
+              paddingTop: 3,
+              fontFamily: 'var(--font-caveat)',
+              fontSize: '0.78rem',
+              color: '#6b7280',
+              lineHeight: 1.3,
+            }}
+            className="flex items-end justify-between gap-2"
+          >
+            <div className="min-w-0">
+              <p style={{ fontWeight: 600 }} className="truncate">{message.author_name || '—'}</p>
+              {message.created_at && (
+                <p style={{ fontSize: '0.68rem', opacity: 0.8 }} className="truncate">{formatUkDate(message.created_at)}</p>
+              )}
+            </div>
+            <div className="shrink-0">
+              <Avatar name={message.author_name} avatarUrl={avatarUrl} size={20} />
+            </div>
+          </div>
         </>
       )}
     </div>

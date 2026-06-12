@@ -162,7 +162,7 @@ function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading proposals…</div>
+        <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading proposals…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-[var(--border)]">
           <FileSignature size={28} className="text-gray-300 mx-auto mb-2" />
@@ -406,7 +406,7 @@ function AnalyticsSection() {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading analytics…</div>;
+    return <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading analytics…</div>;
   }
   if (!data || data.counts.total === 0) {
     return (
@@ -555,7 +555,7 @@ function ProspectsSection() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading…</div>
+        <div className="text-center py-12 text-sm text-[#5b21b6]"><Loader2 size={16} className="animate-spin inline mr-1.5" />Loading…</div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-xl border border-[var(--border)]">
           <UsersIcon size={28} className="text-gray-300 mx-auto mb-2" />

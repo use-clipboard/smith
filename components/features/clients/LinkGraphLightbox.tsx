@@ -409,7 +409,7 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
       onClick={onClose}
     >
       <div
-        className="relative bg-[var(--bg-page)] rounded-2xl shadow-2xl w-full max-w-7xl h-[88vh] flex flex-col overflow-hidden border border-[var(--border)]"
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[88vh] flex flex-col overflow-hidden border border-[var(--border)]"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border)] gap-4">
@@ -440,7 +440,7 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
           </div>
         </div>
 
-        <div className="flex-1 relative bg-[var(--bg-page)]">
+        <div className="flex-1 relative bg-white">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-[var(--text-muted)]">Loading connections…</div>
           )}
@@ -471,7 +471,7 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
         </div>
 
         {/* Legend */}
-        <div className="px-6 py-3 border-t border-[var(--border)] bg-[var(--bg-card)] flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+        <div className="px-6 py-3 border-t border-[var(--border)] bg-white flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
           <span className="font-semibold text-[var(--text-muted)] uppercase tracking-wide">Entities:</span>
           {Object.entries(ENTITY_STYLE).map(([key, s]) => (
             <span key={key} className="flex items-center gap-1.5 text-[var(--text-secondary)]">

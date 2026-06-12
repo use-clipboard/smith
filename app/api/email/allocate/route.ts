@@ -135,8 +135,44 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Create timeline entry
     const noteDate = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+    // Failsafe: never duplicate the same email on the same timeline. The
+    // allocation-row dedupe above can miss when two users allocate via
+    // different scopes (thread-level vs per-message) or race each other — so
+    // also check the timeline itself for an email note with the same thread,
+    // subject and timestamp before inserting.
+    const { data: dupCandidates } = await supabase
+      .from('client_timeline_notes')
+      .select('id, content')
+      .eq('firm_id', ctx.firmId)
+      .eq('client_id', clientId)
+      .eq('note_type', 'email')
+      .eq('note_date', noteDate)
+      .eq('title', subject || '(no subject)');
+    const duplicate = (dupCandidates ?? []).find(c => {
+      try {
+        const j = JSON.parse(c.content as string) as { __smith_email__?: boolean; threadId?: string; date?: string };
+        return j.__smith_email__ === true && j.threadId === threadId && (j.date ?? '') === (date ?? '');
+      } catch { return false; }
+    });
+    if (duplicate) {
+      // Record the allocation against the EXISTING note so unallocate still
+      // cleans it up; ignore a unique-violation if a rival request won.
+      await supabase.from('email_allocations').insert({
+        firm_id: ctx.firmId,
+        user_id: ctx.userId,
+        thread_id: threadId,
+        message_id: messageId ?? null,
+        client_id: clientId,
+        timeline_entry_id: duplicate.id,
+        subject,
+      });
+      results.push({ clientId, timelineEntryId: duplicate.id as string });
+      continue;
+    }
+
+    // Create timeline entry
     const contentObj = {
       __smith_email__: true,
       threadId,

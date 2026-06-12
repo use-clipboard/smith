@@ -1,0 +1,6 @@
+[user]: this is the screen for the schedule a meeting within the client page. Can you include all the new changes we have made to this as well? allow to send google meet, repeat, all day, allow the meeting to be hidden, and also allow the user to select whether they want the invite to be sent to the client
+
+[assistant]: Now I have everything. I'll fully rewrite both the modal and the route:
+
+[assistant]: You've hit your limit · resets 2:30am (Europe/London)
+

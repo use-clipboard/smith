@@ -42,11 +42,15 @@ interface Props {
   taxYear: number;
   /** Default quarter type when a client has no preference set */
   fallbackType?: MtdItQuarterType;
+  /** When true, render just the donut grid + legend (no collapsible card
+   *  chrome / header) so it can be embedded inside another panel — e.g. the
+   *  dashboard MTD widget. */
+  embedded?: boolean;
 }
 
 interface Selection { quarter: 1 | 2 | 3 | 4; bucket: Bucket; }
 
-export default function MtdItQuarterStats({ clients, taxYear, fallbackType = 'calendar' }: Props) {
+export default function MtdItQuarterStats({ clients, taxYear, fallbackType = 'calendar', embedded = false }: Props) {
   // Persist collapsed state. SSR + first paint must match, so we read from
   // localStorage in an effect-free getter — false on the server, then hydrated.
   const [collapsed, setCollapsed] = useState(false);
@@ -102,8 +106,61 @@ export default function MtdItQuarterStats({ clients, taxYear, fallbackType = 'ca
     });
   }, [clients, selection]);
 
+  // The donut grid + shared legend — rendered both inside the collapsible card
+  // (standalone) and bare (embedded in another panel, e.g. the dashboard).
+  const gridAndLegend = total === 0 ? (
+    <p className="text-xs text-gray-500 py-6 text-center">
+      No clients to summarise.
+    </p>
+  ) : (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {ranges.map(r => (
+          <Donut
+            key={r.quarter}
+            quarter={r.quarter}
+            monthsLabel={r.monthsLabel}
+            counts={tallies[r.quarter]}
+            total={total}
+            onSelect={(bucket) => setSelection({ quarter: r.quarter, bucket })}
+          />
+        ))}
+      </div>
+      {/* Shared legend */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600">
+        {BUCKET_ORDER.map(b => (
+          <span key={b} className="inline-flex items-center gap-1.5">
+            <span className={`inline-block w-2.5 h-2.5 rounded-sm ${BUCKET_STYLE[b].chip}`} />
+            {BUCKET_STYLE[b].label}
+          </span>
+        ))}
+      </div>
+    </>
+  );
+
+  const modal = selection && (
+    <ClientListModal
+      quarter={selection.quarter}
+      bucket={selection.bucket}
+      monthsLabel={ranges.find(r => r.quarter === selection.quarter)?.monthsLabel ?? ''}
+      clients={selectedClients}
+      taxYear={taxYear}
+      onClose={() => setSelection(null)}
+    />
+  );
+
+  // Embedded: just the donuts + legend (+ drill-down modal), no card chrome.
+  if (embedded) {
+    return (
+      <>
+        {gridAndLegend}
+        {modal}
+      </>
+    );
+  }
+
   return (
-    <div className="mb-4 bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="mb-4 bg-white/85 backdrop-blur-md border border-gray-200 rounded-xl overflow-hidden">
       <button
         type="button"
         onClick={toggle}
@@ -125,48 +182,11 @@ export default function MtdItQuarterStats({ clients, taxYear, fallbackType = 'ca
 
       {!collapsed && (
         <div className="px-4 pb-4 pt-1 border-t border-gray-100">
-          {total === 0 ? (
-            <p className="text-xs text-gray-500 py-6 text-center">
-              No clients to summarise.
-            </p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {ranges.map(r => (
-                  <Donut
-                    key={r.quarter}
-                    quarter={r.quarter}
-                    monthsLabel={r.monthsLabel}
-                    counts={tallies[r.quarter]}
-                    total={total}
-                    onSelect={(bucket) => setSelection({ quarter: r.quarter, bucket })}
-                  />
-                ))}
-              </div>
-              {/* Shared legend */}
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-gray-600">
-                {BUCKET_ORDER.map(b => (
-                  <span key={b} className="inline-flex items-center gap-1.5">
-                    <span className={`inline-block w-2.5 h-2.5 rounded-sm ${BUCKET_STYLE[b].chip}`} />
-                    {BUCKET_STYLE[b].label}
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
+          {gridAndLegend}
         </div>
       )}
 
-      {selection && (
-        <ClientListModal
-          quarter={selection.quarter}
-          bucket={selection.bucket}
-          monthsLabel={ranges.find(r => r.quarter === selection.quarter)?.monthsLabel ?? ''}
-          clients={selectedClients}
-          taxYear={taxYear}
-          onClose={() => setSelection(null)}
-        />
-      )}
+      {modal}
     </div>
   );
 }

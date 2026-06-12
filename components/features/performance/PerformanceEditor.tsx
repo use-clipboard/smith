@@ -205,7 +205,7 @@ function SectionsBar({ sections, onToggle, onMove }: {
 }) {
   const sorted = [...sections].sort((a, b) => a.order - b.order);
   return (
-    <div className="flex items-center gap-1.5 px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-page)] overflow-x-auto scrollbar-thin">
+    <div className="flex items-center gap-1.5 px-3 py-2 border-t border-[var(--border)] bg-white/[0.78] backdrop-blur-md overflow-x-auto scrollbar-thin">
       <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest shrink-0 mr-1">Sections</span>
       {sorted.map((section, idx) => (
         <div key={section.id}
@@ -265,7 +265,7 @@ function CoverBar({ firmLogoUrl, options, onChange, onFirmLogoUpload }: {
   };
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-page)] overflow-x-auto scrollbar-thin">
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--border)] bg-white/[0.78] backdrop-blur-md overflow-x-auto scrollbar-thin">
 
       {/* Include toggle */}
       <Toggle checked={options.showCover} onChange={v => update({ showCover: v })} label="Cover page" />
@@ -411,7 +411,7 @@ function ThemeBar({ options, onChange }: {
 }) {
   const activeTheme = COVER_THEMES.find(t => t.gradient === options.gradient);
   return (
-    <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--border)] bg-[var(--bg-page)] overflow-x-auto scrollbar-thin">
+    <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--border)] bg-white/[0.78] backdrop-blur-md overflow-x-auto scrollbar-thin">
       <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-widest shrink-0">Theme</span>
       <div className="flex items-center gap-2 shrink-0">
         {COVER_THEMES.map(theme => (
@@ -447,7 +447,7 @@ function TableBar({ editor }: { editor: ReturnType<typeof useEditor> }) {
     </Tooltip>
   );
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--border)] bg-[var(--accent-light)] overflow-x-auto scrollbar-thin">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-[var(--border)] bg-white/[0.78] backdrop-blur-md overflow-x-auto scrollbar-thin">
       <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-widest shrink-0 mr-1">Table</span>
 
       {/* Rows */}
@@ -612,7 +612,7 @@ export default function PerformanceEditor({
       <div className="sticky top-0 z-20 rounded-t-xl border-b border-[var(--border)]">
 
         {/* Row 1 — main formatting tools */}
-        <div className="flex items-center gap-0.5 flex-wrap px-3 py-2 bg-[var(--bg-page)] rounded-t-xl">
+        <div className="flex items-center gap-0.5 flex-wrap px-3 py-2 bg-white/[0.78] backdrop-blur-md rounded-t-xl">
 
           <ToolBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo (Ctrl+Z)"><Undo2 size={14} /></ToolBtn>
           <ToolBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo (Ctrl+Y)"><Redo2 size={14} /></ToolBtn>
@@ -723,7 +723,7 @@ export default function PerformanceEditor({
         {/* A4 paper at 794px. Page-break bands are absolutely positioned inside
             the paper at every 1123px so they clip automatically when there's no
             content — the paper div's overflow:clip handles this for free. */}
-        <div ref={paperRef} className="mx-auto my-8 shadow-xl"
+        <div ref={paperRef} className="mx-auto mb-8 shadow-xl"
           style={{
             maxWidth: 794,
             padding: '48px',

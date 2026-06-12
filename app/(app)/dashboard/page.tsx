@@ -13,14 +13,14 @@ export default async function DashboardPage() {
     .from('clients')
     .select('id, name, client_ref')
     .order('created_at', { ascending: false })
-    .limit(3);
+    .limit(15);
 
   // Fetch recent AI outputs — include client_ref for display
   const { data: recentOutputs } = await supabase
     .from('outputs')
     .select('id, feature, created_at, clients(name, client_ref)')
     .order('created_at', { ascending: false })
-    .limit(3);
+    .limit(15);
 
   // Fetch user profile
   const { data: profile } = await supabase
@@ -36,7 +36,7 @@ export default async function DashboardPage() {
   const { data: teamMembersRaw } = firmId
     ? await service
         .from('users')
-        .select('id, full_name, email, role')
+        .select('id, full_name, email, role, avatar_url')
         .eq('firm_id', firmId)
         .order('full_name')
     : { data: [] };

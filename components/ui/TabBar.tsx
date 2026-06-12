@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, LayoutDashboard, Plus } from 'lucide-react';
 import { useTabContext } from './TabContext';
 import { TOOL_ROUTES } from './TabPanels';
@@ -14,16 +14,66 @@ export default function TabBar() {
   const { resetIfDone, getActivity } = useTabActivityContext();
   const router = useRouter();
 
-  // Drag-to-rearrange state. `dragIndex` is the tab being dragged; `overIndex`
-  // is the slot it's hovering, used to draw an insertion indicator.
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
+  // Pointer-based tab reorder (Chrome-style): click and drag to move a tab,
+  // with live reordering — no HTML5 drag, so no inconsistent move-cursor.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ id: string; startX: number; dragging: boolean } | null>(null);
+  const suppressClickRef = useRef(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  function handleDrop(targetIndex: number) {
-    if (dragIndex !== null && dragIndex !== targetIndex) reorderTab(dragIndex, targetIndex);
-    setDragIndex(null);
-    setOverIndex(null);
+  // Latest tabs/reorder behind refs so the global listeners stay stable.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const reorderRef = useRef(reorderTab);
+  reorderRef.current = reorderTab;
+
+  const onPointerMove = useCallback((e: MouseEvent) => {
+    const st = dragRef.current;
+    if (!st) return;
+    if (!st.dragging) {
+      if (Math.abs(e.clientX - st.startX) < 5) return; // movement threshold → not a click
+      st.dragging = true;
+      setDraggingId(st.id);
+      document.body.style.cursor = 'grabbing';
+    }
+    const strip = stripRef.current;
+    if (!strip) return;
+    const els = Array.from(strip.querySelectorAll('[data-tab-id]')) as HTMLElement[];
+    if (els.length === 0) return;
+    const mids = els.map(el => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; });
+    let newIdx = mids.filter(m => m < e.clientX).length;
+    newIdx = Math.max(0, Math.min(els.length - 1, newIdx));
+    const curIdx = tabsRef.current.findIndex(t => t.id === st.id);
+    if (curIdx >= 0 && newIdx !== curIdx) reorderRef.current(curIdx, newIdx);
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    document.body.style.cursor = '';
+    const wasDragging = dragRef.current?.dragging ?? false;
+    dragRef.current = null;
+    setDraggingId(null);
+    // Swallow the click that fires right after a drag so it doesn't re-activate.
+    if (wasDragging) {
+      suppressClickRef.current = true;
+      setTimeout(() => { suppressClickRef.current = false; }, 0);
+    }
+  }, [onPointerMove]);
+
+  function onTabPointerDown(e: React.MouseEvent, id: string) {
+    if (e.button !== 0) return; // left button only
+    dragRef.current = { id, startX: e.clientX, dragging: false };
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
   }
+
+  // Safety cleanup if the component unmounts mid-drag.
+  useEffect(() => () => {
+    window.removeEventListener('mousemove', onPointerMove);
+    window.removeEventListener('mouseup', onPointerUp);
+    document.body.style.cursor = '';
+  }, [onPointerMove, onPointerUp]);
 
   // Keyboard reordering — Ctrl/Cmd+Shift+←/→ moves the active tool tab one slot.
   // Dashboard (activeTabId === null) can't be moved. Ignored while typing.
@@ -80,7 +130,7 @@ export default function TabBar() {
   }
 
   return (
-    <div className="app-tab-bar flex items-end gap-0.5 px-4 border-b border-[var(--border)] bg-[var(--bg-topbar)] overflow-x-auto scrollbar-thin shrink-0">
+    <div ref={stripRef} className="app-tab-bar flex items-end gap-0.5 px-4 border-b border-[var(--border)] bg-[var(--bg-topbar)] overflow-x-auto scrollbar-thin shrink-0">
       {/* Dashboard tab — always first, permanent (non-draggable), uses Next.js
           Link. Given a persistent faint fill + a right divider so it reads as a
           fixed "home" anchor, distinct from the rearrangeable tool tabs. */}
@@ -98,30 +148,25 @@ export default function TabBar() {
       </Link>
 
       {/* Tool tabs — draggable to rearrange */}
-      {tabs.map((tab, index) => {
+      {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTabId === tab.id;
-        const isDragging = dragIndex === index;
-        const isDropTarget = overIndex === index && dragIndex !== null && dragIndex !== index;
+        const isDragging = draggingId === tab.id;
         return (
           <div
             key={tab.id}
-            draggable
-            onDragStart={e => { setDragIndex(index); e.dataTransfer.effectAllowed = 'move'; }}
-            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (overIndex !== index) setOverIndex(index); }}
-            onDrop={e => { e.preventDefault(); handleDrop(index); }}
-            onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
-            className={`group relative flex items-center gap-1.5 px-3 h-9 text-xs font-medium border-b-2 transition-all duration-150 shrink-0 max-w-[160px] cursor-grab active:cursor-grabbing select-none
+            data-tab-id={tab.id}
+            onMouseDown={e => onTabPointerDown(e, tab.id)}
+            className={`group relative flex items-center gap-1.5 px-3 h-9 text-xs font-medium border-b-2 transition-colors duration-150 shrink-0 max-w-[160px] select-none
               ${isActive
                 ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-light)]'
                 : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'
               }
-              ${isDragging ? 'opacity-40' : ''}
-              ${isDropTarget ? 'before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded before:bg-[var(--accent)]' : ''}`}
+              ${isDragging ? 'opacity-50' : ''}`}
           >
             {/* Tab label — button instead of Link so Next.js doesn't remount the page */}
             <button
-              onClick={() => handleTabClick(tab.id, tab.route)}
+              onClick={() => { if (suppressClickRef.current) return; handleTabClick(tab.id, tab.route); }}
               className="flex items-center gap-1.5 min-w-0 flex-1"
             >
               <Icon size={13} className="shrink-0" />
@@ -130,6 +175,7 @@ export default function TabBar() {
             <Tooltip label="Close tab" className="shrink-0">
               <button
                 onClick={e => handleCloseTab(e, tab.id)}
+                onMouseDown={e => e.stopPropagation()}
                 aria-label="Close tab"
                 className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-[var(--danger)] ml-0.5 p-0.5 rounded"
               >

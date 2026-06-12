@@ -5,6 +5,10 @@ import Tooltip from './Tooltip';
 
 interface FileUploadProps {
   title: string;
+  /** Optional small icon shown before the title (e.g. a document-type glyph). */
+  icon?: React.ReactNode;
+  /** Show a required-field asterisk after the title. */
+  required?: boolean;
   onFilesChange?: (files: File[]) => void;
   onFileChange?: (file: File | null) => void;
   multiple?: boolean;
@@ -15,7 +19,7 @@ interface FileUploadProps {
 }
 
 export default function FileUpload({
-  title, onFilesChange, onFileChange, multiple = false, accept, optional = false, helpText, existingFiles = []
+  title, icon, required = false, onFilesChange, onFileChange, multiple = false, accept, optional = false, helpText, existingFiles = []
 }: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -50,9 +54,16 @@ export default function FileUpload({
   }
 
   return (
-    <div className="glass-solid rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h4>
+    <div className={`backdrop-blur-md rounded-xl p-4 transition-colors ${
+      hasFiles
+        ? 'bg-[var(--accent-light)]/70 ring-1 ring-[var(--accent)]/40'
+        : 'bg-white/[0.78]'
+    }`}>
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {icon && <span className={`shrink-0 ${hasFiles ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{icon}</span>}
+          <h4 className="text-sm font-semibold text-[var(--text-primary)] truncate">{title}{required && <span className="text-red-500 ml-0.5">*</span>}</h4>
+        </div>
         {optional && (
           <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] bg-[var(--bg-nav-hover)] px-2 py-0.5 rounded-full">
             Optional
@@ -60,7 +71,7 @@ export default function FileUpload({
         )}
       </div>
       <div
-        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all duration-150
+        className={`relative border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-all duration-150
           ${hasFiles
             ? 'border-[var(--accent)] bg-[var(--accent-light)]'
             : 'border-[var(--border-input)] hover:border-[var(--accent)] hover:bg-[var(--bg-nav-hover)]'
@@ -106,9 +117,9 @@ export default function FileUpload({
           </div>
         ) : (
           <div>
-            <div className="flex justify-center mb-3">
-              <div className="w-12 h-12 rounded-xl bg-[var(--bg-nav-hover)] flex items-center justify-center">
-                <UploadCloud size={22} className="text-[var(--text-muted)]" />
+            <div className="flex justify-center mb-1.5">
+              <div className="w-8 h-8 rounded-lg bg-[var(--bg-nav-hover)] flex items-center justify-center">
+                <UploadCloud size={16} className="text-[var(--text-muted)]" />
               </div>
             </div>
             <p className="text-sm text-[var(--text-secondary)]">

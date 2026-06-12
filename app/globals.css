@@ -2,85 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Design Tokens ─────────────────────────────────────────────────────── */
+/* ─── Design Tokens ─────────────────────────────────────────────────────────
+ * SMITH runs in a single light theme over a fixed colour-gradient backdrop
+ * (public/app-background.png). Panels are translucent "glass" so the gradient
+ * shows through. Dark mode was removed — may return as a gradient variant later.
+ * ────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Backgrounds */
-  --bg-page: #F4F6FA;
-  --bg-sidebar: rgba(255, 255, 255, 0.88);
-  --bg-card: rgba(255, 255, 255, 0.72);
+  /* Backgrounds — translucency is intentional so the gradient reads through. */
+  --bg-page: transparent;
+  --bg-sidebar: rgba(255, 255, 255, 0.62);
+  --bg-card: rgba(255, 255, 255, 0.58);
   --bg-card-solid: #ffffff;
-  --bg-input: #ffffff;
-  --bg-nav-hover: rgba(79, 70, 229, 0.07);
+  --bg-input: rgba(255, 255, 255, 0.85);
+  --bg-nav-hover: rgba(79, 70, 229, 0.08);
   --bg-nav-active: #4F46E5;
-  --bg-topbar: rgba(255, 255, 255, 0.88);
+  --bg-topbar: rgba(255, 255, 255, 0.55);
 
-  /* Borders */
-  --border: rgba(0, 0, 0, 0.07);
-  --border-input: rgba(0, 0, 0, 0.12);
-  --border-card: rgba(255, 255, 255, 0.6);
+  /* Borders — light, low-contrast so glass edges stay soft over the gradient. */
+  --border: rgba(255, 255, 255, 0.5);
+  --border-input: rgba(15, 15, 26, 0.12);
+  --border-card: rgba(255, 255, 255, 0.7);
 
   /* Accents */
   --accent: #4F46E5;
   --accent-hover: #4338CA;
-  --accent-light: #EEF2FF;
+  --accent-light: rgba(79, 70, 229, 0.1);
 
   /* Text */
   --text-primary: #0F0F1A;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
+  --text-secondary: #4B5563;
+  --text-muted: #6B7280;
   --text-nav-active: #ffffff;
-  --text-nav-inactive: #6B7280;
+  --text-nav-inactive: #4B5563;
 
-  /* Shadows */
-  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.06);
-  --shadow-sidebar: 2px 0 24px rgba(0, 0, 0, 0.05);
-  --shadow-dropdown: 0 8px 32px rgba(0, 0, 0, 0.12);
+  /* Shadows — slightly deeper to lift glass off the saturated backdrop. */
+  --shadow-card: 0 8px 32px rgba(31, 38, 88, 0.1);
+  --shadow-sidebar: 2px 0 32px rgba(31, 38, 88, 0.08);
+  --shadow-dropdown: 0 12px 40px rgba(31, 38, 88, 0.18);
 
   /* Status */
   --success: #10B981;
   --warning: #F59E0B;
   --danger: #EF4444;
   --info: #3B82F6;
-}
-
-.dark {
-  /* Backgrounds */
-  --bg-page: #0D0D14;
-  --bg-sidebar: rgba(255, 255, 255, 0.04);
-  --bg-card: rgba(255, 255, 255, 0.05);
-  --bg-card-solid: #13131E;
-  --bg-input: rgba(255, 255, 255, 0.06);
-  --bg-nav-hover: rgba(99, 102, 241, 0.12);
-  --bg-nav-active: #6366F1;
-  --bg-topbar: rgba(13, 13, 20, 0.88);
-
-  /* Borders */
-  --border: rgba(255, 255, 255, 0.07);
-  --border-input: rgba(255, 255, 255, 0.1);
-  --border-card: rgba(255, 255, 255, 0.08);
-
-  /* Accents */
-  --accent: #6366F1;
-  --accent-hover: #818CF8;
-  --accent-light: rgba(99, 102, 241, 0.15);
-
-  /* Text */
-  --text-primary: #F1F1F5;
-  --text-secondary: #9CA3AF;
-  --text-muted: #6B7280;
-  --text-nav-active: #ffffff;
-  --text-nav-inactive: #9CA3AF;
-
-  /* Shadows */
-  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
-  --shadow-sidebar: 2px 0 24px rgba(0, 0, 0, 0.25);
-  --shadow-dropdown: 0 8px 32px rgba(0, 0, 0, 0.4);
-
-  /* Status */
-  --success: #34D399;
-  --warning: #FBBF24;
-  --danger: #F87171;
-  --info: #60A5FA;
 }
 
 /* ─── Chat Nudge Animation ───────────────────────────────────────────────── */
@@ -99,6 +63,14 @@
   animation: nudge 0.85s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 
+/* ─── Undo Countdown Donut ───────────────────────────────────────────────────
+   Empties a ring (r=6.5 → circumference ≈ 40.84) clockwise over the undo
+   window. Duration is set inline per toast so it always matches the timer. */
+@keyframes smith-undo-countdown {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: 40.84; }
+}
+
 /* ─── Base Styles ────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;
@@ -111,18 +83,37 @@ html {
 
 body {
   color: var(--text-primary);
-  background: var(--bg-page);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Fixed gradient image backdrop — shows through the translucent glass UI.
+     Soft white wash (the 0.15 alpha layer) lifts it a touch; raise/lower to
+     taste. The solid fallback colour matches the image's mid-tone for the brief
+     moment before it paints. */
+  background-color: #c2c9e9;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.15)),
+    url('/app-background.png');
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-attachment: scroll, scroll;
+  font-family: var(--font-jakarta), 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.6;
 }
 
+/* Display serif for large headings (dashboard greeting, page titles). */
+.font-display {
+  font-family: var(--font-fraunces), Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.01em;
+}
+
 /* ─── Glass Morphism Utility ─────────────────────────────────────────────── */
 @layer utilities {
+  /* Keep blur radii modest — backdrop-filter is GPU-expensive and these panels
+     stack (sidebar + header + tab bar + every card), so large radii cause jank. */
   .glass {
     background: var(--bg-card);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border: 1px solid var(--border-card);
     box-shadow: var(--shadow-card);
   }
@@ -135,8 +126,8 @@ body {
 
   .glass-sidebar {
     background: var(--bg-sidebar);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     border-right: 1px solid var(--border);
     box-shadow: var(--shadow-sidebar);
   }
@@ -153,20 +144,30 @@ body {
   }
 
   /* ─── Scrollbar ─── */
+  /* Visible-but-subtle grey thumb. Firefox previously used --border (translucent
+     white) which was invisible on the light panels — use a real grey instead. */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
+    scrollbar-color: rgba(15, 23, 42, 0.30) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 8px;
+    height: 8px;
   }
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: var(--border-input);
-    border-radius: 2px;
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 4px;
+    /* Inset look: padding via a transparent border keeps the thumb off the edge. */
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 23, 42, 0.45);
+    background-clip: padding-box;
+    border: 2px solid transparent;
   }
 }
 
@@ -468,6 +469,42 @@ body {
   top: 0;
   background: white;
   z-index: 5;
+}
+
+/* ─── Sidebar rail + Tools flyout ────────────────────────────────────────────
+   Both the rail and the Tools flyout are the same dark, translucent glass panel
+   with white text + icons over the colour gradient. Applied to every
+   `.glass-sidebar` (the <aside> and the flyout <div>) so they look identical.
+   Overriding the text CSS variables flips every var(--text-*) reference inside
+   to white without touching each class in Sidebar.tsx. */
+.glass-sidebar {
+  background: linear-gradient(180deg, rgba(46, 48, 98, 0.28), rgba(46, 48, 98, 0.40));
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.82);
+  --text-muted: rgba(255, 255, 255, 0.78);
+  --text-nav-inactive: rgba(255, 255, 255, 0.92);
+  --bg-nav-hover: rgba(255, 255, 255, 0.16);
+  --border: rgba(255, 255, 255, 0.18);
+  /* Selected item: white pill with dark text/icon (inverted) so it stands out
+     against the dark glass instead of the blue accent. */
+  --bg-nav-active: #ffffff;
+  --text-nav-active: #2e3062;
+}
+
+/* ─── Top bar ─────────────────────────────────────────────────────────────────
+   Matches the sidebar's dark glass, but slightly LESS transparent (higher alpha)
+   so the header reads as a touch more solid. White text + icons via scoped vars. */
+header.glass-topbar {
+  /* White header strip sitting above the soft-gradient content area. */
+  background: #ffffff;
+  --border: rgba(15, 23, 42, 0.10);
+}
+
+/* Tab strip — continues the white header zone, dark text via the root vars
+   (subtle indigo accent for the active tab). */
+.app-tab-bar {
+  background: #ffffff !important;
+  --border: rgba(15, 23, 42, 0.10);
 }
 
 /* ─── Focus mode ───────────────────────────────────────────────────────────

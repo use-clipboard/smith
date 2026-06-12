@@ -563,7 +563,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     );
   }
   if (appState === 'scan_results') return (
-    <ToolLayout title="Full Transaction Analysis" icon={FileSearch}>
+    <ToolLayout title="Full Transaction Analysis" icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
@@ -575,7 +575,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     </ToolLayout>
   );
   if (appState === 'error') return (
-    <ToolLayout title="Full Transaction Analysis" icon={FileSearch}>
+    <ToolLayout title="Full Transaction Analysis" icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || 'Unknown error'} code={errorCode} onRetry={() => { setAppState('idle'); setErrorCode(undefined); }} />
     </ToolLayout>
@@ -677,61 +677,60 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   };
 
   return (
-    <ToolLayout title="Full Transaction Analysis" description="Analyse invoices and receipts and produce bookkeeping entries for VT, Capium, Xero, QuickBooks, FreeAgent, or Sage." icon={FileSearch}>
+    <ToolLayout title="Full Transaction Analysis" description="Analyse invoices and receipts and produce bookkeeping entries for VT, Capium, Xero, QuickBooks, FreeAgent, or Sage." icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
-          <div className="glass-solid rounded-xl p-5">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-[var(--text-secondary)]">Client</span>
-              <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
+          {/* Client Details — full width, with Link to client in the header (matches Accounts Review) */}
+          <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">1. Client Details</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">Link to client record</span>
+                <ClientSelector value={selectedClient} onSelect={setSelectedClient} align="right" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client Name" className="input-base" />
+              <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value)} placeholder="Client Address" className="input-base" />
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-[var(--text-secondary)]">VAT Registered?</span>
+                <button type="button" onClick={() => setIsVatRegistered(!isVatRegistered)}
+                  className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range <span className="normal-case font-normal">(optional)</span></p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
+                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
+                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
+                </div>
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">1. Client Details</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client Name" className="input-base" />
-                <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value)} placeholder="Client Address" className="input-base" />
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-[var(--text-secondary)]">VAT Registered?</span>
-                  <button type="button" onClick={() => setIsVatRegistered(!isVatRegistered)}
-                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-[var(--border)]">
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range <span className="normal-case font-normal">(optional)</span></p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
-              </div>
-            </div>
-
-            <div className="glass-solid rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">2. Target Software</h3>
-              <div className="flex flex-wrap gap-2">
-                {([
-                  { id: 'vt', label: 'VT Transaction+' }, { id: 'capium', label: 'Capium Bookkeeping' },
-                  { id: 'xero', label: 'Xero' }, { id: 'quickbooks', label: 'QuickBooks' },
-                  { id: 'freeagent', label: 'FreeAgent' }, { id: 'sage', label: 'Sage 50' }, { id: 'general', label: 'General' },
-                ] as { id: TargetSoftware; label: string }[]).map(({ id, label }) => (
-                  <button key={id} onClick={() => setTargetSoftware(id)}
-                    className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${targetSoftware === id ? 'bg-[var(--accent)] text-white shadow-accent-glow' : 'bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)]'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+          {/* Target Software — full width */}
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">2. Target Software</h3>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { id: 'vt', label: 'VT Transaction+' }, { id: 'capium', label: 'Capium Bookkeeping' },
+                { id: 'xero', label: 'Xero' }, { id: 'quickbooks', label: 'QuickBooks' },
+                { id: 'freeagent', label: 'FreeAgent' }, { id: 'sage', label: 'Sage 50' }, { id: 'general', label: 'General' },
+              ] as { id: TargetSoftware; label: string }[]).map(({ id, label }) => (
+                <button key={id} onClick={() => setTargetSoftware(id)}
+                  className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${targetSoftware === id ? 'bg-[var(--accent)] text-white shadow-accent-glow' : 'bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)]'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -809,7 +808,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
           {currentView === 'valid' && (
             <div className="space-y-2">
               <BulkBarValid />
-              <div className="glass-solid rounded-xl overflow-x-auto">
+              <div className="bg-white/[0.78] backdrop-blur-md rounded-xl overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="border-b border-[var(--border)]">
                     <tr>
@@ -956,7 +955,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
 
               {/* Out-of-range section */}
               {hasDateRange && outRangeWithIndices.length > 0 && (
-                <div className="glass-solid rounded-xl overflow-hidden">
+                <div className="bg-white/[0.78] backdrop-blur-md rounded-xl overflow-hidden">
                   <button
                     onClick={() => setShowOutOfRange(v => !v)}
                     className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors"
@@ -1008,10 +1007,10 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
             <div className="space-y-2">
               <BulkBarFlagged />
               {flaggedEntries.length === 0 && (
-                <div className="glass-solid rounded-xl p-10 text-center text-sm text-[var(--text-muted)]">No flagged entries.</div>
+                <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-10 text-center text-sm text-[var(--text-muted)]">No flagged entries.</div>
               )}
               {flaggedEntries.length > 0 && (
-                <div className="glass-solid rounded-xl overflow-hidden">
+                <div className="bg-white/[0.78] backdrop-blur-md rounded-xl overflow-hidden">
                   {/* Select-all header row */}
                   <div className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--bg-nav-hover)]">
                     <input type="checkbox" checked={allFlaggedSelected}

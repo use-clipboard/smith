@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useRef, useEffect } from 'react';
 import { Plus, RefreshCw, Trash2, Pencil, Download, Loader2, Sparkles, PenLine, X, Copy, AlertCircle, Link2 } from 'lucide-react';
@@ -133,7 +133,7 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
           placeholder="Search templates…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-3 py-2 w-60 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="text-sm font-medium rounded-lg px-3 py-2 w-60 bg-white border border-[var(--border)] shadow-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] placeholder:font-medium outline-none transition focus:border-[var(--accent)] focus:bg-white"
         />
         {isAdmin && (
           <button
@@ -147,25 +147,25 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
 
       {/* Firm templates */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Your Firm's Templates ({filteredFirm.length})</h3>
+        <h3 className="text-sm font-bold text-[var(--text-primary)] mb-3">Your Firm&apos;s Templates ({filteredFirm.length})</h3>
         {filteredFirm.length === 0 ? (
-          <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
-            <p className="text-sm text-gray-400 mb-3">No custom templates yet.</p>
-            <p className="text-xs text-gray-400">Import a built-in template below or create one from scratch.</p>
+          <div className="border-2 border-dashed border-[var(--border)] rounded-xl p-8 text-center">
+            <p className="text-sm font-semibold text-[var(--text-primary)] mb-3">No custom templates yet.</p>
+            <p className="text-xs text-[var(--text-secondary)]">Import a built-in template below or create one from scratch.</p>
           </div>
         ) : (
           <div className="space-y-5">
             {firmGroups.map(([cat, items]) => (
               <div key={cat}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider drop-shadow-sm">
                     {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
                   </span>
-                  <div className="flex-1 h-px bg-gray-100" />
+                  <div className="flex-1 h-px bg-white/20" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {items.map(t => (
-                    <div key={t.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors">
+                    <div key={t.id} className="bg-white/[0.78] backdrop-blur-md border border-[var(--border)] shadow-sm rounded-lg p-4 hover:border-indigo-300 transition-colors">
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="font-semibold text-sm text-gray-900">{t.name}</h4>
                         {isAdmin && (
@@ -228,20 +228,20 @@ export default function TemplateLibrary({ firmTemplates, onCreateFromDefault, on
 
       {/* SMITH built-in templates */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-1">SMITH Built-in Templates</h3>
-        <p className="text-xs text-gray-400 mb-4">Import any of these into your firm's library to customise them.</p>
+        <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">SMITH Built-in Templates</h3>
+        <p className="text-xs font-medium text-[var(--text-secondary)] mb-4">Import any of these into your firm&apos;s library to customise them.</p>
         <div className="space-y-5">
           {defaultGroups.map(([cat, items]) => (
             <div key={cat}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider drop-shadow-sm">
                   {TEMPLATE_CATEGORY_LABELS[cat] ?? cat}
                 </span>
-                <div className="flex-1 h-px bg-gray-100" />
+                <div className="flex-1 h-px bg-white/20" />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {items.map(t => (
-                  <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div key={t.id} className="bg-white/[0.6] backdrop-blur-md border border-[var(--border)] shadow-sm rounded-lg p-4">
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-sm text-gray-800">{t.name}</h4>
                       {isAdmin && (
