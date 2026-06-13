@@ -9,6 +9,7 @@ import AskSmithBubble from './AskSmithBubble';
 import Tooltip from './Tooltip';
 import OnboardingModal from './OnboardingModal';
 import EmailToastNotifier from './EmailToastNotifier';
+import NotificationToastNotifier from './NotificationToastNotifier';
 import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
 import StickyNotesProvider from './StickyNotes/StickyNotesProvider';
@@ -21,6 +22,9 @@ import MinimisedComposeChip from '@/components/features/email/MinimisedComposeCh
 import TabProvider, { useTabContext } from './TabContext';
 import { TabActivityProvider } from './TabActivityContext';
 import { ModulesProvider } from './ModulesProvider';
+import EmailCountProvider from './EmailCountProvider';
+import TasksCountProvider from './TasksCountProvider';
+import NotificationsProvider from './NotificationsProvider';
 import { FavouritesProvider } from './FavouritesProvider';
 import { DashboardLayoutProvider } from './DashboardLayoutProvider';
 import { ChatProvider, useChatContext } from '@/components/chat/ChatProvider';
@@ -196,6 +200,9 @@ export default function AppShell({
 
   return (
     <ModulesProvider activeModules={activeModules}>
+      <EmailCountProvider>
+      <TasksCountProvider>
+      <NotificationsProvider userId={userId}>
       <FavouritesProvider initialFavourites={initialFavourites}>
       <DashboardLayoutProvider initialLayout={initialDashboardLayout}>
       <ChatProvider userId={userId} firmId={firmId}>
@@ -219,6 +226,7 @@ export default function AppShell({
                 <ConversationWindows />
                 <UnreadMessageChips />
                 <EmailToastNotifier />
+                <NotificationToastNotifier />
                 <StickyNotesLayer />
                 <GlobalComposeWindow />
                 <MinimisedComposeChip />
@@ -234,6 +242,9 @@ export default function AppShell({
       </ChatProvider>
       </DashboardLayoutProvider>
       </FavouritesProvider>
+      </NotificationsProvider>
+      </TasksCountProvider>
+      </EmailCountProvider>
     </ModulesProvider>
   );
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { getRefreshedGmailClient } from '@/lib/gmail';
+import { syncInboxCache, getUntriagedCount } from '@/lib/emailInboxCache';
 
 export async function GET() {
   const ctx = await getUserContext();
@@ -29,40 +30,17 @@ export async function GET() {
     // under-counts when a sender piles many unread messages into one thread.
     const count = label.data.messagesUnread ?? label.data.threadsUnread ?? 0;
 
-    // Untriaged = EXACT count of inbox EMAILS the caller hasn't categorised.
-    // Triage is per user, per email: we enumerate the inbox's message ids and
-    // check them against this user's triage rows. No row = untriaged for them.
-    // This number drives the Untriaged card and the sidebar badge, and makes
-    // "every new email arrives untriaged" hold by construction — a new email
-    // has no row until its owner triages it.
+    // Untriaged = inbox EMAILS the caller hasn't categorised. Rather than
+    // re-listing the whole inbox from Gmail every call, we keep a server-side
+    // cache of inbox message ids fresh (incrementally, via the Gmail history
+    // API) and compute the count from the DB: cache minus this user's
+    // non-"untriaged" triage rows. Triage stays live, so re-categorising any
+    // email — however old — is reflected on the next read.
     let untriaged = 0;
     try {
-      const inboxIds: string[] = [];
-      let pageToken: string | undefined;
-      for (let page = 0; page < 25; page++) { // 25 × 500 = up to 12,500 emails
-        const res = await gmail.users.messages.list({
-          userId: 'me', labelIds: ['INBOX'], maxResults: 500, pageToken,
-        });
-        for (const m of res.data.messages ?? []) if (m.id) inboxIds.push(m.id);
-        pageToken = res.data.nextPageToken ?? undefined;
-        if (!pageToken) break;
-      }
-
-      const svc = createServiceClient();
-      const categorised = new Set<string>();
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
-        const { data } = await svc
-          .from('email_message_triage')
-          .select('message_id')
-          .eq('user_id', ctx.userId)
-          .neq('category', 'untriaged')
-          .range(from, from + PAGE - 1);
-        for (const r of data ?? []) categorised.add(r.message_id as string);
-        if (!data || data.length < PAGE) break;
-      }
-      untriaged = inboxIds.filter(id => !categorised.has(id)).length;
-    } catch { /* table missing pre-migration — badge just hides */ }
+      await syncInboxCache(ctx.userId, connection.refresh_token);
+      untriaged = await getUntriagedCount(ctx.userId);
+    } catch { /* cache missing pre-migration / sync hiccup — badge just hides */ }
 
     return NextResponse.json({ count, untriaged });
   } catch {

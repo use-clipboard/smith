@@ -29,6 +29,7 @@ import TaskClientStatusPolicyProvider from './TaskClientStatusPolicyProvider';
 import TaskTypeSelector from './TaskTypeSelector';
 import QuickTaskModal from './QuickTaskModal';
 import Tooltip from '@/components/ui/Tooltip';
+import { useTaskCountsOrZero } from '@/components/ui/TasksCountProvider';
 import type {
   Task, TaskStatus, TaskStep, TaskTemplate, DefaultTemplate,
 } from '@/types';
@@ -434,11 +435,10 @@ export default function TasksPage() {
     await refreshTemplates();
   }
 
-  // Task counts per status for badges
-  const myTaskCount = tasks.filter(t =>
-    t.status !== 'complete' && t.status !== 'draft' &&
-    t.steps?.some(s => s.assignee_id === currentUserId && s.status !== 'complete' && s.status !== 'skipped')
-  ).length;
+  // "My Tasks" badge mirrors the main sidebar Tasks badge exactly — both read
+  // the shared TasksCountProvider (one source of truth, pushed in real time), so
+  // they always show the same number and change together.
+  const myTaskCount = useTaskCountsOrZero().count;
 
   const draftTasks = tasks.filter(t => t.status === 'draft');
   const draftCount = draftTasks.length;

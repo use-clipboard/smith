@@ -22,6 +22,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { useEmailCount } from '@/components/ui/EmailCountProvider';
+import { useTasksCount } from '@/components/ui/TasksCountProvider';
+import { useNotifications } from '@/components/ui/NotificationsProvider';
 import { useTabContext } from '@/components/ui/TabContext';
 import { Donut } from '@/components/features/dashboard/widgets/shared';
 import { useDashboardData } from '@/components/features/dashboard/DashboardDataProvider';
@@ -38,20 +41,30 @@ export default function DashboardHero() {
   const { isModuleActive } = useModules();
   const { openTab } = useTabContext();
   const data = useDashboardData();
+  const { untriaged } = useEmailCount();
+  const { counts: taskCounts } = useTasksCount();
+  const { unreadCount: notifications } = useNotifications();
 
   const hasEmail = isModuleActive('email-triage');
   const hasTasks = isModuleActive('tasks');
   const hasHr = isModuleActive('hr');
 
   const loading = !data || data.loading;
-  const emails   = hasEmail ? (data?.emails ?? 0) : null;
-  const overdue  = hasTasks ? (data?.tasks?.overdue ?? 0) : null;
-  const dueWeek  = hasTasks ? (data?.tasks?.dueWithin7 ?? 0) : null;
+  // "Emails to triage" = the shared uncategorised-inbox count from
+  // EmailCountProvider (same number as the sidebar badge), NOT Gmail's unread
+  // count. Kept null while the (slow) untriaged enumeration is still in flight
+  // so the tile shows a loading state rather than flashing a misleading 0.
+  const emails   = hasEmail ? untriaged : null;
+  // Task counts come from the shared TasksCountProvider (same source as the
+  // sidebar badge + Tasks widget). null while loading → tiles show a pulse.
+  const overdue  = hasTasks ? (taskCounts?.overdue ?? null) : null;
+  const dueWeek  = hasTasks ? (taskCounts?.dueWithin7 ?? null) : null;
   const toApprove = hasHr ? (data?.hr?.holidaysToApprove ?? 0) : null;
   const briefings = hasHr ? (data?.hr?.briefingsToRead ?? 0) : null;
   const calConnected = !!data?.calendar?.connected;
   const eventsToday = data?.calendar?.events?.length ?? 0;
-  const notifications = data?.notifications ?? 0;
+  // Notifications come from the realtime NotificationsProvider (same source as
+  // the header bell) so the tile updates the instant one arrives.
 
   const open = (id: string, title: string, route: string, icon: LucideIcon) =>
     openTab({ id, title, route, icon });
@@ -120,7 +133,11 @@ export default function DashboardHero() {
                           <Icon size={12} style={{ color: m.color }} />
                           <ArrowUpRight size={11} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
-                        <p className="text-lg font-bold leading-none" style={{ color: m.color }}>{m.value ?? 0}</p>
+                        {m.value === null ? (
+                          <span className="inline-block w-5 h-5 rounded bg-current/15 animate-pulse" style={{ color: m.color }} />
+                        ) : (
+                          <p className="text-lg font-bold leading-none" style={{ color: m.color }}>{m.value}</p>
+                        )}
                         <p className="text-[10px] text-[var(--text-muted)] mt-0.5 leading-tight">{m.label}</p>
                       </button>
                     );

@@ -1587,8 +1587,39 @@ export default function EmailTriagePage() {
     setShowQuickTask(false);
   }
 
+  // ── Instant local count updates ────────────────────────────────────────────
+  // Optimistically nudge the local counters so the Untriaged panel and the Inbox
+  // unread badge react immediately to an action, rather than waiting for the
+  // next server poll to re-anchor them. (handleMarkAllUnreadRead already does
+  // this for the unread badge; these cover the delete + mark-read paths.)
+  function adjustInboxUnread(delta: number) {
+    if (!delta) return;
+    setLabels(prev => prev.map(l => l.id === 'INBOX'
+      ? { ...l, messagesUnread: Math.max(0, (l.messagesUnread ?? 0) + delta) }
+      : l));
+  }
+  function adjustUntriagedBase(delta: number) {
+    if (!delta) return;
+    setUntriagedServer(prev => prev ? { ...prev, base: Math.max(0, prev.base + delta) } : prev);
+  }
+  // An inbox email left the inbox (deleted / archived / moved): drop it from the
+  // unread badge (if unread) and the untriaged count (if untriaged). Guarded to
+  // inbox emails so acting in another folder doesn't skew the inbox counters.
+  function onInboxEmailRemoved(t: EmailThreadType | undefined) {
+    if (!t || !t.labelIds.includes('INBOX')) return;
+    if (!t.isRead) adjustInboxUnread(-1);
+    if (isUntriaged(t)) adjustUntriagedBase(-1);
+  }
+  // An inbox email's read state flipped: nudge the unread badge accordingly.
+  function onReadStateChanged(t: EmailThreadType | undefined, nowRead: boolean) {
+    if (!t || !t.labelIds.includes('INBOX')) return;
+    if (nowRead && !t.isRead) adjustInboxUnread(-1);
+    else if (!nowRead && t.isRead) adjustInboxUnread(1);
+  }
+
   function handleDelete() {
     if (!activeThread) return;
+    onInboxEmailRemoved(activeThread);
     markPendingTrash([activeThread.id]);
     setThreads(prev => prev.filter(t => t.id !== activeThread.id));
     setActiveThread(null);
@@ -1597,6 +1628,7 @@ export default function EmailTriagePage() {
 
   function handleArchive() {
     if (!activeThread) return;
+    onInboxEmailRemoved(activeThread);
     setThreads(prev => prev.filter(t => t.id !== activeThread.id));
     setActiveThread(null);
     setThreadDetail(null);
@@ -1644,6 +1676,7 @@ export default function EmailTriagePage() {
     // requires the real thread ID. Resolve via gmailThreadId.
     const t = threads.find(x => x.id === threadId);
     const gmailId = t?.gmailThreadId ?? threadId;
+    onInboxEmailRemoved(t);
     markPendingTrash([threadId]);
     setThreads(prev => prev.filter(x => x.id !== threadId));
     if (activeThread?.id === threadId) {
@@ -1678,6 +1711,7 @@ export default function EmailTriagePage() {
       return;
     }
     if (label.id === 'SPAM') {
+      onInboxEmailRemoved(t);
       markPendingTrash([threadId]);
       removeFromList();
       fetch('/api/email/modify', {
@@ -1796,6 +1830,7 @@ export default function EmailTriagePage() {
 
   function handleBulkDelete(ids: string[]) {
     markPendingTrash(ids);
+    ids.forEach(id => onInboxEmailRemoved(threads.find(t => t.id === id)));
     const gmailIds = ids.map(id => threads.find(t => t.id === id)?.gmailThreadId ?? id);
     setThreads(prev => prev.filter(t => !ids.includes(t.id)));
     if (activeThread && ids.includes(activeThread.id)) {
@@ -1817,6 +1852,7 @@ export default function EmailTriagePage() {
     // when running in non-threaded view (where threadId is a message ID).
     const t = threads.find(x => x.id === threadId);
     const gmailId = t?.gmailThreadId ?? threadId;
+    onReadStateChanged(t, markAsRead);
     markPendingReadState([threadId], markAsRead);
     setThreads(prev => prev.map(x =>
       x.id === threadId
@@ -1836,6 +1872,7 @@ export default function EmailTriagePage() {
 
   function handleBulkMarkRead(ids: string[]) {
     markPendingReadState(ids, true);
+    ids.forEach(id => onReadStateChanged(threads.find(t => t.id === id), true));
     const gmailIds = ids.map(id => threads.find(t => t.id === id)?.gmailThreadId ?? id);
     setThreads(prev => prev.map(t =>
       ids.includes(t.id)
@@ -1854,6 +1891,7 @@ export default function EmailTriagePage() {
 
   function handleMove() {
     if (!activeThread) return;
+    onInboxEmailRemoved(activeThread);
     setThreads(prev => prev.filter(t => t.id !== activeThread.id));
     setActiveThread(null);
     setThreadDetail(null);
@@ -1906,6 +1944,7 @@ export default function EmailTriagePage() {
 
   function handleMarkUnread() {
     if (!activeThread) return;
+    onReadStateChanged(activeThread, false);
     setThreads(prev => prev.map(t => t.id === activeThread.id
       ? { ...t, isRead: false, labelIds: [...t.labelIds.filter(l => l !== 'UNREAD'), 'UNREAD'] }
       : t

@@ -3,10 +3,14 @@
 /**
  * DashboardDataProvider — fetches the dashboard's shared data ONCE and hands it
  * to the hero + widgets, instead of every widget firing its own request on
- * mount. Replaces ~6 calls with 3:
- *   • /api/dashboard/summary   — tasks, needsAttention, deadlines (one DB call)
- *   • /api/email/unread        — unread count (external, email module only)
+ * mount:
+ *   • /api/dashboard/summary   — needsAttention, deadlines, notifications (one DB call)
  *   • /api/calendar/reminders  — today's events (external, calendar module only)
+ *   • /api/hr/badge-counts     — holiday approvals + briefings (HR module only)
+ *
+ * Email + task counts are NOT fetched here — they're owned app-wide by
+ * EmailCountProvider / TasksCountProvider (one fetch each, shared with the
+ * sidebar badges), read via useEmailCount() / useTasksCount().
  *
  * Widgets read via useDashboardData(). The hook returns `null` when no provider
  * is mounted, so widgets can keep a self-fetch fallback for standalone use.
@@ -15,7 +19,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useModules } from '@/components/ui/ModulesProvider';
 
-export interface TaskCounts { overdue: number; dueWithin7: number; dueWithin30: number; }
 export interface NeedsAttentionClient {
   clientId: string; name: string; clientRef: string | null;
   status: 'overdue' | 'due-soon'; reason: string;
@@ -27,13 +30,10 @@ export interface HrCounts { holidaysToApprove: number; briefingsToRead: number; 
 
 export interface DashboardData {
   loading: boolean;
-  tasks: TaskCounts | null;
   needsAttention: NeedsAttentionClient[] | null;
   deadlines: DeadlineItem[] | null;
-  emails: number | null;          // null = module off / not loaded
   calendar: { connected: boolean; events: CalEvent[] } | null;
   hr: HrCounts | null;            // null = HR module off
-  notifications: number | null;   // unread header notifications
 }
 
 const Ctx = createContext<DashboardData | null>(null);
@@ -45,44 +45,49 @@ export function useDashboardData(): DashboardData | null {
 
 export default function DashboardDataProvider({ children }: { children: React.ReactNode }) {
   const { isModuleActive } = useModules();
-  const hasEmail = isModuleActive('email-triage');
   const hasCal = isModuleActive('google-calendar');
   const hasHr = isModuleActive('hr');
 
   const [data, setData] = useState<DashboardData>({
-    loading: true, tasks: null, needsAttention: null, deadlines: null, emails: null, calendar: null, hr: null, notifications: null,
+    loading: true, needsAttention: null, deadlines: null, calendar: null, hr: null,
   });
 
   useEffect(() => {
     let active = true;
-    async function load() {
-      const [summary, emails, calendar, hr] = await Promise.all([
-        fetch('/api/dashboard/summary').then(r => r.ok ? r.json() : null).catch(() => null),
-        hasEmail
-          ? fetch('/api/email/unread').then(r => r.ok ? r.json() : null).catch(() => null)
-          : Promise.resolve(null),
-        hasCal
-          ? fetch('/api/calendar/reminders').then(r => r.ok ? r.json() : null).catch(() => null)
-          : Promise.resolve(null),
-        hasHr
-          ? fetch('/api/hr/badge-counts').then(r => r.ok ? r.json() : null).catch(() => null)
-          : Promise.resolve(null),
-      ]);
-      if (!active) return;
-      setData({
-        loading: false,
-        tasks: summary?.tasks ?? { overdue: 0, dueWithin7: 0, dueWithin30: 0 },
-        needsAttention: summary?.needsAttention ?? [],
-        deadlines: summary?.deadlines ?? [],
-        emails: hasEmail ? (emails?.count ?? 0) : null,
-        calendar: hasCal ? { connected: calendar?.connected ?? false, events: calendar?.events ?? [] } : null,
-        hr: hasHr ? { holidaysToApprove: hr?.pendingApprovals ?? 0, briefingsToRead: hr?.newBriefings ?? 0 } : null,
-        notifications: summary?.notifications ?? 0,
+
+    // Fire each source independently and merge as it lands, rather than awaiting
+    // them together — otherwise the slow external calls (Gmail, Google Calendar)
+    // hold the whole briefing on a skeleton even though the internal DB summary
+    // is ready in a fraction of the time.
+
+    // ── Internal DB summary — fast; unblocks the briefing on its own. ─────────
+    fetch('/api/dashboard/summary')
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(summary => {
+        if (!active) return;
+        setData(prev => ({
+          ...prev,
+          loading: false,
+          needsAttention: summary?.needsAttention ?? [],
+          deadlines: summary?.deadlines ?? [],
+        }));
       });
+
+    // ── External integrations — slower; fill in independently. ───────────────
+    if (hasCal) {
+      fetch('/api/calendar/reminders')
+        .then(r => r.ok ? r.json() : null).catch(() => null)
+        .then(d => { if (active) setData(prev => ({ ...prev, calendar: { connected: d?.connected ?? false, events: d?.events ?? [] } })); });
     }
-    load();
+    if (hasHr) {
+      fetch('/api/hr/badge-counts')
+        .then(r => r.ok ? r.json() : null).catch(() => null)
+        .then(d => { if (active) setData(prev => ({ ...prev, hr: { holidaysToApprove: d?.pendingApprovals ?? 0, briefingsToRead: d?.newBriefings ?? 0 } })); });
+    }
+
     return () => { active = false; };
-  }, [hasEmail, hasCal, hasHr]);
+  }, [hasCal, hasHr]);
 
   return <Ctx.Provider value={data}>{children}</Ctx.Provider>;
 }

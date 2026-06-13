@@ -1,23 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { CheckSquare } from 'lucide-react';
 import { WidgetCard, StatRow, WidgetLoading, useOpenTool } from './shared';
-
-interface Counts { overdue: number; dueWithin7: number; dueWithin30: number; }
+import { useTasksCount } from '@/components/ui/TasksCountProvider';
 
 export default function TasksWidget() {
   const openTool = useOpenTool();
-  const [data, setData] = useState<Counts | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch('/api/tasks/my-count')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (active && d) setData({ overdue: d.overdue ?? 0, dueWithin7: d.dueWithin7 ?? 0, dueWithin30: d.dueWithin30 ?? 0 }); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
+  // Shared app-wide task counts (same source as the sidebar badge + hero).
+  // null while first loading → WidgetLoading.
+  const { counts: data } = useTasksCount();
 
   return (
     <WidgetCard

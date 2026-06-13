@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
@@ -14,6 +14,8 @@ import Avatar from './Avatar';
 import Tooltip from './Tooltip';
 import { useTabContext, Tab } from './TabContext';
 import { useModules } from './ModulesProvider';
+import { useEmailCount } from './EmailCountProvider';
+import { useTaskCountsOrZero } from './TasksCountProvider';
 import { useFavourites } from './FavouritesProvider';
 import { createClient } from '@/lib/supabase';
 import {
@@ -38,10 +40,6 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const [toolSearch, setToolSearch] = useState('');
   const [untaggedCount, setUntaggedCount] = useState(0);
   const [todayEventCount, setTodayEventCount] = useState(0);
-  const [emailUnreadCount, setEmailUnreadCount] = useState(0);
-  const [myTaskCount, setMyTaskCount] = useState(0);
-  const [myTaskOverdueCount, setMyTaskOverdueCount] = useState(0);
-  const [myTaskDueSoonCount, setMyTaskDueSoonCount] = useState(0);
   const [hrBadgeCount, setHrBadgeCount] = useState(0);
   const [mtdItUnreadCount, setMtdItUnreadCount] = useState(0);
   const pathname = usePathname();
@@ -53,7 +51,19 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
   const supabase = createClient();
   const isAdmin = userRole === 'admin';
   const vaultActive = isModuleActive('document-vault');
-  const emailActive = isModuleActive('email-triage');
+
+  // Email Triage badge = the shared Untriaged count, fetched once app-wide by
+  // EmailCountProvider (and kept live by the triage page's broadcasts). null
+  // while it first loads — treat as 0 for the badge.
+  const { untriaged } = useEmailCount();
+  const emailUnreadCount = untriaged ?? 0;
+
+  // Tasks badge + alert markers = the shared workload counts, fetched once
+  // app-wide by TasksCountProvider (same source as the dashboard hero/widget).
+  const taskCounts = useTaskCountsOrZero();
+  const myTaskCount = taskCounts.count;
+  const myTaskOverdueCount = taskCounts.overdue;
+  const myTaskDueSoonCount = taskCounts.dueWithin7;
 
   useEffect(() => {
     if (!vaultActive) return;
@@ -62,63 +72,6 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
       .then(data => { if (data?.untaggedCount > 0) setUntaggedCount(data.untaggedCount); })
       .catch(() => {});
   }, [vaultActive]);
-
-  // Email Triage badge = the Untriaged count. Two sources, broadcast-first:
-  // while the Email Triage page is mounted it broadcasts its card count (on
-  // every change and on each of its 60s polls), and that value is the badge —
-  // an exact mirror. The sidebar's own poll only applies when no broadcast has
-  // been heard recently (i.e. the triage page isn't open), so the two never
-  // fight and show different numbers.
-  const lastEmailBroadcastRef = useRef(0);
-  useEffect(() => {
-    if (!emailActive) return;
-    function fetchUnread() {
-      fetch('/api/email/unread')
-        .then(r => r.ok ? r.json() : { untriaged: 0 })
-        .then(d => {
-          // A broadcast in the last 90s means the triage page owns the badge.
-          if (Date.now() - lastEmailBroadcastRef.current < 90_000) return;
-          setEmailUnreadCount(d.untriaged ?? 0);
-        })
-        .catch(() => {});
-    }
-    fetchUnread();
-    // Skip polling Gmail for the count while the tab is hidden — saves quota.
-    const id = setInterval(() => { if (!document.hidden) fetchUnread(); }, 60_000);
-    return () => clearInterval(id);
-  }, [emailActive]);
-  useEffect(() => {
-    if (!emailActive) return;
-    function onUntriaged(e: Event) {
-      const count = (e as CustomEvent<number>).detail;
-      if (typeof count === 'number') {
-        lastEmailBroadcastRef.current = Date.now();
-        setEmailUnreadCount(count);
-      }
-    }
-    window.addEventListener('smith:email-untriaged', onUntriaged);
-    return () => window.removeEventListener('smith:email-untriaged', onUntriaged);
-  }, [emailActive]);
-
-  // Fetch active task count assigned to the current user for the Tasks badge
-  useEffect(() => {
-    const tasksActive = isModuleActive('tasks');
-    if (!tasksActive) return;
-    function fetchTaskCount() {
-      fetch('/api/tasks/my-count')
-        .then(r => r.ok ? r.json() : { count: 0, overdue: 0, dueWithin7: 0 })
-        .then(d => {
-          setMyTaskCount(d.count ?? 0);
-          setMyTaskOverdueCount(d.overdue ?? 0);
-          setMyTaskDueSoonCount(d.dueWithin7 ?? 0);
-        })
-        .catch(() => {});
-    }
-    fetchTaskCount();
-    // Re-fetch every 2 minutes so the count stays fresh
-    const id = setInterval(fetchTaskCount, 2 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [isModuleActive]);
 
   // Fetch MTD IT unread approval count for the sidebar badge
   useEffect(() => {

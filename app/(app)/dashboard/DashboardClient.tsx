@@ -316,11 +316,17 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
         );
 
       case 'recent-clients':
+        // Scrollable list of every client added in the last 30 days (not
+        // fit-to-height) so all of them are reachable when there are more than fit.
         return (
-          <FillPanel
-            icon={<Users size={15} className="text-[var(--accent)]" />}
-            title="Recent Clients"
-            action={
+          <div className="glass rounded-xl p-5 h-full flex flex-col">
+            <div className="flex items-center justify-between mb-4 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center">
+                  <Users size={15} className="text-[var(--accent)]" />
+                </div>
+                <span className="text-sm font-semibold text-[var(--text-primary)]">Recent Clients</span>
+              </div>
               <Link
                 href="/clients"
                 onClick={() => openTab({ id: 'clients', title: 'Clients', route: '/clients', icon: Users as Tab['icon'] })}
@@ -328,27 +334,24 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
               >
                 View all <ExternalLink size={10} />
               </Link>
-            }
-            items={recentClients}
-            listClassName="space-y-3"
-            itemClassName="flex items-center justify-between group"
-            keyFor={c => c.id}
-            renderItem={c => (
-              <>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
-                  {c.client_ref && <p className="text-xs text-[var(--text-muted)]">{c.client_ref}</p>}
-                </div>
-                <Link
-                  href={`/clients/${c.id}`}
-                  className="text-xs text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity ml-2 px-2 py-1 rounded hover:bg-[var(--accent-light)]"
-                >
-                  Open
-                </Link>
-              </>
+            </div>
+            {recentClients.length === 0 ? (
+              <EmptyState icon={<Users size={20} />} text="No clients added in the last 30 days." />
+            ) : (
+              <ul className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-3 -mx-1 px-1">
+                {recentClients.map(c => (
+                  <li key={c.id}>
+                    <Link href={`/clients/${c.id}`} className="flex items-center gap-2.5 group">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">{c.name}</p>
+                        {c.client_ref && <p className="text-xs text-[var(--text-muted)]">{c.client_ref}</p>}
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
-            empty={<EmptyState icon={<Users size={20} />} text="No clients yet. Add your first client." />}
-          />
+          </div>
         );
 
       case 'recent-activity':

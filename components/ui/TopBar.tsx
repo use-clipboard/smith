@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
@@ -14,6 +14,7 @@ import { useChatContext } from '@/components/chat/ChatProvider';
 import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
 import { useFocusMode } from './FocusModeProvider';
+import { useNotifications } from './NotificationsProvider';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from '@/config/navItems';
 import type { Tab } from '@/components/ui/TabContext';
 import type { LucideIcon } from 'lucide-react';
@@ -87,16 +88,6 @@ interface ClientResult {
   client_ref: string | null;
 }
 
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  body: string | null;
-  data: Record<string, unknown> | null;
-  read: boolean;
-  created_at: string;
-}
-
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -136,104 +127,31 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const searchRef = useRef<HTMLDivElement>(null);
   const clientDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Notifications
+  // Notifications — sourced from the app-wide NotificationsProvider, which is
+  // pushed in real time (Supabase Realtime). TopBar just renders + drives toasts.
+  const { notifications, unreadCount, markAllRead: markAllReadCtx, dismiss: dismissCtx, refresh: refreshNotifs } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const notifRef = useRef<HTMLDivElement>(null);
-  const notifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Notification toasts — behave exactly like the email toasts (slide in
-  // bottom-right, auto-dismiss, click to open), but with a red tint. The first
-  // fetch establishes a baseline so existing notifications don't all pop on load.
-  const [notifToasts, setNotifToasts] = useState<Notification[]>([]);
-  const seenNotifIdsRef = useRef<Set<string>>(new Set());
-  const notifInitialisedRef = useRef(false);
-  const NOTIF_TOAST_DISMISS_MS = 10_000;
-
-  const dismissNotifToast = useCallback((id: string) => {
-    setNotifToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await fetch('/api/notifications');
-      if (!res.ok) return;
-      const data = await res.json();
-      const list: Notification[] = data.notifications ?? [];
-      setNotifications(list);
-      setUnreadCount(data.unreadCount ?? 0);
-
-      // Surface newly-arrived unread notifications as toasts.
-      if (!notifInitialisedRef.current) {
-        list.forEach(n => seenNotifIdsRef.current.add(n.id));
-        notifInitialisedRef.current = true;
-      } else {
-        const fresh = list.filter(n => !seenNotifIdsRef.current.has(n.id));
-        fresh.forEach(n => seenNotifIdsRef.current.add(n.id));
-        const freshUnread = fresh.filter(n => !n.read);
-        if (freshUnread.length > 0) {
-          setNotifToasts(prev => [...prev, ...freshUnread]);
-          freshUnread.forEach(n =>
-            setTimeout(() => dismissNotifToast(n.id), NOTIF_TOAST_DISMISS_MS)
-          );
-        }
-      }
-    } catch {
-      // silently ignore — notifications are non-critical
-    }
-  }, [dismissNotifToast]);
-
-  // Fetch on mount and poll every 30 seconds
-  useEffect(() => {
-    fetchNotifications();
-    notifIntervalRef.current = setInterval(fetchNotifications, 30000);
-    return () => {
-      if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
-    };
-  }, [fetchNotifications]);
+  // Notification toasts now live in NotificationToastNotifier (rendered at the
+  // app-shell level so they anchor bottom-right of the viewport, not inside the
+  // header). TopBar only renders the bell + dropdown.
 
   // Let other parts of the app (e.g. the dashboard's notifications tile) open
   // this dropdown via a window event.
   useEffect(() => {
-    const openNotifs = () => { setNotifOpen(true); setSearchOpen(false); fetchNotifications(); };
+    const openNotifs = () => { setNotifOpen(true); setSearchOpen(false); refreshNotifs(); };
     window.addEventListener('smith:open-notifications', openNotifs);
     return () => window.removeEventListener('smith:open-notifications', openNotifs);
-  }, [fetchNotifications]);
-
-  function handleNotifToastClick(n: Notification) {
-    dismissNotifToast(n.id);
-    const taskLink = (n.data as { task_link?: string } | null)?.task_link ?? null;
-    if (taskLink) {
-      navigate(taskLink);
-    } else {
-      setNotifOpen(true);
-      setSearchOpen(false);
-    }
-  }
+  }, [refreshNotifs]);
 
   async function handleMarkAllRead() {
-    try {
-      await fetch('/api/notifications', { method: 'PATCH' });
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
-    } catch {
-      // ignore
-    }
+    await markAllReadCtx();
   }
 
-  async function handleDismiss(id: string, e: React.MouseEvent) {
+  function handleDismiss(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    try {
-      await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      setNotifications(prev => {
-        const updated = prev.filter(n => n.id !== id);
-        setUnreadCount(updated.filter(n => !n.read).length);
-        return updated;
-      });
-    } catch {
-      // ignore
-    }
+    void dismissCtx(id);
   }
 
   // Open/close search
@@ -545,46 +463,6 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
         </div>
       </div>
 
-      {/* Notification toasts — mirror the email toast, with a light red tint. */}
-      {notifToasts.length > 0 && (
-        <div className="fixed bottom-5 right-5 z-[101] flex flex-col gap-3 pointer-events-none">
-          {notifToasts.map(n => (
-            <button
-              key={n.id}
-              onClick={() => handleNotifToastClick(n)}
-              className="glass pointer-events-auto w-[26rem] text-left rounded-xl text-[var(--text-primary)] shadow-dropdown p-4 flex items-start gap-3 transition-all hover:brightness-105"
-              style={{ animation: 'notifToastIn 0.3s ease-out', background: 'rgba(239, 68, 68, 0.14)' }}
-            >
-              <div className="w-10 h-10 rounded-xl bg-red-200/80 flex items-center justify-center shrink-0">
-                <Bell size={18} className="text-red-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-red-700">
-                    New notification
-                  </p>
-                  <span
-                    onClick={e => { e.stopPropagation(); dismissNotifToast(n.id); }}
-                    className="shrink-0 p-1 -m-1 rounded hover:bg-red-200/60 cursor-pointer"
-                    role="button"
-                    aria-label="Dismiss"
-                  >
-                    <X size={14} className="text-red-700/70" />
-                  </span>
-                </div>
-                <p className="text-sm font-semibold text-[var(--text-primary)] truncate mt-0.5">{n.title}</p>
-                {n.body && <p className="text-xs text-[var(--text-muted)] mt-1 line-clamp-2">{n.body}</p>}
-              </div>
-            </button>
-          ))}
-          <style jsx>{`
-            @keyframes notifToastIn {
-              from { transform: translateX(120%); opacity: 0; }
-              to   { transform: translateX(0);     opacity: 1; }
-            }
-          `}</style>
-        </div>
-      )}
     </header>
   );
 }

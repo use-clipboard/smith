@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, Clock } from 'lucide-react';
 import { WidgetCard, WidgetLoading, useOpenTool } from './shared';
+import { useDashboardData } from '@/components/features/dashboard/DashboardDataProvider';
 
 interface CalEvent { id: string; title: string; start: string; }
 interface Resp { events: CalEvent[]; connected: boolean; }
@@ -14,16 +15,21 @@ function timeOf(iso: string): string {
 
 export default function CalendarWidget() {
   const openTool = useOpenTool();
-  const [data, setData] = useState<Resp | null>(null);
+  const shared = useDashboardData();
+  const [own, setOwn] = useState<Resp | null>(null);
 
+  // Prefer the shared provider; only self-fetch if rendered without it.
   useEffect(() => {
+    if (shared) return;
     let active = true;
     fetch('/api/calendar/reminders')
       .then(r => r.ok ? r.json() : { events: [], connected: false })
-      .then(d => { if (active) setData({ events: d.events ?? [], connected: d.connected ?? false }); })
-      .catch(() => { if (active) setData({ events: [], connected: false }); });
+      .then(d => { if (active) setOwn({ events: d.events ?? [], connected: d.connected ?? false }); })
+      .catch(() => { if (active) setOwn({ events: [], connected: false }); });
     return () => { active = false; };
-  }, []);
+  }, [shared]);
+
+  const data = shared ? shared.calendar : own;
 
   return (
     <WidgetCard

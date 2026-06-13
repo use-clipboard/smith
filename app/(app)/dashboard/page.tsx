@@ -8,12 +8,15 @@ export default async function DashboardPage() {
 
   const displayName = user?.email?.split('@')[0] || 'there';
 
-  // Fetch recent clients (capped at 3 for panel display)
+  // Fetch clients added in the last 30 days (newest first). The widget's
+  // fill-to-height list shows as many as fit; the cap is just a safety bound.
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: recentClients } = await supabase
     .from('clients')
     .select('id, name, client_ref')
+    .gte('created_at', thirtyDaysAgo)
     .order('created_at', { ascending: false })
-    .limit(15);
+    .limit(50);
 
   // Fetch recent AI outputs — include client_ref for display
   const { data: recentOutputs } = await supabase

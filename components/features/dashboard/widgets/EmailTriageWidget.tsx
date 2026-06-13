@@ -1,21 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Mail } from 'lucide-react';
 import { WidgetCard, WidgetLoading, useOpenTool } from './shared';
+import { useEmailCount } from '@/components/ui/EmailCountProvider';
 
 export default function EmailTriageWidget() {
   const openTool = useOpenTool();
-  const [count, setCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetch('/api/email/unread')
-      .then(r => r.ok ? r.json() : { count: 0 })
-      .then(d => { if (active) setCount(d.count ?? 0); })
-      .catch(() => { if (active) setCount(0); });
-    return () => { active = false; };
-  }, []);
+  // Shared app-wide untriaged count (same source as the sidebar badge). null
+  // while it first loads → WidgetLoading.
+  const { untriaged: count } = useEmailCount();
 
   return (
     <WidgetCard
@@ -29,7 +22,7 @@ export default function EmailTriageWidget() {
         <div className="h-full flex flex-col items-center justify-center text-center">
           <p className="text-4xl font-bold text-[var(--accent)] leading-none">{count}</p>
           <p className="text-sm text-[var(--text-muted)] mt-2">
-            {count === 0 ? 'Inbox zero 🎉' : count === 1 ? 'unread email' : 'unread emails'}
+            {count === 0 ? 'All triaged 🎉' : count === 1 ? 'email to triage' : 'emails to triage'}
           </p>
         </div>
       )}

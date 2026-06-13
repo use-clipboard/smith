@@ -79,10 +79,10 @@ function LoginContent() {
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2.5 mb-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl brightness-0 invert" />
-          <span className="text-xl font-bold text-white tracking-tight drop-shadow-sm">SMITH</span>
+          <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl brightness-0" />
+          <span className="text-xl font-bold text-[var(--text-primary)] tracking-tight">SMITH</span>
         </div>
-        <p className="text-sm text-white/80 drop-shadow-sm">AI-powered accounting workflow tools</p>
+        <p className="text-sm text-[var(--text-muted)]">AI-powered accounting workflow tools</p>
       </div>
 
       <div className="glass rounded-2xl p-8">

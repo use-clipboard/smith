@@ -9,64 +9,18 @@ import { currentTaxYear, getQuarterDates } from '@/lib/mtdIt/quarters';
  *
  * One round-trip that aggregates the DB-derived data the default dashboard
  * needs, so the page issues a single call instead of one-per-widget:
- *   • tasks          — the signed-in user's overdue / due-soon counts
  *   • needsAttention — firm clients with overdue or imminent tasks
  *   • deadlines      — Companies House + MTD IT statutory deadlines, merged
+ *
+ * Personal task counts and notifications are NOT computed here — they're owned
+ * app-wide by TasksCountProvider and NotificationsProvider (the latter pushed in
+ * real time), shared with the sidebar/header, so we don't duplicate that work.
  *
  * External-integration data (email unread, calendar) stays on its own routes —
  * those hit Google per-user and don't belong in this DB aggregate.
  */
 
 type Ctx = NonNullable<Awaited<ReturnType<typeof getUserContext>>>;
-
-// ── Tasks: the user's personal workload counts (mirrors /api/tasks/my-count) ──
-async function myTaskCounts(supabase: SupabaseClient, ctx: Ctx) {
-  const STEP_PAGE = 1000;
-  const stepRows: { task_id: string; status: string }[] = [];
-  for (let page = 0; ; page++) {
-    const { data, error } = await supabase
-      .from('task_steps')
-      .select('task_id, status')
-      .eq('assignee_id', ctx.userId)
-      .range(page * STEP_PAGE, (page + 1) * STEP_PAGE - 1);
-    if (error) return { overdue: 0, dueWithin7: 0, dueWithin30: 0 };
-    if (!data || data.length === 0) break;
-    stepRows.push(...data);
-    if (data.length < STEP_PAGE) break;
-  }
-
-  const liveTaskIds = [...new Set(
-    stepRows.filter(r => r.status !== 'complete' && r.status !== 'skipped').map(r => r.task_id)
-  )];
-  if (liveTaskIds.length === 0) return { overdue: 0, dueWithin7: 0, dueWithin30: 0 };
-
-  const BATCH = 100;
-  const tasks: { due_date: string | null; status: string }[] = [];
-  for (let i = 0; i < liveTaskIds.length; i += BATCH) {
-    const { data } = await supabase
-      .from('tasks')
-      .select('due_date, status')
-      .eq('firm_id', ctx.firmId)
-      .is('deleted_at', null)
-      .not('status', 'in', '("complete","draft")')
-      .in('id', liveTaskIds.slice(i, i + BATCH));
-    if (data) tasks.push(...data);
-  }
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const weekOut = new Date(today); weekOut.setDate(weekOut.getDate() + 7);
-  const monthOut = new Date(today); monthOut.setDate(monthOut.getDate() + 30);
-
-  let overdue = 0, dueWithin7 = 0, dueWithin30 = 0;
-  for (const t of tasks) {
-    if (!t.due_date) continue;
-    const due = new Date(t.due_date);
-    if (due < today) { overdue++; continue; }
-    if (due <= monthOut) dueWithin30++;
-    if (due <= weekOut) dueWithin7++;
-  }
-  return { overdue, dueWithin7, dueWithin30 };
-}
 
 // ── Needs attention: firm clients ranked by task urgency ─────────────────────
 async function needsAttention(supabase: SupabaseClient, ctx: Ctx) {
@@ -225,24 +179,17 @@ export async function GET() {
   const ctx = await getUserContext();
   if (!ctx) {
     return NextResponse.json(
-      { tasks: { overdue: 0, dueWithin7: 0, dueWithin30: 0 }, needsAttention: [], deadlines: [] },
+      { needsAttention: [], deadlines: [] },
       { status: 401 },
     );
   }
   const supabase = createClient();
-  const [tasks, na, dl, notif] = await Promise.all([
-    myTaskCounts(supabase, ctx),
+  const [na, dl] = await Promise.all([
     needsAttention(supabase, ctx),
     deadlines(supabase, ctx),
-    // Unread = read is false OR null (never touched) — mirrors the header's
-    // `!n.read` count so the dashboard tile and the bell badge always agree.
-    supabase.from('notifications').select('id', { count: 'exact', head: true })
-      .eq('user_id', ctx.userId).or('read.is.null,read.eq.false'),
   ]);
   return NextResponse.json({
-    tasks,
     needsAttention: na,
     deadlines: dl,
-    notifications: notif.count ?? 0,
   });
 }
