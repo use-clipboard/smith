@@ -11,7 +11,24 @@ import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker from './AssigneePicker';
+import TaskListRow from './TaskListRow';
+import TaskTable, { type TaskColumn } from './TaskTable';
+import TaskDeadlineLinksProvider from './TaskDeadlineLinksProvider';
+import TaskClientStatusPolicyProvider from './TaskClientStatusPolicyProvider';
 import type { Task, TaskStep, TaskStatus, StepStatus, RecurrenceType } from '@/types';
+
+// Columns for the profile's Tasks table — mirrors the Tasks tool's "All Tasks"
+// list so the rows render with the same Client / Status / Progress / Due /
+// Assignees / Actions columns.
+const PROFILE_TASK_COLUMNS: TaskColumn<string>[] = [
+  { id: 'task',      label: 'Task',      defaultWidth: 360, minWidth: 200 },
+  { id: 'client',    label: 'Client',    defaultWidth: 220, minWidth: 120 },
+  { id: 'status',    label: 'Status',    defaultWidth: 140, minWidth: 90  },
+  { id: 'progress',  label: 'Progress',  defaultWidth: 140, minWidth: 90  },
+  { id: 'due',       label: 'Due',       defaultWidth: 170, minWidth: 110 },
+  { id: 'assignees', label: 'Assignees', defaultWidth: 130, minWidth: 80  },
+  { id: 'actions',   label: 'Actions',   defaultWidth: 130, minWidth: 110, fixed: true, align: 'right' },
+];
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,11 +93,14 @@ interface RowProps {
   onTaskUpdate: (taskId: string, updates: Partial<Task>) => Promise<void>;
   onDelete: (taskId: string) => Promise<void>;
   onStopRecurrence: (taskId: string) => Promise<void>;
+  /** Show the task's client (name · code) under the title — used when the list
+   *  spans multiple clients (the team-member profile), redundant on a client page. */
+  showClient?: boolean;
 }
 
 function ClientTaskRow({
   task, currentUserId, isAdmin, teamMembers,
-  onStepUpdate, onTaskUpdate, onDelete, onStopRecurrence,
+  onStepUpdate, onTaskUpdate, onDelete, onStopRecurrence, showClient,
 }: RowProps) {
   const [expanded, setExpanded]   = useState(() => expandedTaskIds.has(task.id));
   const [reassignMode, setReassignMode] = useState(false);
@@ -231,13 +251,32 @@ function ClientTaskRow({
           </span>
         )}
 
-        {/* Title block */}
+        {/* Title block — stacked on the client page; laid out across the row on
+            a profile (assignee mode) to use the horizontal space. */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[var(--text-primary)] truncate">{task.title}</p>
-          {isRecurring && nextDueStr && (
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
-            </p>
+          {showClient ? (
+            <div className="flex items-baseline gap-x-3 gap-y-0.5 flex-wrap min-w-0">
+              <span className="text-sm font-medium text-[var(--text-primary)]">{task.title}</span>
+              {isRecurring && nextDueStr && (
+                <span className="text-xs text-[var(--text-muted)] whitespace-nowrap">
+                  Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
+                </span>
+              )}
+              {task.client && (
+                <span className="text-xs text-[var(--text-muted)] truncate">
+                  {task.client.name}{task.client.client_ref ? ` · ${task.client.client_ref}` : ''}
+                </span>
+              )}
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-[var(--text-primary)] truncate">{task.title}</p>
+              {isRecurring && nextDueStr && (
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Deadline on next cycle: <span className="font-medium text-indigo-600">{nextDueStr}</span>
+                </p>
+              )}
+            </>
           )}
         </div>
 
@@ -613,10 +652,14 @@ function ClientTaskRow({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 interface Props {
-  clientId: string;
+  clientId?: string;
+  /** Alternative to clientId: show every task where this user is a step
+   *  assignee (used by the team-member profile's Tasks tab). The CH-deadline
+   *  grouping is client-specific, so it's skipped in assignee mode. */
+  assigneeId?: string;
 }
 
-export default function ClientTasksPanel({ clientId }: Props) {
+export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
   const [tasks, setTasks]           = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -626,16 +669,22 @@ export default function ClientTasksPanel({ clientId }: Props) {
   // ch_deadline_task_links. These get peeled off into their own section so
   // they don't sit in the generic One-off bucket.
   const [chLinkedTaskIds, setChLinkedTaskIds] = useState<Set<string>>(new Set());
+  // Assignee mode (team-member profile): a single due-sorted list split into
+  // Open / Complete sub-tabs, instead of the client page's recurring/one-off grouping.
+  const assigneeMode = !!assigneeId;
+  const [statusTab, setStatusTab] = useState<'open' | 'complete'>('open');
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
+        const tasksUrl = clientId ? `/api/tasks?client_id=${clientId}` : `/api/tasks?assignee_id=${assigneeId}`;
         const [tasksRes, meRes, teamRes, chLinksRes] = await Promise.all([
-          fetch(`/api/tasks?client_id=${clientId}`),
+          fetch(tasksUrl),
           fetch('/api/users/me'),
           fetch('/api/users/team'),
-          fetch(`/api/ch-secretarial/deadline-links?client_id=${clientId}`),
+          // CH-deadline links are client-specific — only fetched in client mode.
+          clientId ? fetch(`/api/ch-secretarial/deadline-links?client_id=${clientId}`) : Promise.resolve(null),
         ]);
         if (tasksRes.ok) {
           const d = await tasksRes.json();
@@ -650,14 +699,14 @@ export default function ClientTasksPanel({ clientId }: Props) {
           const d = await teamRes.json();
           setTeamMembers(d.members ?? []);
         }
-        if (chLinksRes.ok) {
+        if (chLinksRes && chLinksRes.ok) {
           const d = await chLinksRes.json() as { links?: Array<{ task_id: string }> };
           setChLinkedTaskIds(new Set((d.links ?? []).map(l => l.task_id).filter(Boolean)));
         }
       } finally { setLoading(false); }
     }
     void load();
-  }, [clientId]);
+  }, [clientId, assigneeId]);
 
   const handleStepUpdate = useCallback(async (taskId: string, stepId: string, updates: Partial<TaskStep>) => {
     const r = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
@@ -720,6 +769,8 @@ export default function ClientTasksPanel({ clientId }: Props) {
     onTaskUpdate: handleTaskUpdate,
     onDelete: handleDelete,
     onStopRecurrence: handleStopRecurrence,
+    // Show client name/code per row only when the list spans clients (profile).
+    showClient: assigneeMode,
   };
 
   if (loading) {
@@ -737,9 +788,62 @@ export default function ClientTasksPanel({ clientId }: Props) {
         <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
           <RefreshCw className="h-5 w-5 opacity-30" />
         </div>
-        <p className="text-sm font-medium">No tasks for this client</p>
-        <p className="text-xs mt-1 opacity-60">Tasks assigned to this client will appear here.</p>
+        <p className="text-sm font-medium">{assigneeMode ? 'No tasks assigned' : 'No tasks for this client'}</p>
+        <p className="text-xs mt-1 opacity-60">{assigneeMode ? 'Tasks assigned to this person will appear here.' : 'Tasks assigned to this client will appear here.'}</p>
       </div>
+    );
+  }
+
+  // ── Assignee mode: due-sorted table (same rows as the Tasks tool's list),
+  //    split into Open / Complete sub-tabs. ────────────────────────────────────
+  if (assigneeMode) {
+    const openTasks     = sortByDue(tasks.filter(t => t.status !== 'complete'));
+    const completeTasks = sortByDue(tasks.filter(t => t.status === 'complete'));
+    const list = statusTab === 'open' ? openTasks : completeTasks;
+    return (
+      <TaskClientStatusPolicyProvider>
+      <TaskDeadlineLinksProvider>
+        <div className="space-y-4">
+          <div className="flex items-center gap-1 border-b border-[var(--border)] px-1">
+            {(['open', 'complete'] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatusTab(s)}
+                className={`px-3 py-2 text-sm font-medium -mb-px border-b-2 capitalize transition-colors ${
+                  statusTab === s
+                    ? 'border-[var(--accent)] text-[var(--accent)]'
+                    : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                {s} <span className="text-xs opacity-70">{s === 'open' ? openTasks.length : completeTasks.length}</span>
+              </button>
+            ))}
+          </div>
+          {list.length === 0 ? (
+            <div className="glass rounded-xl py-12 text-center text-sm text-[var(--text-muted)]">No {statusTab} tasks.</div>
+          ) : (
+            <TaskTable viewKey="profileTasks" columns={PROFILE_TASK_COLUMNS}>
+              <tbody>
+                {list.map(t => (
+                  <TaskListRow
+                    key={t.id}
+                    task={t}
+                    currentUserId={currentUserId}
+                    onClick={() => {}}
+                    isAdmin={isAdmin}
+                    teamMembers={teamMembers}
+                    onStepUpdate={handleStepUpdate}
+                    onTaskUpdate={handleTaskUpdate}
+                    onDelete={handleDelete}
+                    onStopRecurrence={handleStopRecurrence}
+                  />
+                ))}
+              </tbody>
+            </TaskTable>
+          )}
+        </div>
+      </TaskDeadlineLinksProvider>
+      </TaskClientStatusPolicyProvider>
     );
   }
 

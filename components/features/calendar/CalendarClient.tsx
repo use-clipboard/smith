@@ -182,6 +182,10 @@ export default function CalendarClient() {
         const data = await remindersRes.json();
         setReminders(data.reminders ?? []);
       }
+    } catch {
+      // Network-level failure (e.g. offline, or the dev server mid-recompile) —
+      // degrade gracefully instead of throwing an unhandled rejection.
+      setFetchError('Failed to load calendar events. Please try refreshing.');
     } finally {
       setLoading(false);
     }

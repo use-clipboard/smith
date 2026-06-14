@@ -120,7 +120,7 @@ export default function CommunityPostView({ postId }: Props) {
         {/* Post body */}
         <article className="rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] p-5">
           <div className="flex items-center gap-2.5 mb-3">
-            <Avatar name={display} avatarUrl={post.author?.avatar_url ?? null} size={28} />
+            <Avatar name={display} avatarUrl={post.author?.avatar_url ?? null} size={28} userId={post.author?.id} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-[var(--text-primary)]">{display}</p>
               <p className="text-[11px] text-[var(--text-muted)]">

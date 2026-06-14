@@ -26,6 +26,7 @@ import ProposalsClient from '@/components/features/proposals/ProposalsClient';
 import SettingsHosted from '@/app/(app)/settings/SettingsHosted';
 import HelpPage from '@/app/(app)/help/page';
 import BookkeepingTool from '@/components/features/bookkeeping/BookkeepingTool';
+import TeamProfile from '@/components/features/team/TeamProfile';
 
 const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/full-analysis':   FullAnalysisPage,
@@ -56,6 +57,19 @@ const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
 /** Routes managed by TabPanels (not Next.js routing). Import this wherever you need to distinguish tool tabs from regular pages. */
 export const TOOL_ROUTES = new Set(Object.keys(ROUTE_TO_COMPONENT));
 
+/** Team member profiles open as dynamic tabs (`/team/<userId>`). */
+const TEAM_ROUTE_PREFIX = '/team/';
+export function teamUserIdFromRoute(route: string): string | null {
+  return route.startsWith(TEAM_ROUTE_PREFIX) ? route.slice(TEAM_ROUTE_PREFIX.length) : null;
+}
+
+/** True for any route TabPanels renders itself — the fixed tool routes plus the
+ *  dynamic team-profile tabs. Prefer this over `TOOL_ROUTES.has(...)` so the
+ *  shell hides the Next.js `<main>` for team tabs too. */
+export function isToolRoute(route: string): boolean {
+  return ROUTE_TO_COMPONENT[route] != null || route.startsWith(TEAM_ROUTE_PREFIX);
+}
+
 /**
  * Renders every open tool tab as a permanently-mounted component.
  * Only the active tab is visible (display:none on the others).
@@ -64,12 +78,13 @@ export const TOOL_ROUTES = new Set(Object.keys(ROUTE_TO_COMPONENT));
 export default function TabPanels() {
   const { tabs, activeTabId } = useTabContext();
 
-  const toolTabs = tabs.filter(t => ROUTE_TO_COMPONENT[t.route]);
+  const toolTabs = tabs.filter(t => isToolRoute(t.route));
   if (toolTabs.length === 0) return null;
 
   return (
     <>
       {toolTabs.map(tab => {
+        const teamUserId = teamUserIdFromRoute(tab.route);
         const Component = ROUTE_TO_COMPONENT[tab.route];
         const isActive = tab.id === activeTabId;
         return (
@@ -78,7 +93,7 @@ export default function TabPanels() {
             style={{ display: isActive ? undefined : 'none' }}
             className="absolute inset-0 overflow-y-auto scrollbar-thin"
           >
-            <Component />
+            {teamUserId ? <TeamProfile userId={teamUserId} /> : Component ? <Component /> : null}
           </div>
         );
       })}

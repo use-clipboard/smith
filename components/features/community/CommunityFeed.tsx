@@ -224,7 +224,7 @@ function PostRow({
       {/* Top meta row */}
       <div className="p-4 pb-3">
         <div className="flex items-center gap-2.5 mb-2">
-          <Avatar name={display} avatarUrl={post.author?.avatar_url ?? null} size={24} />
+          <Avatar name={display} avatarUrl={post.author?.avatar_url ?? null} size={24} userId={post.author?.id} />
           <span className="text-xs font-medium text-[var(--text-primary)]">{display}</span>
           <span className="text-xs text-[var(--text-muted)]">·</span>
           <span className="text-xs text-[var(--text-muted)]">{when}</span>

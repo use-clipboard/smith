@@ -4,12 +4,13 @@ import { ReactNode, useState } from 'react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import TabBar from './TabBar';
-import TabPanels, { TOOL_ROUTES } from './TabPanels';
+import TabPanels, { isToolRoute } from './TabPanels';
 import AskSmithBubble from './AskSmithBubble';
 import Tooltip from './Tooltip';
 import OnboardingModal from './OnboardingModal';
 import EmailToastNotifier from './EmailToastNotifier';
 import NotificationToastNotifier from './NotificationToastNotifier';
+import PresenceHeartbeat from './PresenceHeartbeat';
 import ApiKeyBanner from './ApiKeyBanner';
 import CalendarReminderBanner from './CalendarReminderBanner';
 import StickyNotesProvider from './StickyNotes/StickyNotesProvider';
@@ -132,7 +133,7 @@ function AppShellInner({
   const { screenNudgeActive } = useChatContext();
   const activeTab = tabs.find(t => t.id === activeTabId);
   // When a tool tab is active, TabPanels handles rendering — hide the Next.js children
-  const isToolTabActive = !!activeTab && TOOL_ROUTES.has(activeTab.route);
+  const isToolTabActive = !!activeTab && isToolRoute(activeTab.route);
 
   return (
     <div className={`h-screen p-3 bg-transparent ${screenNudgeActive ? 'animate-nudge' : ''}`}>
@@ -227,6 +228,7 @@ export default function AppShell({
                 <UnreadMessageChips />
                 <EmailToastNotifier />
                 <NotificationToastNotifier />
+                <PresenceHeartbeat />
                 <StickyNotesLayer />
                 <GlobalComposeWindow />
                 <MinimisedComposeChip />

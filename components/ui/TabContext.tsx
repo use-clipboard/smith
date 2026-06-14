@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { LucideIcon, Plus, X, AlertTriangle } from 'lucide-react';
+import { LucideIcon, Plus, X, AlertTriangle, User } from 'lucide-react';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS, DASHBOARD_ITEM } from '@/config/navItems';
 
 export interface Tab {
@@ -49,17 +49,20 @@ function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
     const seenRoutes = new Set<string>();
     const tabs: Tab[] = [];
     for (const t of parsed.tabs ?? []) {
+      // Team-member profile tabs are dynamic (`/team/<id>`) — not in the nav
+      // map — so restore them with the stored title + a generic person icon.
+      const isTeam = t.route.startsWith('/team/');
       const nav = ROUTE_TO_NAV.get(t.route);
-      if (!nav) continue; // unknown route — skip (probably an old/removed module)
+      if (!nav && !isTeam) continue; // unknown route — skip (probably an old/removed module)
       if (t.route === '/dashboard') continue; // Dashboard is rendered as a permanent tab in TabBar; never store it in the tab list
       if (seenRoutes.has(t.route)) continue; // collapse duplicates
       seenRoutes.add(t.route);
       tabs.push({
         id: t.id,
-        title: t.title || nav.label,
+        title: t.title || nav?.label || 'Profile',
         route: t.route,
         currentRoute: t.currentRoute,
-        icon: nav.icon,
+        icon: isTeam ? User : nav!.icon,
       });
     }
     const activeTabId = parsed.activeTabId && tabs.some(t => t.id === parsed.activeTabId)

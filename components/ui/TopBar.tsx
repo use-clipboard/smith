@@ -15,6 +15,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
 import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
+import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from '@/config/navItems';
 import type { Tab } from '@/components/ui/TabContext';
 import type { LucideIcon } from 'lucide-react';
@@ -82,6 +83,13 @@ const TOOLS = [
   { label: 'Clients',              href: '/clients',         icon: Users },
 ];
 
+interface PersonResult {
+  id: string;
+  full_name?: string | null;
+  email: string;
+  avatar_url?: string | null;
+}
+
 interface ClientResult {
   id: string;
   name: string;
@@ -117,15 +125,26 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const { totalUnread, isPanelOpen, setIsPanelOpen } = useChatContext();
   const { openTab } = useTabContext();
   const { toggleFocusMode } = useFocusMode();
+  const openProfile = useOpenProfile();
 
   // Search
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [clients, setClients] = useState<ClientResult[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
+  const [people, setPeople] = useState<PersonResult[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const clientDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Team members for the search "People" section — the firm list is small, so
+  // we load it once and filter client-side.
+  useEffect(() => {
+    fetch('/api/users/team')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.members) setPeople(d.members as PersonResult[]); })
+      .catch(() => {});
+  }, []);
 
   // Notifications — sourced from the app-wide NotificationsProvider, which is
   // pushed in real time (Supabase Realtime). TopBar just renders + drives toasts.
@@ -209,6 +228,9 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const filteredTools = q ? TOOLS.filter(t => t.label.toLowerCase().includes(q)) : TOOLS;
   // clients are already server-filtered; only shown when a query is active
   const filteredClients = clients;
+  const filteredPeople = q
+    ? people.filter(m => (m.full_name ?? '').toLowerCase().includes(q) || m.email.toLowerCase().includes(q)).slice(0, 6)
+    : [];
 
   function navigate(href: string) {
     setSearchOpen(false);
@@ -299,12 +321,32 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
                   </div>
                 )}
 
-                {/* No query — hint */}
-                {!q && (
-                  <p className="px-3 py-3 text-xs text-[var(--text-muted)]">Type to search clients…</p>
+                {/* Team — team members, filtered client-side */}
+                {q && filteredPeople.length > 0 && (
+                  <div>
+                    <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Team</p>
+                    {filteredPeople.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => { setSearchOpen(false); openProfile(m.id, m.full_name || m.email.split('@')[0]); }}
+                        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[var(--bg-nav-hover)] transition-colors text-left"
+                      >
+                        <Avatar name={m.full_name || m.email} avatarUrl={m.avatar_url ?? null} size={22} />
+                        <div className="min-w-0">
+                          <span className="text-sm text-[var(--text-primary)] truncate block">{m.full_name || m.email.split('@')[0]}</span>
+                          <span className="text-xs text-[var(--text-muted)] truncate block">{m.email}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 )}
 
-                {q && filteredTools.length === 0 && filteredClients.length === 0 && !loadingClients && (
+                {/* No query — hint */}
+                {!q && (
+                  <p className="px-3 py-3 text-xs text-[var(--text-muted)]">Type to search clients &amp; people…</p>
+                )}
+
+                {q && filteredTools.length === 0 && filteredClients.length === 0 && filteredPeople.length === 0 && !loadingClients && (
                   <p className="px-3 py-6 text-sm text-[var(--text-muted)] text-center">No results for &ldquo;{query}&rdquo;</p>
                 )}
               </div>

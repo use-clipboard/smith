@@ -30,6 +30,7 @@ import DashboardHero from '@/components/features/dashboard/DashboardHero';
 import DashboardDataProvider from '@/components/features/dashboard/DashboardDataProvider';
 import { createClient } from '@/lib/supabase';
 import { useChatContext } from '@/components/chat/ChatProvider';
+import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 
 const ALL_TOOLS = [
   { moduleId: 'full-analysis',   href: '/full-analysis',  label: 'Full Analysis',     desc: 'Analyse invoices for VT, Capium, or Xero', icon: FileSearch,     color: '#4F46E5' },
@@ -158,6 +159,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
   const { openTab } = useTabContext();
   const { isModuleActive } = useModules();
   const { openConversationWith } = useChatContext();
+  const openProfile = useOpenProfile();
 
   // Greeting + today's date are time-dependent — defer until after mount so
   // server-rendered HTML matches the first client paint (otherwise React throws
@@ -416,12 +418,15 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                   const isOnline = onlineIds.has(m.id);
                   return (
                     <li key={m.id} className="flex items-center gap-2.5">
-                      <Avatar name={m.full_name || m.email} size={28} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                      <button
+                        onClick={() => openProfile(m.id, m.full_name || m.email.split('@')[0])}
+                        className="flex items-center gap-2.5 min-w-0 flex-1 group text-left"
+                      >
+                        <Avatar name={m.full_name || m.email} size={28} />
+                        <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                           {m.full_name || m.email.split('@')[0]}
                         </p>
-                      </div>
+                      </button>
                       <Tooltip label={isOnline ? 'Online' : 'Offline'} side="left" className="shrink-0">
                         <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-[var(--text-muted)] opacity-30'}`} />
                       </Tooltip>
@@ -706,10 +711,13 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
 
                     {/* Name + status */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                      <button
+                        onClick={() => { setTeamOpen(false); openProfile(m.id, m.full_name || m.email.split('@')[0]); }}
+                        className="text-sm font-semibold text-[var(--text-primary)] truncate hover:text-[var(--accent)] text-left"
+                      >
                         {m.full_name || m.email.split('@')[0]}
                         {isSelf && <span className="ml-1.5 text-[10px] font-normal text-[var(--text-muted)]">(you)</span>}
-                      </p>
+                      </button>
                       <p className="text-xs text-[var(--text-muted)] truncate">
                         {isOnline
                           ? <span className="text-emerald-500 font-medium">Online now</span>

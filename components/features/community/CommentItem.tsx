@@ -66,7 +66,7 @@ export default function CommentItem({ comment, isAuthor, onChange, onDelete }: P
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card-solid)] p-3.5">
       <div className="flex items-center gap-2 mb-1.5">
-        <Avatar name={author} avatarUrl={comment.author?.avatar_url ?? null} size={22} />
+        <Avatar name={author} avatarUrl={comment.author?.avatar_url ?? null} size={22} userId={comment.author?.id} />
         <span className="text-xs font-medium text-[var(--text-primary)]">{author}</span>
         <span className="text-xs text-[var(--text-muted)]">·</span>
         <span className="text-[11px] text-[var(--text-muted)]">
