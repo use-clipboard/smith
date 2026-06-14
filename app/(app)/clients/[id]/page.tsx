@@ -7,7 +7,7 @@ import {
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
   Archive, CalendarDays, MicVocal, Network, Info, CalendarCheck,
-  Building2, MapPin, User, Briefcase, Landmark, HeartHandshake, Lock,
+  Building2, MapPin, User, UserCircle, Shield, HandHeart, Home, Lock,
   type LucideIcon,
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
@@ -126,15 +126,16 @@ const CLIENT_TYPE_LABELS: Record<string, string> = {
   sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
   individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
 };
-// Header tile icon per entity type (mirrors the Connections Map legend icons).
+// Header tile icon per entity type (matches the client-list type icons).
 const CLIENT_TYPE_ICON: Record<string, LucideIcon> = {
+  sole_trader:     User,
+  partnership:     Users,
   limited_company: Building2,
-  partnership:     Briefcase,
-  sole_trader:     Briefcase,
-  individual:      User,
-  trust:           Landmark,
-  charity:         HeartHandshake,
-  rental_landlord: House,
+  llp:             Building2,
+  individual:      UserCircle,
+  trust:           Shield,
+  charity:         HandHeart,
+  rental_landlord: Home,
 };
 const LINK_TYPE_LABELS: Record<string, string> = {
   director: 'Director of', shareholder: 'Shareholder of', spouse_partner: 'Spouse / Partner of',
