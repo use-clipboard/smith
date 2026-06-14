@@ -38,7 +38,28 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ items: data ?? [] });
   }
 
-  if (type === 'tasks' || type === 'clients') {
+  if (type === 'clients') {
+    // Clients this team member is the account manager for.
+    const { data, error } = await svc
+      .from('clients')
+      .select('id, name, client_ref, status, business_type, contact_email')
+      .eq('firm_id', ctx.firmId)
+      .eq('account_manager_id', targetId)
+      .order('name');
+    // account_manager_id is a recent column — degrade gracefully pre-migration.
+    if (error && error.code === '42703') return NextResponse.json({ items: [] });
+    const items = (data ?? []).map(c => ({
+      clientId: c.id,
+      name: c.name,
+      clientRef: c.client_ref ?? null,
+      status: c.status ?? 'active',
+      businessType: c.business_type ?? null,
+      email: c.contact_email ?? null,
+    }));
+    return NextResponse.json({ items });
+  }
+
+  if (type === 'tasks') {
     // Task ids where the target is a step assignee.
     const STEP_PAGE = 1000;
     const stepTaskIds = new Set<string>();
@@ -71,44 +92,21 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       for (const c of data ?? []) names.set(c.id, { name: c.name, client_ref: c.client_ref });
     }
 
-    if (type === 'tasks') {
-      const items = tasks
-        .map(t => ({
-          id: t.id,
-          title: t.title ?? 'Untitled task',
-          status: t.status,
-          due: t.due_date,
-          clientId: t.client_id,
-          clientName: t.client_id ? (names.get(t.client_id)?.name ?? null) : null,
-        }))
-        // Open first, then by due date.
-        .sort((a, b) => {
-          const ao = a.status === 'complete' ? 1 : 0, bo = b.status === 'complete' ? 1 : 0;
-          if (ao !== bo) return ao - bo;
-          return (a.due ?? '9999').localeCompare(b.due ?? '9999');
-        })
-        .slice(0, 60);
-      return NextResponse.json({ items });
-    }
-
-    // type === 'clients' — group their tasks by client (total + open).
-    const byClient = new Map<string, { total: number; open: number }>();
-    for (const t of tasks) {
-      if (!t.client_id) continue;
-      const agg = byClient.get(t.client_id) ?? { total: 0, open: 0 };
-      agg.total++;
-      if (t.status !== 'complete') agg.open++;
-      byClient.set(t.client_id, agg);
-    }
-    const items = [...byClient.entries()]
-      .map(([clientId, v]) => ({
-        clientId,
-        name: names.get(clientId)?.name ?? 'Unknown client',
-        clientRef: names.get(clientId)?.client_ref ?? null,
-        total: v.total,
-        open: v.open,
+    const items = tasks
+      .map(t => ({
+        id: t.id,
+        title: t.title ?? 'Untitled task',
+        status: t.status,
+        due: t.due_date,
+        clientId: t.client_id,
+        clientName: t.client_id ? (names.get(t.client_id)?.name ?? null) : null,
       }))
-      .sort((a, b) => b.total - a.total)
+      // Open first, then by due date.
+      .sort((a, b) => {
+        const ao = a.status === 'complete' ? 1 : 0, bo = b.status === 'complete' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return (a.due ?? '9999').localeCompare(b.due ?? '9999');
+      })
       .slice(0, 60);
     return NextResponse.json({ items });
   }

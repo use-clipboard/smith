@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   ReactFlow, Background, Controls, MarkerType,
@@ -403,7 +404,9 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
     return { nodes: nextNodes, edges: nextEdges };
   }, [layout, hoveredEdgeId]);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={onClose}
@@ -481,6 +484,7 @@ export default function LinkGraphLightbox({ clientId, onClose }: LinkGraphLightb
           ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

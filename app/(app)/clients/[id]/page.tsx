@@ -6,9 +6,14 @@ import {
   Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, TrendingUp, Zap,
-  Archive, CalendarDays, MicVocal, Network, Sparkles, Info, CalendarCheck,
+  Archive, CalendarDays, MicVocal, Network, Info, CalendarCheck,
+  Building2, MapPin, User, Briefcase, Landmark, HeartHandshake, Lock,
+  type LucideIcon,
 } from 'lucide-react';
 import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
+import ClientOverview from '@/components/features/clients/ClientOverview';
+import ClientHeaderCards from '@/components/features/clients/ClientHeaderCards';
+import KeyContactsEditor, { type KeyContact } from '@/components/features/clients/KeyContactsEditor';
 import TimelineSummaryCard from '@/components/features/clients/TimelineSummaryCard';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import Tooltip from '@/components/ui/Tooltip';
@@ -72,7 +77,10 @@ interface Client {
   vat_scheme_period_end_month: number | null;
   year_end: string | null;
   mtd_it: boolean;
+  account_manager_id: string | null;
+  key_contacts: KeyContact[] | null;
 }
+interface TeamMember { id: string; full_name: string | null; email: string; role: string; }
 interface ClientLink {
   id: string; link_type: string; notes: string | null; direction: 'outgoing' | 'incoming';
   other_client: { id: string; name: string; client_ref: string | null; business_type: string | null; status: ClientStatus; } | null;
@@ -117,6 +125,16 @@ interface SearchableClient { id: string; name: string; client_ref: string | null
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
   individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
+};
+// Header tile icon per entity type (mirrors the Connections Map legend icons).
+const CLIENT_TYPE_ICON: Record<string, LucideIcon> = {
+  limited_company: Building2,
+  partnership:     Briefcase,
+  sole_trader:     Briefcase,
+  individual:      User,
+  trust:           Landmark,
+  charity:         HeartHandshake,
+  rental_landlord: House,
 };
 const LINK_TYPE_LABELS: Record<string, string> = {
   director: 'Director of', shareholder: 'Shareholder of', spouse_partner: 'Spouse / Partner of',
@@ -965,7 +983,7 @@ export default function ClientDetailPage() {
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'outputs' | 'documents' | 'timeline' | 'details' | 'tasks'>('details');
+  const [activeTab, setActiveTab] = useState<'overview' | 'outputs' | 'documents' | 'timeline' | 'details' | 'tasks'>('overview');
 
   // Documents tab
   const [docsTabLoading, setDocsTabLoading] = useState(false);
@@ -1108,6 +1126,12 @@ export default function ClientDetailPage() {
   const [editYearEndDay, setEditYearEndDay] = useState('');
   const [editYearEndMonth, setEditYearEndMonth] = useState('');
   const [editMtdIt, setEditMtdIt] = useState(false);
+  const [editAccountManagerId, setEditAccountManagerId] = useState('');
+  const [editKeyContacts, setEditKeyContacts] = useState<KeyContact[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  // Bumped after a successful edit so the independently-fetching Overview /
+  // header cards (account manager, key info, etc.) remount and refresh.
+  const [overviewRefresh, setOverviewRefresh] = useState(0);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1376,6 +1400,14 @@ export default function ClientDetailPage() {
     const [yeDay = '', yeMonthRaw = ''] = (client.year_end ?? '').trim().split(/[\s-]+/);
     setEditYearEndDay(yeDay); setEditYearEndMonth(yeMonthRaw.toUpperCase());
     setEditMtdIt(client.mtd_it ?? false);
+    setEditAccountManagerId(client.account_manager_id ?? '');
+    setEditKeyContacts(Array.isArray(client.key_contacts) ? client.key_contacts : []);
+    if (teamMembers.length === 0) {
+      fetch('/api/users/team')
+        .then(r => (r.ok ? r.json() : { members: [] }))
+        .then(d => setTeamMembers(d.members ?? []))
+        .catch(() => {});
+    }
     setEditError(null); setEditing(true);
   }
 
@@ -1398,6 +1430,8 @@ export default function ClientDetailPage() {
           contact_email: editEmail,
           risk_rating: editRisk,
           status: editStatus,
+          account_manager_id: editAccountManagerId || null,
+          key_contacts: editKeyContacts.filter(c => c.name.trim()),
           address: editAddress,
           utr_number: editUtr,
           registration_number: editRegNo,
@@ -1420,7 +1454,7 @@ export default function ClientDetailPage() {
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.error || 'Save failed'); return; }
-      setClient(data.client); setEditing(false);
+      setClient(data.client); setEditing(false); setOverviewRefresh(v => v + 1);
     } catch { setEditError('An unexpected error occurred'); } finally { setSaving(false); }
   }
 
@@ -1534,27 +1568,51 @@ export default function ClientDetailPage() {
   const years = Object.keys(yearGroups).sort((a, b) => Number(b) - Number(a));
 
   return (
-    <ToolLayout title={client.name} icon={Users} iconColor="#4F46E5" wide>
-      {/* Header: back link + badges */}
-      <div className="space-y-1.5 mb-4">
-          <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] drop-shadow-sm transition-colors">
-            <ArrowLeft size={14} />All Clients
-          </button>
-          <div className="flex items-center gap-2 flex-wrap">
-            {client.client_ref && <span className="px-2.5 py-1 bg-white border border-[var(--border)] rounded-lg shadow-md text-xs font-mono font-semibold text-[var(--text-primary)]">{client.client_ref}</span>}
-            {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-[var(--border)] shadow-sm text-xs font-semibold text-[var(--text-primary)]">
-                <span className={`w-2 h-2 rounded-full ${s.dot}`} />
-                {s.label}
-              </span>
-            ); })()}
-            {client.risk_rating && <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
-            {client.business_type && <span className="text-xs font-medium text-[var(--text-secondary)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
+    <div className="p-6 w-full">
+      {/* Back link */}
+      <button onClick={() => router.push('/clients')} className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mb-3">
+        <ArrowLeft size={14} />All Clients
+      </button>
+
+      {/* Header card — name + badges + contact (left), account manager + relationship (right) */}
+      <div className="glass rounded-2xl p-4 mb-4 flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shrink-0 shadow-md">
+              {(() => { const HeaderIcon = CLIENT_TYPE_ICON[client.business_type ?? ''] ?? Building2; return <HeaderIcon size={22} className="text-white" />; })()}
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold tracking-tight text-[var(--text-primary)] truncate">{client.name}</h1>
+              <div className="flex items-center gap-2.5 flex-wrap mt-1">
+                {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--text-primary)]">
+                    <span className={`w-2 h-2 rounded-full ${s.dot}`} />{s.label}
+                  </span>
+                ); })()}
+                {client.business_type && <span className="text-xs font-medium text-[var(--text-secondary)]">{CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type}</span>}
+                {client.risk_rating && <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating} Risk</span>}
+              </div>
+            </div>
+          </div>
+          {/* Contact row — packed left so the items sit close together */}
+          <div className="flex flex-wrap items-start gap-x-6 gap-y-2 mt-3.5 [&>*]:min-w-0">
+            <ContactItem icon={FileText} label="Client Reference" mono value={client.client_ref || '—'} tooltip={client.client_ref || undefined} />
+            <ContactItem icon={Mail} label="Contact Email" tooltip={client.contact_email || undefined} value={
+              client.contact_email
+                ? (isModuleActive('email-triage')
+                    ? <button onClick={openCompose} className="text-left text-[var(--text-primary)] hover:text-[var(--accent)] truncate block w-full">{client.contact_email}</button>
+                    : <a href={`mailto:${client.contact_email}`} className="text-[var(--text-primary)] hover:text-[var(--accent)] truncate block">{client.contact_email}</a>)
+                : '—'
+            } />
+            <ContactItem icon={Phone} label="Contact Number" value={(client as { contact_number?: string | null }).contact_number || '—'} tooltip={(client as { contact_number?: string | null }).contact_number || undefined} />
+            <ContactItem icon={MapPin} label="Address" value={client.address || '—'} tooltip={client.address || undefined} />
           </div>
         </div>
+        {clientId && <ClientHeaderCards key={`hdr-${overviewRefresh}`} clientId={clientId} />}
+      </div>
 
       {/* Tabs + actions row */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
+      <div className="flex items-center gap-1 mb-5 flex-wrap border-b border-[var(--border)]">
         {/* Actions — right-aligned, in line with the tabs */}
         {(() => {
           const btype = client.business_type;
@@ -1578,7 +1636,7 @@ export default function ClientDetailPage() {
           const activeTools = quickTools.filter(t => t.show && favourites.includes(t.moduleId) && isModuleActive(t.moduleId));
 
           return (
-            <div className="order-last ml-auto flex items-center gap-1 p-1 rounded-xl bg-white border border-[var(--border)] shadow-sm">
+            <div className="order-last ml-auto flex items-center gap-1 p-1 rounded-xl glass">
 
               {/* ── Left: Favourited quick-launch tools ── */}
               {activeTools.length > 0 && (
@@ -1594,7 +1652,7 @@ export default function ClientDetailPage() {
                             openInNewTab({ id: tool.moduleId, title: tool.label, route: tool.route, icon: Icon as Tab['icon'] });
                             window.history.replaceState(null, '', tool.route);
                           }}
-                          className={`p-2 rounded-lg text-[var(--text-primary)] ${tool.hoverText} ${tool.hoverBg} transition-all`}
+                          className={`p-2 rounded-lg text-[var(--text-secondary)] ${tool.hoverText} ${tool.hoverBg} transition-all`}
                         >
                           <Icon size={17} strokeWidth={2.25} style={{ color: 'currentColor' }} className="transition-colors" />
                         </button>
@@ -1665,21 +1723,25 @@ export default function ClientDetailPage() {
         })()}
 
         {([
-          ['details',   Info,        'Details'],
-          ['timeline',  Clock,       `Timeline${notes.length > 0 ? ` (${notes.length})` : ''}`],
-          ['tasks',     CheckSquare, 'Tasks'],
-          ['outputs',   Sparkles,    `AI Outputs (${outputs.length})`],
-          ['documents', FileText,    `Documents${vaultDocs.length > 0 ? ` (${vaultDocs.length})` : ''}`],
+          ['overview',  'Overview'],
+          ['timeline',  'Timeline'],
+          ['tasks',     'Tasks'],
+          ['outputs',   'AI Outputs'],
+          ['documents', 'Documents'],
         ] as const)
           .filter(([tab]) => tab !== 'tasks' || isModuleActive('tasks'))
-          .map(([tab, Icon, label]) => (
-          <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'documents') void fetchDocumentsTab(); if (tab === 'timeline') void fetchTimeline(); if (tab === 'details') void fetchLinks(); }}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${activeTab === tab ? 'bg-[var(--accent)] text-white shadow-md' : 'bg-white border border-[var(--border)] shadow-sm text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'}`}>
-            <Icon size={14} strokeWidth={2.5} />
+          .map(([tab, label]) => (
+          <button key={tab} onClick={() => { setActiveTab(tab); if (tab === 'documents') void fetchDocumentsTab(); if (tab === 'timeline') void fetchTimeline(); }}
+            className={`px-3 py-2 -mb-px border-b-2 font-medium text-sm transition-colors ${activeTab === tab ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}>
             {label}
           </button>
         ))}
       </div>
+
+      {/* ── Overview Tab ──────────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && clientId && (
+        <ClientOverview key={`ov-${overviewRefresh}`} clientId={clientId} client={client} />
+      )}
 
       {/* ── Outputs Tab ───────────────────────────────────────────────────────── */}
       {activeTab === 'outputs' && (
@@ -1711,7 +1773,9 @@ export default function ClientDetailPage() {
       {/* ── Documents Tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'documents' && (
         <div className="glass rounded-xl overflow-hidden">
-          {docsTabLoading ? (
+          {!isModuleActive('document-vault') ? (
+            <EnableToolMessage tool="Document Vault" />
+          ) : docsTabLoading ? (
             <div className="py-12 text-center">
               <Clock size={20} className="mx-auto text-[var(--text-muted)] opacity-40 mb-2 animate-spin" />
               <p className="text-sm text-[var(--text-muted)]">Loading documents…</p>
@@ -2243,6 +2307,15 @@ export default function ClientDetailPage() {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Account Manager</label>
+                  <select value={editAccountManagerId} onChange={e => setEditAccountManagerId(e.target.value)} className="input-base w-full">
+                    <option value="">— Not assigned —</option>
+                    {teamMembers.map(m => (
+                      <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Status</label>
                   <div className="flex items-center gap-1 bg-[var(--bg-page)] rounded-lg border border-[var(--border)] p-1">
                     {([
@@ -2263,6 +2336,10 @@ export default function ClientDetailPage() {
                 <textarea value={editAddress} onChange={e => setEditAddress(e.target.value)} rows={3} placeholder="Street, City, Postcode" className="input-base w-full resize-none" />
               </div>
               <div className="space-y-3 pt-2 border-t border-[var(--border)]">
+                <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest pt-1">Key Contacts</p>
+                <KeyContactsEditor clientId={clientId} value={editKeyContacts} onChange={setEditKeyContacts} />
+              </div>
+              <div className="space-y-3 pt-2 border-t border-[var(--border)]">
                 <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest pt-1">Regulatory &amp; Tax Details</p>
                 {showFor('utr_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">UTR Number</label><input value={editUtr} onChange={e => setEditUtr(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('registration_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Company Registration Number</label><input value={editRegNo} onChange={e => setEditRegNo(e.target.value)} className="input-base w-full font-mono" /></div>}
@@ -2280,9 +2357,9 @@ export default function ClientDetailPage() {
                     <button
                       type="button"
                       onClick={() => setEditMtdIt(v => !v)}
-                      className={`relative w-10 h-6 rounded-full transition-colors ${editMtdIt ? 'bg-blue-500' : 'bg-[var(--border)]'}`}
+                      className={`relative w-11 h-6 rounded-full transition-colors ring-1 ${editMtdIt ? 'bg-[var(--accent)] ring-[var(--accent)]' : 'bg-gray-300 ring-gray-400'}`}
                     >
-                      <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${editMtdIt ? 'translate-x-4' : ''}`} />
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform ${editMtdIt ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
                 )}
@@ -2576,6 +2653,33 @@ export default function ClientDetailPage() {
           </button>
         </div>
       )}
-    </ToolLayout>
+    </div>
+  );
+}
+
+/** Shown in a tab/panel whose data needs a firm module that isn't switched on. */
+function EnableToolMessage({ tool }: { tool: string }) {
+  return (
+    <div className="py-12 flex flex-col items-center justify-center gap-2 text-center">
+      <Lock size={20} className="text-[var(--text-muted)] opacity-40" />
+      <p className="text-sm text-[var(--text-muted)]">
+        Please enable the <span className="font-medium text-[var(--text-secondary)]">{tool}</span> tool to use this.
+      </p>
+    </div>
+  );
+}
+
+function ContactItem({ icon: Icon, label, value, mono, tooltip }: { icon: React.ElementType; label: string; value: React.ReactNode; mono?: boolean; tooltip?: string }) {
+  const inner = <div className={`text-sm text-[var(--text-primary)] truncate max-w-full ${mono ? 'font-mono' : ''}`}>{value}</div>;
+  return (
+    <div className="flex items-start gap-2 min-w-0">
+      <Icon size={14} className="text-[var(--text-muted)] mt-0.5 shrink-0" />
+      <div className="min-w-0">
+        {tooltip
+          ? <Tooltip label={tooltip} side="top" className="max-w-full">{inner}</Tooltip>
+          : inner}
+        <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{label}</p>
+      </div>
+    </div>
   );
 }

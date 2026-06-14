@@ -37,6 +37,14 @@ const UpdateClientSchema = z.object({
   vat_scheme_period_end_month: z.number().int().min(1).max(12).optional().nullable(),
   year_end: z.string().optional(),
   mtd_it: z.boolean().optional(),
+  account_manager_id: z.string().uuid().nullable().optional(),
+  key_contacts: z.array(z.object({
+    name: z.string().min(1),
+    role: z.string().optional().nullable(),
+    email: z.string().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    linked_client_id: z.string().uuid().optional().nullable(),
+  })).optional(),
 });
 
 // GET /api/clients/[id]
@@ -102,6 +110,8 @@ export async function PATCH(
   if (d.contact_email !== undefined) updates.contact_email = d.contact_email || null;
   if (d.risk_rating !== undefined) updates.risk_rating = d.risk_rating || null;
   if (d.status !== undefined) updates.status = d.status;
+  if (d.account_manager_id !== undefined) updates.account_manager_id = d.account_manager_id || null;
+  if (d.key_contacts !== undefined) updates.key_contacts = d.key_contacts;
   if (d.address !== undefined) updates.address = d.address || null;
   if (d.utr_number !== undefined) updates.utr_number = d.utr_number || null;
   if (d.registration_number !== undefined) updates.registration_number = d.registration_number || null;

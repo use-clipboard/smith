@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Mail, Phone, CalendarDays, MapPin, Building2, Users, CalendarClock, Check,
-  Activity, MessageSquare, HeartHandshake, ArrowUpRight, FileBox, Lock,
+  Activity, MessageSquare, HeartHandshake, ArrowUpRight, FileBox, Lock, Search,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, TrendingUp, Receipt, ShieldAlert,
   FileText, MicVocal, type LucideIcon,
 } from 'lucide-react';
@@ -47,7 +47,7 @@ interface OverviewData {
 // Lazy-loaded tab list item shapes (from /api/team/[id]/list).
 interface TaskItem { id: string; title: string; status: string; due: string | null; clientId: string | null; clientName: string | null }
 interface ActivityItem { id: string; feature: string; created_at: string; clients?: ClientRef | null }
-interface ClientItem { clientId: string; name: string; clientRef: string | null; total: number; open: number }
+interface ClientItem { clientId: string; name: string; clientRef: string | null; status: string; businessType: string | null; email: string | null }
 interface DocItem { id: string; file_name: string; document_type: string | null; created_at: string; drive_file_id?: string | null; file_url?: string | null; clients?: ClientRef | null }
 
 const FEATURE_META: Record<string, { label: string; icon: LucideIcon; color: string }> = {
@@ -255,7 +255,7 @@ export default function TeamProfile({ userId }: { userId: string }) {
           ? <ClientTasksPanel assigneeId={userId} />
           : <div className="glass rounded-xl p-5 h-[200px]"><EnableTool tool="Tasks" /></div>
       ) : tab === 'Clients' ? (
-        <div className="glass rounded-xl p-10 text-center text-sm text-[var(--text-muted)]">Clients — coming soon.</div>
+        <ClientsTab userId={userId} />
       ) : tab !== 'Overview' ? (
         <TabContent tab={tab} items={tabItems[tab]} hasTasks={hasTasks} />
       ) : (
@@ -457,6 +457,115 @@ function EnableTool({ tool }: { tool: string }) {
 
 // ─── Tab content (lazy lists behind Tasks / Activity / Clients / Documents) ───
 
+const CLIENT_TYPE_LABELS: Record<string, string> = {
+  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
+  individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
+};
+const STATUS_LABELS: Record<string, string> = { active: 'Active', hold: 'On Hold', inactive: 'Inactive' };
+
+/**
+ * ClientsTab — the clients this team member is the account manager for, shown as
+ * a searchable / filterable table (name, code, status, business type, email).
+ * Self-fetches /api/team/[id]/list?type=clients.
+ */
+function ClientsTab({ userId }: { userId: string }) {
+  const [items, setItems] = useState<ClientItem[] | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setItems(null);
+    fetch(`/api/team/${userId}/list?type=clients`)
+      .then(r => (r.ok ? r.json() : { items: [] }))
+      .then(d => { if (active) setItems((d.items ?? []) as ClientItem[]); })
+      .catch(() => { if (active) setItems([]); });
+    return () => { active = false; };
+  }, [userId]);
+
+  if (items === null) {
+    return <div className="glass rounded-xl p-10 text-center text-sm text-[var(--text-muted)]">Loading…</div>;
+  }
+
+  const typesPresent = [...new Set(items.map(c => c.businessType).filter(Boolean) as string[])].sort();
+  const q = search.trim().toLowerCase();
+  const filtered = items.filter(c => {
+    if (statusFilter && (c.status ?? '').toLowerCase() !== statusFilter) return false;
+    if (typeFilter && (c.businessType ?? '') !== typeFilter) return false;
+    if (q) {
+      const hay = `${c.name} ${c.clientRef ?? ''} ${c.email ?? ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="glass rounded-xl p-5">
+      <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Client Manager Of</h3>
+      {/* Controls — one line */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1 min-w-0">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, code or email…"
+            className="input-base w-full pl-9 text-sm"
+          />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-base text-sm w-40 shrink-0">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="hold">On Hold</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="input-base text-sm w-44 shrink-0">
+          <option value="">All types</option>
+          {typesPresent.map(t => <option key={t} value={t}>{CLIENT_TYPE_LABELS[t] ?? t}</option>)}
+        </select>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="py-12 text-center text-sm text-[var(--text-muted)]">Not the account manager for any clients yet.</div>
+      ) : filtered.length === 0 ? (
+        <div className="py-12 text-center text-sm text-[var(--text-muted)]">No clients match your filters.</div>
+      ) : (
+        <div className="overflow-x-auto -mx-1">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] border-b border-[var(--border)]">
+                <th className="py-2 px-2 font-semibold">Client</th>
+                <th className="py-2 px-2 font-semibold">Code</th>
+                <th className="py-2 px-2 font-semibold">Status</th>
+                <th className="py-2 px-2 font-semibold">Business Type</th>
+                <th className="py-2 px-2 font-semibold">Email</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {filtered.map(c => (
+                <tr key={c.clientId} className="hover:bg-[var(--bg-nav-hover)] transition-colors">
+                  <td className="py-2.5 px-2">
+                    <Link href={`/clients/${c.clientId}`} className="flex items-center gap-2.5 group">
+                      <Avatar name={c.name} size={28} />
+                      <span className="font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">{c.name}</span>
+                    </Link>
+                  </td>
+                  <td className="py-2.5 px-2 text-[var(--text-secondary)] font-mono text-xs whitespace-nowrap">{c.clientRef || '—'}</td>
+                  <td className="py-2.5 px-2">{clientStatusBadge(STATUS_LABELS[c.status] ?? c.status)}</td>
+                  <td className="py-2.5 px-2 text-[var(--text-secondary)] whitespace-nowrap">{c.businessType ? (CLIENT_TYPE_LABELS[c.businessType] ?? c.businessType) : '—'}</td>
+                  <td className="py-2.5 px-2 text-[var(--text-secondary)]">
+                    {c.email ? <a href={`mailto:${c.email}`} className="hover:text-[var(--accent)] truncate">{c.email}</a> : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function clientStatusBadge(status: string) {
   const s = status.toLowerCase();
   const cls = s === 'active'
@@ -483,7 +592,7 @@ function statusBadge(status: string) {
 }
 
 function TabContent({ tab, items, hasTasks }: { tab: TabName; items: unknown[] | undefined; hasTasks: boolean }) {
-  if ((tab === 'Tasks' || tab === 'Clients') && !hasTasks) {
+  if (tab === 'Tasks' && !hasTasks) {
     return <div className="glass rounded-xl p-5 h-[200px]"><EnableTool tool="Tasks" /></div>;
   }
   if (items === undefined) {
@@ -492,7 +601,6 @@ function TabContent({ tab, items, hasTasks }: { tab: TabName; items: unknown[] |
   if (items.length === 0) {
     const text = tab === 'Tasks' ? 'No tasks assigned.'
       : tab === 'Activity' ? 'No activity yet.'
-      : tab === 'Clients' ? 'No client work yet.'
       : 'No documents uploaded.';
     return <div className="glass rounded-xl p-10 text-center text-sm text-[var(--text-muted)]">{text}</div>;
   }
@@ -529,19 +637,6 @@ function TabContent({ tab, items, hasTasks }: { tab: TabName; items: unknown[] |
             </li>
           );
         })}
-
-        {tab === 'Clients' && (items as ClientItem[]).map(c => (
-          <li key={c.clientId} className="py-2.5">
-            <Link href={`/clients/${c.clientId}`} className="flex items-center gap-3 group">
-              <Avatar name={c.name} size={28} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">{c.name}</p>
-                {c.clientRef && <p className="text-xs text-[var(--text-muted)] truncate">{c.clientRef}</p>}
-              </div>
-              <span className="text-xs text-[var(--text-muted)] shrink-0">{c.total} task{c.total === 1 ? '' : 's'} · {c.open} open</span>
-            </Link>
-          </li>
-        ))}
 
         {tab === 'Documents' && (items as DocItem[]).map(d => {
           const driveUrl = d.file_url || (d.drive_file_id ? `https://drive.google.com/file/d/${d.drive_file_id}/view` : null);
