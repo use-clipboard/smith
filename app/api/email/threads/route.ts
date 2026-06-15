@@ -196,7 +196,11 @@ export async function GET(req: NextRequest) {
       );
       threads.sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0));
       // Drafts never appear in triage views; sender/time post-filter the set.
-      let dbMsgs = threads.filter(t => !t.labelIds?.includes('DRAFT'));
+      // Inbox-scope it too: an email that's been trashed / archived since it was
+      // categorised has left the inbox, so it drops off the category's list
+      // (matches the inbox-scoped card count). Uses the live Gmail labels we just
+      // fetched, so it's exact — not dependent on the cache.
+      let dbMsgs = threads.filter(t => !t.labelIds?.includes('DRAFT') && (t.labelIds?.includes('INBOX') ?? false));
       if (sender) {
         const s = sender.toLowerCase();
         dbMsgs = dbMsgs.filter(t => (t.from?.email ?? '').toLowerCase() === s);

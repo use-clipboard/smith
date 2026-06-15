@@ -1623,13 +1623,33 @@ export default function EmailTriagePage() {
     if (!delta) return;
     setUntriagedServer(prev => prev ? { ...prev, base: Math.max(0, prev.base + delta) } : prev);
   }
+  // A categorised inbox email left the inbox (deleted / archived / spam): pull it
+  // from its category card straight away. It was EXCLUDED from the untriaged
+  // baseline, so we shrink categorisedAtBase in step — otherwise the untriaged
+  // formula (base − (categorised − categorisedAtBase)) would read the smaller
+  // `categorised` as a move back to untriaged and tick that count up by one.
+  function removeCategoryOverride(id: string) {
+    let existed = false;
+    setCategoryOverrides(prev => {
+      if (!prev[id] || prev[id].category === 'untriaged') return prev;
+      existed = true;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (existed) {
+      setUntriagedServer(prev => prev ? { ...prev, categorisedAtBase: Math.max(0, prev.categorisedAtBase - 1) } : prev);
+    }
+  }
   // An inbox email left the inbox (deleted / archived / moved): drop it from the
-  // unread badge (if unread) and the untriaged count (if untriaged). Guarded to
-  // inbox emails so acting in another folder doesn't skew the inbox counters.
+  // unread badge (if unread) and, depending on its triage state, either the
+  // untriaged count or its category card. Guarded to inbox emails so acting in
+  // another folder doesn't skew the inbox counters.
   function onInboxEmailRemoved(t: EmailThreadType | undefined) {
     if (!t || !t.labelIds.includes('INBOX')) return;
     if (!t.isRead) adjustInboxUnread(-1);
     if (isUntriaged(t)) adjustUntriagedBase(-1);
+    else removeCategoryOverride(t.id);
   }
   // An inbox email's read state flipped: nudge the unread badge accordingly.
   function onReadStateChanged(t: EmailThreadType | undefined, nowRead: boolean) {

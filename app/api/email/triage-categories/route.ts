@@ -28,10 +28,28 @@ export async function GET() {
   if (!ctx.activeModules.includes('email-triage')) return NextResponse.json({ categories: {} });
 
   const supabase = createServiceClient();
+  const PAGE = 1000;
+
+  // Inbox-scope the categories: a triage row whose email has LEFT the inbox
+  // (trashed / archived / spam) must stop counting toward the cards — mirrors
+  // how the untriaged count is inbox-scoped. We read the user's live inbox set
+  // from email_inbox_cache. Fallback: if the cache is empty (pre-migration or
+  // not yet synced) we don't scope, so the cards never wrongly drop to zero.
+  const inboxIds = new Set<string>();
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await supabase
+      .from('email_inbox_cache')
+      .select('message_id')
+      .eq('user_id', ctx.userId)
+      .range(from, from + PAGE - 1);
+    for (const r of data ?? []) inboxIds.add(r.message_id as string);
+    if (!data || data.length < PAGE) break;
+  }
+  const scopeToInbox = inboxIds.size > 0;
+
   // Supabase caps each query at 1,000 rows — page through the full set or the
   // card counts silently undercount after a big auto-file run.
   const categories: Record<string, { category: string; setBy: string; updatedAt: string }> = {};
-  const PAGE = 1000;
   for (let from = 0; ; from += PAGE) {
     const { data } = await supabase
       .from('email_message_triage')
@@ -39,7 +57,9 @@ export async function GET() {
       .eq('user_id', ctx.userId)
       .range(from, from + PAGE - 1);
     for (const r of data ?? []) {
-      categories[r.message_id as string] = { category: r.category as string, setBy: r.set_by as string, updatedAt: r.updated_at as string };
+      const messageId = r.message_id as string;
+      if (scopeToInbox && !inboxIds.has(messageId)) continue; // email no longer in the inbox
+      categories[messageId] = { category: r.category as string, setBy: r.set_by as string, updatedAt: r.updated_at as string };
     }
     if (!data || data.length < PAGE) break;
   }
