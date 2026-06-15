@@ -6,6 +6,13 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
+// The main analysis returns review points plus a full nested working-papers
+// JSON in one response, which can be long even for a few small documents.
+// Allow up to 5 minutes (matches /api/performance, which does the same kind of
+// large structured generation) — without this the route uses Vercel's short
+// default and a big review can time out mid-generation.
+export const maxDuration = 300;
+
 const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
 
 const RequestSchema = z.object({
@@ -138,14 +145,17 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 8192,
+      // The response carries review points AND the full working-papers JSON, so
+      // it needs generous headroom — 8192 truncated even on a few small files.
+      // 16000 matches /api/performance; claude-sonnet-4-6 supports up to 64K.
+      max_tokens: 16000,
       system: 'You are an expert UK chartered accountant. Always respond with valid JSON only.',
       messages: [{ role: 'user', content: [...fileContent, { type: 'text', text: prompt }] }],
     });
 
     if (response.stop_reason === 'max_tokens') {
       console.error('[/api/final-accounts] main analysis response truncated — consider increasing max_tokens');
-      return NextResponse.json({ error: 'The AI response was too large to complete. Try uploading fewer documents or removing prior-year files, then try again.' }, { status: 500 });
+      return NextResponse.json({ error: 'There were too many review points to fit in one response. Try splitting the job — e.g. review the current year on its own, then the prior year — and run it again.' }, { status: 500 });
     }
 
     const textContent = response.content.find(c => c.type === 'text');
