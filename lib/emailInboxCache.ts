@@ -28,6 +28,11 @@ type Gmail = Awaited<ReturnType<typeof getRefreshedGmailClient>>['gmail'];
 
 const INBOX = 'INBOX';
 const CHUNK = 1000; // rows per DB insert/upsert batch
+// When the cache size disagrees with Gmail's INBOX total we force a full
+// rebuild, but at most once per this window so a steady 60s poll (or a user
+// whose inbox legitimately exceeds the rebuild page cap) can't trigger a 25-
+// request rebuild every cycle. Drift heals within one cooldown at worst.
+const DRIFT_REBUILD_COOLDOWN_MS = 5 * 60_000;
 
 // De-duplicate concurrent syncs for the same user within this process: first
 // load fires several /api/email/unread calls at once, and we must not let them
@@ -155,7 +160,13 @@ async function incremental(
  * bookmark + existing cache, otherwise a full rebuild. Best-effort: throws only
  * on unexpected errors so callers can degrade gracefully.
  */
-export async function syncInboxCache(userId: string, refreshToken: string): Promise<void> {
+export async function syncInboxCache(
+  userId: string,
+  refreshToken: string,
+  // Gmail's authoritative INBOX message total (from labels.get) when the caller
+  // already has it. Lets us detect cache drift for free and reconcile it.
+  expectedInboxTotal?: number,
+): Promise<void> {
   const existing = inFlight.get(userId);
   if (existing) return existing;
 
@@ -163,25 +174,39 @@ export async function syncInboxCache(userId: string, refreshToken: string): Prom
     const svc = createServiceClient();
 
     const { data: conn } = await svc
-      .from('email_connections').select('history_id').eq('user_id', userId).single();
+      .from('email_connections').select('history_id, inbox_rebuilt_at').eq('user_id', userId).single();
     const { count: cacheCount } = await svc
       .from('email_inbox_cache').select('message_id', { count: 'exact', head: true }).eq('user_id', userId);
 
     const { gmail } = await getRefreshedGmailClient(refreshToken);
 
     const haveBookmark = !!conn?.history_id && (cacheCount ?? 0) > 0;
-    let newHistoryId: string | null = null;
 
-    if (haveBookmark) {
+    // Drift safety-net: if the cached inbox size disagrees with Gmail's own
+    // INBOX total, the incremental history feed has missed an event and the
+    // count is wrong — force a full rebuild to reconcile. Rate-limited via
+    // inbox_rebuilt_at (NOT inbox_synced_at, which every sync bumps).
+    let forceRebuild = false;
+    if (typeof expectedInboxTotal === 'number' && (cacheCount ?? 0) !== expectedInboxTotal) {
+      const lastRebuild = conn?.inbox_rebuilt_at ? Date.parse(conn.inbox_rebuilt_at as string) : 0;
+      if (Date.now() - lastRebuild > DRIFT_REBUILD_COOLDOWN_MS) forceRebuild = true;
+    }
+
+    let newHistoryId: string | null = null;
+    let didRebuild = false;
+
+    if (haveBookmark && !forceRebuild) {
       newHistoryId = await incremental(svc, gmail, userId, conn!.history_id as string);
     }
-    if (!haveBookmark || newHistoryId === null) {
+    if (!haveBookmark || forceRebuild || newHistoryId === null) {
       newHistoryId = await fullRebuild(svc, gmail, userId);
+      didRebuild = true;
     }
 
     await svc.from('email_connections').update({
       history_id: newHistoryId ?? conn?.history_id ?? null,
       inbox_synced_at: new Date().toISOString(),
+      ...(didRebuild ? { inbox_rebuilt_at: new Date().toISOString() } : {}),
     }).eq('user_id', userId);
   })().finally(() => inFlight.delete(userId));
 

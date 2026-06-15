@@ -1,0 +1,13 @@
+-- Drift safety-net for the email inbox cache.
+--
+-- The cache (email_inbox_cache) is kept fresh incrementally via the Gmail
+-- history API. If that feed ever misses an event (a delete / archive that never
+-- arrives as history), a stale row lingers and the untriaged count reads HIGH —
+-- the card shows more untriaged emails than the live inbox actually has.
+--
+-- The fix (see lib/emailInboxCache.ts) compares the cached inbox size against
+-- Gmail's authoritative INBOX message total on each sync and forces a full
+-- rebuild when they disagree. inbox_synced_at is bumped on EVERY sync (including
+-- incremental), so it can't rate-limit the rebuild; this dedicated column records
+-- only the last FULL rebuild, letting us cap reconciliations to one per cooldown.
+alter table email_connections add column if not exists inbox_rebuilt_at timestamptz;

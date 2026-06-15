@@ -11,7 +11,7 @@ import EmailList from './EmailList';
 import EmailThread from './EmailThread';
 import EmailContextPanel, { type AiSummary, type SummaryAction } from './EmailContextPanel';
 import { useComposeWindow } from './ComposeWindowProvider';
-import { EMAIL_SENT_EVENT, EMAIL_DRAFT_DISCARDED_EVENT } from './GlobalComposeWindow';
+import { EMAIL_SENT_EVENT, EMAIL_DRAFT_DISCARDED_EVENT, EMAIL_DRAFT_CREATED_EVENT } from './GlobalComposeWindow';
 import AllocateModal from './AllocateModal';
 import EmailRulesModal from './EmailRulesModal';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
@@ -788,9 +788,23 @@ export default function EmailTriagePage() {
   // A draft was discarded from the compose window — refresh so it drops out of
   // the Drafts list (and the Drafts count) without waiting for the next poll.
   useEffect(() => {
-    function onDiscarded() { fetchThreads(activeLabel); }
+    function onDiscarded() {
+      // Drop the Drafts tab count by one right away, then refresh the list.
+      adjustLabelCount('DRAFT', 'messagesTotal', -1);
+      fetchThreads(activeLabel);
+    }
+    // A brand-new draft just entered the Drafts folder — bump the tab count and
+    // refresh the list if the user is sitting in Drafts.
+    function onCreated() {
+      adjustLabelCount('DRAFT', 'messagesTotal', 1);
+      if (activeLabel === 'DRAFT') fetchThreads(activeLabel);
+    }
     window.addEventListener(EMAIL_DRAFT_DISCARDED_EVENT, onDiscarded);
-    return () => window.removeEventListener(EMAIL_DRAFT_DISCARDED_EVENT, onDiscarded);
+    window.addEventListener(EMAIL_DRAFT_CREATED_EVENT, onCreated);
+    return () => {
+      window.removeEventListener(EMAIL_DRAFT_DISCARDED_EVENT, onDiscarded);
+      window.removeEventListener(EMAIL_DRAFT_CREATED_EVENT, onCreated);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeLabel]);
 
@@ -1593,9 +1607,16 @@ export default function EmailTriagePage() {
   // next server poll to re-anchor them. (handleMarkAllUnreadRead already does
   // this for the unread badge; these cover the delete + mark-read paths.)
   function adjustInboxUnread(delta: number) {
+    adjustLabelCount('INBOX', 'messagesUnread', delta);
+  }
+  // Generic optimistic nudge for any folder tab's count. The top tabs read
+  // `messagesTotal` for Drafts/Starred and `messagesUnread` for the rest
+  // (see EmailTopTabs.countFor) — so pass the field that drives the tab you're
+  // adjusting. Clamped at 0; the next 60s poll re-anchors to the server truth.
+  function adjustLabelCount(id: string, field: 'messagesTotal' | 'messagesUnread', delta: number) {
     if (!delta) return;
-    setLabels(prev => prev.map(l => l.id === 'INBOX'
-      ? { ...l, messagesUnread: Math.max(0, (l.messagesUnread ?? 0) + delta) }
+    setLabels(prev => prev.map(l => l.id === id
+      ? { ...l, [field]: Math.max(0, (l[field] ?? 0) + delta) }
       : l));
   }
   function adjustUntriagedBase(delta: number) {
@@ -1636,6 +1657,9 @@ export default function EmailTriagePage() {
 
   function handleStar(starred: boolean) {
     if (!activeThread) return;
+    if (starred !== activeThread.labelIds.includes('STARRED')) {
+      adjustLabelCount('STARRED', 'messagesTotal', starred ? 1 : -1);
+    }
     setThreads(prev => prev.map(t => t.id === activeThread.id ? {
       ...t,
       labelIds: starred
@@ -1645,6 +1669,8 @@ export default function EmailTriagePage() {
   }
 
   function handleListStar(rowId: string, starred: boolean) {
+    const wasStarred = threads.find(x => x.id === rowId)?.labelIds.includes('STARRED') ?? false;
+    if (starred !== wasStarred) adjustLabelCount('STARRED', 'messagesTotal', starred ? 1 : -1);
     setThreads(prev => prev.map(t => t.id === rowId ? {
       ...t,
       labelIds: starred

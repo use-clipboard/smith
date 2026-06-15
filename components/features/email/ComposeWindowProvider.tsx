@@ -60,7 +60,7 @@ interface ComposeWindowState {
   mode:        Mode;
   ctx:         ComposeOpenContext | null;
   snapshot:    ComposeSnapshot | null;
-  /** True during the 3s undo-send countdown: the window is minimised with its
+  /** True during the 5s undo-send countdown: the window is minimised with its
    *  snapshot retained (so Undo can restore it), but the minimised chip is
    *  hidden and open() is ignored until the send resolves. */
   pendingSend: boolean;
@@ -142,7 +142,7 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
     let restored = false;
     setState(s => {
       // A send countdown is running — its snapshot must stay untouched so
-      // Undo can restore it. Ignore opens for these ~3 seconds.
+      // Undo can restore it. Ignore opens for these ~5 seconds.
       if (s.pendingSend) {
         restored = true;
         return s;

@@ -74,6 +74,9 @@ interface Props {
   /** Called after the user discards the draft (bin button) — lets the parent
    *  refresh the Drafts folder so the deleted draft drops out of the list. */
   onDiscarded?: () => void;
+  /** Fired the first time a brand-new draft is auto-saved (so the Drafts tab
+   *  count can rise by one immediately, staying in step with discard/send). */
+  onDraftCreated?: () => void;
   /** When set, called instead of onClose when the user clicks the minimise button.
    *  The handler receives a snapshot of the current draft for later restoration. */
   onMinimise?: (snap: ComposeSnapshot) => void;
@@ -82,7 +85,7 @@ interface Props {
   initialSnapshot?: ComposeSnapshot | null;
   /** Re-open the minimised window (used by undo-send to bring the email back). */
   onRestore?: () => void;
-  /** Signals the provider that a 3s undo-send countdown is running, so the
+  /** Signals the provider that a 5s undo-send countdown is running, so the
    *  minimised chip stays hidden and open() is ignored until it resolves. */
   onPendingSendChange?: (pending: boolean) => void;
 }
@@ -437,7 +440,7 @@ export default function ComposeModal({
   defaultSubject, defaultAttachments,
   defaultDraftId, defaultBcc, defaultHtmlBody,
   signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
-  onDiscarded, onMinimise, initialSnapshot, onRestore, onPendingSendChange,
+  onDiscarded, onDraftCreated, onMinimise, initialSnapshot, onRestore, onPendingSendChange,
 }: Props) {
   const [to, setTo] = useState<SelectedRecipient[]>([]);
   const [cc, setCc] = useState<SelectedRecipient[]>([]);
@@ -670,7 +673,7 @@ export default function ComposeModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, replyTo, replyAllRecipients, forwardOf, prefilledBody, signature, defaultDraftId, defaultBcc, defaultHtmlBody]);
 
-  // ── Undo-send: Send starts a 3s countdown, not the send itself ────────────
+  // ── Undo-send: Send starts a 5s countdown, not the send itself ────────────
   // The window minimises (snapshot retained by the provider) and a toast with
   // a countdown donut offers Undo. Undo restores the window with everything
   // intact; if the timer runs out, the captured snapshot is actually sent.
@@ -695,7 +698,7 @@ export default function ComposeModal({
     sendTimerRef.current = setTimeout(() => {
       setSendCountdown(false);
       void performSend(snap);
-    }, 3000);
+    }, 5000);
   }
 
   function undoSend() {
@@ -735,6 +738,9 @@ export default function ComposeModal({
       if (draftId) {
         void fetch(`/api/email/draft?draftId=${encodeURIComponent(draftId)}`, { method: 'DELETE' })
           .catch(() => { /* non-fatal — manual cleanup at worst */ });
+        // Tell the page the draft has left the Drafts folder so its tab count
+        // drops by one immediately, not on the next poll.
+        onDiscarded?.();
       }
 
       const jobs: Promise<unknown>[] = [];
@@ -868,7 +874,12 @@ export default function ComposeModal({
       });
       if (res.ok) {
         const j = await res.json().catch(() => ({})) as { draftId?: string };
-        if (j.draftId) setDraftId(j.draftId);
+        if (j.draftId) {
+          // First save of a brand-new draft (no prior draftId) → it just
+          // entered the Drafts folder, so bump the tab count.
+          if (!draftId) onDraftCreated?.();
+          setDraftId(j.draftId);
+        }
         setDraftSaved(true);
       }
       // Auto-save stays silent on failure — we don't interrupt typing with an
@@ -1050,7 +1061,7 @@ export default function ComposeModal({
           <circle
             cx="8" cy="8" r="6.5" fill="none" stroke="white" strokeWidth="3"
             strokeDasharray="40.84"
-            style={{ animation: 'smith-undo-countdown 3000ms linear forwards' }}
+            style={{ animation: 'smith-undo-countdown 5000ms linear forwards' }}
           />
         </svg>
         Undo

@@ -38,7 +38,10 @@ export async function GET() {
     // email — however old — is reflected on the next read.
     let untriaged = 0;
     try {
-      await syncInboxCache(ctx.userId, connection.refresh_token);
+      // Pass Gmail's authoritative INBOX message total so the sync can detect a
+      // drifted cache (incremental history feed missed an event) and reconcile
+      // it with a full rebuild — otherwise the untriaged count reads high.
+      await syncInboxCache(ctx.userId, connection.refresh_token, label.data.messagesTotal ?? undefined);
       untriaged = await getUntriagedCount(ctx.userId);
     } catch { /* cache missing pre-migration / sync hiccup — badge just hides */ }
 

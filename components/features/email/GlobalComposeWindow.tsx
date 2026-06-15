@@ -7,6 +7,8 @@ import { useComposeWindow } from './ComposeWindowProvider';
 export const EMAIL_SENT_EVENT = 'smith:email-sent';
 /** Fired when the user discards a draft from the compose window. */
 export const EMAIL_DRAFT_DISCARDED_EVENT = 'smith:email-draft-discarded';
+/** Fired when a brand-new draft is first auto-saved (enters the Drafts folder). */
+export const EMAIL_DRAFT_CREATED_EVENT = 'smith:email-draft-created';
 
 interface SentDetail {
   threadId:         string;
@@ -35,6 +37,11 @@ export default function GlobalComposeWindow() {
   function handleDiscarded() {
     try {
       window.dispatchEvent(new CustomEvent(EMAIL_DRAFT_DISCARDED_EVENT));
+    } catch { /* ignore */ }
+  }
+  function handleDraftCreated() {
+    try {
+      window.dispatchEvent(new CustomEvent(EMAIL_DRAFT_CREATED_EVENT));
     } catch { /* ignore */ }
   }
   function handleCreateTaskFromSent(data: { subject: string; plainBody: string; toEmail: string; toName: string }) {
@@ -76,6 +83,7 @@ export default function GlobalComposeWindow() {
       onForwardSent={handleForwardSent}
       onCreateTaskFromSent={handleCreateTaskFromSent}
       onDiscarded={handleDiscarded}
+      onDraftCreated={handleDraftCreated}
     />
   );
 }

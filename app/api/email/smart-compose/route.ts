@@ -11,6 +11,18 @@ import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropi
 // NOTE: uses claude-sonnet-4-6 (the only model configured). Pointing this at a
 // Haiku-tier model later would cut latency/cost further — it's the ideal fit.
 
+// Detect replies where the model narrated "there's nothing to add" instead of
+// returning a literal empty string. These are never valid continuations to
+// append to the user's email, so we collapse them to ''.
+function isMetaNonSuggestion(s: string): boolean {
+  const t = s.trim();
+  if (!t) return true;
+  // Wrapped in parens/brackets, e.g. "(empty string …)", "[no continuation]".
+  const inner = t.replace(/^[([{]+|[)\]}]+$/g, '').trim().toLowerCase();
+  return /^(empty string|empty|no (continuation|suggestion|text)|none|n\/a|nothing to add|the message is already complete)\b/.test(inner)
+    || /\bmessage is already complete\b/.test(inner);
+}
+
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
@@ -59,6 +71,12 @@ Continuation:`;
     let suggestion = message.content[0]?.type === 'text' ? message.content[0].text : '';
     // Strip surrounding quotes the model sometimes adds; collapse newlines.
     suggestion = suggestion.replace(/^["'`]+|["'`]+$/g, '').replace(/\n+/g, ' ');
+    // The model is told to return an empty string when there's no useful
+    // continuation, but it sometimes narrates that decision instead — e.g.
+    // "(empty string — the message is already complete)" or "[no continuation]".
+    // Treat any such meta/explanatory reply as empty so it never shows as ghost
+    // text the user could accidentally accept into their email.
+    if (isMetaNonSuggestion(suggestion)) suggestion = '';
     // Guard against the model echoing the whole sentence — keep it short.
     if (suggestion.length > 120) suggestion = suggestion.slice(0, 120);
     return NextResponse.json({ suggestion });
