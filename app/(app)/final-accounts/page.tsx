@@ -191,11 +191,12 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
       if (progressRef.current) clearInterval(progressRef.current);
       setProgress(100);
       setReviewPoints((data.reviewPoints || []).filter(Boolean));
-      // Working papers come back with the analysis — set them immediately
-      if (data.workingPapers?.length > 0) {
-        setWorkingPapersHistory([[], data.workingPapers]);
-        setWpHistoryIndex(1);
-      }
+      // Working papers are produced separately, on demand, via "Produce Working
+      // Papers" — so the review response stays small and never truncates. Start
+      // with an empty working-papers history and land on the Review tab.
+      setWorkingPapersHistory([[]]);
+      setWpHistoryIndex(0);
+      setActiveTab('review');
       setAppState('success');
     } catch (err) {
       if (progressRef.current) clearInterval(progressRef.current);
@@ -203,13 +204,16 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
     }
   }, [canProcess, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, allFiles, selectedClient?.id]);
 
-  // Regenerate working papers on demand (e.g. if user wants a fresh A1 after editing review points)
+  // Produce (or regenerate) the working papers on demand — step 2 of the job.
+  // The documents are re-sent so the AI can extract the figures that populate
+  // the schedules; the A1 narrative is written from the review points.
   const handleGenerateWorkingPapers = useCallback(async () => {
     if (reviewPoints.length === 0) return;
     setIsGeneratingPapers(true);
     setWpError(null);
     try {
-      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'working_papers', businessName, clientCode, businessType, periodStart, periodEnd, preparerName, reviewPoints }) });
+      const fileData = await Promise.all(allFiles.map(async f => ({ name: f.name, mimeType: f.type || 'application/pdf', base64: await fileToBase64(f) })));
+      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'working_papers', businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, reviewPoints, files: fileData, clientId: selectedClient?.id ?? null }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed'); }
       const data = await res.json();
       const newPapers = (data.workingPapers || []).filter(Boolean);
@@ -221,7 +225,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
     } finally {
       setIsGeneratingPapers(false);
     }
-  }, [reviewPoints, businessName, clientCode, businessType, periodStart, periodEnd, preparerName, workingPapersHistory, wpHistoryIndex]);
+  }, [reviewPoints, allFiles, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, selectedClient?.id, workingPapersHistory, wpHistoryIndex]);
 
   const reportHtml = generateReportHtml(businessName, clientCode, businessType, periodStart, periodEnd, preparerName, relevantContext, reviewPoints, workingPapers);
   const reportFileName = `Final_Accounts_Review_${businessName.replace(/\s+/g, '_') || 'Report'}`;
@@ -235,7 +239,7 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
         progress={progress}
         fileCount={allFiles.length}
         files={processingFiles}
-        steps={['Reading financial statements', 'Analysing performance', 'Identifying review points', 'Generating working papers', 'Compiling report']}
+        steps={['Reading financial statements', 'Analysing performance', 'Identifying review points', 'Compiling review']}
       />
     );
   }
@@ -378,7 +382,9 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
                 </button>
               )}
               <button onClick={handleGenerateWorkingPapers} disabled={isGeneratingPapers || reviewPoints.length === 0} className="btn-secondary bg-white text-[var(--text-primary)] border-white hover:bg-white/90 hover:text-[var(--text-primary)] hover:border-white shadow-sm">
-                <FileText size={14} />{isGeneratingPapers ? 'Regenerating…' : 'Regenerate Working Papers'}
+                <FileText size={14} />{isGeneratingPapers
+                  ? (workingPapers.length > 0 ? 'Regenerating…' : 'Producing…')
+                  : (workingPapers.length > 0 ? 'Regenerate Working Papers' : 'Produce Working Papers')}
               </button>
               <button onClick={() => setAppState('idle')} className="btn-primary">New Review</button>
             </div>
@@ -513,9 +519,9 @@ function FinalAccountsTool({ seed, onBack }: { seed: FinalAccountsSeed | null; o
             <div className="flex flex-col gap-3">
               {workingPapers.length === 0 && (
                 <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-12 text-center lg:col-span-2">
-                  <p className="text-sm text-[var(--text-muted)] mb-3">Working papers were not included in this analysis result. Click Regenerate to produce them.</p>
+                  <p className="text-sm text-[var(--text-muted)] mb-3">Review the points first, then produce the working papers — they&apos;re generated from your review and the uploaded accounts.</p>
                   <button onClick={handleGenerateWorkingPapers} disabled={isGeneratingPapers} className="btn-primary mx-auto">
-                    <FileText size={14} />{isGeneratingPapers ? 'Generating…' : 'Regenerate Working Papers'}
+                    <FileText size={14} />{isGeneratingPapers ? 'Producing…' : 'Produce Working Papers'}
                   </button>
                 </div>
               )}
