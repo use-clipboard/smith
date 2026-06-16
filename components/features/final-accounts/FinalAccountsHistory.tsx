@@ -12,7 +12,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generateReportHtml } from '@/utils/finalAccountsReport';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
-import type { ReviewPoint, WorkingPaper } from '@/types';
+import type { ReviewPoint, WorkingPaper, ReviewStatusEvent } from '@/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export interface HistoryUser { id: string; full_name: string | null; email: string }
@@ -42,11 +42,14 @@ export interface FinalAccountsSeed {
   isVatRegistered: boolean;
   relevantContext: string;
   preparerName: string;
+  reviewerName: string;
   periodStart: string;
   periodEnd: string;
   clientCode: string | null;
   reviewPoints: ReviewPoint[];
   workingPapers: WorkingPaper[];
+  pointStatuses?: Record<number, 'reviewed' | 'ignored'>;
+  statusHistory?: ReviewStatusEvent[];
 }
 
 interface Props {
@@ -127,7 +130,7 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
 
   // Expanded rows + per-row review-point cache. Lazy-fetched on expand.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [rowDetail, setRowDetail] = useState<Record<string, { loading: boolean; error?: string; reviewPoints?: ReviewPoint[] }>>({});
+  const [rowDetail, setRowDetail] = useState<Record<string, { loading: boolean; error?: string; reviewPoints?: ReviewPoint[]; statusHistory?: ReviewStatusEvent[] }>>({});
 
   // ── Fetch list ──────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -196,8 +199,8 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
     setRowDetail(prev => ({ ...prev, [id]: { loading: true } }));
     try {
       const output = await fetchOutput(id);
-      const rd = output.result_data as { reviewPoints?: ReviewPoint[] };
-      setRowDetail(prev => ({ ...prev, [id]: { loading: false, reviewPoints: rd.reviewPoints ?? [] } }));
+      const rd = output.result_data as { reviewPoints?: ReviewPoint[]; statusHistory?: ReviewStatusEvent[] };
+      setRowDetail(prev => ({ ...prev, [id]: { loading: false, reviewPoints: rd.reviewPoints ?? [], statusHistory: rd.statusHistory ?? [] } }));
     } catch (e) {
       setRowDetail(prev => ({ ...prev, [id]: { loading: false, error: e instanceof Error ? e.message : 'Failed to load' } }));
     }
@@ -276,11 +279,14 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
         isVatRegistered: Boolean(rd.isVatRegistered),
         relevantContext: String(rd.relevantContext ?? ''),
         preparerName: String(rd.preparerName ?? ''),
+        reviewerName: String(rd.reviewerName ?? ''),
         periodStart: String(rd.periodStart ?? rd.dateFrom ?? ''),
         periodEnd: String(rd.periodEnd ?? rd.dateTo ?? ''),
         clientCode: (rd.clientCode as string | null) ?? null,
         reviewPoints: (rd.reviewPoints as ReviewPoint[]) ?? [],
         workingPapers: (rd.workingPapers as WorkingPaper[]) ?? [],
+        pointStatuses: (rd.pointStatuses as Record<number, 'reviewed' | 'ignored'>) ?? {},
+        statusHistory: (rd.statusHistory as ReviewStatusEvent[]) ?? [],
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Open failed');
@@ -706,7 +712,7 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
                               </div>
                             )}
                             {detail?.reviewPoints && detail.reviewPoints.length > 0 && (
-                              <ExpandedReviewPoints points={detail.reviewPoints} />
+                              <ExpandedReviewPoints points={detail.reviewPoints} statusHistory={detail.statusHistory} />
                             )}
                           </div>
                         </td>
@@ -724,8 +730,9 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
 }
 
 // ── Expanded panel content ───────────────────────────────────────────────────
-function ExpandedReviewPoints({ points }: { points: ReviewPoint[] }) {
+function ExpandedReviewPoints({ points, statusHistory }: { points: ReviewPoint[]; statusHistory?: ReviewStatusEvent[] }) {
   const serious = points.filter(p => p.severity === 'Serious');
+  const medium = points.filter(p => p.severity === 'Medium');
   const minor = points.filter(p => p.severity === 'Minor');
 
   return (
@@ -737,25 +744,38 @@ function ExpandedReviewPoints({ points }: { points: ReviewPoint[] }) {
           {serious.length} Serious
         </span>
         <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
+          {medium.length} Medium
+        </span>
+        <span className="text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-600 rounded-full px-2 py-0.5">
           {minor.length} Minor
         </span>
       </div>
 
-      {serious.length > 0 && (
-        <div className="px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-red-700 mb-2">Serious</p>
-          <div className="space-y-2">
-            {serious.map((p, i) => <ReviewPointCard key={`s-${i}`} point={p} />)}
+      {([['Serious', serious, 'text-red-700'], ['Medium', medium, 'text-amber-700'], ['Minor', minor, 'text-slate-600']] as const).map(([label, list, cls]) =>
+        list.length > 0 ? (
+          <div key={label} className="px-4 py-3">
+            <p className={`text-[10px] font-bold uppercase tracking-wide mb-2 ${cls}`}>{label}</p>
+            <div className="space-y-2">
+              {list.map((p, i) => <ReviewPointCard key={`${label}-${i}`} point={p} />)}
+            </div>
           </div>
-        </div>
+        ) : null
       )}
 
-      {minor.length > 0 && (
-        <div className="px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-2">Minor</p>
-          <div className="space-y-2">
-            {minor.map((p, i) => <ReviewPointCard key={`m-${i}`} point={p} />)}
-          </div>
+      {statusHistory && statusHistory.length > 0 && (
+        <div className="px-4 py-3 bg-gray-50/50">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-2">Resolution history</p>
+          <ul className="space-y-2">
+            {[...statusHistory].reverse().map((e, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-xs">
+                <span className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${e.action === 'reviewed' ? 'bg-emerald-500' : e.action === 'ignored' ? 'bg-slate-400' : 'bg-amber-500'}`} />
+                <div className="min-w-0">
+                  <p className="text-gray-700"><span className="font-semibold">{e.byName || 'Someone'}</span> {e.action === 'reopened' ? 'reopened' : `marked as ${e.action}`}{e.issue ? <span className="text-gray-500"> — {e.issue}</span> : null}</p>
+                  <p className="text-[11px] text-gray-400">{new Date(e.at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -763,9 +783,9 @@ function ExpandedReviewPoints({ points }: { points: ReviewPoint[] }) {
 }
 
 function ReviewPointCard({ point }: { point: ReviewPoint }) {
-  const isSerious = point.severity === 'Serious';
+  const accent = point.severity === 'Serious' ? 'border-red-400 bg-red-50/40' : point.severity === 'Medium' ? 'border-amber-400 bg-amber-50/40' : 'border-slate-300 bg-slate-50/40';
   return (
-    <div className={`px-3 py-2 rounded-lg border-l-4 ${isSerious ? 'border-red-400 bg-red-50/40' : 'border-amber-400 bg-amber-50/40'}`}>
+    <div className={`px-3 py-2 rounded-lg border-l-4 ${accent}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{point.area}</p>

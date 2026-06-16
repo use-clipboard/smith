@@ -15,9 +15,21 @@ import type { RefObject } from 'react';
  * Extracted from SaveReportModal so it can also be used for direct
  * "download from history" flows that don't have a live DOM to clone.
  */
+/** Performance-report PDF options. When `pageMarginPx` is set (live-editor path
+ *  only), the exporter matches the live paginator: the cover becomes its own
+ *  full-bleed first page, and body pages use the same margins so the same amount
+ *  of content lands on each page. Leaving these unset preserves the original
+ *  full-bleed slicing used by working papers / Accounts Review. */
+export interface PdfPaginationOptions {
+  coverSelector?: string;      // e.g. '[data-cover]' — rendered as its own page
+  pageMarginPx?: number;       // per-page top/bottom margin (matches live, e.g. 48)
+  avoidSplitSelector?: string; // blocks that must not be cut across a page break
+}
+
 export async function generatePdfBlob(
   htmlContent: string,
   paperRef?: RefObject<HTMLElement | null>,
+  opts?: PdfPaginationOptions,
 ): Promise<Blob> {
   const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
@@ -26,40 +38,59 @@ export async function generatePdfBlob(
 
   const A4_W_MM   = 210;
   const A4_H_MM   = 297;
-  // Hard cap to prevent a runaway canvas from generating a 100MB+ PDF.
-  // Legitimate performance reports are ~10-40 pages; anything beyond
-  // SANITY_MAX_PAGES indicates a layout bug in the source DOM.
   const SANITY_MAX_PAGES = 100;
   const SCALE = 1.5;
   const CONTENT_W_PX = 794;
+  const PX_PER_MM = CONTENT_W_PX / A4_W_MM; // 794px ↔ 210mm
 
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;';
 
   let captureTarget: HTMLElement;
   const livePaper = paperRef?.current ?? null;
+  // Performance "match the live paginator" mode — only on the live-editor path.
+  const perfMode = !!(livePaper && opts?.pageMarginPx);
 
-  // String-HTML reports (no live editor clone) get a clean printed margin on
-  // every page so text never runs to the paper edge. The live-editor path
-  // keeps a zero PDF margin so the page-break bands the user sees while
-  // editing line up exactly with the rendered output.
-  const MARGIN_MM  = livePaper ? 0 : 10;
-  const PRINT_W_MM = A4_W_MM - MARGIN_MM * 2;
-  const PRINT_H_MM = A4_H_MM - MARGIN_MM * 2;
-  // One printable page height in px, derived so the captured content keeps the
-  // A4 aspect ratio when mapped onto the printable area (no vertical squish).
-  // With MARGIN_MM = 0 this is the original 1123px.
-  const PAGE_H_PX  = Math.round((PRINT_H_MM * CONTENT_W_PX) / PRINT_W_MM);
+  // ── Page geometry ──────────────────────────────────────────────────────────
+  // perfMode: full page width (the editor's own 48px side padding is the side
+  //   margin, already baked into the 794px capture), with top/bottom margins so
+  //   each body page holds exactly one live page's worth of content.
+  // default: original behaviour (full bleed for live clones, 10mm for strings).
+  let imgX: number, imgY: number, imgW: number, imgH: number, PAGE_H_PX: number;
+  if (perfMode) {
+    const marginMM = opts!.pageMarginPx! / PX_PER_MM; // 48px → ~12.7mm
+    imgX = 0; imgY = marginMM; imgW = A4_W_MM; imgH = A4_H_MM - marginMM * 2;
+    PAGE_H_PX = Math.round(imgH * PX_PER_MM);          // ≈ 1027px content/page
+  } else {
+    const MARGIN_MM = livePaper ? 0 : 10;
+    imgX = MARGIN_MM; imgY = MARGIN_MM;
+    imgW = A4_W_MM - MARGIN_MM * 2; imgH = A4_H_MM - MARGIN_MM * 2;
+    PAGE_H_PX = Math.round((imgH * CONTENT_W_PX) / imgW);
+  }
 
   if (livePaper) {
     const clone = livePaper.cloneNode(true) as HTMLDivElement;
     clone.querySelectorAll('[aria-hidden="true"]').forEach(el => el.remove());
+
+    // PaginationPlus injects page chrome (headers/footers/gap bands) as widgets,
+    // plus a global stylesheet keyed off `.rm-with-pagination` that restyles
+    // tables. Strip both so the clone is clean, continuous content (the PDF
+    // paginates it itself below).
+    clone.querySelectorAll(
+      '.rm-page-header, .rm-page-footer, .rm-pagination-gap, .rm-page-break, .rm-page-break-blank, [data-rm-pagination]'
+    ).forEach(el => el.remove());
+    clone.querySelectorAll('[class*="rm-page"], [class*="rm-pagination"]').forEach(el => el.remove());
+    if (clone.classList.contains('rm-with-pagination')) clone.classList.remove('rm-with-pagination');
+    clone.querySelectorAll('.rm-with-pagination').forEach(el => el.classList.remove('rm-with-pagination'));
     clone.style.overflow   = 'visible';
     clone.style.boxShadow  = 'none';
     clone.style.borderRadius = '0';
     clone.style.margin     = '0';
     clone.style.maxWidth   = '794px';
     clone.style.width      = '794px';
+    // Pin the font so the PDF matches the on-screen editor (the report prose is
+    // Arial; without this html2canvas can fall back to a different sans).
+    clone.style.fontFamily = 'Arial, Helvetica, sans-serif';
     clone.querySelectorAll('[contenteditable]').forEach(el => {
       (el as HTMLElement).setAttribute('contenteditable', 'false');
     });
@@ -74,7 +105,7 @@ export async function generatePdfBlob(
       .join('\n');
     const bodyContent = doc.body.innerHTML;
     wrapper.style.background = '#fff';
-    wrapper.innerHTML = `<style>${styleContent}</style><div style="padding:40px 40px 0;background:#fff;">${bodyContent}</div>`;
+    wrapper.innerHTML = `<style>${styleContent}</style><div style="padding:40px 40px 0;background:#fff;font-family:Arial,Helvetica,sans-serif;">${bodyContent}</div>`;
     document.body.appendChild(wrapper);
     captureTarget = wrapper;
   }
@@ -82,29 +113,8 @@ export async function generatePdfBlob(
   try {
     void captureTarget.offsetHeight;
 
-    // Phase 1: push .force-page-start elements to the next page boundary
-    for (let pass = 0; pass < 20; pass++) {
-      let inserted = false;
-      void captureTarget.offsetHeight;
-      const originY = captureTarget.getBoundingClientRect().top;
-
-      for (const el of Array.from(captureTarget.querySelectorAll('.force-page-start')) as HTMLElement[]) {
-        const elTop      = Math.round(el.getBoundingClientRect().top - originY);
-        const pageOffset = elTop % PAGE_H_PX;
-        if (pageOffset > PAGE_H_PX * 0.65) {
-          const spacer = document.createElement('div');
-          spacer.style.cssText = `height:${PAGE_H_PX - pageOffset}px;line-height:0;font-size:0;`;
-          el.parentNode!.insertBefore(spacer, el);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) break;
-    }
-
-    // Phase 2: keep content off page boundaries. Push any element of the given
-    // selector that straddles a page break (and still fits on one page) onto
-    // the next page by inserting a spacer before it.
+    // Push any element matching `selector` that straddles a page boundary (and
+    // fits within one page) onto the next page, by inserting a spacer before it.
     const avoidSplit = (selector: string, maxPasses: number) => {
       for (let pass = 0; pass < maxPasses; pass++) {
         let inserted = false;
@@ -131,12 +141,47 @@ export async function generatePdfBlob(
       }
     };
 
-    // 2a — keep each WHOLE working paper / review point on a single page first,
-    // so a section is never split when it fits on one page.
-    avoidSplit('.paper, .review-point', 100);
-    // 2b — for papers genuinely taller than a page, at least keep their inner
-    // text blocks (paragraphs, monospace, notes, journals) from being cut.
-    avoidSplit('.wp-para, pre, .wp-notes, .journal-section', 100);
+    // ── Cover (perfMode): capture it as its own full-bleed first page, then
+    //    remove it so the body content paginates on its own clean grid. ──
+    let coverCanvas: HTMLCanvasElement | null = null;
+    if (perfMode && opts?.coverSelector) {
+      const coverInner = captureTarget.querySelector(opts.coverSelector);
+      const coverWrap = (coverInner?.parentElement ?? coverInner) as HTMLElement | null;
+      if (coverWrap) {
+        coverCanvas = await html2canvas(coverWrap, {
+          scale: SCALE, useCORS: true, logging: false, backgroundColor: '#ffffff', windowWidth: 794,
+        });
+        coverWrap.remove();
+        void captureTarget.offsetHeight;
+      }
+    }
+
+    if (perfMode) {
+      // Keep whole blocks (headings, paragraphs, tables, lists) off page breaks,
+      // mirroring the live paginator's whole-block behaviour.
+      if (opts?.avoidSplitSelector) avoidSplit(opts.avoidSplitSelector, 300);
+    } else {
+      // Working-papers / Accounts Review behaviour (unchanged).
+      for (let pass = 0; pass < 20; pass++) {
+        let inserted = false;
+        void captureTarget.offsetHeight;
+        const originY = captureTarget.getBoundingClientRect().top;
+        for (const el of Array.from(captureTarget.querySelectorAll('.force-page-start')) as HTMLElement[]) {
+          const elTop      = Math.round(el.getBoundingClientRect().top - originY);
+          const pageOffset = elTop % PAGE_H_PX;
+          if (pageOffset > PAGE_H_PX * 0.65) {
+            const spacer = document.createElement('div');
+            spacer.style.cssText = `height:${PAGE_H_PX - pageOffset}px;line-height:0;font-size:0;`;
+            el.parentNode!.insertBefore(spacer, el);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) break;
+      }
+      avoidSplit('.paper, .review-point', 100);
+      avoidSplit('.wp-para, pre, .wp-notes, .journal-section', 100);
+    }
 
     const canvas = await html2canvas(captureTarget, {
       scale: SCALE,
@@ -147,43 +192,46 @@ export async function generatePdfBlob(
     });
 
     const pageHeightCanvasPx = PAGE_H_PX * SCALE;
-    const numPages = Math.max(1, Math.ceil(canvas.height / pageHeightCanvasPx));
+    const numContentPages = Math.max(1, Math.ceil(canvas.height / pageHeightCanvasPx));
+    const totalPages = numContentPages + (coverCanvas ? 1 : 0);
 
-    if (numPages > SANITY_MAX_PAGES) {
+    if (totalPages > SANITY_MAX_PAGES) {
       throw new Error(
-        `Generated PDF would be ${numPages} pages — the report's rendered height (${Math.round(canvas.height / SCALE)}px) is far larger than expected. ` +
+        `Generated PDF would be ${totalPages} pages — the report's rendered height (${Math.round(canvas.height / SCALE)}px) is far larger than expected. ` +
         `This usually means a layout bug in the editor (e.g. an element with runaway height). ` +
         `Try refreshing the page, removing the most recent section, or contact support.`,
       );
     }
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    let firstPage = true;
+    const newPage = () => { if (!firstPage) pdf.addPage(); firstPage = false; };
 
-    // Slice the captured canvas into per-page sub-canvases. Each PDF page
-    // gets its own (smaller) PNG instead of the whole giant image being
-    // embedded once per page — which previously bloated the file (a 1090-
-    // page report came out at 106MB because every page held the full image).
-    for (let i = 0; i < numPages; i++) {
+    // Cover page (perfMode) — full bleed.
+    if (coverCanvas) {
+      newPage();
+      pdf.addImage(coverCanvas.toDataURL('image/png'), 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+    }
+
+    // Body pages — one canvas slice per page, placed within the page margins.
+    for (let i = 0; i < numContentPages; i++) {
       const sliceCanvas = document.createElement('canvas');
       sliceCanvas.width  = canvas.width;
       sliceCanvas.height = pageHeightCanvasPx;
       const ctx = sliceCanvas.getContext('2d');
       if (!ctx) continue;
-      // Fill the slice with white so any "missing" pixels (the last partial
-      // page) render as white rather than transparent/black.
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
       ctx.drawImage(
         canvas,
-        0, i * pageHeightCanvasPx,                  // source x, y
-        canvas.width, pageHeightCanvasPx,           // source w, h
-        0, 0,                                       // dest x, y
-        canvas.width, pageHeightCanvasPx,           // dest w, h
+        0, i * pageHeightCanvasPx,
+        canvas.width, pageHeightCanvasPx,
+        0, 0,
+        canvas.width, pageHeightCanvasPx,
       );
 
-      const sliceImgData = sliceCanvas.toDataURL('image/png');
-      if (i > 0) pdf.addPage();
-      pdf.addImage(sliceImgData, 'PNG', MARGIN_MM, MARGIN_MM, PRINT_W_MM, PRINT_H_MM);
+      newPage();
+      pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', imgX, imgY, imgW, imgH);
     }
 
     return pdf.output('blob');

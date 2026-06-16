@@ -199,8 +199,38 @@ export interface ReviewPoint {
   area: string;
   issue: string;
   explanation: string;
-  severity: 'Serious' | 'Minor';
+  severity: 'Serious' | 'Medium' | 'Minor';
   suggestedJournal?: JournalEntry | null;
+  // ── Optional richer fields for the results view. All optional so older saved
+  // reviews (and any pre-upgrade run still in memory) render fine without them. ──
+  /** Second-level breadcrumb, e.g. 'Director Loan Account'. */
+  subArea?: string | null;
+  /** Short summary phrase shown on the card, e.g. 'Potential s455 exposure'. */
+  tag?: string | null;
+  /** The implication / risk callout, separate from the issue explanation. */
+  risk?: string | null;
+  /** A structured headline figure for the card / detail panel. */
+  metric?: {
+    /** e.g. '£69,914' or '+48%'. */
+    value?: string | null;
+    /** e.g. 'Balance' or 'vs prior year'. */
+    label?: string | null;
+    /** Trend vs prior year, e.g. '+£6,295'. */
+    delta?: string | null;
+  } | null;
+}
+
+/** An entry in a review's resolution audit trail (who marked what, when). */
+export interface ReviewStatusEvent {
+  /** Index of the review point this event relates to. */
+  pointIndex: number;
+  /** Snapshot of the point's title at the time, for display in history. */
+  issue?: string;
+  action: 'reviewed' | 'ignored' | 'reopened';
+  /** Display name of the user who made the change. */
+  byName?: string;
+  /** ISO timestamp. */
+  at: string;
 }
 
 export interface WorkingPaperTableRow {

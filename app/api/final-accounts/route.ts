@@ -82,7 +82,18 @@ type ReviewPointInput = { issue?: string; suggestedJournal?: { debitAccount?: st
 function buildWorkingPapers(reviewPoints: unknown[], wpd: WpData, a1Notes: string, businessType: string) {
   const isLtd = businessType === 'limited_company';
   const SEP = '─'.repeat(72);
-  const fmt = (n: number | null | undefined) => n != null ? `£${n.toFixed(2)}` : '';
+  // The prompt asks the model to return `null` for any figure it can't find, so
+  // every numeric cell must be null-safe. These helpers coerce whatever the
+  // model returns (number, null, or a stray numeric string) to a clean value —
+  // never throwing — so a missing figure renders blank instead of crashing the
+  // whole working-papers build with `null.toFixed`.
+  const toNum = (n: unknown): number | null => {
+    if (n == null) return null;
+    const v = typeof n === 'number' ? n : Number(String(n).replace(/[^0-9.\-]/g, ''));
+    return Number.isFinite(v) ? v : null;
+  };
+  const n2 = (n: unknown) => { const v = toNum(n); return v != null ? v.toFixed(2) : ''; };
+  const fmt = (n: unknown) => { const v = toNum(n); return v != null ? `£${v.toFixed(2)}` : ''; };
 
   // Helper — build a WorkingPaper with both content (for export) and table (for UI)
   function makeTable(
@@ -108,17 +119,17 @@ function buildWorkingPapers(reviewPoints: unknown[], wpd: WpData, a1Notes: strin
     .filter(p => p.suggestedJournal && p.suggestedJournal.debitAccount && p.suggestedJournal.debitAccount !== 'None')
     .map(p => {
       const j = p.suggestedJournal!;
-      return { 'DR Account': j.debitAccount ?? '', 'CR Account': j.creditAccount ?? '', 'Amount (£)': j.amount != null ? j.amount.toFixed(2) : '', 'Description': j.description ?? p.issue ?? '' };
+      return { 'DR Account': j.debitAccount ?? '', 'CR Account': j.creditAccount ?? '', 'Amount (£)': n2(j.amount), 'Description': j.description ?? p.issue ?? '' };
     });
 
   // B1 — Lead Asset Schedule
   const b1TableRows = (wpd.fixedAssets ?? []).map(r => ({
-    'Account': r.account, 'B/Fwd (£)': r.bfwd.toFixed(2), 'Additions (£)': r.additions.toFixed(2), 'Disposals (£)': r.disposals.toFixed(2), 'C/Fwd (£)': r.cfwd.toFixed(2),
+    'Account': r.account, 'B/Fwd (£)': n2(r.bfwd), 'Additions (£)': n2(r.additions), 'Disposals (£)': n2(r.disposals), 'C/Fwd (£)': n2(r.cfwd),
   }));
 
   // B2 — Depreciation
   const b2TableRows = (wpd.depreciationSchedule ?? []).map(r => ({
-    'Asset': r.asset, 'Cost (£)': r.cost.toFixed(2), 'Rate %': r.ratePercent != null ? `${r.ratePercent}%` : '', 'Charge (£)': r.charge.toFixed(2),
+    'Asset': r.asset, 'Cost (£)': n2(r.cost), 'Rate %': r.ratePercent != null ? `${r.ratePercent}%` : '', 'Charge (£)': n2(r.charge),
   }));
 
   // C1 — Debtors & Prepayments
@@ -143,12 +154,12 @@ function buildWorkingPapers(reviewPoints: unknown[], wpd: WpData, a1Notes: strin
 
   // G1 — Directors Emoluments
   const g1TableRows = (wpd.directorsEmoluments ?? []).map(r => ({
-    'Director Name': r.name, 'Gross Salary (£)': r.grossSalary.toFixed(2), 'PAYE/NI (£)': r.payeNi.toFixed(2), 'Pension (£)': r.pension.toFixed(2), 'Net Pay (£)': r.netPay.toFixed(2),
+    'Director Name': r.name, 'Gross Salary (£)': n2(r.grossSalary), 'PAYE/NI (£)': n2(r.payeNi), 'Pension (£)': n2(r.pension), 'Net Pay (£)': n2(r.netPay),
   }));
 
   // G4 — Legal & Professional
   const g4TableRows = pl.legalProfessional != null
-    ? [{ 'Item': 'Legal & Professional (total per accounts)', 'Amount (£)': pl.legalProfessional.toFixed(2), 'Capital/Revenue': 'Revenue', 'Notes': 'Obtain full breakdown from client' }]
+    ? [{ 'Item': 'Legal & Professional (total per accounts)', 'Amount (£)': n2(pl.legalProfessional), 'Capital/Revenue': 'Revenue', 'Notes': 'Obtain full breakdown from client' }]
     : [];
 
   // G5 — Rent, Rates (text form with pre-populated amounts)

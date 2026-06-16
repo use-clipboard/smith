@@ -15,9 +15,11 @@ export function generateReportHtml(
   relevantContext: string,
   reviewPoints: ReviewPoint[],
   workingPapers: WorkingPaper[],
+  opts: { statuses?: Record<number, 'reviewed' | 'ignored'>; finalPack?: boolean; reviewerName?: string } = {},
 ): string {
   const isWorkingPapersOnly = reviewPoints.length === 0;
   const serious = reviewPoints.filter(p => p.severity === 'Serious');
+  const medium = reviewPoints.filter(p => p.severity === 'Medium');
   const minor = reviewPoints.filter(p => p.severity === 'Minor');
   const dateGenerated = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -114,7 +116,7 @@ export function generateReportHtml(
       ${reviewPoints.length > 0 ? `
         <div class="toc-group">
           <div class="toc-group-header">Review Points</div>
-          <div class="toc-entry"><span class="toc-code">—</span><span class="toc-entry-name">${reviewPoints.length} point${reviewPoints.length !== 1 ? 's' : ''} identified (${serious.length} serious, ${minor.length} minor)</span></div>
+          <div class="toc-entry"><span class="toc-code">—</span><span class="toc-entry-name">${reviewPoints.length} point${reviewPoints.length !== 1 ? 's' : ''} identified (${serious.length} serious, ${medium.length} medium, ${minor.length} minor)</span></div>
         </div>` : ''}
       ${tocGroupsHtml}
     </div>`;
@@ -124,14 +126,17 @@ export function generateReportHtml(
       <div class="sd-letter">R</div>
       <div class="sd-content">
         <div class="sd-name">Review Points</div>
-        <div class="sd-sub">${reviewPoints.length} point${reviewPoints.length !== 1 ? 's' : ''} identified &mdash; ${serious.length} serious, ${minor.length} minor</div>
+        <div class="sd-sub">${reviewPoints.length} point${reviewPoints.length !== 1 ? 's' : ''} identified &mdash; ${serious.length} serious, ${medium.length} medium, ${minor.length} minor</div>
       </div>
     </div>
     <div class="review-summary">
       <div class="rsbox serious-box"><div class="rsnum">${serious.length}</div><div class="rslbl">Serious</div></div>
+      <div class="rsbox medium-box"><div class="rsnum">${medium.length}</div><div class="rslbl">Medium</div></div>
       <div class="rsbox minor-box"><div class="rsnum">${minor.length}</div><div class="rslbl">Minor</div></div>
     </div>
-    ${reviewPoints.map(p => {
+    ${reviewPoints.map((p, idx) => {
+      const sevClass = p.severity === 'Serious' ? 'serious' : p.severity === 'Medium' ? 'medium' : 'minor';
+      const status = opts.statuses?.[idx];
       const hasJournal = p.suggestedJournal && p.suggestedJournal.debitAccount && p.suggestedJournal.debitAccount !== 'None' && (p.suggestedJournal.amount ?? 0) > 0;
       const journalHtml = hasJournal ? `
         <div class="journal-section">
@@ -145,13 +150,17 @@ export function generateReportHtml(
           </table>
           ${p.suggestedJournal!.description ? `<div class="journal-desc">${p.suggestedJournal!.description}</div>` : ''}
         </div>` : '';
+      const statusHtml = status ? `<span class="status-tag status-${status}">${status === 'reviewed' ? 'Reviewed' : 'Ignored'}</span>` : '';
+      const riskHtml = p.risk ? `<div class="rp-risk"><span class="rp-risk-label">Risk:</span> ${p.risk}</div>` : '';
+      const subArea = p.subArea ? ` &middot; ${p.subArea}` : '';
       return `
-        <div class="review-point ${p.severity === 'Serious' ? 'serious' : 'minor'}">
+        <div class="review-point ${sevClass}">
           <div class="rp-header">
-            <div><span class="rp-area">${p.area ?? ''}</span><div class="rp-issue">${p.issue ?? ''}</div></div>
-            <span class="badge ${p.severity === 'Serious' ? 'badge-serious' : 'badge-minor'}">${p.severity}</span>
+            <div><span class="rp-area">${p.area ?? ''}${subArea}</span><div class="rp-issue">${p.issue ?? ''}</div></div>
+            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">${statusHtml}<span class="badge badge-${sevClass}">${p.severity}</span></div>
           </div>
           <p class="rp-expl">${p.explanation ?? ''}</p>
+          ${riskHtml}
           ${journalHtml}
         </div>`;
     }).join('')}
@@ -230,7 +239,36 @@ export function generateReportHtml(
     pre { background: #F5F5F8; border: 1px solid #e5e7eb; border-radius: 4px; padding: 12px 14px; font-size: 11px; line-height: 1.7; white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', Courier, monospace; }
     .wp-para { font-size: 12px; color: #374151; margin: 0 0 10px; line-height: 1.8; page-break-inside: avoid; break-inside: avoid; }
     .wp-para:last-child { margin-bottom: 0; }
+    /* 3-tier severity + status + risk + sign-off (overrides 2-tier defaults above) */
+    .review-point.medium { border-left-color: #f59e0b; background: #fffdf5; }
+    .review-point.minor  { border-left-color: #94a3b8; background: #fafafa; }
+    .badge-medium { background: #fef3c7; color: #92400e; }
+    .medium-box { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+    .minor-box  { background: #f8fafc; border-color: #cbd5e1; color: #475569; }
+    .status-tag { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 3px 9px; border-radius: 999px; }
+    .status-reviewed { background: #dcfce7; color: #166534; }
+    .status-ignored  { background: #f1f5f9; color: #64748b; }
+    .rp-risk { font-size: 11.5px; color: #92400e; margin: 6px 0 0; padding: 6px 10px; background: #fffbeb; border-left: 3px solid #fcd34d; border-radius: 0 4px 4px 0; }
+    .rp-risk-label { font-weight: 700; }
+    .signoff { margin-top: 44px; padding-top: 22px; border-top: 2px solid #12458F; }
+    .signoff-title { font-size: 14px; font-weight: 800; color: #12458F; margin-bottom: 6px; }
+    .signoff-sub { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
+    .signoff-row { display: flex; gap: 40px; margin-top: 30px; }
+    .signoff-field { flex: 1; }
+    .signoff-field label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #9ca3af; display: block; margin-bottom: 26px; }
+    .signoff-line { border-bottom: 1px solid #9ca3af; padding-bottom: 2px; font-size: 13px; color: #374151; min-height: 18px; }
   `;
+
+  const signoffHtml = opts.finalPack ? `
+    <div class="signoff force-page-start">
+      <div class="signoff-title">Review Sign-Off</div>
+      <div class="signoff-sub">This pack documents the final accounts review and supporting working papers for the period.</div>
+      <div class="signoff-row">
+        <div class="signoff-field"><label>Prepared by</label><div class="signoff-line">${preparerName || ''}</div></div>
+        <div class="signoff-field"><label>Reviewed by</label><div class="signoff-line">${opts.reviewerName || ''}</div></div>
+        <div class="signoff-field"><label>Date</label><div class="signoff-line">${dateGenerated}</div></div>
+      </div>
+    </div>` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -244,6 +282,7 @@ export function generateReportHtml(
   ${tocHtml}
   ${reviewSectionHtml}
   ${wpSectionsHtml}
+  ${signoffHtml}
 </body>
 </html>`;
 }

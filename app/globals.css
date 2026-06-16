@@ -47,6 +47,20 @@
   --info: #3B82F6;
 }
 
+/* ─── Marketing — gentle float ───────────────────────────────────────────────
+   Continuous slow bob for the landing-page hero product shot. Disabled when the
+   user prefers reduced motion. */
+@keyframes smith-floaty {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-12px); }
+}
+.animate-floaty {
+  animation: smith-floaty 6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-floaty { animation: none; }
+}
+
 /* ─── Chat Nudge Animation ───────────────────────────────────────────────── */
 @keyframes nudge {
   0%,100% { transform: translateX(0) rotate(0deg); }
@@ -339,40 +353,19 @@ body {
 .performance-prose mark {
   padding: 1px 2px; border-radius: 2px;
 }
-/* Page break marker — zero height so it doesn't shift content vs the A4 gradient lines.
-   The visual gap is created with box-shadow (which does not affect layout). */
+/* Page break marker — INVISIBLE in the editor (zero height, no layout impact). The
+   visible A4 page gutters are drawn as overlay bands by paginate() in
+   PerformanceEditor. This node is kept in the document only so the exported PDF can
+   force a real page break before each section (handled by the export stylesheet). */
 .performance-prose div[data-page-break] {
   display: block;
   height: 0;
-  margin: 0 -48px;
-  border: none;
-  position: relative;
-  overflow: visible;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   user-select: none;
-  pointer-events: none;
-  /* Top shadow = bottom of previous page, bottom shadow = top of next page */
-  box-shadow:
-    0 -28px 0 28px #e2e8f0,
-    0  28px 0 28px #e2e8f0,
-    0 -30px 0 29px #94a3b8,
-    0  30px 0 29px #94a3b8;
-}
-.performance-prose div[data-page-break]::before {
-  content: 'PAGE BREAK';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 9px;
-  font-weight: 800;
-  color: #64748b;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  font-family: Arial, sans-serif;
-  white-space: nowrap;
-  background: #e2e8f0;
-  padding: 2px 12px;
-  border-radius: 9999px;
   pointer-events: none;
 }
 

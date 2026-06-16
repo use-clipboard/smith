@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // tiptap-pagination-plus ships ESM-syntax JS without "type":"module", so let
+  // Next transpile it through its own loaders to avoid bundler resolution issues.
+  transpilePackages: ['tiptap-pagination-plus'],
   eslint: {
     ignoreDuringBuilds: true,
   },

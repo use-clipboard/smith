@@ -7,8 +7,8 @@ import { Highlight } from '@tiptap/extension-highlight';
 import TextAlign from '@tiptap/extension-text-align';
 import FontFamily from '@tiptap/extension-font-family';
 import { TableKit } from '@tiptap/extension-table';
-import { Node } from '@tiptap/core';
-import { useCallback, useRef, useState } from 'react';
+import { PaginationPlus } from 'tiptap-pagination-plus';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bold, Italic, UnderlineIcon,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
@@ -49,13 +49,11 @@ const DEFAULT_GRADIENT = COVER_THEMES[0].gradient;
 
 // ─── Page Break extension ─────────────────────────────────────────────────────
 
-const PageBreak = Node.create({
-  name: 'pageBreak',
-  group: 'block',
-  atom: true,
-  parseHTML() { return [{ tag: 'div[data-page-break]' }]; },
-  renderHTML() { return ['div', { 'data-page-break': '', class: 'force-page-start', style: 'page-break-before:always;break-before:page;' }]; },
-});
+// A4 page geometry for the live paginator (PaginationPlus). 794×1123 = A4 at 96dpi.
+const A4_PAGE_WIDTH  = 794;
+const A4_PAGE_HEIGHT = 1123;
+const PAGE_MARGIN    = 48; // inner page margin (matches the report's content inset)
+const PAGE_GAP       = 26; // grey gap shown between pages
 
 // ─── Section helpers ──────────────────────────────────────────────────────────
 
@@ -88,6 +86,25 @@ function syncEditorToSections(sections: Section[], editorHtml: string): Section[
     if (vi < 0 || vi >= currentParsed.length) return section;
     return { ...section, html: currentParsed[vi].html };
   });
+}
+
+// The live paginator (PaginationPlus) creates page breaks automatically from
+// content height, so we no longer inject manual <div data-page-break> markers.
+// We just strip any that linger in older saved reports so they don't leave stray
+// empty blocks in the editor.
+function stripPageBreaks(html: string): string {
+  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') {
+    return html.replace(/<div[^>]*data-page-break[^>]*>\s*<\/div>/gi, '');
+  }
+  try {
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+    const root = doc.body;
+    if (!root) return html;
+    root.querySelectorAll('div[data-page-break]').forEach(n => n.remove());
+    return root.innerHTML;
+  } catch {
+    return html;
+  }
 }
 
 // ─── Colour constants ─────────────────────────────────────────────────────────
@@ -521,6 +538,14 @@ export default function PerformanceEditor({
     firmLabel: '', subtitle: 'Performance Analysis Report',
   });
 
+  // Local ref to the A4 paper element, forwarded to the optional `paperRef` prop
+  // so SaveReportModal can clone the live DOM for the PDF.
+  const localPaperRef = useRef<HTMLDivElement | null>(null);
+  const setPaperRef = useCallback((node: HTMLDivElement | null) => {
+    localPaperRef.current = node;
+    if (paperRef) (paperRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+  }, [paperRef]);
+
   const handleFirmLogoUpload = async (file: File) => {
     if (file.size > 2 * 1024 * 1024) { alert('Max file size is 2MB'); return; }
     try {
@@ -553,9 +578,22 @@ export default function PerformanceEditor({
       Underline, TextStyle, Color,
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      FontFamily, TableKit, PageBreak,
+      FontFamily,
+      TableKit.configure({ table: { resizable: true } }),
+      PaginationPlus.configure({
+        pageHeight: A4_PAGE_HEIGHT,
+        pageWidth: A4_PAGE_WIDTH,
+        pageGap: PAGE_GAP,
+        pageGapBorderSize: 0,
+        pageGapBorderColor: '#c8d1dc',
+        pageBreakBackground: '#c8d1dc',
+        marginTop: PAGE_MARGIN, marginBottom: PAGE_MARGIN,
+        marginLeft: PAGE_MARGIN, marginRight: PAGE_MARGIN,
+        contentMarginTop: 0, contentMarginBottom: 0,
+        headerLeft: '', headerRight: '', footerLeft: '', footerRight: '',
+      }),
     ],
-    content: buildHtmlFromSections(sections),
+    content: stripPageBreaks(buildHtmlFromSections(sections)),
     onUpdate: ({ editor }) => onHtmlChange(editor.getHTML()),
     editorProps: { attributes: { class: 'performance-prose focus:outline-none' } },
   });
@@ -563,7 +601,7 @@ export default function PerformanceEditor({
   const applyNewSections = useCallback((newSections: Section[]) => {
     setSections(newSections);
     if (editor) {
-      const html = buildHtmlFromSections(newSections);
+      const html = stripPageBreaks(buildHtmlFromSections(newSections));
       editor.commands.setContent(html);
       onHtmlChange(html);
     }
@@ -592,6 +630,25 @@ export default function PerformanceEditor({
     setCoverOptions(opts);
     onCoverChange?.(opts);
   };
+
+  // ── A4 pagination ───────────────────────────────────────────────────────────
+  // Walk the content block-by-block and break it into true A4 pages. Whole blocks
+  // (paragraphs, lists, tables) are pushed to the next page rather than split, so a
+  // table never straddles a gutter. Section headings always start a new page. Each
+  // closed page is filled to a full A4 height with white space, then a grey gutter
+  // band (drawn as an overlay from `gutters`) separates it from the next page.
+  // A block taller than a whole page (an oversized table) can't be kept off the
+  // boundary — pages still break through it, because pages matter more.
+  // Runs on mount, on edits, on resize and after fonts load.
+  // On first mount, sync the (page-break-stripped) content up to the parent so the
+  // exported PDF matches what's shown in the editor.
+  const didInitHtml = useRef(false);
+  useEffect(() => {
+    if (editor && !didInitHtml.current) {
+      didInitHtml.current = true;
+      onHtmlChange(editor.getHTML());
+    }
+  }, [editor, onHtmlChange]);
 
   if (!editor) return null;
 
@@ -719,47 +776,8 @@ export default function PerformanceEditor({
 
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div style={{ minHeight: 700, background: '#c8d1dc', paddingBottom: 64 }}>
-        {/* A4 paper at 794px. Page-break bands are absolutely positioned inside
-            the paper at every 1123px so they clip automatically when there's no
-            content — the paper div's overflow:clip handles this for free. */}
-        <div ref={paperRef} className="mx-auto mb-8 shadow-xl"
-          style={{
-            maxWidth: 794,
-            padding: '48px',
-            overflow: 'clip',
-            background: 'white',
-            position: 'relative',
-            borderRadius: 2,
-          }}>
-
-          {/* Page-break bands — purely visual, positioned absolute so they don't
-              affect layout. They appear at every 1123px (one A4 page height). */}
-          {Array.from({ length: 20 }, (_, i) => (
-            <div key={i} aria-hidden="true"
-              style={{
-                position: 'absolute',
-                top: (i + 1) * 1123 - 14,
-                left: 0,
-                right: 0,
-                height: 28,
-                background: 'rgba(200,209,220,0.92)',
-                zIndex: 5,
-                pointerEvents: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                borderTop: '1px solid #94a3b8',
-                borderBottom: '1px solid #94a3b8',
-              }}>
-              <div style={{ flex: 1, height: 1, background: '#b0bec5', marginLeft: 20 }} />
-              <span style={{ fontSize: 9, color: '#78909c', userSelect: 'none', letterSpacing: '2px', textTransform: 'uppercase', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                Page {i + 1} &nbsp;·&nbsp; Page {i + 2}
-              </span>
-              <div style={{ flex: 1, height: 1, background: '#b0bec5', marginRight: 20 }} />
-            </div>
-          ))}
+      <div style={{ minHeight: 700, background: '#c8d1dc', padding: '28px 0 64px' }}>
+        <div ref={setPaperRef} style={{ width: 'fit-content', maxWidth: '100%', margin: '0 auto' }}>
 
           <style>{`
             .performance-prose h1 { color: ${themeColor}; border-bottom-color: ${themeColor}; }
@@ -767,8 +785,53 @@ export default function PerformanceEditor({
             .performance-prose h3 { color: ${themeColor}; }
             .performance-prose strong { color: ${themeColor}; }
             .performance-prose th { background: ${themeColor}; border-color: ${themeColor}; }
+
+            /* PaginationPlus turns the editor itself into the white A4 page(s). */
+            .performance-prose.rm-with-pagination {
+              background: #fff;
+              margin: 0 auto;
+              box-shadow: 0 10px 30px rgba(15,23,42,0.12);
+              border-radius: 2px;
+              border-color: #e5e7eb !important;
+            }
+
+            /* Protect our standard tables from the paginator's table-splitting CSS
+               (which targets companion table extensions we don't use). Keep them
+               rendering as normal, whole tables. */
+            .performance-prose.rm-with-pagination table { display: table !important; width: 100% !important; }
+            .performance-prose.rm-with-pagination table > tr { display: table-row !important; }
+            .performance-prose.rm-with-pagination table thead { display: table-header-group !important; }
+            .performance-prose.rm-with-pagination table tbody { display: table-row-group !important; max-height: none !important; overflow: visible !important; }
+            .performance-prose.rm-with-pagination table tbody > tr { display: table-row !important; }
+            .performance-prose.rm-with-pagination table td,
+            .performance-prose.rm-with-pagination table th { word-break: normal !important; }
+
+            /* Column resize affordance for tables (TableKit resizable). */
+            .performance-prose .tableWrapper { overflow-x: auto; }
+            .performance-prose .column-resize-handle {
+              position: absolute;
+              right: -2px;
+              top: 0;
+              bottom: -2px;
+              width: 4px;
+              background: var(--accent);
+              pointer-events: none;
+            }
+            .performance-prose table { position: relative; }
+            .performance-prose.resize-cursor { cursor: col-resize; }
           `}</style>
-          {titlePageHtml && <div dangerouslySetInnerHTML={{ __html: titlePageHtml }} />}
+
+          {/* Cover / title page — its own A4 sheet above the paginated body. */}
+          {titlePageHtml && (
+            <div style={{
+              width: A4_PAGE_WIDTH, maxWidth: '100%', margin: '0 auto 26px',
+              padding: PAGE_MARGIN, background: '#fff', overflow: 'clip',
+              boxShadow: '0 10px 30px rgba(15,23,42,0.12)', position: 'relative', borderRadius: 2,
+            }}>
+              <div data-cover dangerouslySetInnerHTML={{ __html: titlePageHtml }} />
+            </div>
+          )}
+
           <EditorContent editor={editor} />
         </div>
       </div>

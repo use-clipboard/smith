@@ -52,7 +52,21 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/cron/') ||
     request.nextUrl.pathname === '/api/tasks/reminders/process';
 
-  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute) {
+  // Public marketing site (no auth). The homepage at "/" plus the marketing
+  // sub-pages are visible to anyone — logged-out visitors should land here, not
+  // be bounced to /login. App routes (/dashboard, /clients, …) are NOT listed
+  // here and therefore stay protected.
+  const MARKETING_PATHS = [
+    '/pricing', '/product', '/features', '/tools', '/about', '/story',
+    '/resources', '/contact', '/demo', '/security',
+  ];
+  const isMarketing =
+    request.nextUrl.pathname === '/' ||
+    MARKETING_PATHS.some(
+      (p) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/')
+    );
+
+  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute && !isMarketing) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);

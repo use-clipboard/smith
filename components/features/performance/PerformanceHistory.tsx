@@ -64,6 +64,7 @@ export interface PerformanceSeed {
   reportHtml: string;
   editorHtml: string;
   titlePageHtml: string;
+  chartDataJson?: string;
 }
 
 interface Props {
@@ -271,8 +272,9 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
       '    ul, ol { padding-left: 22px; margin: 8px 0; }',
       '    li { margin-bottom: 4px; }',
       '    h1, h2, h3 { page-break-after: avoid; break-after: avoid; }',
-      '    h2, h3 { page-break-before: avoid; break-before: avoid; }',
-      '    div[data-page-break] { display: block; height: 0; border: none; background: transparent; margin: 0; padding: 0; box-shadow: none; }',
+      '    h1, h2, h3, p, li, blockquote { page-break-inside: avoid; break-inside: avoid; }',
+      '    tr, td, th { page-break-inside: avoid; break-inside: avoid; }',
+      '    div[data-page-break] { display: block; height: 0; border: none; background: transparent; margin: 0; padding: 0; box-shadow: none; page-break-before: always; break-before: page; }',
       '    .tableWrapper { overflow-x: auto; }',
       '  </style>',
       '</head>',
@@ -319,6 +321,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
         reportHtml: String(rd.reportHtml ?? ''),
         editorHtml: String(rd.editorHtml ?? rd.reportHtml ?? ''),
         titlePageHtml: String(rd.titlePageHtml ?? ''),
+        chartDataJson: String(rd.chartDataJson ?? ''),
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Open failed');
@@ -640,7 +643,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
                           {row.user ? (
                             <Tooltip label={userName}>
                               <div className="inline-flex items-center gap-2">
-                                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold text-[var(--text-primary)] ${avatarColour(row.user.id)}`}>
+                                <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${avatarColour(row.user.id)}`}>
                                   {initials(row.user.full_name, row.user.email)}
                                 </div>
                                 <span className="text-sm text-[var(--text-secondary)] truncate max-w-[120px]">

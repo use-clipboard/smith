@@ -135,6 +135,9 @@ Your output MUST be a single JSON object with exactly two keys: "reportHtml" and
    - **Cover page:** Start with: \`<div class="report-cover"><h1>Business Performance Report ${periodDesc}</h1><h2>Prepared for: ${businessName}</h2><p>Date of Issue: ${today}</p></div>\`
    - **Contents:** Follow the cover page with: \`<h1>Report Contents</h1><ul>${sectionList}</ul>\`
    - **Only generate the sections listed in the contents above.** Do not add sections that are not listed.
+   - **Page breaks (IMPORTANT — for clean PDF pagination):** Insert \`<div data-page-break></div>\` immediately BEFORE every \`<h1>\` that begins a major section (i.e. every \`<h1>\` AFTER the "Report Contents" list). This makes each section start on a fresh page. Do NOT place a page break before the cover or before the Report Contents.
+   - **Keep every table on a single page:** No \`<table>\` may be longer than one A4 page (roughly 22 body rows max). If a table would be longer, split it into several smaller tables — each under \`<h3>\` sub-headings and each comfortably under one page — rather than producing one long table. Never produce a table that would span two pages.
+   - **Never split a block across a page:** keep each paragraph, list and table self-contained and reasonably short so it is not broken by a page boundary.
 
 2. **chartDataJson**: A JSON **string** containing KPI benchmarking data for a bar chart.
    - Format: \`[{"label": "KPI Name", "company": 25, "benchmark": 22}, ...]\`
