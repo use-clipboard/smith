@@ -29,7 +29,11 @@ The main description field MUST be formatted as: "[Invoice Number] - [Supplier/C
  * It is IDENTICAL for every request with the same targetSoftware + isVatRegistered, so Anthropic
  * can cache it and avoid re-processing these tokens on every call.
  */
-export function buildStaticInstructions(targetSoftware: TargetSoftware, isVatRegistered: boolean): string {
+export function buildStaticInstructions(
+  targetSoftware: TargetSoftware,
+  isVatRegistered: boolean,
+  analysisMode: 'standard' | 'thorough' = 'standard',
+): string {
   const vatInstruction = isVatRegistered
     ? `**VAT Status: REGISTERED.**\n- You MUST only extract a VAT amount if a VAT value (e.g., "VAT", "Value Added Tax") and a corresponding amount is explicitly listed on the document.\n- If the document does not explicitly state a VAT amount, the VAT value MUST be 0.\n- If a VAT registration number is present, it is a strong indicator that VAT might be applicable, but you still must find an explicit VAT amount on the document to extract it.`
     : `**VAT Status: NOT REGISTERED.**\n- The client is NOT VAT registered. For ALL transactions, the VAT amount MUST be 0.`;
@@ -52,14 +56,20 @@ export function buildStaticInstructions(targetSoftware: TargetSoftware, isVatReg
     taskPrompt = `**Task 1: Valid Transactions (Sage 50 UK — Audit Trail Import Format)**\nOutput one row per invoice line. Rules:\n- 'TYPE': Transaction type code. Use 'PI' for Purchase Invoice, 'SI' for Sales Invoice, 'PC' for Purchase Credit Note, 'SC' for Sales Credit Note, 'BP' for Bank Payment, 'BR' for Bank Receipt.\n- 'ACCOUNT_REF': Supplier or customer account reference as it appears in Sage (short code, max 8 chars, no spaces — e.g., "AMAZON01", "SMITH001"). Derive from supplier name.\n- 'NOMINAL_CODE': Nominal/expense ledger code from the chart of accounts provided (numeric, e.g., 5000 for purchases, 7000 for overheads).\n- 'DATE': DD/MM/YYYY.\n- 'REFERENCE': Invoice reference number (max 30 chars).\n- 'DETAILS': Short description (max 60 chars) — supplier name and brief description.\n- 'NET_AMOUNT': Net amount excluding VAT (positive number).\n- 'TAX_CODE': Sage VAT tax code. Use 'T1' for standard 20% VAT, 'T5' for reduced 5% VAT, 'T0' for zero-rated, 'T9' for exempt or outside scope. ${isVatRegistered ? '' : "CRITICAL: Always use 'T9' and TAX_AMOUNT must be 0."}\n- 'TAX_AMOUNT': VAT amount (0 if T0/T9 or client not VAT registered).\n- 'EXCHANGE_RATE': Always 1.00 for GBP. If invoice is in foreign currency, convert all amounts to GBP first and note the rate in DETAILS.\n${CURRENCY_AND_DESCRIPTION} ${isVatRegistered ? '' : "CRITICAL: 'TAX_AMOUNT' MUST be 0 and 'TAX_CODE' MUST be 'T9'."}`;
   }
 
-  const flaggingPrompt = `**Task 2: Flagging Entries**\nFlag irrelevant, unprocessable, or potential duplicate documents. Include the page number where the flagged item was found. When checking for duplicates within the current batch, if you find multiple identical documents, you MUST process the first occurrence as a valid transaction and flag all subsequent occurrences as duplicates.`;
+  const flaggingPrompt = `**Task 2: Flagging Entries**
+Flag irrelevant, unprocessable, or potential duplicate documents. For EACH flagged entry output an object with: 'fileName', 'reason' (why it was flagged), 'pageNumber' (where it was found), and — CRITICALLY — also extract whatever transaction data IS legible on the document into these fields: 'date' (YYYY-MM-DD), 'supplier' (the supplier/customer name), 'amount' (the total GROSS amount, as a number), and 'description' (a short summary). Always populate these data fields from the document when the values are present, EVEN THOUGH the entry is flagged — so that if the user decides the entry is valid after all, the details are already captured and ready to promote without re-keying. Leave a data field out only if it genuinely does not appear on the document. When checking for duplicates within the current batch, if you find multiple identical documents, you MUST process the first occurrence as a valid transaction and flag all subsequent occurrences as duplicates (set 'duplicateOf' to the reference of the original).`;
+
+  const thoroughPrompt = analysisMode === 'thorough'
+    ? `**Analysis Mode: THOROUGH.**\n- Examine every line of each document carefully; do not rush.\n- Double-check every monetary figure (net, VAT, gross) against the document and confirm net + VAT = gross before outputting.\n- Re-read supplier/customer names, dates and references for accuracy.\n- Take extra care matching each transaction to the correct account/category; when genuinely uncertain, flag the entry with a clear reason rather than guessing.\n- Scrutinise for duplicates and anomalies more aggressively than usual.`
+    : '';
 
   return [
     vatInstruction,
     taskPrompt,
     flaggingPrompt,
+    thoroughPrompt,
     `Return a single JSON object with keys: 'validTransactions' and 'flaggedEntries'.`,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 /**

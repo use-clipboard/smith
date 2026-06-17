@@ -9,7 +9,7 @@ import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
 import PerformanceEditor, { getThemeColor } from '@/components/features/performance/PerformanceEditor';
 import PerformanceHistory, { type PerformanceSeed } from '@/components/features/performance/PerformanceHistory';
-import { TrendingUp, Check, ArrowLeft, ArrowRight, Sparkles, ShieldCheck, FileText, Activity, Save, Loader2, CheckCircle2, Circle, AlertCircle, BarChart3, UploadCloud, BookCopy, X } from 'lucide-react';
+import { TrendingUp, Check, ArrowLeft, ArrowRight, Sparkles, ShieldCheck, FileText, Activity, Save, Loader2, CheckCircle2, Circle, AlertCircle, UploadCloud, BookCopy, X } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { fileToBase64 } from '@/utils/fileUtils';
 
@@ -1014,38 +1014,6 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             </Tooltip>
           </div>
 
-          {/* KPI vs industry benchmark */}
-          {chartItems.length > 0 && (
-            <div className="bg-white/[0.78] backdrop-blur-md rounded-2xl border border-[var(--border)] p-5">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--text-primary)]"><BarChart3 size={15} className="text-[var(--accent)]" /> KPIs vs industry benchmark</h3>
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
-                {chartItems.map((d, i) => {
-                  const max = Math.max(d.company, d.benchmark, 1);
-                  const above = d.company >= d.benchmark;
-                  return (
-                    <div key={i}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{d.label}</span>
-                        <span className={`text-xs font-bold shrink-0 ${above ? 'text-emerald-600' : 'text-amber-600'}`}>{d.companyRaw}</span>
-                      </div>
-                      <div className="mt-1.5 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="w-16 shrink-0 text-[10px] text-[var(--text-muted)]">Company</span>
-                          <div className="flex-1 h-2 rounded-full bg-[var(--bg-nav-hover)] overflow-hidden"><div className={`h-full rounded-full ${above ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${Math.min(100, Math.max(0, (d.company / max) * 100))}%` }} /></div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-16 shrink-0 text-[10px] text-[var(--text-muted)]">Benchmark</span>
-                          <div className="flex-1 h-2 rounded-full bg-[var(--bg-nav-hover)] overflow-hidden"><div className="h-full rounded-full bg-slate-400" style={{ width: `${Math.min(100, Math.max(0, (d.benchmark / max) * 100))}%` }} /></div>
-                          <span className="w-10 shrink-0 text-right text-[10px] text-[var(--text-muted)]">{d.benchmarkRaw}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           <SaveReportModal
             isOpen={saveModalOpen}
             reportHtml={fullReportHtml}
@@ -1053,7 +1021,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             pdfOptions={{
               coverSelector: '[data-cover]',
               pageMarginPx: 48,
-              avoidSplitSelector: 'h1, h2, h3, p, table, ul, ol, li, blockquote',
+              avoidSplitSelector: 'h1, h2, h3, p, table, ul, ol, blockquote, [data-perf-chart]',
             }}
             reportFileName={reportFileName}
             feature="performance_analysis"
@@ -1075,6 +1043,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
             defaultTitle={paBusinessName}
             defaultPeriod={storedPeriod}
             paperRef={paperRef}
+            kpiData={chartItems.map(d => ({ label: d.label, company: d.company, benchmark: d.benchmark }))}
             onHtmlChange={setEditorHtml}
             onCoverChange={handleCoverChange}
             onFirmLogoUploaded={url => setFirmLogoUrl(url)}

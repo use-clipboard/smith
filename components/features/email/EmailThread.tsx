@@ -115,14 +115,13 @@ const ATTACHMENT_COLLAPSE_THRESHOLD = 3;
 
 function AttachmentChips({ attachments }: { attachments: EmailMessage['attachments'] }) {
   const [expanded, setExpanded] = useState(false);
+  const [zipping, setZipping] = useState(false);
   if (!attachments.length) return null;
-  // Trigger one download per attachment sequentially. Browsers stagger the
-  // save dialogs themselves; we just create an anchor and click it for each.
-  // This avoids needing a server-side zip endpoint — fine for the typical
-  // 2–5 attachment case. Filenames are preserved via the download attribute.
-  function downloadAll() {
-    const downloadable = attachments.filter(a => !!a.attachmentId);
-    downloadable.forEach((att, i) => {
+
+  // One-by-one downloads (the original behaviour) — used for a single file, and
+  // as a graceful fallback if zipping ever fails.
+  function downloadSequential(items: EmailMessage['attachments']) {
+    items.forEach((att, i) => {
       window.setTimeout(() => {
         const a = document.createElement('a');
         a.href = attachmentUrl(att);
@@ -133,6 +132,69 @@ function AttachmentChips({ attachments }: { attachments: EmailMessage['attachmen
         document.body.removeChild(a);
       }, i * 250);
     });
+  }
+
+  // "Download all": fetch every attachment and bundle them into a single .zip so
+  // the user gets one file instead of a stream of save dialogs. A single
+  // attachment downloads directly; any failure falls back to sequential saves.
+  async function downloadAll() {
+    const downloadable = attachments.filter(a => !!a.attachmentId);
+    if (downloadable.length === 0) return;
+    if (downloadable.length === 1) { downloadSequential(downloadable); return; }
+
+    setZipping(true);
+    try {
+      const fetched = await Promise.allSettled(
+        downloadable.map(async att => {
+          const res = await fetch(attachmentUrl(att));
+          if (!res.ok) throw new Error(`Failed to fetch ${att.filename}`);
+          return { filename: att.filename, bytes: new Uint8Array(await res.arrayBuffer()) };
+        })
+      );
+      const got = fetched
+        .filter((r): r is PromiseFulfilledResult<{ filename: string; bytes: Uint8Array }> => r.status === 'fulfilled')
+        .map(r => r.value);
+      if (got.length === 0) throw new Error('No attachments could be downloaded.');
+
+      // De-duplicate filenames so two attachments named the same don't collide.
+      const used = new Set<string>();
+      const fileMap: Record<string, Uint8Array> = {};
+      for (const { filename, bytes } of got) {
+        let name = filename || 'attachment';
+        if (used.has(name)) {
+          const dot = name.lastIndexOf('.');
+          const base = dot > 0 ? name.slice(0, dot) : name;
+          const ext = dot > 0 ? name.slice(dot) : '';
+          let n = 2;
+          while (used.has(`${base} (${n})${ext}`)) n++;
+          name = `${base} (${n})${ext}`;
+        }
+        used.add(name);
+        fileMap[name] = bytes;
+      }
+
+      // Store-only (level 0) — attachments are already-compressed PDFs/images, so
+      // re-compressing just burns CPU. fflate is dynamically imported so it stays
+      // out of the main bundle.
+      const { zip } = await import('fflate');
+      const zipped = await new Promise<Uint8Array>((resolve, reject) => {
+        zip(fileMap, { level: 0 }, (err, data) => (err ? reject(err) : resolve(data)));
+      });
+
+      const blob = new Blob([zipped], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'attachments.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      downloadSequential(downloadable);
+    } finally {
+      setZipping(false);
+    }
   }
   const downloadableCount = attachments.filter(a => !!a.attachmentId).length;
   const totalKB = Math.round(attachments.reduce((s, a) => s + a.size, 0) / 1024);
@@ -159,14 +221,15 @@ function AttachmentChips({ attachments }: { attachments: EmailMessage['attachmen
   }
 
   const downloadAllButton = downloadableCount > 1 ? (
-    <Tooltip label={`Download all ${downloadableCount} attachments`}>
+    <Tooltip label={zipping ? 'Preparing zip…' : `Download all ${downloadableCount} attachments as a zip`}>
       <button
         type="button"
         onClick={downloadAll}
-        aria-label="Download all attachments"
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors"
+        disabled={zipping}
+        aria-label="Download all attachments as a zip"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[var(--border)] bg-[var(--bg-card-solid)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        <FolderDown size={12} /> Download all
+        {zipping ? <Loader2 size={12} className="animate-spin" /> : <FolderDown size={12} />} {zipping ? 'Zipping…' : 'Download all'}
       </button>
     </Tooltip>
   ) : null;

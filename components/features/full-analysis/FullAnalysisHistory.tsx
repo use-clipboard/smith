@@ -82,6 +82,16 @@ const SOFTWARE_BADGE: Record<TargetSoftware, string> = {
   sage:       'bg-amber-100 text-amber-700',
 };
 
+const SOFTWARE_LOGO: Record<TargetSoftware, string> = {
+  general:    '/logos/general.svg',
+  vt:         '/logos/vt.png',
+  capium:     '/logos/capium.png',
+  xero:       '/logos/xero.png',
+  quickbooks: '/logos/quickbooks.png',
+  freeagent:  '/logos/freeagent.png',
+  sage:       '/logos/sage.png',
+};
+
 type SortKey = 'created_at' | 'target_software' | 'client_name' | 'transaction_count';
 
 interface ColumnConfig {
@@ -382,7 +392,7 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <ToolLayout title="Full Transaction Analysis" icon={FileSearch} wide>
+    <ToolLayout title="Capture" icon={FileSearch} wide>
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -718,7 +728,10 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
                     )}
                     {colVisible('mode') && (
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${SOFTWARE_BADGE[row.target_software] ?? SOFTWARE_BADGE.general}`}>
+                        <span className={`inline-flex items-center gap-1.5 text-[11px] pl-1 pr-2 py-0.5 rounded-full font-semibold ${SOFTWARE_BADGE[row.target_software] ?? SOFTWARE_BADGE.general}`}>
+                          <span className="w-4 h-4 rounded-full bg-white flex items-center justify-center overflow-hidden shrink-0 border border-black/5">
+                            <img src={SOFTWARE_LOGO[row.target_software] ?? SOFTWARE_LOGO.general} alt="" className="w-full h-full object-contain" />
+                          </span>
                           {SOFTWARE_LABELS[row.target_software] ?? row.target_software}
                         </span>
                       </td>

@@ -26,6 +26,7 @@ const RequestSchema = z.object({
   saveToDrive: z.boolean().optional(),
   isVatRegistered: z.boolean().default(false),
   targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general']),
+  analysisMode: z.enum(['standard', 'thorough']).default('standard'),
   files: z.array(FileSchema),
   pastTransactionsContent: z.string().nullable().optional(),
   ledgersContent: z.string().nullable().optional(),
@@ -49,7 +50,8 @@ async function runBatch(
     pastTransactionsContent?: string | null;
     ledgersContent?: string | null;
   },
-  anthropic: Anthropic
+  anthropic: Anthropic,
+  maxTokens: number,
 ): Promise<BatchResult> {
   const fileNames = batchFiles.map(f => f.name);
   const dynamicContext = buildDynamicContext({ fileNames, ...context });
@@ -73,7 +75,7 @@ async function runBatch(
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8192,
+    max_tokens: maxTokens,
     // Cache the system prompt — identical for every call, saves re-processing on each request
     system: [
       {
@@ -125,7 +127,7 @@ export async function POST(req: NextRequest) {
 
     const {
       clientName, clientAddress, clientId, clientCode, saveToDrive,
-      isVatRegistered, targetSoftware, files, pastTransactionsContent, ledgersContent,
+      isVatRegistered, targetSoftware, analysisMode, files, pastTransactionsContent, ledgersContent,
     } = parsed.data;
 
     const userCtx = await getUserContext();
@@ -135,8 +137,10 @@ export async function POST(req: NextRequest) {
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
 
-    // Build the static instructions once — shared across all batches
-    const staticInstructions = buildStaticInstructions(targetSoftware, isVatRegistered);
+    // Build the static instructions once — shared across all batches. Thorough
+    // mode adds careful-checking guidance and a larger output budget.
+    const staticInstructions = buildStaticInstructions(targetSoftware, isVatRegistered, analysisMode);
+    const maxTokens = analysisMode === 'thorough' ? 16000 : 8192;
 
     // Split files into batches of BATCH_SIZE and run in parallel
     const batches: ParsedFile[][] = [];
@@ -146,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     const batchResults = await Promise.all(
       batches.map(batch =>
-        runBatch(batch, staticInstructions, { clientName, clientAddress, pastTransactionsContent, ledgersContent }, anthropic)
+        runBatch(batch, staticInstructions, { clientName, clientAddress, pastTransactionsContent, ledgersContent }, anthropic, maxTokens)
       )
     );
 

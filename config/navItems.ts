@@ -27,7 +27,7 @@ export const DASHBOARD_ITEM: NavItem = {
 
 /** All tool nav items (excludes Dashboard). Filtered by active modules in the sidebar. */
 export const TOOL_NAV_ITEMS: NavItem[] = [
-  { moduleId: 'full-analysis',   href: '/full-analysis',  label: 'Full Analysis',   icon: FileSearch },
+  { moduleId: 'full-analysis',   href: '/full-analysis',  label: 'Capture',         icon: FileSearch },
   { moduleId: 'bank-to-csv',     href: '/bank-to-csv',    label: 'Bank to CSV',     icon: ArrowLeftRight },
   { moduleId: 'landlord',        href: '/landlord',       label: 'Landlord',        icon: House },
   { moduleId: 'mtd-it',          href: '/mtd-it',         label: 'MTD IT',          icon: CalendarCheck },

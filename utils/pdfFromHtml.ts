@@ -82,6 +82,11 @@ export async function generatePdfBlob(
     clone.querySelectorAll('[class*="rm-page"], [class*="rm-pagination"]').forEach(el => el.remove());
     if (clone.classList.contains('rm-with-pagination')) clone.classList.remove('rm-with-pagination');
     clone.querySelectorAll('.rm-with-pagination').forEach(el => el.classList.remove('rm-with-pagination'));
+    // PaginationPlus sets an inline min-height on the editor to fit its page boxes.
+    // The clone must shrink to actual content height — otherwise that padding (and
+    // any over-measurement) adds blank trailing pages, or a runaway, to the PDF.
+    clone.style.minHeight = '';
+    clone.querySelectorAll<HTMLElement>('[style*="min-height"]').forEach(el => { el.style.minHeight = ''; });
     clone.style.overflow   = 'visible';
     clone.style.boxShadow  = 'none';
     clone.style.borderRadius = '0';
@@ -115,7 +120,13 @@ export async function generatePdfBlob(
 
     // Push any element matching `selector` that straddles a page boundary (and
     // fits within one page) onto the next page, by inserting a spacer before it.
+    // Guarded against runaway cascades: spacers can shift everything below and
+    // create new straddles, so we cap total injected height to one document's
+    // worth and bail if exceeded.
     const avoidSplit = (selector: string, maxPasses: number) => {
+      const baseHeight = captureTarget.scrollHeight;
+      let injected = 0;
+      const injectBudget = baseHeight + PAGE_H_PX * 4; // never more than ~content + a few pages
       for (let pass = 0; pass < maxPasses; pass++) {
         let inserted = false;
         void captureTarget.offsetHeight;
@@ -130,6 +141,8 @@ export async function generatePdfBlob(
           const pageEnd   = Math.floor((elBottom - 1) / PAGE_H_PX);
           if (pageStart < pageEnd && elH <= PAGE_H_PX) {
             const pushBy = PAGE_H_PX - (elTop % PAGE_H_PX);
+            if (injected + pushBy > injectBudget) return; // runaway guard
+            injected += pushBy;
             const spacer = document.createElement('div');
             spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
             el.parentNode!.insertBefore(spacer, el);
@@ -159,7 +172,7 @@ export async function generatePdfBlob(
     if (perfMode) {
       // Keep whole blocks (headings, paragraphs, tables, lists) off page breaks,
       // mirroring the live paginator's whole-block behaviour.
-      if (opts?.avoidSplitSelector) avoidSplit(opts.avoidSplitSelector, 300);
+      if (opts?.avoidSplitSelector) avoidSplit(opts.avoidSplitSelector, 80);
     } else {
       // Working-papers / Accounts Review behaviour (unchanged).
       for (let pass = 0; pass < 20; pass++) {

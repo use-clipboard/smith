@@ -12,6 +12,8 @@ export interface SelectedClient {
   business_type: string | null;
   vat_number: string | null;
   status: ClientStatus;
+  /** Optional — carried through so tools can auto-fill the client address. */
+  address?: string | null;
 }
 
 interface ClientSelectorProps {
@@ -30,6 +32,7 @@ interface ClientRow {
   business_type: string | null;
   vat_number: string | null;
   status: ClientStatus;
+  address: string | null;
 }
 
 const STATUS_STYLES: Record<ClientStatus, { dot: string; label: string; pill: string }> = {
@@ -92,7 +95,7 @@ export default function ClientSelector({ value, onSelect, align = 'left' }: Clie
   }
 
   function handleSelect(c: ClientRow) {
-    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number, status: c.status });
+    onSelect({ id: c.id, name: c.name, client_ref: c.client_ref, business_type: c.business_type, vat_number: c.vat_number, status: c.status, address: c.address ?? null });
     setOpen(false);
   }
 

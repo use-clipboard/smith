@@ -174,6 +174,11 @@ export default function TransactionEditModal({
     };
   });
 
+  // Did the AI manage to extract any usable details for this flagged entry?
+  const hasExtractedData = isFlagged && !txBase && !!(
+    entry?.date || entry?.supplier || entry?.description || (entry?.amount != null && entry.amount !== 0)
+  );
+
   const [flagReason, setFlagReason] = useState('');
   const [showFlagInput, setShowFlagInput] = useState(false);
   const [docUrl, setDocUrl] = useState<string | null>(null);
@@ -377,7 +382,9 @@ export default function TransactionEditModal({
                 /* Flagged entry with no transactionData — minimal fields */
                 <div className="space-y-3">
                   <p className="text-xs text-[var(--text-muted)] bg-[var(--bg-nav-hover)] rounded-lg p-3">
-                    This entry was flagged by AI without full transaction data. You can fill in the details below to promote it to a valid transaction.
+                    {hasExtractedData
+                      ? "SMITH extracted these details from the document. Review them — then ‘Mark as Valid’ to carry them straight across, or adjust anything that’s off first."
+                      : 'This entry was flagged without usable transaction data. Fill in the details below to promote it to a valid transaction.'}
                   </p>
                   {[
                     { key: 'date', label: 'Date', type: 'date' as FieldType },

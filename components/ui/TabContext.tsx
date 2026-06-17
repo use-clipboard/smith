@@ -59,7 +59,10 @@ function loadPersisted(): { tabs: Tab[]; activeTabId: string | null } | null {
       seenRoutes.add(t.route);
       tabs.push({
         id: t.id,
-        title: t.title || nav?.label || 'Profile',
+        // Nav-driven tabs (tools, etc.) always take the CURRENT nav label, so a
+        // tool rename shows up on the next load without needing to close/reopen
+        // the tab. Only dynamic profile tabs keep their stored custom title.
+        title: isTeam ? (t.title || 'Profile') : nav!.label,
         route: t.route,
         currentRoute: t.currentRoute,
         icon: isTeam ? User : nav!.icon,

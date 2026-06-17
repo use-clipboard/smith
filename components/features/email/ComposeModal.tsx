@@ -230,6 +230,15 @@ function RecipientInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Escape dismisses the suggestion list (and is swallowed so it doesn't also
+    // close the whole compose window). Only when the list is open — otherwise
+    // let Escape bubble up as normal.
+    if (e.key === 'Escape' && open) {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      return;
+    }
     if (e.key === 'Enter' && query.includes('@')) {
       e.preventDefault();
       if (!recipients.find(x => x.email === query)) onAdd({ name: '', email: query });
@@ -241,10 +250,15 @@ function RecipientInput({
   }
 
   function handleBlur() {
-    if (query.includes('@')) {
-      if (!recipients.find(x => x.email === query)) onAdd({ name: '', email: query });
-      setQuery(''); setOpen(false);
+    // Commit a fully-typed email address when leaving the field…
+    if (query.includes('@') && !recipients.find(x => x.email === query)) {
+      onAdd({ name: '', email: query });
+      setQuery('');
     }
+    // …and always close the suggestion list. Suggestion buttons use
+    // onMouseDown→preventDefault so clicking one doesn't blur the input first,
+    // meaning a real blur here always means the user has moved on.
+    setOpen(false);
   }
 
   const [recipientDragOver, setRecipientDragOver] = useState(false);
@@ -290,6 +304,7 @@ function RecipientInput({
           {results.map(r => (
             <button
               key={r.id}
+              onMouseDown={e => e.preventDefault()}
               onClick={() => handleSelect(r)}
               className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-nav-hover)] text-left transition-colors"
             >
@@ -683,6 +698,16 @@ export default function ComposeModal({
 
   function handleSend() {
     if (to.length === 0 || sending || sendCountdown) return;
+    // Attachments are uploaded through the serverless function, whose request
+    // body is capped at ~4.5 MB by the platform — a bigger upload dies with a
+    // 413 before it ever reaches Gmail. Catch it here with a clear message and a
+    // workaround instead of a cryptic failure (also covers forwarded attachments,
+    // which get auto-downloaded into attachedFiles).
+    const attachBytes = attachedFiles.reduce((s, f) => s + f.size, 0);
+    if (attachBytes > 4 * 1024 * 1024) {
+      setError(`Attachments total ${(attachBytes / 1048576).toFixed(1)} MB — SMITH can send up to about 4 MB at a time. For larger files, forward the email directly in Gmail, or share a Document Vault / Drive link instead.`);
+      return;
+    }
     // Cancel any pending auto-save — the draft is deleted on a successful send.
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     setError(null);
@@ -995,11 +1020,11 @@ export default function ComposeModal({
 
   function handleFiles(files: FileList | null) {
     if (!files) return;
-    const MAX_TOTAL = 20 * 1024 * 1024; // 20 MB client-side guard
+    const MAX_TOTAL = 4 * 1024 * 1024; // ~4 MB — the platform request-body cap
     const incoming = Array.from(files);
     const total = [...attachedFiles, ...incoming].reduce((s, f) => s + f.size, 0);
     if (total > MAX_TOTAL) {
-      setError('Total attachment size must be under 20 MB.');
+      setError('Total attachment size must be under ~4 MB. For larger files, forward the email directly in Gmail, or share a Document Vault / Drive link.');
       return;
     }
     setAttachedFiles(prev => [...prev, ...incoming]);

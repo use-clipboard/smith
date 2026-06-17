@@ -31,6 +31,7 @@
     "@types/dagre": "^0.7.54",
     "@xyflow/react": "^12.10.2",
     "dagre": "^0.8.5",
+    "fflate": "^0.8.3",
     "googleapis": "^171.4.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

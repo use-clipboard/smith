@@ -1,7 +1,6 @@
 'use client';
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { consumePendingClient } from '@/lib/pendingClient';
-import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
@@ -12,7 +11,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import TransactionEditModal from '@/components/features/full-analysis/TransactionEditModal';
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
 import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/full-analysis/FullAnalysisHistory';
-import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles } from 'lucide-react';
+import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 
@@ -34,6 +33,68 @@ function buildMinimalTx(entry: FlaggedEntry, software: TargetSoftware): Transact
   if (software === 'sage') return { ...base, TYPE: 'PI', ACCOUNT_REF: entry.supplier ?? '', NOMINAL_CODE: '', DATE: entry.date ?? '', REFERENCE: '', DETAILS: entry.description ?? '', NET_AMOUNT: entry.amount ?? 0, TAX_CODE: 'T9', TAX_AMOUNT: 0, EXCHANGE_RATE: 1 } as SageTransaction;
   return { ...base, date: entry.date ?? '', supplier: entry.supplier ?? '', invoiceNumber: '', description: entry.description ?? '', netAmount: entry.amount ?? 0, vatAmount: 0, grossAmount: entry.amount ?? 0, currency: 'GBP', documentType: 'Purchase', category: '', notes: '' } as GeneralTransaction;
 }
+
+// ─── Setup wizard helpers ───────────────────────────────────────────────────────
+
+const WIZARD_STEPS = [
+  { n: 1, label: 'Select Client' },
+  { n: 2, label: 'Choose Output' },
+  { n: 3, label: 'Upload Documents' },
+  { n: 4, label: 'Review' },
+] as const;
+
+function WizardStepper({ current, onStep }: { current: number; onStep: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = s.n <= current;
+        return (
+          <div key={s.n} className="flex items-center gap-1.5 sm:gap-2.5">
+            <button type="button" disabled={!clickable} onClick={() => clickable && onStep(s.n)}
+              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors
+                ${active ? 'bg-[var(--accent)] text-white' : done ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                {done ? <Check size={13} /> : s.n}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Package-upload categories
+type DocCat = 'documents' | 'past_transactions' | 'chart_of_accounts';
+interface DocItem { id: string; file: File; cat: DocCat; }
+
+const DOC_CATS: { id: DocCat; label: string; hint: string; required?: boolean }[] = [
+  { id: 'documents',         label: 'Documents',         hint: 'Invoices, receipts & bank statements (PDF, JPG, PNG)', required: true },
+  { id: 'past_transactions', label: 'Past transactions', hint: 'CSV of prior entries — used to spot duplicates' },
+  { id: 'chart_of_accounts', label: 'Chart of accounts', hint: 'CSV of ledger accounts — improves coding accuracy' },
+];
+
+function detectDocCat(file: File): DocCat {
+  const name = file.name.toLowerCase();
+  const isCsv = /\.(csv|xlsx?|tsv)$/.test(name) || file.type.includes('csv') || file.type.includes('sheet') || file.type.includes('excel');
+  if (!isCsv) return 'documents';
+  if (/account|ledger|\bcoa\b|chart|nominal/.test(name)) return 'chart_of_accounts';
+  return 'past_transactions';
+}
+
+const SOFTWARE_OPTIONS: { id: TargetSoftware; label: string; logo: string }[] = [
+  { id: 'vt',         label: 'VT Transaction+',     logo: '/logos/vt.png' },
+  { id: 'capium',     label: 'Capium Bookkeeping',  logo: '/logos/capium.png' },
+  { id: 'xero',       label: 'Xero',                logo: '/logos/xero.png' },
+  { id: 'quickbooks', label: 'QuickBooks',          logo: '/logos/quickbooks.png' },
+  { id: 'freeagent',  label: 'FreeAgent',           logo: '/logos/freeagent.png' },
+  { id: 'sage',       label: 'Sage 50',             logo: '/logos/sage.png' },
+  { id: 'general',    label: 'General',             logo: '/logos/general.svg' },
+];
 
 export default function FullAnalysisPage() {
   // ── History dashboard wrapper ────────────────────────────────────────────
@@ -94,6 +155,12 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   const [clientAddress, setClientAddress] = useState('');
   const [isVatRegistered, setIsVatRegistered] = useState(false);
   const [targetSoftware, setTargetSoftware] = useState<TargetSoftware>('general');
+  const [analysisMode, setAnalysisMode] = useState<'standard' | 'thorough'>('standard');
+
+  // Setup wizard: 1 Select Client · 2 Choose Output · 3 Upload Documents · 4 Review
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  // Once analysis completes, the wizard sits on the Review step.
+  useEffect(() => { if (appState === 'success') setWizardStep(4); }, [appState]);
 
   // ── Seed loader: when opened from history dashboard, hydrate the success view
   const seedLoadedRef = useRef(false);
@@ -137,11 +204,35 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   useEffect(() => {
     if (!selectedClient) return;
     if (selectedClient.name) setClientName(selectedClient.name);
+    if (selectedClient.address) setClientAddress(selectedClient.address);
     if (selectedClient.vat_number) setIsVatRegistered(true);
   }, [selectedClient]);
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [pastTransactionsFile, setPastTransactionsFile] = useState<File | null>(null);
   const [ledgersFile, setLedgersFile] = useState<File | null>(null);
+
+  // ── Package upload (step 3) ────────────────────────────────────────────────
+  // A single drag-drop bucket of files, each auto-categorised. The existing
+  // documentFiles / pastTransactionsFile / ledgersFile state is DERIVED from this
+  // (see effect below) so the analysis logic stays unchanged.
+  const [docs, setDocs] = useState<DocItem[]>([]);
+  useEffect(() => {
+    setDocumentFiles(docs.filter(d => d.cat === 'documents').map(d => d.file));
+    setPastTransactionsFile(docs.find(d => d.cat === 'past_transactions')?.file ?? null);
+    setLedgersFile(docs.find(d => d.cat === 'chart_of_accounts')?.file ?? null);
+  }, [docs]);
+  const addDocs = useCallback((files: File[]) => {
+    setDocs(prev => [
+      ...prev,
+      ...files.map(file => ({ id: `${file.name}-${file.size}-${Math.round(file.lastModified)}-${prev.length}`, file, cat: detectDocCat(file) })),
+    ]);
+  }, []);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Step gating
+  const canLeaveStep1 = clientName.trim().length > 0;
+  const docCount = docs.filter(d => d.cat === 'documents').length;
 
   // ── Auto client-context: pulls past saved analyses for this client + software
   // and uses them as a synthetic "past transactions" CSV so the AI stays consistent
@@ -429,7 +520,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            clientName, clientAddress, isVatRegistered, targetSoftware,
+            clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode,
             files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
             pastTransactionsContent, ledgersContent,
             clientId: selectedClient?.id ?? null,
@@ -466,7 +557,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     }
 
     return results;
-  }, [clientName, clientAddress, isVatRegistered, targetSoftware, selectedClient?.id, selectedClient?.client_ref]);
+  }, [clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
 
   // ─── Analysis ────────────────────────────────────────────────────────────────
 
@@ -563,7 +654,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     );
   }
   if (appState === 'scan_results') return (
-    <ToolLayout title="Full Transaction Analysis" icon={FileSearch} wide>
+    <ToolLayout title="Capture" icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
@@ -575,7 +666,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     </ToolLayout>
   );
   if (appState === 'error') return (
-    <ToolLayout title="Full Transaction Analysis" icon={FileSearch} wide>
+    <ToolLayout title="Capture" icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || 'Unknown error'} code={errorCode} onRetry={() => { setAppState('idle'); setErrorCode(undefined); }} />
     </ToolLayout>
@@ -677,113 +768,228 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   };
 
   return (
-    <ToolLayout title="Full Transaction Analysis" description="Analyse invoices and receipts and produce bookkeeping entries for VT, Capium, Xero, QuickBooks, FreeAgent, or Sage." icon={FileSearch} wide>
+    <ToolLayout title="Capture" description="Capture invoices, receipts and bank statements, and turn them into accurate bookkeeping entries formatted for VT Transaction+, Capium, Xero, QuickBooks, FreeAgent, Sage, or General." icon={FileSearch} wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
-          {/* Client Details — full width, with Link to client in the header (matches Accounts Review) */}
-          <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
-            <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">1. Client Details</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-[var(--text-secondary)]">Link to client record</span>
-                <ClientSelector value={selectedClient} onSelect={setSelectedClient} align="right" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client Name" className="input-base" />
-              <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value)} placeholder="Client Address" className="input-base" />
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-[var(--text-secondary)]">VAT Registered?</span>
-                <button type="button" onClick={() => setIsVatRegistered(!isVatRegistered)}
-                  className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
-                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range <span className="normal-case font-normal">(optional)</span></p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
-                  <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
-                </div>
-                <div>
-                  <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
-                  <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
-                </div>
-              </div>
-              <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
-            </div>
+          {/* ── Wizard stepper ─────────────────────────────────────────── */}
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={wizardStep} onStep={n => setWizardStep(n as 1 | 2 | 3 | 4)} />
           </div>
 
-          {/* Target Software — full width */}
-          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">2. Target Software</h3>
-            <div className="flex flex-wrap gap-2">
-              {([
-                { id: 'vt', label: 'VT Transaction+' }, { id: 'capium', label: 'Capium Bookkeeping' },
-                { id: 'xero', label: 'Xero' }, { id: 'quickbooks', label: 'QuickBooks' },
-                { id: 'freeagent', label: 'FreeAgent' }, { id: 'sage', label: 'Sage 50' }, { id: 'general', label: 'General' },
-              ] as { id: TargetSoftware; label: string }[]).map(({ id, label }) => (
-                <button key={id} onClick={() => setTargetSoftware(id)}
-                  className={`px-5 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${targetSoftware === id ? 'bg-[var(--accent)] text-white shadow-accent-glow' : 'bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)]'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <FileUpload title="3. Documents to Analyse" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload invoices, receipts, and bank statements." existingFiles={documentFiles} />
-            <div className="space-y-4">
-              {/* Auto-context pill — shown when this client has past analyses we can learn from */}
-              {selectedClient && !pastTransactionsFile && (autoContextLoading || autoContextCount.rows > 0) && (
-                <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
-                  useAutoContext
-                    ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
-                    : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
-                }`}>
-                  <Sparkles size={13} className="shrink-0" />
-                  <div className="flex-1 leading-snug">
-                    {autoContextLoading ? (
-                      <span>Looking for past analyses for this client…</span>
-                    ) : useAutoContext ? (
-                      <>
-                        Using <span className="font-semibold">{autoContextCount.rows}</span> past
-                        {' '}entries from <span className="font-semibold">{autoContextCount.analyses}</span> previous
-                        {' '}{autoContextCount.analyses === 1 ? 'analysis' : 'analyses'} to improve account-code accuracy.
-                      </>
-                    ) : (
-                      <>Past-analysis learning is off — accuracy may be lower.</>
-                    )}
+          {/* ── Step 1 · Select Client ─────────────────────────────────── */}
+          {wizardStep === 1 && (
+            <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]"><Users size={15} className="text-[var(--accent)]" /> Client</h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-[var(--text-secondary)]">Link to client record</span>
+                  <ClientSelector value={selectedClient} onSelect={setSelectedClient} align="right" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <input type="text" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Client name" className="input-base" />
+                <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value)} placeholder="Client address (optional)" className="input-base" />
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-[var(--text-secondary)]">VAT registered?</span>
+                  <button type="button" onClick={() => setIsVatRegistered(!isVatRegistered)}
+                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-200 ${isVatRegistered ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 mt-0.5 ml-0.5 ${isVatRegistered ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date range <span className="normal-case font-normal">(optional)</span></p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
                   </div>
-                  <Tooltip label={useAutoContext ? 'Turn off learning from past analyses' : 'Turn learning back on'}>
-                    <button
-                      onClick={() => setUseAutoContext(v => !v)}
-                      aria-label="Toggle past-analysis learning"
-                      className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${useAutoContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext ? 'translate-x-4' : 'translate-x-0'}`} />
+                  <div>
+                    <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 2 · Choose Output ─────────────────────────────────── */}
+          {wizardStep === 2 && (
+            <div className="space-y-5">
+              <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] mb-1"><FileOutput size={15} className="text-[var(--accent)]" /> Generate for</h3>
+                <p className="text-xs text-[var(--text-muted)] mb-4">Choose the accounting software the entries should be formatted for.</p>
+                <div className="flex flex-wrap gap-2">
+                  {SOFTWARE_OPTIONS.map(({ id, label, logo }) => (
+                    <button key={id} type="button" onClick={() => setTargetSoftware(id)}
+                      className={`flex items-center gap-2 pl-2 pr-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${targetSoftware === id ? 'bg-[var(--accent)] text-white shadow-accent-glow' : 'bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:bg-[var(--accent-light)] hover:text-[var(--accent)]'}`}>
+                      <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center overflow-hidden shrink-0 border border-black/5">
+                        <img src={logo} alt="" className="w-full h-full object-contain" />
+                      </span>
+                      {label}
+                    </button>
+                  ))}
+                  <Tooltip label="Post entries straight into SMITH's own bookkeeping ledger — coming soon">
+                    <button type="button" disabled aria-disabled="true"
+                      className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg text-sm font-medium border border-dashed border-[var(--border)] text-[var(--text-muted)] bg-transparent cursor-not-allowed">
+                      <span className="w-6 h-6 rounded-md bg-[var(--bg-nav-hover)] flex items-center justify-center shrink-0">
+                        <BookCopy size={14} className="text-[var(--text-muted)]" />
+                      </span>
+                      SMITH Bookkeeping
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">Soon</span>
                     </button>
                   </Tooltip>
                 </div>
-              )}
-              <FileUpload title="4. Past Transactions (CSV)" onFileChange={setPastTransactionsFile} accept=".csv" optional helpText={selectedClient && autoContextCount.rows > 0 && useAutoContext ? 'Optional — past analyses for this client are used automatically. Upload to override.' : 'Helps identify duplicate transactions.'} existingFiles={pastTransactionsFile ? [pastTransactionsFile] : []} />
-              <FileUpload title="5. Chart of Accounts (CSV)" onFileChange={setLedgersFile} accept=".csv" optional helpText="Improves accuracy of ledger allocation." existingFiles={ledgersFile ? [ledgersFile] : []} />
-            </div>
-          </div>
+              </div>
 
-          <div className="flex justify-end">
-            <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary">
-              <FileSearch size={15} />Analyse Documents
+              <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] mb-1"><SlidersHorizontal size={15} className="text-[var(--accent)]" /> Analysis settings</h3>
+                <p className="text-xs text-[var(--text-muted)] mb-4">Tune how carefully SMITH reads your documents.</p>
+
+                <p className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Analysis mode</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {([
+                    { id: 'standard' as const, icon: <Zap size={15} />,      label: 'Standard', rec: true,  desc: 'Best balance of speed and accuracy. Right for most jobs.' },
+                    { id: 'thorough' as const, icon: <Sparkles size={15} />, label: 'Thorough', rec: false, desc: 'Reads every line extra carefully and double-checks each figure. Slower and uses more AI credit.' },
+                  ]).map(m => (
+                    <button key={m.id} type="button" onClick={() => setAnalysisMode(m.id)}
+                      className={`text-left rounded-xl border p-3.5 transition-colors ${analysisMode === m.id ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-[var(--bg-card)] hover:bg-[var(--bg-nav-hover)]'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={analysisMode === m.id ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}>{m.icon}</span>
+                        <span className="text-sm font-semibold text-[var(--text-primary)]">{m.label}</span>
+                        {m.rec && <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--accent)]/15 text-[var(--accent)]">Recommended</span>}
+                      </div>
+                      <p className="text-[11px] text-[var(--text-muted)] leading-snug">{m.desc}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-start gap-3 mt-5 pt-4 border-t border-[var(--border)]">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-[var(--text-secondary)]">Learn from past analyses</p>
+                    <p className="text-[11px] text-[var(--text-muted)] leading-snug mt-0.5">
+                      {!selectedClient
+                        ? 'Link a client (step 1) to reuse account-code choices from their previous analyses.'
+                        : autoContextLoading
+                          ? 'Looking for past analyses for this client…'
+                          : autoContextCount.rows > 0
+                            ? <>Using <span className="font-semibold text-[var(--text-secondary)]">{autoContextCount.rows}</span> entries from <span className="font-semibold text-[var(--text-secondary)]">{autoContextCount.analyses}</span> past {autoContextCount.analyses === 1 ? 'analysis' : 'analyses'} to keep coding consistent.</>
+                            : 'No past analyses found for this client yet.'}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setUseAutoContext(v => !v)} aria-label="Toggle past-analysis learning"
+                    disabled={!selectedClient || autoContextCount.rows === 0}
+                    className={`relative inline-flex h-6 w-11 rounded-full transition-colors shrink-0 mt-0.5 disabled:opacity-40 ${useAutoContext && autoContextCount.rows > 0 ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}>
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext && autoContextCount.rows > 0 ? 'translate-x-5' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3 · Upload Documents ──────────────────────────────── */}
+          {wizardStep === 3 && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div className="lg:col-span-2 space-y-4">
+                <div
+                  onClick={() => docInputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setDragOver(false); addDocs(Array.from(e.dataTransfer.files)); }}
+                  className={`cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-white/[0.5] hover:border-[var(--accent)]'}`}>
+                  <UploadCloud size={28} className="mx-auto text-[var(--accent)] mb-2" />
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Drop files here or click to browse</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1">Invoices, receipts & bank statements (PDF, JPG, PNG) — plus optional past-transactions / chart-of-accounts CSVs. We auto-sort them; retag below if needed.</p>
+                </div>
+                <input ref={docInputRef} type="file" multiple accept="application/pdf,image/*,.csv,.xlsx,.xls,.tsv" className="hidden"
+                  onChange={e => { addDocs(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+
+                {docs.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)] px-1">{docs.length} {docs.length === 1 ? 'file' : 'files'}</p>
+                    {docs.map(d => (
+                      <div key={d.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card)]">
+                        <FileSearch size={14} className="text-[var(--text-muted)] shrink-0" />
+                        <span className="text-xs font-medium text-[var(--text-primary)] truncate flex-1">{d.file.name}</span>
+                        <span className="text-[10px] text-[var(--text-muted)] shrink-0 hidden sm:inline">{(d.file.size / 1024).toFixed(0)} KB</span>
+                        <select value={d.cat} onChange={e => setDocs(prev => prev.map(x => x.id === d.id ? { ...x, cat: e.target.value as DocCat } : x))}
+                          className="text-[11px] h-7 rounded-md border border-[var(--border-input)] bg-[var(--bg-input)] px-1.5 text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)]">
+                          {DOC_CATS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        </select>
+                        <button type="button" onClick={() => setDocs(prev => prev.filter(x => x.id !== d.id))} aria-label="Remove file" className="text-[var(--text-muted)] hover:text-red-500 shrink-0">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Readiness + connectors */}
+              <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-4 h-fit">
+                <h4 className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-3">Ready to analyse</h4>
+                <div className="space-y-3">
+                  {DOC_CATS.map(c => {
+                    const count = docs.filter(d => d.cat === c.id).length;
+                    const ok = count > 0;
+                    return (
+                      <div key={c.id} className="flex items-start gap-2.5">
+                        <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 text-[9px] font-bold ${ok ? 'bg-emerald-500 text-white' : c.required ? 'bg-amber-100 text-amber-600' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                          {ok ? <Check size={10} /> : c.required ? '!' : '○'}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[var(--text-primary)]">
+                            {c.label} {c.required ? <span className="text-red-500">*</span> : <span className="text-[var(--text-muted)] font-normal">(optional)</span>}
+                            {count > 0 && <span className="text-[var(--accent)] font-normal"> · {count}</span>}
+                          </p>
+                          <p className="text-[11px] text-[var(--text-muted)] leading-snug">{c.hint}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-4 pt-3 border-t border-[var(--border)] space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Connect a source <span className="font-normal normal-case">(soon)</span></p>
+                  {['SMITH Bookkeeping', 'Xero', 'QuickBooks'].map(s => (
+                    <div key={s} className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
+                      <BookCopy size={12} className="shrink-0" /> {s}
+                      <span className="ml-auto text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-[var(--bg-nav-hover)]">Soon</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Nav buttons ────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={() => setWizardStep(s => Math.max(1, s - 1) as 1 | 2 | 3 | 4)} disabled={wizardStep === 1}
+              className="btn-secondary disabled:opacity-40 disabled:cursor-not-allowed">
+              <ArrowLeft size={15} /> Back
             </button>
+            {wizardStep < 3 ? (
+              <button type="button" onClick={() => setWizardStep(s => Math.min(3, s + 1) as 1 | 2 | 3 | 4)}
+                disabled={wizardStep === 1 && !canLeaveStep1}
+                className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+                Next <ArrowRight size={15} />
+              </button>
+            ) : (
+              <button type="button" onClick={handleProcess} disabled={docCount === 0} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+                <FileSearch size={15} /> Analyse {docCount > 0 ? `${docCount} ${docCount === 1 ? 'document' : 'documents'}` : 'documents'}
+              </button>
+            )}
           </div>
         </div>
       )}
 
       {appState === 'success' && (
         <div className="space-y-4">
+          {/* Wizard stepper — Review step. Clicking a prior step returns to setup. */}
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={4} onStep={n => { if (n < 4) { setAppState('idle'); setWizardStep(n as 1 | 2 | 3 | 4); } }} />
+          </div>
           {/* Top action bar */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex gap-2">
@@ -800,7 +1006,11 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
               <button onClick={() => { setHistoryIndex(h => h - 1); setSelectedValid(new Set()); }} disabled={!canUndo} className="btn-secondary px-2.5 py-2"><Undo2 size={14} /></button>
               <button onClick={() => { setHistoryIndex(h => h + 1); setSelectedValid(new Set()); }} disabled={!canRedo} className="btn-secondary px-2.5 py-2"><Redo2 size={14} /></button>
               <button onClick={() => setSaveModalOpen(true)} className="btn-primary"><Download size={14} />Save Analysis</button>
-              <button onClick={() => setAppState('idle')} className="btn-secondary">New Analysis</button>
+              <button onClick={() => {
+                setDocs([]); setTransactionHistory([]); setHistoryIndex(-1); setFlaggedEntries([]);
+                setScanResults([]); setSelectedValid(new Set()); setSelectedFlagged(new Set());
+                setWizardStep(1); setAppState('idle');
+              }} className="btn-secondary">New Analysis</button>
             </div>
           </div>
 

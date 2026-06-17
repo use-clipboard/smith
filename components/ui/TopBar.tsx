@@ -36,7 +36,7 @@ interface TopBarProps {
 
 const ROUTE_TITLES: Record<string, string> = {
   '/dashboard':       'Dashboard',
-  '/full-analysis':   'Full Transaction Analysis',
+  '/full-analysis':   'Capture',
   '/bank-to-csv':     'Bank to CSV',
   '/landlord':        'Landlord Analysis',
   '/mtd-it':          'MTD IT',

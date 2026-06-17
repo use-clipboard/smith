@@ -12,14 +12,12 @@
  *   if (pending) setSelectedClient(pending);
  */
 
-export interface PendingClientData {
-  id: string;
-  name: string;
-  client_ref: string | null;
-  business_type: string | null;
-  vat_number: string | null;
-  status: string;
-}
+// Kept identical to SelectedClient (the tool-side client shape) so a client can
+// be handed straight from the client page to a tool's selector without casts or
+// drift. Aliasing — rather than duplicating fields — means new SelectedClient
+// fields can never silently break Quick Launch again.
+import type { SelectedClient } from '@/components/ui/ClientSelector';
+export type PendingClientData = SelectedClient;
 
 interface PendingEntry {
   route: string;

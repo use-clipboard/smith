@@ -129,6 +129,9 @@ export default function TaskListRow({
   const [updatingStep, setUpdatingStep]       = useState<string | null>(null);
   const [updatingTask, setUpdatingTask]       = useState(false);
   const [hoveredStepId, setHoveredStepId]     = useState<string | null>(null);
+  // While a step row holds focus (e.g. the user is editing its note), we hide
+  // the hover card so it doesn't cover the field they're typing in.
+  const [focusedStepId, setFocusedStepId]     = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete]     = useState(false);
   const [deleting, setDeleting]               = useState(false);
   const [stoppingRec, setStoppingRec]         = useState(false);
@@ -564,6 +567,8 @@ export default function TaskListRow({
                         ${isNextUp && !isSelected ? 'border-l-2 border-indigo-400' : isSelected ? 'border-l-2 border-indigo-500' : 'border-l-2 border-transparent'}`}
                       onMouseEnter={() => !reassignMode && handleStepMouseEnter(s.id)}
                       onMouseLeave={handleStepMouseLeave}
+                      onFocusCapture={() => setFocusedStepId(s.id)}
+                      onBlurCapture={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusedStepId(prev => (prev === s.id ? null : prev)); }}
                     >
                       {/* Reassign checkbox */}
                       {reassignMode && (
@@ -613,7 +618,7 @@ export default function TaskListRow({
                         {isEndStep && !isDone && (
                           <p className="text-[10px] text-indigo-400 mt-0.5">Ticking this completes all steps &amp; closes the task</p>
                         )}
-                        {isHovered && (s.description || s.assignee || s.due_date || s.is_client_step) && (
+                        {isHovered && focusedStepId !== s.id && (s.description || s.assignee || s.due_date || s.is_client_step) && (
                           <StepTooltip step={s} />
                         )}
                       </div>

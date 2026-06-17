@@ -15,10 +15,13 @@ import {
   List, ListOrdered, Undo2, Redo2,
   Highlighter, Palette, ChevronDown,
   Table as TableIcon, Layers, ChevronUp, Eye, EyeOff, Download,
-  LayoutTemplate, Upload, ExternalLink,
+  LayoutTemplate, Upload, ExternalLink, BarChart3,
 } from 'lucide-react';
 import type { CoverOptions, CoverStyleId } from '@/app/(app)/performance/page';
 import Tooltip from '@/components/ui/Tooltip';
+import { type ChartSpec } from './chart';
+import { ChartNode } from './ChartNode';
+import ChartBuilder, { type ReportTable, type KpiDatum } from './ChartBuilder';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -514,6 +517,10 @@ interface PerformanceEditorProps {
    *  live DOM for pixel-perfect PDF rendering (same CSS as the editor view). */
   paperRef?: React.RefObject<HTMLDivElement | null>;
 
+  /** KPI benchmark data (Company vs Industry) — offered as a one-click source
+   *  in the chart builder so the KPI strip can be embedded into the report. */
+  kpiData?: KpiDatum[];
+
   onHtmlChange: (html: string) => void;
   onCoverChange?: (opts: CoverOptions) => void;
   onFirmLogoUploaded?: (url: string) => void;
@@ -524,11 +531,16 @@ interface PerformanceEditorProps {
 export default function PerformanceEditor({
   initialHtml, titlePageHtml, firmLogoUrl: firmLogoUrlProp = null,
   defaultTitle = '', defaultPeriod = '',
-  paperRef,
+  paperRef, kpiData,
   onHtmlChange, onCoverChange, onFirmLogoUploaded, onSave, onNewAnalysis,
 }: PerformanceEditorProps) {
   const [sections, setSections]             = useState<Section[]>(() => parseHtmlIntoSections(initialHtml));
   const [activePanel, setActivePanel]       = useState<'sections' | 'cover' | 'theme' | null>(null);
+  const [chartOpen, setChartOpen]           = useState(false);
+  const [reportTables, setReportTables]     = useState<ReportTable[]>([]);
+  const [editingChart, setEditingChart]     = useState<{ pos: number; width: number | null; spec: ChartSpec } | null>(null);
+  // Stable callback the chart node calls on double-click (avoids recreating the editor).
+  const chartEditRef = useRef<(pos: number, spec: ChartSpec, width: number | null) => void>(() => {});
   const [headingOpen, setHeadingOpen]       = useState(false);
   const [fontOpen, setFontOpen]             = useState(false);
   const [localFirmLogoUrl, setLocalFirmLogoUrl] = useState<string | null>(firmLogoUrlProp);
@@ -580,6 +592,7 @@ export default function PerformanceEditor({
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       FontFamily,
       TableKit.configure({ table: { resizable: true } }),
+      ChartNode.configure({ onEdit: (pos, spec, width) => chartEditRef.current(pos, spec, width) }),
       PaginationPlus.configure({
         pageHeight: A4_PAGE_HEIGHT,
         pageWidth: A4_PAGE_WIDTH,
@@ -649,6 +662,47 @@ export default function PerformanceEditor({
       onHtmlChange(editor.getHTML());
     }
   }, [editor, onHtmlChange]);
+
+  // Collect the report's tables (from the live editor DOM) so the chart builder
+  // can offer them as a data source, then open the builder for a NEW chart.
+  const openChartBuilder = () => {
+    const tables: ReportTable[] = [];
+    const dom = editor?.view.dom;
+    if (dom) {
+      dom.querySelectorAll('table').forEach((tbl, i) => {
+        const grid = Array.from(tbl.querySelectorAll('tr')).map(tr =>
+          Array.from(tr.querySelectorAll('th,td')).map(c => (c.textContent ?? '').trim()),
+        ).filter(r => r.length > 0);
+        if (grid.length < 2) return; // need at least a header + one row
+        const firstCells = grid[0].slice(0, 3).filter(Boolean).join(' · ');
+        tables.push({ id: `tbl-${i}`, label: `Table ${i + 1}${firstCells ? ` — ${firstCells}` : ''}`, grid });
+      });
+    }
+    setReportTables(tables);
+    setEditingChart(null);
+    setChartOpen(true);
+  };
+
+  // Double-clicking a chart opens the builder pre-filled to edit it.
+  chartEditRef.current = (pos, spec, width) => {
+    setReportTables([]);
+    setEditingChart({ pos, spec, width });
+    setChartOpen(true);
+  };
+
+  const insertChart = (spec: ChartSpec) => {
+    if (editingChart) {
+      // Update the existing node in place, preserving its width.
+      editor?.chain().focus().command(({ tr }) => {
+        tr.setNodeMarkup(editingChart.pos, undefined, { spec, width: editingChart.width });
+        return true;
+      }).run();
+    } else {
+      editor?.chain().focus().insertContent({ type: 'perfChart', attrs: { spec } }).run();
+    }
+    setChartOpen(false);
+    setEditingChart(null);
+  };
 
   if (!editor) return null;
 
@@ -736,6 +790,9 @@ export default function PerformanceEditor({
           <TDivider />
           <ToolBtn onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table">
             <TableIcon size={14} />
+          </ToolBtn>
+          <ToolBtn onClick={openChartBuilder} title="Insert chart">
+            <BarChart3 size={14} />
           </ToolBtn>
           <TDivider />
           <PanelBtn label="Sections" icon={<Layers size={13} />}        active={activePanel === 'sections'} onClick={() => togglePanel('sections')} />
@@ -835,6 +892,15 @@ export default function PerformanceEditor({
           <EditorContent editor={editor} />
         </div>
       </div>
+
+      <ChartBuilder
+        open={chartOpen}
+        onClose={() => { setChartOpen(false); setEditingChart(null); }}
+        onInsert={insertChart}
+        tables={reportTables}
+        kpiData={kpiData}
+        editSpec={editingChart?.spec ?? null}
+      />
     </div>
   );
 }

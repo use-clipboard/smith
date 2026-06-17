@@ -71,7 +71,7 @@ export const MODULES: ModuleConfig[] = [
   // ─── Optional Tools ───────────────────────────────────────────────────────
   {
     id: 'full-analysis',
-    name: 'Full Analysis',
+    name: 'Capture',
     description: 'Analyse invoices and receipts and produce bookkeeping entries for VT Transaction+, Capium, Xero, QuickBooks, FreeAgent, Sage, or General format.',
     iconName: 'FileSearch',
     route: '/full-analysis',

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="General format">
+  <circle cx="64" cy="64" r="64" fill="#64748b"/>
+  <g fill="#ffffff">
+    <rect x="34" y="40" width="60" height="10" rx="5"/>
+    <rect x="34" y="59" width="60" height="10" rx="5"/>
+    <rect x="34" y="78" width="40" height="10" rx="5"/>
+  </g>
+</svg>

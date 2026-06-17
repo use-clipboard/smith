@@ -1617,7 +1617,7 @@ export default function ClientDetailPage() {
         {/* Actions — right-aligned, in line with the tabs */}
         {(() => {
           const btype = client.business_type;
-          const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active' };
+          const pendingClient = { id: client.id, name: client.name, client_ref: client.client_ref, business_type: btype, vat_number: client.vat_number, status: client.status ?? 'active', address: client.address ?? null };
           type QuickTool = { moduleId: string; label: string; icon: React.ElementType; route: string; color: string; hoverBg: string; hoverText: string; show: boolean };
           const quickTools: QuickTool[] = [
             { moduleId: 'full-analysis',   label: 'Full Analysis',    icon: FileSearch,     route: '/full-analysis',   color: '#4F46E5', hoverBg: 'hover:bg-indigo-50',  hoverText: 'hover:text-indigo-600', show: true },

@@ -7,7 +7,7 @@ const SaveSchema = z.object({
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
-  transactions: z.array(z.record(z.unknown())).default([]),
+  transactions: z.array(z.record(z.string(), z.unknown())).default([]),
   sourceFilenames: z.array(z.string()).default([]),
 });
 

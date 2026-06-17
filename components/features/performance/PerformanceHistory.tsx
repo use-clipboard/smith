@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, type RefObject } from 'react';
 import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
   TrendingUp, Plus, Search, Download, FolderOpen, Trash2, Loader2,
@@ -248,46 +248,42 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
     };
     const businessName = rd.paBusinessName ?? output.client?.name ?? output.client_name ?? 'Report';
     const themeColor = rd.themeColor || '#059669';
-    const editorHtml = rd.editorHtml || rd.reportHtml || '<p>No report content saved.</p>';
+    const editorHtml = (rd.editorHtml || rd.reportHtml || '<p>No report content saved.</p>').replace(/<p><\/p>/g, '<p><br></p>');
     const titlePageHtml = rd.titlePageHtml || '';
 
-    const fullReportHtml = [
-      '<!DOCTYPE html>',
-      '<html lang="en">',
-      '<head>',
-      '  <meta charset="utf-8" />',
-      `  <title>Performance Analysis — ${businessName}</title>`,
-      '  <style>',
-      '    body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 48px; font-size: 13px; line-height: 1.75; max-width: 794px; }',
-      `    h1 { font-size: 22px; font-weight: 700; color: ${themeColor}; margin: 28px 0 14px; padding-bottom: 8px; border-bottom: 2px solid ${themeColor}; }`,
-      `    h2 { font-size: 17px; font-weight: 700; color: ${themeColor}; margin: 24px 0 10px; padding-bottom: 5px; border-bottom: 1.5px solid #e5e7eb; }`,
-      `    h3 { font-size: 14px; font-weight: 600; color: ${themeColor}; margin: 18px 0 8px; }`,
-      '    p  { margin: 0 0 10px; min-height: 1.5em; }',
-      '    p:empty::before { content: "\\00a0"; }',
-      `    strong { color: ${themeColor}; font-weight: 600; }`,
-      '    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 11px; table-layout: fixed; page-break-inside: avoid; break-inside: avoid; }',
-      `    th { background: ${themeColor}; color: #fff; padding: 6px 8px; text-align: left; font-weight: 600; border: 1px solid ${themeColor}; word-break: break-word; }`,
-      '    td { padding: 5px 8px; border: 1px solid #e5e7eb; word-break: break-word; }',
-      '    tr:nth-child(even) td { background: #f9fafb; }',
-      '    ul, ol { padding-left: 22px; margin: 8px 0; }',
-      '    li { margin-bottom: 4px; }',
-      '    h1, h2, h3 { page-break-after: avoid; break-after: avoid; }',
-      '    h1, h2, h3, p, li, blockquote { page-break-inside: avoid; break-inside: avoid; }',
-      '    tr, td, th { page-break-inside: avoid; break-inside: avoid; }',
-      '    div[data-page-break] { display: block; height: 0; border: none; background: transparent; margin: 0; padding: 0; box-shadow: none; page-break-before: always; break-before: page; }',
-      '    .tableWrapper { overflow-x: auto; }',
-      '  </style>',
-      '</head>',
-      '<body>',
-      titlePageHtml,
-      editorHtml.replace(/<p><\/p>/g, '<p><br></p>'),
-      '</body>',
-      '</html>',
-    ].join('\n');
+    // Re-create the editor's paper structure off-screen (cover sheet + a
+    // `.performance-prose` body styled by globals.css + a scoped theme override),
+    // then run it through the SAME perfMode export the live "Save" uses — so a
+    // history re-download is identical (cover on its own page, matched margins).
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;background:#fff;';
+    const themeStyle = `<style>
+      .performance-prose h1{color:${themeColor};border-bottom-color:${themeColor};}
+      .performance-prose h2{color:${themeColor};}
+      .performance-prose h3{color:${themeColor};}
+      .performance-prose strong{color:${themeColor};}
+      .performance-prose th{background:${themeColor};border-color:${themeColor};}
+    </style>`;
+    const coverHtml = titlePageHtml
+      ? `<div style="width:794px;padding:48px;box-sizing:border-box;background:#fff;"><div data-cover>${titlePageHtml}</div></div>`
+      : '';
+    holder.innerHTML =
+      `${themeStyle}${coverHtml}` +
+      `<div class="performance-prose" style="width:794px;padding:0 48px;box-sizing:border-box;background:#fff;">${editorHtml}</div>`;
+    document.body.appendChild(holder);
 
-    const blob = await generatePdfBlob(fullReportHtml);
-    const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
-    downloadBlob(blob, `Performance_Analysis_${businessName.replace(/\s+/g, '_')}_${dateStr}.pdf`);
+    try {
+      const ref: RefObject<HTMLElement | null> = { current: holder };
+      const blob = await generatePdfBlob('', ref, {
+        coverSelector: titlePageHtml ? '[data-cover]' : undefined,
+        pageMarginPx: 48,
+        avoidSplitSelector: 'h1, h2, h3, p, table, ul, ol, blockquote, [data-perf-chart]',
+      });
+      const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
+      downloadBlob(blob, `Performance_Analysis_${businessName.replace(/\s+/g, '_')}_${dateStr}.pdf`);
+    } finally {
+      document.body.removeChild(holder);
+    }
   };
 
   const handleDownload = async (id: string) => {

@@ -16,6 +16,84 @@ import { ArrowLeftRight, Download, ArrowLeft } from 'lucide-react';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 
+// Max base64 length we can POST in one request. The hosting platform caps a
+// serverless request body at ~4.5 MB; base64 is ~1 byte per character, so we
+// keep the encoded payload comfortably under that.
+const BANK_UPLOAD_LIMIT = 4_400_000;
+
+interface ChunkScan {
+  ok: boolean;
+  transactions: BankCsvTransaction[];
+  errorMessage?: string;
+  errorCode?: string;
+  truncated?: boolean;
+}
+
+// Scan a single (already-small-enough) file through the API, returning a result
+// object. Parses error responses defensively so a platform error page (e.g. a
+// 413 sent as plain text) surfaces a real message, not "Unexpected token … is
+// not valid JSON".
+async function scanOneBankFile(file: File, clientId: string | null, clientCode: string | null): Promise<ChunkScan> {
+  const base64 = await fileToBase64(file);
+  const tooLargeMsg = `This file is too large to process in one go (${(file.size / 1048576).toFixed(1)} MB). Split the PDF into smaller parts and upload them separately.`;
+  if (base64.length > BANK_UPLOAD_LIMIT) {
+    return { ok: false, transactions: [], errorCode: 'FILE_TOO_LARGE', errorMessage: tooLargeMsg };
+  }
+  const res = await fetch('/api/bank-to-csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }], clientId, clientCode }),
+  });
+  if (!res.ok) {
+    const raw = await res.text().catch(() => '');
+    if (res.status === 413 || /request entity too large|payload too large|content too large/i.test(raw)) {
+      return { ok: false, transactions: [], errorCode: 'FILE_TOO_LARGE', errorMessage: tooLargeMsg };
+    }
+    let errorMessage = 'Processing failed';
+    let errorCode: string | undefined;
+    try { const err = JSON.parse(raw); errorMessage = err.error || errorMessage; errorCode = err.code; }
+    catch { errorMessage = raw.slice(0, 160).trim() || `Server error (${res.status})`; }
+    return { ok: false, transactions: [], errorMessage, errorCode };
+  }
+  const data = await res.json();
+  return { ok: true, transactions: ((data.transactions || []) as BankCsvTransaction[]).filter(Boolean), truncated: !!data.truncated };
+}
+
+// Split an oversized PDF into page-chunks that each fit under the upload limit.
+// Non-PDFs, small files, and single-page PDFs pass straight through. Page ranges
+// are halved recursively until each saved chunk is small enough — this copes
+// with pdf-lib duplicating shared resources (fonts/images) into each chunk.
+async function splitPdfIfNeeded(file: File): Promise<File[]> {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (!isPdf || (file.size * 4) / 3 <= BANK_UPLOAD_LIMIT) return [file];
+  try {
+    const { PDFDocument } = await import('pdf-lib');
+    const srcBytes = new Uint8Array(await file.arrayBuffer());
+    const src = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+    const pageCount = src.getPageCount();
+    if (pageCount <= 1) return [file];
+    const base = file.name.replace(/\.pdf$/i, '');
+    const out: File[] = [];
+    const emit = async (indices: number[]): Promise<void> => {
+      const doc = await PDFDocument.create();
+      const pages = await doc.copyPages(src, indices);
+      pages.forEach(p => doc.addPage(p));
+      const bytes = await doc.save();
+      if ((bytes.length * 4) / 3 <= BANK_UPLOAD_LIMIT || indices.length === 1) {
+        out.push(new File([bytes], `${base} — part ${out.length + 1}.pdf`, { type: 'application/pdf' }));
+        return;
+      }
+      const mid = Math.ceil(indices.length / 2);
+      await emit(indices.slice(0, mid));
+      await emit(indices.slice(mid));
+    };
+    await emit(Array.from({ length: pageCount }, (_, i) => i));
+    return out.length > 0 ? out : [file];
+  } catch {
+    return [file];
+  }
+}
+
 // ── Page wrapper ────────────────────────────────────────────────────────────
 export default function BankToCsvPage() {
   const [view, setView] = useState<'history' | 'tool'>('history');
@@ -127,38 +205,43 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
       setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
 
       try {
-        const base64 = await fileToBase64(file);
-        const res = await fetch('/api/bank-to-csv', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
-            clientId,
-            clientCode,
-          }),
-        });
+        // Large PDFs are auto-split into page-chunks that each fit under the
+        // upload limit; the rows are merged back under the original filename, so
+        // the user still sees one document (and gets one CSV).
+        const chunks = await splitPdfIfNeeded(file);
+        const merged: BankCsvTransaction[] = [];
+        const partErrors: string[] = [];
+        let firstErrorCode: string | undefined;
+        let truncated = false;
 
-        if (!res.ok) {
-          const err = await res.json();
-          docResults.push({
-            fileName: file.name,
-            status: 'failed',
-            validTransactions: [],
-            flaggedEntries: [],
-            errorMessage: err.error || 'Processing failed',
-            errorCode: err.code,
-          });
-        } else {
-          const data = await res.json();
-          const transactions: BankCsvTransaction[] = (data.transactions || []).filter(Boolean);
-          if (data.truncated) setWasTruncated(true);
-          docResults.push({
-            fileName: file.name,
-            status: 'success',
-            validTransactions: transactions,
-            flaggedEntries: [],
-          });
+        for (let c = 0; c < chunks.length; c++) {
+          if (chunks.length > 1) {
+            setScanProgress({ current: i + 1, total: filesToScan.length, fileName: `${file.name} — part ${c + 1} of ${chunks.length}` });
+          }
+          const r = await scanOneBankFile(chunks[c], clientId, clientCode);
+          if (r.ok) {
+            merged.push(...r.transactions);
+            if (r.truncated) truncated = true;
+          } else {
+            partErrors.push(r.errorMessage || 'Processing failed');
+            firstErrorCode = firstErrorCode ?? r.errorCode;
+          }
         }
+
+        if (truncated) setWasTruncated(true);
+        const allFailed = partErrors.length === chunks.length;
+        docResults.push({
+          fileName: file.name,
+          status: allFailed ? 'failed' : 'success',
+          validTransactions: merged,
+          flaggedEntries: [],
+          errorMessage: allFailed
+            ? partErrors[0]
+            : partErrors.length
+              ? `${partErrors.length} of ${chunks.length} parts couldn't be read — the rest were processed.`
+              : undefined,
+          errorCode: allFailed ? firstErrorCode : undefined,
+        });
       } catch (err) {
         docResults.push({
           fileName: file.name,
