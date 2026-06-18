@@ -21,6 +21,7 @@ import {
   FileText, Zap, ListChecks, Vote, BookText, PenLine,
   Phone, Video, PersonStanding, MonitorSpeaker, Monitor,
   Upload, Film, FolderOpen, CheckSquare, MicVocal, ArrowLeft,
+  ShieldCheck, Lightbulb, Volume2, UserCheck,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -91,9 +92,74 @@ interface MeetingNotesResult {
 
 const ORIGIN_OPTIONS: { value: MeetingOrigin; label: string; icon: React.ReactNode; hint: string }[] = [
   { value: 'recorded',  label: 'Voice Recording',   icon: <Mic size={14} />,            hint: 'Record via microphone with live transcription' },
-  { value: 'virtual',   label: 'Virtual',    icon: <Video size={14} />,          hint: 'Video call — screen record + mic transcription' },
+  { value: 'virtual',   label: 'Video Call', icon: <Video size={14} />,          hint: 'Video call — screen record + mic transcription' },
   { value: 'in_person', label: 'In Person',  icon: <PersonStanding size={14} />, hint: 'Face-to-face — describe what was discussed' },
   { value: 'phone',     label: 'Phone Call', icon: <Phone size={14} />,          hint: 'Phone call — describe what was discussed' },
+];
+
+// ── Setup wizard ──────────────────────────────────────────────────────────
+
+const WIZARD_STEPS = [
+  { n: 1, label: 'Meeting Details' },
+  { n: 2, label: 'Record Meeting' },
+  { n: 3, label: 'Review & Edit' },
+  { n: 4, label: 'Share & Export' },
+] as const;
+
+function WizardStepper({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = !!onStep && s.n < current;
+        return (
+          <div key={s.n} className="flex items-center gap-1.5 sm:gap-2.5">
+            <button type="button" disabled={!clickable} onClick={() => clickable && onStep?.(s.n)}
+              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors
+                ${active ? 'bg-[var(--accent)] text-white' : done ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                {done ? <Check size={13} /> : s.n}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StepperBar({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+  return (
+    <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin mb-5">
+      <WizardStepper current={current} onStep={onStep} />
+    </div>
+  );
+}
+
+const AI_CAPTURE = [
+  'Meeting summary',
+  'Key points and decisions',
+  'Action items with owners',
+  'Topics discussed',
+  'Next steps',
+];
+
+const MEETING_TIPS = [
+  { icon: Volume2,   title: 'Find a quiet space',     hint: 'Minimise background noise' },
+  { icon: Users2,    title: 'Speak clearly',          hint: 'One person at a time' },
+  { icon: MicVocal,  title: 'Use a good microphone',  hint: 'For higher quality recordings' },
+  { icon: UserCheck, title: 'Review and edit',        hint: 'Check the notes for accuracy' },
+];
+
+const WHAT_YOU_GET = [
+  { icon: Zap,        title: 'AI Summary',      hint: 'A concise overview of the meeting',        tint: 'text-[var(--accent)] bg-[var(--accent-light)]' },
+  { icon: ListChecks, title: 'Action Items',    hint: 'Tasks with owners and due dates',          tint: 'text-emerald-600 bg-emerald-50' },
+  { icon: Vote,       title: 'Key Decisions',   hint: 'Important decisions made',                 tint: 'text-rose-600 bg-rose-50' },
+  { icon: BookText,   title: 'Topics Discussed', hint: 'Main topics and discussion points',       tint: 'text-sky-600 bg-sky-50' },
+  { icon: FileText,   title: 'Full Transcript', hint: 'Complete searchable transcript',           tint: 'text-slate-600 bg-slate-100' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -122,7 +188,7 @@ function TabPill({ label, icon, active, onClick }: {
       className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
         active
           ? 'bg-[var(--accent)] text-white'
-          : 'text-white/90 font-semibold drop-shadow-sm hover:text-white hover:bg-white/15'
+          : 'text-[var(--text-secondary)] bg-white border border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'
       }`}>
       {icon}{label}
     </button>
@@ -857,8 +923,9 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
 
   if (phase === 'saved') {
     return (
-      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
         <BackToHistory onBack={onBack} />
+        <StepperBar current={4} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center text-center gap-6">
           <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
             <CheckCircle2 size={32} className="text-green-600" />
@@ -903,8 +970,9 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
 
   if (phase === 'uploading') {
     return (
-      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
         <BackToHistory onBack={onBack} />
+        <StepperBar current={2} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center gap-6">
           <div className="w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center">
             <Upload size={28} className="text-indigo-600" />
@@ -943,8 +1011,9 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
 
   if (phase === 'processing') {
     return (
-      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC}>
+      <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
         <BackToHistory onBack={onBack} />
+        <StepperBar current={2} />
         <div className="max-w-xl mx-auto py-16 flex flex-col items-center gap-6">
           <div className="w-16 h-16 rounded-full bg-[var(--accent-light)] flex items-center justify-center">
             <Loader2 size={28} className="text-[var(--accent)] animate-spin" />
@@ -967,16 +1036,17 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
     return (
       <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
       <BackToHistory onBack={onBack} />
+        <StepperBar current={3} onStep={() => setPhase('setup')} />
         <div className="space-y-6 pb-8">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h2 className="text-lg font-bold text-white drop-shadow-sm">{meetingTitle || 'Untitled Meeting'}</h2>
-              <p className="text-sm font-semibold text-white/90 drop-shadow-sm mt-0.5 flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-[var(--text-primary)]">{meetingTitle || 'Untitled Meeting'}</h2>
+              <p className="text-sm font-medium text-[var(--text-secondary)] mt-0.5 flex items-center gap-2 flex-wrap">
                 <span className="flex items-center gap-1"><Calendar size={12} />{formatDateDisplay(meetingDate)}</span>
                 {meetingTime && <span className="flex items-center gap-1"><Clock size={12} />{meetingTime}</span>}
                 {duration > 0 && <span className="flex items-center gap-1"><Mic size={12} />{formatDuration(duration)}</span>}
                 {originOption && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 bg-white/20 border border-white/25 rounded text-xs text-white font-medium">
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-[var(--accent-light)] border border-[var(--accent)]/25 rounded text-xs text-[var(--accent)] font-medium">
                     {originOption.icon}{originOption.label}
                   </span>
                 )}
@@ -989,10 +1059,10 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setPhase('setup')} className="btn-ghost text-sm flex items-center gap-1.5 text-white hover:text-white hover:bg-white/15">
+              <button onClick={() => setPhase('setup')} className="btn-secondary text-sm flex items-center gap-1.5">
                 <RefreshCw size={14} />Back
               </button>
-              <button onClick={() => void handleSummarise(true)} className="btn-ghost text-sm flex items-center gap-1.5 text-white hover:text-white hover:bg-white/15">
+              <button onClick={() => void handleSummarise(true)} className="btn-secondary text-sm flex items-center gap-1.5">
                 <Zap size={14} />Re-analyse
               </button>
               {tasksModuleActive && editActions.length > 0 && (
@@ -1284,6 +1354,7 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
   return (
     <ToolLayout title="Meeting Notes" icon={MicVocal} description={MEETING_NOTES_DESC} wide>
       <BackToHistory onBack={onBack} />
+      <StepperBar current={(isRecording || isScreenRecording || canSummarise) ? 2 : 1} />
       <div className="space-y-5 pb-8">
 
         {/* Calendar hint */}
@@ -1313,39 +1384,39 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
 
-          {/* ── Left: meeting details ─── */}
-          <div className="lg:col-span-3 space-y-4">
-            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
-              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Meeting Details</p>
+          {/* ── Col 1: meeting details ─── */}
+          <div className="lg:col-span-4 flex">
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-3 flex-1">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">1. Meeting Details</p>
 
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Title</label>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Title</label>
                 <input value={meetingTitle} onChange={e => setMeetingTitle(e.target.value)} placeholder="e.g. Year End Review — Acme Ltd" className="input-base w-full text-sm" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Date</label>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date</label>
                   <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} className="input-base w-full text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Time</label>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Time</label>
                   <input type="time" value={meetingTime} onChange={e => setMeetingTime(e.target.value)} className="input-base w-full text-sm" />
                 </div>
               </div>
 
               {/* Meeting Type */}
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Meeting Type</label>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2">Meeting type</label>
                 <div className="grid grid-cols-2 gap-2">
                   {ORIGIN_OPTIONS.map(opt => (
                     <Tooltip key={opt.value} label={opt.hint}>
                     <button type="button" onClick={() => setMeetingOrigin(opt.value)} aria-label={opt.hint}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
                         meetingOrigin === opt.value
-                          ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                          ? 'bg-[var(--accent-light)] text-[var(--accent)] border-[var(--accent)]'
                           : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
                       }`}>
                       {opt.icon}{opt.label}
@@ -1356,8 +1427,8 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1 flex items-center gap-1">
-                  <MapPin size={11} />Location
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5 flex items-center gap-1">
+                  <MapPin size={11} />Location <span className="text-[var(--text-muted)] font-normal">(optional)</span>
                 </label>
                 <input value={location} onChange={e => setLocation(e.target.value)}
                   placeholder={meetingOrigin === 'virtual' ? 'e.g. Google Meet, Zoom…' : meetingOrigin === 'phone' ? 'e.g. +44 7700 900000' : 'e.g. Office, Meeting Room 1'}
@@ -1366,13 +1437,13 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
 
               {/* Client */}
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1">Client (optional)</label>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Client <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
                 <ClientSelector value={selectedClient} onSelect={setSelectedClient} />
               </div>
 
               {/* Attendees */}
               <div>
-                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1 flex items-center gap-1"><Users2 size={11} />Attendees</label>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5 flex items-center gap-1"><Users2 size={11} />Attendees</label>
                 <div className="flex gap-2">
                   <input value={attendeeInput} onChange={e => setAttendeeInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addAttendee(); } }}
@@ -1389,268 +1460,325 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
                   </div>
                 )}
                 {teamMembers.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {teamMembers.map(m => {
-                      const label = m.name || m.email;
-                      const added = attendees.includes(label);
-                      return (
-                        <button key={m.id} type="button" onClick={() => toggleTeamMember(m)}
-                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border transition-all
-                            ${added
-                              ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
-                              : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
-                            }`}>
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
-                          {label}
-                          {added && <Check size={9} />}
-                        </button>
-                      );
-                    })}
+                  <div className="mt-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-1.5">Add from your team</p>
+                    <div className="max-h-28 overflow-y-auto scrollbar-thin border border-[var(--border)] rounded-lg p-2 flex flex-wrap gap-1.5">
+                      {[...teamMembers]
+                        .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email))
+                        .map(m => {
+                          const label = m.name || m.email;
+                          const added = attendees.includes(label);
+                          return (
+                            <button key={m.id} type="button" onClick={() => toggleTeamMember(m)}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border transition-all
+                                ${added
+                                  ? 'border-[var(--accent)] bg-[var(--accent-light)] text-[var(--accent)]'
+                                  : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]'
+                                }`}>
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                              {label}
+                              {added && <Check size={9} />}
+                            </button>
+                          );
+                        })}
+                    </div>
                   </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* ── Right: entry area ─── */}
-          <div className="lg:col-span-2 space-y-4">
-
-            {/* ── VIRTUAL / SCREEN RECORDING ─── */}
-            {isScreenMode && (
-              <>
-                {/* Explainer */}
-                <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-start gap-3">
-                  <Monitor size={16} className="text-indigo-600 mt-0.5 shrink-0" />
-                  <div className="text-sm text-indigo-800 space-y-1">
-                    <p className="font-semibold">How to record your Google Meet</p>
-                    <ol className="list-decimal list-inside space-y-1 text-xs text-indigo-700">
-                      <li>Click <strong>Start Screen Share</strong> below</li>
-                      <li>In Chrome's picker, select the <strong>Chrome Tab</strong> tab and choose your Google Meet tab</li>
-                      <li>Make sure <strong>"Share tab audio"</strong> is checked at the bottom of the picker</li>
-                      <li>Click <strong>Share</strong> — recording begins immediately</li>
-                      <li>Your microphone will also transcribe your own voice live</li>
-                      <li>When finished, click <strong>Stop Recording</strong></li>
-                    </ol>
-                    <p className="text-xs text-indigo-600 mt-1">When you click <strong>Generate Minutes</strong> you can choose to save the recording to Google Drive{!driveEnabled ? ' (connect Drive in Settings → Integrations first)' : ''} or download it locally.</p>
+          {/* ── Col 2: record meeting (one card, constant height for all modes) ─── */}
+          <div className="lg:col-span-4 flex">
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 flex-1 flex flex-col gap-4 min-h-0">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">2. Record Meeting</p>
+                {(isRecording || isScreenRecording) && (
+                  <div className="flex items-center gap-2">
+                    {isScreenRecording && <span className="flex items-center gap-1 text-xs text-[var(--text-muted)]"><Film size={11} />{formatBytes(recordingSize)}</span>}
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                    </span>
+                    <span className="text-sm font-mono font-medium text-red-600">{formatDuration(duration)}</span>
                   </div>
-                </div>
+                )}
+              </div>
 
-                {/* Screen recording controls */}
-                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Screen Recording</p>
-                    {isScreenRecording && (
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                          <Film size={11} />{formatBytes(recordingSize)}
-                        </span>
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                        </span>
-                        <span className="text-sm font-mono font-medium text-red-600">{formatDuration(duration)}</span>
+              {/* Content region — fills the column so the card height is constant across modes */}
+              <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto scrollbar-thin">
+
+                {/* ── VIRTUAL / SCREEN RECORDING ─── */}
+                {isScreenMode && (
+                  <>
+                    <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start gap-2.5">
+                      <Monitor size={15} className="text-indigo-600 mt-0.5 shrink-0" />
+                      <div className="text-xs text-indigo-800 space-y-1">
+                        <p className="font-semibold">How to record your video call</p>
+                        <ol className="list-decimal list-inside space-y-0.5 text-indigo-700">
+                          <li>Click <strong>Start Screen Share</strong> below</li>
+                          <li>In Chrome&apos;s picker, choose your meeting tab</li>
+                          <li>Tick <strong>&quot;Share tab audio&quot;</strong> in the picker</li>
+                          <li>Click <strong>Share</strong> — recording begins</li>
+                          <li>Your mic also transcribes your voice live</li>
+                          <li>Click <strong>Stop Recording</strong> when done</li>
+                        </ol>
+                      </div>
+                    </div>
+
+                    {screenError && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-1.5">
+                        <AlertCircle size={13} className="mt-0.5 shrink-0" />{screenError}
                       </div>
                     )}
-                  </div>
-
-                  {screenError && (
-                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-1.5">
-                      <AlertCircle size={13} className="mt-0.5 shrink-0" />{screenError}
-                    </div>
-                  )}
-
-                  {!driveEnabled && (
-                    <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-1.5">
-                      <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                      Google Drive is not connected. The recording will not be saved. Connect Drive in Settings → Integrations.
-                    </div>
-                  )}
-
-                  {/* Recording ready indicator */}
-                  {!isScreenRecording && recordingChunks.current.length > 0 && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
-                      <CheckCircle2 size={13} className="shrink-0" />
-                      <span>Recording ready — <span className="font-medium">{formatBytes(recordingSize)}</span></span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {!isScreenRecording ? (
-                      <button onClick={() => void startScreenRecording()}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-colors shadow-sm">
-                        <Monitor size={16} />Start Screen Share
-                      </button>
-                    ) : (
-                      <button onClick={() => { stopRecording(); }}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors shadow-sm">
-                        <Square size={14} className="fill-white" />Stop Recording
-                      </button>
+                    {!driveEnabled && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-start gap-1.5">
+                        <AlertCircle size={13} className="mt-0.5 shrink-0" />
+                        Google Drive is not connected. The recording will not be saved. Connect Drive in Settings → Integrations.
+                      </div>
                     )}
                     {!isScreenRecording && recordingChunks.current.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setSaveRecordingToDrive(driveEnabled);
-                          setDownloadRecording(false);
-                          setAddVideoToTimeline(false);
-                          setShowRecordingSaveModal(true);
-                        }}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm">
-                        <Zap size={16} />Generate Minutes
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Mic transcription status */}
-                  {isScreenRecording && (
-                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                      <Mic size={11} className="text-green-500" />
-                      Microphone transcription active — your voice is being captured
-                    </div>
-                  )}
-                </div>
-
-                {/* Live transcript during screen recording */}
-                {(isScreenRecording || transcript) && (
-                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
-                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Your voice (live transcript)</p>
-                    <div className="text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto">
-                      {transcript || <span className="text-[var(--text-muted)] italic">Listening for your voice…</span>}
-                      {interim && <span className="text-[var(--text-muted)] italic"> {interim}</span>}
-                    </div>
-                  </div>
-                )}
-
-                {/* Supplemental notes — shown after recording stops */}
-                {!isScreenRecording && recordingChunks.current.length > 0 && (
-                  <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-4 space-y-2">
-                    <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Additional Notes (optional)</label>
-                    <p className="text-xs text-[var(--text-muted)]">
-                      Add key points from the other party, decisions made, or anything your microphone may have missed.
-                    </p>
-                    <textarea
-                      value={supplementalNotes}
-                      onChange={e => setSupplementalNotes(e.target.value)}
-                      rows={5}
-                      placeholder="e.g. Client confirmed the £120k turnover figure. Agreed to fee increase from Jan 2027. They will send the missing invoices by Friday…"
-                      className="input-base w-full resize-none text-sm leading-relaxed"
-                    />
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ── MIC-ONLY RECORDING ─── */}
-            {!isManualMode && !isScreenMode && (
-              <>
-                {!speechSupport && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-sm text-amber-700">
-                    <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                    Live transcription requires Chrome or Edge.
-                    <button onClick={() => setMeetingOrigin('in_person')} className="underline font-medium ml-1">Switch to manual entry</button>
-                  </div>
-                )}
-                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Recording</p>
-                    {isRecording && (
-                      <div className="flex items-center gap-2">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                        </span>
-                        <span className="text-sm font-mono font-medium text-red-600">{formatDuration(duration)}</span>
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
+                        <CheckCircle2 size={13} className="shrink-0" />
+                        <span>Recording ready — <span className="font-medium">{formatBytes(recordingSize)}</span></span>
                       </div>
                     )}
-                  </div>
-                  {micError && (
-                    <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5">
-                      <AlertCircle size={13} className="mt-0.5 shrink-0" />{micError}
+
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {!isScreenRecording ? (
+                        <button onClick={() => void startScreenRecording()}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition-colors shadow-sm">
+                          <Monitor size={16} />Start Screen Share
+                        </button>
+                      ) : (
+                        <button onClick={() => { stopRecording(); }}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors shadow-sm">
+                          <Square size={14} className="fill-white" />Stop Recording
+                        </button>
+                      )}
+                      {!isScreenRecording && recordingChunks.current.length > 0 && (
+                        <button
+                          onClick={() => {
+                            setSaveRecordingToDrive(driveEnabled);
+                            setDownloadRecording(false);
+                            setAddVideoToTimeline(false);
+                            setShowRecordingSaveModal(true);
+                          }}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm">
+                          <Zap size={16} />Generate Minutes
+                        </button>
+                      )}
                     </div>
-                  )}
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {!isRecording ? (
-                      <button onClick={() => void startMicRecording()} disabled={!speechSupport}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50 shadow-sm">
-                        <Mic size={16} />Start Recording
-                      </button>
+
+                    {isScreenRecording && (
+                      <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                        <Mic size={11} className="text-green-500" />
+                        Microphone transcription active — your voice is being captured
+                      </div>
+                    )}
+
+                    {(isScreenRecording || transcript) && (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Your voice (live transcript)</p>
+                        <div className="text-sm text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto rounded-lg border border-[var(--border)] p-2.5">
+                          {transcript || <span className="text-[var(--text-muted)] italic">Listening for your voice…</span>}
+                          {interim && <span className="text-[var(--text-muted)] italic"> {interim}</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {!isScreenRecording && recordingChunks.current.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Additional Notes (optional)</label>
+                        <p className="text-xs text-[var(--text-muted)]">Add key points from the other party, decisions made, or anything your microphone may have missed.</p>
+                        <textarea
+                          value={supplementalNotes}
+                          onChange={e => setSupplementalNotes(e.target.value)}
+                          rows={5}
+                          placeholder="e.g. Client confirmed the £120k turnover figure. Agreed to fee increase from Jan 2027…"
+                          className="input-base w-full resize-none text-sm leading-relaxed"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── MIC-ONLY RECORDING ─── */}
+                {!isManualMode && !isScreenMode && (
+                  <>
+                    {!speechSupport && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-sm text-amber-700">
+                        <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                        Live transcription requires Chrome or Edge.
+                        <button onClick={() => setMeetingOrigin('in_person')} className="underline font-medium ml-1">Switch to manual entry</button>
+                      </div>
+                    )}
+                    {micError && (
+                      <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-start gap-1.5">
+                        <AlertCircle size={13} className="mt-0.5 shrink-0" />{micError}
+                      </div>
+                    )}
+
+                    {/* Clean "ready to record" state — centred, fills the panel */}
+                    {!isRecording && !canSummarise ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-4">
+                        <div className="w-16 h-16 rounded-full bg-[var(--accent-light)] flex items-center justify-center mb-4">
+                          <Mic size={26} className="text-[var(--accent)]" />
+                        </div>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">Ready to record</p>
+                        <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">Click the button below to start recording your meeting.</p>
+                        <button onClick={() => void startMicRecording()} disabled={!speechSupport}
+                          className="btn-primary disabled:opacity-50">
+                          <Mic size={16} />Start Recording
+                        </button>
+                      </div>
                     ) : (
                       <>
-                        <button onClick={stopRecording}
-                          className="flex items-center gap-2 px-4 py-2.5 border border-red-300 text-red-600 hover:bg-red-50 font-medium rounded-xl transition-colors">
-                          <Square size={14} className="fill-red-600" />Pause
-                        </button>
-                        <button onClick={() => void handleSummarise()}
-                          className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm">
-                          <MicOff size={16} />Stop & Summarise
-                        </button>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          {isRecording ? (
+                            <>
+                              <button onClick={stopRecording}
+                                className="flex items-center gap-2 px-4 py-2.5 border border-red-300 text-red-600 hover:bg-red-50 font-medium rounded-xl transition-colors">
+                                <Square size={14} className="fill-red-600" />Pause
+                              </button>
+                              <button onClick={() => void handleSummarise()}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm">
+                                <MicOff size={16} />Stop &amp; Summarise
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => void startMicRecording()} disabled={!speechSupport}
+                                className="flex items-center gap-2 px-4 py-2.5 border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] font-medium rounded-xl transition-colors disabled:opacity-50">
+                                <Mic size={16} />Resume
+                              </button>
+                              <button onClick={() => void handleSummarise()} disabled={processing}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+                                {processing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}Summarise
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="flex-1 min-h-0 flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Live Transcript</p>
+                            {transcript && <button onClick={() => { setTranscript(''); transcriptRef.current = ''; setInterim(''); }} className="text-xs text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1"><Trash2 size={11} />Clear</button>}
+                          </div>
+                          <textarea
+                            value={transcript + (interim ? ` ${interim}` : '')}
+                            onChange={e => { setTranscript(e.target.value); transcriptRef.current = e.target.value; setInterim(''); }}
+                            placeholder={isRecording ? 'Listening… speech will appear here in real time.' : 'Transcript will appear once you start recording. You can also type manually.'}
+                            className="input-base w-full resize-none text-sm leading-relaxed flex-1 min-h-[140px]"
+                          />
+                          {canSummarise && !isRecording && (
+                            <div className="flex justify-end">
+                              <button onClick={() => void handleSummarise()} disabled={processing}
+                                className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
+                                {processing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}Summarise with AI
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </>
                     )}
-                    {!isRecording && canSummarise && (
-                      <button onClick={() => void handleSummarise()} disabled={processing}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
-                        {processing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}Summarise
-                      </button>
-                    )}
-                  </div>
-                  <p className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                    <MonitorSpeaker size={12} />Tip: for remote calls, play audio through speakers near your mic for best results.
-                  </p>
-                </div>
-                <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Live Transcript</p>
-                    {transcript && <button onClick={() => { setTranscript(''); transcriptRef.current = ''; setInterim(''); }} className="text-xs text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1"><Trash2 size={11} />Clear</button>}
-                  </div>
-                  <textarea
-                    value={transcript + (interim ? ` ${interim}` : '')}
-                    onChange={e => { setTranscript(e.target.value); transcriptRef.current = e.target.value; setInterim(''); }}
-                    placeholder={isRecording ? 'Listening… speech will appear here in real time.' : 'Transcript will appear once you start recording. You can also type manually.'}
-                    rows={12} className="input-base w-full resize-none text-sm leading-relaxed"
-                  />
-                  {canSummarise && !isRecording && (
-                    <div className="flex justify-end">
-                      <button onClick={() => void handleSummarise()} disabled={processing}
-                        className="btn-primary text-sm flex items-center gap-2 disabled:opacity-50">
-                        {processing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}Summarise with AI
+                  </>
+                )}
+
+                {/* ── MANUAL ENTRY ─── */}
+                {isManualMode && (
+                  <div className="flex-1 min-h-0 flex flex-col gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center shrink-0">
+                        <PenLine size={16} className="text-[var(--accent)]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">Describe the Meeting</p>
+                        <p className="text-xs text-[var(--text-muted)] mt-0.5">Write what was discussed — topics, decisions, actions agreed. SMITH will turn this into full professional minutes.</p>
+                      </div>
+                    </div>
+                    <textarea
+                      value={manualDescription}
+                      onChange={e => setManualDescription(e.target.value)}
+                      placeholder={
+                        meetingOrigin === 'phone'
+                          ? `e.g. Called ${selectedClient?.name || 'the client'} to discuss their year end accounts. Confirmed turnover of £120k. Agreed to submit accounts by 31 January. Client mentioned a new van purchase (£18,000) to capitalise. Action: obtain van invoice and finance agreement.`
+                          : `e.g. Met with ${selectedClient?.name || 'the client'} at their office. Reviewed draft accounts. Discussed outstanding HMRC enquiry — client to provide correspondence by end of month. Agreed fee increase from £1,500 to £1,800 from next year.`
+                      }
+                      className="input-base w-full resize-none text-sm leading-relaxed flex-1 min-h-[200px]"
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-[var(--text-muted)]">{manualDescription.trim().split(/\s+/).filter(Boolean).length} words</p>
+                      <button onClick={() => void handleSummarise()} disabled={!canSummarise || processing}
+                        className="btn-primary flex items-center gap-2 disabled:opacity-50">
+                        {processing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}Generate Notes with AI
                       </button>
                     </div>
-                  )}
-                </div>
-              </>
-            )}
+                  </div>
+                )}
+              </div>
 
-            {/* ── MANUAL ENTRY ─── */}
-            {isManualMode && (
-              <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-[var(--accent-light)] flex items-center justify-center shrink-0">
-                    <PenLine size={16} className="text-[var(--accent)]" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">Describe the Meeting</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-0.5">Write what was discussed — topics, decisions, actions agreed. SMITH will turn this into full professional minutes.</p>
-                  </div>
+              {/* Tip — recorded modes only, pinned to the bottom */}
+              {!isManualMode && (
+                <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-[var(--bg-nav-hover)] text-xs text-[var(--text-muted)]">
+                  <MonitorSpeaker size={13} className="shrink-0 mt-0.5" />
+                  <span>Tip: for best results, speak clearly and record in a quiet environment. For remote calls, play audio through speakers near your mic.</span>
                 </div>
-                <textarea
-                  value={manualDescription}
-                  onChange={e => setManualDescription(e.target.value)}
-                  rows={14}
-                  placeholder={
-                    meetingOrigin === 'phone'
-                      ? `e.g. Called ${selectedClient?.name || 'the client'} to discuss their year end accounts. Confirmed turnover of £120k. Agreed to submit accounts by 31 January. Client mentioned a new van purchase (£18,000) to capitalise. Action: obtain van invoice and finance agreement.`
-                      : `e.g. Met with ${selectedClient?.name || 'the client'} at their office. Reviewed draft accounts. Discussed outstanding HMRC enquiry — client to provide correspondence by end of month. Agreed fee increase from £1,500 to £1,800 from next year.`
-                  }
-                  className="input-base w-full resize-none text-sm leading-relaxed"
-                />
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-[var(--text-muted)]">{manualDescription.trim().split(/\s+/).filter(Boolean).length} words</p>
-                  <button onClick={() => void handleSummarise()} disabled={!canSummarise || processing}
-                    className="btn-primary flex items-center gap-2 disabled:opacity-50">
-                    {processing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}Generate Notes with AI
-                  </button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Col 3: AI will capture · What you'll get · Tips ─── */}
+          <div className="lg:col-span-4 flex flex-col gap-4">
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">AI will capture</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">Our AI will listen, transcribe and generate:</p>
+              <div className="space-y-3">
+                {AI_CAPTURE.map(label => (
+                  <div key={label} className="flex items-center gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                    <span className="text-xs font-medium text-[var(--text-primary)]">{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 pt-4 border-t border-[var(--border)] flex items-start gap-2.5">
+                <ShieldCheck size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-[var(--text-primary)]">Your data is secure</p>
+                  <p className="text-[11px] text-[var(--text-muted)] leading-snug mt-0.5">Recordings and transcripts are encrypted and never used to train AI models.</p>
                 </div>
               </div>
-            )}
+            </div>
+
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-3">What you&apos;ll get</p>
+              <div className="space-y-3.5">
+                {WHAT_YOU_GET.map(({ icon: Icon, title, hint, tint }) => (
+                  <div key={title} className="flex items-start gap-3">
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon size={15} /></span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-[var(--text-primary)]">{title}</p>
+                      <p className="text-[11px] text-[var(--text-muted)] leading-snug">{hint}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white/85 backdrop-blur-md rounded-xl border border-[var(--border)] p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-3"><Lightbulb size={15} className="text-amber-500" /> Tips for better results</p>
+              <div className="space-y-3.5">
+                {MEETING_TIPS.map(({ icon: Icon, title, hint }) => (
+                  <div key={title} className="flex items-start gap-3">
+                    <span className="w-8 h-8 rounded-lg bg-[var(--bg-nav-hover)] flex items-center justify-center shrink-0"><Icon size={15} className="text-[var(--text-muted)]" /></span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-[var(--text-primary)]">{title}</p>
+                      <p className="text-[11px] text-[var(--text-muted)] leading-snug">{hint}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -15,8 +15,8 @@ interface ClientOption {
 interface TaskFiltersProps {
   search: string;
   onSearchChange: (v: string) => void;
-  statusFilter: TaskStatus | 'all';
-  onStatusChange: (v: TaskStatus | 'all') => void;
+  statusFilter: TaskStatus | 'all' | 'open';
+  onStatusChange: (v: TaskStatus | 'all' | 'open') => void;
   clientFilter: string;
   onClientChange: (v: string) => void;
   assigneeFilter: string;
@@ -26,7 +26,8 @@ interface TaskFiltersProps {
   onClear: () => void;
 }
 
-const STATUS_OPTIONS: { value: TaskStatus | 'all'; label: string }[] = [
+const STATUS_OPTIONS: { value: TaskStatus | 'all' | 'open'; label: string }[] = [
+  { value: 'open',              label: 'Open' },
   { value: 'all',               label: 'All Statuses' },
   { value: 'not_started',       label: 'Not Started' },
   { value: 'in_progress',       label: 'In Progress' },
@@ -111,7 +112,8 @@ export default function TaskFilters({
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const hasFilters = search || statusFilter !== 'all' || clientFilter || assigneeFilter;
+  // 'open' is the default view, so it doesn't count as an active filter.
+  const hasFilters = search || statusFilter !== 'open' || clientFilter || assigneeFilter;
 
   const clientLabel = clientFilter === ''         ? 'All Clients'
                     : clientFilter === 'internal' ? 'Internal Only'
@@ -135,7 +137,7 @@ export default function TaskFilters({
       <GlassSelect
         ariaLabel="Filter by status"
         value={statusFilter}
-        onChange={v => onStatusChange(v as TaskStatus | 'all')}
+        onChange={v => onStatusChange(v as TaskStatus | 'all' | 'open')}
         options={STATUS_OPTIONS}
         className="min-w-[150px]"
       />

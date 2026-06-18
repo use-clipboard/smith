@@ -296,14 +296,16 @@ export default function HrClient() {
       icon={HeartHandshake}
       iconColor="#9333EA"
       wide
-      headerRight={userId ? headerPill : null}
     >
-      {/* Top-level tabs */}
-      <div className="flex flex-wrap gap-2 mb-4 border-b border-[var(--border)] pb-3">
-        <TabBtn active={topTab === 'overview'}  onClick={() => setTopTab('overview')}  icon={LayoutDashboard} label="Overview" />
-        <TabBtn active={topTab === 'holidays'}  onClick={() => setTopTab('holidays')}  icon={CalIcon}         label="Holidays & Absence" badge={badges.pendingApprovals + badges.holidayDecisions} />
-        <TabBtn active={topTab === 'people'}    onClick={() => setTopTab('people')}    icon={UsersIcon}       label="People" />
-        <TabBtn active={topTab === 'resources'} onClick={() => setTopTab('resources')} icon={BookOpenCheck}   label="Resources" badge={badges.newBriefings + badges.newDisclosures} />
+      {/* Top-level tabs (underline style) with the action pill in line on the right */}
+      <div className="flex items-end justify-between gap-3 mb-5 border-b border-[var(--border)]">
+        <div className="flex items-center flex-wrap">
+          <TabBtn active={topTab === 'overview'}  onClick={() => setTopTab('overview')}  icon={LayoutDashboard} label="Overview" />
+          <TabBtn active={topTab === 'holidays'}  onClick={() => setTopTab('holidays')}  icon={CalIcon}         label="Holidays & Absence" badge={badges.pendingApprovals + badges.holidayDecisions} />
+          <TabBtn active={topTab === 'people'}    onClick={() => setTopTab('people')}    icon={UsersIcon}       label="People" />
+          <TabBtn active={topTab === 'resources'} onClick={() => setTopTab('resources')} icon={BookOpenCheck}   label="Resources" badge={badges.newBriefings + badges.newDisclosures} />
+        </div>
+        {userId && <div className="pb-2 shrink-0">{headerPill}</div>}
       </div>
 
       {/* Sub-tabs */}
@@ -352,7 +354,9 @@ export default function HrClient() {
             setTopTab(top);
             if (top === 'holidays' && sub) setHolidaysSub(sub as HolidaysSub);
             if (top === 'people' && sub) setPeopleSub(sub as PeopleSub);
+            if (top === 'resources' && sub) setResourcesSub(sub as ResourcesSub);
           }}
+          onRequestHoliday={() => setQuickRequestOpen(true)}
         />
       )}
 
@@ -423,21 +427,20 @@ function SubTabBtn({ active, onClick, icon: Icon, label, badge }: { active: bool
   );
 }
 
-function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: React.ElementType; label: string; badge?: number }) {
+function TabBtn({ active, onClick, label, badge }: { active: boolean; onClick: () => void; icon?: React.ElementType; label: string; badge?: number }) {
   const badgeLabel = badge != null && badge > 99 ? '99+' : String(badge ?? 0);
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+      className={`inline-flex items-center gap-1.5 px-3 py-2 -mb-px border-b-2 text-sm font-medium transition-colors ${
         active
-          ? 'bg-[var(--accent)] text-white'
-          : 'bg-white border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+          ? 'border-[var(--accent)] text-[var(--accent)]'
+          : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'
       }`}
     >
-      <Icon size={13} />
       {label}
       {badge != null && badge > 0 && (
-        <span className={`ml-1 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center ${active ? 'bg-white text-[var(--accent)]' : 'bg-[var(--accent)] text-white'}`}>
+        <span className="ml-0.5 min-w-[16px] h-[16px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center bg-[var(--accent)] text-white">
           {badgeLabel}
         </span>
       )}

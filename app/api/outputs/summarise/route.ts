@@ -7,7 +7,7 @@ const SaveSchema = z.object({
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
-  documents: z.array(z.record(z.unknown())).default([]),
+  documents: z.array(z.record(z.string(), z.unknown())).default([]),
   groupBy: z.enum(['none', 'entity', 'category']).default('none'),
   dateFrom: z.string().optional().default(''),
   dateTo: z.string().optional().default(''),

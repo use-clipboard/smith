@@ -12,6 +12,9 @@ const RequestSchema = z.object({
   files: z.array(FileSchema),
   clientId: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
+  accountName: z.string().nullable().optional(),
+  accountNumber: z.string().nullable().optional(),
+  yearEnd: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
 });
 
@@ -21,7 +24,7 @@ export async function POST(req: NextRequest) {
     const validation = RequestSchema.safeParse(body);
     if (!validation.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive } = validation.data;
+    const { files, clientId, clientCode, accountName, accountNumber, yearEnd, saveToDrive } = validation.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -29,7 +32,7 @@ export async function POST(req: NextRequest) {
     if (!isModuleActive('bank-to-csv')) return moduleNotActive('bank-to-csv');
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
-    const prompt = buildBankToCsvPrompt();
+    const prompt = buildBankToCsvPrompt({ accountName, accountNumber, yearEnd });
 
     const fileContent = files.map(f => {
       if (f.mimeType === 'application/pdf') {

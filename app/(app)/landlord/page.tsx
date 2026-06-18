@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { consumePendingClient } from '@/lib/pendingClient';
-import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
@@ -16,7 +15,8 @@ import Tooltip from '@/components/ui/Tooltip';
 import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
-  Plus, Trash2, TrendingUp, ArrowLeft, Sparkles,
+  Plus, Trash2, TrendingUp, ArrowLeft, ArrowRight, Sparkles,
+  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator,
 } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment } from '@/types';
@@ -92,6 +92,51 @@ function buildExpenseRows(txs: LandlordExpenseTransaction[], dateFrom: string, d
   }));
 }
 
+// ─── Setup wizard ──────────────────────────────────────────────────────────
+
+const WIZARD_STEPS = [
+  { n: 1, label: 'Select Client' },
+  { n: 2, label: 'Upload Documents' },
+  { n: 3, label: 'Analysis Results' },
+] as const;
+
+function WizardStepper({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = !!onStep && s.n < current;
+        return (
+          <div key={s.n} className="flex items-center gap-1.5 sm:gap-2.5">
+            <button type="button" disabled={!clickable} onClick={() => clickable && onStep?.(s.n)}
+              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors
+                ${active ? 'bg-[var(--accent)] text-white' : done ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                {done ? <Check size={13} /> : s.n}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const LANDLORD_OUTPUTS = [
+  { icon: Coins, label: 'Rental income' },
+  { icon: Receipt, label: 'Allowable expenses' },
+  { icon: Building2, label: 'Per-property breakdown' },
+  { icon: AlertTriangle, label: 'Duplicate detection' },
+  { icon: Calculator, label: 'Rent computation' },
+];
+
+function isSupportedDoc(f: File): boolean {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name) || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 // ── Page wrapper: history dashboard or tool ──────────────────────────────────
@@ -140,10 +185,18 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
-  const [clientName, setClientName] = useState('');
-  const [clientCode, setClientCode] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setDocumentFiles(prev => {
+      const seen = new Set(prev.map(f => `${f.name}-${f.size}`));
+      return [...prev, ...files.filter(f => !seen.has(`${f.name}-${f.size}`))];
+    });
+  }, []);
 
   // ── Auto client-context: pulls past saved Landlord analyses for this client
   // and feeds them to the AI so it stays consistent with previously-chosen
@@ -188,8 +241,6 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         vat_number: seed.client.vat_number ?? null,
         status: 'active',
       });
-      setClientName(seed.client.name);
-      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
     }
     setDateFrom(seed.dateFrom ?? '');
     setDateTo(seed.dateTo ?? '');
@@ -227,13 +278,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     return () => window.removeEventListener('smith:pending-client', handle);
   }, []);
 
-  // Pre-populate name/code when a client is selected from the selector
   const handleClientSelect = useCallback((c: SelectedClient | null) => {
     setSelectedClient(c);
-    if (c) {
-      if (c.name) setClientName(c.name);
-      if (c.client_ref) setClientCode(c.client_ref);
-    }
   }, []);
 
   // Per-document scan state
@@ -421,7 +467,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     let elapsed = 0;
     progressRef.current = setInterval(() => { elapsed += 100; setProgress(Math.min(90, (elapsed / est) * 100)); }, 100);
 
-    const resolvedClientCode = clientCode.trim() || selectedClient?.client_ref || null;
+    const resolvedClientCode = selectedClient?.client_ref ?? null;
     const allResults = await scanFiles(documentFiles, selectedClient?.id ?? null, resolvedClientCode);
     if (progressRef.current) clearInterval(progressRef.current);
     setProgress(100);
@@ -641,13 +687,13 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     );
   }
   if (appState === 'error') return (
-    <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706">
+    <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
   if (appState === 'scan_results') return (
-    <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706">
+    <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706" wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView results={scanResults} fileRefs={fileRefs.current} isRescanning={isRescanning} onRescan={handleRescan} onDismissAndContinue={handleDismissAndContinue} />
     </ToolLayout>
@@ -859,108 +905,185 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   // ─── Main render ────────────────────────────────────────────────────────────
 
+  const allSupported = documentFiles.length > 0 && documentFiles.every(isSupportedDoc);
+  const idleStep = selectedClient ? 2 : 1;
+
+  const PastContextPill = () => (
+    selectedClient && (autoCtxLoading || (autoCtxIncome.length + autoCtxExpenses.length > 0)) ? (
+      <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+        useAutoContext
+          ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+          : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+      }`}>
+        <Sparkles size={13} className="shrink-0" />
+        <div className="flex-1 leading-snug">
+          {autoCtxLoading ? (
+            <span>Looking for past analyses for this client…</span>
+          ) : useAutoContext ? (
+            <>
+              Using <span className="font-semibold">{autoCtxIncome.length}</span> past income and
+              {' '}<span className="font-semibold">{autoCtxExpenses.length}</span> past expense entries from
+              {' '}<span className="font-semibold">{autoCtxAnalyses}</span> previous {autoCtxAnalyses === 1 ? 'analysis' : 'analyses'} to improve category, supplier and capital-vs-revenue accuracy.
+            </>
+          ) : (
+            <>Past-analysis learning is off — accuracy may be lower.</>
+          )}
+        </div>
+        <Tooltip label={useAutoContext ? 'Turn off learning from past analyses' : 'Turn learning back on'}>
+          <button
+            onClick={() => setUseAutoContext(v => !v)}
+            aria-label="Toggle past-analysis learning"
+            className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${useAutoContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </Tooltip>
+      </div>
+    ) : null
+  );
+
   return (
-    <ToolLayout title="Landlord Analysis" description="Analyse income and expense documents for a rental property portfolio." icon={House} iconColor="#D97706">
+    <ToolLayout title="Landlord Analysis" description="Analyse income and expense documents for a rental property portfolio." icon={House} iconColor="#D97706" wide>
       <BackToHistory onBack={onBack} />
 
-      {/* ── Idle ── */}
+      {/* ── Idle (steps 1 & 2) ── */}
       {appState === 'idle' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5 space-y-4">
-              {/* Client */}
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
-                <div className="flex items-center gap-2 mb-3">
-                  <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+          {/* Stepper */}
+          <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={idleStep} />
+          </div>
+
+          <PastContextPill />
+
+          {/* Top row — Client · Upload · What we'll produce */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Client */}
+            <div className="lg:col-span-3 relative z-30 glass-solid rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">1. Client</p>
+              {selectedClient ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[var(--accent-light)] flex items-center justify-center shrink-0">
+                      <Building2 size={20} className="text-[var(--accent)]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{selectedClient.name}</p>
+                      <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 flex-wrap">
+                        {selectedClient.client_ref && <span className="font-mono">{selectedClient.client_ref}</span>}
+                        {selectedClient.client_ref && selectedClient.vat_number && <span>·</span>}
+                        {selectedClient.vat_number
+                          ? <span className="text-emerald-600 font-medium">VAT Registered</span>
+                          : <span>Not VAT registered</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => handleClientSelect(null)} className="btn-secondary text-xs py-1.5 px-3">Change client</button>
                 </div>
+              ) : (
+                <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+              )}
+
+              <div className="space-y-3 pt-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]"><CalendarDays size={12} /> Date range <span className="text-[var(--text-muted)] font-normal">(optional)</span></p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Name</label>
-                    <input
-                      type="text"
-                      value={clientName}
-                      onChange={e => setClientName(e.target.value)}
-                      placeholder="e.g. John Smith"
-                      className="input-base w-full text-sm"
-                    />
+                    <label className="block text-[11px] text-[var(--text-muted)] mb-1">From</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full text-sm" />
                   </div>
                   <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Code</label>
-                    <input
-                      type="text"
-                      value={clientCode}
-                      onChange={e => setClientCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. JS001"
-                      className="input-base w-full text-sm font-mono"
-                    />
+                    <label className="block text-[11px] text-[var(--text-muted)] mb-1">To</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full text-sm" />
                   </div>
                 </div>
-              </div>
-              {/* Date range */}
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range (optional)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-1.5">Transactions outside this range will be shown separately.</p>
+                <p className="text-[11px] text-[var(--text-muted)] leading-snug">Transactions outside this range are shown separately in the results.</p>
               </div>
             </div>
-            <div className="space-y-3">
-              {/* Auto-context pill — visible when this client has past landlord analyses */}
-              {selectedClient && (autoCtxLoading || (autoCtxIncome.length + autoCtxExpenses.length > 0)) && (
-                <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
-                  useAutoContext
-                    ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
-                    : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
-                }`}>
-                  <Sparkles size={13} className="shrink-0" />
-                  <div className="flex-1 leading-snug">
-                    {autoCtxLoading ? (
-                      <span>Looking for past analyses for this client…</span>
-                    ) : useAutoContext ? (
-                      <>
-                        Using <span className="font-semibold">{autoCtxIncome.length}</span> past income and
-                        {' '}<span className="font-semibold">{autoCtxExpenses.length}</span> past expense entries from
-                        {' '}<span className="font-semibold">{autoCtxAnalyses}</span> previous {autoCtxAnalyses === 1 ? 'analysis' : 'analyses'} to improve category, supplier and capital-vs-revenue accuracy.
-                      </>
-                    ) : (
-                      <>Past-analysis learning is off — accuracy may be lower.</>
-                    )}
-                  </div>
-                  <Tooltip label={useAutoContext ? 'Turn off learning from past analyses' : 'Turn learning back on'}>
-                    <button
-                      onClick={() => setUseAutoContext(v => !v)}
-                      aria-label="Toggle past-analysis learning"
-                      className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${useAutoContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${useAutoContext ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                  </Tooltip>
+
+            {/* Upload */}
+            <div className="lg:col-span-6 glass-solid rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">2. Upload Documents</p>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-white/[0.5] hover:border-[var(--accent)]'}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-[var(--accent-light)] flex items-center justify-center mx-auto mb-3">
+                  <UploadCloud size={22} className="text-[var(--accent)]" />
+                </div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Drag and drop your documents here</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Upload letting agent statements, invoices &amp; receipts (PDF, PNG, JPG)</p>
+                <span className="btn-primary mt-4 inline-flex pointer-events-none">Browse files</span>
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+                onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+
+              {documentFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {documentFiles.map((f, i) => {
+                    const ok = isSupportedDoc(f);
+                    return (
+                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)]">
+                        <Receipt size={15} className={ok ? 'text-[var(--accent)] shrink-0' : 'text-[var(--text-muted)] shrink-0'} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{f.name}</p>
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase">{(f.type.split('/')[1] || f.name.split('.').pop() || 'file')} · {(f.size / 1048576).toFixed(1)} MB</p>
+                        </div>
+                        {ok
+                          ? <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                          : <Tooltip label="Unsupported format"><span className="text-[10px] font-semibold text-amber-600">?</span></Tooltip>}
+                        <button type="button" onClick={() => setDocumentFiles(prev => prev.filter((_, j) => j !== i))} aria-label="Remove file" className="text-[var(--text-muted)] hover:text-red-500 shrink-0">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)] hover:opacity-80 pt-1">
+                    <UploadCloud size={13} /> Add another file
+                  </button>
                 </div>
               )}
-              <FileUpload title="Landlord Documents" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload letting agent statements, invoices, and receipts." existingFiles={documentFiles} />
+            </div>
+
+            {/* What we'll produce */}
+            <div className="lg:col-span-3 glass-solid rounded-xl p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">What we&apos;ll produce</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">We&apos;ll analyse your documents and build a UK property income computation.</p>
+              <div className="space-y-3">
+                {LANDLORD_OUTPUTS.map(({ icon: Icon, label }) => (
+                  <div key={label} className="flex items-center gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                    <span className="text-xs font-medium text-[var(--text-primary)] flex items-center gap-1.5"><Icon size={13} className="text-[var(--text-muted)]" /> {label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 pt-4 border-t border-[var(--border)] flex items-start gap-2.5">
+                <ShieldCheck size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-[var(--text-muted)] leading-snug">Documents are sent over an encrypted connection and are never used to train AI models.</p>
+              </div>
             </div>
           </div>
-          <div className="flex justify-end">
-            <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary">
-              <House size={15} />
-              Analyse Documents
+
+          {/* Action bar */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><ShieldCheck size={13} /> Sent over an encrypted connection and never used to train AI models.</p>
+            <button onClick={handleProcess} disabled={documentFiles.length === 0 || !allSupported} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+              <House size={15} /> Analyse Documents <ArrowRight size={15} />
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Success ── */}
+      {/* ── Success (step 3) — results unchanged, with stepper on top ── */}
       {appState === 'success' && (
         <div className="space-y-4">
+
+          {/* Stepper */}
+          <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={3} onStep={() => setAppState('idle')} />
+          </div>
 
           {/* Summary strip */}
           <div className="grid grid-cols-3 gap-3">
@@ -1034,7 +1157,11 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 <Download size={14} />
                 Save & Export
               </button>
-              <button onClick={() => setAppState('idle')} className="btn-secondary">New Analysis</button>
+              <button onClick={() => {
+                setDocumentFiles([]); setScanResults([]); setHistory([]); setHistoryIndex(-1);
+                setAdjustments([]); setSelectedIncome(new Set()); setSelectedExpenses(new Set());
+                setView('income'); setAppState('idle');
+              }} className="btn-secondary">New Analysis</button>
             </div>
           </div>
 
@@ -1362,8 +1489,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             flaggedExpenses={flaggedExpenses.map(r => ({ date: r.DueDate, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName }))}
             documentFiles={documentFiles}
             initialClient={selectedClient}
-            initialClientName={clientName}
-            initialClientCode={clientCode}
+            initialClientName={selectedClient?.name ?? ''}
+            initialClientCode={selectedClient?.client_ref ?? ''}
             dateFrom={dateFrom}
             dateTo={dateTo}
             onClose={() => setSaveModalOpen(false)}

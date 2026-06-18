@@ -72,7 +72,7 @@ export default function StaffHirePage() {
 
   if (!isModuleActive('staff-hire')) {
     return (
-      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED">
+      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED" wide>
         <div className="glass-solid rounded-xl p-8 text-center">
           <Lock size={24} className="text-[var(--text-muted)] mx-auto mb-2" />
           <p className="text-sm text-[var(--text-muted)]">The Staff Hire module is not enabled. Ask your admin to enable it in Settings → Tools.</p>
@@ -83,7 +83,7 @@ export default function StaffHirePage() {
 
   if (hasAccess === null) {
     return (
-      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED">
+      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED" wide>
         <div className="flex justify-center py-12">
           <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
         </div>
@@ -93,7 +93,7 @@ export default function StaffHirePage() {
 
   if (hasAccess === false) {
     return (
-      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED">
+      <ToolLayout title="Staff Hire" icon={UserPlus} iconColor="#7C3AED" wide>
         <div className="glass-solid rounded-xl p-8 text-center">
           <Lock size={24} className="text-[var(--text-muted)] mx-auto mb-2" />
           <p className="text-sm font-semibold text-[var(--text-primary)] mb-1">Access Restricted</p>
@@ -109,6 +109,7 @@ export default function StaffHirePage() {
       description="Manage recruitment — write job postings, evaluate applicants, run interviews, and make AI-powered hiring decisions."
       icon={UserPlus}
       iconColor="#7C3AED"
+      wide
     >
       {view.type === 'dashboard' && (
         <StaffHireDashboard

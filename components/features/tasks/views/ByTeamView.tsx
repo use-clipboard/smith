@@ -19,7 +19,7 @@ interface Props {
   currentUserId: string;
   teamMembers: TeamMember[];
   search: string; onSearchChange: (v: string) => void;
-  statusFilter: TaskStatus | 'all'; onStatusChange: (v: TaskStatus | 'all') => void;
+  statusFilter: TaskStatus | 'all' | 'open'; onStatusChange: (v: TaskStatus | 'all' | 'open') => void;
   clientFilter: string; onClientChange: (v: string) => void;
   assigneeFilter: string; onAssigneeChange: (v: string) => void;
   clients: { id: string; name: string }[];
@@ -56,7 +56,7 @@ export default function ByTeamView({ tasks, currentUserId, teamMembers, search, 
       const hay = `${t.title} ${t.client?.name ?? ''} ${t.client?.client_ref ?? ''}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
-    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    if (statusFilter === 'open' ? t.status === 'complete' : (statusFilter !== 'all' && t.status !== statusFilter)) return false;
     if (clientFilter === 'internal' && !t.is_internal) return false;
     if (clientFilter && clientFilter !== 'internal' && t.client_id !== clientFilter) return false;
     return true;

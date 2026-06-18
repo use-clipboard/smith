@@ -102,7 +102,7 @@ export default function TasksPage() {
 
   // Filters
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<TaskStatus | 'all' | 'open'>('open');
   const [clientFilter, setClientFilter] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
 
@@ -133,7 +133,7 @@ export default function TasksPage() {
 
   function clearFilters() {
     setSearch('');
-    setStatusFilter('all');
+    setStatusFilter('open');
     setClientFilter('');
     // On My Tasks keep the filter on the current user; on other views clear it
     setAssigneeFilter(view === 'my' ? currentUserId : '');

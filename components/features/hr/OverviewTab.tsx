@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Calendar as CalIcon, Inbox, Cake, PartyPopper, Plane, Loader2, ChevronRight, ShieldCheck, Clock, FileWarning, X,
+  CalendarCheck, CalendarClock, Hourglass, CalendarPlus, Users2 as UsersGroup, FileText, BarChart3, GraduationCap, Settings as SettingsIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
@@ -14,6 +16,8 @@ interface Props {
   team: TeamMember[];
   isManagerOfSomeone: boolean;
   onJumpTo: (top: 'holidays' | 'people' | 'resources', sub?: string) => void;
+  /** Opens the quick holiday-request modal (owned by HrClient). */
+  onRequestHoliday?: () => void;
 }
 
 interface ProbationLite { id: string; user_id: string; end_date: string | null; status: string }
@@ -28,7 +32,25 @@ const addDays = (iso: string, days: number): string => {
 const fmtDay = (iso: string): string => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const isOnDate = (h: HolidayRow, iso: string): boolean => h.start_date <= iso && h.end_date >= iso;
 
-export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone, onJumpTo }: Props) {
+// Quick-links row. `go` receives the navigation helpers so each tile lands
+// somewhere real. A few destinations are best-guess mappings to existing tabs
+// (Documents → Resources, Reporting → Tracker, Training → Team Profiles).
+type QuickLinkCtx = {
+  onJumpTo: Props['onJumpTo'];
+  onRequestHoliday?: () => void;
+  router: ReturnType<typeof useRouter>;
+};
+const QUICK_LINKS: Array<{ label: string; hint: string; icon: React.ElementType; tile: string; go: (ctx: QuickLinkCtx) => void }> = [
+  { label: 'Add Holiday',    hint: 'Request time off',       icon: CalendarPlus,  tile: 'bg-[var(--accent-light)] text-[var(--accent)]', go: c => (c.onRequestHoliday ? c.onRequestHoliday() : c.onJumpTo('holidays', 'mine')) },
+  { label: 'Team Directory', hint: 'View all employees',     icon: UsersGroup,    tile: 'bg-emerald-50 text-emerald-600', go: c => c.onJumpTo('people', 'team-profiles') },
+  { label: 'Documents',      hint: 'HR policies & files',    icon: FileText,      tile: 'bg-amber-50 text-amber-600',     go: c => c.onJumpTo('resources', 'briefings') },
+  { label: 'Reporting',      hint: 'HR insights & data',     icon: BarChart3,     tile: 'bg-sky-50 text-sky-600',         go: c => c.onJumpTo('holidays', 'tracker') },
+  { label: 'Training',       hint: 'Learning & development', icon: GraduationCap, tile: 'bg-pink-50 text-pink-600',       go: c => c.onJumpTo('people', 'team-profiles') },
+  { label: 'Settings',       hint: 'HR preferences',         icon: SettingsIcon,  tile: 'bg-slate-100 text-slate-600',    go: c => c.router.push('/settings') },
+];
+
+export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone, onJumpTo, onRequestHoliday }: Props) {
+  const router = useRouter();
   const [balance, setBalance] = useState<BalanceInfo | null>(null);
   const [toilBalance, setToilBalance] = useState<number | null>(null);
   const [myHolidays, setMyHolidays] = useState<HolidayRow[]>([]);
@@ -135,31 +157,32 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
   return (
     <div className="space-y-5">
       {/* Welcome + balance strip */}
-      <div className="bg-gradient-to-br from-[var(--accent-light)] to-white border border-[var(--border)] rounded-2xl p-5">
-        <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+      <div>
+        <h2 className="text-xl font-bold text-[var(--text-primary)]">
           Hi {(me?.full_name ?? '').split(' ')[0] || 'there'}
         </h2>
-        <p className="text-sm text-[var(--text-muted)] mt-0.5">Here's what's happening across your HR space today.</p>
+        <p className="text-sm text-[var(--text-muted)] mt-0.5">Here&apos;s what&apos;s happening across your HR space today.</p>
         {balance && (
-          <div className={`grid grid-cols-2 sm:grid-cols-${toilBalance != null ? 5 : 4} gap-3 mt-4`}>
+          <div className={`grid grid-cols-2 ${toilBalance != null ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3 mt-4`}>
             <BalanceCard
+              icon={CalIcon}
               label={balance.pro_rated ? 'Entitlement (pro-rata)' : 'Entitlement'}
               value={balance.entitlement}
               suffix="days"
-              tone="white"
+              tone="indigo"
               hint={balance.pro_rated && balance.annual_entitlement != null
                 ? `Pro-rated for your first holiday year — your full annual entitlement is ${balance.annual_entitlement} days.`
                 : undefined}
             />
-            <BalanceCard label="Used" value={balance.used} suffix="days" tone="emerald" />
-            <BalanceCard label="Pending" value={balance.pending} suffix="days" tone="amber" />
-            <BalanceCard label="Remaining" value={balance.remaining} suffix="days" tone="bold" />
-            {toilBalance != null && <BalanceCard label="TOIL" value={toilBalance} suffix="hours" tone="purple" />}
+            <BalanceCard icon={CalendarCheck} label="Used" value={balance.used} suffix="days" tone="emerald" />
+            <BalanceCard icon={CalendarClock} label="Pending" value={balance.pending} suffix="days" tone="amber" />
+            <BalanceCard icon={Hourglass} label="Remaining" value={balance.remaining} suffix="days" tone="bold" />
+            {toilBalance != null && <BalanceCard icon={Clock} label="TOIL" value={toilBalance} suffix="hours" tone="purple" />}
           </div>
         )}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* My next holidays */}
         <DashCard title="My upcoming holidays" icon={Plane} cta={{ label: 'See all', onClick: () => onJumpTo('holidays', 'mine') }}>
           {myUpcoming.length === 0 ? (
@@ -202,6 +225,9 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
             )}
           </div>
         </DashCard>
+
+        {/* Manager: Action items — tall card on the right of the top row */}
+        {showManagerCards && <PersonnelAlertsCard team={team} userId={userId} userRole={userRole} onJumpTo={onJumpTo} className="lg:row-span-2" />}
 
         {/* Birthdays + anniversaries */}
         <DashCard
@@ -249,8 +275,26 @@ export default function OverviewTab({ userId, userRole, team, isManagerOfSomeone
           </DashCard>
         )}
 
-        {/* Manager: probation reviews due / RTW expiring */}
-        {showManagerCards && <PersonnelAlertsCard team={team} userId={userId} userRole={userRole} onJumpTo={onJumpTo} />}
+      </div>
+
+      {/* Quick links */}
+      <div>
+        <p className="text-sm font-semibold text-[var(--text-primary)] mb-3">Quick links</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {QUICK_LINKS.map(q => (
+            <button
+              key={q.label}
+              onClick={() => q.go({ onJumpTo, onRequestHoliday, router })}
+              className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-white p-3.5 text-left hover:border-[var(--accent)] hover:shadow-sm transition-all"
+            >
+              <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${q.tile}`}><q.icon size={17} /></span>
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold text-[var(--text-primary)] truncate">{q.label}</span>
+                <span className="block text-[11px] text-[var(--text-muted)] truncate">{q.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {showAllEvents && (
@@ -357,16 +401,17 @@ function UsersAvatarsIcon({ size = 16 }: { size?: number }) {
   return <Plane size={size} className="rotate-45" />;
 }
 
-function DashCard({ title, icon: Icon, cta, tone, children }: {
+function DashCard({ title, icon: Icon, cta, tone, className, children }: {
   title: string;
   icon: React.ElementType;
   cta?: { label: string; onClick: () => void };
   tone?: 'amber';
+  className?: string;
   children: React.ReactNode;
 }) {
   const border = tone === 'amber' ? 'border-amber-300 bg-amber-50/40' : 'border-[var(--border)] bg-white';
   return (
-    <div className={`rounded-xl border ${border} p-4`}>
+    <div className={`rounded-xl border ${border} p-4 ${className ?? ''}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
           <Icon size={14} className="text-[var(--accent)]" />{title}
@@ -413,25 +458,31 @@ function PersonChips({ holidays, team, showSpan }: { holidays: HolidayRow[]; tea
   );
 }
 
-function BalanceCard({ label, value, suffix, tone, hint }: { label: string; value: number; suffix: string; tone: 'white' | 'emerald' | 'amber' | 'bold' | 'purple'; hint?: string }) {
-  const map: Record<typeof tone, string> = {
-    white:   'bg-white text-[var(--accent)] border-white/60',
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    amber:   'bg-amber-50 text-amber-700 border-amber-200',
-    bold:    'bg-gray-900 text-white border-gray-900',
-    purple:  'bg-purple-50 text-purple-700 border-purple-200',
+function BalanceCard({ icon: Icon, label, value, suffix, tone, hint }: { icon: React.ElementType; label: string; value: number; suffix: string; tone: 'indigo' | 'emerald' | 'amber' | 'bold' | 'purple'; hint?: string }) {
+  // card background/border · icon-tile background · icon colour · value colour · label colour
+  const map: Record<typeof tone, { card: string; tile: string; icon: string; value: string; label: string }> = {
+    indigo:  { card: 'bg-[var(--accent-light)]/50 border-[var(--border)]', tile: 'bg-white',          icon: 'text-[var(--accent)]', value: 'text-[var(--text-primary)]', label: 'text-[var(--text-muted)]' },
+    emerald: { card: 'bg-emerald-50/60 border-emerald-100',                tile: 'bg-white',          icon: 'text-emerald-600',     value: 'text-[var(--text-primary)]', label: 'text-[var(--text-muted)]' },
+    amber:   { card: 'bg-amber-50/60 border-amber-100',                    tile: 'bg-white',          icon: 'text-amber-600',       value: 'text-[var(--text-primary)]', label: 'text-[var(--text-muted)]' },
+    bold:    { card: 'bg-gray-900 border-gray-900',                        tile: 'bg-white/10',       icon: 'text-white',           value: 'text-white',                 label: 'text-white/60' },
+    purple:  { card: 'bg-purple-50/60 border-purple-100',                  tile: 'bg-white',          icon: 'text-purple-600',      value: 'text-[var(--text-primary)]', label: 'text-[var(--text-muted)]' },
   };
+  const c = map[tone];
   return (
-    <div className={`rounded-xl border p-3 ${map[tone]}`} title={hint}>
-      <p className="text-[10px] font-bold uppercase tracking-wide opacity-80">{label}</p>
-      <p className="text-2xl font-bold mt-0.5">{value}<span className="text-xs font-medium ml-1 opacity-70">{suffix}</span></p>
-      {hint && <p className="text-[10px] mt-1 opacity-75 leading-snug">{hint}</p>}
+    <div className={`rounded-2xl border p-4 flex items-center gap-3.5 ${c.card}`} title={hint}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${c.tile}`}>
+        <Icon size={22} className={c.icon} />
+      </div>
+      <div className="min-w-0">
+        <p className={`text-2xl font-bold leading-none ${c.value}`}>{value}<span className={`text-xs font-medium ml-1 ${c.label}`}>{suffix}</span></p>
+        <p className={`text-xs mt-1 ${c.label}`}>{label}</p>
+      </div>
     </div>
   );
 }
 
-function PersonnelAlertsCard({ team, userId, userRole, onJumpTo }: {
-  team: TeamMember[]; userId: string; userRole: 'admin' | 'staff'; onJumpTo: Props['onJumpTo'];
+function PersonnelAlertsCard({ team, userId, userRole, onJumpTo, className }: {
+  team: TeamMember[]; userId: string; userRole: 'admin' | 'staff'; onJumpTo: Props['onJumpTo']; className?: string;
 }) {
   const [probationItems, setProbationItems] = useState<Array<{ user: TeamMember; end_date: string }>>([]);
   const [rtwItems, setRtwItems] = useState<Array<{ user: TeamMember; expiry_date: string }>>([]);
@@ -473,7 +524,7 @@ function PersonnelAlertsCard({ team, userId, userRole, onJumpTo }: {
   const total = probationItems.length + rtwItems.length;
 
   return (
-    <DashCard title="Action items" icon={FileWarning} tone={total > 0 ? 'amber' : undefined} cta={{ label: 'Team Profiles', onClick: () => onJumpTo('people', 'team-profiles') }}>
+    <DashCard title="Action items" icon={FileWarning} tone={total > 0 ? 'amber' : undefined} className={className} cta={{ label: 'Team Profiles', onClick: () => onJumpTo('people', 'team-profiles') }}>
       {loading ? (
         <p className="text-xs text-[var(--text-muted)]"><Loader2 size={11} className="inline animate-spin mr-1" />Checking…</p>
       ) : total === 0 ? (

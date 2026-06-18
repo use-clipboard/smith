@@ -1,7 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { consumePendingClient } from '@/lib/pendingClient';
-import FileUpload from '@/components/ui/FileUpload';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
@@ -10,9 +9,14 @@ import SaveBankCsvModal from '@/components/features/bank-to-csv/SaveBankCsvModal
 import BankToCsvHistory, { type BankCsvSeed } from '@/components/features/bank-to-csv/BankToCsvHistory';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { BankCsvTransaction, DocumentScanResult } from '@/types';
-import { ArrowLeftRight, Download, ArrowLeft } from 'lucide-react';
+import {
+  ArrowLeftRight, Download, ArrowLeft, ArrowRight, Check, UploadCloud, Building2,
+  CalendarDays, Hash, CreditCard, FileText, Image as ImageIcon, Files, ShieldCheck,
+  Loader2, Trash2, BookCopy,
+} from 'lucide-react';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 
@@ -29,11 +33,17 @@ interface ChunkScan {
   truncated?: boolean;
 }
 
+interface BankScanContext {
+  accountName?: string | null;
+  accountNumber?: string | null;
+  yearEnd?: string | null;
+}
+
 // Scan a single (already-small-enough) file through the API, returning a result
 // object. Parses error responses defensively so a platform error page (e.g. a
 // 413 sent as plain text) surfaces a real message, not "Unexpected token … is
 // not valid JSON".
-async function scanOneBankFile(file: File, clientId: string | null, clientCode: string | null): Promise<ChunkScan> {
+async function scanOneBankFile(file: File, clientId: string | null, clientCode: string | null, ctx: BankScanContext): Promise<ChunkScan> {
   const base64 = await fileToBase64(file);
   const tooLargeMsg = `This file is too large to process in one go (${(file.size / 1048576).toFixed(1)} MB). Split the PDF into smaller parts and upload them separately.`;
   if (base64.length > BANK_UPLOAD_LIMIT) {
@@ -42,7 +52,13 @@ async function scanOneBankFile(file: File, clientId: string | null, clientCode: 
   const res = await fetch('/api/bank-to-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }], clientId, clientCode }),
+    body: JSON.stringify({
+      files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
+      clientId, clientCode,
+      accountName: ctx.accountName ?? null,
+      accountNumber: ctx.accountNumber ?? null,
+      yearEnd: ctx.yearEnd ?? null,
+    }),
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => '');
@@ -94,6 +110,51 @@ async function splitPdfIfNeeded(file: File): Promise<File[]> {
   }
 }
 
+// ── Setup wizard ──────────────────────────────────────────────────────────
+const WIZARD_STEPS = [
+  { n: 1, label: 'Select Client' },
+  { n: 2, label: 'Upload Statement' },
+  { n: 3, label: 'Extract Transactions' },
+  { n: 4, label: 'Review & Export' },
+] as const;
+
+function WizardStepper({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = !!onStep && s.n < current;
+        return (
+          <div key={s.n} className="flex items-center gap-1.5 sm:gap-2.5">
+            <button type="button" disabled={!clickable} onClick={() => clickable && onStep?.(s.n)}
+              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors
+                ${active ? 'bg-[var(--accent)] text-white' : done ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                {done ? <Check size={13} /> : s.n}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const SUPPORTED_FORMATS = [
+  { icon: FileText, label: 'PDF documents' },
+  { icon: ImageIcon, label: 'PNG, JPG images' },
+  { icon: Files, label: 'Multi-page statements' },
+];
+
+const EXTRACTED_FIELDS = ['Transaction date', 'Description', 'Money in', 'Money out', 'Balance', 'Reference'];
+
+function isSupportedBankFile(f: File): boolean {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name) || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+}
+
 // ── Page wrapper ────────────────────────────────────────────────────────────
 export default function BankToCsvPage() {
   const [view, setView] = useState<'history' | 'tool'>('history');
@@ -141,8 +202,20 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
   const [results, setResults] = useState<BankCsvTransaction[]>([]);
   const [wasTruncated, setWasTruncated] = useState(false);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
-  const [clientName, setClientName] = useState('');
-  const [clientCode, setClientCode] = useState('');
+  // Optional statement context — passed through to the AI as reference only.
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [yearEnd, setYearEnd] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setDocumentFiles(prev => {
+      const seen = new Set(prev.map(f => `${f.name}-${f.size}`));
+      return [...prev, ...files.filter(f => !seen.has(`${f.name}-${f.size}`))];
+    });
+  }, []);
 
   // ── Seed loader: when opened from history dashboard, hydrate the success view
   const seedLoadedRef = useRef(false);
@@ -158,8 +231,6 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
         vat_number: seed.client.vat_number ?? null,
         status: 'active',
       });
-      setClientName(seed.client.name);
-      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
     }
     setResults(seed.transactions ?? []);
     setAppState('success');
@@ -181,10 +252,6 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
 
   const handleClientSelect = useCallback((c: SelectedClient | null) => {
     setSelectedClient(c);
-    if (c) {
-      if (c.name) setClientName(c.name);
-      if (c.client_ref) setClientCode(c.client_ref);
-    }
   }, []);
 
   // Per-document scan state
@@ -198,6 +265,11 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
     clientId: string | null,
     clientCode: string | null,
   ): Promise<DocumentScanResult[]> => {
+    const ctx: BankScanContext = {
+      accountName: accountName.trim() || null,
+      accountNumber: accountNumber.trim() || null,
+      yearEnd: yearEnd || null,
+    };
     const docResults: DocumentScanResult[] = [];
 
     for (let i = 0; i < filesToScan.length; i++) {
@@ -218,7 +290,7 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
           if (chunks.length > 1) {
             setScanProgress({ current: i + 1, total: filesToScan.length, fileName: `${file.name} — part ${c + 1} of ${chunks.length}` });
           }
-          const r = await scanOneBankFile(chunks[c], clientId, clientCode);
+          const r = await scanOneBankFile(chunks[c], clientId, clientCode, ctx);
           if (r.ok) {
             merged.push(...r.transactions);
             if (r.truncated) truncated = true;
@@ -260,7 +332,7 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
     }
 
     return docResults;
-  }, []);
+  }, [accountName, accountNumber, yearEnd]);
 
   const applyAndProceed = useCallback((allScanResults: DocumentScanResult[]) => {
     const successfulTxs = allScanResults
@@ -377,48 +449,178 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
     </ToolLayout>
   );
 
+  const allSupported = documentFiles.length > 0 && documentFiles.every(isSupportedBankFile);
+  const idleStep = selectedClient ? 2 : 1;
+
   return (
-    <ToolLayout title="Bank to CSV" description="Extract transactions from bank statements and produce a clean CSV." icon={ArrowLeftRight} iconColor="#0891B2" wide>
+    <ToolLayout
+      title="Bank to CSV"
+      description="Extract transactions from bank statements and produce a clean CSV file."
+      icon={ArrowLeftRight}
+      iconColor="#0891B2"
+      wide
+    >
       <BackToHistory onBack={onBack} />
+
       {appState === 'idle' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-4">
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
-                <div className="flex items-center gap-2 mb-3">
-                  <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+          {/* Stepper */}
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={idleStep} />
+          </div>
+
+          {/* Top row — Client · Upload · Readiness */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Client */}
+            <div className="lg:col-span-3 relative z-30 bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">1. Client</p>
+              {selectedClient ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[var(--accent-light)] flex items-center justify-center shrink-0">
+                      <Building2 size={20} className="text-[var(--accent)]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{selectedClient.name}</p>
+                      <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 flex-wrap">
+                        {selectedClient.client_ref && <span className="font-mono">{selectedClient.client_ref}</span>}
+                        {selectedClient.client_ref && selectedClient.vat_number && <span>·</span>}
+                        {selectedClient.vat_number
+                          ? <span className="text-emerald-600 font-medium">VAT Registered</span>
+                          : <span>Not VAT registered</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => handleClientSelect(null)} className="btn-secondary text-xs py-1.5 px-3">Change client</button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Name</label>
-                    <input
-                      type="text"
-                      value={clientName}
-                      onChange={e => setClientName(e.target.value)}
-                      placeholder="e.g. John Smith"
-                      className="input-base w-full text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Code</label>
-                    <input
-                      type="text"
-                      value={clientCode}
-                      onChange={e => setClientCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. JS001"
-                      className="input-base w-full text-sm font-mono"
-                    />
-                  </div>
+              ) : (
+                <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+              )}
+
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1"><CalendarDays size={12} /> Year end <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
+                  <input type="date" value={yearEnd} onChange={e => setYearEnd(e.target.value)} className="input-base w-full text-sm" />
+                </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1"><CreditCard size={12} /> Account <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
+                  <input type="text" value={accountName} onChange={e => setAccountName(e.target.value)} placeholder="e.g. Business Current Account" className="input-base w-full text-sm" />
+                </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] mb-1"><Hash size={12} /> Account number <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
+                  <input type="text" value={accountNumber} onChange={e => setAccountNumber(e.target.value)} placeholder="e.g. 12345678" className="input-base w-full text-sm font-mono" />
                 </div>
               </div>
             </div>
-            <FileUpload title="Bank Statement(s)" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload PDF or image bank statements." existingFiles={documentFiles} />
+
+            {/* Upload */}
+            <div className="lg:col-span-6 bg-white/[0.78] backdrop-blur-md rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">2. Upload Bank Statement</p>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-white/[0.5] hover:border-[var(--accent)]'}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-[var(--accent-light)] flex items-center justify-center mx-auto mb-3">
+                  <UploadCloud size={22} className="text-[var(--accent)]" />
+                </div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Drag and drop your bank statement here</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Upload PDF or image file (PNG, JPG)</p>
+                <span className="btn-primary mt-4 inline-flex pointer-events-none">Browse files</span>
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+                onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+
+              {documentFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {documentFiles.map((f, i) => {
+                    const ok = isSupportedBankFile(f);
+                    return (
+                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)]">
+                        <FileText size={15} className={ok ? 'text-rose-500 shrink-0' : 'text-[var(--text-muted)] shrink-0'} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{f.name}</p>
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase">{(f.type.split('/')[1] || f.name.split('.').pop() || 'file')} · {(f.size / 1048576).toFixed(1)} MB</p>
+                        </div>
+                        {ok
+                          ? <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                          : <Tooltip label="Unsupported format"><span className="text-[10px] font-semibold text-amber-600">?</span></Tooltip>}
+                        <button type="button" onClick={() => setDocumentFiles(prev => prev.filter((_, j) => j !== i))} aria-label="Remove file" className="text-[var(--text-muted)] hover:text-red-500 shrink-0">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)] hover:opacity-80 pt-1">
+                    <UploadCloud size={13} /> Add another file
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* AI Readiness */}
+            <div className="lg:col-span-3 bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">AI Readiness</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">We&apos;ll let you know when your file is ready to extract.</p>
+
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-2.5">Required</p>
+              <div className="space-y-2.5">
+                {[
+                  { label: 'File uploaded', ok: documentFiles.length > 0 },
+                  { label: 'File format recognised', ok: allSupported },
+                  { label: 'Ready to analyse', ok: allSupported },
+                ].map(r => (
+                  <div key={r.label} className="flex items-center gap-2.5">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${r.ok ? 'bg-emerald-500 text-white' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                      {r.ok ? <Check size={12} /> : <Loader2 size={12} className="animate-spin opacity-50" />}
+                    </span>
+                    <span className={`text-xs ${r.ok ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)] mt-5 mb-2.5">Supported formats</p>
+              <div className="space-y-2.5">
+                {SUPPORTED_FORMATS.map(({ icon: Icon, label }) => (
+                  <div key={label} className="flex items-center gap-2.5 text-xs text-[var(--text-secondary)]">
+                    <Icon size={14} className="text-[var(--text-muted)] shrink-0" /> {label}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <div className="flex justify-end">
-            <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary">
-              <ArrowLeftRight size={15} />
-              Extract Transactions
+
+          {/* Bottom row — what we extract + security */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-3">What we&apos;ll extract automatically</p>
+              <div className="flex flex-wrap gap-2">
+                {EXTRACTED_FIELDS.map(field => (
+                  <span key={field} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--bg-nav-hover)] text-xs font-medium text-[var(--text-secondary)]">
+                    <Check size={11} className="text-[var(--accent)]" /> {field}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-[var(--text-muted)] mt-3">We use AI to detect and extract all key data points with high accuracy — then you review every row before exporting.</p>
+            </div>
+            <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <ShieldCheck size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Private &amp; secure</p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">Documents are sent over an encrypted connection and are never used to train AI models.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action bar */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><ShieldCheck size={13} /> Sent over an encrypted connection and never used to train AI models.</p>
+            <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+              Extract Transactions <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -426,6 +628,9 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
 
       {appState === 'success' && (
         <div className="space-y-4">
+          <div className="bg-white/[0.78] backdrop-blur-md rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={4} onStep={() => setAppState('idle')} />
+          </div>
           {wasTruncated && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-300">
               <span className="shrink-0 font-bold">⚠</span>
@@ -438,11 +643,27 @@ function BankToCsvTool({ seed, onBack }: { seed: BankCsvSeed | null; onBack: () 
           <div className="flex justify-between items-center">
             <p className="text-sm text-[var(--text-muted)]">{results.length} transactions extracted</p>
             <div className="flex items-center gap-2">
+              <Tooltip label="Coming soon — send these transactions straight to the Bookkeeping tool for this client to complete the bank reconciliation.">
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Upload to Bookkeeping (coming soon)"
+                  className="btn-secondary opacity-50 cursor-not-allowed inline-flex items-center gap-2"
+                >
+                  <BookCopy size={14} />
+                  Upload to Bookkeeping
+                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">Soon</span>
+                </button>
+              </Tooltip>
               <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
                 <Download size={14} />
                 Save & Export CSV
               </button>
-              <button onClick={() => setAppState('idle')} className="btn-secondary">New Analysis</button>
+              <button onClick={() => {
+                setDocumentFiles([]); setResults([]); setScanResults([]); setWasTruncated(false);
+                setAccountName(''); setAccountNumber(''); setYearEnd('');
+                setAppState('idle');
+              }} className="btn-secondary">New Analysis</button>
             </div>
           </div>
           <SaveBankCsvModal

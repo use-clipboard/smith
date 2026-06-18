@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useCallback, useEffect } from 'react';
-import FileUpload from '@/components/ui/FileUpload';
+import { useRouter } from 'next/navigation';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import ProcessingView, { type ProgressFile } from '@/components/ui/ProcessingView';
 import ErrorDisplay from '@/components/ui/ErrorDisplay';
@@ -11,12 +11,59 @@ import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import Tooltip from '@/components/ui/Tooltip';
 import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
 import ToolLayout from '@/components/ui/ToolLayout';
-import { FileText, Download, Layers, ChevronDown, ChevronRight, ArrowLeft, Sparkles } from 'lucide-react';
+import {
+  FileText, Download, Layers, ChevronDown, ChevronRight, ArrowLeft, ArrowRight, Sparkles,
+  UploadCloud, Check, Building2, CalendarDays, Trash2, ShieldCheck, Users, Tag,
+  Files, FileStack, ArrowUpRight,
+} from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { OutOfRangeDocument, DocumentScanResult } from '@/types';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 export type GroupBy = 'none' | 'entity' | 'category';
+
+// ── Setup wizard ──────────────────────────────────────────────────────────
+const WIZARD_STEPS = [
+  { n: 1, label: 'Select Client' },
+  { n: 2, label: 'Upload Documents' },
+  { n: 3, label: 'Summary Results' },
+] as const;
+
+function WizardStepper({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+      {WIZARD_STEPS.map((s, i) => {
+        const done = s.n < current;
+        const active = s.n === current;
+        const clickable = !!onStep && s.n < current;
+        return (
+          <div key={s.n} className="flex items-center gap-1.5 sm:gap-2.5">
+            <button type="button" disabled={!clickable} onClick={() => clickable && onStep?.(s.n)}
+              className={`flex items-center gap-2 ${clickable ? 'cursor-pointer' : 'cursor-default'}`}>
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors
+                ${active ? 'bg-[var(--accent)] text-white' : done ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>
+                {done ? <Check size={13} /> : s.n}
+              </span>
+              <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
+            </button>
+            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const SUMMARISE_OUTPUTS = [
+  { icon: Users, label: 'Totals by supplier' },
+  { icon: Tag, label: 'Totals by entry type' },
+  { icon: FileText, label: 'VAT totals' },
+  { icon: Files, label: 'Document count' },
+];
+
+function isSupportedDoc(f: File): boolean {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name) || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+}
 
 // ── Grouping helpers ──────────────────────────────────────────────────────────
 
@@ -100,6 +147,7 @@ function BackToHistory({ onBack }: { onBack: () => void }) {
 }
 
 function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: () => void }) {
+  const router = useRouter();
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/summarise', appState);
   const [error, setError] = useState<string | null>(null);
@@ -108,10 +156,18 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [results, setResults] = useState<OutOfRangeDocument[]>([]);
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
-  const [clientName, setClientName] = useState('');
-  const [clientCode, setClientCode] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setDocumentFiles(prev => {
+      const seen = new Set(prev.map(f => `${f.name}-${f.size}`));
+      return [...prev, ...files.filter(f => !seen.has(`${f.name}-${f.size}`))];
+    });
+  }, []);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [groupByOpen, setGroupByOpen] = useState(false);
@@ -168,8 +224,6 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
         vat_number: seed.client.vat_number ?? null,
         status: 'active',
       });
-      setClientName(seed.client.name);
-      if (seed.client.client_ref) setClientCode(seed.client.client_ref);
     }
     setResults(seed.documents ?? []);
     setGroupBy(seed.groupBy ?? 'none');
@@ -193,10 +247,6 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
 
   const handleClientSelect = useCallback((c: SelectedClient | null) => {
     setSelectedClient(c);
-    if (c) {
-      if (c.name) setClientName(c.name);
-      if (c.client_ref) setClientCode(c.client_ref);
-    }
   }, []);
 
   // Per-document scan state
@@ -355,14 +405,14 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
   }
 
   if (appState === 'error') return (
-    <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569">
+    <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
   );
 
   if (appState === 'scan_results') return (
-    <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569">
+    <ToolLayout title="Summarise Documents" icon={FileText} iconColor="#475569" wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView
         results={scanResults}
@@ -378,6 +428,14 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
 
   const groups = groupResults(results, groupBy);
   const grandTotals = sumGroup(results);
+  const allSupported = documentFiles.length > 0 && documentFiles.every(isSupportedDoc);
+  const idleStep = selectedClient ? 2 : 1;
+
+  // Totals tables for the results step (top suppliers / entry types, with a "more" tail)
+  const supplierTotals = groupResults(results, 'entity').map(([k, rows]) => ({ key: k, ...sumGroup(rows), count: rows.length }))
+    .sort((a, b) => b.gross - a.gross);
+  const entryTotals = groupResults(results, 'category').map(([k, rows]) => ({ key: k, ...sumGroup(rows), count: rows.length }))
+    .sort((a, b) => b.gross - a.gross);
 
   const GROUP_BY_LABELS: Record<GroupBy, string> = {
     none: 'None',
@@ -385,93 +443,167 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
     category: 'Category',
   };
 
+  // Shared past-context pill (steps 1 & 2)
+  const PastContextPill = () => (
+    selectedClient && (pastCtxLoading || pastDocs.length > 0) ? (
+      <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
+        usePastContext
+          ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
+          : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
+      }`}>
+        <Sparkles size={13} className="shrink-0" />
+        <div className="flex-1 leading-snug">
+          {pastCtxLoading ? (
+            <span>Looking for past summaries for this client…</span>
+          ) : usePastContext ? (
+            <>
+              Using <span className="font-semibold">{pastDocs.length}</span> past document entries from
+              {' '}<span className="font-semibold">{pastCtxAnalyses}</span> previous {pastCtxAnalyses === 1 ? 'summary' : 'summaries'} to keep entity names and categories consistent.
+            </>
+          ) : (
+            <>Past-summary learning is off — entity / category consistency may be lower.</>
+          )}
+        </div>
+        <Tooltip label={usePastContext ? 'Turn off learning from past summaries' : 'Turn learning back on'}>
+          <button
+            onClick={() => setUsePastContext(v => !v)}
+            aria-label="Toggle past-summary learning"
+            className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${usePastContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${usePastContext ? 'translate-x-4' : 'translate-x-0'}`} />
+          </button>
+        </Tooltip>
+      </div>
+    ) : null
+  );
+
   return (
-    <ToolLayout title="Summarise Documents" description="Summarise out-of-date-range documents for file note purposes." icon={FileText} iconColor="#475569">
+    <ToolLayout title="Summarise Documents" description="Get a quick summary of your invoices, receipts or financial documents." icon={FileText} iconColor="#475569" wide>
       <BackToHistory onBack={onBack} />
       {appState === 'idle' && (
         <div className="space-y-5">
-          {/* Auto-context pill — visible when this client has past summaries */}
-          {selectedClient && (pastCtxLoading || pastDocs.length > 0) && (
-            <div className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs ${
-              usePastContext
-                ? 'bg-[var(--accent-light)] border-[var(--accent)]/30 text-[var(--accent)]'
-                : 'bg-[var(--bg-nav-hover)] border-[var(--border)] text-[var(--text-muted)]'
-            }`}>
-              <Sparkles size={13} className="shrink-0" />
-              <div className="flex-1 leading-snug">
-                {pastCtxLoading ? (
-                  <span>Looking for past summaries for this client…</span>
-                ) : usePastContext ? (
-                  <>
-                    Using <span className="font-semibold">{pastDocs.length}</span> past document entries from
-                    {' '}<span className="font-semibold">{pastCtxAnalyses}</span> previous {pastCtxAnalyses === 1 ? 'summary' : 'summaries'} to keep entity names and categories consistent.
-                  </>
-                ) : (
-                  <>Past-summary learning is off — entity / category consistency may be lower.</>
-                )}
-              </div>
-              <Tooltip label={usePastContext ? 'Turn off learning from past summaries' : 'Turn learning back on'}>
-                <button
-                  onClick={() => setUsePastContext(v => !v)}
-                  aria-label="Toggle past-summary learning"
-                  className={`relative inline-flex h-5 w-9 rounded-full transition-colors shrink-0 ${usePastContext ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5 ${usePastContext ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
-              </Tooltip>
-            </div>
-          )}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="glass-solid rounded-xl p-5 space-y-4">
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Client</p>
-                <div className="flex items-center gap-2 mb-3">
-                  <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Name</label>
-                    <input
-                      type="text"
-                      value={clientName}
-                      onChange={e => setClientName(e.target.value)}
-                      placeholder="e.g. John Smith"
-                      className="input-base w-full text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">Client Code</label>
-                    <input
-                      type="text"
-                      value={clientCode}
-                      onChange={e => setClientCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. JS001"
-                      className="input-base w-full text-sm font-mono"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Date Range (optional)</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">From</label>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--text-secondary)] mb-1">To</label>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full" />
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--text-muted)] mt-2">Documents outside this range will be shown separately.</p>
-              </div>
-            </div>
-            <FileUpload title="Documents to Summarise" onFilesChange={setDocumentFiles} multiple accept="application/pdf,image/*" helpText="Upload invoices, receipts, or any financial documents." existingFiles={documentFiles} />
+          {/* Stepper */}
+          <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={idleStep} />
           </div>
-          <div className="flex justify-end">
-            <button onClick={handleProcess} disabled={documentFiles.length === 0} className="btn-primary">
-              <FileText size={15} />
-              Summarise Documents
+
+          <PastContextPill />
+
+          {/* Top row — Client · Upload · What we'll summarise */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Client */}
+            <div className="lg:col-span-3 relative z-30 glass-solid rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">1. Client</p>
+              {selectedClient ? (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-[var(--accent-light)] flex items-center justify-center shrink-0">
+                      <Building2 size={20} className="text-[var(--accent)]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{selectedClient.name}</p>
+                      <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 flex-wrap">
+                        {selectedClient.client_ref && <span className="font-mono">{selectedClient.client_ref}</span>}
+                        {selectedClient.client_ref && selectedClient.vat_number && <span>·</span>}
+                        {selectedClient.vat_number
+                          ? <span className="text-emerald-600 font-medium">VAT Registered</span>
+                          : <span>Not VAT registered</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => handleClientSelect(null)} className="btn-secondary text-xs py-1.5 px-3">Change client</button>
+                </div>
+              ) : (
+                <ClientSelector value={selectedClient} onSelect={handleClientSelect} />
+              )}
+
+              <div className="space-y-3 pt-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]"><CalendarDays size={12} /> Date range <span className="text-[var(--text-muted)] font-normal">(optional)</span></p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-[var(--text-muted)] mb-1">From</label>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="input-base w-full text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-[var(--text-muted)] mb-1">To</label>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full text-sm" />
+                  </div>
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] leading-snug">Recorded against the summary so you can note which period it covers.</p>
+              </div>
+            </div>
+
+            {/* Upload */}
+            <div className="lg:col-span-6 glass-solid rounded-xl p-5 space-y-4">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">2. Upload Documents</p>
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+                className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${dragOver ? 'border-[var(--accent)] bg-[var(--accent-light)]' : 'border-[var(--border)] bg-white/[0.5] hover:border-[var(--accent)]'}`}
+              >
+                <div className="w-12 h-12 rounded-full bg-[var(--accent-light)] flex items-center justify-center mx-auto mb-3">
+                  <UploadCloud size={22} className="text-[var(--accent)]" />
+                </div>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Drag and drop your documents here</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Upload invoices, receipts or any financial documents (PDF, PNG, JPG)</p>
+                <span className="btn-primary mt-4 inline-flex pointer-events-none">Browse files</span>
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+                onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+
+              {documentFiles.length > 0 && (
+                <div className="space-y-1.5">
+                  {documentFiles.map((f, i) => {
+                    const ok = isSupportedDoc(f);
+                    return (
+                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-[var(--border)] bg-[var(--bg-card)]">
+                        <FileText size={15} className={ok ? 'text-rose-500 shrink-0' : 'text-[var(--text-muted)] shrink-0'} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-[var(--text-primary)] truncate">{f.name}</p>
+                          <p className="text-[10px] text-[var(--text-muted)] uppercase">{(f.type.split('/')[1] || f.name.split('.').pop() || 'file')} · {(f.size / 1048576).toFixed(1)} MB</p>
+                        </div>
+                        {ok
+                          ? <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                          : <Tooltip label="Unsupported format"><span className="text-[10px] font-semibold text-amber-600">?</span></Tooltip>}
+                        <button type="button" onClick={() => setDocumentFiles(prev => prev.filter((_, j) => j !== i))} aria-label="Remove file" className="text-[var(--text-muted)] hover:text-red-500 shrink-0">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)] hover:opacity-80 pt-1">
+                    <UploadCloud size={13} /> Add another file
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* What we'll summarise */}
+            <div className="lg:col-span-3 glass-solid rounded-xl p-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">What we&apos;ll summarise</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 mb-4">We&apos;ll analyse your documents and give you a quick summary.</p>
+              <div className="space-y-3">
+                {SUMMARISE_OUTPUTS.map(({ icon: Icon, label }) => (
+                  <div key={label} className="flex items-center gap-2.5">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0"><Check size={12} className="text-white" /></span>
+                    <span className="text-xs font-medium text-[var(--text-primary)] flex items-center gap-1.5"><Icon size={13} className="text-[var(--text-muted)]" /> {label}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 pt-4 border-t border-[var(--border)] flex items-start gap-2.5">
+                <ShieldCheck size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-[var(--text-muted)] leading-snug">Documents are sent over an encrypted connection and are never used to train AI models.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action bar */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><ShieldCheck size={13} /> Sent over an encrypted connection and never used to train AI models.</p>
+            <button onClick={handleProcess} disabled={documentFiles.length === 0 || !allSupported} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+              <FileText size={15} /> Summarise Documents <ArrowRight size={15} />
             </button>
           </div>
         </div>
@@ -479,9 +611,83 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
 
       {appState === 'success' && (
         <div className="space-y-4">
+          {/* Stepper */}
+          <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+            <WizardStepper current={3} onStep={() => setAppState('idle')} />
+          </div>
+
+          {/* Summary Overview */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { icon: Files,    label: 'Documents',     value: String(results.length),     tint: 'text-[var(--accent)] bg-[var(--accent-light)]' },
+              { icon: FileStack, label: 'Total (ex VAT)', value: fmt(grandTotals.net),      tint: 'text-slate-600 bg-slate-100' },
+              { icon: FileText, label: 'Total VAT',      value: fmt(grandTotals.vat),       tint: 'text-amber-600 bg-amber-50' },
+              { icon: Download, label: 'Total (inc VAT)', value: fmt(grandTotals.gross),    tint: 'text-emerald-600 bg-emerald-50' },
+            ].map(c => (
+              <div key={c.label} className="glass-solid rounded-xl p-5 flex items-center gap-3.5">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${c.tint}`}>
+                  <c.icon size={20} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-lg font-bold text-[var(--text-primary)] tabular-nums truncate">{c.value}</p>
+                  <p className="text-xs text-[var(--text-muted)]">{c.label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Totals by supplier / entry type */}
+          {results.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {([
+                { title: 'Totals by Supplier', head: 'Supplier', icon: Users, rows: supplierTotals },
+                { title: 'Totals by Entry Type', head: 'Entry Type', icon: Tag, rows: entryTotals },
+              ] as const).map(({ title, head, icon: Icon, rows }) => {
+                const top = rows.slice(0, 6);
+                const moreCount = rows.length - top.length;
+                return (
+                  <div key={title} className="glass-solid rounded-xl p-5">
+                    <p className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2 mb-3"><Icon size={15} className="text-[var(--text-muted)]" /> {title}</p>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                          <th className="text-left pb-2 font-semibold">{head}</th>
+                          <th className="text-right pb-2 font-semibold">Net (ex VAT)</th>
+                          <th className="text-right pb-2 font-semibold">VAT</th>
+                          <th className="text-right pb-2 font-semibold">Total (inc VAT)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--border)]">
+                        {top.map(r => (
+                          <tr key={r.key}>
+                            <td className="py-2 pr-2 text-[var(--text-secondary)] truncate max-w-[160px]">{r.key}</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">{fmt(r.net)}</td>
+                            <td className="py-2 text-right tabular-nums text-[var(--text-secondary)]">{fmt(r.vat)}</td>
+                            <td className="py-2 text-right tabular-nums font-medium text-[var(--text-primary)]">{fmt(r.gross)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-[var(--border)]">
+                          <td className="pt-2 text-xs font-bold text-[var(--text-primary)]">Total</td>
+                          <td className="pt-2 text-right tabular-nums font-bold text-[var(--text-primary)]">{fmt(grandTotals.net)}</td>
+                          <td className="pt-2 text-right tabular-nums font-bold text-[var(--text-primary)]">{fmt(grandTotals.vat)}</td>
+                          <td className="pt-2 text-right tabular-nums font-bold text-[var(--text-primary)]">{fmt(grandTotals.gross)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                    {moreCount > 0 && (
+                      <p className="text-[11px] text-[var(--text-muted)] mt-2">+{moreCount} more {moreCount === 1 ? 'row' : 'rows'} — see the full breakdown below.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {/* Toolbar */}
           <div className="flex justify-between items-center flex-wrap gap-3">
-            <p className="text-sm text-[var(--text-muted)]">{results.length} documents summarised</p>
+            <p className="text-sm text-[var(--text-muted)]">{results.length} documents summarised — full breakdown</p>
             <div className="flex items-center gap-2">
 
               {/* Group By dropdown */}
@@ -518,7 +724,10 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
                 <Download size={14} />
                 Save & Export
               </button>
-              <button onClick={() => setAppState('idle')} className="btn-secondary">New Analysis</button>
+              <button onClick={() => {
+                setDocumentFiles([]); setResults([]); setScanResults([]); setGroupBy('none'); setExpandedGroups(new Set());
+                setAppState('idle');
+              }} className="btn-secondary">New Analysis</button>
             </div>
           </div>
 
@@ -626,6 +835,20 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Cross-sell — Capture for full transaction extraction */}
+          <div className="glass-solid rounded-xl p-5 flex items-center gap-4 flex-wrap">
+            <div className="w-10 h-10 rounded-xl bg-[var(--accent-light)] flex items-center justify-center shrink-0">
+              <Layers size={20} className="text-[var(--accent)]" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">Ready to go further?</p>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">Use Capture to extract full transactions from these documents and export them to your accounting software.</p>
+            </div>
+            <button onClick={() => router.push('/full-analysis')} className="btn-secondary inline-flex items-center gap-1.5 shrink-0">
+              Go to Capture <ArrowUpRight size={14} />
+            </button>
           </div>
         </div>
       )}
