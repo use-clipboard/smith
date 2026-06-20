@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   // Pull firm defaults for VAT etc.
   const { data: settings } = await supabase
     .from('firm_proposal_settings')
-    .select('default_vat_mode, default_vat_rate, intro_template, terms_template, default_expiry_days')
+    .select('default_vat_mode, default_vat_rate, intro_template, terms_template, default_expiry_days, default_post_acceptance_action')
     .eq('firm_id', ctx.firmId)
     .maybeSingle();
   const vatMode = body.vat_mode ?? (settings?.default_vat_mode as 'inclusive' | 'exclusive' | undefined) ?? 'exclusive';
@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
   const expiresAt = body.expires_at ?? (settings?.default_expiry_days
     ? new Date(Date.now() + settings.default_expiry_days * 86_400_000).toISOString()
     : null);
+  const postAcceptanceAction = (settings?.default_post_acceptance_action as
+    | 'none' | 'send_onboarding' | 'auto_create_client' | undefined) ?? 'send_onboarding';
 
   const { data, error } = await supabase
     .from('proposals')
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
       vat_mode: vatMode,
       vat_rate: vatRate,
       expires_at: expiresAt,
+      post_acceptance_action: postAcceptanceAction,
       created_by: ctx.userId,
     })
     .select('*')

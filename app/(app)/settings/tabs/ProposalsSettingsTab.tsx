@@ -49,6 +49,7 @@ interface ProposalSettings {
   auto_create_tasks: boolean;
   auto_tasks_template_id: string | null;
   auto_generate_loe: boolean;
+  default_post_acceptance_action: 'none' | 'send_onboarding' | 'auto_create_client';
   collect_payment_on_accept: boolean;
   stripe_account_id: string | null;
   email_from_address: string | null;
@@ -1294,14 +1295,19 @@ function PackageForm({ initial, services, isAdmin, onCancel, onSaved }: {
 // ── General defaults + onboarding ────────────────────────────────────────
 function GeneralSection({ isAdmin, tasksModuleActive }: { isAdmin: boolean; tasksModuleActive: boolean }) {
   const [settings, setSettings] = useState<ProposalSettings | null>(null);
+  const [activeFormCount, setActiveFormCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch('/api/proposals/settings');
-    setSettings((await res.json()).settings ?? null);
+    const [sRes, fRes] = await Promise.all([
+      fetch('/api/proposals/settings').then(r => r.json()),
+      fetch('/api/proposals/onboarding-forms').then(r => r.ok ? r.json() : { forms: [] }),
+    ]);
+    setSettings(sRes.settings ?? null);
+    setActiveFormCount(((fRes.forms ?? []) as Array<{ active: boolean }>).filter(f => f.active).length);
     setLoading(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -1348,6 +1354,28 @@ function GeneralSection({ isAdmin, tasksModuleActive }: { isAdmin: boolean; task
 
       <Card title="Auto-onboarding on acceptance">
         <p className="text-[11px] text-[var(--text-muted)] mb-2">When a prospect accepts a proposal, choose which of these should happen automatically.</p>
+
+        <Field label="Default action when a proposal is accepted">
+          <select
+            value={settings.default_post_acceptance_action}
+            onChange={e => update('default_post_acceptance_action', e.target.value as ProposalSettings['default_post_acceptance_action'])}
+            className="input-base text-sm w-full"
+          >
+            <option value="send_onboarding">Send the prospect an onboarding form</option>
+            <option value="none">Just notify me — no onboarding form (skip it)</option>
+            <option value="auto_create_client">Auto-create the client record — no onboarding form</option>
+          </select>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1">
+            New proposals start with this choice. If your firm doesn&apos;t use onboarding forms, pick one of the &ldquo;no onboarding form&rdquo; options. Each proposal can still override this under <strong>When this proposal is accepted</strong> in the builder.
+          </p>
+          {settings.default_post_acceptance_action === 'send_onboarding' && activeFormCount === 0 && (
+            <p className="text-[11px] text-amber-700 mt-1 flex items-start gap-1">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              <span>You don&apos;t have any active onboarding forms yet, so nothing will be sent on acceptance. Build one under the <strong>Onboarding forms</strong> tab, or switch this to a &ldquo;no onboarding form&rdquo; option.</span>
+            </p>
+          )}
+        </Field>
+
         <Toggle label="Graduate the prospect to a client record" value={settings.auto_graduate_client} onChange={v => update('auto_graduate_client', v)} />
         <Toggle label="Save onboarding form answers to the client" value={settings.auto_save_form_answers} onChange={v => update('auto_save_form_answers', v)} />
         <Toggle label="Create a Risk Assessment (AML) record" value={settings.auto_create_aml} onChange={v => update('auto_create_aml', v)} />

@@ -15,6 +15,7 @@ const Patch = z.object({
   auto_create_tasks: z.boolean().optional(),
   auto_tasks_template_id: z.string().uuid().nullable().optional(),
   auto_generate_loe: z.boolean().optional(),
+  default_post_acceptance_action: z.enum(['none', 'send_onboarding', 'auto_create_client']).optional(),
   collect_payment_on_accept: z.boolean().optional(),
   stripe_account_id: z.string().nullable().optional(),
   email_from_address: z.string().nullable().optional(),
