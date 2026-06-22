@@ -422,7 +422,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                         onClick={() => openProfile(m.id, m.full_name || m.email.split('@')[0])}
                         className="flex items-center gap-2.5 min-w-0 flex-1 group text-left"
                       >
-                        <Avatar name={m.full_name || m.email} size={28} />
+                        <Avatar name={m.full_name || m.email} avatarUrl={m.avatar_url ?? null} size={28} />
                         <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-[var(--accent)]">
                           {m.full_name || m.email.split('@')[0]}
                         </p>
@@ -701,7 +701,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                   <li key={m.id} className="flex items-center gap-4 py-3.5 px-1">
                     {/* Avatar + online dot */}
                     <div className="relative shrink-0">
-                      <Avatar name={m.full_name || m.email} size={36} />
+                      <Avatar name={m.full_name || m.email} avatarUrl={m.avatar_url ?? null} size={36} />
                       <span
                         className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--bg-card-solid)] ${
                           isOnline ? 'bg-emerald-400' : 'bg-gray-300 dark:bg-gray-600'
