@@ -170,6 +170,7 @@ export default function TabProvider({ children }: { children: ReactNode }) {
   // mount via the reconciledRef guard — we don't want spurious tab creation
   // later in the session.
   const reconciledRef = useRef(false);
+  const prevPathnameRef = useRef<string | null>(null);
   useEffect(() => {
     if (!pathname) return;
     // Wait for the restore effect above to finish before trying to match
@@ -179,11 +180,20 @@ export default function TabProvider({ children }: { children: ReactNode }) {
     // duplicate on every fresh login. See `hydrated` declaration above.
     if (!hydrated) return;
 
+    // Did the URL itself change this run? The effect also re-runs when `tabs`
+    // change, and we must NOT treat a programmatic tab-open (which adds a tab
+    // while the URL is still /dashboard) as a navigation back to the Dashboard.
+    const pathnameChanged = prevPathnameRef.current !== pathname;
+    prevPathnameRef.current = pathname;
+
     // Dashboard is rendered as a permanent leading tab in TabBar (activeTabId
     // === null means it's active). Never create or match a tool tab for it —
     // otherwise we get a second "Dashboard" pill next to the permanent one.
     if (pathname === '/dashboard') {
-      if (activeTabId !== null) setActiveTabId(null);
+      // Only deactivate to the Dashboard on a genuine navigation to it — not
+      // when a tab was just opened from the dashboard (URL still /dashboard),
+      // which would instantly reset the tab we just switched to.
+      if (pathnameChanged && activeTabId !== null) setActiveTabId(null);
       reconciledRef.current = true;
       return;
     }
