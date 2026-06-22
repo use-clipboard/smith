@@ -46,6 +46,9 @@ interface Props {
   taxYear:  number;
   /** Current quarter status — drives whether Send-for-approval is enabled. */
   quarterStatus: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  /** When true (deep-link from the approval notification), open the Submit-to-
+   *  HMRC modal automatically once entries have loaded. */
+  autoOpenSubmit?: boolean;
   /** Which sub-stage of the post-analysis workflow we're rendering. The
    *  component owns all three because the entries / properties / trades data
    *  is heavy and we don't want to re-fetch on every wizard hop. */
@@ -124,7 +127,7 @@ export default function MtdItReviewPhase({
   quarterId, clientId, rangeFrom, rangeTo, streams, fxRates,
   initialConsolidated, clientName, clientRef, clientEmail, quarterLabel, taxYearLabel,
   quarter, taxYear,
-  quarterStatus, view, onProceedToSend, onProceedToSave,
+  quarterStatus, autoOpenSubmit, view, onProceedToSend, onProceedToSave,
   onBackToReview, onBackToSend, onBackToSetup, onFinished,
 }: Props) {
   // ── Loading entries / properties / trades ───────────────────────────
@@ -301,6 +304,16 @@ export default function MtdItReviewPhase({
   const [submitOpen, setSubmitOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sentToast, setSentToast] = useState<{ recipient: string; viaCompose?: boolean } | null>(null);
+
+  // Deep-link auto-open: when arriving from the approval notification
+  // (?submit=1) open the Submit-to-HMRC modal once, after entries have loaded.
+  const autoSubmitFired = useRef(false);
+  useEffect(() => {
+    if (autoOpenSubmit && !loading && !autoSubmitFired.current) {
+      autoSubmitFired.current = true;
+      setSubmitOpen(true);
+    }
+  }, [autoOpenSubmit, loading]);
   const [preparingSend, setPreparingSend] = useState(false);
   // Consolidated state declared early so the triage hand-off callback below
   // can reference it without a TDZ violation.

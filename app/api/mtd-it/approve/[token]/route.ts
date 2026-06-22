@@ -33,7 +33,7 @@ async function loadApproval(token: string) {
 function pickQuarterContext(row: NonNullable<Awaited<ReturnType<typeof loadApproval>>['row']>) {
   type FirmRow    = { name?: string };
   type ClientRow  = { id?: string; name?: string; client_ref?: string | null; mtd_it_quarter_type?: 'calendar' | 'standard'; firm_id?: string; firms?: FirmRow };
-  type QuarterRow = { id?: string; tax_year?: number; quarter?: 1 | 2 | 3 | 4; status?: string; clients?: ClientRow };
+  type QuarterRow = { id?: string; tax_year?: number; quarter?: 1 | 2 | 3 | 4; status?: string; streams_snapshot?: Record<string, boolean> | null; clients?: ClientRow };
   const quarter = (row as unknown as { mtd_it_quarters?: QuarterRow }).mtd_it_quarters ?? {};
   const client  = quarter.clients ?? {};
   const firm    = client.firms ?? {};
@@ -56,10 +56,17 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     .select('stream, entry_type, gross_amount, currency, fx_rate, gbp_amount, flagged_reason, flag_dismissed')
     .eq('quarter_id', quarter.id ?? '');
 
+  // Only summarise streams that are still ACTIVE on the quarter. A stream the
+  // user toggled off (e.g. added UK Rental then removed it) leaves its entries
+  // in the table — they must NOT show on the client's approval page, which has
+  // to match the figures in the email / PDF (those are built from the active
+  // streams). `streams_snapshot` is the source of truth for what's in scope.
+  const streamsSnapshot = quarter.streams_snapshot ?? null;
   const totals: Record<string, { income: number; expense: number }> = {};
   for (const e of entries ?? []) {
     if (e.flagged_reason && !e.flag_dismissed) continue;
     const s = e.stream as string;
+    if (streamsSnapshot && !streamsSnapshot[s]) continue;
     if (!totals[s]) totals[s] = { income: 0, expense: 0 };
     let amount = Number(e.gross_amount ?? 0);
     if (e.currency !== 'GBP') {
@@ -169,6 +176,13 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
             quarter_id: quarter.id,
             approval_id: row.id,
             action,
+            // Deep-link the bell notification straight to the quarter. On
+            // approve we add ?submit=1 so it opens the review with the Submit-
+            // to-HMRC modal ready; on a change request it just opens the quarter
+            // so the preparer can make the edits.
+            task_link: action === 'approve'
+              ? `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}?submit=1`
+              : `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}`,
           },
         });
       } catch (e) {

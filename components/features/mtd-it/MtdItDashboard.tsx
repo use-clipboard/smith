@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, ShieldCheck, HelpCircle, X, History,
+  Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -53,6 +53,11 @@ function hmrcStatusKey(c: Row): 'not_discovered' | 'unmapped' | 'ready' {
   if (t > 0 && m === t) return 'ready';
   if (t > 0) return 'unmapped';
   return 'not_discovered';
+}
+// A client is "ready to file" if any of its quarters has been approved by the
+// client but not yet submitted to HMRC.
+function isReadyToFile(c: Row): boolean {
+  return Object.values(c.quarters ?? {}).includes('approved');
 }
 const HMRC_STATUS_LABEL: Record<string, string> = {
   not_discovered: 'Not discovered', unmapped: 'Unmapped', ready: 'Ready',
@@ -134,6 +139,9 @@ export default function MtdItDashboard() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [thresholdFilter, setThresholdFilter] = useState<ThresholdFilter>('all');
+  // "Ready to file" = quarters the client has approved but that haven't been
+  // filed with HMRC yet. The agent reviews + submits these.
+  const [readyToFileOnly, setReadyToFileOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -283,6 +291,7 @@ export default function MtdItDashboard() {
         if (thresholdFilter === 'flagged'   && !t.belowThreshold) return false;
         if (thresholdFilter === 'unflagged' &&  t.belowThreshold) return false;
       }
+      if (readyToFileOnly && !isReadyToFile(c)) return false;
       return true;
     });
     // Sort in-place on a copy. DOB is stored YYYY-MM-DD (lexically sortable);
@@ -293,11 +302,17 @@ export default function MtdItDashboard() {
       const bv = sortKey === 'status' ? String(HMRC_STATUS_ORDER[hmrcStatusKey(b)]) : (b as Record<SortKey, string | null>)[sortKey];
       return compareValues(av, bv, sortDir);
     });
-  }, [clients, search, statusFilter, thresholdFilter, taxYear, sortKey, sortDir]);
+  }, [clients, search, statusFilter, thresholdFilter, readyToFileOnly, taxYear, sortKey, sortDir]);
 
   const flaggedCount = useMemo(
     () => clients.filter(c => evaluateThreshold(c.mtd_it_prior_year_income, taxYear).belowThreshold).length,
     [clients, taxYear],
+  );
+
+  // Total quarters across all clients that are approved but not yet filed.
+  const readyToFileCount = useMemo(
+    () => clients.reduce((n, c) => n + Object.values(c.quarters ?? {}).filter(s => s === 'approved').length, 0),
+    [clients],
   );
 
   // Total <th>/<td> count for colSpan: chevron + name + each visible column +
@@ -405,6 +420,28 @@ export default function MtdItDashboard() {
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
           />
         </div>
+
+        {/* Ready to file — quick filter for quarters the client has approved but
+            that haven't been submitted to HMRC yet. Only shown when there are
+            any, styled as a call-to-action. */}
+        {readyToFileCount > 0 && (
+          <Tooltip label={readyToFileOnly ? 'Showing only clients with approved, unfiled quarters' : 'Show only clients with quarters approved by the client and ready to file with HMRC'}>
+            <button
+              onClick={() => setReadyToFileOnly(v => !v)}
+              aria-pressed={readyToFileOnly}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border shadow-sm transition-colors ${
+                readyToFileOnly
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              <CheckCircle2 size={13} />
+              Ready to file
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${readyToFileOnly ? 'bg-white/25 text-white' : 'bg-emerald-600 text-white'}`}>{readyToFileCount}</span>
+              {readyToFileOnly && <X size={12} className="ml-0.5" />}
+            </button>
+          </Tooltip>
+        )}
 
         {/* Active filter pills — obvious when filters are applied; they stack. */}
         {statusFilter !== 'all' && (

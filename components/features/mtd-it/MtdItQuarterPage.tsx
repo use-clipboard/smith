@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, ArrowLeft, Briefcase, House, Globe2, Pencil, Sparkles,
   AlertTriangle, Loader2, CheckCircle2, X, Upload, FileText, RefreshCw,
   User, Hash, FileBadge, IdCard, Cake, AtSign, MapPin, Check, FastForward,
-  FilePlus2, MoreVertical, Trash2, Users,
+  FilePlus2, MoreVertical, Trash2, Users, BookCopy,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -127,6 +127,10 @@ function clientInitials(name: string): string {
 
 export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) {
   const router = useRouter();
+  // Deep-link from the approval notification: /mtd-it/.../<q>?submit=1 opens the
+  // review with the Submit-to-HMRC modal ready. Consumed once on mount.
+  const searchParams = useSearchParams();
+  const autoOpenSubmit = searchParams?.get('submit') === '1';
 
   // Load client + quarter
   const [client,  setClient]  = useState<Row | null>(null);
@@ -299,15 +303,46 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
   }, [qrow, phase, loadStreamSummary]);
 
   // ── Stream toggle (writes back to quarter row) ─────────────────────────
-  async function toggleStream(s: MtdItStream) {
+  // Turning a stream OFF that already has entries would orphan them (the editor
+  // only shows active streams, yet the entries still leak into the client
+  // approval page / a filing). So we confirm, then DELETE that stream's entries
+  // before toggling it off. Turning a stream ON, or off when empty, is direct.
+  const [streamToRemove, setStreamToRemove] = useState<{ stream: MtdItStream; count: number } | null>(null);
+  const [removingStream, setRemovingStream] = useState(false);
+
+  function applyStreamToggle(s: MtdItStream, on: boolean) {
     if (!qrow) return;
-    const next = { ...qrow.streams_snapshot, [s]: !qrow.streams_snapshot[s] };
+    const next = { ...qrow.streams_snapshot, [s]: on };
     setQrow({ ...qrow, streams_snapshot: next });
     void fetch(`/api/mtd-it/quarters/${qrow.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ streams_snapshot: next }),
     });
+  }
+
+  function toggleStream(s: MtdItStream) {
+    if (!qrow) return;
+    const currentlyOn = qrow.streams_snapshot[s];
+    if (currentlyOn && (streamSummary[s]?.count ?? 0) > 0) {
+      setStreamToRemove({ stream: s, count: streamSummary[s].count });
+      return;
+    }
+    applyStreamToggle(s, !currentlyOn);
+  }
+
+  async function confirmStreamRemoval() {
+    if (!qrow || !streamToRemove) return;
+    const s = streamToRemove.stream;
+    setRemovingStream(true);
+    try {
+      await fetch(`/api/mtd-it/entries?quarter_id=${qrow.id}&stream=${s}`, { method: 'DELETE' });
+      applyStreamToggle(s, false);
+      void loadStreamSummary(qrow.id, qrow.fx_rates ?? {});
+    } finally {
+      setRemovingStream(false);
+      setStreamToRemove(null);
+    }
   }
 
   // ── FX rates (per-quarter, per currency) ──────────────────────────────
@@ -461,7 +496,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         <div className="flex items-center gap-1">
           <button
             onClick={() => router.push('/mtd-it')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-white drop-shadow-sm hover:bg-white/15 rounded-lg"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] rounded-lg"
           ><ArrowLeft size={14} /> Back to dashboard</button>
           {/* Admin-only overflow menu — Delete quarter (and future admin
               actions) live here. Non-admins don't see the button at all. */}
@@ -473,7 +508,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
                   aria-label="Quarter actions"
                   aria-haspopup="menu"
                   aria-expanded={menuOpen}
-                  className="p-1.5 text-white drop-shadow-sm hover:text-white hover:bg-white/15 rounded-lg"
+                  className="p-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] rounded-lg"
                 ><MoreVertical size={16} /></button>
               </Tooltip>
               {menuOpen && (
@@ -660,6 +695,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           quarter={quarter}
           taxYear={taxYear}
           quarterStatus={qrow.status}
+          autoOpenSubmit={autoOpenSubmit}
           view={phase === 'send' ? 'send' : phase === 'save' ? 'save' : 'edit'}
           onProceedToSend={() => setPhase('send')}
           onProceedToSave={() => setPhase('save')}
@@ -710,6 +746,40 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
             router.push('/mtd-it');
           }}
         />
+      )}
+
+      {/* Confirm removing a stream that still has entries. */}
+      {streamToRemove && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/40">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-start gap-3 p-5">
+              <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-gray-900">Remove {STREAM_META[streamToRemove.stream].label}?</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  This stream has <strong>{streamToRemove.count}</strong> {streamToRemove.count === 1 ? 'entry' : 'entries'}. Removing it will <strong>permanently delete</strong> {streamToRemove.count === 1 ? 'it' : 'them'} from this quarter. This can&apos;t be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-3 bg-gray-50 border-t border-gray-100">
+              <button
+                onClick={() => setStreamToRemove(null)}
+                disabled={removingStream}
+                className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >Cancel</button>
+              <button
+                onClick={() => void confirmStreamRemoval()}
+                disabled={removingStream}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {removingStream ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Remove &amp; delete entries
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </ToolLayout>
   );
@@ -1042,6 +1112,28 @@ function StreamPanel(props: {
           </>
         )}
 
+        {/* Import from Bookkeeping — sole trader only. Greyed-out / coming-soon
+            until the Bookkeeping module is fully released; once live this will
+            pull the trade's income & expenses for the period straight from its
+            ledger instead of (or alongside) uploading documents. */}
+        {stream === 'sole' && (
+          <SubSection title="Import" hint="Pull figures straight from another SMITH tool instead of uploading documents.">
+            <Tooltip label="Coming soon — once the Bookkeeping module is released, you'll be able to import this trade's income and expenses for the quarter directly from its ledger, with no document upload needed.">
+              <div
+                aria-disabled="true"
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-gray-400 cursor-not-allowed select-none"
+              >
+                <BookCopy size={15} className="shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold">Import from Bookkeeping</div>
+                  <div className="text-[11px]">Pull this trade&apos;s income &amp; expenses from its ledger.</div>
+                </div>
+                <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-wider bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">Coming soon</span>
+              </div>
+            </Tooltip>
+          </SubSection>
+        )}
+
         {/* Documents */}
         <SubSection title="Documents" hint="PDFs, images, spreadsheets, or WhatsApp exports. Each file is scanned on its own.">
           <UploadZone
@@ -1115,8 +1207,8 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   return (
     <div className="mb-4">
       <div className="mb-2">
-        <h3 className="text-sm font-bold text-white drop-shadow-sm">{title}</h3>
-        {hint && <p className="text-xs text-white/80 drop-shadow-sm mt-0.5">{hint}</p>}
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">{title}</h3>
+        {hint && <p className="text-xs text-[var(--text-muted)] mt-0.5">{hint}</p>}
       </div>
       {children}
     </div>

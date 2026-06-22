@@ -228,3 +228,36 @@ export async function PUT(req: NextRequest) {
     deleted: deletes.length,
   });
 }
+
+// ── DELETE ───────────────────────────────────────────────────────────────
+// DELETE /api/mtd-it/entries?quarter_id=...&stream=...
+//   Remove every entry for one stream on a quarter. Used when a stream is
+//   toggled OFF in setup: its entries would otherwise be orphaned (invisible
+//   in the editor, yet still leaking into the client approval page / a filing).
+export async function DELETE(req: NextRequest) {
+  const ctx = await getUserContext();
+  if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+
+  const url = new URL(req.url);
+  const quarter_id = url.searchParams.get('quarter_id');
+  const streamParam = url.searchParams.get('stream');
+  const stream = STREAM.safeParse(streamParam);
+  if (!quarter_id || !stream.success) {
+    return NextResponse.json({ error: 'quarter_id and a valid stream are required' }, { status: 400 });
+  }
+  if (!(await quarterBelongsToFirm(quarter_id, ctx.firmId))) {
+    return NextResponse.json({ error: 'Quarter not found' }, { status: 404 });
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('mtd_it_entries')
+    .delete()
+    .eq('quarter_id', quarter_id)
+    .eq('stream', stream.data);
+  if (error) {
+    console.error('DELETE /api/mtd-it/entries', error);
+    return NextResponse.json({ error: 'Failed to delete entries' }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
