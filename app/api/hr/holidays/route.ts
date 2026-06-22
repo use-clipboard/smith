@@ -5,6 +5,12 @@ import { getUserContext } from '@/lib/getUserContext';
 import { createNotification } from '@/lib/notifications';
 import { calcTotalDays } from '@/lib/hrHolidays';
 
+// ISO (YYYY-MM-DD) → dd/mm/yyyy for user-facing notification text.
+function ukSlash(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 const HalfMarker = z.enum(['full', 'morning', 'afternoon']);
 
 const CreateSchema = z.object({
@@ -150,7 +156,7 @@ export async function POST(req: NextRequest) {
       firmId: ctx.firmId,
       type: 'hr_holiday_request',
       title: `Holiday request: ${requesterName}`,
-      body: `${body.start_date}${body.start_date === body.end_date ? '' : ` → ${body.end_date}`} (${total} day${total === 1 ? '' : 's'}).`,
+      body: `${ukSlash(body.start_date)}${body.start_date === body.end_date ? '' : ` → ${ukSlash(body.end_date)}`} (${total} day${total === 1 ? '' : 's'}).`,
       data: { holiday_id: created.id, link: '/hr?tab=approvals' },
     });
   }

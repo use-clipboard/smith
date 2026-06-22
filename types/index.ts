@@ -218,6 +218,19 @@ export interface ReviewPoint {
     /** Trend vs prior year, e.g. '+£6,295'. */
     delta?: string | null;
   } | null;
+  /**
+   * Where the finding came from in the uploaded accounts. We don't store the
+   * documents for clickable deep-linking — this is a plain-text citation only:
+   * the document the figure was read from, plus an optional verbatim quote of
+   * the line/figure the AI relied on. Older saved reviews lack this and render
+   * a "no citation" message; a review must be re-run to capture sources.
+   */
+  sources?: {
+    /** The uploaded document the finding was drawn from, e.g. 'Trial Balance' or the file name. */
+    document: string;
+    /** A short verbatim quote of the line/figure relied on, e.g. 'Depreciation 1,250'. Empty if none. */
+    quote?: string | null;
+  }[] | null;
 }
 
 /** An entry in a review's resolution audit trail (who marked what, when). */

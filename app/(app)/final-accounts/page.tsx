@@ -849,7 +849,11 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
                 activeTab === 'finalpack' ? 'bg-[#2e3062] text-white border-[#2e3062]' : 'bg-white text-[var(--text-secondary)] border-[var(--border)] hover:bg-[var(--bg-nav-hover)]'
               }`}>
               Final Pack
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] bg-[var(--bg-nav-hover)] px-1.5 py-0.5 rounded-full">Not generated</span>
+              {workingPapers.length > 0 ? (
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${activeTab === 'finalpack' ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-700'}`}>Ready</span>
+              ) : (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] bg-[var(--bg-nav-hover)] px-1.5 py-0.5 rounded-full">Not generated</span>
+              )}
             </button>
           </div>
 
@@ -996,7 +1000,24 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
                       )}
 
                       {detailTab === 'sources' && (
-                        <p className="text-sm text-[var(--text-muted)]">Source-document linking is coming soon — we&apos;ll point each finding to the exact document and page it came from.</p>
+                        selectedPoint.sources && selectedPoint.sources.length > 0 ? (
+                          <div className="space-y-3">
+                            <p className="text-xs text-[var(--text-muted)]">Where this finding was drawn from in the uploaded accounts. Quotes are as the AI read them — always verify against the original document.</p>
+                            {selectedPoint.sources.map((s, k) => (
+                              <div key={k} className="rounded-lg border border-[var(--border)] overflow-hidden">
+                                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-nav-hover)] border-b border-[var(--border)]">
+                                  <FileText size={14} className="text-[var(--text-muted)] shrink-0" />
+                                  <span className="text-sm font-semibold text-[var(--text-primary)]">{s.document}</span>
+                                </div>
+                                {s.quote && (
+                                  <blockquote className="m-3 border-l-2 border-[var(--accent)] pl-3 text-sm italic text-[var(--text-secondary)]">&ldquo;{s.quote}&rdquo;</blockquote>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-[var(--text-muted)]">No source citation was recorded for this finding. Re-run the review to capture document references.</p>
+                        )
                       )}
 
                       {detailTab === 'action' && (

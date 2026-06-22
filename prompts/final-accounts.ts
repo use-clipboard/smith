@@ -41,6 +41,10 @@ For each point you identify, provide:
     - **'Medium'**: Should be reviewed and explained — notable analytical variances (e.g. revenue/margin swings), liquidity or creditor-day movements, or items needing supporting evidence.
     - **'Minor'**: Low priority — small presentational points or variances within tolerance.
 9. **suggestedJournal**: A suggested journal entry to correct the error, if applicable. If not applicable, return \`null\` for this field.
+10. **sources**: An array citing where in the attached documents this finding came from, so a reviewer can verify it. For each source provide:
+    - **document**: which document the figure was read from. Prefer a recognisable name such as 'Trial Balance', 'Balance Sheet', 'Profit & Loss' or the document's file name. Never invent a document that was not attached.
+    - **quote**: a SHORT verbatim quote of the exact line or figure you relied on, copied as it appears (e.g. 'Depreciation    1,250.00' or 'Directors loan account  (39,747)'). Keep it under ~15 words. Empty string if you cannot quote a specific line.
+    Return an empty array \`[]\` only if the point is a general/structural observation not tied to any specific figure.
 
 **Review Checklist:**
 - **Compliance:** Check for items inconsistent with the business type (e.g., a Director's Loan Account for a Sole Trader should be 'Drawings' - this is a 'Serious' issue).
@@ -53,7 +57,7 @@ For each point you identify, provide:
 - **Contextual Review:** Take into account the 'Additional Context' provided.
 
 Return a single JSON object with this exact shape and nothing else:
-{ "reviewPoints": [ { "area": string, "subArea": string, "issue": string, "tag": string, "metric": { "value": string, "label": string, "delta": string }, "explanation": string, "risk": string, "severity": "Serious" | "Medium" | "Minor", "suggestedJournal": { "debitAccount": string, "creditAccount": string, "amount": number, "description": string } | null } ] }`;
+{ "reviewPoints": [ { "area": string, "subArea": string, "issue": string, "tag": string, "metric": { "value": string, "label": string, "delta": string }, "explanation": string, "risk": string, "severity": "Serious" | "Medium" | "Minor", "suggestedJournal": { "debitAccount": string, "creditAccount": string, "amount": number, "description": string } | null, "sources": [ { "document": string, "quote": string } ] } ] }`;
 }
 
 interface WorkingPapersPromptOptions {

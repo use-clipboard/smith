@@ -152,6 +152,15 @@ export function generateReportHtml(
         </div>` : '';
       const statusHtml = status ? `<span class="status-tag status-${status}">${status === 'reviewed' ? 'Reviewed' : 'Ignored'}</span>` : '';
       const riskHtml = p.risk ? `<div class="rp-risk"><span class="rp-risk-label">Risk:</span> ${p.risk}</div>` : '';
+      // Source citations are verbatim copies from the client's documents, so
+      // escape them (they may contain <, &, etc.) before dropping into HTML.
+      const escSrc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const sources = (p.sources ?? []).filter(s => s && s.document);
+      const sourcesHtml = sources.length > 0 ? `
+        <div class="rp-sources">
+          <div class="rp-sources-label">Source documents</div>
+          ${sources.map(s => `<div class="rp-source"><span class="rp-source-doc">${escSrc(s.document)}</span>${s.quote ? `<span class="rp-source-quote">&ldquo;${escSrc(s.quote)}&rdquo;</span>` : ''}</div>`).join('')}
+        </div>` : '';
       const subArea = p.subArea ? ` &middot; ${p.subArea}` : '';
       return `
         <div class="review-point ${sevClass}">
@@ -162,6 +171,7 @@ export function generateReportHtml(
           <p class="rp-expl">${p.explanation ?? ''}</p>
           ${riskHtml}
           ${journalHtml}
+          ${sourcesHtml}
         </div>`;
     }).join('')}
   ` : '';
@@ -250,6 +260,11 @@ export function generateReportHtml(
     .status-ignored  { background: #f1f5f9; color: #64748b; }
     .rp-risk { font-size: 11.5px; color: #92400e; margin: 6px 0 0; padding: 6px 10px; background: #fffbeb; border-left: 3px solid #fcd34d; border-radius: 0 4px 4px 0; }
     .rp-risk-label { font-weight: 700; }
+    .rp-sources { margin: 8px 0 0; padding: 7px 10px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 4px; }
+    .rp-sources-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 4px; }
+    .rp-source { font-size: 11px; color: #374151; margin: 2px 0; }
+    .rp-source-doc { font-weight: 700; color: #12458F; }
+    .rp-source-quote { font-style: italic; color: #4b5563; margin-left: 6px; }
     .signoff { margin-top: 44px; padding-top: 22px; border-top: 2px solid #12458F; }
     .signoff-title { font-size: 14px; font-weight: 800; color: #12458F; margin-bottom: 6px; }
     .signoff-sub { font-size: 11px; color: #9ca3af; margin-bottom: 8px; }
