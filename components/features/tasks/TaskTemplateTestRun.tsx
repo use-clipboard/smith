@@ -343,7 +343,7 @@ function EmailLightbox({ step, templateName, onClose, onContinue, hasClient }: E
         </div>
         <div className="flex-1 overflow-y-auto">
           <div className="border-b border-gray-200 px-5 py-3 bg-gray-50 space-y-1 text-xs">
-            <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">From</span><span className="text-gray-700 font-medium">SMITH &lt;noreply@smithapp.co.uk&gt;</span></div>
+            <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">From</span><span className="text-gray-700 font-medium">SMITH &lt;noreply@smithforaccountants.co.uk&gt;</span></div>
             <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">To</span><span className="text-gray-700">{toAddress}</span></div>
             <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">Subject</span><span className="text-gray-900 font-semibold">{subject}</span></div>
           </div>

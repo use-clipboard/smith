@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
-import { sendTaskReminderEmail } from '@/lib/email';
+import { renderTaskReminderEmail } from '@/lib/email';
+import { resolveTaskEmailSender } from '@/lib/tasks/taskEmailSender';
+import { buildRawMessage } from '@/lib/gmail';
+import { createNotification } from '@/lib/notifications';
 
 // POST /api/cron/timeout-conditions
 // Runs daily via Vercel Cron. Finds task steps whose incoming timeout-condition
@@ -13,7 +16,7 @@ export async function POST(req: NextRequest) {
   }
 
   const service = createServiceClient();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://smithapp.co.uk';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://smithforaccountants.co.uk';
 
   // 1. Fetch all timeout-condition edges, with task + step + client + assignee data
   const { data: edges, error: edgesError } = await service
@@ -28,8 +31,10 @@ export async function POST(req: NextRequest) {
         id,
         title,
         firm_id,
-        client:clients ( name, contact_email ),
-        firm:firms ( email_from_name, email_from_address )
+        created_by,
+        email_sender_mode,
+        email_sender_mailbox_id,
+        client:clients ( name, contact_email )
       )
     `)
     .eq('condition_type', 'timeout');
@@ -94,15 +99,17 @@ export async function POST(req: NextRequest) {
       if (existing) { skipped++; continue; }
 
       // 5. Determine recipient
-      const task = edge.task as {
+      const task = edge.task as unknown as {
         id: string;
         title: string;
         firm_id: string;
+        created_by: string | null;
+        email_sender_mode?: 'default' | 'owner' | 'specific';
+        email_sender_mailbox_id?: string | null;
         client: { name: string; contact_email: string | null } | null;
-        firm: { email_from_name: string | null; email_from_address: string | null } | null;
       } | null;
 
-      const assignee = step.assignee as { email: string; full_name: string | null } | null;
+      const assignee = step.assignee as unknown as { email: string; full_name: string | null } | null;
       const client = task?.client ?? null;
 
       let recipientEmail: string | null = null;
@@ -128,21 +135,40 @@ export async function POST(req: NextRequest) {
         if (validToken) taskUrl = `${appUrl}/client/task/${validToken.token}`;
       }
 
-      // 7. Build firm from-address
-      const firm = task?.firm ?? null;
-      let fromAddress: string | undefined;
-      if (firm?.email_from_address) {
-        fromAddress = firm.email_from_name
-          ? `${firm.email_from_name} <${firm.email_from_address}>`
-          : firm.email_from_address;
-      }
+      // 7. Resolve the Gmail sender for this task (owner / specific mailbox /
+      //    firm default). Owner = task creator, else the step assignee.
+      const ownerUserId = task?.created_by ?? step.assignee_id ?? null;
+      const sender = await resolveTaskEmailSender({
+        firmId: task?.firm_id ?? '',
+        mode: task?.email_sender_mode ?? 'default',
+        mailboxId: task?.email_sender_mailbox_id ?? null,
+        ownerUserId,
+      });
 
-      // 8. Send the email
       const timeoutLabel = cfg?.timeout_days
         ? `${cfg.timeout_days} day${cfg.timeout_days !== 1 ? 's' : ''}`
         : `${cfg?.timeout_hours ?? 24} hour${(cfg?.timeout_hours ?? 24) !== 1 ? 's' : ''}`;
 
-      await sendTaskReminderEmail({
+      // 8. If no sender is connected, don't send via Resend — flag the owner and
+      //    record the trigger so we neither resend nor re-flag daily.
+      if (!sender.ok) {
+        if (ownerUserId && task?.firm_id) {
+          await createNotification({
+            userId: ownerUserId,
+            firmId: task.firm_id,
+            type: 'task_email_blocked',
+            title: `Couldn't send a task reminder for ${task?.title ?? 'a task'}`,
+            body: `${sender.reason} The timeout reminder to ${recipientEmail} was not sent.`,
+            data: { task_id: task?.id, task_link: `${appUrl}/tasks` },
+          }).catch(() => {});
+        }
+        await service.from('task_timeout_triggers').insert({ task_step_id: step.id, edge_from_key: edge.from_step_key });
+        skipped++;
+        continue;
+      }
+
+      // 9. Send via Gmail, then record the trigger so we don't resend.
+      const { subject, html } = renderTaskReminderEmail({
         to: recipientEmail,
         recipientName,
         taskTitle: task?.title ?? 'Task',
@@ -153,10 +179,10 @@ export async function POST(req: NextRequest) {
         customSubject: step.email_reminder_subject ?? null,
         customMessage: step.email_reminder_message
           ?? `This is an automated reminder — this step has been waiting for more than ${timeoutLabel} without a response. Please action it at your earliest convenience.`,
-        fromAddress,
       });
+      const raw = buildRawMessage({ from: sender.fromEmail, to: [recipientEmail], subject, htmlBody: html });
+      await sender.gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
 
-      // 9. Record the trigger so we don't resend
       await service.from('task_timeout_triggers').insert({
         task_step_id: step.id,
         edge_from_key: edge.from_step_key,

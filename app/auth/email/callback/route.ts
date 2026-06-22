@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getGmailOAuthClient } from '@/lib/gmail';
 import { google } from 'googleapis';
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
   // `state` is set by the connect route and tells us which settings tab to land on
   const state = searchParams.get('state');
-  const returnTab = state === 'proposals' ? 'proposals' : 'email-triage';
+  const returnTab = state === 'proposals' ? 'proposals' : state === 'task-mailbox' ? 'tasks' : 'email-triage';
 
   if (error || !code) {
     return NextResponse.redirect(`${origin}/settings?tab=${returnTab}&email=cancelled`);
@@ -69,6 +69,37 @@ export async function GET(request: NextRequest) {
         await supabase.from('proposal_email_connections').insert(proposalTokenData);
       }
       return NextResponse.redirect(`${origin}/settings?tab=proposals&email=connected`);
+    }
+
+    // Task sending mailbox — a firm can connect several shared Gmail accounts to
+    // send task emails from. Stored in firm_sending_mailboxes (a firm can have
+    // many, keyed by google_email). Access is admin-gated by the connect route.
+    if (state === 'task-mailbox') {
+      if (!tokens.refresh_token) {
+        return NextResponse.redirect(`${origin}/settings?tab=tasks&mailbox=error`);
+      }
+      // Tokens live in a service-role-only table — use the service client.
+      const service = createServiceClient();
+      const { data: existing } = await service
+        .from('firm_sending_mailboxes')
+        .select('id')
+        .eq('firm_id', profile.firm_id)
+        .eq('google_email', googleEmail)
+        .maybeSingle();
+      if (existing) {
+        await service.from('firm_sending_mailboxes')
+          .update({ refresh_token: tokens.refresh_token, connected_by: user.id })
+          .eq('id', existing.id);
+      } else {
+        await service.from('firm_sending_mailboxes').insert({
+          firm_id: profile.firm_id,
+          google_email: googleEmail,
+          label: googleEmail,
+          refresh_token: tokens.refresh_token,
+          connected_by: user.id,
+        });
+      }
+      return NextResponse.redirect(`${origin}/settings?tab=tasks&mailbox=connected`);
     }
 
     // Email Triage path — one connection per user

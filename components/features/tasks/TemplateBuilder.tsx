@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useNodesState, useEdgesState, addEdge, type Connection, type OnConnect } from '@xyflow/react';
 import { X, Plus, Trash2, Loader2, Save, Mail, Puzzle, Clock, RefreshCw, ChevronDown, ChevronUp, Zap, ArrowRight, UserCheck, Upload, CheckCircle2, ExternalLink, Sparkles, AlertTriangle, AlertCircle, Info, ShieldCheck, Rocket, Flag, Bell } from 'lucide-react';
 import { MERGE_TAGS, resolveMergeTags, type MergeTagContext } from '@/lib/emailMergeTags';
@@ -91,6 +91,10 @@ export interface TemplateData {
    *  fields above are ignored in this mode — CH dictates the cadence. */
   ch_deadline_type?: ChDeadlineType | null;
   ch_offset_days?: number;
+  /** Which Gmail mailbox this template's task emails send from: inherit the
+   *  firm default, the task owner's mailbox, or a specific firm mailbox. */
+  email_sender_mode?: 'default' | 'owner' | 'specific';
+  email_sender_mailbox_id?: string | null;
   steps: TemplateStepData[];
   edges: TemplateEdgeData[];
   /** When editing a template that already has active task instances, this
@@ -312,7 +316,7 @@ function EmailEditorModal({ step, templateName, onUpdate, onClose }: EmailEditor
             <div className="max-w-lg mx-auto">
               {/* Email client chrome */}
               <div className="border border-gray-200 rounded-t-lg px-4 py-3 bg-white space-y-1 text-xs">
-                <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">From</span><span className="text-gray-700 font-medium">SMITH &lt;noreply@smithapp.co.uk&gt;</span></div>
+                <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">From</span><span className="text-gray-700 font-medium">SMITH &lt;noreply@smithforaccountants.co.uk&gt;</span></div>
                 <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">To</span><span className="text-gray-700">{toAddress}</span></div>
                 <div className="flex gap-2"><span className="text-gray-400 w-14 flex-shrink-0">Subject</span><span className="text-gray-900 font-semibold">{previewSubject}</span></div>
               </div>
@@ -612,6 +616,21 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
     template?.ch_offset_days ?? initialData?.ch_offset_days ?? 0,
   );
   const isChLinked = chDeadlineType !== '';
+
+  // Task-email sender for this template (inherits the firm default unless overridden).
+  const [senderMode, setSenderMode] = useState<'default' | 'owner' | 'specific'>(
+    (template as { email_sender_mode?: 'default' | 'owner' | 'specific' } | undefined)?.email_sender_mode ?? 'default',
+  );
+  const [senderMailboxId, setSenderMailboxId] = useState<string | null>(
+    (template as { email_sender_mailbox_id?: string | null } | undefined)?.email_sender_mailbox_id ?? null,
+  );
+  const [senderMailboxes, setSenderMailboxes] = useState<{ id: string; google_email: string; label: string | null }[]>([]);
+  useEffect(() => {
+    void fetch('/api/tasks/sending-mailboxes')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.mailboxes) setSenderMailboxes(j.mailboxes); })
+      .catch(() => {});
+  }, []);
 
   // Steps (local state — push to React Flow via useMemo)
   const [steps, setSteps] = useState<TemplateStepData[]>(() =>
@@ -942,6 +961,8 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
       ch_deadline_type: isChLinked ? (chDeadlineType as ChDeadlineType) : null,
       ch_offset_days:   isChLinked ? chOffsetDays : 0,
       estimated_duration_days: estimatedDays ? parseInt(estimatedDays) : null,
+      email_sender_mode: senderMode,
+      email_sender_mailbox_id: senderMode === 'specific' ? senderMailboxId : null,
       steps,
       edges: edgesData,
     };
@@ -1267,6 +1288,29 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                 <input type="checkbox" checked={isFirmWide} onChange={e => setIsFirmWide(e.target.checked)} className="rounded" />
                 Firm-wide
               </label>
+              {/* Which Gmail this template's task emails send from. */}
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-500">Email from</span>
+                <select
+                  value={senderMode}
+                  onChange={e => setSenderMode(e.target.value as 'default' | 'owner' | 'specific')}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="default">Firm default</option>
+                  <option value="owner">Task owner&apos;s Gmail</option>
+                  <option value="specific" disabled={senderMailboxes.length === 0}>Specific mailbox</option>
+                </select>
+                {senderMode === 'specific' && (
+                  <select
+                    value={senderMailboxId ?? ''}
+                    onChange={e => setSenderMailboxId(e.target.value || null)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white max-w-[180px] focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="">Choose…</option>
+                    {senderMailboxes.map(m => <option key={m.id} value={m.id}>{m.label || m.google_email}</option>)}
+                  </select>
+                )}
+              </div>
             </>
           )}
         </div>

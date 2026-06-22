@@ -13,6 +13,8 @@ const UpdateTemplateSchema = z.object({
   estimated_duration_days: z.number().int().positive().optional().nullable(),
   ch_deadline_type: z.enum(['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due']).optional().nullable(),
   ch_offset_days:   z.number().int().min(-365).max(365).optional().nullable(),
+  email_sender_mode: z.enum(['default', 'owner', 'specific']).optional(),
+  email_sender_mailbox_id: z.string().uuid().optional().nullable(),
   // Full step/edge replacement
   steps: z.array(z.object({
     step_key: z.string(),

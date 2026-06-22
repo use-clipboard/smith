@@ -55,6 +55,10 @@ export async function instantiateTaskFromTemplate(opts: InstantiateOptions): Pro
       // caller is expected to set it through a separate path if needed.
       recurrence_type: isChLinkedTemplate ? null : (template.recurrence_type ?? null),
       recurrence_interval_days: isChLinkedTemplate ? null : (template.recurrence_interval_days ?? null),
+      // Carry the template's email-sender choice onto the task so the reminder
+      // cron resolves the right Gmail mailbox without re-reading the template.
+      email_sender_mode: (template as { email_sender_mode?: string }).email_sender_mode ?? 'default',
+      email_sender_mailbox_id: (template as { email_sender_mailbox_id?: string | null }).email_sender_mailbox_id ?? null,
       status: 'not_started',
     })
     .select('id')

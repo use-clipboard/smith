@@ -16,6 +16,10 @@ const CreateTemplateSchema = z.object({
   // deadline on the client. recurrence_* are ignored in that mode.
   ch_deadline_type: z.enum(['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due']).optional().nullable(),
   ch_offset_days:   z.number().int().min(-365).max(365).optional().nullable(),
+  // Which Gmail task emails for this template send from: inherit the firm
+  // default, the task owner's mailbox, or a specific firm mailbox.
+  email_sender_mode: z.enum(['default', 'owner', 'specific']).optional(),
+  email_sender_mailbox_id: z.string().uuid().optional().nullable(),
   steps: z.array(z.object({
     step_key: z.string(),
     title: z.string().min(1),
@@ -104,6 +108,8 @@ export async function POST(req: NextRequest) {
       estimated_duration_days: tplData.estimated_duration_days ?? null,
       ch_deadline_type: tplData.ch_deadline_type ?? null,
       ch_offset_days:   tplData.ch_offset_days ?? 0,
+      email_sender_mode: tplData.email_sender_mode ?? 'default',
+      email_sender_mailbox_id: tplData.email_sender_mode === 'specific' ? (tplData.email_sender_mailbox_id ?? null) : null,
     })
     .select()
     .single();

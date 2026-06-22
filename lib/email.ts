@@ -34,10 +34,10 @@ export interface TaskReminderEmailOptions {
   mergeContext?: MergeTagContext;
 }
 
-export async function sendTaskReminderEmail(opts: TaskReminderEmailOptions) {
-  const resend = getResend();
-  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
-
+// Render the task-reminder email (subject + HTML) WITHOUT sending. Used both by
+// the Resend path (sendTaskReminderEmail below) and the Gmail path (the reminder
+// cron sends from the task owner's / a firm mailbox's Gmail).
+export function renderTaskReminderEmail(opts: TaskReminderEmailOptions): { subject: string; html: string } {
   // Build merge tag context — merge in the top-level fields as a baseline
   const ctx: MergeTagContext = {
     client_name:    opts.clientName,
@@ -89,6 +89,16 @@ export async function sendTaskReminderEmail(opts: TaskReminderEmailOptions) {
     </div>
   `;
 
+  return { subject, html };
+}
+
+// Resend path — renders then sends via Resend. Kept for any caller still using
+// the system mailbox; the task reminder cron now prefers the Gmail path.
+export async function sendTaskReminderEmail(opts: TaskReminderEmailOptions) {
+  const resend = getResend();
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const { subject, html } = renderTaskReminderEmail(opts);
+
   const { error } = await resend.emails.send({
     from: fromAddress,
     to: opts.to,
@@ -110,10 +120,8 @@ export interface ClientStepCompleteEmailOptions {
   taskUrl: string;
 }
 
-export async function sendClientStepCompleteEmail(opts: ClientStepCompleteEmailOptions) {
-  const resend = getResend();
-  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
-
+// Render the client-step-complete notification (subject + HTML) without sending.
+export function renderClientStepCompleteEmail(opts: ClientStepCompleteEmailOptions): { subject: string; html: string } {
   const clientLine = opts.clientName
     ? `<p style="color:#6b7280;font-size:14px;">Client: <strong>${opts.clientName}</strong></p>`
     : '';
@@ -139,13 +147,17 @@ export async function sendClientStepCompleteEmail(opts: ClientStepCompleteEmailO
     </div>
   `;
 
-  const { error } = await resend.emails.send({
-    from: fromAddress,
-    to: opts.to,
-    subject: `[SMITH] Client completed: ${opts.stepTitle}`,
-    html,
-  });
+  return { subject: `[SMITH] Client completed: ${opts.stepTitle}`, html };
+}
 
+// Resend path — kept for any non-task caller. The client task flow now sends
+// this via the task's resolved Gmail sender (see the complete route).
+export async function sendClientStepCompleteEmail(opts: ClientStepCompleteEmailOptions) {
+  const resend = getResend();
+  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const { subject, html } = renderClientStepCompleteEmail(opts);
+
+  const { error } = await resend.emails.send({ from: fromAddress, to: opts.to, subject, html });
   if (error) throw new Error(`Failed to send client-complete email: ${error.message}`);
 }
 
@@ -158,7 +170,7 @@ export interface ManagerBriefingEmailOptions {
 
 export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions) {
   const resend = getResend();
-  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
   const baseUrl = getBaseUrl();
   const link = `${baseUrl}/hr?tab=resources`;
 
@@ -297,7 +309,7 @@ async function dispatchProposalEmail(opts: ProposalDispatch): Promise<{ via: 'gm
 
   // ── Resend fallback ──────────────────────────────────────────────────
   const resend = getResend();
-  const fromAddress = overrideFrom ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithapp.co.uk>';
+  const fromAddress = overrideFrom ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
   const { error } = await resend.emails.send({
     from: fromAddress,
     to: opts.to,

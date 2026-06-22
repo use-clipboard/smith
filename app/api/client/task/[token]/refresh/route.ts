@@ -54,7 +54,7 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to refresh' }, { status: 500 });
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://smithapp.co.uk';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://smithforaccountants.co.uk';
   return NextResponse.json({
     success: true,
     new_url: `${appUrl}/client/task/${newToken.token}`,
