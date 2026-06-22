@@ -15,19 +15,29 @@ const PatchSchema = z.object({
   fx_rates:             z.record(z.string(), z.number().positive()).optional(),
   status:               z.enum(['draft', 'complete', 'sent', 'approved', 'submitted']).optional(),
   notes:                z.string().nullable().optional(),
+  // Escape hatch: allow an explicit status regression (e.g. an admin reset).
+  // Normal save/navigation never sends this, so status stays monotonic.
+  force:                z.boolean().optional(),
 }).strict();
 
-async function loadQuarterForFirm(quarterId: string, firmId: string): Promise<{ client_id: string; quarter: number; tax_year: number } | null> {
+// Workflow ordering. A quarter's status only ever moves FORWARD along this
+// ladder during normal use — re-opening an earlier step to look must never drag
+// the status back (the bug this guards against). Higher number = later stage.
+const STATUS_RANK: Record<string, number> = {
+  not_started: 0, draft: 1, complete: 2, sent: 3, approved: 4, submitted: 5,
+};
+
+async function loadQuarterForFirm(quarterId: string, firmId: string): Promise<{ client_id: string; quarter: number; tax_year: number; status: string } | null> {
   const supabase = createClient();
   const { data } = await supabase
     .from('mtd_it_quarters')
-    .select('client_id, quarter, tax_year, clients!inner(firm_id)')
+    .select('client_id, quarter, tax_year, status, clients!inner(firm_id)')
     .eq('id', quarterId)
     .maybeSingle();
   if (!data) return null;
   const c = (data as unknown as { clients?: { firm_id?: string } }).clients;
   if (c?.firm_id !== firmId) return null;
-  return { client_id: data.client_id as string, quarter: data.quarter as number, tax_year: data.tax_year as number };
+  return { client_id: data.client_id as string, quarter: data.quarter as number, tax_year: data.tax_year as number, status: data.status as string };
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -45,7 +55,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const supabase = createClient();
-  const updates: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
+  const { force, ...patch } = parsed.data;
+  const updates: Record<string, unknown> = { ...patch, updated_at: new Date().toISOString() };
+
+  // Monotonic status guard. If a status is supplied that's EARLIER in the
+  // workflow than the one already reached, drop it — the quarter keeps its
+  // furthest-reached status. This is what stops re-opening a submitted quarter
+  // (to look at something) from quietly dragging it back to draft/sent. Other
+  // fields (consolidated, fx_rates, …) still apply. `force` overrides for an
+  // intentional reset.
+  let statusApplied: string | undefined = patch.status;
+  if (patch.status && !force) {
+    const curRank = STATUS_RANK[qmeta.status] ?? 0;
+    const newRank = STATUS_RANK[patch.status] ?? 0;
+    if (newRank < curRank) {
+      delete updates.status;
+      statusApplied = undefined;
+    }
+  }
 
   const { error } = await supabase.from('mtd_it_quarters').update(updates).eq('id', params.id);
   if (error) {
@@ -53,12 +80,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Failed to update quarter' }, { status: 500 });
   }
 
-  // Log status transitions to the activity feed (drafts, completes, reopens…).
-  if (parsed.data.status) {
+  // Log status transitions to the activity feed — only when the status actually
+  // changed (a guard-dropped or no-op status writes nothing).
+  if (statusApplied && statusApplied !== qmeta.status) {
     createServiceClient().from('mtd_it_activity').insert({
       firm_id: ctx.firmId, client_id: qmeta.client_id, quarter_id: params.id,
       quarter: qmeta.quarter, tax_year: qmeta.tax_year, user_id: ctx.userId,
-      kind: 'status_change', detail: parsed.data.status,
+      kind: 'status_change', detail: statusApplied,
     }).then(() => {}, () => {});
   }
 
@@ -67,7 +95,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // gives the user a chance to archive to Drive/Vault first. We
   // intentionally don't auto-cleanup here, because PATCH may run from
   // code paths that don't surface the archive prompt.
-  return NextResponse.json({ ok: true });
+  // Return the effective status (post-guard) so callers can sync their UI
+  // instead of assuming the requested status was applied.
+  return NextResponse.json({ ok: true, status: statusApplied ?? qmeta.status });
 }
 
 // DELETE /api/mtd-it/quarters/[id]

@@ -136,12 +136,17 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   const { quarter, client, firm } = pickQuarterContext(row);
 
-  // Flip quarter status (only on approve — changes_requested keeps 'sent')
+  // Flip quarter status (only on approve — changes_requested keeps 'sent').
+  // Guard with `.eq('status', 'sent')` so the status only ever moves forward:
+  // a stale approval link clicked after the quarter was already submitted (or
+  // re-approved) must never drag it back to 'approved'. The approval row's
+  // approved_at is still stamped above for the audit trail either way.
   if (action === 'approve' && quarter.id) {
     await service
       .from('mtd_it_quarters')
       .update({ status: 'approved', updated_at: now })
-      .eq('id', quarter.id);
+      .eq('id', quarter.id)
+      .eq('status', 'sent');
   }
 
   // ── Notify the preparer (email via their Gmail + in-app notification) ─

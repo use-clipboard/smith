@@ -640,20 +640,20 @@ export default function MtdItDashboard() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left">
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <SortHeader label="Client"    field="name"                          className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />
-              {visibleCols.has('client_ref')                && <SortHeader label="Code"      field="client_ref"                className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('status')                    && <SortHeader label="HMRC"      field="status"                    className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('utr_number')                && <SortHeader label="UTR"       field="utr_number"                className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('national_insurance_number') && <SortHeader label="NI Number" field="national_insurance_number" className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('date_of_birth')             && <SortHeader label="DOB"       field="date_of_birth"             className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('address')                   && <SortHeader label="Address"   field="address"                   className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              {visibleCols.has('contact_email')             && <SortHeader label="Email"     field="contact_email"             className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200" />}
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Quarters</th>
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Streams</th>
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
-              <th className="sticky top-0 z-10 bg-gray-50/80 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <SortHeader label="Client"    field="name"                          className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />
+              {visibleCols.has('client_ref')                && <SortHeader label="Code"      field="client_ref"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('status')                    && <SortHeader label="HMRC"      field="status"                    className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('utr_number')                && <SortHeader label="UTR"       field="utr_number"                className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('national_insurance_number') && <SortHeader label="NI Number" field="national_insurance_number" className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('date_of_birth')             && <SortHeader label="DOB"       field="date_of_birth"             className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('address')                   && <SortHeader label="Address"   field="address"                   className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              {visibleCols.has('contact_email')             && <SortHeader label="Email"     field="contact_email"             className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200" />}
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Quarters</th>
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 font-medium text-[11px] uppercase tracking-wide text-gray-500">Streams</th>
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
+              <th className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200 px-3 py-2 w-8"></th>
             </tr>
           </thead>
             <tbody>

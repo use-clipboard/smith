@@ -6,6 +6,12 @@ import { createNotification } from '@/lib/notifications';
 import { calcTotalDays } from '@/lib/hrHolidays';
 import { addCalendarEventForUser } from '@/lib/hrCalendarPush';
 
+// ISO (YYYY-MM-DD) → dd/mm/yyyy for user-facing notification text.
+function ukSlash(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
 const HalfMarker = z.enum(['full', 'morning', 'afternoon']);
 
 const PatchSchema = z.object({
@@ -86,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       firmId: ctx.firmId,
       type: 'hr_holiday_decided',
       title: 'Holiday approved',
-      body: `${row.start_date}${row.start_date === row.end_date ? '' : ` → ${row.end_date}`}`,
+      body: `${ukSlash(row.start_date)}${row.start_date === row.end_date ? '' : ` → ${ukSlash(row.end_date)}`}`,
       data: { holiday_id: row.id, link: '/hr', outcome: 'approved' },
     });
     return NextResponse.json({ ok: true });
@@ -139,7 +145,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         firmId: ctx.firmId,
         type: 'hr_holiday_cancelled',
         title: 'Holiday cancelled',
-        body: `${row.requester?.full_name ?? row.requester?.email ?? 'Team member'} cancelled their booking for ${row.start_date}.`,
+        body: `${row.requester?.full_name ?? row.requester?.email ?? 'Team member'} cancelled their booking for ${ukSlash(row.start_date)}.`,
         data: { holiday_id: row.id, link: '/hr?tab=team-holidays' },
       });
     }

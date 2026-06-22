@@ -5,8 +5,8 @@ import { isHmrcConfigured } from '@/lib/hmrc/config';
 import { getHmrcConnection, hmrcRequest, hmrcErrorMessage, type HmrcConnection } from '@/lib/hmrc/api';
 import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { normaliseNino } from '@/lib/hmrc/mtdItServer';
-import { computeMtdItCumulative, type BusinessSource, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
-import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
+import { computeFilingUnits, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
+import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
 import type { MtdItQuarterType } from '@/types';
 
 // ── POST /api/mtd-it/quarters/[id]/submit ────────────────────────────────────
@@ -83,13 +83,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const [{ data: trades }, { data: props }] = await Promise.all([
     service.from('mtd_it_trades').select('id, name, hmrc_business_id').eq('client_id', client.id).eq('active', true),
-    service.from('mtd_it_properties').select('id, address, property_type, hmrc_business_id').eq('client_id', client.id).eq('active', true),
+    service.from('mtd_it_properties').select('id, address, property_type, country, hmrc_business_id').eq('client_id', client.id).eq('active', true),
   ]);
 
-  const sources: BusinessSource[] = [
-    ...(trades ?? []).map(t => ({ kind: 'trade' as const, id: t.id as string, hmrcBusinessId: (t.hmrc_business_id as string | null) ?? null, typeOfBusiness: 'self-employment' as TypeOfBusiness, name: t.name as string })),
-    ...(props ?? []).map(p => ({ kind: 'property' as const, id: p.id as string, hmrcBusinessId: (p.hmrc_business_id as string | null) ?? null, typeOfBusiness: (p.property_type === 'foreign' ? 'foreign-property' : 'uk-property') as TypeOfBusiness, name: p.address as string })),
-  ];
+  // The actual HMRC filing units: self-employment per trade; UK property
+  // aggregated into the single UK business; foreign property aggregated into the
+  // single foreign business (split by country). Aggregation is the whole point —
+  // a client with several UK (or foreign) properties files ONE combined return
+  // per business, so filing one property at a time would under-declare.
+  const units = await computeFilingUnits(service, {
+    clientId: client.id as string, taxYear: quarter.tax_year as number, quarterType, uptoQuarter,
+    trades: (trades ?? []).map(t => ({ id: t.id as string, name: t.name as string, hmrcBusinessId: (t.hmrc_business_id as string | null) ?? null })),
+    props: (props ?? []).map(p => ({ id: p.id as string, address: p.address as string, propertyType: p.property_type as 'uk' | 'foreign', country: (p.country as string | null) ?? null, hmrcBusinessId: (p.hmrc_business_id as string | null) ?? null })),
+  });
 
   // Real HMRC obligation periods (best-effort) so we file against the right one.
   const obligationsByBusiness = await fetchObligationPeriods(conn, nino, fraudHeaders, body.testScenario || undefined, quarter.tax_year as number);
@@ -97,42 +103,49 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const results: SourceResult[] = [];
   let submitted = 0, errors = 0;
 
-  for (const source of sources) {
-    // Self-employment + UK property file now. Foreign property is held (needs
-    // per-country codes + a distinct body shape, verified separately).
-    if (source.typeOfBusiness === 'foreign-property') {
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'skipped', reason: 'Foreign property filing is coming soon.' });
+  for (const unit of units) {
+    if (!unit.businessId) {
+      results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'Not linked to an HMRC business.' });
       continue;
     }
-    if (!source.hmrcBusinessId) {
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'skipped', reason: 'Not linked to an HMRC business.' });
-      continue;
-    }
-
-    const figures = await computeMtdItCumulative(service, { clientId: client.id as string, taxYear: quarter.tax_year as number, quarterType, uptoQuarter, source });
 
     // File against the actual HMRC obligation period when we have it: the
     // cumulative window runs from the first obligation's start to the chosen
     // quarter's obligation end. Falls back to the computed dates otherwise.
-    const periods = obligationsByBusiness.get(source.hmrcBusinessId) ?? [];
+    let periodStartDate = unit.figures.periodStartDate;
+    let periodEndDate = unit.figures.periodEndDate;
+    const periods = obligationsByBusiness.get(unit.businessId) ?? [];
     if (periods.length > 0) {
-      figures.periodStartDate = periods[0].start;
-      figures.periodEndDate = (periods[uptoQuarter - 1] ?? periods[periods.length - 1]).end;
+      periodStartDate = periods[0].start;
+      periodEndDate = (periods[uptoQuarter - 1] ?? periods[periods.length - 1]).end;
     }
 
-    const payload = source.typeOfBusiness === 'self-employment'
-      ? buildSelfEmploymentCumulativeBody(figures, Boolean(body.useConsolidated))
-      : buildUkPropertyCumulativeBody(figures, Boolean(body.useConsolidated));
-    const path = cumulativePath(nino, source.hmrcBusinessId, source.typeOfBusiness, taxYearStr);
+    let payload: object;
+    if (unit.typeOfBusiness === 'self-employment') {
+      payload = buildSelfEmploymentCumulativeBody({ ...unit.figures, periodStartDate, periodEndDate }, Boolean(body.useConsolidated));
+    } else if (unit.typeOfBusiness === 'uk-property') {
+      payload = buildUkPropertyCumulativeBody({ ...unit.figures, periodStartDate, periodEndDate }, Boolean(body.useConsolidated));
+    } else {
+      // Foreign — drop any country we couldn't resolve (never file a blank code).
+      // NOTE: the foreign cumulative envelope is isolated in hmrcBody.ts and
+      // should be verified against the HMRC sandbox before live use.
+      const countries = (unit.foreignCountries ?? []).filter(c => c.countryCode) as Array<{ countryCode: string; income: number; expensesByField: Record<string, number>; consolidatedExpenses: number }>;
+      if (countries.length === 0) {
+        results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'Set a valid country (e.g. "France" or "FRA") on the foreign property before filing.' });
+        continue;
+      }
+      payload = buildForeignPropertyCumulativeBody(periodStartDate, periodEndDate, countries, Boolean(body.useConsolidated));
+    }
 
+    const path = cumulativePath(nino, unit.businessId, unit.typeOfBusiness, taxYearStr);
     const r = await hmrcRequest(conn, path, {
-      method: 'PUT', body: payload, version: cumulativeApiVersion(source.typeOfBusiness),
+      method: 'PUT', body: payload, version: cumulativeApiVersion(unit.typeOfBusiness),
       fraudHeaders, testScenario: body.testScenario || undefined,
     });
 
     await service.from('mtd_it_submissions').insert({
-      quarter_id: quarter.id, client_id: client.id, business_id: source.hmrcBusinessId,
-      type_of_business: source.typeOfBusiness, tax_year: taxYearStr, period_to: figures.periodEndDate,
+      quarter_id: quarter.id, client_id: client.id, business_id: unit.businessId,
+      type_of_business: unit.typeOfBusiness, tax_year: taxYearStr, period_to: periodEndDate,
       payload, hmrc_status: r.status, hmrc_response: r.json as object, submitted_by: ctx.userId,
     });
 
@@ -140,10 +153,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       submitted++;
       const resp = (r.json ?? {}) as Record<string, unknown>;
       const reference = (resp.transactionReference ?? resp.submissionId ?? resp.calculationId ?? null) as string | null;
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'submitted', businessId: source.hmrcBusinessId, reference });
+      results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'submitted', businessId: unit.businessId, reference });
     } else {
       errors++;
-      results.push({ name: source.name, typeOfBusiness: source.typeOfBusiness, status: 'error', reason: hmrcErrorMessage(r.json) });
+      results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'error', reason: hmrcErrorMessage(r.json) });
     }
   }
 

@@ -3,16 +3,17 @@
 /**
  * MtdItSubmitModal — file the quarter's YTD cumulative update to HMRC.
  *
- * Shows the server-computed figures per business source (preview), then submits
- * each self-employment source via the cumulative period-summary API. Property
- * sources are shown but held (field codelist pending verification). Gated on the
- * quarter being client-approved.
+ * Shows the server-computed figures per HMRC filing unit (preview) — self-
+ * employment per trade, UK and foreign property each aggregated into one unit —
+ * then files each via the cumulative period-summary API. Gated on the quarter
+ * being client-approved.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { X, Loader2, Landmark, AlertTriangle, CheckCircle2, Building2, CalendarClock, Download } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { collectFraudData, HMRC_OBLIGATION_SCENARIOS } from '@/lib/hmrc/clientFraudData';
+import { CONSOLIDATED_REPORTING_LIMIT } from '@/lib/mtdIt/categories';
 
 interface PreviewSource {
   typeOfBusiness: 'self-employment' | 'uk-property' | 'foreign-property';
@@ -137,8 +138,14 @@ export default function MtdItSubmitModal({
     } finally { setSubmitting(false); }
   }
 
-  const submittable = (preview ?? []).filter(s => s.typeOfBusiness !== 'foreign-property' && s.businessId);
+  const submittable = (preview ?? []).filter(s => s.businessId);
   const alreadyFiled = quarterStatus === 'submitted';
+
+  // Consolidated reporting is only permitted while the client's combined income
+  // across all sources stays below the threshold. Echo it here at submit time as
+  // a non-blocking nudge (it's also shown on the review toolbar).
+  const combinedIncome = (preview ?? []).reduce((sum, s) => sum + (s.income || 0), 0);
+  const consolidatedOverThreshold = useConsolidated && combinedIncome >= CONSOLIDATED_REPORTING_LIMIT;
 
   // Post-submit result state.
   const done = results !== null;
@@ -186,12 +193,18 @@ export default function MtdItSubmitModal({
             <p className="text-sm text-gray-400">No business sources found for this client.</p>
           ) : (
             <>
-              <p className="text-xs text-gray-500">Year-to-date cumulative figures, recomputed from the approved entries. Self-employment and UK property are filed now; foreign property is shown for reference (coming soon).</p>
+              <p className="text-xs text-gray-500">Year-to-date cumulative figures, recomputed from the approved entries. Foreign property is filed against HMRC as one business, split by the country set on each property.</p>
+              {consolidatedOverThreshold && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 inline-flex items-start gap-1.5">
+                  <AlertTriangle size={12} className="shrink-0 mt-px" />
+                  <span>Consolidated expenses are switched on, but combined income (£{combinedIncome.toLocaleString()}) is at or above the £{CONSOLIDATED_REPORTING_LIMIT.toLocaleString()} limit where consolidated reporting is normally permitted — file itemised expenses instead unless you’re sure.</span>
+                </div>
+              )}
               {preview.map((s, i) => {
-                const held = s.typeOfBusiness === 'foreign-property';
                 const unmapped = !s.businessId;
+                const foreign = s.typeOfBusiness === 'foreign-property';
                 return (
-                  <div key={i} className={`rounded-lg border p-3 ${held || unmapped ? 'border-gray-200 bg-gray-50' : 'border-indigo-100 bg-indigo-50/30'}`}>
+                  <div key={i} className={`rounded-lg border p-3 ${unmapped ? 'border-gray-200 bg-gray-50' : 'border-indigo-100 bg-indigo-50/30'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1.5"><Building2 size={13} className="text-slate-400" /> {s.name}</span>
                       <span className="text-[10px] uppercase tracking-wide text-slate-500">{TYPE_LABEL[s.typeOfBusiness]}</span>
@@ -201,8 +214,8 @@ export default function MtdItSubmitModal({
                       <span>Expenses <strong className="tabular-nums">{gbp(s.consolidatedExpenses)}</strong></span>
                       <span className="text-slate-400">{uk(s.periodStartDate)}–{uk(s.periodEndDate)} · {s.rowCount} rows</span>
                     </div>
-                    {held && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Foreign property filing coming soon.</p>}
-                    {unmapped && !held && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Not linked to an HMRC business — map it on the HMRC setup screen.</p>}
+                    {unmapped && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Not linked to an HMRC business — map it on the HMRC setup screen.</p>}
+                    {foreign && !unmapped && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Set a valid country on this property — it keys the HMRC filing.</p>}
                     {s.warnings.map((w, j) => <p key={j} className="text-[11px] text-amber-700 mt-1 inline-flex items-start gap-1"><AlertTriangle size={10} className="mt-0.5" /> {w}</p>)}
                   </div>
                 );

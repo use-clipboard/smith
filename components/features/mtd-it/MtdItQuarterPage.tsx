@@ -167,6 +167,13 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         setQrow(qJson.quarter as QuarterRow);
         setUserRole((listJson.user_role as 'admin' | 'staff') ?? 'staff');
 
+        // A filed or client-approved quarter opens straight into the review
+        // editor (which renders read-only with a "view only" banner) rather
+        // than the setup screen — the user is almost always re-opening it to
+        // look at the figures, not to start over.
+        const qStatus = (qJson.quarter as QuarterRow).status;
+        if (qStatus === 'submitted' || qStatus === 'approved') setPhase('done');
+
         // Look up co-owner imports for this quarter — if any linked
         // properties already have clean entries on another MTD IT client
         // for the same period, the banner offers a one-click import.

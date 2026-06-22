@@ -57,6 +57,10 @@ interface Props {
   consolidated: boolean;
   onChange: (next: EditorEntry[]) => void;
   pushHistory: () => void;
+  /** Read-only: rows can be opened/viewed and source docs inspected, but no
+   *  field is editable and the add/delete/flag affordances are hidden. Used for
+   *  filed/approved quarters. */
+  readOnly?: boolean;
   /** Open the source-document viewer for the given filename. Only rows with
    *  a source_file_name show the View source button — manual entries don't. */
   onViewSource: (fileName: string, pageNumber: number | null) => void;
@@ -120,7 +124,7 @@ function isFlagged(e: EditorEntry): boolean {
   return !!e.flagged_reason && !e.flag_dismissed;
 }
 
-export default function MtdItStreamColumn({ stream, entries, properties, trades, fxRates, consolidated, onChange, pushHistory, onViewSource }: Props) {
+export default function MtdItStreamColumn({ stream, entries, properties, trades, fxRates, consolidated, onChange, pushHistory, readOnly = false, onViewSource }: Props) {
   const M = STREAM_META[stream];
   const visible = entries.filter(e => !e._deleted);
 
@@ -193,20 +197,24 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
         <M.Icon size={15} className={M.accent} />
         <div className="text-sm font-semibold flex-1 min-w-0 truncate">{M.label}</div>
         <span className="text-[11px] opacity-70">{visible.length} {visible.length === 1 ? 'entry' : 'entries'}</span>
-        <Tooltip label="Add income entry">
-          <button
-            onClick={() => addEntry('income')}
-            aria-label="Add income entry"
-            className="w-6 h-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 inline-flex items-center justify-center transition-colors shrink-0"
-          ><Plus size={13} strokeWidth={2.5} /></button>
-        </Tooltip>
-        <Tooltip label="Add expense entry">
-          <button
-            onClick={() => addEntry('expense')}
-            aria-label="Add expense entry"
-            className="w-6 h-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 inline-flex items-center justify-center transition-colors shrink-0"
-          ><Plus size={13} strokeWidth={2.5} /></button>
-        </Tooltip>
+        {!readOnly && (
+          <>
+            <Tooltip label="Add income entry">
+              <button
+                onClick={() => addEntry('income')}
+                aria-label="Add income entry"
+                className="w-6 h-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 inline-flex items-center justify-center transition-colors shrink-0"
+              ><Plus size={13} strokeWidth={2.5} /></button>
+            </Tooltip>
+            <Tooltip label="Add expense entry">
+              <button
+                onClick={() => addEntry('expense')}
+                aria-label="Add expense entry"
+                className="w-6 h-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 inline-flex items-center justify-center transition-colors shrink-0"
+              ><Plus size={13} strokeWidth={2.5} /></button>
+            </Tooltip>
+          </>
+        )}
       </header>
 
       {/* Totals strip — flagged is shown separately and is NOT in income/expense */}
@@ -253,6 +261,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               fxRates={fxRates}
               consolidated={consolidated}
               expandedRow={expandedRow}
+              readOnly={readOnly}
               onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
               onPatch={patch}
               onToggleFlag={toggleFlag}
@@ -260,7 +269,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               onViewSource={onViewSource}
             />
           ) : incomes.length === 0 ? (
-            <EmptyTabHint type="income" onAdd={() => addEntry('income')} />
+            <EmptyTabHint type="income" onAdd={() => addEntry('income')} readOnly={readOnly} />
           ) : (
             <div className="divide-y divide-gray-100">
               {incomeByCategory.map(([category, rows]) => (
@@ -268,6 +277,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
                   key={`income|${category}`}
                   category={category}
                   type="income"
+                  readOnly={readOnly}
                   rows={rows}
                   open={openCat[`income|${category}`] ?? true}
                   onToggle={() => toggleCat(`income|${category}`)}
@@ -281,7 +291,8 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
                     fxRates={fxRates}
                     consolidated={consolidated}
                     expandedRow={expandedRow}
-                    onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
+                    readOnly={readOnly}
+              onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
                     onPatch={patch}
                     onToggleFlag={toggleFlag}
                     onDelete={deleteEntry}
@@ -303,6 +314,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               fxRates={fxRates}
               consolidated={consolidated}
               expandedRow={expandedRow}
+              readOnly={readOnly}
               onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
               onPatch={patch}
               onToggleFlag={toggleFlag}
@@ -310,7 +322,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               onViewSource={onViewSource}
             />
           ) : expenses.length === 0 ? (
-            <EmptyTabHint type="expense" onAdd={() => addEntry('expense')} />
+            <EmptyTabHint type="expense" onAdd={() => addEntry('expense')} readOnly={readOnly} />
           ) : (
             <div className="divide-y divide-gray-100">
               {expenseByCategory.map(([category, rows]) => (
@@ -318,6 +330,7 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
                   key={`expense|${category}`}
                   category={category}
                   type="expense"
+                  readOnly={readOnly}
                   rows={rows}
                   open={openCat[`expense|${category}`] ?? true}
                   onToggle={() => toggleCat(`expense|${category}`)}
@@ -331,7 +344,8 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
                     fxRates={fxRates}
                     consolidated={consolidated}
                     expandedRow={expandedRow}
-                    onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
+                    readOnly={readOnly}
+              onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
                     onPatch={patch}
                     onToggleFlag={toggleFlag}
                     onDelete={deleteEntry}
@@ -361,7 +375,8 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
                 fxRates={fxRates}
                 consolidated={consolidated}
                 expandedRow={expandedRow}
-                onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
+                readOnly={readOnly}
+              onToggleRow={(id) => setExpandedRow(expandedRow === id ? null : id)}
                 onPatch={patch}
                 onToggleFlag={toggleFlag}
                 onDelete={deleteEntry}
@@ -414,19 +429,21 @@ function TabButton({ label, count, tone, active, onClick }: {
 }
 
 // Inline empty-state hint used inside each tab when no rows live there yet.
-function EmptyTabHint({ type, onAdd }: { type: 'income' | 'expense'; onAdd: () => void }) {
+function EmptyTabHint({ type, onAdd, readOnly = false }: { type: 'income' | 'expense'; onAdd: () => void; readOnly?: boolean }) {
   const tone = type === 'income'
     ? 'text-green-700 hover:bg-green-50'
     : 'text-red-700 hover:bg-red-50';
   return (
     <div className="px-4 py-8 flex flex-col items-center gap-2">
-      <p className="text-xs text-gray-500 italic">No {type} entries yet.</p>
-      <button
-        onClick={onAdd}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-current/20 ${tone}`}
-      >
-        <Plus size={12} /> Add {type} entry
-      </button>
+      <p className="text-xs text-gray-500 italic">No {type} entries.</p>
+      {!readOnly && (
+        <button
+          onClick={onAdd}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-current/20 ${tone}`}
+        >
+          <Plus size={12} /> Add {type} entry
+        </button>
+      )}
     </div>
   );
 }
@@ -455,7 +472,7 @@ function Total({ label, value, tone }: { label: string; value: number; tone: str
 
 // ── Category sub-group (e.g. "Turnover", "Cost of Goods Bought") ───────
 function CategoryGroup({
-  category, rows, open, onToggle, onAdd, type, children,
+  category, rows, open, onToggle, onAdd, type, readOnly = false, children,
 }: {
   category: string;
   type: 'income' | 'expense';
@@ -463,6 +480,7 @@ function CategoryGroup({
   open: boolean;
   onToggle: () => void;
   onAdd: () => void;
+  readOnly?: boolean;
   children: React.ReactNode;
 }) {
   const total = rows.reduce((a, e) => a + (e.gross_amount || 0), 0);
@@ -478,14 +496,16 @@ function CategoryGroup({
         <span className="font-medium text-gray-700">{category}</span>
         <span className="text-[10px] text-gray-400">· {rows.length}</span>
         <span className="ml-auto tabular-nums text-gray-700 font-medium">{fmtMoney(total)}</span>
-        <Tooltip label={`Add ${type} entry to ${category}`}>
-          <span
-            role="button"
-            aria-label={`Add ${type} entry to ${category}`}
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            className="ml-1 p-0.5 rounded hover:bg-gray-200 text-gray-500"
-          ><Plus size={10} /></span>
-        </Tooltip>
+        {!readOnly && (
+          <Tooltip label={`Add ${type} entry to ${category}`}>
+            <span
+              role="button"
+              aria-label={`Add ${type} entry to ${category}`}
+              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              className="ml-1 p-0.5 rounded hover:bg-gray-200 text-gray-500"
+            ><Plus size={10} /></span>
+          </Tooltip>
+        )}
       </button>
       {open && <div className="divide-y divide-gray-50">{children}</div>}
     </div>
@@ -502,13 +522,14 @@ function CategoryBody(props: {
   consolidated: boolean;
   expandedRow: string | null;
   showFlagReasonBanner?: boolean;
+  readOnly?: boolean;
   onToggleRow: (id: string) => void;
   onPatch: (id: string, p: Partial<EditorEntry>) => void;
   onToggleFlag: (id: string) => void;
   onDelete: (id: string) => void;
   onViewSource: (fileName: string, pageNumber: number | null) => void;
 }) {
-  const { entries, stream, properties, trades, fxRates, consolidated, expandedRow, showFlagReasonBanner, onToggleRow, onPatch, onToggleFlag, onDelete, onViewSource } = props;
+  const { entries, stream, properties, trades, fxRates, consolidated, expandedRow, showFlagReasonBanner, readOnly = false, onToggleRow, onPatch, onToggleFlag, onDelete, onViewSource } = props;
   if (entries.length === 0) {
     return <p className="px-4 py-2 text-[11px] text-gray-400 italic">No entries.</p>;
   }
@@ -525,6 +546,7 @@ function CategoryBody(props: {
           consolidated={consolidated}
           expanded={expandedRow === e._localId}
           showFlagReasonBanner={showFlagReasonBanner}
+          readOnly={readOnly}
           onToggleExpand={() => onToggleRow(e._localId)}
           onPatch={p => onPatch(e._localId, p)}
           onToggleFlag={() => onToggleFlag(e._localId)}
@@ -546,13 +568,14 @@ function EntryRow(props: {
   consolidated: boolean;
   expanded: boolean;
   showFlagReasonBanner?: boolean;
+  readOnly?: boolean;
   onToggleExpand: () => void;
   onPatch: (patch: Partial<EditorEntry>) => void;
   onToggleFlag: () => void;
   onDelete: () => void;
   onViewSource: (fileName: string, pageNumber: number | null) => void;
 }) {
-  const { entry: e, stream, properties, trades, fxRates, consolidated, expanded, showFlagReasonBanner, onToggleExpand, onPatch, onToggleFlag, onDelete, onViewSource } = props;
+  const { entry: e, stream, properties, trades, fxRates, consolidated, expanded, showFlagReasonBanner, readOnly = false, onToggleExpand, onPatch, onToggleFlag, onDelete, onViewSource } = props;
   const flagged = isFlagged(e);
 
   const gbpEquiv = stream === 'foreign_rental' && e.currency !== 'GBP'
@@ -567,7 +590,8 @@ function EntryRow(props: {
           type="date"
           value={e.entry_date ?? ''}
           onChange={ev => onPatch({ entry_date: ev.target.value || null })}
-          className="text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white w-[112px] shrink-0"
+          disabled={readOnly}
+          className="text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white w-[112px] shrink-0 disabled:bg-gray-50 disabled:text-gray-600"
         />
 
         {/* Description (full-width) */}
@@ -576,8 +600,9 @@ function EntryRow(props: {
           value={e.description ?? ''}
           onChange={ev => onPatch({ description: ev.target.value })}
           onFocus={() => { if (!expanded) onToggleExpand(); }}
+          disabled={readOnly}
           placeholder="Description"
-          className="flex-1 min-w-0 text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white"
+          className="flex-1 min-w-0 text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white disabled:bg-gray-50 disabled:text-gray-600"
         />
 
         {/* Amount */}
@@ -586,7 +611,8 @@ function EntryRow(props: {
           step="0.01"
           value={e.gross_amount}
           onChange={ev => onPatch({ gross_amount: Number(ev.target.value) || 0 })}
-          className="w-[88px] text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white text-right tabular-nums shrink-0"
+          disabled={readOnly}
+          className="w-[88px] text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white text-right tabular-nums shrink-0 disabled:bg-gray-50 disabled:text-gray-600"
           aria-label="Gross amount"
         />
 
@@ -622,16 +648,22 @@ function EntryRow(props: {
           </Tooltip>
         )}
 
-        {/* Manual flag toggle */}
-        <Tooltip label={flagged ? 'Clear flag' : 'Flag for review'}>
-          <button
-            onClick={onToggleFlag}
-            aria-label={flagged ? 'Clear flag' : 'Flag entry for review'}
-            className={`p-1 rounded transition-colors shrink-0 ${flagged ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-600 hover:bg-amber-50'}`}
-          >
-            {flagged ? <Flag size={12} /> : <FlagOff size={12} />}
-          </button>
-        </Tooltip>
+        {/* Manual flag toggle — in read-only we still show a static flag marker
+            on flagged rows (so the Flagged tab reads clearly), just not the
+            interactive toggle. */}
+        {readOnly ? (
+          flagged && <span className="p-1 text-amber-600 shrink-0" aria-label="Flagged"><Flag size={12} /></span>
+        ) : (
+          <Tooltip label={flagged ? 'Clear flag' : 'Flag for review'}>
+            <button
+              onClick={onToggleFlag}
+              aria-label={flagged ? 'Clear flag' : 'Flag entry for review'}
+              className={`p-1 rounded transition-colors shrink-0 ${flagged ? 'text-amber-600 hover:bg-amber-50' : 'text-gray-300 hover:text-amber-600 hover:bg-amber-50'}`}
+            >
+              {flagged ? <Flag size={12} /> : <FlagOff size={12} />}
+            </button>
+          </Tooltip>
+        )}
 
         {/* Expand / collapse */}
         <Tooltip label={expanded ? 'Hide details' : 'Show details'}>
@@ -644,14 +676,16 @@ function EntryRow(props: {
           </button>
         </Tooltip>
 
-        {/* Delete */}
-        <Tooltip label="Delete row">
-          <button
-            onClick={onDelete}
-            aria-label="Delete row"
-            className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 shrink-0"
-          ><Trash2 size={12} /></button>
-        </Tooltip>
+        {/* Delete — hidden in read-only */}
+        {!readOnly && (
+          <Tooltip label="Delete row">
+            <button
+              onClick={onDelete}
+              aria-label="Delete row"
+              className="p-1 text-gray-400 hover:text-red-600 rounded hover:bg-red-50 shrink-0"
+            ><Trash2 size={12} /></button>
+          </Tooltip>
+        )}
       </div>
 
       {/* Flag reason banner — visible in the Flagged section so the user
@@ -660,14 +694,17 @@ function EntryRow(props: {
         <div className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1">
           <Flag size={11} className="shrink-0 mt-px" />
           <span className="flex-1">{e.flagged_reason}</span>
-          <button onClick={onToggleFlag} className="text-amber-700 hover:underline shrink-0">Clear flag</button>
+          {!readOnly && <button onClick={onToggleFlag} className="text-amber-700 hover:underline shrink-0">Clear flag</button>}
         </div>
       )}
 
       {/* Expanded details */}
       {expanded && (
         <div className="mt-2 pl-1 space-y-2 animate-in fade-in duration-150">
-          <div className="grid grid-cols-2 gap-2">
+          {/* A disabled fieldset makes every field below read-only in one shot
+              (filed/approved quarters). The source-doc "View" button lives
+              outside it, so it stays clickable. */}
+          <fieldset disabled={readOnly} className="grid grid-cols-2 gap-2 m-0 p-0 border-0 min-w-0">
             <FieldRow label="Type">
               <select
                 value={e.entry_type}
@@ -790,7 +827,7 @@ function EntryRow(props: {
                 </FieldRow>
               </>
             )}
-          </div>
+          </fieldset>
 
           {/* Source file + flag info — read-only meta */}
           {(e.source_file_name || gbpEquiv !== null) && (

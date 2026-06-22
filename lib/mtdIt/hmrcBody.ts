@@ -72,6 +72,61 @@ export function buildUkPropertyCumulativeBody(
   };
 }
 
+// ── Foreign property (Property Business API v6.0) ───────────────────────────
+// Unlike UK property, a person has a SINGLE foreign-property business that
+// aggregates ALL foreign properties, broken down by country. The cumulative
+// body therefore carries a `foreignProperty` ARRAY, one entry per countryCode
+// (ISO 3166-1 alpha-3). Expense field names match UK property (PropertyExpenseField).
+// ISOLATED like the SE/UK builders — if HMRC rejects the shape, adjust here only.
+
+export interface ForeignPropertyCountryEntry {
+  countryCode: string;
+  income: number;
+  expensesByField: Record<string, number>;
+  consolidatedExpenses: number;
+}
+
+export interface ForeignPropertyCumulativeBody {
+  fromDate: string;
+  toDate: string;
+  foreignProperty: Array<{
+    countryCode: string;
+    income: { rentIncome: { rentAmount: number } };
+    expenses: Record<string, number>;
+  }>;
+}
+
+/**
+ * Build the Foreign Property Cumulative Period Summary body. Takes one entry per
+ * country (already aggregated) plus the shared YTD period dates.
+ * @param useConsolidated single consolidatedExpenses total vs itemised fields.
+ */
+export function buildForeignPropertyCumulativeBody(
+  periodStartDate: string,
+  periodEndDate: string,
+  countries: ForeignPropertyCountryEntry[],
+  useConsolidated: boolean,
+): ForeignPropertyCumulativeBody {
+  return {
+    fromDate: periodStartDate,
+    toDate: periodEndDate,
+    foreignProperty: countries.map(c => {
+      const expenses: Record<string, number> = useConsolidated
+        ? { consolidatedExpenses: round2(c.consolidatedExpenses) }
+        : Object.fromEntries(
+            Object.entries(c.expensesByField)
+              .filter(([, v]) => typeof v === 'number' && v !== 0)
+              .map(([k, v]) => [k, round2(v as number)]),
+          );
+      return {
+        countryCode: c.countryCode,
+        income: { rentIncome: { rentAmount: round2(c.income) } },
+        expenses,
+      };
+    }),
+  };
+}
+
 /** HMRC path for a cumulative period summary PUT, by business type. */
 export function cumulativePath(nino: string, businessId: string, typeOfBusiness: CumulativeResult['typeOfBusiness'], hmrcTaxYear: string): string {
   if (typeOfBusiness === 'self-employment') {

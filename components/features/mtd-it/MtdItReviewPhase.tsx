@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
   Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward, Landmark,
+  Lock, PenLine,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
@@ -161,11 +162,17 @@ export default function MtdItReviewPhase({
   // is the whole point of the approval email in the normal flow.
   const [attachPdf, setAttachPdf] = useState(true);
 
-  // Firm-level reminder settings (reminder_enabled + reminder_days). Drives
-  // the "Reminder scheduled for …" hint on the send screen. Fetched once.
-  // NOTE: as of this writing the cron worker that actually sends the
-  // reminder email isn't wired up — this UI only surfaces what the firm has
-  // *configured* so the preparer knows what's coming.
+  // A filed (submitted) or client-approved quarter opens READ-ONLY so it can be
+  // reviewed without accidentally editing figures that have gone to HMRC / been
+  // signed off. "Amend" flips this on to make changes (which will require
+  // re-submission / re-approval). Resets whenever the quarter status changes.
+  const [amending, setAmending] = useState(false);
+  useEffect(() => { setAmending(false); }, [quarterStatus]);
+
+  // Firm-level reminder settings (reminder_enabled + reminder_days). Drives the
+  // "Reminder scheduled for …" hint on the send screen. The cron worker that
+  // sends the reminder emails is wired (app/api/cron/mtd-it-reminders, daily);
+  // this UI just surfaces what the firm has configured. Fetched once.
   const [reminderSettings, setReminderSettings] = useState<{ enabled: boolean; days: number } | null>(null);
   useEffect(() => {
     if (view !== 'send') return;
@@ -566,8 +573,60 @@ export default function MtdItReviewPhase({
     activeStreams.length === 2 ? 'lg:grid-cols-2' :
     /* 1 */                       'lg:grid-cols-1';
 
+  // A filed or approved quarter is read-only until the user explicitly amends.
+  const isFiled    = quarterStatus === 'submitted';
+  const isApproved = quarterStatus === 'approved';
+  const lockable   = isFiled || isApproved;
+  const locked     = lockable && !amending;
+
   return (
     <div className="space-y-4">
+      {/* Read-only / amend banner — a filed or approved quarter opens locked so
+          its figures can't be changed by accident. The user must explicitly
+          choose to amend. Only shown on the edit view (send/save are already
+          read-only previews). */}
+      {view === 'edit' && lockable && (
+        locked ? (
+          <div className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 ${isFiled ? 'border-emerald-200 bg-emerald-50' : 'border-indigo-200 bg-indigo-50'}`}>
+            <Lock size={16} className={isFiled ? 'text-emerald-600' : 'text-indigo-600'} />
+            <div className="text-sm">
+              <p className={`font-semibold ${isFiled ? 'text-emerald-800' : 'text-indigo-800'}`}>
+                {isFiled ? 'Filed with HMRC — view only' : 'Approved by the client — view only'}
+              </p>
+              <p className={isFiled ? 'text-emerald-700' : 'text-indigo-700'}>
+                {isFiled
+                  ? 'These figures have been submitted to HMRC. Amend to change them — you’ll need to re-submit the cumulative update.'
+                  : 'The client has approved these figures. Amend to change them — you’ll need to send the quarter for approval again.'}
+              </p>
+            </div>
+            <Tooltip label={isFiled ? 'Unlock the entries to make changes. Saving and re-submitting will amend the figures already filed with HMRC.' : 'Unlock the entries to make changes. The quarter will need to be sent for approval again.'}>
+              <button
+                onClick={() => setAmending(true)}
+                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+              >
+                <PenLine size={14} /> Amend figures
+              </button>
+            </Tooltip>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <PenLine size={16} className="text-amber-600" />
+            <p className="text-sm text-amber-800">
+              <span className="font-semibold">Amending a {isFiled ? 'filed' : 'approved'} quarter.</span>{' '}
+              {isFiled
+                ? 'Re-submit to HMRC after saving to update the cumulative figures.'
+                : 'This quarter will need to be sent to the client for approval again.'}
+            </p>
+            <button
+              onClick={() => setAmending(false)}
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-sm font-medium text-amber-800 hover:bg-amber-50 shadow-sm"
+            >
+              <Lock size={14} /> Stop amending
+            </button>
+          </div>
+        )
+      )}
+
       {/* Toolbar — only rendered on the edit view. Send and save views are
           read-only previews of what's already been entered, so the editor
           controls (consolidated toggle, P&L view, undo/redo, save-to-records)
@@ -586,7 +645,8 @@ export default function MtdItReviewPhase({
           <button
             onClick={toggleConsolidated}
             aria-pressed={consolidated}
-            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors shadow-sm ${
+            disabled={locked}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
               consolidated
                 ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
                 : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
@@ -739,6 +799,10 @@ export default function MtdItReviewPhase({
             fxRates={fxRates}
             consolidated={consolidated}
             pushHistory={pushHistory}
+            // Filed/approved quarters render read-only: rows can be opened and
+            // viewed (incl. the Expenses / Flagged tabs and source documents)
+            // but no field is editable until the user hits "Amend figures".
+            readOnly={locked}
             onChange={(nextForStream) => {
               // Splice this stream's slice back into the full array, keeping
               // the relative order of other streams stable.
@@ -780,6 +844,17 @@ export default function MtdItReviewPhase({
           </div>
 
           {view === 'edit' && (
+            locked ? (
+              // Read-only: the only forward action is to unlock for amendment.
+              <Tooltip label={isFiled ? 'Unlock the entries to amend. Saving and re-submitting will amend the figures filed with HMRC.' : 'Unlock the entries to amend. The quarter will need to be sent for approval again.'}>
+                <button
+                  onClick={() => setAmending(true)}
+                  className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 rounded-lg"
+                >
+                  <PenLine size={14} /> Amend figures
+                </button>
+              </Tooltip>
+            ) : (
             <>
               <button
                 onClick={() => save('draft')}
@@ -800,6 +875,7 @@ export default function MtdItReviewPhase({
                 </button>
               </Tooltip>
             </>
+            )
           )}
 
           {view === 'send' && (
@@ -998,7 +1074,7 @@ function ApprovalStatusBanner({
     edited_since_approved_at: string | null;
     sender: { full_name: string | null; email: string } | null;
   };
-  status: 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  status: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
 }) {
   const sentBy   = info.sender?.full_name?.trim() || info.sender?.email || 'a team member';
   const sentDate = formatDateTimeUk(info.sent_at);
