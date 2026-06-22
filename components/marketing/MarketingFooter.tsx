@@ -24,7 +24,7 @@ const COLUMNS: { heading: string; links: { label: string; href: string }[] }[] =
     links: [
       { label: 'Our story', href: '#story' },
       { label: 'Made by accountants', href: '#story' },
-      { label: 'Contact', href: 'mailto:hello@smith.app' },
+      { label: 'Contact', href: 'mailto:hello@smithforaccountants.co.uk' },
     ],
   },
   {
@@ -81,8 +81,8 @@ export default function MarketingFooter() {
             © {new Date().getFullYear()} SMITH. All rights reserved.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-400">
-            <Link href="#" className="hover:text-slate-600">Privacy Policy</Link>
-            <Link href="#" className="hover:text-slate-600">Terms of Service</Link>
+            <Link href="/privacy" className="hover:text-slate-600">Privacy Policy</Link>
+            <Link href="/terms" className="hover:text-slate-600">Terms of Service</Link>
           </div>
         </div>
       </div>

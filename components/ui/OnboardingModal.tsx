@@ -70,16 +70,20 @@ export default function OnboardingModal({ onDismiss }: Props) {
           />
         </div>
 
-        {/* Skip button */}
-        <Tooltip label="Skip setup guide" className="absolute top-4 right-4" side="left">
-          <button
-            onClick={onDismiss}
-            aria-label="Skip setup guide"
-            className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
-          >
-            <X size={16} />
-          </button>
-        </Tooltip>
+        {/* Skip button — the absolute positioning goes on this wrapper, not the
+            Tooltip (the Tooltip wrapper is hardcoded `relative`, which would win
+            over an `absolute` passed via className and drop the button into flow). */}
+        <div className="absolute top-4 right-4 z-10">
+          <Tooltip label="Skip setup guide" side="left">
+            <button
+              onClick={onDismiss}
+              aria-label="Skip setup guide"
+              className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </Tooltip>
+        </div>
 
         <div className="px-8 pt-10 pb-8">
           {/* Step indicator */}

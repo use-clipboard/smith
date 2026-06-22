@@ -106,16 +106,18 @@ export default function ApiKeySettings() {
               className="input-base pr-10 font-mono text-sm"
               onKeyDown={e => { if (e.key === 'Enter') void handleSave(); }}
             />
-            <Tooltip label={showKey ? 'Hide key' : 'Show key'} side="left" className="absolute right-2.5 top-1/2 -translate-y-1/2">
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                aria-label={showKey ? 'Hide key' : 'Show key'}
-                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </Tooltip>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+              <Tooltip label={showKey ? 'Hide key' : 'Show key'} side="left">
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  aria-label={showKey ? 'Hide key' : 'Show key'}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                >
+                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </Tooltip>
+            </div>
           </div>
           <button
             onClick={handleSave}
