@@ -213,7 +213,13 @@ export default function TabProvider({ children }: { children: ReactNode }) {
       if (existing.currentRoute !== deep) {
         setTabs(prev => prev.map(t => t.id === existing.id ? { ...t, currentRoute: deep } : t));
       }
-      if (activeTabId !== existing.id) setActiveTabId(existing.id);
+      // Only switch the active tab to match the URL on a GENUINE navigation.
+      // When this effect re-runs merely because the tab LIST changed (e.g. a
+      // tab was opened programmatically from inside another tool — "View
+      // client" in Email Triage), the URL is still the old tool's route, so
+      // matching it here would snap activeTabId back to that tool and silently
+      // undo the open. Same guard as the Dashboard branch above.
+      if (pathnameChanged && activeTabId !== existing.id) setActiveTabId(existing.id);
       reconciledRef.current = true;
       return;
     }
