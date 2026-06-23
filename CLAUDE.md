@@ -118,7 +118,7 @@ All schemas also include a `flaggedEntries` array with fields: `fileName`, `reas
 
 **Inputs:** Bank statement (PDF, CSV, or Excel)
 
-**Output schema per transaction:** `fileName`, `detectedDate`, `entityName`, `detailedCategory`, `totalNetAmount` (optional), `totalVatAmount` (optional), `totalGrossAmount`
+**Output schema per transaction** (`BankCsvTransaction` in `types/index.ts`): `Date` (YYYY-MM-DD), `Description`, `Money In` (number | null, optional), `Money Out` (number | null, optional), `Balance` (number | null, optional). Money in/out are separate columns — a transaction sets one or the other, never both. Saved outputs store `{ transactions: BankCsvTransaction[], clientCode }` in `outputs.result_data`.
 
 **Features:**
 - User can review and edit extracted rows before downloading

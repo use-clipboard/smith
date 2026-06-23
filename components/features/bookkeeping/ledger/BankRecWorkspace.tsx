@@ -30,10 +30,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Loader2, AlertCircle, ChevronLeft, Check, Ban, Upload, Pencil,
-  FileScan, Cable, X, MoreVertical, NotebookPen, Sparkles,
+  FileScan, FileSpreadsheet, Cable, X, MoreVertical, NotebookPen, Sparkles,
+  type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import ContributeCsvModal from './ContributeCsvModal';
+import BankPdfImportModal from './BankPdfImportModal';
+import BankCsvImportModal from './BankCsvImportModal';
 import ManualBankRecSheet from './ManualBankRecSheet';
 import GapHelperModal from './GapHelperModal';
 import { useBookNavigation, TxnRefLink } from '../book/BookNavigationContext';
@@ -162,6 +165,13 @@ export default function BankRecWorkspace({
    *  seed rows for review-and-allocate. 'reference' POSTs straight to
    *  /contribute-lines as legacy bookkeeping_bank_lines rows. */
   const [csvMode, setCsvMode] = useState<'transactions' | 'reference'>('transactions');
+  /** Toggle for the PDF / image statement import modal. Extraction happens
+   *  server-side; the parsed lines feed the same Manual-sheet seed path as the
+   *  CSV "transactions" flow. */
+  const [pdfOpen, setPdfOpen] = useState(false);
+  /** Toggle for the "import from a saved Bank to CSV analysis" picker. Reuses
+   *  outputs already extracted by the Bank to CSV tool — no AI, no re-upload. */
+  const [csvToolOpen, setCsvToolOpen] = useState(false);
   /** Toggle for the multi-row Manual entry sheet. */
   const [postOpen, setPostOpen] = useState(false);
   /** Seed rows fed into the Manual sheet from a parsed CSV — set when the
@@ -173,6 +183,19 @@ export default function BankRecWorkspace({
     payee: string;
     totalText: string;
   }> | null>(null);
+  /** Shared by the CSV (transactions mode) and PDF import flows: turn parsed
+   *  statement lines into Manual-sheet seed rows and open the sheet for
+   *  review + allocate + post. Money-in sign → REC, money-out → PAY. */
+  const seedManualSheetFromLines = useCallback((lines: Array<{ date: string; description: string; amount: number }>) => {
+    const seeds = lines.map(l => ({
+      type: (l.amount < 0 ? 'PAY' : 'REC') as 'PAY' | 'REC',
+      dateUk: (() => { const [y, m, d] = l.date.split('-'); return `${d}/${m}/${y}`; })(),
+      payee: l.description,
+      totalText: Math.abs(l.amount).toFixed(2),
+    }));
+    setCsvSeedRows(seeds);
+    setPostOpen(true);
+  }, []);
   /** Toggle for the gap-helper diagnostic modal — opens when the user
    *  clicks the non-zero gap pill in the balance strip. */
   const [gapHelperOpen, setGapHelperOpen] = useState(false);
@@ -180,6 +203,9 @@ export default function BankRecWorkspace({
    *  hook (late-VAT-entry handling on edits). */
   const [vatRegistered, setVatRegistered] = useState<boolean>(false);
   const [vatLockDate,   setVatLockDate]   = useState<string | null>(null);
+  /** The book's client — used to scope the Bank-to-CSV import picker to this
+   *  client's saved analyses by default. */
+  const [bookClientId,  setBookClientId]  = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +215,7 @@ export default function BankRecWorkspace({
         if (cancelled) return;
         setVatRegistered(!!d?.book?.vat_registered);
         setVatLockDate(d?.book?.vat_lock_date ?? null);
+        setBookClientId(d?.book?.client_id ?? null);
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -809,6 +836,8 @@ export default function BankRecWorkspace({
           onSelectLine={(id) => setSelectedLineId(prev => prev === id ? null : id)}
           onImportCsv={() => { setCsvMode('transactions'); setCsvOpen(true); }}
           onImportCsvReference={() => { setCsvMode('reference'); setCsvOpen(true); }}
+          onImportPdf={() => setPdfOpen(true)}
+          onImportFromCsvTool={() => setCsvToolOpen(true)}
           onPostMissing={() => setPostOpen(true)}
         />
       </div>
@@ -881,21 +910,30 @@ export default function BankRecWorkspace({
             await load();
             onChanged();
           }}
-          onParsedRows={(lines) => {
-            // transactions-mode success — seed the Manual sheet with the
-            // parsed CSV lines and open it. Money-in sign → REC, out → PAY.
-            const seeds = lines.map(l => ({
-              type: (l.amount < 0 ? 'PAY' : 'REC') as 'PAY' | 'REC',
-              dateUk: (() => {
-                const [y, m, d] = l.date.split('-');
-                return `${d}/${m}/${y}`;
-              })(),
-              payee:     l.description,
-              totalText: Math.abs(l.amount).toFixed(2),
-            }));
-            setCsvSeedRows(seeds);
-            setPostOpen(true);
-          }}
+          onParsedRows={seedManualSheetFromLines}
+        />
+      )}
+
+      {/* ── PDF / image statement import — server-side AI extraction, then the
+          same Manual-sheet seed path as the CSV transactions flow. ─────────── */}
+      {pdfOpen && (
+        <BankPdfImportModal
+          bookId={bookId}
+          accountLabel={accountName}
+          onClose={() => setPdfOpen(false)}
+          onParsedRows={seedManualSheetFromLines}
+        />
+      )}
+
+      {/* ── Import from a saved Bank to CSV analysis — no AI, reuses the
+          transactions the Bank to CSV tool already extracted. ────────────── */}
+      {csvToolOpen && (
+        <BankCsvImportModal
+          bookId={bookId}
+          clientId={bookClientId}
+          accountLabel={accountName}
+          onClose={() => setCsvToolOpen(false)}
+          onParsedRows={seedManualSheetFromLines}
         />
       )}
 
@@ -1272,7 +1310,7 @@ function SplitGroup({
 
 // ── Right column ──────────────────────────────────────────────────────────
 function StatementColumn({
-  ws, editable, selectedLineId, onSelectLine, onImportCsv, onImportCsvReference, onPostMissing,
+  ws, editable, selectedLineId, onSelectLine, onImportCsv, onImportCsvReference, onImportPdf, onImportFromCsvTool, onPostMissing,
 }: {
   ws: Workspace;
   editable: boolean;
@@ -1285,6 +1323,10 @@ function StatementColumn({
    *  reference statement lines (no ledger transactions). Surfaced as a
    *  small inline link below the chips. */
   onImportCsvReference: () => void;
+  /** Opens the PDF / image statement import modal (AI extraction). */
+  onImportPdf: () => void;
+  /** Opens the "import from a saved Bank to CSV analysis" picker. */
+  onImportFromCsvTool: () => void;
   onPostMissing: () => void;
 }) {
   return (
@@ -1302,10 +1344,11 @@ function StatementColumn({
           <div className="px-4 py-6 text-xs text-slate-500 text-center">
             <p>Add statement lines, or post a missing entry inline:</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <MethodChip icon={Upload}   label="Import CSV"  onClick={editable ? onImportCsv    : undefined} />
-              <MethodChip icon={Pencil}   label="Manual"      onClick={editable ? onPostMissing : undefined} />
-              <MethodChip icon={FileScan} label="PDF"         disabled comingSoon />
-              <MethodChip icon={Cable}    label="Link feed"   disabled comingSoon />
+              <MethodChip icon={Upload}          label="Import CSV"   onClick={editable ? onImportCsv         : undefined} />
+              <MethodChip icon={Pencil}          label="Manual"       onClick={editable ? onPostMissing       : undefined} />
+              <MethodChip icon={FileScan}        label="PDF"          onClick={editable ? onImportPdf         : undefined} />
+              <MethodChip icon={FileSpreadsheet} label="Bank to CSV"  onClick={editable ? onImportFromCsvTool : undefined} />
+              <MethodChip icon={Cable}           label="Link feed"    disabled comingSoon />
             </div>
             {/* Legacy "statement lines only" flow tucked under the chips
                 as an inline link — used only when the user already has
@@ -1363,9 +1406,10 @@ function StatementColumn({
               </tbody>
             </table>
             <div className="px-3 py-2 border-t border-slate-100 flex items-center gap-2 bg-slate-50/40 flex-wrap">
-              <MethodChip icon={Upload}   label="+ Import more"  onClick={editable ? onImportCsv    : undefined} />
-              <MethodChip icon={Pencil}   label="+ Manual"        onClick={editable ? onPostMissing : undefined} />
-              <MethodChip icon={FileScan} label="+ PDF"           disabled comingSoon />
+              <MethodChip icon={Upload}          label="+ Import more"  onClick={editable ? onImportCsv         : undefined} />
+              <MethodChip icon={Pencil}          label="+ Manual"        onClick={editable ? onPostMissing       : undefined} />
+              <MethodChip icon={FileScan}        label="+ PDF"           onClick={editable ? onImportPdf         : undefined} />
+              <MethodChip icon={FileSpreadsheet} label="+ Bank to CSV"   onClick={editable ? onImportFromCsvTool : undefined} />
               {editable && (
                 <button
                   type="button"
@@ -1386,7 +1430,7 @@ function StatementColumn({
 function MethodChip({
   icon: Icon, label, onClick, disabled, comingSoon,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   label: string;
   onClick?: () => void;
   disabled?: boolean;
