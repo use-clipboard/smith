@@ -6,9 +6,12 @@ import type { Asset, DepreciationCharge, DepreciationMethod, LedgerDepreciationS
 import {
   DISPOSAL_PL_ACCOUNT,
   chargeExpenseAccountName,
+  chargeExpenseRole,
   depreciationNoun,
   faAccountNames,
   isFixedAssetLedger,
+  resolveFaAccount,
+  resolveBookAccount,
 } from '@/lib/bookkeeping/fixedAssets';
 import { computePeriodCharge } from '@/lib/bookkeeping/depreciation';
 
@@ -135,18 +138,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const nbv = round2(asset.cost - accumulatedAtDisposal);
   const profit = round2(body.proceeds - nbv); // +gain / −loss
 
-  // Resolve accounts.
+  // Resolve accounts — by system_role first, name as fallback (see fixedAssets).
   const names = faAccountNames(asset.ledger);
   const { data: accts, error: acctErr } = await supabase
     .from('bookkeeping_accounts')
-    .select('id, name, ledger, account_type')
+    .select('id, name, ledger, account_type, system_role')
     .eq('book_id', params.id);
   if (acctErr) return NextResponse.json({ error: acctErr.message }, { status: 500 });
-  const find = (ledger: string, name: string) => (accts ?? []).find(a => a.ledger === ledger && a.name === name);
+  const all = accts ?? [];
 
-  const costDisposalsAcct = find(asset.ledger, names.costDisposals);
-  const depnDisposalsAcct = find(asset.ledger, names.depnDisposals);
-  const plAcct = (accts ?? []).find(a => a.name === DISPOSAL_PL_ACCOUNT);
+  const costDisposalsAcct = resolveFaAccount(all, asset.ledger, 'costDisposals');
+  const depnDisposalsAcct = resolveFaAccount(all, asset.ledger, 'depnDisposals');
+  const plAcct = resolveBookAccount(all, 'disposal_pl', DISPOSAL_PL_ACCOUNT);
   if (!costDisposalsAcct) return NextResponse.json({ error: `Missing "${names.costDisposals}" account in ${asset.ledger}.` }, { status: 400 });
   if (!depnDisposalsAcct) return NextResponse.json({ error: `Missing "${names.depnDisposals}" account in ${asset.ledger}.` }, { status: 400 });
   if (!plAcct) return NextResponse.json({ error: `Missing P&L "${DISPOSAL_PL_ACCOUNT}" account.` }, { status: 400 });
@@ -154,8 +157,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // ── Journal 1: depreciation catch-up (only if there's a charge) ───────────
   if (catchUp > 0) {
     const expenseName = chargeExpenseAccountName(asset.ledger);
-    const depnChargeAcct = find(asset.ledger, names.depnCharge);
-    const expenseAcct = (accts ?? []).find(a => a.name === expenseName && a.account_type === 'expense');
+    const depnChargeAcct = resolveFaAccount(all, asset.ledger, 'depnCharge');
+    const expenseAcct = resolveBookAccount(all, chargeExpenseRole(asset.ledger), expenseName, 'expense');
     if (!depnChargeAcct) return NextResponse.json({ error: `Missing "${names.depnCharge}" account in ${asset.ledger}.` }, { status: 400 });
     if (!expenseAcct) return NextResponse.json({ error: `Missing P&L "${expenseName}" account.` }, { status: 400 });
 

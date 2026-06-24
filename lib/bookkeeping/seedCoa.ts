@@ -6,7 +6,7 @@
 // don't duplicate accounts.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getCoaSeed } from '@/config/bookkeeping/coa-defaults';
+import { getCoaSeed, assignSeedCodes } from '@/config/bookkeeping/coa-defaults';
 import type { BookTemplateType } from '@/types/bookkeeping';
 
 interface SeedOptions {
@@ -36,13 +36,20 @@ export async function seedBookCoa(
   const seed = getCoaSeed(templateType);
   if (!seed) return { inserted: 0, skipped: 0, vat_skipped: 0 };
 
+  // Codes are assigned over the FULL seed (vat_only included) so an account's
+  // code is the same whether or not the book is VAT-registered.
+  const codes = assignSeedCodes(seed);
+
   let vatSkipped = 0;
   const rows: Array<{
     book_id: string;
     ledger: string;
+    ledger_key: string;
     name: string;
     account_type: string;
     sort_order: number;
+    system_role: string | null;
+    code: string | null;
   }> = [];
 
   let sortOrder = 0;
@@ -55,9 +62,12 @@ export async function seedBookCoa(
       rows.push({
         book_id: bookId,
         ledger: ledger.name,
+        ledger_key: ledger.ledger_key,
         name: account.name,
         account_type: ledger.account_type,
         sort_order: sortOrder++,
+        system_role: account.system_role ?? null,
+        code: codes.get(`${ledger.name}::${account.name}`) ?? null,
       });
     }
   }

@@ -15,7 +15,7 @@ import type {
   DepreciationCharge,
   LedgerDepreciationSetting,
 } from '@/types/bookkeeping';
-import { faAccountNames, isFixedAssetLedger } from './fixedAssets';
+import { faAccountNames, isFixedAssetLedger, resolveFaAccount } from './fixedAssets';
 import { buildScheduleRow } from './depreciation';
 
 type DB = SupabaseClient;
@@ -32,14 +32,14 @@ export async function syncAdditionAssets(
 ): Promise<void> {
   if (!isFixedAssetLedger(ledger)) return;
 
-  const names = faAccountNames(ledger);
-  const { data: costAcct } = await supabase
+  // Resolve the ledger's "Cost - additions" account by system_role first, name
+  // as fallback — so a rename doesn't orphan the asset register.
+  const { data: ledgerAccts } = await supabase
     .from('bookkeeping_accounts')
-    .select('id')
+    .select('id, name, ledger, system_role')
     .eq('book_id', bookId)
-    .eq('ledger', ledger)
-    .eq('name', names.costAdditions)
-    .maybeSingle();
+    .eq('ledger', ledger);
+  const costAcct = resolveFaAccount(ledgerAccts ?? [], ledger, 'costAdditions');
   if (!costAcct) return;
 
   // Every split touching the Cost-additions account, with its transaction.

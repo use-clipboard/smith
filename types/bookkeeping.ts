@@ -191,6 +191,8 @@ export interface BookAccountRef {
   name: string;
   ledger: string | null;
   account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  /** User-facing ranged-by-type account number (display only). */
+  code?: string | null;
 }
 
 export interface TransactionSplit {

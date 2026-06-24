@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
+import { rangeBaseFor, nextCodeInRange, type CodeAccountType } from '@/lib/bookkeeping/accountCodes';
 
 // ── GET /api/bookkeeping/books/[id]/accounts ─────────────────────────────────
 // Returns the book's COA, optionally filtered. Used by the account picker.
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   let q = supabase
     .from('bookkeeping_accounts')
-    .select('id, name, ledger, account_type, sort_order, archived, inactive, notes')
+    .select('id, name, ledger, ledger_key, account_type, sort_order, archived, inactive, notes, code, system_role')
     .eq('book_id', params.id)
     .order('ledger', { ascending: true, nullsFirst: false })
     .order('sort_order', { ascending: true })
@@ -88,19 +89,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // Pick a sort_order that pushes the new account to the bottom of its ledger
-  // unless the caller provided one.
+  // unless the caller provided one. While we're here, grab the ledger_key from
+  // an existing sibling account (ledger_key is a per-ledger constant) so the
+  // new account joins the same ledger identity.
   let sortOrder = body.sort_order;
-  if (sortOrder === undefined) {
-    const { data: maxRow } = await supabase
+  let ledgerKey: string | null = null;
+  {
+    const { data: siblings } = await supabase
       .from('bookkeeping_accounts')
-      .select('sort_order')
+      .select('sort_order, ledger_key')
       .eq('book_id', params.id)
       .eq('ledger', body.ledger)
-      .order('sort_order', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    sortOrder = ((maxRow?.sort_order as number | null) ?? 0) + 1;
+      .order('sort_order', { ascending: false });
+    if (sortOrder === undefined) {
+      sortOrder = ((siblings?.[0]?.sort_order as number | null) ?? 0) + 1;
+    }
+    ledgerKey = (siblings ?? []).map(s => s.ledger_key as string | null).find(Boolean) ?? null;
   }
+
+  // Assign the next free code in this account type's band (1xxx asset … 6xxx
+  // expense). Cosmetic only — never used for resolution.
+  const { data: codeRows } = await supabase
+    .from('bookkeeping_accounts')
+    .select('code')
+    .eq('book_id', params.id);
+  const base = rangeBaseFor(body.account_type as CodeAccountType, ledgerKey, body.ledger);
+  const code = nextCodeInRange((codeRows ?? []).map(r => r.code as string | null), base);
 
   const { data, error } = await supabase
     .from('bookkeeping_accounts')
@@ -108,10 +122,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       book_id: params.id,
       name: body.name.trim(),
       ledger: body.ledger,
+      ledger_key: ledgerKey,
       account_type: body.account_type,
       sort_order: sortOrder,
+      code,
     })
-    .select('id, name, ledger, account_type, sort_order, archived')
+    .select('id, name, ledger, ledger_key, account_type, sort_order, archived, code')
     .single();
 
   if (error) {

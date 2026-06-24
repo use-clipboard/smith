@@ -93,16 +93,19 @@ export async function recordVatFiling(
   let filingJournalId: string | null = null;
   let journalWarning: string | null = null;
   if (opts.postJournal !== false) try {
+    // Resolve VAT control accounts by system_role first, falling back to name
+    // within the Creditors ledger — a rename can't break VAT filing.
     const { data: vatAccts } = await supabase
       .from('bookkeeping_accounts')
-      .select('id, name')
+      .select('id, name, ledger, system_role')
       .eq('book_id', bookId)
-      .eq('ledger', 'Creditors')
-      .in('name', ['VAT - Input', 'VAT - Output', 'Net VAT due']);
-    const accts = new Map((vatAccts ?? []).map(a => [a.name as string, a.id as string]));
-    const outAcct = accts.get('VAT - Output');
-    const inAcct = accts.get('VAT - Input');
-    const netAcct = accts.get('Net VAT due');
+      .eq('ledger', 'Creditors');
+    const resolveVat = (role: string, name: string) =>
+      (vatAccts ?? []).find(a => a.system_role === role)?.id
+      ?? (vatAccts ?? []).find(a => a.name === name)?.id;
+    const outAcct = resolveVat('vat_output', 'VAT - Output');
+    const inAcct = resolveVat('vat_input', 'VAT - Input');
+    const netAcct = resolveVat('net_vat_due', 'Net VAT due');
     if (outAcct && inAcct && netAcct) {
       const splits: Array<{ account_id: string; debit: number; credit: number; entry_details: string }> = [];
       const isFrs = figures.scheme === 'flat_rate';
@@ -170,7 +173,11 @@ export async function recordVatFiling(
         }
       }
     } else {
-      const missing = ['VAT - Input', 'VAT - Output', 'Net VAT due'].filter(n => !accts.has(n));
+      const missing = [
+        !inAcct && 'VAT - Input',
+        !outAcct && 'VAT - Output',
+        !netAcct && 'Net VAT due',
+      ].filter(Boolean);
       journalWarning = `Closing journal not posted — missing accounts in Creditors ledger: ${missing.join(', ')}.`;
     }
   } catch (e) {

@@ -17,6 +17,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } fr
 import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Plus, Search, X } from 'lucide-react';
 import type { BookAccountRef } from '@/types/bookkeeping';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 
 // Fallback ledger → account_type mapping used when the picker needs to
 // create a new account in an empty ledger (e.g. the first customer of a
@@ -402,6 +403,7 @@ export default function AccountPicker({
                               i === highlight ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-50'
                             }`}
                           >
+                            <AccountCodeTag code={a.code} className="mr-2" />
                             {a.name}
                           </li>
                         );

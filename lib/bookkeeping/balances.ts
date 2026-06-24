@@ -17,6 +17,8 @@ export interface BalanceAccount {
   name: string;
   ledger: string | null;
   account_type: string;
+  /** User-facing ranged code (display only). */
+  code: string | null;
   debit_total: number;
   credit_total: number;
   /** debit_total − credit_total. Natural-sign for asset/expense; negative for
@@ -63,7 +65,7 @@ export async function computeBalances(
     debit: number;
     credit: number;
     account_id: string;
-    account: { id: string; name: string; ledger: string | null; account_type: string; archived: boolean } | null;
+    account: { id: string; name: string; ledger: string | null; account_type: string; code: string | null; archived: boolean } | null;
     transaction: { date: string; type: string } | null;
   };
 
@@ -74,7 +76,7 @@ export async function computeBalances(
       .from('bookkeeping_transaction_splits')
       .select(`
         debit, credit, account_id,
-        account:bookkeeping_accounts!inner(id, name, ledger, account_type, archived, book_id),
+        account:bookkeeping_accounts!inner(id, name, ledger, account_type, code, archived, book_id),
         transaction:bookkeeping_transactions!inner(date, type, book_id)
       `)
       .eq('account.book_id', bookId)
@@ -94,7 +96,7 @@ export async function computeBalances(
   }
 
   type Agg = {
-    id: string; name: string; ledger: string | null; account_type: string;
+    id: string; name: string; ledger: string | null; account_type: string; code: string | null;
     debit_total: number; credit_total: number;
   };
   const byAccount = new Map<string, Agg>();
@@ -102,7 +104,7 @@ export async function computeBalances(
     if (!r.account) continue;
     const a = byAccount.get(r.account.id) ?? {
       id: r.account.id, name: r.account.name, ledger: r.account.ledger,
-      account_type: r.account.account_type, debit_total: 0, credit_total: 0,
+      account_type: r.account.account_type, code: r.account.code ?? null, debit_total: 0, credit_total: 0,
     };
     a.debit_total  = r2(a.debit_total  + Number(r.debit));
     a.credit_total = r2(a.credit_total + Number(r.credit));
@@ -112,12 +114,12 @@ export async function computeBalances(
   if (includeZero) {
     const { data: allAccounts } = await supabase
       .from('bookkeeping_accounts')
-      .select('id, name, ledger, account_type')
+      .select('id, name, ledger, account_type, code')
       .eq('book_id', bookId)
       .eq('archived', false);
-    for (const a of (allAccounts ?? []) as Array<{ id: string; name: string; ledger: string | null; account_type: string }>) {
+    for (const a of (allAccounts ?? []) as Array<{ id: string; name: string; ledger: string | null; account_type: string; code: string | null }>) {
       if (!byAccount.has(a.id)) {
-        byAccount.set(a.id, { id: a.id, name: a.name, ledger: a.ledger, account_type: a.account_type, debit_total: 0, credit_total: 0 });
+        byAccount.set(a.id, { id: a.id, name: a.name, ledger: a.ledger, account_type: a.account_type, code: a.code ?? null, debit_total: 0, credit_total: 0 });
       }
     }
   }

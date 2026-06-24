@@ -16,12 +16,14 @@ import { Loader2, Scale, Printer, Download } from 'lucide-react';
 import PeriodEmptyState from './PeriodEmptyState';
 import ReportPrintHeader from './ReportPrintHeader';
 import { useBookNavigation } from '../book/BookNavigationContext';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 
 interface AccountBalance {
   id: string;
   name: string;
   ledger: string | null;
   account_type: string;
+  code?: string | null;
   debit_total: number;
   credit_total: number;
   balance: number;
@@ -30,7 +32,7 @@ interface AccountBalance {
 interface Props {
   bookId: string;
   /** Called when the user clicks an account name to drill into its ledger. */
-  onOpenAccount: (account: { id: string; name: string; ledger: string | null }) => void;
+  onOpenAccount: (account: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
 }
 
 // Lightweight chip per account type — same colour family used elsewhere but
@@ -310,9 +312,10 @@ export default function TrialBalanceTab({ bookId, onOpenAccount }: Props) {
                           <td className="px-6 py-1 pl-10">
                             <button
                               type="button"
-                              onClick={() => onOpenAccount({ id: a.id, name: a.name, ledger: a.ledger })}
+                              onClick={() => onOpenAccount({ id: a.id, name: a.name, ledger: a.ledger, code: a.code })}
                               className="text-indigo-700 hover:underline text-left"
                             >
+                              <AccountCodeTag code={a.code} className="mr-2" />
                               {a.name}
                             </button>
                           </td>

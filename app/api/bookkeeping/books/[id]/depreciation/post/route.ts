@@ -4,9 +4,12 @@ import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import {
   chargeExpenseAccountName,
+  chargeExpenseRole,
   depreciationNoun,
   faAccountNames,
   isFixedAssetLedger,
+  resolveFaAccount,
+  resolveBookAccount,
 } from '@/lib/bookkeeping/fixedAssets';
 import { loadLedgerSchedule } from '@/lib/bookkeeping/depreciationServer';
 
@@ -79,12 +82,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: accts, error: acctErr } = await supabase
     .from('bookkeeping_accounts')
-    .select('id, name, ledger, account_type')
+    .select('id, name, ledger, account_type, system_role')
     .eq('book_id', params.id);
   if (acctErr) return NextResponse.json({ error: acctErr.message }, { status: 500 });
+  const all = accts ?? [];
 
-  const depnChargeAcct = (accts ?? []).find(a => a.ledger === body.ledger && a.name === names.depnCharge);
-  const expenseAcct = (accts ?? []).find(a => a.name === expenseName && a.account_type === 'expense');
+  const depnChargeAcct = resolveFaAccount(all, body.ledger, 'depnCharge');
+  const expenseAcct = resolveBookAccount(all, chargeExpenseRole(body.ledger), expenseName, 'expense');
 
   if (!depnChargeAcct) {
     return NextResponse.json(

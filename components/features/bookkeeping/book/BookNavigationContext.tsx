@@ -27,6 +27,7 @@ import { createContext, useContext, useLayoutEffect, useRef, useState, useEffect
 import { createPortal } from 'react-dom';
 import type { TransactionType } from '@/types/bookkeeping';
 import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 
 /**
  * Active reporting period — produced by the BookYearPeriodBar in the header
@@ -58,7 +59,7 @@ export interface BookNavigation {
    *  when they weren't passed by the caller. */
   bookId: string;
   /** Opens the per-account ledger drill-down. */
-  openAccount: (account: { id: string; name: string; ledger: string | null }) => void;
+  openAccount: (account: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
   /** Opens the transaction-type list view, optionally pre-selecting a row. */
   openTypeList: (type: TransactionType, txnId?: string) => void;
   /** Opens the ledger-level view (Customers / Suppliers / Bank / etc.).
@@ -384,10 +385,11 @@ function TxnTAccountHover({
   );
 }
 
-interface AccountLike { id: string; name: string; ledger: string | null; }
+interface AccountLike { id: string; name: string; ledger: string | null; code?: string | null; }
 
 /**
- * Renders an account as `Ledger: Name` (or just `Name` when ledger is null).
+ * Renders an account as `Ledger: Name` (or just `Name` when ledger is null),
+ * optionally prefixed with its code when the per-user preference is on.
  * Clickable when nav is mounted; plain span otherwise.
  */
 export function AccountLink({
@@ -397,14 +399,15 @@ export function AccountLink({
   if (!account) return <span></span>;
   const label = showLedger && account.ledger ? `${account.ledger}: ${account.name}` : account.name;
   const cls = `text-indigo-700 ${className ?? ''}`;
-  if (!nav) return <span className={cls}>{label}</span>;
+  const inner = <><AccountCodeTag code={account.code} className="mr-1.5" />{label}</>;
+  if (!nav) return <span className={cls}>{inner}</span>;
   return (
     <button
       type="button"
       onClick={() => nav.openAccount(account)}
       className={`${cls} hover:underline hover:text-indigo-900 text-left transition-colors`}
     >
-      {label}
+      {inner}
     </button>
   );
 }

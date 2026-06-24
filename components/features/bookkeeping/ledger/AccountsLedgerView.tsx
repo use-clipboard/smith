@@ -33,6 +33,7 @@ import BankRecHistoryTab from './BankRecHistoryTab';
 import BankRecDetailModal from './BankRecDetailModal';
 import DepreciationTab from './DepreciationTab';
 import { isFixedAssetLedger, depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 void BankRecPanel; // retained for fallback / future reference — superseded by BankReconcileTab in the period-first model
 import { useAccountContextMenu } from './AccountContextMenu';
 import MoveEntriesModal from './MoveEntriesModal';
@@ -44,6 +45,8 @@ interface AccountSummary {
   name: string;
   ledger: string | null;
   account_type: string;
+  /** User-facing ranged code (display only). */
+  code?: string | null;
   /** Inactive accounts are still listed in the master pane (so historic
    *  balances are visible) but get a muted style + a small "locked" hint;
    *  the account-picker hides them from new-entry creation server-side. */
@@ -238,7 +241,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
       );
       const merged: AccountSummary[] = (accountsBody.accounts as Array<{
         id: string; name: string; ledger: string | null; account_type: string;
-        inactive?: boolean; notes?: string | null;
+        inactive?: boolean; notes?: string | null; code?: string | null;
       }>).map(a => {
         const b = balById.get(a.id);
         return {
@@ -925,7 +928,7 @@ export default function AccountsLedgerView({ bookId, ledger, initialAccountId, i
                         : 'hover:bg-slate-50 text-slate-700'
                     }`}
                   >
-                    <span className="text-xs truncate flex-1">{a.name}</span>
+                    <span className="text-xs truncate flex-1"><AccountCodeTag code={a.code} className="mr-1.5" />{a.name}</span>
                     <span className={`text-xs tabular-nums shrink-0 ml-2 ${
                       active
                         ? `font-semibold${a.inactive ? ' not-italic' : ''}`

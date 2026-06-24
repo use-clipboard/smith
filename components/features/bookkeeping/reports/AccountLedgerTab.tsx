@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import PeriodSelector, { type DateRange } from './PeriodSelector';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { TxnRefLink } from '../book/BookNavigationContext';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import type { Transaction } from '@/types/bookkeeping';
 
 interface Props {
@@ -24,6 +25,7 @@ interface Props {
   accountId: string;
   accountName: string;
   accountLedger: string | null;
+  accountCode?: string | null;
 }
 
 function formatDateUk(iso: string): string {
@@ -47,7 +49,7 @@ interface LedgerRow {
   balance: number;        // running
 }
 
-export default function AccountLedgerTab({ bookId, accountId, accountName, accountLedger }: Props) {
+export default function AccountLedgerTab({ bookId, accountId, accountName, accountLedger, accountCode }: Props) {
   const [period, setPeriod] = useState<DateRange>({ from: null, to: null });
   const [openingBalance, setOpeningBalance] = useState(0);
   const [periodTxns, setPeriodTxns] = useState<Transaction[]>([]);
@@ -159,6 +161,7 @@ export default function AccountLedgerTab({ bookId, accountId, accountName, accou
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">
+            <AccountCodeTag code={accountCode} className="mr-2" />
             {accountLedger && <span className="text-gray-500">{accountLedger}: </span>}{accountName}
           </h3>
           <p className="text-[11px] text-gray-500">All transactions touching this account in the selected period.</p>

@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { printReport } from './printReport';
 import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import { Loader2, Printer, Download, FileBarChart2 } from 'lucide-react';
 import { type DateRange } from './PeriodSelector';
 import PeriodEmptyState from './PeriodEmptyState';
@@ -27,6 +28,7 @@ interface AccountBalance {
   name: string;
   ledger: string | null;
   account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  code?: string | null;
   debit_total: number;
   credit_total: number;
   balance: number;
@@ -34,7 +36,7 @@ interface AccountBalance {
 
 interface Props {
   bookId: string;
-  onOpenAccount?: (a: { id: string; name: string; ledger: string | null }) => void;
+  onOpenAccount?: (a: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
 }
 
 // P&L "preferred" sections — these get a fixed slot at the top of the report
@@ -173,7 +175,7 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
   const priorPeriod = useMemo(() => computePriorPeriod(period), [period.from, period.to]);
 
   // ── Build the per-section grouped data ──────────────────────────────────
-  type Row = { id: string; name: string; ledger: string | null; current: number; prior: number };
+  type Row = { id: string; name: string; ledger: string | null; code: string | null; current: number; prior: number };
   type Section = {
     title: string;
     ledger: string;
@@ -225,12 +227,12 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
         acc.filter(a => (a.ledger ?? '').trim() === def.ledger && plTypes.has(a.account_type));
       const cur = inLedger(current);
       const pri = inLedger(prior);
-      const idMap = new Map<string, { name: string; ledger: string | null; current: number; prior: number }>();
+      const idMap = new Map<string, { name: string; ledger: string | null; code: string | null; current: number; prior: number }>();
       for (const a of cur) {
-        idMap.set(a.id, { name: a.name, ledger: a.ledger, current: displayValue(a), prior: 0 });
+        idMap.set(a.id, { name: a.name, ledger: a.ledger, code: a.code ?? null, current: displayValue(a), prior: 0 });
       }
       for (const a of pri) {
-        const entry = idMap.get(a.id) ?? { name: a.name, ledger: a.ledger, current: 0, prior: 0 };
+        const entry = idMap.get(a.id) ?? { name: a.name, ledger: a.ledger, code: a.code ?? null, current: 0, prior: 0 };
         entry.prior = displayValue(a);
         idMap.set(a.id, entry);
       }
@@ -408,13 +410,14 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
               {onOpenAccount ? (
                 <button
                   type="button"
-                  onClick={() => onOpenAccount({ id: r.id, name: r.name, ledger: r.ledger })}
+                  onClick={() => onOpenAccount({ id: r.id, name: r.name, ledger: r.ledger, code: r.code })}
                   className="text-indigo-700 hover:underline text-left"
                 >
+                  <AccountCodeTag code={r.code} className="mr-2" />
                   {r.name}
                 </button>
               ) : (
-                <span className="text-indigo-700">{r.name}</span>
+                <span className="text-indigo-700"><AccountCodeTag code={r.code} className="mr-2" />{r.name}</span>
               )}
             </td>
             <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(r.current)}</td>

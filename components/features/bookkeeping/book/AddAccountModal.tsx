@@ -14,6 +14,7 @@
 import { useEffect, useState } from 'react';
 import { X, Loader2, Check, Plus } from 'lucide-react';
 import type { BookAccountRef } from '@/types/bookkeeping';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 
 type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense';
 
@@ -51,7 +52,7 @@ export default function AddAccountModal({
   const [loadingLedgers, setLoadingLedgers] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useState<BookAccountRef | null>(null);
 
   // Load the book's existing ledgers (distinct, non-null).
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function AddAccountModal({
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? 'Could not create the account.');
       onCreated?.(d.account as BookAccountRef);
-      setDone(`${ledger}: ${name.trim()}`);
+      setDone(d.account as BookAccountRef);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the account.');
     } finally {
@@ -113,7 +114,10 @@ export default function AddAccountModal({
           <div className="p-6 text-center">
             <div className="inline-flex w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 items-center justify-center mb-2"><Check size={18} /></div>
             <p className="text-sm font-medium text-slate-900">Account created</p>
-            <p className="text-xs text-slate-500 mt-0.5">{done}</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              <AccountCodeTag code={done.code} className="mr-1.5" />
+              {done.ledger ? `${done.ledger}: ${done.name}` : done.name}
+            </p>
             <div className="flex items-center justify-center gap-2 mt-4">
               <button type="button" onClick={() => { setDone(null); setName(''); }} className="btn-secondary text-sm">Add another</button>
               <button type="button" onClick={onClose} className="btn-primary text-sm">Done</button>

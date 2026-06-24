@@ -127,7 +127,7 @@ export async function POST(
   // "Brought forward" account), and persist that choice for next time.
   const { data: accts, error: acctErr } = await supabase
     .from('bookkeeping_accounts')
-    .select('id, name, ledger, account_type, archived')
+    .select('id, name, ledger, account_type, archived, system_role')
     .eq('book_id', params.id);
   if (acctErr) return NextResponse.json({ error: acctErr.message }, { status: 500 });
   const allAccounts = accts ?? [];
@@ -135,11 +135,15 @@ export async function POST(
   let reAccountId = book.retained_earnings_account_id as string | null;
   if (reAccountId && !allAccounts.some(a => a.id === reAccountId)) reAccountId = null;
   if (!reAccountId) {
+    // Prefer the seeded retained_earnings role (Ltd: Profit and loss account →
+    // Brought forward; Sole trader: Capital account → Brought forward). Falls
+    // back to the old name-based heuristic for books seeded before roles.
+    const byRole = allAccounts.find(a => a.system_role === 'retained_earnings' && !a.archived);
     const equity = allAccounts.filter(a => a.account_type === 'equity' && !a.archived);
     const inPlLedger = equity.filter(a => (a.ledger ?? '').toLowerCase() === 'profit and loss account');
     const pool = inPlLedger.length > 0 ? inPlLedger : equity;
     const chosen =
-      pool.find(a => a.name.toLowerCase().includes('brought forward')) ?? pool[0] ?? null;
+      byRole ?? pool.find(a => a.name.toLowerCase().includes('brought forward')) ?? pool[0] ?? null;
     if (!chosen) {
       return NextResponse.json(
         { error: 'No Retained earnings (equity) account found. Add a "Profit and loss account" equity account, then try again.' },

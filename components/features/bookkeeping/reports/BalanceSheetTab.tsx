@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { printReport } from './printReport';
 import { exportRowsAsCsv, type CsvRow } from './exportReportCsv';
+import { AccountCodeTag } from '@/lib/bookkeeping/useAccountCodes';
 import { Loader2, Printer, Download, Layers, AlertTriangle } from 'lucide-react';
 import { type DateRange } from './PeriodSelector';
 import PeriodEmptyState from './PeriodEmptyState';
@@ -26,6 +27,7 @@ interface AccountBalance {
   name: string;
   ledger: string | null;
   account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense';
+  code?: string | null;
   debit_total: number;
   credit_total: number;
   balance: number;
@@ -33,7 +35,7 @@ interface AccountBalance {
 
 interface Props {
   bookId: string;
-  onOpenAccount?: (a: { id: string; name: string; ledger: string | null }) => void;
+  onOpenAccount?: (a: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
 }
 
 type BsGroup = 'fixed_assets' | 'current_assets' | 'current_liabilities' | 'long_term_liabilities' | 'equity';
@@ -177,7 +179,7 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
     // filter alone can't surface rows that weren't in the original response).
   }, [bookId, activePeriod.ready, asAtCurrent, asAtPrior, showZero]);
 
-  type Row = { id: string; name: string; ledger: string | null; current: number; prior: number };
+  type Row = { id: string; name: string; ledger: string | null; code: string | null; current: number; prior: number };
   /** Within a section, rows are grouped by ledger so the report reads like
    *  VT's BS (FA - equipment, fixture; FA - vehicles; Customers; Bank; etc.
    *  each get their own labelled block with a sub-total). */
@@ -195,12 +197,12 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
       const inSection = (acc: AccountBalance[]) => acc.filter(a => bsGroupOf(a.ledger, a.account_type) === def.key);
       const cur = inSection(current);
       const pri = inSection(prior);
-      const idMap = new Map<string, { name: string; ledger: string | null; current: number; prior: number }>();
+      const idMap = new Map<string, { name: string; ledger: string | null; code: string | null; current: number; prior: number }>();
       for (const a of cur) {
-        idMap.set(a.id, { name: a.name, ledger: a.ledger, current: displayValue(a), prior: 0 });
+        idMap.set(a.id, { name: a.name, ledger: a.ledger, code: a.code ?? null, current: displayValue(a), prior: 0 });
       }
       for (const a of pri) {
-        const entry = idMap.get(a.id) ?? { name: a.name, ledger: a.ledger, current: 0, prior: 0 };
+        const entry = idMap.get(a.id) ?? { name: a.name, ledger: a.ledger, code: a.code ?? null, current: 0, prior: 0 };
         entry.prior = displayValue(a);
         idMap.set(a.id, entry);
       }
@@ -484,13 +486,14 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
               {onOpenAccount ? (
                 <button
                   type="button"
-                  onClick={() => onOpenAccount({ id: r.id, name: r.name, ledger: r.ledger })}
+                  onClick={() => onOpenAccount({ id: r.id, name: r.name, ledger: r.ledger, code: r.code })}
                   className="text-indigo-700 hover:underline text-left"
                 >
+                  <AccountCodeTag code={r.code} className="mr-2" />
                   {r.name}
                 </button>
               ) : (
-                <span className="text-indigo-700">{r.name}</span>
+                <span className="text-indigo-700"><AccountCodeTag code={r.code} className="mr-2" />{r.name}</span>
               )}
             </td>
             <td className="px-6 py-1 text-right tabular-nums text-slate-700">{fmt(r.current)}</td>

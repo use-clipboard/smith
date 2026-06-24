@@ -83,6 +83,7 @@ interface DynamicLedgerTab {
   accountId: string;
   accountName: string;
   accountLedger: string | null;
+  accountCode?: string | null;
 }
 interface DynamicTypeListTab {
   id: string;                  // unique tab id: `type:<TYPE>`
@@ -164,7 +165,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
   // rail renders them in order of appearance.
   const [dynamicTabs, setDynamicTabs] = useState<DynamicTab[]>([]);
 
-  function openLedgerTab(account: { id: string; name: string; ledger: string | null }) {
+  function openLedgerTab(account: { id: string; name: string; ledger: string | null; code?: string | null }) {
     if (!account.id) return; // ignore ledger-row clicks (not yet wired)
     const tabId = `ledger:${account.id}`;
     setDynamicTabs(prev => {
@@ -175,6 +176,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         accountId: account.id,
         accountName: account.name,
         accountLedger: account.ledger,
+        accountCode: account.code ?? null,
       }];
     });
     setTab(tabId);
@@ -560,6 +562,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
                     accountId={dt.accountId}
                     accountName={dt.accountName}
                     accountLedger={dt.accountLedger}
+                    accountCode={dt.accountCode}
                   />
                 )}
               </div>
