@@ -40,6 +40,9 @@ export function isHmrcConfigured(): boolean {
   return Boolean(process.env.HMRC_CLIENT_ID && process.env.HMRC_CLIENT_SECRET);
 }
 
-export function hmrcClientId(): string { return process.env.HMRC_CLIENT_ID ?? ''; }
-export function hmrcClientSecret(): string { return process.env.HMRC_CLIENT_SECRET ?? ''; }
-export function hmrcRedirectUri(): string { return process.env.HMRC_REDIRECT_URI ?? ''; }
+// Trim the credentials — a client id/secret never contains surrounding
+// whitespace, and a stray space/tab/newline pasted into an env var (a common
+// dashboard mistake) otherwise causes an opaque 401 invalid_client.
+export function hmrcClientId(): string { return (process.env.HMRC_CLIENT_ID ?? '').trim(); }
+export function hmrcClientSecret(): string { return (process.env.HMRC_CLIENT_SECRET ?? '').trim(); }
+export function hmrcRedirectUri(): string { return (process.env.HMRC_REDIRECT_URI ?? '').trim(); }
