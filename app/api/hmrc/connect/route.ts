@@ -25,6 +25,10 @@ export async function GET(req: NextRequest) {
   const kind = rawKind === 'business' ? 'business' : rawKind === 'individual' ? 'individual' : 'agent';
   const bookId = url.searchParams.get('bookId') ?? '';
   const clientId = url.searchParams.get('clientId') ?? '';
+  // Optional same-origin relative path to return to after the handshake. Must
+  // start with a single '/' (not '//') so it can't become an open redirect.
+  const returnToRaw = url.searchParams.get('returnTo') ?? '';
+  const returnTo = /^\/(?!\/)/.test(returnToRaw) ? returnToRaw : '';
 
   // Derive the redirect URI from this request's host and persist it, so the
   // callback's token exchange uses the byte-identical value HMRC requires.
@@ -33,7 +37,7 @@ export async function GET(req: NextRequest) {
   const res = NextResponse.redirect(buildAuthorizeUrl(state, redirectUri, scopesForService(service)));
   // sameSite 'lax' so the cookie survives the top-level GET redirect back from HMRC.
   res.cookies.set('hmrc_oauth', JSON.stringify({
-    state, service, kind, bookId, clientId, firmId: ctx.firmId, redirectUri,
+    state, service, kind, bookId, clientId, firmId: ctx.firmId, redirectUri, returnTo,
   }), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',

@@ -17,6 +17,7 @@ interface OAuthStash {
   clientId?: string;
   firmId: string;
   redirectUri?: string;
+  returnTo?: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -32,11 +33,14 @@ export async function GET(req: NextRequest) {
   const svc: HmrcService = stash?.service === 'mtd_it' ? 'mtd_it' : 'vat';
   const bookId = stash?.bookId ?? '';
   const clientId = stash?.clientId ?? '';
+  // Only honour a same-origin relative returnTo (single leading '/').
+  const returnTo = stash?.returnTo && /^\/(?!\/)/.test(stash.returnTo) ? stash.returnTo : '';
   const back = (status: string) => {
-    // VAT returns to the book; MTD-IT returns to the income-tax area.
-    const path = svc === 'mtd_it'
+    // An explicit returnTo wins (e.g. the admin VAT sandbox tester); otherwise
+    // VAT returns to the book and MTD-IT to the income-tax area.
+    const path = returnTo || (svc === 'mtd_it'
       ? '/mtd-it'
-      : (bookId ? `/bookkeeping/${bookId}` : '/bookkeeping');
+      : (bookId ? `/bookkeeping/${bookId}` : '/bookkeeping'));
     const dest = new URL(path, req.url);
     dest.searchParams.set('hmrc', status);
     const r = NextResponse.redirect(dest);
