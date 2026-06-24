@@ -6,7 +6,7 @@
 import type { ElementType } from 'react';
 import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
-  ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText,
+  ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText,
   BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
   MessagesSquare, CalendarCheck, BookCopy,
 } from 'lucide-react';
@@ -32,7 +32,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'landlord',        href: '/landlord',       label: 'Landlord',        icon: House },
   { moduleId: 'mtd-it',          href: '/mtd-it',         label: 'MTD IT',          icon: CalendarCheck },
   { moduleId: 'final-accounts',  href: '/final-accounts', label: 'Accounts Review', icon: ClipboardCheck },
-  { moduleId: 'performance',     href: '/performance',    label: 'Performance',     icon: TrendingUp },
+  { moduleId: 'performance',     href: '/performance',    label: 'Performance',     icon: Gauge },
   { moduleId: 'p32',             href: '/p32',            label: 'P32 Summary',     icon: Receipt },
   { moduleId: 'risk-assessment', href: '/risk-assessment',label: 'Risk Assessment', icon: ShieldAlert },
   { moduleId: 'summarise',       href: '/summarise',      label: 'Summarise',       icon: FileText },

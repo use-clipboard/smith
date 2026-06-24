@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
+  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   Check, Loader2, AlertTriangle, Puzzle, Info, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
   HeartHandshake, FileSignature, CalendarCheck,
@@ -11,7 +11,7 @@ import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.conf
 
 // Map iconName strings to lucide components
 const ICON_MAP: Record<string, React.ElementType> = {
-  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
+  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
   HeartHandshake, FileSignature, CalendarCheck,

@@ -33,6 +33,9 @@ const RequestSchema = z.object({
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
   files: z.array(FileSchema),
+  // Management figures handed over from the SMITH Bookkeeping tool as text
+  // (TB/P&L/BS, optionally with prior year). Optional; stands in for uploads.
+  bookkeepingStatements: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest) {
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive, paBusinessName, selectedSections, pastAnalyses, ...opts } = parsed.data;
+    const { files, clientId, clientCode, saveToDrive, paBusinessName, selectedSections, pastAnalyses, bookkeepingStatements, ...opts } = parsed.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -63,6 +66,11 @@ export async function POST(req: NextRequest) {
       return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 } };
     });
 
+    // Bookkeeping handoff: exact ledger figures as text (no OCR needed).
+    const statementsContent = bookkeepingStatements?.trim()
+      ? [{ type: 'text' as const, text: `The following management figures were generated directly from the client's bookkeeping ledger in SMITH. Treat these as the authoritative figures for the period (exact, not OCR'd):\n\n${bookkeepingStatements}` }]
+      : [];
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 16000,
@@ -71,7 +79,7 @@ CRITICAL: You must respond with a single valid JSON object. The JSON must be par
 When embedding HTML inside a JSON string value you MUST escape all double-quotes as \\" and all backslashes as \\\\.
 Do not use unescaped newlines inside JSON string values — use \\n instead.
 Do not add any text before or after the JSON object.`,
-      messages: [{ role: 'user', content: [...fileContent, { type: 'text', text: prompt }] }],
+      messages: [{ role: 'user', content: [...fileContent, ...statementsContent, { type: 'text', text: prompt }] }],
     }, {
       headers: { 'anthropic-beta': 'output-128k-2025-02-19' },
     });

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   FileSearch, ArrowLeftRight, House, ClipboardCheck,
-  TrendingUp, Receipt, ShieldAlert, FileText, BookOpen,
+  Gauge, Receipt, ShieldAlert, FileText, BookOpen,
   Users, Activity, Wifi, ExternalLink, Archive, Building2,
   CalendarDays, MicVocal, UserPlus, CheckSquare, X, MessageSquare,
   HeartHandshake, FileSignature, GripVertical, Plus, Pencil, Check, LayoutGrid,
@@ -37,7 +37,7 @@ const ALL_TOOLS = [
   { moduleId: 'bank-to-csv',     href: '/bank-to-csv',    label: 'Bank to CSV',        desc: 'Extract transactions from bank statements',  icon: ArrowLeftRight, color: '#0891B2' },
   { moduleId: 'landlord',        href: '/landlord',       label: 'Landlord',           desc: 'UK property income & expense analysis',      icon: House,          color: '#D97706' },
   { moduleId: 'final-accounts',  href: '/final-accounts', label: 'Accounts Review',    desc: 'Review accounts & prepare working papers',   icon: ClipboardCheck, color: '#7C3AED' },
-  { moduleId: 'performance',     href: '/performance',    label: 'Performance',        desc: 'Business performance report with KPIs',      icon: TrendingUp,     color: '#059669' },
+  { moduleId: 'performance',     href: '/performance',    label: 'Performance',        desc: 'Business performance report with KPIs',      icon: Gauge,     color: '#059669' },
   { moduleId: 'p32',             href: '/p32',            label: 'P32 Summary',        desc: 'Generate client email from P32 record',      icon: Receipt,        color: '#CA8A04' },
   { moduleId: 'risk-assessment', href: '/risk-assessment',label: 'Risk Assessment',    desc: 'AML client risk assessment',                 icon: ShieldAlert,    color: '#DC2626' },
   { moduleId: 'summarise',       href: '/summarise',      label: 'Summarise',          desc: 'Summarise out-of-range documents',            icon: FileText,       color: '#475569' },
@@ -61,7 +61,7 @@ const FEATURE_META: Record<string, { label: string; icon: React.ElementType; col
   bank_to_csv:           { label: 'Bank to CSV',       icon: ArrowLeftRight, color: '#0891B2', route: '/bank-to-csv'     },
   landlord_analysis:     { label: 'Landlord Analysis', icon: House,          color: '#D97706', route: '/landlord'        },
   final_accounts_review: { label: 'Accounts Review',   icon: ClipboardCheck, color: '#7C3AED', route: '/final-accounts'  },
-  performance_analysis:  { label: 'Performance',       icon: TrendingUp,     color: '#059669', route: '/performance'     },
+  performance_analysis:  { label: 'Performance',       icon: Gauge,     color: '#059669', route: '/performance'     },
   p32_summary:           { label: 'P32 Summary',       icon: Receipt,        color: '#CA8A04', route: '/p32'             },
   risk_assessment:       { label: 'Risk Assessment',   icon: ShieldAlert,    color: '#DC2626', route: '/risk-assessment' },
   summarise:             { label: 'Summarise',         icon: FileText,       color: '#475569', route: '/summarise'       },

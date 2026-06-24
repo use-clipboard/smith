@@ -25,6 +25,10 @@ const RequestSchema = z.object({
   periodEnd: z.string(),
   relevantContext: z.string().default(''),
   files: z.array(FileSchema),
+  // Text statements handed over from the SMITH Bookkeeping tool (TB/P&L/BS as
+  // plain text — exact figures, no document upload). Optional; sent alongside
+  // (or instead of) uploaded files.
+  bookkeepingStatements: z.string().optional(),
 });
 
 const WorkingPapersSchema = z.object({
@@ -41,6 +45,7 @@ const WorkingPapersSchema = z.object({
   // The documents are sent again so the figures can be extracted to populate
   // the schedules — the review response carries review points only.
   files: z.array(FileSchema),
+  bookkeepingStatements: z.string().optional(),
 });
 
 type FileInput = z.infer<typeof FileSchema>;
@@ -54,6 +59,16 @@ function toFileContent(files: FileInput[]) {
     }
     return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 } };
   });
+}
+
+// Statements handed over from SMITH Bookkeeping arrive as plain text (exact
+// ledger figures — no OCR). Wrap them in a labelled text content block.
+function toStatementsContent(text?: string) {
+  if (!text || !text.trim()) return [];
+  return [{
+    type: 'text' as const,
+    text: `The following financial statements were generated directly from the client's bookkeeping ledger in SMITH. Treat these as the authoritative figures for the period (exact, not OCR'd):\n\n${text}`,
+  }];
 }
 
 // Strip ```json fences the model occasionally wraps the JSON in.
@@ -211,13 +226,14 @@ export async function POST(req: NextRequest) {
 
       const { files, reviewPoints, businessType } = parsed.data;
       const fileContent = toFileContent(files);
+      const statementsContent = toStatementsContent(parsed.data.bookkeepingStatements);
       const prompt = buildWorkingPapersPrompt(parsed.data);
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         system: 'You are an expert UK chartered accountant. Always respond with valid JSON only.',
-        messages: [{ role: 'user', content: [...fileContent, { type: 'text', text: prompt }] }],
+        messages: [{ role: 'user', content: [...fileContent, ...statementsContent, { type: 'text', text: prompt }] }],
       });
 
       if (response.stop_reason === 'max_tokens') {
@@ -251,15 +267,16 @@ export async function POST(req: NextRequest) {
     const parsed = RequestSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 
-    const { files, clientId, clientCode, saveToDrive, businessName, ...rest } = parsed.data;
+    const { files, clientId, clientCode, saveToDrive, businessName, bookkeepingStatements, ...rest } = parsed.data;
     const prompt = buildFinalAccountsPrompt({ businessName, clientCode, ...rest });
     const fileContent = toFileContent(files);
+    const statementsContent = toStatementsContent(bookkeepingStatements);
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 16000,
       system: 'You are an expert UK chartered accountant. Always respond with valid JSON only.',
-      messages: [{ role: 'user', content: [...fileContent, { type: 'text', text: prompt }] }],
+      messages: [{ role: 'user', content: [...fileContent, ...statementsContent, { type: 'text', text: prompt }] }],
     });
 
     if (response.stop_reason === 'max_tokens') {

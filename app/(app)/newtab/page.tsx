@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
+  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, Puzzle, Plus,
   HeartHandshake, FileSignature, CalendarCheck,
@@ -12,7 +12,7 @@ import { useTabActivityContext } from '@/components/ui/TabActivityContext';
 import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
 
 const ICON_MAP: Record<string, React.ElementType> = {
-  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, TrendingUp,
+  FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
   CalendarCheck,

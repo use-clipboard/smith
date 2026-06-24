@@ -18,7 +18,7 @@ import Link from 'next/link';
 import {
   CalendarClock, ClipboardCheck, Activity, Wallet, Lock, Mail, Phone, Users2, Link2,
   MessageCircle, StickyNote,
-  FileSearch, ArrowLeftRight, House, TrendingUp, Receipt, ShieldAlert, FileText, MicVocal,
+  FileSearch, ArrowLeftRight, House, Gauge, Receipt, ShieldAlert, FileText, MicVocal,
   type LucideIcon,
 } from 'lucide-react';
 import { Donut } from '@/components/features/dashboard/widgets/shared';
@@ -72,7 +72,7 @@ const FEATURE_META: Record<string, { label: string; icon: LucideIcon; color: str
   bank_to_csv:           { label: 'Bank to CSV',       icon: ArrowLeftRight, color: '#0891B2' },
   landlord_analysis:     { label: 'Landlord Analysis', icon: House,          color: '#D97706' },
   final_accounts_review: { label: 'Accounts Review',   icon: ClipboardCheck, color: '#7C3AED' },
-  performance_analysis:  { label: 'Performance',       icon: TrendingUp,     color: '#059669' },
+  performance_analysis:  { label: 'Performance',       icon: Gauge,     color: '#059669' },
   p32_summary:           { label: 'P32 Summary',       icon: Receipt,        color: '#CA8A04' },
   risk_assessment:       { label: 'Risk Assessment',   icon: ShieldAlert,    color: '#DC2626' },
   summarise:             { label: 'Summarise',         icon: FileText,       color: '#475569' },

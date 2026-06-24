@@ -25,13 +25,14 @@ import {
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
   Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
+  ClipboardCheck, Gauge, ArrowUpRight,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import type { TransactionType } from '@/types/bookkeeping';
 
 // ── Action menu groups (grouped transaction types) ──────────────────────────
-const GROUPS: { name: string; icon: React.ComponentType<{ size?: number; className?: string }>; tone: string; actions: { type: TransactionType; label: string; description: string }[] }[] = [
+const GROUPS: { name: string; icon: LucideIcon; tone: string; actions: { type: TransactionType; label: string; description: string }[] }[] = [
   {
     name: 'Bank',
     icon: Wallet,
@@ -85,7 +86,10 @@ const GROUPS: { name: string; icon: React.ComponentType<{ size?: number; classNa
 
 // Reports grouped behind a single rail flyout — the rail was getting too long
 // listing each one individually. Aged debtors/creditors live here too.
-const REPORTS: { id: string; label: string; icon: LucideIcon }[] = [
+// `launch: true` items don't open an in-book tab — they fire onLaunchTool to
+// open a separate tool (Accounts Review / Performance) in a new workspace tab,
+// pre-populated with this book's statements.
+const REPORTS: { id: string; label: string; icon: LucideIcon; launch?: boolean }[] = [
   { id: 'tb',             label: 'Trial Balance',             icon: Scale },
   { id: 'pnl',            label: 'Profit & Loss',             icon: TrendingUp },
   { id: 'bs',             label: 'Balance Sheet',             icon: Layers },
@@ -93,8 +97,12 @@ const REPORTS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'aged-debtors',   label: 'Aged Debtors (Customers)',  icon: Clock },
   { id: 'aged-creditors', label: 'Aged Creditors (Suppliers)', icon: Clock },
   { id: 'ai-review',      label: 'AI Book Review',            icon: Sparkles },
+  { id: 'accounts-review', label: 'Accounts Review',          icon: ClipboardCheck, launch: true },
+  { id: 'performance',     label: 'Performance',              icon: Gauge,          launch: true },
 ];
-const REPORT_IDS = new Set(REPORTS.map(r => r.id));
+// Only the in-book report tabs drive the rail's active-state highlight; the
+// launch items never become the active tab.
+const REPORT_IDS = new Set(REPORTS.filter(r => !r.launch).map(r => r.id));
 
 export interface LedgerRailTab {
   id: string;
@@ -114,6 +122,9 @@ interface Props {
   /** Currently-active tab id (e.g. 'home', 'input', 'tb', or a dynamic tab id). */
   activeTab: string;
   onSelectTab: (id: string) => void;
+  /** Fired by the launch-type report items (Accounts Review / Performance) to
+   *  open that tool in a new tab instead of switching the in-book tab. */
+  onLaunchTool?: (tool: 'accounts-review' | 'performance') => void;
   onAction: (type: TransactionType) => void;
   /** Open ledger drill-down tabs — surfaced as their own icons in the rail. */
   ledgerTabs: LedgerRailTab[];
@@ -133,7 +144,7 @@ interface Props {
 }
 
 export default function BookSideRail({
-  activeTab, onSelectTab, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
+  activeTab, onSelectTab, onLaunchTool, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
   onCloseLedgerTab, onOpenSettings, onOpenSearch, disabled, className,
 }: Props) {
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -218,9 +229,10 @@ export default function BookSideRail({
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [reportsMenuOpen]);
-  function pickReport(id: string) {
-    onSelectTab(id);
+  function pickReport(r: { id: string; launch?: boolean }) {
     setReportsMenuOpen(false);
+    if (r.launch) { onLaunchTool?.(r.id as 'accounts-review' | 'performance'); return; }
+    onSelectTab(r.id);
   }
 
   function railButton({
@@ -229,7 +241,7 @@ export default function BookSideRail({
     id: string;
     label: string;
     tooltip: string;
-    icon: React.ComponentType<{ size?: number; className?: string }>;
+    icon: LucideIcon;
     active: boolean;
     onClick: () => void;
     disabled?: boolean;
@@ -555,21 +567,33 @@ export default function BookSideRail({
             <span className="text-xs font-semibold text-slate-900">Reports</span>
           </div>
           <div className="p-1.5">
-            {REPORTS.map(r => {
+            {REPORTS.map((r, i) => {
               const Icon = r.icon;
               const active = activeTab === r.id;
+              // Visually separate the "launch another tool" items from the
+              // in-book reports with a labelled divider.
+              const firstLaunch = r.launch && !REPORTS[i - 1]?.launch;
               return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => pickReport(r.id)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-colors ${
-                    active ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <Icon size={14} className={active ? 'text-indigo-600' : 'text-slate-400'} />
-                  {r.label}
-                </button>
+                <div key={r.id}>
+                  {firstLaunch && (
+                    <div className="flex items-center gap-2 px-2.5 pt-2 pb-1">
+                      <div className="h-px flex-1 bg-slate-100" />
+                      <span className="text-[9px] uppercase tracking-wide font-semibold text-slate-400">Analyse in</span>
+                      <div className="h-px flex-1 bg-slate-100" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => pickReport(r)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm text-left transition-colors ${
+                      active ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon size={14} className={active ? 'text-indigo-600' : 'text-slate-400'} />
+                    {r.label}
+                    {r.launch && <ArrowUpRight size={13} className="ml-auto text-slate-400" />}
+                  </button>
+                </div>
               );
             })}
           </div>

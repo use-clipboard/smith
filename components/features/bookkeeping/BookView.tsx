@@ -37,6 +37,7 @@ import BookSettingsDrawer from './book/BookSettingsDrawer';
 import VatThresholdBanner from './book/VatThresholdBanner';
 import YearEndsDialog from './book/YearEndsDialog';
 import BookSideRail from './book/BookSideRail';
+import LaunchAnalysisDialog, { type AnalysisTool } from './book/LaunchAnalysisDialog';
 import MultiTypeInputSheet from './input/MultiTypeInputSheet';
 import EntryToastHost, { type EntryToast } from './input/EntryToastHost';
 import { isInputSheetType } from '@/lib/bookkeeping/transactionTypeConfig';
@@ -116,6 +117,9 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
   const [notFound, setNotFound] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [yearEndsOpen, setYearEndsOpen] = useState(false);
+  /** Which external analysis tool the user is launching from the Reports menu
+   *  (opens the period-picker dialog); null = closed. */
+  const [launchTool, setLaunchTool] = useState<AnalysisTool | null>(null);
   /** Book-wide search lightbox — opens from the Search rail button,
    *  Ctrl+K shortcut, or the home tab's "View all" recent-transactions link. */
   const [searchOpen, setSearchOpen] = useState(false);
@@ -346,6 +350,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
       <BookSideRail
         activeTab={tab}
         onSelectTab={(id) => setTab(id as typeof tab)}
+        onLaunchTool={setLaunchTool}
         onAction={handleAction}
         ledgerTabs={dynamicTabs
           .filter((t): t is DynamicLedgerTab => t.kind === 'ledger')
@@ -627,6 +632,16 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           onOpenAccount={openLedgerTab}
           onOpenTypeList={openTypeListTab}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+
+      {/* ── Launch Accounts Review / Performance from the book's figures ────── */}
+      {launchTool && (
+        <LaunchAnalysisDialog
+          bookId={bookId}
+          tool={launchTool}
+          activePeriod={activePeriod}
+          onClose={() => setLaunchTool(null)}
         />
       )}
 

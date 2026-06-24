@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, type RefObject } from 'react';
 import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
-  TrendingUp, Plus, Search, Download, FolderOpen, Trash2, Loader2,
+  Gauge, Plus, Search, Download, FolderOpen, Trash2, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, SlidersHorizontal, User as UserIcon,
   X, AlertTriangle, Filter, CheckSquare, ChevronRight, Check,
 } from 'lucide-react';
@@ -403,7 +403,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
   return (
-    <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669" wide>
+    <ToolLayout title="Performance Analysis" icon={Gauge} iconColor="#059669" wide>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative w-full max-w-sm">
@@ -588,7 +588,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
 
               {!loading && !error && filteredRows.length === 0 && (
                 <tr><td colSpan={totalColSpan} className="text-center py-12">
-                  <TrendingUp size={28} className="text-gray-300 mx-auto mb-3" />
+                  <Gauge size={28} className="text-gray-300 mx-auto mb-3" />
                   <p className="text-sm text-[var(--text-muted)] mb-4">
                     {hasActiveFilters || search ? 'No reports match your filters.' : 'No performance reports yet. Generate your first one to get started.'}
                   </p>

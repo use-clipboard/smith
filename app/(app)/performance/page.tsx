@@ -6,10 +6,11 @@ import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
+import { consumePendingAnalysis, peekPendingAnalysis, type PendingAnalysisData } from '@/lib/bookkeeping/pendingAnalysis';
 import ToolLayout from '@/components/ui/ToolLayout';
 import PerformanceEditor, { getThemeColor } from '@/components/features/performance/PerformanceEditor';
 import PerformanceHistory, { type PerformanceSeed } from '@/components/features/performance/PerformanceHistory';
-import { TrendingUp, Check, ArrowLeft, ArrowRight, Sparkles, ShieldCheck, FileText, Activity, Save, Loader2, CheckCircle2, Circle, AlertCircle, UploadCloud, BookCopy, X } from 'lucide-react';
+import { Gauge, Check, ArrowLeft, ArrowRight, Sparkles, ShieldCheck, FileText, Activity, Save, Loader2, CheckCircle2, Circle, AlertCircle, UploadCloud, BookCopy, X } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import { fileToBase64 } from '@/utils/fileUtils';
 
@@ -308,7 +309,7 @@ function PerfReadyRow({ label, done }: { label: string; done: boolean }) {
 export default function PerformancePage() {
   // Skip the history view when arriving via a Quick Launch pill (pending client present).
   const [view, setView] = useState<'history' | 'tool'>(
-    () => peekPendingClient('/performance') ? 'tool' : 'history',
+    () => (peekPendingClient('/performance') || peekPendingAnalysis('/performance')) ? 'tool' : 'history',
   );
   const [seed, setSeed] = useState<PerformanceSeed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff' }>({ userId: '', userRole: 'staff' });
@@ -328,7 +329,11 @@ export default function PerformancePage() {
       setView('tool');
     }
     window.addEventListener('smith:pending-client', onPending);
-    return () => window.removeEventListener('smith:pending-client', onPending);
+    window.addEventListener('smith:pending-analysis', onPending);
+    return () => {
+      window.removeEventListener('smith:pending-client', onPending);
+      window.removeEventListener('smith:pending-analysis', onPending);
+    };
   }, []);
 
   return view === 'history' ? (
@@ -385,6 +390,13 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
 
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
 
+  // Management figures handed over from the SMITH Bookkeeping tool (TB/P&L/BS as
+  // text). When present they stand in for uploaded management accounts.
+  const [bookkeeping, setBookkeeping] = useState<PendingAnalysisData | null>(null);
+  const bookkeepingStatementsText = bookkeeping
+    ? [bookkeeping.current.combined, bookkeeping.prior?.combined].filter(Boolean).join('\n\n\n')
+    : undefined;
+
   // ── Seed loader: when opened from history, hydrate the success view
   const seedLoadedRef = useRef(false);
   useEffect(() => {
@@ -429,6 +441,28 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
     }
     window.addEventListener('smith:pending-client', handle);
     return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
+
+  // ── Launch from Bookkeeping: pre-fill management figures + period ───────────
+  useEffect(() => {
+    function apply(d: PendingAnalysisData) {
+      setBookkeeping(d);
+      if (d.businessName) setPaBusinessName(d.businessName);
+      if (d.client?.business_type) setPaBusinessType(d.client.business_type);
+      setPaReportingPeriodEnd(d.period.toIso);
+      // A full financial year of figures → yearly analysis by default; the user
+      // can switch to quarterly/monthly on the wizard if they'd rather.
+      setPaAnalysisPeriod(prev => prev || 'yearly');
+    }
+    const pending = consumePendingAnalysis('/performance');
+    if (pending) apply(pending);
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/performance') return;
+      const p = consumePendingAnalysis('/performance');
+      if (p) apply(p);
+    }
+    window.addEventListener('smith:pending-analysis', handle);
+    return () => window.removeEventListener('smith:pending-analysis', handle);
   }, []);
 
   const [selectedSections, setSelectedSections] = useState<SectionId[]>(
@@ -542,10 +576,12 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
   }
 
   const allFiles = docs.map(d => d.file);
-  const hasCat = (c: PerfDocCat) => docs.some(d => d.cat === c);
+  // The bookkeeping handoff supplies the management figures as text, so it
+  // satisfies the "management accounts" requirement on its own.
+  const hasCat = (c: PerfDocCat) => docs.some(d => d.cat === c) || (!!bookkeeping && c === 'management_accounts');
   const step1Valid = !!(paBusinessName && paBusinessType && paAnalysisPeriod && paReportingPeriodEnd);
   const step2Valid = selectedSections.length > 0;
-  const step3Valid = hasCat('management_accounts');
+  const step3Valid = hasCat('management_accounts') || !!bookkeeping;
   const canProcess = step1Valid && step2Valid && step3Valid;
   const businessTypeLabel = BUSINESS_TYPE_LABELS[paBusinessType] || 'business';
   const recommendation = recommendSections(paBusinessType, paBusinessTrade);
@@ -598,7 +634,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
       const sym = CURRENCY_SYMBOL[paCurrency] ?? '£';
       const relevantInfoWithCurrency = `${paCurrency !== 'GBP' ? `All monetary figures are in ${paCurrency} (${sym}). ` : ''}${paRelevantInfo}`.trim();
       const effectivePastAnalyses = (usePastContext && pastAnalyses.length > 0) ? pastAnalyses.slice(0, 3) : null;
-      const res = await fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo: relevantInfoWithCurrency, paAnalysisPeriod, paAnalysisPeriodDescription: effectivePeriodDescription, selectedSections, pastAnalyses: effectivePastAnalyses, files: fileData, clientId: selectedClient?.id ?? null, clientCode: selectedClient?.client_ref ?? null }) });
+      const res = await fetch('/api/performance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo: relevantInfoWithCurrency, paAnalysisPeriod, paAnalysisPeriodDescription: effectivePeriodDescription, selectedSections, pastAnalyses: effectivePastAnalyses, files: fileData, clientId: selectedClient?.id ?? null, clientCode: selectedClient?.client_ref ?? null, bookkeepingStatements: bookkeepingStatementsText }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed'); }
       const data = await res.json();
       if (progressRef.current) clearInterval(progressRef.current);
@@ -612,7 +648,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
       if (progressRef.current) clearInterval(progressRef.current);
       setError(err instanceof Error ? err.message : 'Unknown error'); setAppState('error'); setProgress(0);
     }
-  }, [canProcess, paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription, paReportingPeriodEnd, paCurrency, selectedSections, allFiles, selectedClient?.id, usePastContext, pastAnalyses]);
+  }, [canProcess, paBusinessName, paBusinessType, paBusinessTrade, paTradingLocation, paRelevantInfo, paAnalysisPeriod, paAnalysisPeriodDescription, paReportingPeriodEnd, paCurrency, selectedSections, allFiles, selectedClient?.id, usePastContext, pastAnalyses, bookkeepingStatementsText]);
 
   // Wrap the current (possibly edited) HTML in a standalone document for download/Drive
   const themeColor = getThemeColor(coverOpts.gradient);
@@ -654,18 +690,20 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
   const reportFileName = `Performance_Analysis_${paBusinessName.replace(/\s+/g, '_') || 'Report'}`;
 
   if (appState === 'loading') {
-    const processingFiles: ProgressFile[] = allFiles.map(f => ({ name: f.name, status: 'processing' as const }));
+    const processingFiles: ProgressFile[] = allFiles.length > 0
+      ? allFiles.map(f => ({ name: f.name, status: 'processing' as const }))
+      : bookkeeping ? [{ name: 'Statements from SMITH Bookkeeping', status: 'processing' as const }] : [];
     return (
       <ProcessingView
         progress={progress}
-        fileCount={allFiles.length}
+        fileCount={processingFiles.length}
         files={processingFiles}
         steps={['Reading accounts', 'Calculating KPIs', 'Benchmarking performance', 'Writing commentary', 'Building report']}
       />
     );
   }
   if (appState === 'error') return (
-    <ToolLayout title="Performance Analysis" icon={TrendingUp} iconColor="#059669" wide>
+    <ToolLayout title="Performance Analysis" icon={Gauge} iconColor="#059669" wide>
       <BackToHistory onBack={onBack} />
       <ErrorDisplay error={error || ''} onRetry={() => setAppState('idle')} />
     </ToolLayout>
@@ -707,7 +745,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
   };
 
   return (
-    <ToolLayout title="Performance Analysis" description="Analyse management accounts and produce a business performance report with KPI ratios." icon={TrendingUp} iconColor="#059669" wide>
+    <ToolLayout title="Performance Analysis" description="Analyse management accounts and produce a business performance report with KPI ratios." icon={Gauge} iconColor="#059669" wide>
       <BackToHistory onBack={onBack} />
 
       {/* Save toast — success/error feedback, auto-dismisses */}
@@ -924,6 +962,35 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
                   </div>
                 )}
 
+                {/* Management figures handed over from the Bookkeeping tool */}
+                {bookkeeping && (
+                  <div className="bg-white/[0.78] backdrop-blur-md rounded-2xl p-4 space-y-2 border border-[var(--accent)]/30">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+                        <BookCopy size={14} className="text-[var(--accent)]" /> From SMITH Bookkeeping
+                      </p>
+                      <button type="button" onClick={() => setBookkeeping(null)} aria-label="Remove bookkeeping statements" className="text-[var(--text-muted)] hover:text-red-500">
+                        <X size={15} />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      {bookkeeping.current.periodLabel}{bookkeeping.prior ? ' · incl. prior year' : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {['Profit & Loss', 'Balance Sheet', 'Trial Balance'].map(s => (
+                        <span key={s} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-white/60 text-xs text-[var(--text-secondary)]">
+                          <FileText size={11} /> {s}
+                        </span>
+                      ))}
+                      {bookkeeping.prior && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-white/60 text-xs text-[var(--text-secondary)]">
+                          Prior year
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                   <ShieldCheck size={14} className="text-[var(--accent)] shrink-0" />
                   Your data is encrypted and secure. Smith will only use it to generate your performance report.
@@ -997,7 +1064,7 @@ function PerformanceTool({ seed, onBack }: { seed: PerformanceSeed | null; onBac
                 disabled={(wizardStep === 1 && !step1Valid) || (wizardStep === 2 && !step2Valid) || (wizardStep === 3 && !step3Valid)}
                 className="btn-primary">Next: {PERF_STEPS[wizardStep]} <ArrowRight size={14} /></button>
             ) : (
-              <button type="button" onClick={handleProcess} disabled={!canProcess} className="btn-primary"><TrendingUp size={15} /> Generate Report</button>
+              <button type="button" onClick={handleProcess} disabled={!canProcess} className="btn-primary"><Gauge size={15} /> Generate Report</button>
             )}
           </div>
         </div>

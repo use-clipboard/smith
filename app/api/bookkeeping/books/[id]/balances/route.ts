@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
+import { computeBalances } from '@/lib/bookkeeping/balances';
 
 // ── GET /api/bookkeeping/books/[id]/balances ─────────────────────────────────
 // Aggregated account balances across the requested date range. The TB, P&L
@@ -64,117 +65,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .single();
   if (bookErr || !book) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  // Pull every split for the book within the date range. PostgREST joins
-  // to the transaction for the date filter; we paginate ourselves because
-  // a single TB request can run into thousands of rows on a real book.
-  const PAGE_SIZE = 1000;
-  type SplitRow = {
-    debit: number;
-    credit: number;
-    account_id: string;
-    account: { id: string; name: string; ledger: string | null; account_type: string; archived: boolean } | null;
-    transaction: { date: string; type: string } | null;
-  };
-  const rows: SplitRow[] = [];
-  let pageStart = 0;
-  while (true) {
-    let q = supabase
-      .from('bookkeeping_transaction_splits')
-      .select(`
-        debit, credit, account_id,
-        account:bookkeeping_accounts!inner(id, name, ledger, account_type, archived, book_id),
-        transaction:bookkeeping_transactions!inner(date, type, book_id)
-      `)
-      .eq('account.book_id', params.id)
-      .eq('transaction.book_id', params.id)
-      .range(pageStart, pageStart + PAGE_SIZE - 1);
-
-    if (from) q = q.gte('transaction.date', from);
-    if (to)   q = q.lte('transaction.date', to);
-    // Exclude e.g. YET (year-end closing) for the P&L, so it shows the
-    // period's gross activity rather than netting to zero.
-    if (excludeTypes.length > 0) q = q.not('transaction.type', 'in', `(${excludeTypes.join(',')})`);
-
-    const { data, error } = await q;
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    if (!data || data.length === 0) break;
-    rows.push(...(data as unknown as SplitRow[]));
-    if (data.length < PAGE_SIZE) break;
-    pageStart += PAGE_SIZE;
+  // Aggregation now lives in lib/bookkeeping/balances.ts so this route and the
+  // /statements endpoint compute from one source of truth.
+  try {
+    const result = await computeBalances(supabase, params.id, { from, to, includeZero, excludeTypes });
+    return NextResponse.json(result);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load balances' }, { status: 500 });
   }
-
-  // Aggregate per account.
-  type Agg = {
-    id: string;
-    name: string;
-    ledger: string | null;
-    account_type: string;
-    debit_total: number;
-    credit_total: number;
-  };
-  const byAccount = new Map<string, Agg>();
-  for (const r of rows) {
-    if (!r.account) continue;
-    const a = byAccount.get(r.account.id) ?? {
-      id: r.account.id,
-      name: r.account.name,
-      ledger: r.account.ledger,
-      account_type: r.account.account_type,
-      debit_total: 0,
-      credit_total: 0,
-    };
-    a.debit_total  = +(a.debit_total  + Number(r.debit)).toFixed(2);
-    a.credit_total = +(a.credit_total + Number(r.credit)).toFixed(2);
-    byAccount.set(r.account.id, a);
-  }
-
-  // Also include accounts that have NO movement in the period when explicitly
-  // asked — useful for TB views that want to show every chart account.
-  if (includeZero) {
-    const { data: allAccounts } = await supabase
-      .from('bookkeeping_accounts')
-      .select('id, name, ledger, account_type')
-      .eq('book_id', params.id)
-      .eq('archived', false);
-    for (const a of allAccounts ?? []) {
-      if (!byAccount.has(a.id)) {
-        byAccount.set(a.id, {
-          id: a.id, name: a.name, ledger: a.ledger, account_type: a.account_type,
-          debit_total: 0, credit_total: 0,
-        });
-      }
-    }
-  }
-
-  const accounts = [...byAccount.values()]
-    .map(a => ({ ...a, balance: +(a.debit_total - a.credit_total).toFixed(2) }))
-    .sort((a, b) => {
-      const ledgerCmp = (a.ledger ?? '').localeCompare(b.ledger ?? '');
-      if (ledgerCmp !== 0) return ledgerCmp;
-      return a.name.localeCompare(b.name);
-    });
-
-  const totals = accounts.reduce(
-    (acc, a) => ({
-      debit_total:  +(acc.debit_total  + a.debit_total).toFixed(2),
-      credit_total: +(acc.credit_total + a.credit_total).toFixed(2),
-    }),
-    { debit_total: 0, credit_total: 0 },
-  );
-
-  // Net profit = sum of (credit - debit) over P&L accounts (income/expense).
-  // Positive = profit.
-  const netProfit = +(
-    accounts
-      .filter(a => a.account_type === 'income' || a.account_type === 'expense')
-      .reduce((s, a) => s + (a.credit_total - a.debit_total), 0)
-  ).toFixed(2);
-
-  return NextResponse.json({
-    from: from ?? null,
-    to: to ?? null,
-    accounts,
-    totals,
-    net_profit: netProfit,
-  });
 }

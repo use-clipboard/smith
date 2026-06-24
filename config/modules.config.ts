@@ -118,7 +118,7 @@ export const MODULES: ModuleConfig[] = [
     id: 'performance',
     name: 'Performance Analysis',
     description: 'Analyse management accounts and produce a business performance report with KPI ratios, benchmarks, and commentary. Supports yearly, quarterly, and monthly periods.',
-    iconName: 'TrendingUp',
+    iconName: 'Gauge',
     route: '/performance',
     alwaysOn: false,
     monthlyPricePence: 2900,

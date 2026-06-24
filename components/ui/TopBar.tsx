@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
-  ClipboardCheck, TrendingUp, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
+  ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
   Maximize2,
 } from 'lucide-react';
 import Avatar from './Avatar';
@@ -55,6 +55,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/policies':        'Policies & Procedures',
   '/clients':         'Clients',
   '/tasks':           'Tasks',
+  '/bookkeeping':     'Bookkeeping',
   '/help':            'Help',
   '/settings':        'Settings',
 };
@@ -72,7 +73,7 @@ const TOOLS = [
   { label: 'Bank to CSV',          href: '/bank-to-csv',     icon: ArrowLeftRight },
   { label: 'Landlord Analysis',    href: '/landlord',        icon: Building2 },
   { label: 'Accounts Review',      href: '/final-accounts',  icon: ClipboardCheck },
-  { label: 'Performance Analysis', href: '/performance',     icon: TrendingUp },
+  { label: 'Performance Analysis', href: '/performance',     icon: Gauge },
   { label: 'P32 Summary',          href: '/p32',             icon: Receipt },
   { label: 'Risk Assessment',      href: '/risk-assessment', icon: ShieldAlert },
   { label: 'Summarise',            href: '/summarise',       icon: FileText },

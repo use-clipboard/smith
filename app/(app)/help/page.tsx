@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   Key, Users, Puzzle, Sparkles, HelpCircle, CreditCard, FileSearch,
-  ArrowLeftRight, Building2, ClipboardCheck, TrendingUp, Receipt,
+  ArrowLeftRight, Building2, ClipboardCheck, Gauge, Receipt,
   ShieldAlert, FileText, Archive, BookOpen, ChevronDown, ChevronRight,
   ExternalLink, CalendarDays, MicVocal, UserPlus, Mail, ListChecks,
   HeartHandshake,
@@ -215,7 +215,7 @@ const TOOLS = [
   { icon: ArrowLeftRight, name: 'Bank to CSV', desc: 'Extracts transactions from a bank statement (PDF, CSV, or Excel) and produces a clean, editable CSV.' },
   { icon: Building2, name: 'Landlord', desc: 'Analyses rental income and expense documents and produces a UK property income computation.' },
   { icon: ClipboardCheck, name: 'Accounts Review', desc: 'Reviews P&L, Balance Sheet, and Trial Balance against UK GAAP. Produces review points with suggested journals and generates working papers for Sole Traders, Partnerships, and Limited Companies.' },
-  { icon: TrendingUp, name: 'Performance Analysis', desc: 'Analyses management accounts and produces a business performance report with KPI ratios and commentary.' },
+  { icon: Gauge, name: 'Performance Analysis', desc: 'Analyses management accounts and produces a business performance report with KPI ratios and commentary.' },
   { icon: Receipt, name: 'P32 Summary', desc: 'Reads a P32 payroll document and produces a client-ready email body summarising the figures.' },
   { icon: ShieldAlert, name: 'Risk Assessment', desc: 'Conducts a structured AML/client risk assessment and produces a rated risk report (Low/Medium/High).' },
   { icon: FileText, name: 'Summarise', desc: 'Summarises documents that are out of date range or not relevant to the current job, for file note purposes.' },

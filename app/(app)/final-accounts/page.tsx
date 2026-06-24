@@ -6,6 +6,7 @@ import ErrorDisplay from '@/components/ui/ErrorDisplay';
 import SaveReportModal from '@/components/ui/SaveReportModal';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { consumePendingClient, peekPendingClient } from '@/lib/pendingClient';
+import { consumePendingAnalysis, peekPendingAnalysis, type PendingAnalysisData } from '@/lib/bookkeeping/pendingAnalysis';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { ClipboardCheck, FileText, Download, Undo2, Redo2, ArrowLeft, TrendingUp, Scale, Calculator, Check, Loader2, UploadCloud, CheckCircle2, Circle, ShieldCheck, Sparkles, BookCopy, AlertCircle, Save, X } from 'lucide-react';
@@ -21,7 +22,7 @@ type AppState = 'idle' | 'loading' | 'success' | 'error';
 export default function FinalAccountsPage() {
   // Skip the history view when arriving via a Quick Launch pill (pending client present).
   const [view, setView] = useState<'history' | 'tool'>(
-    () => peekPendingClient('/final-accounts') ? 'tool' : 'history',
+    () => (peekPendingClient('/final-accounts') || peekPendingAnalysis('/final-accounts')) ? 'tool' : 'history',
   );
   const [seed, setSeed] = useState<FinalAccountsSeed | null>(null);
   const [me, setMe]     = useState<{ userId: string; userRole: 'admin' | 'staff'; fullName: string }>({ userId: '', userRole: 'staff', fullName: '' });
@@ -41,7 +42,11 @@ export default function FinalAccountsPage() {
       setView('tool');
     }
     window.addEventListener('smith:pending-client', onPending);
-    return () => window.removeEventListener('smith:pending-client', onPending);
+    window.addEventListener('smith:pending-analysis', onPending);
+    return () => {
+      window.removeEventListener('smith:pending-client', onPending);
+      window.removeEventListener('smith:pending-analysis', onPending);
+    };
   }, []);
 
   return view === 'history' ? (
@@ -235,6 +240,14 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
   const [selectedClient, setSelectedClient] = useState<SelectedClient | null>(null);
   const clientCode = selectedClient?.client_ref ?? '';
 
+  // Statements handed over from the SMITH Bookkeeping tool (TB/P&L/BS as text).
+  // When present they stand in for uploaded documents — shown as "from
+  // Bookkeeping" chips and sent to the analyse route as text.
+  const [bookkeeping, setBookkeeping] = useState<PendingAnalysisData | null>(null);
+  const bookkeepingStatementsText = bookkeeping
+    ? [bookkeeping.current.combined, bookkeeping.prior?.combined].filter(Boolean).join('\n\n\n')
+    : undefined;
+
   // ── Seed loader: when opened from history dashboard, hydrate the success view
   const seedLoadedRef = useRef(false);
   useEffect(() => {
@@ -278,6 +291,28 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
     }
     window.addEventListener('smith:pending-client', handle);
     return () => window.removeEventListener('smith:pending-client', handle);
+  }, []);
+
+  // ── Launch from Bookkeeping: pre-fill statements + period ───────────────────
+  useEffect(() => {
+    function apply(d: PendingAnalysisData) {
+      setBookkeeping(d);
+      if (d.businessName) setBusinessName(d.businessName);
+      if (d.client?.business_type) setBusinessType(d.client.business_type);
+      if (d.client?.vat_number) setIsVatRegistered(true);
+      // The book's period drives the year end (and derived start).
+      setPeriodEnd(d.period.toIso);
+      setPeriodStart(d.period.fromIso);
+    }
+    const pending = consumePendingAnalysis('/final-accounts');
+    if (pending) apply(pending);
+    function handle(e: Event) {
+      if ((e as CustomEvent<{ route: string }>).detail.route !== '/final-accounts') return;
+      const p = consumePendingAnalysis('/final-accounts');
+      if (p) apply(p);
+    }
+    window.addEventListener('smith:pending-analysis', handle);
+    return () => window.removeEventListener('smith:pending-analysis', handle);
   }, []);
 
   // Pre-populate fields when a client is selected
@@ -341,17 +376,23 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
 
   const workingPapers = workingPapersHistory[wpHistoryIndex] || [];
   const allFiles = docs.map(d => d.file);
-  const hasCat = (c: DocCat) => docs.some(d => d.cat === c);
+  // The bookkeeping handoff supplies the three core statements (and prior year)
+  // as text, so the readiness checklist ticks those off too.
+  const hasCat = (c: DocCat) =>
+    docs.some(d => d.cat === c)
+    || (!!bookkeeping && (c === 'trial_balance' || c === 'balance_sheet' || c === 'profit_loss'))
+    || (!!bookkeeping?.prior && c === 'prior_year');
   const requiredUploaded = REQUIRED_CATS.filter(c => hasCat(c.key)).length;
   // Gate on the essentials only — business type, year end and at least one
   // document. The AI receives every uploaded file regardless of its tag, so a
   // combined "accounts package" PDF (or a mis-detected filename) shouldn't block
   // the user; the AI Readiness checklist is live guidance, not a hard barrier.
-  const canProcess = !!(businessType && periodEnd && docs.length > 0);
+  const hasSource = docs.length > 0 || !!bookkeeping;
+  const canProcess = !!(businessType && periodEnd && hasSource);
   // The single most relevant thing still blocking "Analyse" — surfaced next to
   // the button so a disabled state is never a mystery (e.g. a forgotten year end
   // even when all the files are detected).
-  const missingMsg = docs.length === 0 ? 'Upload your accounts to continue'
+  const missingMsg = !hasSource ? 'Upload your accounts to continue'
     : !businessType ? 'Select a business type'
     : !periodEnd ? 'Add a year end to continue'
     : '';
@@ -384,7 +425,7 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
     progressRef.current = setInterval(() => { elapsed += 100; setProgress(Math.min(99, (elapsed / est) * 100)); }, 100);
     try {
       const fileData = await Promise.all(allFiles.map(async f => ({ name: f.name, mimeType: f.type || 'application/pdf', base64: await fileToBase64(f) })));
-      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, files: fileData, clientId: selectedClient?.id ?? null }) });
+      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, files: fileData, clientId: selectedClient?.id ?? null, bookkeepingStatements: bookkeepingStatementsText }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed'); }
       const data = await res.json();
       if (progressRef.current) clearInterval(progressRef.current);
@@ -403,7 +444,7 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
       if (progressRef.current) clearInterval(progressRef.current);
       setError(err instanceof Error ? err.message : 'Unknown error'); setAppState('error'); setProgress(0);
     }
-  }, [canProcess, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, allFiles, selectedClient?.id]);
+  }, [canProcess, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, allFiles, selectedClient?.id, bookkeepingStatementsText]);
 
   // Produce (or regenerate) the working papers on demand — step 2 of the job.
   // The documents are re-sent so the AI can extract the figures that populate
@@ -420,7 +461,7 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
     wpProgressRef.current = setInterval(() => { elapsed += 100; setWpProgress(Math.min(96, (elapsed / est) * 100)); }, 100);
     try {
       const fileData = await Promise.all(allFiles.map(async f => ({ name: f.name, mimeType: f.type || 'application/pdf', base64: await fileToBase64(f) })));
-      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'working_papers', businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, reviewPoints, files: fileData, clientId: selectedClient?.id ?? null }) });
+      const res = await fetch('/api/final-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'working_papers', businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, reviewPoints, files: fileData, clientId: selectedClient?.id ?? null, bookkeepingStatements: bookkeepingStatementsText }) });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Failed'); }
       const data = await res.json();
       const newPapers = (data.workingPapers || []).filter(Boolean);
@@ -435,7 +476,7 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
       if (wpProgressRef.current) clearInterval(wpProgressRef.current);
       setIsGeneratingPapers(false);
     }
-  }, [reviewPoints, allFiles, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, selectedClient?.id, workingPapersHistory, wpHistoryIndex]);
+  }, [reviewPoints, allFiles, businessName, clientCode, businessType, isVatRegistered, periodStart, periodEnd, relevantContext, preparerName, selectedClient?.id, workingPapersHistory, wpHistoryIndex, bookkeepingStatementsText]);
 
   const reportHtml = generateReportHtml(businessName, clientCode, businessType, periodStart, periodEnd, preparerName, relevantContext, reviewPoints, workingPapers);
   const reportFileName = `Final_Accounts_Review_${businessName.replace(/\s+/g, '_') || 'Report'}`;
@@ -447,11 +488,13 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
   const finalPackFileName = `Final_Pack_${businessName.replace(/\s+/g, '_') || 'Report'}`;
 
   if (appState === 'loading') {
-    const processingFiles: ProgressFile[] = allFiles.map(f => ({ name: f.name, status: 'processing' as const }));
+    const processingFiles: ProgressFile[] = allFiles.length > 0
+      ? allFiles.map(f => ({ name: f.name, status: 'processing' as const }))
+      : bookkeeping ? [{ name: 'Statements from SMITH Bookkeeping', status: 'processing' as const }] : [];
     return (
       <ProcessingView
         progress={progress}
-        fileCount={allFiles.length}
+        fileCount={processingFiles.length}
         files={processingFiles}
         steps={['Reading financial statements', 'Analysing performance', 'Identifying review points', 'Compiling review']}
       />
@@ -683,6 +726,35 @@ function FinalAccountsTool({ seed, onBack, meName }: { seed: FinalAccountsSeed |
                       </button>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Statements handed over from the Bookkeeping tool */}
+              {bookkeeping && (
+                <div className="bg-white/[0.78] backdrop-blur-md rounded-2xl p-4 space-y-2 border border-[var(--accent)]/30">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-[var(--text-secondary)] flex items-center gap-1.5">
+                      <BookCopy size={14} className="text-[var(--accent)]" /> From SMITH Bookkeeping
+                    </p>
+                    <button type="button" onClick={() => setBookkeeping(null)} aria-label="Remove bookkeeping statements" className="text-[var(--text-muted)] hover:text-red-500">
+                      <X size={15} />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    {bookkeeping.current.periodLabel}{bookkeeping.prior ? ' · incl. prior year' : ''}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Profit & Loss', 'Balance Sheet', 'Trial Balance'].map(s => (
+                      <span key={s} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-white/60 text-xs text-[var(--text-secondary)]">
+                        <FileText size={11} /> {s}
+                      </span>
+                    ))}
+                    {bookkeeping.prior && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[var(--border)] bg-white/60 text-xs text-[var(--text-secondary)]">
+                        Prior year
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 
