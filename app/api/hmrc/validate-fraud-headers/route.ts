@@ -50,7 +50,30 @@ export async function POST(req: NextRequest) {
   try {
     token = (await getApplicationToken()).access_token;
   } catch (e) {
-    return NextResponse.json({ error: `Could not get an HMRC application token: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
+    // SAFE diagnostics — fingerprints of the configured creds, never the secret
+    // itself. Expected sandbox: client id length 28, secret length 36 (UUID),
+    // no quotes/whitespace, env=sandbox. A 401 invalid_client with a mismatch
+    // here means the Vercel env var was pasted wrong.
+    const fp = (raw?: string) => {
+      if (!raw) return { set: false };
+      return {
+        set: true,
+        length: raw.length,
+        trimmedLength: raw.trim().length,            // ≠ length → stray whitespace
+        hasSurroundingQuotes: /^["']|["']$/.test(raw),
+        preview: raw.length <= 6 ? '***' : `${raw.slice(0, 2)}…${raw.slice(-2)}`,
+      };
+    };
+    return NextResponse.json({
+      error: `Could not get an HMRC application token: ${e instanceof Error ? e.message : String(e)}`,
+      diagnostics: {
+        env: HMRC_ENV,
+        baseUrl: HMRC_BASE_URL,
+        clientId: fp(process.env.HMRC_CLIENT_ID),
+        clientSecret: fp(process.env.HMRC_CLIENT_SECRET),
+        expected: { clientIdLength: 28, clientSecretLength: 36, env: 'sandbox' },
+      },
+    }, { status: 502 });
   }
 
   let res: Response;

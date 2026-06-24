@@ -43,11 +43,13 @@ const VERDICT = {
 export default function FraudHeaderValidator() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [result, setResult] = useState<ValidateResult | null>(null);
 
   async function run() {
     setRunning(true);
     setError(null);
+    setDiagnostics(null);
     setResult(null);
     try {
       const r = await fetch('/api/hmrc/validate-fraud-headers', {
@@ -56,7 +58,7 @@ export default function FraudHeaderValidator() {
         body: JSON.stringify({ fraudData: collectFraudData() }),
       });
       const d = await r.json();
-      if (!r.ok) { setError(d.error ?? 'Validation failed.'); return; }
+      if (!r.ok) { setError(d.error ?? 'Validation failed.'); setDiagnostics(d.diagnostics ?? null); return; }
       setResult(d as ValidateResult);
     } catch (e) {
       setError(String(e));
@@ -96,6 +98,15 @@ export default function FraudHeaderValidator() {
 
         {error && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</div>
+        )}
+
+        {diagnostics != null && (
+          <div className="mt-3">
+            <p className="text-xs font-semibold text-slate-600 mb-1.5">Credential diagnostics (no secret shown)</p>
+            <pre className="max-h-72 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">
+              {JSON.stringify(diagnostics, null, 2)}
+            </pre>
+          </div>
         )}
       </div>
 
