@@ -78,6 +78,19 @@ export function refreshTokens(refreshToken: string): Promise<HmrcTokens> {
   }));
 }
 
+/**
+ * Application (server) token via the client-credentials grant — used for HMRC's
+ * APPLICATION-RESTRICTED endpoints that aren't tied to a user, e.g. the Test
+ * Fraud Prevention Headers validator. No user consent / scope needed.
+ */
+export function getApplicationToken(): Promise<HmrcTokens> {
+  return tokenRequest(new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: hmrcClientId(),
+    client_secret: hmrcClientSecret(),
+  }));
+}
+
 /** ISO timestamp `expires_in` seconds from now, for storing token_expiry. */
 export function expiryFromNow(expiresIn: number): string {
   return new Date(Date.now() + Math.max(0, (expiresIn - 60)) * 1000).toISOString();

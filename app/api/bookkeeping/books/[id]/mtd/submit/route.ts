@@ -6,7 +6,7 @@ import { computeVatReturn } from '@/lib/bookkeeping/vatReturn';
 import { recordVatFiling } from '@/lib/bookkeeping/recordVatFiling';
 import { isHmrcConfigured } from '@/lib/hmrc/config';
 import { getConnectionForBook, hmrcRequest } from '@/lib/hmrc/api';
-import { buildFraudHeaders } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp } from '@/lib/hmrc/fraudHeaders';
 
 // ── POST /api/bookkeeping/books/[id]/mtd/submit ──────────────────────────────
 // Submits a VAT return to HMRC and files it in SMITH in one step. The 9-box
@@ -76,7 +76,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     finalised: true,
   };
 
-  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData, { userId: ctx.userId, vendorPublicIp }) : {};
   const result = await hmrcRequest(conn, `/organisations/vat/${vrn}/returns`, { method: 'POST', body: payload, fraudHeaders });
   if (result.status !== 200 && result.status !== 201) {
     return NextResponse.json({ error: hmrcError(result.json), status: result.status, detail: result.json }, { status: 502 });

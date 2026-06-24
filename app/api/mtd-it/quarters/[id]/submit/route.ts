@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { isHmrcConfigured } from '@/lib/hmrc/config';
 import { getHmrcConnection, hmrcRequest, hmrcErrorMessage, type HmrcConnection } from '@/lib/hmrc/api';
-import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { normaliseNino } from '@/lib/hmrc/mtdItServer';
 import { computeFilingUnits, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
 import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
@@ -79,7 +79,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const quarterType: MtdItQuarterType = (client.mtd_it_quarter_type as MtdItQuarterType) ?? 'calendar';
   const uptoQuarter = quarter.quarter as 1 | 2 | 3 | 4;
   const taxYearStr = hmrcTaxYear(quarter.tax_year as number);
-  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData, { userId: ctx.userId, vendorPublicIp }) : {};
 
   const [{ data: trades }, { data: props }] = await Promise.all([
     service.from('mtd_it_trades').select('id, name, hmrc_business_id').eq('client_id', client.id).eq('active', true),

@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { isHmrcConfigured } from '@/lib/hmrc/config';
 import { getHmrcConnection, hmrcRequest, hmrcErrorMessage } from '@/lib/hmrc/api';
-import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { normaliseNino } from '@/lib/hmrc/mtdItServer';
 
 // ── POST /api/mtd-it/agent/discover-businesses ───────────────────────────────
@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
   const { data: clients } = await q;
 
   const fraudData = body.fraudData as ClientFraudData | undefined;
-  const fraudHeaders = fraudData ? buildFraudHeaders(req, fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = fraudData ? buildFraudHeaders(req, fraudData, { userId: ctx.userId, vendorPublicIp }) : {};
   const testScenario = body.testScenario || undefined;
 
   // Sequential sweep. Each client uses its OWN connection if it has one

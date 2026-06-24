@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { hmrcRequest, hmrcErrorMessage } from '@/lib/hmrc/api';
-import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { resolveMtdItCtx } from '@/lib/hmrc/mtdItServer';
 
 // ── POST /api/mtd-it/clients/[clientId]/businesses ───────────────────────────
@@ -13,10 +13,11 @@ interface HmrcBusiness { typeOfBusiness?: string; businessId?: string; tradingNa
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const r = await resolveMtdItCtx(params.id);
   if (r instanceof NextResponse) return r;
-  const { client, conn, service } = r;
+  const { client, conn, service, userId } = r;
 
   const body = await req.json().catch(() => ({})) as { fraudData?: ClientFraudData; testScenario?: string };
-  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData, { userId, vendorPublicIp }) : {};
 
   const result = await hmrcRequest(conn, `/individuals/business/details/${client.nino}/list`, {
     version: '2.0', fraudHeaders, testScenario: body.testScenario || undefined,

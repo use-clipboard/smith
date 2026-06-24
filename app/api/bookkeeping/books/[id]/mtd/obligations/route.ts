@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { isHmrcConfigured } from '@/lib/hmrc/config';
 import { getConnectionForBook, hmrcRequest } from '@/lib/hmrc/api';
-import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 
 // ── POST /api/bookkeeping/books/[id]/mtd/obligations ─────────────────────────
 // Lists the OPEN VAT obligations (periods awaiting a return) for the book's VRN.
@@ -31,7 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const conn = await getConnectionForBook(service, ctx.firmId, params.id);
   if (!conn) return NextResponse.json({ error: 'Connect HMRC first.' }, { status: 400 });
 
-  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData, { userId: ctx.userId, vendorPublicIp }) : {};
   // Gov-Test-Scenario only affects HMRC's SANDBOX (ignored in production), and
   // lets sandbox return obligations dated relative to today instead of the
   // static 2017 sample data.

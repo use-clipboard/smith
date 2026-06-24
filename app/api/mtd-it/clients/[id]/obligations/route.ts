@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { hmrcRequest, hmrcErrorMessage } from '@/lib/hmrc/api';
-import { buildFraudHeaders, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
+import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { resolveMtdItCtx } from '@/lib/hmrc/mtdItServer';
 
 // ── POST /api/mtd-it/clients/[clientId]/obligations ──────────────────────────
@@ -12,13 +12,14 @@ const TYPES = new Set(['self-employment', 'uk-property', 'foreign-property']);
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const r = await resolveMtdItCtx(params.id);
   if (r instanceof NextResponse) return r;
-  const { client, conn } = r;
+  const { client, conn, userId } = r;
 
   const body = await req.json().catch(() => ({})) as {
     fraudData?: ClientFraudData; testScenario?: string;
     typeOfBusiness?: string; businessId?: string; status?: 'Open' | 'Fulfilled';
   };
-  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData) : {};
+  const vendorPublicIp = await resolveVendorPublicIp();
+  const fraudHeaders = body.fraudData ? buildFraudHeaders(req, body.fraudData, { userId, vendorPublicIp }) : {};
 
   const qs = new URLSearchParams();
   if (body.typeOfBusiness && TYPES.has(body.typeOfBusiness)) qs.set('typeOfBusiness', body.typeOfBusiness);
