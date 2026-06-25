@@ -14,7 +14,10 @@ export function getCalendarAuthUrl() {
     access_type: 'offline',
     prompt: 'consent',
     scope: [
-      'https://www.googleapis.com/auth/calendar',
+      // calendar.events (not full `calendar`) — SMITH only reads/writes events
+      // on the user's calendar, never calendar settings/sharing/ACLs. Both are
+      // "sensitive" tier, but the narrower scope is a cleaner verification ask.
+      'https://www.googleapis.com/auth/calendar.events',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
   });
