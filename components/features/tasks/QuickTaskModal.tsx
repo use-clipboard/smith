@@ -344,7 +344,7 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                     <span className="text-sm text-gray-500">days</span>
                   </div>
                 )}
-                {recurrence && recurrence !== '' && (
+                {recurrence && (
                   <p className="text-xs text-gray-400">
                     For more control over recurring tasks (custom assignees per recurrence, conditional steps), use a Full Task instead.
                   </p>

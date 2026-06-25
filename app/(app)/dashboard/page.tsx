@@ -79,7 +79,7 @@ export default async function DashboardPage() {
       recentClients={recentClients ?? []}
       recentOutputs={(recentOutputs ?? []) as unknown as { id: string; feature: string; created_at: string; clients?: { name: string; client_ref?: string | null } | null }[]}
       teamMembers={teamMembers}
-      whiteboardMessages={(whiteboardMessages ?? []) as unknown as { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string }[]}
+      whiteboardMessages={(whiteboardMessages ?? []) as unknown as { id: string; content: string; color: 'yellow' | 'pink' | 'blue'; author_name: string; created_at: string; user_id: string; kind: 'sticky' | 'marker'; pos_x: number; pos_y: number; rotation: number }[]}
       currentUserId={user?.id ?? ''}
       firmId={firmId}
       currentUserName={currentUserName}

@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
 
   // Strip reporter identity for the recipient when anonymous
-  let masked = row as typeof row & { reporter?: unknown };
+  let masked = row as Omit<typeof row, 'reporter'> & { reporter?: unknown };
   if (row.is_anonymous && row.reporter_id !== ctx.userId) {
     masked = { ...row, reporter_id: '__anonymous__', reporter: null };
   }

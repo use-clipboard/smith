@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2, Filter, User, Users as UsersIcon, Building2, Shield, HandHeart, Home, UserCircle } from 'lucide-react';
+import { Plus, Upload, Search, ChevronRight, Circle, ChevronUp, ChevronDown, ChevronsUpDown, Download, SlidersHorizontal, X, CheckSquare, Trash2, Filter, User, Users as UsersIcon, Building2, Shield, HandHeart, Home, UserCircle, type LucideIcon } from 'lucide-react';
 import ClientImportModal from '@/components/ui/ClientImportModal';
 import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
@@ -11,7 +11,7 @@ import { Users } from 'lucide-react';
 
 // Business-type metadata for the inline expandable filter pill.
 // Keeping label + icon together makes adding new types a one-line edit.
-const CLIENT_TYPE_OPTIONS: Array<{ value: string; label: string; Icon: React.ComponentType<{ size?: number; className?: string }> }> = [
+const CLIENT_TYPE_OPTIONS: Array<{ value: string; label: string; Icon: LucideIcon }> = [
   { value: 'sole_trader',     label: 'Sole Trader',     Icon: User },
   { value: 'partnership',     label: 'Partnership',     Icon: UsersIcon },
   { value: 'limited_company', label: 'Limited Company', Icon: Building2 },

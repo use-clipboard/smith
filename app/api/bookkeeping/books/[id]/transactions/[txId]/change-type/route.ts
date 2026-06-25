@@ -52,6 +52,7 @@ const PRIMARY_LEDGER: Record<TxType, string | null> = {
   SIN: 'Customers', SCR: 'Customers',
   PIN: 'Suppliers', PCR: 'Suppliers',
   JRN: null, RJN: null,
+  WOF: null, WBK: null, YET: null, DVT: null,
 };
 
 const TYPES_WITHOUT_PRIMARY = new Set<TxType>(['JRN', 'RJN']);

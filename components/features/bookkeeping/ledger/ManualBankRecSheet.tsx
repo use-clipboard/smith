@@ -79,19 +79,6 @@ interface Props {
    *  payee / total; ledger + analysis stay blank for the user (or the
    *  forthcoming auto-allocate step) to fill in. */
   seedRows?: ManualSeedRow[];
-}
-
-/** Pre-populated row shape used to seed the sheet from a CSV import.
- *  Intentionally a subset of RowDraft — we never seed VAT treatment,
- *  analysis account, or entry-details because those require human (or
- *  rule-based) judgement based on context. */
-export interface ManualSeedRow {
-  type: 'PAY' | 'REC' | 'CHQ' | 'TRF';
-  /** dd/mm/yyyy — same format the rest of the sheet uses. */
-  dateUk: string;
-  payee: string;
-  /** Pre-formatted gross amount as a string, e.g. "9.35". */
-  totalText: string;
   /** Optional. When provided the posted rows attach to this active rec
    *  rather than creating a sibling import. Used by the period-first
    *  Reconcile workspace's Manual entry chip. */
@@ -108,6 +95,19 @@ export interface ManualSeedRow {
   /** Called when the post succeeds. Returns the import_id (existing or
    *  freshly created) so the caller can refresh or navigate. */
   onPosted: (importId: string) => void;
+}
+
+/** Pre-populated row shape used to seed the sheet from a CSV import.
+ *  Intentionally a subset of RowDraft — we never seed VAT treatment,
+ *  analysis account, or entry-details because those require human (or
+ *  rule-based) judgement based on context. */
+export interface ManualSeedRow {
+  type: 'PAY' | 'REC' | 'CHQ' | 'TRF';
+  /** dd/mm/yyyy — same format the rest of the sheet uses. */
+  dateUk: string;
+  payee: string;
+  /** Pre-formatted gross amount as a string, e.g. "9.35". */
+  totalText: string;
 }
 
 /** Existing ledger entry on the bank account, rendered as a muted

@@ -855,7 +855,7 @@ function Cell({
   txn: Transaction;
   onOpenAccount?: (a: { id: string; name: string; ledger: string | null }) => void;
   onOpenTypeList?: (type: TransactionType, txnId?: string) => void;
-  analysisSplit: Transaction['splits'] extends (infer S)[] | undefined ? S : never;
+  analysisSplit?: Transaction['splits'] extends (infer S)[] | undefined ? S : never;
 }) {
   switch (col) {
     case 'date': return <div className="px-2 text-gray-700 tabular-nums">{formatDateUk(txn.date)}</div>;

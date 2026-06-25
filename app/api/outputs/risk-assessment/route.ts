@@ -11,7 +11,7 @@ const SaveSchema = z.object({
   raClientName: z.string().optional().default(''),
   raClientCode: z.string().optional().default(''),
   raClientType: z.string().optional().default(''),
-  answers: z.record(z.object({ answer: z.boolean(), comment: z.string() })).default({}),
+  answers: z.record(z.string(), z.object({ answer: z.boolean(), comment: z.string() })).default({}),
   report: z.object({
     overallRiskLevel: z.enum(['Low', 'Medium', 'High']),
     riskJustification: z.string(),

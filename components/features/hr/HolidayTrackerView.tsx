@@ -257,7 +257,7 @@ export default function HolidayTrackerView({ team, departments, userId, userRole
       if (a.user_id !== memberId) continue;
       const kind = categoryToKind(a.category);
       const synthetic: HolidayRow = {
-        id: a.id, firm_id: '', user_id: a.user_id, manager_id: null,
+        id: a.id, user_id: a.user_id, manager_id: null,
         start_date: a.start_date, start_half: a.start_half,
         end_date: a.end_date, end_half: a.end_half,
         total_days: 0, reason: null, status: 'approved', source: 'direct',

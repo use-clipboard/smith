@@ -1915,15 +1915,18 @@ export default function ClientDetailPage() {
                           isAdmin={isAdminUser} onReallocate={openReallocateNote} />
                       );
                     }
-                    return (
-                      <EmailThreadGroupCard
-                        key={`pin-group-${item.data.groupKey}`}
-                        group={item.data}
-                        onPin={handlePinNote}
-                        isAdmin={isAdminUser}
-                        onReallocateGroup={openReallocateGroup}
-                      />
-                    );
+                    if (item.kind === 'email-group') {
+                      return (
+                        <EmailThreadGroupCard
+                          key={`pin-group-${item.data.groupKey}`}
+                          group={item.data}
+                          onPin={handlePinNote}
+                          isAdmin={isAdminUser}
+                          onReallocateGroup={openReallocateGroup}
+                        />
+                      );
+                    }
+                    return null;
                   })}
                 </div>
               )}

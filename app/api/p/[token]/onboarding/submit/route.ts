@@ -8,7 +8,7 @@ const Body = z.object({
   form_id: z.string().uuid(),
   submitted_by_name: z.string().min(1),
   submitted_by_email: z.string().email(),
-  answers: z.record(z.unknown()),
+  answers: z.record(z.string(), z.unknown()),
 });
 
 // Whitelist of columns on `clients` we'll allow a form to write into.
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   if (!form) return NextResponse.json({ error: 'Form not found' }, { status: 404 });
 
   // Required-field validation
-  const fields = (form.fields as Array<{ field_key: string; label: string; field_type: string; required: boolean; show_if_field_key: string | null; show_if_value: string | null }>) ?? [];
+  const fields = (form.fields as Array<{ field_key: string; label: string; field_type: string; required: boolean; show_if_field_key: string | null; show_if_value: string | null; client_field_mapping: string | null }>) ?? [];
   for (const f of fields) {
     if (f.field_type === 'section_header' || f.field_type === 'info') continue;
     if (!f.required) continue;
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     .maybeSingle();
 
   const sideEffectLog: Record<string, unknown> = {};
-  const prospect = proposal.prospect as { id: string; contact_name: string; company_name: string | null; email: string; phone: string | null; client_type: string | null; converted_client_id: string | null };
+  const prospect = (Array.isArray(proposal.prospect) ? proposal.prospect[0] : proposal.prospect) as { id: string; contact_name: string; company_name: string | null; email: string; phone: string | null; client_type: string | null; converted_client_id: string | null };
 
   // ── Side-effect 1: graduate prospect → client ────────────────────────
   let graduatedClientId: string | null = prospect.converted_client_id;

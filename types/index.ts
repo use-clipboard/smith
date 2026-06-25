@@ -836,6 +836,7 @@ export interface DefaultTemplateStep {
   description?: string;
   assignee_role: 'team_member' | 'client' | 'any';
   tool_module_id?: string;
+  client_instructions?: string;
   email_reminder_enabled?: boolean;
   email_reminder_config?: Partial<EmailReminderConfig>;
   time_estimate_minutes?: number;

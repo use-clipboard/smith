@@ -326,7 +326,7 @@ function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
     recurrence_type: (t.recurrence_type as RecurrenceType) ?? null,
     recurrence_interval_days: ('recurrence_interval_days' in t ? (t as TaskTemplate).recurrence_interval_days : null) ?? null,
     estimated_duration_days: ('estimated_duration_days' in t ? t.estimated_duration_days : null) ?? null,
-    steps: (t.steps ?? []).map((s: Record<string, unknown>) => ({
+    steps: ((t.steps ?? []) as unknown as Array<Record<string, unknown>>).map(s => ({
       step_key:              String(s.step_key ?? ''),
       title:                 String(s.title ?? ''),
       description:           (s.description as string | null) ?? null,
@@ -345,8 +345,8 @@ function toTemplateData(t: DefaultTemplate | TaskTemplate): TemplateData {
       step_type:             (s.step_type as 'regular' | 'start' | 'end') ?? 'regular',
       start_trigger_config:  (s.start_trigger_config as object | null) ?? null,
       end_config:            (s.end_config as object | null) ?? null,
-    })),
-    edges: (('edges' in t ? t.edges : []) ?? []).map((e: Record<string, unknown>) => ({
+    })) as TemplateData['steps'],
+    edges: ((('edges' in t ? t.edges : []) ?? []) as Array<Record<string, unknown>>).map(e => ({
       from_step_key:  String(e.from_step_key ?? ''),
       to_step_key:    String(e.to_step_key ?? ''),
       label:          (e.label as string | null) ?? null,
@@ -442,7 +442,7 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
     created_at: '',
     updated_at: '',
     assignee: teamMembers.find(m => m.id === s.assignee_id) ?? null,
-  })), [steps, teamMembers]);
+  }) as TaskStep), [steps, teamMembers]);
 
   const previewEdges: TaskStepEdge[] = useMemo(() => edges.map((e, i) => ({
     id: `e-${i}`,

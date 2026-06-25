@@ -36,7 +36,7 @@ export function classifyTasks(tasks: Task[]): {
   for (const t of tasks) {
     const w = classifyDue(t, today, weekEnd);
     classMap.set(t.id, w);
-    if (w) counts[w] += 1;
+    if (w && w !== 'all') counts[w] += 1;
   }
   return { classMap, counts };
 }

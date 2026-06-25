@@ -25,7 +25,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const services = ((proposal.line_items as Array<{ service_name: string; frequency: string }>) ?? [])
     .map(li => li.service_name)
     .filter((v, i, arr) => arr.indexOf(v) === i);
-  const p = proposal.prospect as { contact_name: string; company_name: string | null; client_type: string | null; source: string | null; notes: string | null };
+  const p = (Array.isArray(proposal.prospect) ? proposal.prospect[0] : proposal.prospect) as { contact_name: string; company_name: string | null; client_type: string | null; source: string | null; notes: string | null };
 
   try {
     const anthropic = await getAnthropicForFirm(ctx.firmId);

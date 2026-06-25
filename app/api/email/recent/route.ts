@@ -62,7 +62,7 @@ export async function GET() {
     );
 
     const emails: RecentEmail[] = results
-      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof gmail.users.messages.get>>> => r.status === 'fulfilled')
+      .filter((r): r is Extract<typeof results[number], { status: 'fulfilled' }> => r.status === 'fulfilled')
       .map(r => {
         const m = r.value.data;
         const fromRaw = getHeader(m.payload?.headers ?? [], 'From');

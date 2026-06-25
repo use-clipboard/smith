@@ -79,7 +79,7 @@ export async function POST(
 
   // ── Resolve the source of new lines ─────────────────────────────────────
   let parsedLines: Array<{ date: string; description: string; amount: number; statementBalance: number | null }>;
-  let columns: ReturnType<typeof parseBankCsv> extends { ok: true; columns: infer C } ? C : null = null;
+  let columns: Extract<ReturnType<typeof parseBankCsv>, { ok: true }>['columns'] | null = null;
   let skipped: { lineNo: number; reason: string }[] = [];
 
   if (body.csv) {

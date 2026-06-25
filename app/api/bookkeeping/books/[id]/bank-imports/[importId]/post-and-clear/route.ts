@@ -57,8 +57,12 @@ export async function POST(
     .eq('book_id', params.id)
     .single();
   if (!imp) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  // @ts-expect-error — !inner guarantees the join
-  const book = imp.book;
+  // The !inner join is a to-one relationship but Supabase's generated types
+  // surface it as an array — normalise to the single row.
+  const book = (Array.isArray(imp.book) ? imp.book[0] : imp.book) as {
+    id: string; firm_id: string; vat_registered: boolean;
+    vat_lock_date: string | null; period_lock_date: string | null; admin_locked: boolean;
+  };
   if (book.firm_id !== ctx.firmId) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (imp.status === 'reconciled' || imp.status === 'abandoned') {
     return NextResponse.json({ error: `Cannot post into a ${imp.status} reconciliation.` }, { status: 409 });

@@ -26,7 +26,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 
   const { data: firm } = await supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle();
-  const p = proposal.prospect as { contact_name: string; company_name: string | null; client_type: string | null };
+  const p = (Array.isArray(proposal.prospect) ? proposal.prospect[0] : proposal.prospect) as { contact_name: string; company_name: string | null; client_type: string | null };
   const services = ((proposal.line_items as Array<{ service_name: string }>) ?? []).map(li => li.service_name).filter((v, i, arr) => arr.indexOf(v) === i);
 
   try {

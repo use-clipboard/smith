@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!proposal.public_token) {
     return NextResponse.json({ error: 'No public link on this proposal.' }, { status: 400 });
   }
+  const prospect = (Array.isArray(proposal.prospect) ? proposal.prospect[0] : proposal.prospect) as { contact_name: string; email: string };
 
   const [{ data: firm }, { data: sender }] = await Promise.all([
     supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle(),
@@ -43,9 +44,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     await sendProposalReminderEmail({
       firmId: ctx.firmId,
-      to: proposal.prospect.email,
+      to: prospect.email,
       proposalTitle: proposal.title,
-      prospectName: proposal.prospect.contact_name,
+      prospectName: prospect.contact_name,
       firmName: firm?.name ?? 'your accountancy firm',
       senderName: sender?.full_name ?? sender?.email ?? null,
       acceptUrl: link,

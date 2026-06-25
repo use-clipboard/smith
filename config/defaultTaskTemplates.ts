@@ -15,7 +15,7 @@ const START_CFG = (type: 'manual' | 'deadline_relative' | 'day_of_month', opts?:
   step_type: 'start' as const,
   assignee_role: 'any' as const,
   email_reminder_enabled: false,
-  email_reminder_config: { recipients: [] as const, timing: 'on_assign' as const },
+  email_reminder_config: { recipients: [] as ('assignee' | 'client')[], timing: 'on_assign' as const },
   start_trigger_config: { type, ...opts },
   end_config: null,
 });
@@ -23,9 +23,9 @@ const END_CFG = {
   step_type: 'end' as const,
   assignee_role: 'any' as const,
   email_reminder_enabled: false,
-  email_reminder_config: { recipients: [] as const, timing: 'on_assign' as const },
+  email_reminder_config: { recipients: [] as ('assignee' | 'client')[], timing: 'on_assign' as const },
   start_trigger_config: null,
-  end_config: { send_completion_notification: true, notification_recipients: ['assignee'] as const },
+  end_config: { send_completion_notification: true, notification_recipients: ['assignee'] as ('assignee' | 'client')[] },
 };
 
 export const DEFAULT_TASK_TEMPLATES: DefaultTemplate[] = [

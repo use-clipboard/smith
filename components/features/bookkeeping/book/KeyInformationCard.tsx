@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, BarChart3, Wallet, Users, Building2, FileBadge, CalendarRange, TrendingUp, TrendingDown, Layers } from 'lucide-react';
+import { Loader2, BarChart3, Wallet, Users, Building2, FileBadge, CalendarRange, TrendingUp, TrendingDown, Layers, type LucideIcon } from 'lucide-react';
 import { LedgerLink } from './BookNavigationContext';
 import type { Book, VatScheme } from '@/types/bookkeeping';
 import { VAT_SCHEME_LABEL } from '@/types/bookkeeping';
@@ -200,7 +200,7 @@ function sumByLedger(accounts: AccountBalance[], ledger: string): number {
     }, 0);
 }
 
-interface Row { label: React.ReactNode; value: string; icon?: React.ComponentType<{ size?: number; className?: string }>; tone?: 'default' | 'positive' | 'negative' }
+interface Row { label: React.ReactNode; value: string; icon?: LucideIcon; tone?: 'default' | 'positive' | 'negative' }
 
 function DataRow({ label, value, icon: Icon, tone = 'default' }: Row) {
   const toneClass =

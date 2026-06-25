@@ -21,6 +21,7 @@
 import { useState } from 'react';
 import {
   Zap, Plus, Upload, Sparkles, HelpCircle,
+  type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 
@@ -28,7 +29,7 @@ interface ActionDef {
   id: string;
   label: string;
   description: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   /** Tailwind colour for the icon tile. Static so JIT keeps the classes. */
   tone: 'indigo' | 'emerald' | 'amber' | 'violet' | 'rose' | 'sky';
   /** When undefined, the button is "coming soon" and shows the hint. */

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, CheckCircle2, Trash2, RefreshCw, ChevronDown, ChevronRight, Clock, User as UserIcon, Calendar, Activity, Layers, Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { Task, TaskStep } from '@/types';
+import type { Task, TaskStep, TaskTimeEntry } from '@/types';
 import { exportToCsv } from '@/utils/fileUtils';
 import ChangesView, { type ChangesViewHandle } from './ChangesView';
 
@@ -15,7 +15,7 @@ interface HistoryTask extends Task {
   deleted_by_user?: { id: string; full_name: string | null; email: string } | null;
   completed_by_user?: { id: string; full_name: string | null; email: string } | null;
   steps?: (TaskStep & { assignee?: { id: string; full_name: string | null; email: string } | null })[];
-  time_entries?: { id: string; step_id: string | null; started_at: string; ended_at: string; notes: string | null; user?: { full_name: string | null; email: string } | null }[];
+  time_entries?: (TaskTimeEntry & { user?: { full_name: string | null; email: string } | null })[];
 }
 
 type FilterId = 'all' | 'completed' | 'deleted' | 'audit';
@@ -43,7 +43,8 @@ function userDisplay(u: { full_name: string | null; email: string } | null | und
   return u.full_name || u.email || fallback;
 }
 
-function durationMins(startIso: string, endIso: string): number {
+function durationMins(startIso: string, endIso: string | null): number {
+  if (!endIso) return 0; // timer still running — no completed duration yet
   return Math.max(0, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000));
 }
 
@@ -295,7 +296,6 @@ export default function HistoryView() {
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
                                 s.status === 'complete' ? 'bg-emerald-500' :
                                 s.status === 'in_progress' ? 'bg-indigo-500' :
-                                s.status === 'blocked' ? 'bg-amber-500' :
                                 s.status === 'skipped' ? 'bg-gray-300' :
                                 'bg-gray-200'
                               }`} />

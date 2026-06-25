@@ -6,7 +6,7 @@ import { getUserContext } from '@/lib/getUserContext';
 const Body = z.object({
   user_id: z.string().uuid().optional(),
   assessment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  responses: z.record(z.unknown()).optional(),
+  responses: z.record(z.string(), z.unknown()).optional(),
   recommendations: z.string().nullable().optional(),
   next_review_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });

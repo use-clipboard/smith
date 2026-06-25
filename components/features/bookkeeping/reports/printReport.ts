@@ -106,12 +106,14 @@ export function printReport(
   // dialog shows an unstyled flash. Most browsers fire `load` on the popup
   // window once <link rel="stylesheet"> resources resolve.
   function fire() {
-    popup.focus();
-    popup.print();
+    // popup is guaranteed non-null past the guard above; the nested closure
+    // just loses TS's control-flow narrowing.
+    popup!.focus();
+    popup!.print();
     // Close after a short delay so Chrome's print preview has time to read
     // from the window. Some browsers auto-close when the dialog dismisses,
     // others keep the window — the timeout covers both.
-    setTimeout(() => { try { popup.close(); } catch { /* user closed it */ } }, 500);
+    setTimeout(() => { try { popup!.close(); } catch { /* user closed it */ } }, 500);
   }
   if (popup.document.readyState === 'complete') {
     // Already loaded (no external sheets, or cached).

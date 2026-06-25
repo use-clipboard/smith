@@ -604,7 +604,7 @@ async function runAiFallback({
       });
       const toolUse = response.content.find((c) => c.type === 'tool_use');
       if (toolUse && toolUse.type === 'tool_use') {
-        toolInput = toolUse.input as typeof toolInput;
+        toolInput = toolUse.input as { allocations?: Array<{ row_id?: string; account_id?: string | null; confidence?: string; reasoning?: string }> };
       }
     } catch (e) {
       // Soft failure — log and move on. The rule-based allocations stay.

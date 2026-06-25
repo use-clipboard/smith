@@ -422,7 +422,7 @@ function AnalyticsSection() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard label="Win rate" value={data.winRate == null ? '—' : `${data.winRate}%`} tone="bold" />
+        <MetricCard label="Win rate" value={data.winRate == null ? '—' : `${data.winRate}%`} />
         <MetricCard label="Avg days to decide" value={data.avgDaysToDecide == null ? '—' : `${data.avgDaysToDecide}d`} />
         <MetricCard label="Decided" value={String(decided)} />
         <MetricCard label="Outstanding" value={String(data.counts.outstanding)} />

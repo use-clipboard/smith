@@ -211,7 +211,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       oneYearForward.setUTCFullYear(oneYearForward.getUTCFullYear() + 1);
       const throughIso = oneYearForward.toISOString().slice(0, 10);
 
-      const desired = enumerateFys(pattern, firstStart, throughIso);
+      const desired = firstStart ? enumerateFys(pattern, firstStart, throughIso) : [];
       if (desired.length > 0) {
         await supabase
           .from('bookkeeping_financial_years')

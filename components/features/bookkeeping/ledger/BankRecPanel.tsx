@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Loader2, Upload, FileText, Pencil, FileScan, Cable, Check, ChevronRight,
+  type LucideIcon,
 } from 'lucide-react';
 import NewBankImportModal from './NewBankImportModal';
 import BankRecDetailModal from './BankRecDetailModal';
@@ -212,7 +213,7 @@ export default function BankRecPanel({
 function MethodButton({
   icon: Icon, label, description, tone, disabled, disabledLabel, onClick,
 }: {
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: LucideIcon;
   label: string;
   description: string;
   tone: 'indigo' | 'slate';
