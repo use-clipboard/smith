@@ -59,6 +59,10 @@ export async function middleware(request: NextRequest) {
   const MARKETING_PATHS = [
     '/pricing', '/product', '/features', '/tools', '/about', '/story',
     '/resources', '/contact', '/demo', '/security',
+    // Legal pages must be reachable without a session — Google OAuth
+    // verification (and users generally) need the privacy policy + terms to be
+    // publicly accessible, not behind /login.
+    '/privacy', '/terms',
   ];
   const isMarketing =
     request.nextUrl.pathname === '/' ||
