@@ -364,3 +364,48 @@ export function defaultTemplateFromBusinessType(bt: string | null | undefined): 
   if (t.includes('charity')) return 'charity';
   return 'basic';
 }
+
+// ── Book participants (people behind the entity) ─────────────────────────────
+
+export type ParticipantRole = 'partner' | 'sole_trader' | 'director' | 'shareholder';
+export type ParticipantSource = 'client_link' | 'key_contact' | 'manual';
+
+export const PARTICIPANT_ROLE_LABEL: Record<ParticipantRole, string> = {
+  partner: 'Partner',
+  sole_trader: 'Sole trader',
+  director: 'Director',
+  shareholder: 'Shareholder',
+};
+
+export interface BookParticipant {
+  id: string;
+  book_id: string;
+  role: ParticipantRole;
+  source_type: ParticipantSource;
+  /** The client record this person is (when source is a client link). Bridge to
+   *  self-assessment / vouchers / minutes later. */
+  linked_client_id: string | null;
+  name: string;
+  profit_share_pct: number | null;
+  shareholding_pct: number | null;
+  shares_held: number | null;
+  annual_salary: number | null;
+  /** Optional mapping to the per-partner capital ledger account (P1..P9). */
+  capital_account_id: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+}
+
+/** A pickable source for adding a participant (client link or key contact). */
+export interface ParticipantSourceOption {
+  kind: 'client_link' | 'key_contact';
+  /** client id (link) or a synthetic id (key contact). */
+  ref_id: string;
+  name: string;
+  /** e.g. 'director' / 'shareholder' from the link type or contact role. */
+  role_hint: string | null;
+  linked_client_id: string | null;
+  /** Ownership % carried on a client link, if any. */
+  ownership_percentage: number | null;
+}

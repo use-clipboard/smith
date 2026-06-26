@@ -18,6 +18,7 @@ import { Loader2, X, Printer, Download, Search } from 'lucide-react';
 import KeyInformationCard from './KeyInformationCard';
 import QuickActionsCard from './QuickActionsCard';
 import AddAccountModal from './AddAccountModal';
+import BookParticipantsModal from './BookParticipantsModal';
 import GettingStartedCard from './GettingStartedCard';
 import BookWhiteboardCard from './BookWhiteboardCard';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
@@ -72,6 +73,7 @@ export default function BookHomeTab({ book, onDelete, onImport, onOpenSearch, re
   const vatRegistered = book.vat_registered;
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
   const [recent, setRecent] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllModal, setShowAllModal] = useState(false);
@@ -125,7 +127,7 @@ export default function BookHomeTab({ book, onDelete, onImport, onOpenSearch, re
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3" style={{ height: 'calc(100vh - 32rem)', minHeight: '20rem' }}>
         <div className="lg:col-span-5 flex flex-col gap-3 min-h-0">
           {/* Quick Actions takes its natural compact height; Key Info fills the rest and scrolls. */}
-          <QuickActionsCard onAddAccount={() => setAddAccountOpen(true)} onImport={onImport} onHelp={() => setHelpOpen(true)} />
+          <QuickActionsCard onAddAccount={() => setAddAccountOpen(true)} onImport={onImport} onHelp={() => setHelpOpen(true)} onPeople={() => setPeopleOpen(true)} />
           <KeyInformationCard book={book} refreshKey={refreshKey} className="flex-1 min-h-0" />
         </div>
         <div className="lg:col-span-7 min-h-0">
@@ -338,6 +340,9 @@ export default function BookHomeTab({ book, onDelete, onImport, onOpenSearch, re
           onCreated={() => onChanged?.()}
         />
       )}
+
+      {/* People & roles — partners / directors / shareholders. */}
+      <BookParticipantsModal book={book} open={peopleOpen} onClose={() => setPeopleOpen(false)} />
 
       {/* Help & how-to overlay — the Getting Started topics in a roomy reader. */}
       {helpOpen && (

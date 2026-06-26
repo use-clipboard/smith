@@ -20,7 +20,7 @@
 
 import { useState } from 'react';
 import {
-  Zap, Plus, Upload, Sparkles, HelpCircle,
+  Zap, Plus, Upload, Sparkles, HelpCircle, Users,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -46,6 +46,8 @@ interface Props {
   onImport?: () => void;
   /** Opens the Help & how-to overlay (Getting Started topics). */
   onHelp?: () => void;
+  /** Opens the People & roles modal (partners / directors / shareholders). */
+  onPeople?: () => void;
 }
 
 const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
@@ -57,7 +59,7 @@ const TONE_CLASSES: Record<ActionDef['tone'], { bg: string; text: string }> = {
   sky:     { bg: 'bg-sky-50',     text: 'text-sky-600'     },
 };
 
-export default function QuickActionsCard({ onAddAccount, onImport, onHelp }: Props) {
+export default function QuickActionsCard({ onAddAccount, onImport, onHelp, onPeople }: Props) {
   const [comingHint, setComingHint] = useState<string | null>(null);
 
   const actions: ActionDef[] = [
@@ -68,6 +70,14 @@ export default function QuickActionsCard({ onAddAccount, onImport, onHelp }: Pro
       icon: Plus,
       tone: 'emerald',
       onClick: onAddAccount,
+    },
+    {
+      id: 'people',
+      label: 'People & roles',
+      description: 'Partners, directors and shareholders behind this entity',
+      icon: Users,
+      tone: 'indigo',
+      onClick: onPeople,
     },
     {
       id: 'import_data',
@@ -98,7 +108,7 @@ export default function QuickActionsCard({ onAddAccount, onImport, onHelp }: Pro
 
       {/* Compact 3-column grid — single line per button with icon + label.
           The "Soon" hint moves into the tooltip so the layout stays clean. */}
-      <div className="p-2 grid grid-cols-3 gap-1.5">
+      <div className="p-2 grid grid-cols-4 gap-1.5">
         {actions.map(a => {
           const Icon = a.icon;
           const tone = TONE_CLASSES[a.tone];
