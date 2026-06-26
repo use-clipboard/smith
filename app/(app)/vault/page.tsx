@@ -42,6 +42,27 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Format a document date tag for display as UK dd/mm/yyyy.
+ *
+ * Display-only — the stored value is left as-is (the date-range filter in
+ * /api/vault/documents compares tag_document_date with .gte/.lte, so it must
+ * stay ISO). The AI tagger sometimes stores ISO (2025-05-30) and sometimes
+ * already dd/mm/yyyy (25/06/2026); this normalises both to dd/mm/yyyy so the
+ * Date column is consistent. Unrecognised formats are returned unchanged.
+ */
+function formatVaultDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  // ISO yyyy-mm-dd (optionally with a time component) → dd/mm/yyyy
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  // Already day-first (dd/mm/yyyy or dd-mm-yyyy) → normalise separators + padding
+  const dmy = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) return `${dmy[1].padStart(2, '0')}/${dmy[2].padStart(2, '0')}/${dmy[3]}`;
+  return v;
+}
+
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return 'Never';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -393,7 +414,7 @@ function PreviewDrawer({ doc, onClose, onUpdate, onDelete }: PreviewDrawerProps)
     }
   }
 
-  function field(label: string, key: string, value: string | null | undefined) {
+  function field(label: string, key: string, value: string | null | undefined, formatDisplay?: (v: string) => string | null) {
     const isEditing = key in editing;
     const displayValue = isEditing ? editing[key] : value;
 
@@ -412,7 +433,7 @@ function PreviewDrawer({ doc, onClose, onUpdate, onDelete }: PreviewDrawerProps)
               onKeyDown={e => { if (e.key === 'Escape') { const next = { ...editing }; delete next[key]; setEditing(next); } }}
             />
           ) : (
-            <span className="text-sm text-[var(--text-primary)]">{displayValue || <span className="text-[var(--text-muted)] italic">—</span>}</span>
+            <span className="text-sm text-[var(--text-primary)]">{displayValue ? (formatDisplay ? formatDisplay(displayValue) : displayValue) : <span className="text-[var(--text-muted)] italic">—</span>}</span>
           )}
         </div>
         {!isEditing && (
@@ -480,7 +501,7 @@ function PreviewDrawer({ doc, onClose, onUpdate, onDelete }: PreviewDrawerProps)
             {field('Document Type', 'tag_document_type', doc.tag_document_type)}
             {field('Supplier', 'tag_supplier_name', doc.tag_supplier_name)}
             {field('Client', 'tag_client_name', doc.tag_client_name)}
-            {field('Date', 'tag_document_date', doc.tag_document_date)}
+            {field('Date', 'tag_document_date', doc.tag_document_date, formatVaultDate)}
             {field('Amount', 'tag_amount', doc.tag_amount != null ? String(doc.tag_amount) : null)}
             {field('Currency', 'tag_currency', doc.tag_currency)}
             {field('Tax Year', 'tag_tax_year', doc.tag_tax_year)}
@@ -632,7 +653,7 @@ function DocRow({ doc, selected, onSelect, onClick, onTag }: DocRowProps) {
         {doc.tag_supplier_name ?? '—'}
       </td>
       <td className="px-2 py-3 text-sm text-[var(--text-secondary)]" onClick={onClick}>
-        {doc.tag_document_date ?? (doc.drive_modified_at ? new Date(doc.drive_modified_at).toLocaleDateString('en-GB') : '—')}
+        {doc.tag_document_date ? formatVaultDate(doc.tag_document_date) : (doc.drive_modified_at ? new Date(doc.drive_modified_at).toLocaleDateString('en-GB') : '—')}
       </td>
       <td className="px-2 py-3 text-sm text-right text-[var(--text-secondary)]" onClick={onClick}>
         {doc.tag_amount != null ? `${doc.tag_currency === 'GBP' ? '£' : doc.tag_currency}${doc.tag_amount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}` : '—'}
@@ -698,7 +719,7 @@ function DocCard({ doc, onClick }: { doc: VaultDocument; onClick: () => void }) 
         <DocTypeBadge type={doc.tag_document_type} />
       </div>
       <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-        <span>{doc.tag_document_date ?? (doc.drive_modified_at ? new Date(doc.drive_modified_at).toLocaleDateString('en-GB') : '—')}</span>
+        <span>{doc.tag_document_date ? formatVaultDate(doc.tag_document_date) : (doc.drive_modified_at ? new Date(doc.drive_modified_at).toLocaleDateString('en-GB') : '—')}</span>
         {doc.tag_amount != null && (
           <span className="font-medium text-[var(--text-secondary)]">
             £{doc.tag_amount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
