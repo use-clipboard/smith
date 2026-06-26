@@ -11,11 +11,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, Loader2, Users, Plus, Trash2, Link2, Contact, Pencil } from 'lucide-react';
+import { X, Loader2, Users, Plus, Trash2, Link2, Contact, Pencil, Scale, Banknote } from 'lucide-react';
 import type {
   Book, BookParticipant, ParticipantRole, ParticipantSource, ParticipantSourceOption,
 } from '@/types/bookkeeping';
 import { PARTICIPANT_ROLE_LABEL } from '@/types/bookkeeping';
+import BookProfitAllocationModal from './BookProfitAllocationModal';
+import BookDividendsModal from './BookDividendsModal';
 
 interface AccountLite { id: string; name: string; ledger: string | null; code?: string | null }
 
@@ -56,6 +58,10 @@ export default function BookParticipantsModal({ book, open, onClose }: { book: B
   const [salary, setSalary] = useState('');
   const [capitalAccountId, setCapitalAccountId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [allocOpen, setAllocOpen] = useState(false);
+  const [divOpen, setDivOpen] = useState(false);
+  const isPartnershipLike = book.template_type === 'partnership' || book.template_type === 'llp';
+  const isLtd = book.template_type === 'ltd';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -154,8 +160,23 @@ export default function BookParticipantsModal({ book, open, onClose }: { book: B
             <h2 className="text-sm font-semibold text-slate-900">People &amp; roles</h2>
             <p className="text-[11px] text-slate-500">Partners, directors and shareholders behind {book.name}</p>
           </div>
+          {isPartnershipLike && (
+            <button type="button" onClick={() => setAllocOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors">
+              <Scale size={13} /> Allocate profit
+            </button>
+          )}
+          {isLtd && (
+            <button type="button" onClick={() => setDivOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors">
+              <Banknote size={13} /> Dividends
+            </button>
+          )}
           <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700"><X size={18} /></button>
         </div>
+
+        <BookProfitAllocationModal bookId={bookId} open={allocOpen} onClose={() => setAllocOpen(false)} onPosted={load} />
+        <BookDividendsModal book={book} open={divOpen} onClose={() => setDivOpen(false)} />
 
         <div className="p-5 space-y-5 overflow-y-auto">
           {error && <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>}
