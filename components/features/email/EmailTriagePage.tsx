@@ -1102,9 +1102,12 @@ export default function EmailTriagePage() {
       // isReplied: there are received messages AND at least one sent message that is not a forward
       const isReplied = hasInbound && sentMsgs.length > 0
         && sentMsgs.some((m: { subject?: string }) => !FORWARD_PREFIX.test(m.subject ?? ''));
-      const isForwarded = sentMsgs.some((m: { subject?: string }) => FORWARD_PREFIX.test(m.subject ?? ''))
-        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id)
-        || !!data.externalForwardedAt;
+      // In-thread forward = a Fwd:/FW: SENT message on this very thread. The
+      // out-of-thread case (threading broken on forward) is detected async
+      // below via the deferred /forwarded endpoint, so it never blocks render.
+      const inThreadForward = sentMsgs.some((m: { subject?: string }) => FORWARD_PREFIX.test(m.subject ?? ''));
+      const isForwarded = inThreadForward
+        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id);
       setThreadMeta(prev => ({
         ...prev,
         [thread.id]: {
@@ -1163,9 +1166,7 @@ export default function EmailTriagePage() {
         });
       }
       if (isForwarded) {
-        // Prefer the in-thread forward date; fall back to the date found via
-        // Sent-folder search when threading was broken on forward.
-        const date = pickLatest(sentMsgs, true) || data.externalForwardedAt || '';
+        const date = pickLatest(sentMsgs, true) || '';
         setForwardedThreadIds(prev => {
           if (prev.get(realId) === date) return prev;
           const next = new Map(prev);
@@ -1173,6 +1174,30 @@ export default function EmailTriagePage() {
           try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
+      }
+      // Deferred out-of-thread forward check: when this thread has no in-thread
+      // Fwd:/FW: SENT message and we don't already know it was forwarded, ask
+      // the server to search the Sent folder. Runs *after* the messages are on
+      // screen, so the ~6 Gmail round-trips it can cost never delay the open.
+      if (!inThreadForward && !forwardedThreadIds.has(realId)) {
+        fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}`)
+          .then(r => (r.ok ? r.json() : null))
+          .then((d: { externalForwardedAt?: string | null } | null) => {
+            const date = d?.externalForwardedAt;
+            if (!date) return;
+            setForwardedThreadIds(prev => {
+              if (prev.get(realId) === date) return prev;
+              const next = new Map(prev);
+              next.set(realId, date);
+              try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+              return next;
+            });
+            setThreadMeta(prev => ({
+              ...prev,
+              [thread.id]: { ...(prev[thread.id] ?? { hasAllocation: false, hasTaskLink: false }), isForwarded: true },
+            }));
+          })
+          .catch(() => {});
       }
       // Mark thread as read in local state
       setThreads(prev => prev.map(t => t.id === thread.id ? { ...t, isRead: true } : t));
