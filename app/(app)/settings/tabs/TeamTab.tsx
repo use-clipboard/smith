@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { UserPlus, Pencil, X, Check, KeyRound, Trash2, Loader2, ChevronDown } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
+import DeletionRequestsPanel from '@/components/features/settings/DeletionRequestsPanel';
 
 interface TeamMember {
   id: string;
@@ -263,6 +264,9 @@ export default function TeamTab({ currentUserId }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Pending account-deletion requests (renders only when there are any) */}
+      <DeletionRequestsPanel onCompleted={loadMembers} />
+
       {/* Invite form */}
       <div className="glass-solid rounded-xl p-6 space-y-4">
         <div className="flex items-center gap-2">

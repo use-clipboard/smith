@@ -80,6 +80,7 @@ export default async function SettingsPage() {
       hrModuleActive={activeModules.includes('hr')}
       proposalsModuleActive={activeModules.includes('proposals')}
       bookkeepingActive={canAccessBookkeeping(user)}
+      documentVaultActive={activeModules.includes('document-vault')}
       emailSenderName={emailSenderName}
       emailSenderAddress={emailSenderAddress}
     />

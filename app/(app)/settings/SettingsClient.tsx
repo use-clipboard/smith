@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
+import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
+import DeleteFirmSection from '@/components/features/settings/DeleteFirmSection';
 import PreferencesTab from './tabs/PreferencesTab';
 import DashboardSettingsTab from './tabs/DashboardSettingsTab';
 import ModulesTab from './tabs/ModulesTab';
@@ -24,7 +26,7 @@ import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
 
 interface Props {
   userId: string;
@@ -46,6 +48,7 @@ interface Props {
   proposalsModuleActive?: boolean;
   mtdItModuleActive?: boolean;
   bookkeepingActive?: boolean;
+  documentVaultActive?: boolean;
   emailSenderName?: string | null;
   emailSenderAddress?: string | null;
 }
@@ -60,7 +63,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, bookkeepingActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, bookkeepingActive, documentVaultActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -106,6 +109,7 @@ export default function SettingsClient({
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },
     { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
+    { id: 'document-vault' as Tab, label: 'Document Vault', icon: FolderArchive, adminOnly: true, hidden: !documentVaultActive,    group: 'tools' as TabGroup },
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
     { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
@@ -349,6 +353,7 @@ export default function SettingsClient({
 
       {/* Profile tab */}
       {activeTab === 'profile' && (
+        <div className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="glass-solid rounded-xl p-6">
             <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Profile Photo</h3>
@@ -448,6 +453,10 @@ export default function SettingsClient({
             </div>
           </div>
         </div>
+
+          {/* Personal account deletion — this individual user only, not the firm. */}
+          <DeleteAccountSection />
+        </div>
       )}
 
       {/* Account tab */}
@@ -524,12 +533,21 @@ export default function SettingsClient({
                 </div>
               </div>
 
-              <GoogleDriveSettings />
             </div>
-
-
           </div>
+
+          {/* Whole-firm deletion — admin only, sits outside the opacity overlay. */}
+          {isAdmin && (
+            <div className="mt-6">
+              <DeleteFirmSection firmName={firmName} />
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Document Vault tab — admin only; Google Drive connection + sync folder */}
+      {activeTab === 'document-vault' && documentVaultActive && (
+        <GoogleDriveSettings />
       )}
 
       {/* Team tab — admin only */}
