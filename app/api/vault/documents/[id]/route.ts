@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
-import { getRefreshedDriveCredentials } from '@/lib/vaultHelpers';
+import { getRefreshedDriveCredentials, toIsoDate } from '@/lib/vaultHelpers';
 import { createServiceClient } from '@/lib/supabase-server';
 
 const PatchSchema = z.object({
@@ -55,10 +55,16 @@ export async function PATCH(
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
+    // Keep tag_document_date canonical ISO so the date-range filter keeps working.
+    const updateData = { ...parsed.data };
+    if ('tag_document_date' in updateData) {
+      updateData.tag_document_date = toIsoDate(updateData.tag_document_date);
+    }
+
     const { data: updated, error } = await db
       .from('vault_documents')
       .update({
-        ...parsed.data,
+        ...updateData,
         manually_edited: true,
         tagging_status: 'manually_reviewed',
         updated_at: new Date().toISOString(),

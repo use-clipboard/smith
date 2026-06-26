@@ -264,6 +264,29 @@ export async function tagDocumentWithClaude(
 }
 
 /**
+ * Normalise a document date to canonical ISO (yyyy-mm-dd) for storage.
+ *
+ * The tagger prompt asks Claude for ISO, but it occasionally returns UK
+ * day-first (dd/mm/yyyy). tag_document_date MUST be stored ISO because the
+ * date-range filter in /api/vault/documents compares it with .gte/.lte
+ * (lexicographic) — a day-first value silently breaks that filter. The UI
+ * formats ISO back to dd/mm/yyyy for display. Unrecognised formats are left
+ * untouched rather than dropped.
+ */
+export function toIsoDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  if (!v) return null;
+  // Already ISO yyyy-mm-dd (optionally with a time component) → keep date part
+  const iso = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // UK day-first dd/mm/yyyy or dd-mm-yyyy → yyyy-mm-dd
+  const dmy = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return v;
+}
+
+/**
  * Apply Claude tags to a vault_documents row.
  * If clientId is provided, also sets client_id on the document.
  */
@@ -279,7 +302,7 @@ export async function applyTagsToDocument(
     tag_supplier_name: tags.supplier_name,
     tag_client_code: tags.client_code,
     tag_client_name: tags.client_name,
-    tag_document_date: tags.document_date,
+    tag_document_date: toIsoDate(tags.document_date),
     tag_amount: tags.amount,
     tag_currency: tags.currency ?? 'GBP',
     tag_document_type: tags.document_type as VaultDocumentType | null,

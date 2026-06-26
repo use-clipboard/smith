@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createServiceClient } from '@/lib/supabase-server';
+import { toIsoDate } from '@/lib/vaultHelpers';
 
 const UploadedFileSchema = z.object({
   name: z.string(),
@@ -128,7 +129,7 @@ export async function POST(req: NextRequest) {
             tag_supplier_name: supplierName,
             tag_client_code: clientCode ?? null,
             tag_client_name: clientName ?? null,
-            tag_document_date: earliestDate ?? null,
+            tag_document_date: toIsoDate(earliestDate),
             tag_amount: totalAmount,
             tag_currency: 'GBP',
             tag_document_type: documentType ?? 'invoice',
