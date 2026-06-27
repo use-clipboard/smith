@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getBookkeepingContext } from '@/lib/bookkeeping/server';
 import { seedBookCoa } from '@/lib/bookkeeping/seedCoa';
+import { seedBookFunds } from '@/lib/bookkeeping/seedFunds';
 import { parseYearEndMd, enumerateFys } from '@/lib/bookkeeping/financialYears';
 
 const TEMPLATE_TYPES = ['basic','ltd','llp','partnership','self_employed','sole_trader','trust','charity'] as const;
@@ -136,6 +137,16 @@ export async function POST(req: NextRequest) {
     }
   } catch (seedError) {
     console.error('[bookkeeping] COA seed failed for book', data.id, seedError);
+  }
+
+  // Charity books get a default "General" unrestricted fund so fund accounting
+  // works out of the box. Restricted / endowment funds are added by the user.
+  if (data.template_type === 'charity') {
+    try {
+      await seedBookFunds(supabase, data.id, ctx.userId);
+    } catch (fundError) {
+      console.error('[bookkeeping] Fund seed failed for book', data.id, fundError);
+    }
   }
 
   // Generate the implied financial-year rows when a year-end was supplied.

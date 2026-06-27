@@ -44,6 +44,7 @@ import { isInputSheetType } from '@/lib/bookkeeping/transactionTypeConfig';
 import TrialBalanceTab from './reports/TrialBalanceTab';
 import ProfitLossTab from './reports/ProfitLossTab';
 import BalanceSheetTab from './reports/BalanceSheetTab';
+import SofaTab from './reports/SofaTab';
 import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
 import AccountLedgerTab from './reports/AccountLedgerTab';
@@ -76,7 +77,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'sofa' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -351,6 +352,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
       {/* ── Side rail ───────────────────────────────────────────────────── */}
       <BookSideRail
         activeTab={tab}
+        showFunds={book.template_type === 'charity'}
         onSelectTab={(id) => setTab(id as typeof tab)}
         onLaunchTool={setLaunchTool}
         onAction={handleAction}
@@ -505,6 +507,11 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         <div hidden={tab !== 'cf'}>
           <CashFlowTab bookId={bookId} />
         </div>
+        {book.template_type === 'charity' && (
+          <div hidden={tab !== 'sofa'}>
+            <SofaTab bookId={bookId} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} periodLabel={activePeriod.label} />
+          </div>
+        )}
         <div hidden={tab !== 'vat'}>
           <VatReturnTab
             bookId={bookId}

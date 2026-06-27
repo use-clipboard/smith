@@ -14,6 +14,8 @@ const SplitSchema = z.object({
   credit: z.number().min(0).default(0),
   entry_details: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  /** Charity fund this line belongs to (NULL on non-charity books). */
+  fund_id: z.string().uuid().nullable().optional(),
 }).refine(s => s.debit === 0 || s.credit === 0, {
   message: 'A split cannot be both a debit and a credit',
 });
@@ -53,8 +55,9 @@ const TX_SELECT = `
   primary_account_id, frs_capital_reclaim, status, created_by, created_at, updated_at, posted_at,
   primary_account:bookkeeping_accounts!bookkeeping_transactions_primary_account_id_fkey(id, name, ledger, account_type),
   splits:bookkeeping_transaction_splits(
-    id, transaction_id, line_no, account_id, debit, credit, entry_details, notes,
-    account:bookkeeping_accounts(id, name, ledger, account_type)
+    id, transaction_id, line_no, account_id, debit, credit, entry_details, notes, fund_id,
+    account:bookkeeping_accounts(id, name, ledger, account_type),
+    fund:bookkeeping_funds(id, name, fund_type)
   )
 `;
 
@@ -270,6 +273,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
   }
 
+  // Fund validation: any fund_id supplied on a split must belong to THIS book.
+  {
+    const fundIds = [...new Set(body.splits.map(s => s.fund_id).filter((f): f is string => !!f))];
+    if (fundIds.length > 0) {
+      const { data: bookFunds } = await supabase
+        .from('bookkeeping_funds').select('id').eq('book_id', params.id).in('id', fundIds);
+      const valid = new Set((bookFunds ?? []).map(f => f.id));
+      const bad = fundIds.filter(f => !valid.has(f));
+      if (bad.length > 0) {
+        return NextResponse.json({ error: 'One or more funds do not belong to this book.' }, { status: 400 });
+      }
+    }
+  }
+
   // Allocate next ref atomically via SQL function.
   const { data: nextSeqData, error: seqErr } = await supabase
     .rpc('bookkeeping_next_ref', { p_book_id: params.id, p_type: body.type });
@@ -316,6 +333,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     credit: s.credit,
     entry_details: s.entry_details ?? null,
     notes: s.notes ?? null,
+    fund_id: s.fund_id ?? null,
   }));
   const { data: insertedSplits, error: splitsErr } = await supabase
     .from('bookkeeping_transaction_splits')
@@ -382,6 +400,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           credit: s.debit,
           entry_details: s.entry_details ?? null,
           notes: s.notes ?? null,
+          fund_id: s.fund_id ?? null,
         }));
         const { data: revInserted, error: revSplitsErr } = await supabase
           .from('bookkeeping_transaction_splits')

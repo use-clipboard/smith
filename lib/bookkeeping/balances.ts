@@ -42,6 +42,9 @@ export interface ComputeBalancesOpts {
   includeZero?: boolean;
   /** Transaction types to leave out of the aggregation (e.g. ['YET'] for P&L). */
   excludeTypes?: string[];
+  /** Charity fund accounting — restrict the aggregation to splits in this fund.
+   *  Null/undefined aggregates across all funds (the normal whole-book view). */
+  fundId?: string | null;
 }
 
 const r2 = (n: number) => +n.toFixed(2);
@@ -57,7 +60,7 @@ export async function computeBalances(
   bookId: string,
   opts: ComputeBalancesOpts = {},
 ): Promise<BalancesResult> {
-  const { from = null, to = null, includeZero = false } = opts;
+  const { from = null, to = null, includeZero = false, fundId = null } = opts;
   const excludeTypes = (opts.excludeTypes ?? []).map(s => s.trim().toUpperCase()).filter(Boolean);
 
   const PAGE_SIZE = 1000;
@@ -86,6 +89,7 @@ export async function computeBalances(
     if (from) q = q.gte('transaction.date', from);
     if (to)   q = q.lte('transaction.date', to);
     if (excludeTypes.length > 0) q = q.not('transaction.type', 'in', `(${excludeTypes.join(',')})`);
+    if (fundId) q = q.eq('fund_id', fundId);
 
     const { data, error } = await q;
     if (error) throw new Error(error.message);

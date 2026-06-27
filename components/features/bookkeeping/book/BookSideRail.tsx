@@ -25,7 +25,7 @@ import {
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
   Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
-  ClipboardCheck, Gauge, ArrowUpRight,
+  ClipboardCheck, Gauge, ArrowUpRight, HandCoins,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -89,10 +89,11 @@ const GROUPS: { name: string; icon: LucideIcon; tone: string; actions: { type: T
 // `launch: true` items don't open an in-book tab — they fire onLaunchTool to
 // open a separate tool (Accounts Review / Performance) in a new workspace tab,
 // pre-populated with this book's statements.
-const REPORTS: { id: string; label: string; icon: LucideIcon; launch?: boolean }[] = [
+const REPORTS: { id: string; label: string; icon: LucideIcon; launch?: boolean; charityOnly?: boolean }[] = [
   { id: 'tb',             label: 'Trial Balance',             icon: Scale },
   { id: 'pnl',            label: 'Profit & Loss',             icon: TrendingUp },
   { id: 'bs',             label: 'Balance Sheet',             icon: Layers },
+  { id: 'sofa',           label: 'SOFA (by fund)',            icon: HandCoins, charityOnly: true },
   { id: 'cf',             label: 'Cash Flow',                 icon: BadgePoundSterling },
   { id: 'aged-debtors',   label: 'Aged Debtors (Customers)',  icon: Clock },
   { id: 'aged-creditors', label: 'Aged Creditors (Suppliers)', icon: Clock },
@@ -121,6 +122,8 @@ export interface ManualRecRailTab {
 interface Props {
   /** Currently-active tab id (e.g. 'home', 'input', 'tb', or a dynamic tab id). */
   activeTab: string;
+  /** Charity books surface fund-specific reports (the SOFA). */
+  showFunds?: boolean;
   onSelectTab: (id: string) => void;
   /** Fired by the launch-type report items (Accounts Review / Performance) to
    *  open that tool in a new tab instead of switching the in-book tab. */
@@ -144,9 +147,10 @@ interface Props {
 }
 
 export default function BookSideRail({
-  activeTab, onSelectTab, onLaunchTool, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
+  activeTab, showFunds, onSelectTab, onLaunchTool, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
   onCloseLedgerTab, onOpenSettings, onOpenSearch, disabled, className,
 }: Props) {
+  const visibleReports = REPORTS.filter(r => !r.charityOnly || showFunds);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoutRef = useRef<HTMLDivElement>(null);
@@ -567,12 +571,12 @@ export default function BookSideRail({
             <span className="text-xs font-semibold text-slate-900">Reports</span>
           </div>
           <div className="p-1.5">
-            {REPORTS.map((r, i) => {
+            {visibleReports.map((r, i) => {
               const Icon = r.icon;
               const active = activeTab === r.id;
               // Visually separate the "launch another tool" items from the
               // in-book reports with a labelled divider.
-              const firstLaunch = r.launch && !REPORTS[i - 1]?.launch;
+              const firstLaunch = r.launch && !visibleReports[i - 1]?.launch;
               return (
                 <div key={r.id}>
                   {firstLaunch && (

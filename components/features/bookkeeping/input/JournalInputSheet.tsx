@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, X, Loader2, Trash2 } from 'lucide-react';
 import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
+import FundPicker from './FundPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import { useTransactionRowActions } from '../transactions/useTransactionRowActions';
 import { formatMoneyAbs } from '@/lib/bookkeeping/formatMoney';
@@ -87,6 +88,8 @@ interface Line {
   description: string;
   debitText: string;
   creditText: string;
+  /** Charity fund (per-line so fund transfers DR one fund / CR another). */
+  fund: string | null;
 }
 
 function makeBlankLine(): Line {
@@ -97,6 +100,7 @@ function makeBlankLine(): Line {
     description: '',
     debitText: '',
     creditText: '',
+    fund: null,
   };
 }
 
@@ -148,6 +152,17 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
   const [aidTo, setAidTo] = useState('');
   const [aidExpense, setAidExpense] = useState<BookAccountRef | null>(null);
   const [accounts, setAccounts] = useState<AccountLite[]>([]);
+
+  // Whether this book uses fund accounting (charity). Drives the Fund column.
+  const [hasFunds, setHasFunds] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/funds`)
+      .then(r => r.ok ? r.json() : { funds: [] })
+      .then(d => { if (!cancelled) setHasFunds(((d.funds ?? []) as unknown[]).length > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
 
   // Pull the COA so we can auto-locate the Accruals / Prepayments accounts.
   useEffect(() => {
@@ -312,6 +327,10 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
       if (dr > 0 && cr > 0) { setError('A line cannot be both a debit and a credit.'); return; }
       if (dr === 0 && cr === 0) { setError('Every line needs a debit or a credit.'); return; }
     }
+    if (hasFunds && nonBlankLines.some(l => !l.fund)) {
+      setError('Every line needs a fund.');
+      return;
+    }
     if (!isBalanced) {
       setError(`Out of balance: Dr ${formatMoneyAbs(totals.dr)} vs Cr ${formatMoneyAbs(totals.cr)} (diff ${formatMoneyAbs(totals.diff)}).`);
       return;
@@ -355,6 +374,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
         debit:  parseAmount(l.debitText),
         credit: parseAmount(l.creditText),
         entry_details: l.description || headerDetails || null,
+        fund_id: l.fund,
       }));
 
       const total = Math.max(totals.dr, totals.cr);  // for the header
@@ -611,6 +631,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
               <th className="px-2 py-1.5 text-right w-28 border-r border-slate-300">Credit</th>
               <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Ledger</th>
               <th className="px-2 py-1.5 text-left w-60 border-r border-slate-300">Account</th>
+              {hasFunds && <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Fund</th>}
               <th className="px-2 py-1.5 text-left">Description</th>
             </tr>
           </thead>
@@ -684,6 +705,17 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
                       className="!border-none"
                     />
                   </td>
+                  {hasFunds && (
+                    <td className="px-1 py-0 border-r border-slate-200">
+                      <FundPicker
+                        bookId={bookId}
+                        value={l.fund}
+                        onChange={f => updateLine(l.id, { fund: f })}
+                        className="w-full text-sm px-2 py-1.5 border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                        placeholder="Fund…"
+                      />
+                    </td>
+                  )}
                   <td className="px-0 py-0">
                     <input
                       type="text"
@@ -715,7 +747,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
               </td>
               <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.dr)}</td>
               <td className="px-2 py-2 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.cr)}</td>
-              <td colSpan={3} />
+              <td colSpan={hasFunds ? 4 : 3} />
             </tr>
             <tr className="border-t border-slate-200">
               <td className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wide font-semibold text-slate-600 border-r border-slate-200">
@@ -730,7 +762,7 @@ export default function JournalInputSheet({ bookId, vatRegistered, type, onTypeC
               }`}>
                 {formatMoneyAbs(totals.diff)}
               </td>
-              <td colSpan={3} />
+              <td colSpan={hasFunds ? 4 : 3} />
             </tr>
           </tfoot>
         </table>

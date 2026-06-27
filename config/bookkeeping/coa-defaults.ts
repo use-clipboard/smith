@@ -1626,6 +1626,256 @@ export const TRUST_COA_SEED: CoaTemplateSeed = {
   ],
 };
 
+// ── Charity (Charities SORP / FRS 102) ──────────────────────────────────────
+// HAND-BUILT (VT has no charity template) on the Charities SORP. Two things
+// define charity accounts: the SOFA (Statement of Financial Activities) replaces
+// the P&L, and FUND ACCOUNTING — every figure belongs to an unrestricted,
+// restricted or endowment fund. We model funds as an orthogonal DIMENSION
+// (bookkeeping_funds + a fund_id on each split, see 20260719 migration) rather
+// than duplicating the chart per fund — so this COA stays clean and the per-fund
+// SOFA is produced by the reporting layer (SofaTab) from the same accounts.
+//
+// Income ledgers = SOFA income headers; expenditure ledgers = SOFA expenditure
+// headers. Net movement in funds closes into "Funds: Unrestricted funds"
+// (retained_earnings). VAT control accounts ship for partially-VAT-registered
+// charities. NOTE (v1): the year-end close posts to one accumulated-funds
+// account (not split per fund), and auto-journals (depreciation) aren't
+// fund-tagged yet — both are future refinements.
+export const CHARITY_COA_SEED: CoaTemplateSeed = {
+  template_type: 'charity',
+  ledgers: [
+    // ── SOFA — Income ───────────────────────────────────────────────────────
+    {
+      name: 'Donations and legacies',
+      ledger_key: 'donations_legacies',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Donations' },
+        { name: 'Legacies' },
+        { name: 'Gift Aid reclaimed' },
+        { name: 'Grants receivable' },
+      ],
+    },
+    {
+      name: 'Charitable activities income',
+      ledger_key: 'charitable_income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Fees and charges' },
+        { name: 'Contract income' },
+        { name: 'Performance grants' },
+      ],
+    },
+    {
+      name: 'Other trading activities',
+      ledger_key: 'trading_income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Fundraising events' },
+        { name: 'Shop / trading income' },
+        { name: 'Sponsorship' },
+      ],
+    },
+    {
+      name: 'Investment income',
+      ledger_key: 'investment_income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Bank interest' },
+        { name: 'Dividends' },
+        { name: 'Rental income' },
+      ],
+    },
+    {
+      name: 'Other income',
+      ledger_key: 'other_income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Other income' },
+      ],
+    },
+    // ── SOFA — Expenditure ──────────────────────────────────────────────────
+    {
+      name: 'Cost of raising funds',
+      ledger_key: 'raising_funds',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Fundraising costs' },
+        { name: 'Trading costs' },
+        { name: 'Investment management costs' },
+      ],
+    },
+    {
+      name: 'Charitable activities',
+      ledger_key: 'charitable_expenditure',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Grants payable' },
+        { name: 'Staff costs' },
+        { name: 'Project costs' },
+        { name: 'Premises costs' },
+        { name: 'Depreciation', system_role: 'depreciation_expense' },
+      ],
+    },
+    {
+      name: 'Support costs',
+      ledger_key: 'support_costs',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Office and administration' },
+        { name: 'IT and communications' },
+        { name: 'Insurance' },
+        { name: 'Bank charges' },
+      ],
+    },
+    {
+      name: 'Governance costs',
+      ledger_key: 'governance_costs',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Audit and accountancy' },
+        { name: 'Legal and professional' },
+        { name: 'Trustee expenses' },
+      ],
+    },
+    {
+      name: 'Other expenditure',
+      ledger_key: 'other_expenditure',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Net (gain)/loss on disposal of assets', system_role: 'disposal_pl' },
+        { name: 'Other expenditure' },
+      ],
+    },
+    // ── Balance sheet — assets ──────────────────────────────────────────────
+    {
+      name: 'FA - Tangible',
+      ledger_key: 'fa_tangible',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Cost - b/fwd', system_role: 'fa_cost_bfwd' },
+        { name: 'Cost - additions', system_role: 'fa_cost_additions' },
+        { name: 'Cost - disposals', system_role: 'fa_cost_disposals' },
+        { name: 'Depn - b/fwd', system_role: 'fa_depn_bfwd' },
+        { name: 'Depn - charge for the year', system_role: 'fa_depn_charge' },
+        { name: 'Depn - disposals', system_role: 'fa_depn_disposals' },
+      ],
+    },
+    {
+      // Investment holdings — added as acquired. Ships empty.
+      name: 'Investments',
+      ledger_key: 'investments',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [],
+    },
+    {
+      name: 'Stocks',
+      ledger_key: 'stocks',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Stock' },
+      ],
+    },
+    {
+      name: 'Debtors',
+      ledger_key: 'debtors',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Trade debtors' },
+        { name: 'Gift Aid recoverable' },
+        { name: 'Prepayments' },
+        { name: 'Accrued income' },
+        { name: 'Other debtors' },
+      ],
+    },
+    {
+      name: 'Bank',
+      ledger_key: 'bank',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Current account' },
+        { name: 'Deposit account' },
+        { name: 'Petty cash' },
+      ],
+    },
+    {
+      // Client-specific — created as the user adds customers. Ships empty.
+      name: 'Customers',
+      ledger_key: 'customers',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [],
+    },
+    // ── Balance sheet — liabilities ─────────────────────────────────────────
+    {
+      // Trade suppliers — added as needed. Ships empty.
+      name: 'Suppliers',
+      ledger_key: 'suppliers',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [],
+    },
+    {
+      name: 'Creditors',
+      ledger_key: 'creditors',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [
+        { name: 'Trade creditors' },
+        { name: 'Accruals' },
+        { name: 'Deferred income' },
+        { name: 'Grants payable' },
+        { name: 'PAYE and NI' },
+        { name: 'Other creditors' },
+        { name: 'Net VAT due', vat_only: true, system_role: 'net_vat_due' },
+        { name: 'VAT - Input',  vat_only: true, system_role: 'vat_input' },
+        { name: 'VAT - Output', vat_only: true, system_role: 'vat_output' },
+      ],
+    },
+    {
+      name: 'Creditors > 1 year',
+      ledger_key: 'creditors_over_1yr',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [
+        { name: 'Loans' },
+        { name: 'Other creditors' },
+      ],
+    },
+    // ── Funds (equity) ──────────────────────────────────────────────────────
+    {
+      // Brought-forward fund balances. The fund a movement belongs to is carried
+      // on each split (fund dimension); these accumulate the closing balances.
+      // Net movement closes into "Unrestricted funds" (retained_earnings) — v1
+      // posts a single accumulated-funds close, not a per-fund split.
+      name: 'Funds',
+      ledger_key: 'funds',
+      ledger_type: 'balance_sheet',
+      account_type: 'equity',
+      accounts: [
+        { name: 'Unrestricted funds', system_role: 'retained_earnings' },
+        { name: 'Restricted funds' },
+        { name: 'Endowment funds' },
+      ],
+    },
+  ],
+};
+
 // ── Registry ────────────────────────────────────────────────────────────────
 // New template seeds slot in here — no schema changes required.
 export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
@@ -1634,8 +1884,8 @@ export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
   partnership: PARTNERSHIP_COA_SEED,
   llp: LLP_COA_SEED,
   trust: TRUST_COA_SEED,
+  charity: CHARITY_COA_SEED,
   // self_employed: ...
-  // charity:       ...
   // basic:         ...  Hand-built fallback — write from scratch.
 };
 

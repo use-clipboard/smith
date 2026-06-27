@@ -46,6 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
   const includeZero = url.searchParams.get('include_zero') === 'true';
+  const fundId = url.searchParams.get('fund_id');
   const excludeTypes = (url.searchParams.get('exclude_types') ?? '')
     .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
 
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Aggregation now lives in lib/bookkeeping/balances.ts so this route and the
   // /statements endpoint compute from one source of truth.
   try {
-    const result = await computeBalances(supabase, params.id, { from, to, includeZero, excludeTypes });
+    const result = await computeBalances(supabase, params.id, { from, to, includeZero, excludeTypes, fundId });
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to load balances' }, { status: 500 });

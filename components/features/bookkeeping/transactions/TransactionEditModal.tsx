@@ -26,6 +26,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, X, Pencil, Copy as CopyIcon, Plus, Trash2 } from 'lucide-react';
 import AccountPicker from '../input/AccountPicker';
 import LedgerPicker from '../input/LedgerPicker';
+import FundPicker from '../input/FundPicker';
 import DateInput, { parseUkDateStrict, fromIso } from '../input/DateInput';
 import { getTypeConfig, TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 import { buildSplits } from '@/lib/bookkeeping/buildSplits';
@@ -74,6 +75,7 @@ interface JournalLine {
   description: string;
   debitText: string;
   creditText: string;
+  fund: string | null;
 }
 
 function makeBlankJournalLine(): JournalLine {
@@ -84,7 +86,22 @@ function makeBlankJournalLine(): JournalLine {
     description: '',
     debitText: '',
     creditText: '',
+    fund: null,
   };
+}
+
+/** Whether the book uses fund accounting (charity). Fetched once per modal. */
+function useHasFunds(bookId: string): boolean {
+  const [hasFunds, setHasFunds] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/funds`)
+      .then(r => r.ok ? r.json() : { funds: [] })
+      .then(d => { if (!cancelled) setHasFunds(((d.funds ?? []) as unknown[]).length > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
+  return hasFunds;
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -210,6 +227,7 @@ function UniversalEditForm({
 }) {
   const type = txn.type as TransactionType;
   const config = getTypeConfig(type) ?? TRANSACTION_TYPE_CONFIG.PAY;
+  const hasFunds = useHasFunds(bookId);
 
   // Reconstruct the form state from the loaded transaction.
   //
@@ -287,6 +305,7 @@ function UniversalEditForm({
     } : null,
   );
   const [entryDetails, setEntryDetails] = useState(analysisSplit?.entry_details ?? '');
+  const [fund, setFund] = useState<string | null>(analysisSplit?.fund_id ?? null);
   const [includeInNextReturn, setIncludeInNextReturn] = useState(true);
 
   // VAT routing account ids
@@ -325,6 +344,7 @@ function UniversalEditForm({
     if (!analysis) { onError(`Pick the ${config.analysisLabel.toLowerCase()}.`); return; }
     if (primary.id === analysis.id) { onError('Primary and analysis must differ.'); return; }
     if (total <= 0) { onError('Amount must be greater than zero.'); return; }
+    if (hasFunds && !fund) { onError('Pick a fund.'); return; }
 
     setSubmitting(true);
     try {
@@ -337,6 +357,7 @@ function UniversalEditForm({
         vatOutputAccountId: vatOutputId,
         entryDetails: entryDetails || null,
         notes: null,
+        fundId: fund,
       });
 
       const body = {
@@ -479,6 +500,12 @@ function UniversalEditForm({
         />
       </Field>
 
+      {hasFunds && (
+        <Field label="Fund">
+          <FundPicker bookId={bookId} value={fund} onChange={setFund} placeholder="Fund…" />
+        </Field>
+      )}
+
       {/* Flat Rate Scheme — reclaimable capital asset (purchases only) */}
       {showVatColumn && isPurchase && (
         <label className="flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 cursor-pointer">
@@ -545,6 +572,7 @@ function JournalEditForm({
 }) {
   void vatLockDate; // journal entries don't carry VAT directly so no late-entry chip needed
   const type = txn.type as 'JRN' | 'RJN';
+  const hasFunds = useHasFunds(bookId);
 
   const [date, setDate] = useState(mode === 'duplicate' ? fromIso(todayIso()) : fromIso(txn.date));
   const [headerDetails, setHeaderDetails] = useState(txn.details ?? '');
@@ -563,6 +591,7 @@ function JournalEditForm({
       description: s.entry_details ?? '',
       debitText: s.debit > 0 ? Number(s.debit).toFixed(2) : '',
       creditText: s.credit > 0 ? Number(s.credit).toFixed(2) : '',
+      fund: s.fund_id ?? null,
     }));
     return seed.length >= 2 ? seed : [...seed, makeBlankJournalLine(), makeBlankJournalLine()].slice(0, Math.max(2, seed.length));
   });
@@ -601,6 +630,7 @@ function JournalEditForm({
       if (dr > 0 && cr > 0) { onError('A line cannot be both a debit and a credit.'); return; }
       if (dr === 0 && cr === 0) { onError('Every line needs a debit or a credit.'); return; }
     }
+    if (hasFunds && nonBlank.some(l => !l.fund)) { onError('Every line needs a fund.'); return; }
     if (!isBalanced) {
       onError(`Out of balance: Dr ${formatMoneyAbs(totals.dr)} vs Cr ${formatMoneyAbs(totals.cr)} (diff ${formatMoneyAbs(totals.diff)}).`);
       return;
@@ -613,6 +643,7 @@ function JournalEditForm({
         debit: parseAmount(l.debitText),
         credit: parseAmount(l.creditText),
         entry_details: l.description || headerDetails || null,
+        fund_id: l.fund,
       }));
       const total = Math.max(totals.dr, totals.cr);
 
@@ -692,6 +723,7 @@ function JournalEditForm({
               <th className="px-2 py-1.5 text-right w-24 border-r border-slate-300">Credit</th>
               <th className="px-2 py-1.5 text-left w-40 border-r border-slate-300">Ledger</th>
               <th className="px-2 py-1.5 text-left w-52 border-r border-slate-300">Account</th>
+              {hasFunds && <th className="px-2 py-1.5 text-left w-40 border-r border-slate-300">Fund</th>}
               <th className="px-2 py-1.5 text-left">Description</th>
             </tr>
           </thead>
@@ -759,6 +791,17 @@ function JournalEditForm({
                     className="!border-none"
                   />
                 </td>
+                {hasFunds && (
+                  <td className="px-1 py-0 border-r border-slate-200">
+                    <FundPicker
+                      bookId={bookId}
+                      value={l.fund}
+                      onChange={f => updateLine(l.id, { fund: f })}
+                      className="w-full text-sm px-2 py-1.5 border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                      placeholder="Fund…"
+                    />
+                  </td>
+                )}
                 <td className="px-0 py-0">
                   <input
                     type="text"
@@ -776,7 +819,7 @@ function JournalEditForm({
               <td className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wide font-semibold text-slate-600 border-r border-slate-200">Totals</td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.dr)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold border-r border-slate-200">{formatMoneyAbs(totals.cr)}</td>
-              <td colSpan={3} />
+              <td colSpan={hasFunds ? 4 : 3} />
             </tr>
             <tr className="border-t border-slate-200">
               <td className="px-2 py-1.5 text-right text-[10px] uppercase tracking-wide font-semibold text-slate-600 border-r border-slate-200">Diff</td>
@@ -785,7 +828,7 @@ function JournalEditForm({
               }`}>
                 {formatMoneyAbs(totals.diff)}
               </td>
-              <td colSpan={3} />
+              <td colSpan={hasFunds ? 4 : 3} />
             </tr>
           </tfoot>
         </table>

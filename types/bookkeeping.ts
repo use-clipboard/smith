@@ -132,6 +132,43 @@ export const VAT_SCHEME_LABEL: Record<VatScheme, string> =
 export const BASE_CURRENCY_OPTIONS = ['GBP', 'EUR', 'USD'] as const;
 export type BaseCurrency = typeof BASE_CURRENCY_OPTIONS[number];
 
+// ── Charity funds (fund accounting dimension) ────────────────────────────────
+
+export type FundType = 'unrestricted' | 'restricted' | 'endowment';
+
+export const FUND_TYPE_LABEL: Record<FundType, string> = {
+  unrestricted: 'Unrestricted',
+  restricted: 'Restricted',
+  endowment: 'Endowment',
+};
+
+export const FUND_TYPE_OPTIONS: { id: FundType; label: string; hint: string }[] = [
+  { id: 'unrestricted', label: 'Unrestricted', hint: 'General funds the charity can spend on any of its purposes' },
+  { id: 'restricted',   label: 'Restricted',   hint: 'Funds the donor restricted to a specific purpose' },
+  { id: 'endowment',    label: 'Endowment',    hint: 'Capital that must be retained, not spent' },
+];
+
+export interface BookFund {
+  id: string;
+  book_id: string;
+  name: string;
+  fund_type: FundType;
+  description: string | null;
+  sort_order: number;
+  archived: boolean;
+  created_by: string | null;
+  created_at: string;
+  /** Whether the fund has any posted splits (drives delete-protection in UI). */
+  in_use?: boolean;
+}
+
+/** Minimal fund shape for display on a split. */
+export interface BookFundRef {
+  id: string;
+  name: string;
+  fund_type: FundType;
+}
+
 // ── Transactions ────────────────────────────────────────────────────────────
 
 export type TransactionType =
@@ -205,6 +242,10 @@ export interface TransactionSplit {
   credit: number;
   entry_details: string | null;
   notes: string | null;
+  /** Charity fund this line belongs to. Null on non-charity books. */
+  fund_id: string | null;
+  /** Denormalised fund ref for display (joined on read). */
+  fund?: BookFundRef | null;
 }
 
 export interface Transaction {

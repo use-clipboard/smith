@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Trash2, ClipboardPaste, FileUp, Info } from 'lucide-react';
 import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
+import FundPicker from './FundPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
 import Tooltip from '@/components/ui/Tooltip';
@@ -101,6 +102,8 @@ interface Row {
   includeInNextReturn: boolean;
   /** FRS — purchase flagged as a reclaimable capital asset. */
   frsCapital: boolean;
+  /** Charity fund (NULL on non-charity books — the Fund column is hidden). */
+  fund: string | null;
 }
 
 function makeBlankRow(vatRegistered: boolean, type: SingleType, defaultDateUk: string, seed: Partial<Row> = {}): Row {
@@ -119,6 +122,7 @@ function makeBlankRow(vatRegistered: boolean, type: SingleType, defaultDateUk: s
     notes: '',
     includeInNextReturn: true,
     frsCapital: seed.frsCapital ?? false,
+    fund: seed.fund ?? null,
   };
 }
 
@@ -273,6 +277,7 @@ export default function MultiTypeInputSheet({
   const [accounts, setAccounts] = useState<AccountLite[]>([]);
   const [recLockHits, setRecLockHits] = useState<RecLockHit[] | null>(null);
   const [pendingLive, setPendingLive] = useState<Array<{ r: Row; idx: number }> | null>(null);
+  const [hasFunds, setHasFunds] = useState(false);
 
   const tableRef = useRef<HTMLTableElement>(null);
   const pendingFocusRowId = useRef<string | null>(null);
@@ -297,6 +302,10 @@ export default function MultiTypeInputSheet({
     fetch(`/api/bookkeeping/books/${bookId}/accounts?pickable_only=true`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (!cancelled && d) setAccounts((d.accounts ?? []) as AccountLite[]); })
+      .catch(() => {});
+    fetch(`/api/bookkeeping/books/${bookId}/funds`)
+      .then(r => r.ok ? r.json() : { funds: [] })
+      .then(d => { if (!cancelled) setHasFunds(((d.funds ?? []) as unknown[]).length > 0); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [bookId]);
@@ -336,7 +345,7 @@ export default function MultiTypeInputSheet({
   }
   function inheritSeed(): Partial<Row> {
     const last = rows[rows.length - 1];
-    return last ? { date: last.date, vatTreatment: last.vatTreatment } : {};
+    return last ? { date: last.date, vatTreatment: last.vatTreatment, fund: last.fund } : {};
   }
   function appendRow() {
     const last = rows[rows.length - 1];
@@ -437,6 +446,7 @@ export default function MultiTypeInputSheet({
       const iso = parseUkDateStrict(r.date);
       if (!iso) { setError(`Row ${lineNo}: "${r.date}" isn't a valid date — use dd/mm/yyyy.`); return; }
       if (r.primary!.id === r.analysis!.id) { setError(`Row ${lineNo}: Primary and analysis must be different accounts.`); return; }
+      if (hasFunds && !r.fund) { setError(`Row ${lineNo}: pick a fund.`); return; }
     }
 
     const probes: RecLockProbe[] = [];
@@ -470,6 +480,7 @@ export default function MultiTypeInputSheet({
           vatOutputAccountId: vatOutputId,
           entryDetails: r.entryDetails || null,
           notes: r.notes || null,
+          fundId: r.fund,
         });
         const lateEntry = lateRows[idx] && r.includeInNextReturn;
         const res = await fetch(`/api/bookkeeping/books/${bookId}/transactions`, {
@@ -524,7 +535,7 @@ export default function MultiTypeInputSheet({
 
   // ── Render ───────────────────────────────────────────────────────────────────
   const posting = postingProgress !== null;
-  const colSpanBase = (showVatColumns ? 11 : 9) + (isFrs ? 1 : 0);
+  const colSpanBase = (showVatColumns ? 11 : 9) + (isFrs ? 1 : 0) + (hasFunds ? 1 : 0);
 
   return (
     <div onKeyDown={handleKey} className="space-y-3">
@@ -590,6 +601,7 @@ export default function MultiTypeInputSheet({
               {showVatColumns && <th className="px-2 py-1.5 text-right w-24 border-r border-slate-300">Net</th>}
               <th className="px-2 py-1.5 text-left w-40 border-r border-slate-300">Analysis ledger</th>
               <th className="px-2 py-1.5 text-left w-52 border-r border-slate-300">Analysis account</th>
+              {hasFunds && <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Fund</th>}
               {isFrs && <th className="px-2 py-1.5 text-center w-16 border-r border-slate-300" title="Reclaimable capital asset (Flat Rate Scheme)">Capital</th>}
               <th className="px-2 py-1.5 text-left">Entry details</th>
             </tr>
@@ -727,6 +739,19 @@ export default function MultiTypeInputSheet({
                       className="!border-none"
                     />
                   </td>
+
+                  {/* Fund (charity books only) */}
+                  {hasFunds && (
+                    <td className="px-1 py-0 border-r border-slate-200">
+                      <FundPicker
+                        bookId={bookId}
+                        value={r.fund}
+                        onChange={f => updateRow(r.id, { fund: f })}
+                        className="w-full text-sm px-2 py-1.5 border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                        placeholder="Fund…"
+                      />
+                    </td>
+                  )}
 
                   {/* FRS capital-reclaim toggle (purchase rows only) */}
                   {isFrs && (

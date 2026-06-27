@@ -25,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Loader2, Trash2 } from 'lucide-react';
 import AccountPicker from './AccountPicker';
 import LedgerPicker from './LedgerPicker';
+import FundPicker from './FundPicker';
 import DateInput, { parseUkDateStrict } from './DateInput';
 import PayeeAutocomplete, { type PayeeSuggestion } from './PayeeAutocomplete';
 import Tooltip from '@/components/ui/Tooltip';
@@ -102,6 +103,8 @@ interface Row {
   includeInNextReturn: boolean;
   /** FRS — purchase flagged as a reclaimable capital asset. */
   frsCapital: boolean;
+  /** Charity fund (NULL on non-charity books — the Fund column is hidden). */
+  fund: string | null;
 }
 
 function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Partial<Row> = {}, defaultDateUk?: string): Row {
@@ -118,6 +121,7 @@ function makeBlankRow(vatRegistered: boolean, analysisLedger: string, seed: Part
     notes: '',
     includeInNextReturn: true,  // default ticked; ignored unless row triggers late-entry
     frsCapital: seed.frsCapital ?? false,
+    fund: seed.fund ?? null,
   };
 }
 
@@ -181,6 +185,9 @@ export default function UniversalInputSheet({
   const [vatInputId, setVatInputId]   = useState<string | null>(null);
   const [vatOutputId, setVatOutputId] = useState<string | null>(null);
 
+  // Whether this book uses fund accounting (charity). Drives the Fund column.
+  const [hasFunds, setHasFunds] = useState(false);
+
   // Row actions (edit / duplicate / delete / audit) for the Recent table.
   const rowActions = useTransactionRowActions({
     bookId,
@@ -236,6 +243,15 @@ export default function UniversalInputSheet({
     return () => { cancelled = true; };
   }, [bookId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/funds`)
+      .then(r => r.ok ? r.json() : { funds: [] })
+      .then(d => { if (!cancelled) setHasFunds(((d.funds ?? []) as unknown[]).length > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
+
   // ── Row mutations ────────────────────────────────────────────────────────
   function updateRow(id: string, patch: Partial<Row>) {
     setRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
@@ -249,6 +265,7 @@ export default function UniversalInputSheet({
       primary: last.primary,
       vatTreatment: last.vatTreatment,
       analysisLedger: last.analysisLedger || config.analysisLedger || '',
+      fund: last.fund,
     } : {};
     return makeBlankRow(vatRegistered, config.analysisLedger ?? '', seed, defaultDateUk);
   }
@@ -260,6 +277,7 @@ export default function UniversalInputSheet({
         primary: last.primary,
         vatTreatment: last.vatTreatment,
         analysisLedger: last.analysisLedger || config.analysisLedger || '',
+        fund: last.fund,
       } : {};
     })(), defaultDateUk)]);
   }
@@ -315,6 +333,7 @@ export default function UniversalInputSheet({
       const iso = parseDate(r.date);
       if (!iso) { setError(`Row ${lineNo}: "${r.date}" isn't a valid date — use dd/mm/yyyy (or * for today).`); return; }
       if (r.primary!.id === r.analysis!.id) { setError(`Row ${lineNo}: Primary and analysis must be different accounts.`); return; }
+      if (hasFunds && !r.fund) { setError(`Row ${lineNo}: pick a fund.`); return; }
     }
 
     // Rec-lock probe — gather every (bank-ledger account, date) pair this
@@ -366,6 +385,7 @@ export default function UniversalInputSheet({
           vatOutputAccountId: vatOutputId,
           entryDetails: r.entryDetails || null,
           notes: r.notes || null,
+          fundId: r.fund,
         });
 
         // Late-entry flag — only carries meaning when the row's date is in
@@ -478,6 +498,7 @@ export default function UniversalInputSheet({
       notes: analysisSplit?.notes ?? '',
       includeInNextReturn: true,
       frsCapital: Boolean(last.frs_capital_reclaim),
+      fund: analysisSplit?.fund_id ?? null,
     };
 
     // Replace a trailing fully-empty row if there is one, otherwise append.
@@ -635,6 +656,7 @@ export default function UniversalInputSheet({
               {showVatColumn && <th className="px-2 py-1.5 text-right w-24 border-r border-slate-300">Net</th>}
               <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Ledger</th>
               <th className="px-2 py-1.5 text-left w-56 border-r border-slate-300">{config.analysisLabel}</th>
+              {hasFunds && <th className="px-2 py-1.5 text-left w-44 border-r border-slate-300">Fund</th>}
               {showCapital && <th className="px-2 py-1.5 text-center w-16 border-r border-slate-300" title="Reclaimable capital asset (Flat Rate Scheme)">Capital</th>}
               <th className="px-2 py-1.5 text-left">Entry details</th>
             </tr>
@@ -773,6 +795,19 @@ export default function UniversalInputSheet({
                       className="!border-none"
                     />
                   </td>
+
+                  {/* Fund (charity books only) */}
+                  {hasFunds && (
+                    <td className="px-1 py-0 border-r border-slate-200">
+                      <FundPicker
+                        bookId={bookId}
+                        value={r.fund}
+                        onChange={f => updateRow(r.id, { fund: f })}
+                        className="w-full text-sm px-2 py-1.5 border-0 bg-transparent focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                        placeholder="Fund…"
+                      />
+                    </td>
+                  )}
 
                   {/* FRS capital-reclaim toggle */}
                   {showCapital && (

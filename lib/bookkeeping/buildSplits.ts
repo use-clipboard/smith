@@ -31,6 +31,9 @@ export interface BuildSplitsInput {
   vatOutputAccountId: string | null;
   entryDetails?: string | null;
   notes?: string | null;
+  /** Charity fund stamped on every generated split (NULL on non-charity books).
+   *  All legs of a single-analysis transaction belong to the same fund. */
+  fundId?: string | null;
 }
 
 export interface SplitInput {
@@ -39,18 +42,20 @@ export interface SplitInput {
   credit: number;
   entry_details?: string | null;
   notes?: string | null;
+  fund_id?: string | null;
 }
 
 export function buildSplits(input: BuildSplitsInput): SplitInput[] {
   const { config, primaryAccountId, analysisAccountId, total, vat, net,
           vatInputAccountId, vatOutputAccountId, entryDetails, notes } = input;
+  const fundId = input.fundId ?? null;
 
   // TRF — two bank accounts, no VAT, gross both sides.
   if (config.type === 'TRF') {
     return [
-      { account_id: primaryAccountId,  debit: 0,     credit: total },
+      { account_id: primaryAccountId,  debit: 0,     credit: total, fund_id: fundId },
       { account_id: analysisAccountId, debit: total, credit: 0,
-        entry_details: entryDetails ?? null, notes: notes ?? null },
+        entry_details: entryDetails ?? null, notes: notes ?? null, fund_id: fundId },
     ];
   }
 
@@ -70,6 +75,7 @@ export function buildSplits(input: BuildSplitsInput): SplitInput[] {
       account_id: primaryAccountId,
       debit:  primaryIsDebit  ? total : 0,
       credit: primaryIsDebit  ? 0     : total,
+      fund_id: fundId,
     },
     // Analysis leg — moves by net if we can route VAT separately, else gross
     {
@@ -78,6 +84,7 @@ export function buildSplits(input: BuildSplitsInput): SplitInput[] {
       credit: analysisIsDebit ? 0 : (hasVatAccount ? net : total),
       entry_details: entryDetails ?? null,
       notes: notes ?? null,
+      fund_id: fundId,
     },
   ];
 
@@ -87,6 +94,7 @@ export function buildSplits(input: BuildSplitsInput): SplitInput[] {
       account_id: vatAccountId!,
       debit:  analysisIsDebit ? vat : 0,
       credit: analysisIsDebit ? 0   : vat,
+      fund_id: fundId,
     });
   }
 
