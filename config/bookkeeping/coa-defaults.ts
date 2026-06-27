@@ -1515,6 +1515,117 @@ export const LLP_COA_SEED: CoaTemplateSeed = {
   ],
 };
 
+// ── Trust (UK trust accounting) ─────────────────────────────────────────────
+// 9 ledgers. Captured verbatim from a clean VT Transaction+ "Chart of accounts
+// for trust accounting" export (27/06/26). Much simpler and structurally
+// different: investment income (dividends/interest), trustee/professional fees,
+// and beneficiaries' capital + income accounts instead of company/partner
+// equity. No VAT and no fixed-asset ledgers. Net income for the period closes
+// into "Beneficiaries → Income account" (tagged retained_earnings).
+export const TRUST_COA_SEED: CoaTemplateSeed = {
+  template_type: 'trust',
+  ledgers: [
+    {
+      name: 'Income',
+      ledger_key: 'income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [
+        { name: 'Dividends' },
+        { name: 'Interest' },
+        { name: 'Other' },
+      ],
+    },
+    {
+      name: 'Expenses',
+      ledger_key: 'expenses',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Accountants fees' },
+        { name: 'Bank charges' },
+        { name: 'Exchange differences' },
+        { name: 'Legal fees' },
+        { name: 'Other professional fees' },
+        { name: 'Sundry' },
+        { name: 'Trustee fees' },
+        { name: 'Write backs' },
+        { name: 'Write offs' },
+      ],
+    },
+    {
+      name: 'Taxation',
+      ledger_key: 'taxation',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: 'Tax' },
+      ],
+    },
+    {
+      // Investment holdings — added as the trust acquires them. Ships empty.
+      name: 'Investments',
+      ledger_key: 'investments',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [],
+    },
+    {
+      name: 'Debtors',
+      ledger_key: 'debtors',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Accrued income' },
+        { name: 'Prepayments' },
+        { name: 'Translation differences' },
+      ],
+    },
+    {
+      name: 'Bank accounts',
+      ledger_key: 'bank',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Current account' },
+        { name: 'Deposit account' },
+      ],
+    },
+    {
+      // Trade creditors — added as needed. Ships empty.
+      name: 'Creditors ledger',
+      ledger_key: 'creditors',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [],
+    },
+    {
+      name: 'Other creditors',
+      ledger_key: 'other_creditors',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [
+        { name: 'Accruals' },
+        { name: 'Deferred income' },
+        { name: 'Inland Revenue' },
+      ],
+    },
+    {
+      // Beneficiaries' capital + income accounts. Net income closes into the
+      // Income account (retained_earnings); capital movements to the Capital
+      // account.
+      name: 'Beneficiaries',
+      ledger_key: 'beneficiaries',
+      ledger_type: 'balance_sheet',
+      account_type: 'equity',
+      accounts: [
+        { name: 'Capital account' },
+        { name: 'Income account', system_role: 'retained_earnings' },
+      ],
+    },
+  ],
+};
+
 // ── Registry ────────────────────────────────────────────────────────────────
 // New template seeds slot in here — no schema changes required.
 export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
@@ -1522,8 +1633,8 @@ export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
   sole_trader: SOLE_TRADER_COA_SEED,
   partnership: PARTNERSHIP_COA_SEED,
   llp: LLP_COA_SEED,
+  trust: TRUST_COA_SEED,
   // self_employed: ...
-  // trust:         ...
   // charity:       ...
   // basic:         ...  Hand-built fallback — write from scratch.
 };
