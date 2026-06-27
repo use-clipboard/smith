@@ -21,6 +21,7 @@ import MtdItReviewPhase from './MtdItReviewPhase';
 import MtdItDeleteQuarterModal from './MtdItDeleteQuarterModal';
 import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import MtdItCoOwnerImportModal, { type ImportableSource } from './MtdItCoOwnerImportModal';
+import MtdItBookkeepingImportModal from './MtdItBookkeepingImportModal';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import type { MtdItClientRow as Row, MtdItStream, MtdItStreams, MtdItProperty } from '@/types';
@@ -652,6 +653,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           onAddFiles={addFiles}
           onRemoveFile={removeFile}
           onForeignPropertiesChange={setForeignProperties}
+          onImported={() => { void loadStreamSummary(qrow.id, qrow.fx_rates ?? {}); }}
           onAnalyse={runAnalyse}
           onSkip={skipToReview}
         />
@@ -838,10 +840,11 @@ function SetupPhase(props: {
   onAddFiles: (s: MtdItStream, files: FileList | null) => void;
   onRemoveFile: (id: string) => void;
   onForeignPropertiesChange: (props: MtdItProperty[]) => void;
+  onImported: () => void;
   onAnalyse: () => void;
   onSkip: () => void;
 }) {
-  const { qrow, clientId, activeStreams, filesByStream, detectedCurrencies, streamSummary, onToggleStream, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onAnalyse, onSkip } = props;
+  const { qrow, clientId, activeStreams, filesByStream, detectedCurrencies, streamSummary, onToggleStream, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onImported, onAnalyse, onSkip } = props;
   const totalActiveFiles = activeStreams.reduce((acc, s) => acc + filesByStream[s].length, 0);
   const canAnalyse = activeStreams.length > 0 && totalActiveFiles > 0;
 
@@ -909,6 +912,7 @@ function SetupPhase(props: {
               onAddFiles={onAddFiles}
               onRemoveFile={onRemoveFile}
               onForeignPropertiesChange={onForeignPropertiesChange}
+              onImported={onImported}
             />
           );
         })}
@@ -1001,8 +1005,10 @@ function StreamPanel(props: {
   onAddFiles: (s: MtdItStream, files: FileList | null) => void;
   onRemoveFile: (id: string) => void;
   onForeignPropertiesChange: (props: MtdItProperty[]) => void;
+  onImported: () => void;
 }) {
-  const { stream, qrow, clientId, files, summary, detectedCurrencies, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange } = props;
+  const { stream, qrow, clientId, files, summary, detectedCurrencies, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onImported } = props;
+  const [showImport, setShowImport] = useState(false);
   const M = STREAM_META[stream];
   const net = summary.income - summary.expense;
   const hasEntries = summary.count > 0;
@@ -1118,19 +1124,23 @@ function StreamPanel(props: {
             ledger instead of (or alongside) uploading documents. */}
         {stream === 'sole' && (
           <SubSection title="Import" hint="Pull figures straight from another SMITH tool instead of uploading documents.">
-            <Tooltip label="Coming soon — once the Bookkeeping module is released, you'll be able to import this trade's income and expenses for the quarter directly from its ledger, with no document upload needed.">
-              <div
-                aria-disabled="true"
-                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-gray-400 cursor-not-allowed select-none"
-              >
-                <BookCopy size={15} className="shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold">Import from Bookkeeping</div>
-                  <div className="text-[11px]">Pull this trade&apos;s income &amp; expenses from its ledger.</div>
-                </div>
-                <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-wider bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded-full">Coming soon</span>
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-50 transition-colors text-left"
+            >
+              <BookCopy size={15} className="shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold">Import from Bookkeeping</div>
+                <div className="text-[11px] text-indigo-600/80">Pull this trade&apos;s income &amp; expenses for the quarter from its ledger.</div>
               </div>
-            </Tooltip>
+            </button>
+            <MtdItBookkeepingImportModal
+              quarterId={qrow.id}
+              open={showImport}
+              onClose={() => setShowImport(false)}
+              onImported={() => { setShowImport(false); onImported(); }}
+            />
           </SubSection>
         )}
 
