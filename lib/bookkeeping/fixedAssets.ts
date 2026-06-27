@@ -23,7 +23,8 @@ export function isFixedAssetLedger(ledger: string | null | undefined): boolean {
 }
 
 export function isIntangibleLedger(ledger: string | null | undefined): boolean {
-  return ledger === 'FA - intangible';
+  // Case-insensitive: Ltd seeds "FA - intangible", VT's LLP export "FA - Intangible".
+  return (ledger ?? '').toLowerCase() === 'fa - intangible';
 }
 
 /** "Depreciation" for tangibles, "Amortisation" for intangibles. */
