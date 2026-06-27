@@ -9,7 +9,6 @@ export type BookTemplateType =
   | 'ltd'
   | 'llp'
   | 'partnership'
-  | 'self_employed'
   | 'sole_trader'
   | 'trust'
   | 'charity';
@@ -103,8 +102,7 @@ export interface FinancialYear {
 
 export const BOOK_TEMPLATE_OPTIONS: { id: BookTemplateType; label: string; hint: string }[] = [
   { id: 'ltd',           label: 'Limited Company',  hint: 'Companies House registered, CT' },
-  { id: 'sole_trader',   label: 'Sole Trader',      hint: 'Single owner, unincorporated' },
-  { id: 'self_employed', label: 'Self-Employed',    hint: 'Self-assessment, no separate business entity' },
+  { id: 'sole_trader',   label: 'Sole Trader',      hint: 'Single owner, unincorporated (incl. self-employed)' },
   { id: 'partnership',   label: 'Partnership',      hint: 'Two or more partners, no LLP' },
   { id: 'llp',           label: 'LLP',              hint: 'Limited Liability Partnership' },
   { id: 'trust',         label: 'Trust',            hint: 'Discretionary, interest-in-possession, etc.' },
@@ -400,7 +398,7 @@ export function defaultTemplateFromBusinessType(bt: string | null | undefined): 
   if (t.includes('llp')) return 'llp';
   if (t.includes('partnership')) return 'partnership';
   if (t.includes('sole')) return 'sole_trader';
-  if (t.includes('self') || t.includes('individual')) return 'self_employed';
+  if (t.includes('self') || t.includes('individual')) return 'sole_trader';
   if (t.includes('trust')) return 'trust';
   if (t.includes('charity')) return 'charity';
   return 'basic';

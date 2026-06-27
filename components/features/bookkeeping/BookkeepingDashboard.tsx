@@ -16,7 +16,6 @@ const TEMPLATE_BADGE_CLASSES: Record<BookTemplateType, string> = {
   llp:            'bg-indigo-50  text-indigo-700  border-indigo-200',
   partnership:    'bg-violet-50  text-violet-700  border-violet-200',
   sole_trader:    'bg-emerald-50 text-emerald-700 border-emerald-200',
-  self_employed:  'bg-teal-50    text-teal-700    border-teal-200',
   trust:          'bg-amber-50   text-amber-700   border-amber-200',
   charity:        'bg-rose-50    text-rose-700    border-rose-200',
   basic:          'bg-slate-50   text-slate-700   border-slate-200',

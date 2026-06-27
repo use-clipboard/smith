@@ -1885,7 +1885,6 @@ export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
   llp: LLP_COA_SEED,
   trust: TRUST_COA_SEED,
   charity: CHARITY_COA_SEED,
-  // self_employed: ...
   // basic:         ...  Hand-built fallback — write from scratch.
 };
 

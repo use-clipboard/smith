@@ -23,7 +23,7 @@ interface AccountLite { id: string; name: string; ledger: string | null; code?: 
 
 function defaultRole(t: Book['template_type']): ParticipantRole {
   if (t === 'partnership' || t === 'llp') return 'partner';
-  if (t === 'sole_trader' || t === 'self_employed') return 'sole_trader';
+  if (t === 'sole_trader') return 'sole_trader';
   return 'director';
 }
 

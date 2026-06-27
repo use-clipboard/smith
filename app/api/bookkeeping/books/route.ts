@@ -6,7 +6,7 @@ import { seedBookCoa } from '@/lib/bookkeeping/seedCoa';
 import { seedBookFunds } from '@/lib/bookkeeping/seedFunds';
 import { parseYearEndMd, enumerateFys } from '@/lib/bookkeeping/financialYears';
 
-const TEMPLATE_TYPES = ['basic','ltd','llp','partnership','self_employed','sole_trader','trust','charity'] as const;
+const TEMPLATE_TYPES = ['basic','ltd','llp','partnership','sole_trader','trust','charity'] as const;
 const VAT_SCHEMES = ['standard','flat_rate','cash','annual','margin','partial_exemption'] as const;
 
 const CreateBody = z.object({

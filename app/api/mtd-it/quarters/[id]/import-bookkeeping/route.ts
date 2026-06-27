@@ -46,7 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     supabase.from('bookkeeping_books')
       .select('id, name, template_type')
       .eq('firm_id', ctx.firmId).eq('client_id', q.client_id).eq('archived', false)
-      .in('template_type', ['sole_trader', 'self_employed']),
+      .in('template_type', ['sole_trader']),
     supabase.from('mtd_it_trades')
       .select('id, name').eq('client_id', q.client_id).eq('active', true).order('created_at', { ascending: true }),
   ]);

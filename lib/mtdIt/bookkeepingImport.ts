@@ -1,6 +1,6 @@
 // Map a sole-trader bookkeeping P&L into MTD IT self-employment entries.
 //
-// Given the per-account balances for a sole_trader / self_employed book over a
+// Given the per-account balances for a sole_trader book over a
 // quarter's date range, produce one import line per P&L account with a suggested
 // MTD sole category. Categories are a default heuristic — the user can override
 // each in the import preview before entries are created.
