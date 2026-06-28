@@ -269,11 +269,70 @@ export interface Transaction {
   /** FRS — purchase flagged as a reclaimable capital asset. */
   frs_capital_reclaim?: boolean;
   status: TransactionStatus;
+  /** Link to the source document (Google Drive via Capture/Vault). Pointer
+   *  only — the file is not stored in SMITH. */
+  source_doc_url?: string | null;
+  source_doc_name?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
   posted_at: string | null;
   splits?: TransactionSplit[];
+}
+
+// ── Recurring (memorised) transactions ──────────────────────────────────────
+
+export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+export const RECURRING_FREQUENCY_OPTIONS: { id: RecurringFrequency; label: string }[] = [
+  { id: 'weekly',    label: 'Weekly' },
+  { id: 'monthly',   label: 'Monthly' },
+  { id: 'quarterly', label: 'Quarterly' },
+  { id: 'yearly',    label: 'Yearly' },
+];
+
+export const RECURRING_FREQUENCY_LABEL: Record<RecurringFrequency, string> =
+  Object.fromEntries(RECURRING_FREQUENCY_OPTIONS.map(o => [o.id, o.label])) as Record<RecurringFrequency, string>;
+
+/** One leg of a recurring template. Mirrors a transaction split. */
+export interface RecurringSplit {
+  account_id: string;
+  debit: number;
+  credit: number;
+  entry_details?: string | null;
+  notes?: string | null;
+  fund_id?: string | null;
+}
+
+/** The saved transaction shape a recurring template materialises into. */
+export interface RecurringTemplate {
+  payee_text: string | null;
+  details: string | null;
+  total: number;
+  vat_total: number;
+  vat_rate: number | null;
+  vat_treatment: VatTreatment | null;
+  primary_account_id: string | null;
+  splits: RecurringSplit[];
+}
+
+export interface RecurringTransaction {
+  id: string;
+  book_id: string;
+  name: string;
+  type: TransactionType;
+  frequency: RecurringFrequency;
+  interval_count: number;
+  next_due_date: string;
+  end_date: string | null;
+  last_run_date: string | null;
+  active: boolean;
+  template: RecurringTemplate;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Derived server-side: occurrence is due on/before today and still active. */
+  is_due?: boolean;
 }
 
 // ── VAT returns ─────────────────────────────────────────────────────────────

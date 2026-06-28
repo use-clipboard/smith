@@ -32,6 +32,9 @@ const PatchBody = z.object({
   late_entry: z.boolean().optional(),
   /** Flat Rate Scheme — purchase is a reclaimable capital asset. */
   frs_capital_reclaim: z.boolean().optional(),
+  /** Link to the source document (Google Drive via Capture/Vault). Pass null to clear. */
+  source_doc_url: z.string().url().max(2000).nullable().optional(),
+  source_doc_name: z.string().max(300).nullable().optional(),
 });
 
 /** Add one day to a YYYY-MM-DD string. */
@@ -44,7 +47,7 @@ function addOneDay(iso: string): string {
 const TX_SELECT = `
   id, book_id, type, ref_no, ref_seq, date, payee_text, details,
   total, vat_total, vat_rate, vat_treatment, vat_period_override,
-  primary_account_id, frs_capital_reclaim, status, created_by, created_at, updated_at, posted_at,
+  primary_account_id, frs_capital_reclaim, status, source_doc_url, source_doc_name, created_by, created_at, updated_at, posted_at,
   primary_account:bookkeeping_accounts!bookkeeping_transactions_primary_account_id_fkey(id, name, ledger, account_type),
   splits:bookkeeping_transaction_splits(
     id, transaction_id, line_no, account_id, debit, credit, entry_details, notes, fund_id,
@@ -247,6 +250,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.vat_treatment !== undefined)      patch.vat_treatment = body.vat_treatment;
   if (body.primary_account_id !== undefined) patch.primary_account_id = body.primary_account_id;
   if (body.frs_capital_reclaim !== undefined) patch.frs_capital_reclaim = body.frs_capital_reclaim;
+  if (body.source_doc_url !== undefined)     patch.source_doc_url = body.source_doc_url;
+  if (body.source_doc_name !== undefined)    patch.source_doc_name = body.source_doc_name;
   if (vatPeriodOverride !== undefined)       patch.vat_period_override = vatPeriodOverride;
   patch.updated_at = new Date().toISOString();
 

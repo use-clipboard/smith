@@ -36,8 +36,9 @@
 import { useCallback, useState } from 'react';
 import {
   Pencil, Copy as CopyIcon, Trash2, MoreHorizontal,
-  Clipboard, History, ArrowRightLeft,
+  Clipboard, History, ArrowRightLeft, Paperclip,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import RowActionsMenu, { type ActionMenuItem, type AnchorPosition } from './RowActionsMenu';
 import TransactionEditModal from './TransactionEditModal';
 import AuditHistoryDrawer from './AuditHistoryDrawer';
@@ -135,7 +136,22 @@ export function useTransactionRowActions({
   }), []);
 
   const renderActions = useCallback((t: Transaction) => (
-    <div className="inline-flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="inline-flex items-center gap-0.5">
+      {t.source_doc_url && (
+        <Tooltip label={t.source_doc_name ? `Source document — ${t.source_doc_name}` : 'Source document'}>
+          <a
+            href={t.source_doc_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            aria-label={`Open source document for ${t.ref_no}`}
+            className="p-1 rounded text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50"
+          >
+            <Paperclip size={12} />
+          </a>
+        </Tooltip>
+      )}
+      <span className="inline-flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
       <button
         type="button"
         onClick={e => { e.stopPropagation(); handleEdit(t); }}
@@ -173,6 +189,7 @@ export function useTransactionRowActions({
       >
         <MoreHorizontal size={12} />
       </button>
+      </span>
     </div>
   ), [handleEdit, handleDuplicate, handleDelete]);
 

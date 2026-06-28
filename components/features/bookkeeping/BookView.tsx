@@ -34,6 +34,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
+import BookRecurringModal from './book/BookRecurringModal';
 import VatThresholdBanner from './book/VatThresholdBanner';
 import YearEndsDialog from './book/YearEndsDialog';
 import BookSideRail from './book/BookSideRail';
@@ -119,6 +120,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
   const [notFound, setNotFound] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [yearEndsOpen, setYearEndsOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
   /** Which external analysis tool the user is launching from the Reports menu
    *  (opens the period-picker dialog); null = closed. */
   const [launchTool, setLaunchTool] = useState<AnalysisTool | null>(null);
@@ -371,6 +373,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           .map(mr => ({ id: mr.id, accountName: mr.accountName }))}
         onCloseLedgerTab={closeDynamicTab}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenRecurring={() => setRecurringOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
         disabled={lockedForMe || book.archived}
         className="sticky top-4 self-start"
@@ -617,6 +620,14 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         // Bump the refresh key too so VAT-status-dependent chrome (the threshold
         // banner, the header VAT badge) re-reads after a change is recorded.
         onUpdated={next => { setBook(next); bumpRefresh(); }}
+      />
+
+      {/* ── Recurring (memorised) transactions ─────────────────────────────── */}
+      <BookRecurringModal
+        bookId={bookId}
+        open={recurringOpen}
+        onClose={() => setRecurringOpen(false)}
+        onPosted={bumpRefresh}
       />
 
       {/* ── Financial-year management (close / reopen) ──────────────────────── */}

@@ -40,6 +40,9 @@ const CreateBody = z.object({
   /** Flat Rate Scheme — purchase is a reclaimable capital asset (input VAT
    *  recoverable into Box 4 despite FRS). */
   frs_capital_reclaim: z.boolean().optional(),
+  /** Link to the source document (Google Drive via Capture/Vault). */
+  source_doc_url: z.string().url().max(2000).nullable().optional(),
+  source_doc_name: z.string().max(300).nullable().optional(),
 });
 
 /** Add one day to a YYYY-MM-DD string. */
@@ -52,7 +55,7 @@ function addOneDay(iso: string): string {
 const TX_SELECT = `
   id, book_id, type, ref_no, ref_seq, date, payee_text, details,
   total, vat_total, vat_rate, vat_treatment, vat_period_override,
-  primary_account_id, frs_capital_reclaim, status, created_by, created_at, updated_at, posted_at,
+  primary_account_id, frs_capital_reclaim, status, source_doc_url, source_doc_name, created_by, created_at, updated_at, posted_at,
   primary_account:bookkeeping_accounts!bookkeeping_transactions_primary_account_id_fkey(id, name, ledger, account_type),
   splits:bookkeeping_transaction_splits(
     id, transaction_id, line_no, account_id, debit, credit, entry_details, notes, fund_id,
@@ -314,6 +317,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       vat_period_override: vatPeriodOverride,
       primary_account_id: body.primary_account_id ?? null,
       frs_capital_reclaim: body.frs_capital_reclaim ?? false,
+      source_doc_url: body.source_doc_url ?? null,
+      source_doc_name: body.source_doc_name ?? null,
       status: 'posted',
       created_by: ctx.userId,
       posted_at: new Date().toISOString(),

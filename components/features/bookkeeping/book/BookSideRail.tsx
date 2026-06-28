@@ -25,7 +25,7 @@ import {
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
   Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
-  ClipboardCheck, Gauge, ArrowUpRight, HandCoins,
+  ClipboardCheck, Gauge, ArrowUpRight, HandCoins, Repeat,
   type LucideIcon,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -138,6 +138,8 @@ interface Props {
   /** Single close handler for any dynamic tab (ledger / type-list / manual-rec). */
   onCloseLedgerTab: (id: string) => void;
   onOpenSettings: () => void;
+  /** Opens the recurring (memorised) transactions manager. */
+  onOpenRecurring?: () => void;
   /** Opens the book-wide search lightbox (Ctrl+K also triggers it). */
   onOpenSearch?: () => void;
   /** Disable the action button + tabs that should be unavailable. */
@@ -148,7 +150,7 @@ interface Props {
 
 export default function BookSideRail({
   activeTab, showFunds, onSelectTab, onLaunchTool, onAction, ledgerTabs, typeListTabs = [], manualRecTabs = [],
-  onCloseLedgerTab, onOpenSettings, onOpenSearch, disabled, className,
+  onCloseLedgerTab, onOpenSettings, onOpenRecurring, onOpenSearch, disabled, className,
 }: Props) {
   const visibleReports = REPORTS.filter(r => !r.charityOnly || showFunds);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -376,6 +378,11 @@ export default function BookSideRail({
           id: 'ai-adviser', label: 'AI Adviser', tooltip: 'AI Adviser — discuss entries & prepare journals',
           icon: Bot, active: activeTab === 'ai-adviser',
           onClick: () => onSelectTab('ai-adviser'),
+        })}
+        {onOpenRecurring && railButton({
+          id: 'recurring', label: 'Recurring', tooltip: 'Recurring (memorised) transactions',
+          icon: Repeat, active: false,
+          onClick: onOpenRecurring,
         })}
         {/* Bulk Import lives on the home-page Quick Actions card now, not
             the rail — it's a deliberate occasional action rather than a

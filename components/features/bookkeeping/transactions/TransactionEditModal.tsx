@@ -27,6 +27,7 @@ import { CheckCircle2, Loader2, X, Pencil, Copy as CopyIcon, Plus, Trash2 } from
 import AccountPicker from '../input/AccountPicker';
 import LedgerPicker from '../input/LedgerPicker';
 import FundPicker from '../input/FundPicker';
+import TransactionDocLink from './TransactionDocLink';
 import DateInput, { parseUkDateStrict, fromIso } from '../input/DateInput';
 import { getTypeConfig, TRANSACTION_TYPE_CONFIG } from '@/lib/bookkeeping/transactionTypeConfig';
 import { buildSplits } from '@/lib/bookkeeping/buildSplits';
@@ -306,6 +307,9 @@ function UniversalEditForm({
   );
   const [entryDetails, setEntryDetails] = useState(analysisSplit?.entry_details ?? '');
   const [fund, setFund] = useState<string | null>(analysisSplit?.fund_id ?? null);
+  // Source-document link. A duplicate starts a fresh transaction, so don't carry it.
+  const [docUrl, setDocUrl] = useState<string | null>(mode === 'duplicate' ? null : (txn.source_doc_url ?? null));
+  const [docName, setDocName] = useState<string | null>(mode === 'duplicate' ? null : (txn.source_doc_name ?? null));
   const [includeInNextReturn, setIncludeInNextReturn] = useState(true);
 
   // VAT routing account ids
@@ -373,6 +377,8 @@ function UniversalEditForm({
         splits,
         late_entry: isLateEntry && includeInNextReturn,
         frs_capital_reclaim: isPurchase ? frsCapital : false,
+        source_doc_url: docUrl,
+        source_doc_name: docName,
       };
 
       const url = mode === 'edit'
@@ -506,6 +512,10 @@ function UniversalEditForm({
         </Field>
       )}
 
+      <Field label="Source document">
+        <TransactionDocLink bookId={bookId} value={{ url: docUrl, name: docName }} onChange={(u, n) => { setDocUrl(u); setDocName(n); }} />
+      </Field>
+
       {/* Flat Rate Scheme — reclaimable capital asset (purchases only) */}
       {showVatColumn && isPurchase && (
         <label className="flex items-start gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 cursor-pointer">
@@ -573,6 +583,8 @@ function JournalEditForm({
   void vatLockDate; // journal entries don't carry VAT directly so no late-entry chip needed
   const type = txn.type as 'JRN' | 'RJN';
   const hasFunds = useHasFunds(bookId);
+  const [docUrl, setDocUrl] = useState<string | null>(mode === 'duplicate' ? null : (txn.source_doc_url ?? null));
+  const [docName, setDocName] = useState<string | null>(mode === 'duplicate' ? null : (txn.source_doc_name ?? null));
 
   const [date, setDate] = useState(mode === 'duplicate' ? fromIso(todayIso()) : fromIso(txn.date));
   const [headerDetails, setHeaderDetails] = useState(txn.details ?? '');
@@ -658,6 +670,8 @@ function JournalEditForm({
         vat_treatment: null,
         primary_account_id: null,
         splits,
+        source_doc_url: docUrl,
+        source_doc_name: docName,
         ...(mode === 'duplicate' && type === 'RJN' ? { reverses_on_date: isoReversesOn } : {}),
       };
 
@@ -832,6 +846,11 @@ function JournalEditForm({
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Source document</label>
+        <TransactionDocLink bookId={bookId} value={{ url: docUrl, name: docName }} onChange={(u, n) => { setDocUrl(u); setDocName(n); }} />
       </div>
 
       <div className="pt-2 flex items-center justify-end gap-2">
