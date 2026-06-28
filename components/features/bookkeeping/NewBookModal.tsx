@@ -5,7 +5,7 @@ import { X, Loader2, BookCopy, ChevronRight, ChevronDown, ListTree } from 'lucid
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import DateInput, { fromIso, toIso } from './input/DateInput';
 import {
-  BOOK_TEMPLATE_OPTIONS, VAT_SCHEME_OPTIONS, BASE_CURRENCY_OPTIONS,
+  BOOK_TEMPLATE_OPTIONS, BOOK_TEMPLATE_LABEL, VAT_SCHEME_OPTIONS, BASE_CURRENCY_OPTIONS,
   defaultTemplateFromBusinessType,
   type Book, type BookTemplateType, type VatScheme,
 } from '@/types/bookkeeping';
@@ -121,6 +121,10 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
   // we stop auto-rewriting it when the client/template changes.
   const [nameTouched, setNameTouched] = useState(false);
 
+  // Human-readable note of what we pre-filled from the client record, so the
+  // suggestion is transparent and the user can sanity-check / override it.
+  const [clientHint, setClientHint] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -153,11 +157,17 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
         if (!c || cancelled) return;
         const inferredTemplate = defaultTemplateFromBusinessType(c.business_type);
         setTemplate(inferredTemplate);
-        if (c.vat_number) {
-          setVatRegistered(true);
-          setVatNumber(c.vat_number);
+
+        // VAT: a stored VAT number OR a filing frequency (vat_scheme) means the
+        // client is VAT-registered. Set the flag explicitly either way so
+        // switching from a VAT to a non-VAT client correctly clears it.
+        const vatRegisteredSignal = !!(c.vat_number || c.vat_scheme);
+        setVatRegistered(vatRegisteredSignal);
+        if (vatRegisteredSignal) {
+          if (c.vat_number) setVatNumber(c.vat_number);
           setVatScheme(inferVatSchemeFromClient(c));
         }
+
         // Soft-parse the client's free-text year_end. parseClientYearEnd
         // returns MM-DD; flip to DD-MM for the input.
         const parsedYeMd = parseClientYearEnd(c.year_end);
@@ -165,6 +175,13 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
           const [mm, dd] = parsedYeMd.split('-');
           setYearEndDm(`${dd}-${mm}`);
         }
+
+        // Build the transparency note.
+        const bits: string[] = [];
+        if (c.business_type) bits.push(BOOK_TEMPLATE_LABEL[inferredTemplate]);
+        if (vatRegisteredSignal) bits.push('VAT registered');
+        if (parsedYeMd) bits.push(`year-end ${parsedYeMd.split('-').reverse().join('-')}`);
+        setClientHint(bits.length ? `Suggested from ${c.name}’s record: ${bits.join(' · ')}. Change anything below.` : '');
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
@@ -274,6 +291,7 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
                 setClientId(id);
                 setClientName(n);
                 if (id) setUnallocated(false);
+                if (!id) setClientHint('');
               }}
               disabled={unallocated}
               placeholder="Choose a client…"
@@ -284,7 +302,7 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
                 checked={unallocated}
                 onChange={e => {
                   setUnallocated(e.target.checked);
-                  if (e.target.checked) { setClientId(''); setClientName(''); }
+                  if (e.target.checked) { setClientId(''); setClientName(''); setClientHint(''); }
                 }}
                 className="rounded border-gray-300"
               />
@@ -303,6 +321,14 @@ export default function NewBookModal({ onClose, onCreated }: Props) {
               className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+
+          {/* Suggested-from-client hint */}
+          {clientHint && !unallocated && (
+            <div className="flex items-start gap-2 rounded-lg bg-indigo-50/60 border border-indigo-100 px-3 py-2 text-[11px] text-indigo-800">
+              <ListTree size={13} className="mt-px shrink-0 text-indigo-500" />
+              <span>{clientHint}</span>
+            </div>
+          )}
 
           {/* Template picker */}
           <div>
