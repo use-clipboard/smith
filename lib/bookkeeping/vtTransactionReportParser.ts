@@ -115,6 +115,15 @@ export interface ParsedTransaction {
   errors: string[];
   /** First source-row (1-based) of this transaction in the spreadsheet. */
   sourceRowStart: number;
+  /** Where this staged transaction came from. 'vt' (default) appends the
+   *  "Imported from VT — original ref" note; 'capture' suppresses it. */
+  source?: 'vt' | 'capture';
+  /** VAT carried through from Capture (VT/CSV imports post net-only, vat 0). */
+  vat_total?: number;
+  vat_treatment?: string;
+  /** Source-document link (Google Drive via Capture) for the posted txn. */
+  source_doc_url?: string | null;
+  source_doc_name?: string | null;
 }
 
 export interface ParsedCoaEntry {

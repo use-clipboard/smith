@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
   FileSearch, Plus, Search, Download, FolderOpen, Trash2, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, SlidersHorizontal, User as UserIcon,
-  X, AlertTriangle, Filter, CheckSquare,
+  X, AlertTriangle, Filter, CheckSquare, BookCopy,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -63,6 +64,7 @@ interface Props {
 }
 
 const SOFTWARE_LABELS: Record<TargetSoftware, string> = {
+  smith:      'SMITH Bookkeeping',
   general:    'General',
   vt:         'VT Transaction+',
   capium:     'Capium',
@@ -73,6 +75,7 @@ const SOFTWARE_LABELS: Record<TargetSoftware, string> = {
 };
 
 const SOFTWARE_BADGE: Record<TargetSoftware, string> = {
+  smith:      'bg-indigo-100 text-indigo-700',
   general:    'bg-gray-100 text-gray-700',
   vt:         'bg-emerald-100 text-emerald-700',
   capium:     'bg-purple-100 text-purple-700',
@@ -83,6 +86,7 @@ const SOFTWARE_BADGE: Record<TargetSoftware, string> = {
 };
 
 const SOFTWARE_LOGO: Record<TargetSoftware, string> = {
+  smith:      '/logos/general.svg',
   general:    '/logos/general.svg',
   vt:         '/logos/vt.png',
   capium:     '/logos/capium.png',
@@ -292,6 +296,47 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
       setConfirmDeleteId(null);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Send a SMITH-format analysis straight into the client's bookkeeping book —
+  // stages it into the import pipeline (review → Post → rollback), then opens
+  // the book's Import tab. Source-doc links + VAT carry through.
+  const router = useRouter();
+  const handleSendToBookkeeping = async (row: HistoryRow) => {
+    if (!row.client_id) {
+      alert('This analysis isn’t linked to a client — open it, pick the client and re-save, then send to bookkeeping.');
+      return;
+    }
+    setBusyId(row.id);
+    try {
+      // Prefer the book the analysis was coded against (stored at save); fall
+      // back to the client's primary book for older analyses.
+      let bookId: string | null = null;
+      const outRes = await fetch(`/api/outputs/${row.id}`);
+      if (outRes.ok) { const { output } = await outRes.json(); bookId = output?.result_data?.book_id ?? null; }
+      if (!bookId) {
+        const coaRes = await fetch(`/api/bookkeeping/clients/${row.client_id}/coa`);
+        const coa = coaRes.ok ? await coaRes.json() : null;
+        bookId = coa?.book?.id ?? null;
+      }
+      if (!bookId) {
+        alert('This client has no bookkeeping books yet. Create a set of books for them first.');
+        return;
+      }
+      const res = await fetch(`/api/bookkeeping/books/${bookId}/imports/from-capture`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_id: row.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? 'Could not send to bookkeeping.');
+      const warn = (d.warnings ?? []).length ? ` (${d.warnings.length} note${d.warnings.length === 1 ? '' : 's'} to review)` : '';
+      alert(`Staged for the book${warn}. Review and post it in the book’s Import tab.`);
+      router.push(`/bookkeeping/${bookId}?tab=import`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not send to bookkeeping.');
     } finally {
       setBusyId(null);
     }
@@ -786,6 +831,18 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-1">
+                          {row.target_software === 'smith' && (
+                            <Tooltip label="Send to bookkeeping">
+                              <button
+                                onClick={() => void handleSendToBookkeeping(row)}
+                                disabled={isBusy}
+                                aria-label="Send to bookkeeping"
+                                className="h-7 w-7 rounded-full inline-flex items-center justify-center text-[var(--text-muted)] hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                              >
+                                {isBusy ? <Loader2 size={13} className="animate-spin" /> : <BookCopy size={13} />}
+                              </button>
+                            </Tooltip>
+                          )}
                           <Tooltip label="Open in tool">
                             <button
                               onClick={() => void handleOpen(row.id)}

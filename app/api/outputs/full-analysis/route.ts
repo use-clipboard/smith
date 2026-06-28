@@ -7,12 +7,15 @@ const SaveSchema = z.object({
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
-  targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general']),
+  targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general', 'smith']),
   transactions: z.array(z.record(z.string(), z.unknown())),
   flaggedEntries: z.array(z.record(z.string(), z.unknown())).default([]),
   sourceFilenames: z.array(z.string()).default([]),
   dateFrom: z.string().optional().default(''),
   dateTo: z.string().optional().default(''),
+  /** SMITH format: the bookkeeping book this analysis was coded against — the
+   *  authoritative "Send to bookkeeping" target. */
+  bookId: z.string().uuid().nullable().optional(),
 });
 
 // POST /api/outputs/full-analysis — save a Full Analysis run to the history dashboard
@@ -46,6 +49,7 @@ export async function POST(req: NextRequest) {
         clientCode: body.clientCode ?? null,
         dateFrom: body.dateFrom || '',
         dateTo: body.dateTo || '',
+        book_id: body.bookId ?? null,
       },
     })
     .select('id')

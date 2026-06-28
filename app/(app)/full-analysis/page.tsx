@@ -12,7 +12,7 @@ import TransactionEditModal from '@/components/features/full-analysis/Transactio
 import SaveAnalysisModal from '@/components/features/full-analysis/SaveAnalysisModal';
 import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/full-analysis/FullAnalysisHistory';
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy } from 'lucide-react';
-import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, DocumentScanResult } from '@/types';
+import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
@@ -87,6 +87,7 @@ function detectDocCat(file: File): DocCat {
 }
 
 const SOFTWARE_OPTIONS: { id: TargetSoftware; label: string; logo: string }[] = [
+  { id: 'smith',      label: 'SMITH Bookkeeping',   logo: '/logos/general.svg' },
   { id: 'vt',         label: 'VT Transaction+',     logo: '/logos/vt.png' },
   { id: 'capium',     label: 'Capium Bookkeeping',  logo: '/logos/capium.png' },
   { id: 'xero',       label: 'Xero',                logo: '/logos/xero.png' },
@@ -262,6 +263,30 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     return () => { cancelled = true; };
   }, [selectedClient?.id, targetSoftware]);
 
+  // SMITH format: resolve the client's bookkeeping book + its chart of accounts
+  // so analysis codes to the book's REAL accounts and we know the send target.
+  const [bookCoa, setBookCoa] = useState<{ bookId: string; bookName: string; csv: string; accounts: { name: string; code: string }[]; books: { id: string; name: string }[] } | null>(null);
+  const [coaBookId, setCoaBookId] = useState<string | null>(null); // user's chosen book (null = primary)
+  const [coaStatus, setCoaStatus] = useState<'idle' | 'loading' | 'none' | 'ready'>('idle');
+
+  // Forget the chosen book when the client or format changes.
+  useEffect(() => { setCoaBookId(null); }, [selectedClient?.id, targetSoftware]);
+
+  useEffect(() => {
+    if (targetSoftware !== 'smith' || !selectedClient?.id) { setBookCoa(null); setCoaStatus('idle'); return; }
+    let cancelled = false;
+    setCoaStatus('loading');
+    fetch(`/api/bookkeeping/clients/${selectedClient.id}/coa${coaBookId ? `?book_id=${coaBookId}` : ''}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (cancelled) return;
+        if (d?.book) { setBookCoa({ bookId: d.book.id, bookName: d.book.name, csv: d.csv ?? '', accounts: d.accounts ?? [], books: d.books ?? [] }); setCoaStatus('ready'); }
+        else { setBookCoa(null); setCoaStatus('none'); }
+      })
+      .catch(() => { if (!cancelled) { setBookCoa(null); setCoaStatus('none'); } });
+    return () => { cancelled = true; };
+  }, [targetSoftware, selectedClient?.id, coaBookId]);
+
   const [transactionHistory, setTransactionHistory] = useState<Transaction[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [flaggedEntries, setFlaggedEntries] = useState<FlaggedEntry[]>([]);
@@ -345,7 +370,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   const someFlaggedSelected = sortedFlaggedWithIndices.some(({ origIndex }) => selectedFlagged.has(origIndex));
 
   const accountLabel =
-    targetSoftware === 'vt' ? 'Analysis Account' :
+    targetSoftware === 'vt' || targetSoftware === 'smith' ? 'Analysis Account' :
     targetSoftware === 'sage' ? 'Nominal Code' :
     targetSoftware === 'general' ? 'Category' : 'Account Name';
   const hasAccountField = targetSoftware !== 'freeagent';
@@ -392,7 +417,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     const newList = processedTransactions.map((tx, i) => {
       if (!selectedValid.has(i)) return tx;
       const u = { ...tx } as Record<string, unknown>;
-      if (targetSoftware === 'vt')         u.analysisAccount = bulkValue;
+      if (targetSoftware === 'vt' || targetSoftware === 'smith') u.analysisAccount = bulkValue;
       else if (targetSoftware === 'capium') { u.accountname = bulkValue; u.accountcode = ''; }
       else if (targetSoftware === 'xero')   { u.accountName = bulkValue; u.accountCode = ''; }
       else if (targetSoftware === 'quickbooks') { u.accountName = bulkValue; u.accountCode = ''; }
@@ -445,7 +470,10 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     rawTransactions.forEach((tx) => {
       let isValid = true; let reason = ''; let net = 0, vat = 0, gross = 0;
       try {
-        if (targetSoftware === 'vt') {
+        if (targetSoftware === 'smith') {
+          const sm = tx as SmithTransaction; net = sm.netAmount || 0; vat = sm.vatAmount || 0; gross = sm.grossAmount || 0;
+          if (Math.abs((net + vat) - gross) > TOLERANCE) { isValid = false; reason = `Calc error: Net (${net.toFixed(2)}) + VAT (${vat.toFixed(2)}) ≠ Gross (${gross.toFixed(2)})`; }
+        } else if (targetSoftware === 'vt') {
           const v = tx as VTTransaction; net = v.analysis || 0; vat = v.vat || 0; gross = v.total || 0;
           if (Math.abs((net + vat) - gross) > TOLERANCE) { isValid = false; reason = `Calc error: Net (${net.toFixed(2)}) + VAT (${vat.toFixed(2)}) ≠ Gross (${gross.toFixed(2)})`; }
         } else if (targetSoftware === 'capium') {
@@ -473,6 +501,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
 
     const validated = parsedLedgerAccounts.length > 0 ? validTxs.map(tx => {
       const aiName =
+        targetSoftware === 'smith'      ? (tx as SmithTransaction).analysisAccount :
         targetSoftware === 'vt'         ? (tx as VTTransaction).analysisAccount :
         targetSoftware === 'capium'     ? (tx as CapiumTransaction).accountname :
         targetSoftware === 'xero'       ? (tx as XeroTransaction).accountName :
@@ -484,6 +513,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
       const { bestMatch, score } = findBestMatch(aiName || '', parsedLedgerAccounts);
       if (bestMatch && score > 0.7) {
         const updated = { ...tx } as Record<string, unknown>;
+        if (targetSoftware === 'smith') updated.analysisAccount = bestMatch.name;
         if (targetSoftware === 'vt') updated.analysisAccount = bestMatch.name;
         if (targetSoftware === 'capium') { updated.accountname = bestMatch.name; updated.accountcode = bestMatch.code || ''; }
         if (targetSoftware === 'xero') { updated.accountName = bestMatch.name; updated.accountCode = bestMatch.code || ''; }
@@ -576,7 +606,12 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     if (!pastTransactionsContent && useAutoContext && autoContextCsv) {
       pastTransactionsContent = autoContextCsv;
     }
-    const ledgersContent = ledgersFile ? await readFileAsText(ledgersFile) : null;
+    let ledgersContent = ledgersFile ? await readFileAsText(ledgersFile) : null;
+    // SMITH format: if the user didn't upload a ledgers file, feed the client's
+    // book chart of accounts so the AI allocates to the book's real accounts.
+    if (targetSoftware === 'smith' && !ledgersContent && bookCoa?.csv) {
+      ledgersContent = bookCoa.csv;
+    }
     let parsedLedgerAccounts: LedgerAccount[] = [];
     if (ledgersContent) { parsedLedgerAccounts = parseLedgerCsv(ledgersContent); setLedgerAccounts(parsedLedgerAccounts); }
     sharedInputsRef.current = { pastTransactionsContent, ledgersContent, parsedLedgerAccounts };
@@ -831,17 +866,39 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
                       {label}
                     </button>
                   ))}
-                  <Tooltip label="Post entries straight into SMITH's own bookkeeping ledger — coming soon">
-                    <button type="button" disabled aria-disabled="true"
-                      className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg text-sm font-medium border border-dashed border-[var(--border)] text-[var(--text-muted)] bg-transparent cursor-not-allowed">
-                      <span className="w-6 h-6 rounded-md bg-[var(--bg-nav-hover)] flex items-center justify-center shrink-0">
-                        <BookCopy size={14} className="text-[var(--text-muted)]" />
-                      </span>
-                      SMITH Bookkeeping
-                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">Soon</span>
-                    </button>
-                  </Tooltip>
                 </div>
+
+                {/* SMITH Bookkeeping — which chart of accounts the analysis codes
+                    against (and the book entries will post to). */}
+                {targetSoftware === 'smith' && (
+                  <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                    {!selectedClient ? (
+                      <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><BookCopy size={13} /> Select a client to code against its bookkeeping chart of accounts.</p>
+                    ) : coaStatus === 'loading' ? (
+                      <p className="text-xs text-[var(--text-muted)]">Loading chart of accounts…</p>
+                    ) : coaStatus === 'none' || !bookCoa ? (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
+                        <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                        <span>No bookkeeping found for {clientName || 'this client'} — accounts will import to <strong>Suspense</strong>. Create a set of books for them (or upload a chart of accounts) for accurate coding.</span>
+                      </p>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap text-xs">
+                        <BookCopy size={13} className="text-[var(--accent)]" />
+                        {bookCoa.books.length > 1 ? (
+                          <>
+                            <span className="text-[var(--text-secondary)]">Code against book:</span>
+                            <select value={bookCoa.bookId} onChange={e => setCoaBookId(e.target.value)} className="input-base text-xs py-1">
+                              {bookCoa.books.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          </>
+                        ) : (
+                          <span className="text-[var(--text-secondary)]">Using <strong>{bookCoa.bookName}</strong>&rsquo;s chart of accounts</span>
+                        )}
+                        <span className="text-[var(--text-muted)]">· {bookCoa.accounts.length} account{bookCoa.accounts.length === 1 ? '' : 's'} · entries post here</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="bg-white/[0.78] backdrop-blur-md rounded-xl p-5">
@@ -1027,6 +1084,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
                           if (allValidSelected) setSelectedValid(new Set());
                           else setSelectedValid(new Set(inRangeWithIndices.map(x => x.origIndex)));
                         }} />
+                      {targetSoftware === 'smith' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="contactName">Contact</SortTH><TH>Description</TH><SortTH sortKey="analysisAccount">Account</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><SortTH sortKey="vatAmount" right>VAT</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><TH></TH></>}
                       {targetSoftware === 'vt' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="date">Date</SortTH><SortTH sortKey="type">Type</SortTH><SortTH sortKey="primaryAccount">Account</SortTH><TH>Details</TH><SortTH sortKey="total" right>Total</SortTH><SortTH sortKey="vat" right>VAT</SortTH><SortTH sortKey="analysis" right>Net</SortTH><SortTH sortKey="analysisAccount">Analysis Account</SortTH><TH></TH></>}
                       {targetSoftware === 'capium' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoicedate">Date</SortTH><SortTH sortKey="contactname">Contact</SortTH><TH>Description</TH><SortTH sortKey="accountname">Account</SortTH><SortTH sortKey="amount" right>Gross</SortTH><SortTH sortKey="vatamount" right>VAT</SortTH><SortTH sortKey="netAmount" right>Net</SortTH><TH></TH></>}
                       {targetSoftware === 'xero' && <><SortTH sortKey="fileName">File</SortTH><SortTH sortKey="invoiceDate">Date</SortTH><SortTH sortKey="contactName">Contact</SortTH><SortTH sortKey="invoiceNumber">Invoice No</SortTH><TH>Description</TH><SortTH sortKey="unitAmount" right>Net</SortTH><SortTH sortKey="grossAmount" right>Gross</SortTH><SortTH sortKey="accountName">Account</SortTH><SortTH sortKey="taxType">Tax</SortTH><TH></TH></>}
@@ -1047,6 +1105,23 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
                         </td>
                       );
                       const editTd = <td className="px-2 py-2" onClick={e => e.stopPropagation()}><EditBtn onClick={() => setEditTarget({ type: 'valid', index: origIndex })} /></td>;
+
+                      if (targetSoftware === 'smith') {
+                        const m = tx as SmithTransaction;
+                        return <tr key={origIndex} className={rowCls} onClick={toggleRow}>
+                          {checkTd}
+                          <td className="px-3 py-2.5 text-[var(--text-muted)] truncate max-w-[120px]">{m.fileName}</td>
+                          <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.date}</td>
+                          <td className="px-3 py-2.5 font-medium text-[var(--text-primary)]">{m.type}</td>
+                          <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.contactName}</td>
+                          <td className="px-3 py-2.5 truncate max-w-[160px] text-[var(--text-secondary)]">{m.description}</td>
+                          <td className="px-3 py-2.5 text-[var(--text-secondary)]">{m.analysisAccount}</td>
+                          <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{m.netAmount?.toFixed(2)}</td>
+                          <td className="px-3 py-2.5 text-right text-[var(--text-secondary)]">£{m.vatAmount?.toFixed(2)}</td>
+                          <td className="px-3 py-2.5 text-right font-medium text-[var(--text-primary)]">£{m.grossAmount?.toFixed(2)}</td>
+                          {editTd}
+                        </tr>;
+                      }
 
                       if (targetSoftware === 'vt') {
                         const v = tx as VTTransaction;
@@ -1281,6 +1356,7 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
         initialClient={selectedClient}
         dateFrom={dateFrom}
         dateTo={dateTo}
+        bookId={targetSoftware === 'smith' ? (bookCoa?.bookId ?? null) : null}
         onClose={() => setSaveModalOpen(false)}
       />
 

@@ -1,4 +1,4 @@
-export type TargetSoftware = 'vt' | 'capium' | 'xero' | 'quickbooks' | 'freeagent' | 'sage' | 'general';
+export type TargetSoftware = 'vt' | 'capium' | 'xero' | 'quickbooks' | 'freeagent' | 'sage' | 'general' | 'smith';
 
 interface FullAnalysisPromptOptions {
   clientName: string;
@@ -39,7 +39,9 @@ export function buildStaticInstructions(
     : `**VAT Status: NOT REGISTERED.**\n- The client is NOT VAT registered. For ALL transactions, the VAT amount MUST be 0.`;
 
   let taskPrompt = '';
-  if (targetSoftware === 'vt') {
+  if (targetSoftware === 'smith') {
+    taskPrompt = `**Task 1: Valid Transactions (SMITH Bookkeeping Format)**\nProduce entries ready to post directly into the SMITH bookkeeping ledger. Output ONE transaction per invoice/document. Rules:\n- 'type': the transaction type — 'PIN' (purchase invoice, addressed TO the client), 'SIN' (sales invoice, issued BY the client), 'PCR' (purchase credit note), 'SCR' (sales credit note), 'PAY' (a purchase paid immediately by bank/card), 'REC' (money received in). Default to 'PIN' for supplier invoices and 'SIN' for the client's own sales invoices.\n- 'date': YYYY-MM-DD (the document date).\n- 'contactName': the supplier name (purchases) or customer name (sales), exactly as shown.\n- 'reference': the invoice/document reference number.\n- 'description': follow the description formatting rules below.\n- 'analysisAccount': the income/expense account the NET amount posts to. You MUST choose the single best-matching account NAME from the provided chart of accounts, matching EXACTLY to one of the provided account names. If no chart of accounts is provided or none fits, set this to "Suspense".\n- 'netAmount': net amount excluding VAT.\n- 'vatAmount': VAT amount (0 if no VAT on the document).\n- 'grossAmount': total gross (netAmount + vatAmount).\n- 'vatTreatment': EXACTLY one of 'standard_20', 'reduced_5', 'zero', 'exempt', 'outside_scope', or 'no_vat'. Use 'no_vat' when there is no VAT.\n${CURRENCY_AND_DESCRIPTION} ${isVatRegistered ? '' : "CRITICAL: 'vatAmount' MUST be 0, 'grossAmount' MUST equal 'netAmount', and 'vatTreatment' MUST be 'no_vat'."}`;
+  } else if (targetSoftware === 'vt') {
     taskPrompt = `**Task 1: Valid Transactions (VT Transaction+ Format)**\nRules: 'type' is PIN/SIN/PAY/REC/PCR. 'refNo' is "[auto]". 'date' is YYYY-MM-DD. 'primaryAccount' is the supplier/customer name. 'total' is the invoice's total GROSS amount. 'vat' is the invoice's total VAT amount. 'analysis' is the invoice's total NET amount. 'analysisAccount' MUST match the provided chart of accounts or be flagged. 'transactionNotes' is empty. Each document should result in a single transaction representing the invoice totals. ${CURRENCY_AND_DESCRIPTION} ${isVatRegistered ? '' : "CRITICAL: 'vat' MUST be 0 and 'analysis' MUST equal 'total'."}`;
   } else if (targetSoftware === 'capium') {
     taskPrompt = `**Task 1: Valid Transactions (Capium Format)**\nRules: 'contacttype' is Supplier/Customer. 'invoicedate' is YYYY-MM-DD. 'accountname'/'accountcode' from chart of accounts. 'isvatincluded' is "Yes". 'amount' is the invoice's total GROSS amount. 'vatamount' is the total VAT. 'netAmount' is the total NET amount. For unpaid purchase invoices, leave 'paydate', 'payaccountname', 'payaccountcode' blank. ${CURRENCY_AND_DESCRIPTION} ${isVatRegistered ? '' : "CRITICAL: 'vatamount' MUST be 0."}`;

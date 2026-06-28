@@ -18,7 +18,7 @@ export type AppMode =
   | 'summarise'
   | 'policies_and_procedures';
 
-export type TargetSoftware = 'vt' | 'capium' | 'xero' | 'quickbooks' | 'freeagent' | 'sage' | 'general';
+export type TargetSoftware = 'vt' | 'capium' | 'xero' | 'quickbooks' | 'freeagent' | 'sage' | 'general' | 'smith';
 export type View = 'valid' | 'flagged';
 export type AppState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -134,7 +134,22 @@ export interface SageTransaction extends BaseTransaction {
   EXCHANGE_RATE: number;
 }
 
-export type Transaction = VTTransaction | CapiumTransaction | XeroTransaction | QuickBooksTransaction | FreeAgentTransaction | SageTransaction | GeneralTransaction;
+/** SMITH Bookkeeping native format — maps directly to the bookkeeping module's
+ *  transaction model so a Capture analysis can be sent straight into a book. */
+export interface SmithTransaction extends BaseTransaction {
+  type: string;           // PIN | SIN | PAY | REC | PCR | SCR
+  date: string;           // YYYY-MM-DD
+  contactName: string;    // supplier (purchases) / customer (sales)
+  reference: string;      // invoice / document ref
+  description: string;
+  analysisAccount: string; // income/expense account NAME (matched to the book COA)
+  netAmount: number;
+  vatAmount: number;
+  grossAmount: number;
+  vatTreatment: string;   // no_vat | standard_20 | reduced_5 | zero | exempt | outside_scope
+}
+
+export type Transaction = VTTransaction | CapiumTransaction | XeroTransaction | QuickBooksTransaction | FreeAgentTransaction | SageTransaction | GeneralTransaction | SmithTransaction;
 
 export interface FlaggedEntry {
   fileName: string;

@@ -25,7 +25,7 @@ const RequestSchema = z.object({
   clientCode: z.string().nullable().optional(),
   saveToDrive: z.boolean().optional(),
   isVatRegistered: z.boolean().default(false),
-  targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general']),
+  targetSoftware: z.enum(['vt', 'capium', 'xero', 'quickbooks', 'freeagent', 'sage', 'general', 'smith']),
   analysisMode: z.enum(['standard', 'thorough']).default('standard'),
   files: z.array(FileSchema),
   pastTransactionsContent: z.string().nullable().optional(),

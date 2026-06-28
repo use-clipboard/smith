@@ -17,6 +17,8 @@ interface SaveAnalysisModalProps {
   initialClient?: SelectedClient | null;
   dateFrom?: string;
   dateTo?: string;
+  /** SMITH format: the book this analysis was coded against (send target). */
+  bookId?: string | null;
   onClose: () => void;
 }
 
@@ -29,6 +31,7 @@ export default function SaveAnalysisModal({
   initialClient,
   dateFrom = '',
   dateTo = '',
+  bookId = null,
   onClose,
 }: SaveAnalysisModalProps) {
   const { isModuleActive } = useModules();
@@ -153,6 +156,7 @@ export default function SaveAnalysisModal({
         sourceFilenames,
         dateFrom,
         dateTo,
+        bookId,
       }),
     }).catch(err => console.error('[SaveAnalysisModal] history save failed:', err));
 

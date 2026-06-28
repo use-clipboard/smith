@@ -5,7 +5,7 @@ import { X, Flag, CheckCircle, FileText, AlertTriangle, ExternalLink } from 'luc
 import type {
   Transaction, FlaggedEntry, TargetSoftware,
   VTTransaction, CapiumTransaction, XeroTransaction,
-  QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction,
+  QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction,
 } from '@/types';
 
 // ─── Field configuration ──────────────────────────────────────────────────────
@@ -14,6 +14,18 @@ type FieldType = 'text' | 'number' | 'date' | 'select' | 'textarea';
 interface FieldConfig { key: string; label: string; type: FieldType; options?: string[] }
 
 const SOFTWARE_FIELDS: Record<TargetSoftware, FieldConfig[]> = {
+  smith: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'type', label: 'Type', type: 'select', options: ['PIN', 'SIN', 'PAY', 'REC', 'PCR', 'SCR'] },
+    { key: 'contactName', label: 'Supplier / Customer', type: 'text' },
+    { key: 'reference', label: 'Reference', type: 'text' },
+    { key: 'description', label: 'Description', type: 'text' },
+    { key: 'analysisAccount', label: 'Analysis Account', type: 'text' },
+    { key: 'netAmount', label: 'Net (£)', type: 'number' },
+    { key: 'vatAmount', label: 'VAT (£)', type: 'number' },
+    { key: 'grossAmount', label: 'Gross (£)', type: 'number' },
+    { key: 'vatTreatment', label: 'VAT Treatment', type: 'select', options: ['no_vat', 'standard_20', 'reduced_5', 'zero', 'exempt', 'outside_scope'] },
+  ],
   vt: [
     { key: 'date', label: 'Date', type: 'date' },
     { key: 'type', label: 'Type', type: 'select', options: ['PIN', 'SIN', 'PAY', 'REC', 'PCR'] },
@@ -128,6 +140,7 @@ function buildMinimalTx(entry: FlaggedEntry, values: Record<string, string>, sof
   const desc = values.description || entry.description || '';
   const supplier = values.supplier || entry.supplier || '';
   switch (software) {
+    case 'smith': return { ...base, type: 'PIN', date, contactName: supplier, reference: '', description: desc, analysisAccount: '', netAmount: amt, vatAmount: 0, grossAmount: amt, vatTreatment: 'no_vat' } as SmithTransaction;
     case 'vt': return { ...base, type: 'PIN', refNo: '[auto]', date, primaryAccount: supplier, details: desc, total: amt, vat: 0, analysis: amt, analysisAccount: '', entryDetails: '', transactionNotes: '' } as VTTransaction;
     case 'capium': return { ...base, contactname: supplier, contacttype: 'Supplier', reference: '', description: desc, accountname: '', accountcode: '', invoicedate: date, vatname: '', vatamount: 0, isvatincluded: 'Yes', amount: amt, netAmount: amt } as CapiumTransaction;
     case 'xero': return { ...base, contactName: supplier, invoiceNumber: '', invoiceDate: date, dueDate: '', description: desc, quantity: 1, unitAmount: amt, grossAmount: amt, accountCode: '', accountName: '', taxType: 'No VAT' } as XeroTransaction;

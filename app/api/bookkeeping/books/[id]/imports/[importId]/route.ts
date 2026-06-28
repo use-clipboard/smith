@@ -220,17 +220,19 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         date: t.date,
         payee_text: null,
         details: t.details,
-        notes: t.originalRefIfRemapped
+        notes: (t.originalRefIfRemapped && t.source !== 'capture')
           ? `${t.notes ? t.notes + '\n\n' : ''}Imported from VT — original ref: ${t.originalRefIfRemapped}`
           : t.notes,
         total: Math.max(
           t.splits.reduce((s, x) => s + x.debit, 0),
           t.splits.reduce((s, x) => s + x.credit, 0),
         ),
-        vat_total: 0,
+        vat_total: t.vat_total ?? 0,
         vat_rate: null,
-        vat_treatment: 'no_vat' as const,
+        vat_treatment: (t.vat_treatment ?? 'no_vat'),
         primary_account_id: null,
+        source_doc_url: t.source_doc_url ?? null,
+        source_doc_name: t.source_doc_name ?? null,
         status: 'posted' as const,
         created_by: ctx.userId,
         posted_at: new Date().toISOString(),
