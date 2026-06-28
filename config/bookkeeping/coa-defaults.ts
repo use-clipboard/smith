@@ -1876,6 +1876,116 @@ export const CHARITY_COA_SEED: CoaTemplateSeed = {
   ],
 };
 
+// ── Basic (generic catch-all) ────────────────────────────────────────────────
+// Captured verbatim from VT Transaction+ "Basic ledgers with only default
+// accounts set up" (28/06/26) — the minimal generic chart for any entity that
+// doesn't fit the specific templates. Several ledgers ship EMPTY (Income,
+// Taxation and dividends, Fixed assets, Customers, Suppliers) — the user adds
+// accounts as needed. Net profit closes into "Shareholders' funds: Profit and
+// loss account" (retained_earnings). VAT control accounts ship for VAT books.
+//
+// Note: the fixed-asset ledger is plain "Fixed assets" (not "FA - …"), so the
+// depreciation engine doesn't drive it and there are no fa_*/depreciation/
+// disposal roles to tag — fitting for a generic ships-empty chart.
+export const BASIC_COA_SEED: CoaTemplateSeed = {
+  template_type: 'basic',
+  ledgers: [
+    {
+      name: 'Income',
+      ledger_key: 'income',
+      ledger_type: 'profit_and_loss',
+      account_type: 'income',
+      accounts: [],
+    },
+    {
+      name: 'Expenses',
+      ledger_key: 'expenses',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [
+        { name: "Exchange diff's & charges" },
+        { name: 'Write backs/discounts' },
+        { name: 'Write offs/discounts' },
+      ],
+    },
+    {
+      // Appropriation ledger (corporation tax / dividends). Ships empty.
+      name: 'Taxation and dividends',
+      ledger_key: 'taxation_dividends',
+      ledger_type: 'profit_and_loss',
+      account_type: 'expense',
+      accounts: [],
+    },
+    {
+      name: 'Fixed assets',
+      ledger_key: 'fixed_assets',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [],
+    },
+    {
+      // Client-specific — created as the user adds customers. Ships empty.
+      name: 'Customers',
+      ledger_key: 'customers',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [],
+    },
+    {
+      name: 'Debtors',
+      ledger_key: 'debtors',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Prepayments' },
+        { name: 'Translation differences' },
+      ],
+    },
+    {
+      name: 'Bank',
+      ledger_key: 'bank',
+      ledger_type: 'balance_sheet',
+      account_type: 'asset',
+      accounts: [
+        { name: 'Current a/c' },
+      ],
+    },
+    {
+      // Trade suppliers — added as needed. Ships empty.
+      name: 'Suppliers',
+      ledger_key: 'suppliers',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [],
+    },
+    {
+      name: 'Creditors',
+      ledger_key: 'creditors',
+      ledger_type: 'balance_sheet',
+      account_type: 'liability',
+      accounts: [
+        { name: 'Accruals' },
+        { name: 'Net VAT due',          vat_only: true, system_role: 'net_vat_due' },
+        { name: 'Opening balances contra' },
+        { name: 'VAT - Deferred input',  vat_only: true, system_role: 'vat_deferred_input' },
+        { name: 'VAT - Deferred output', vat_only: true, system_role: 'vat_deferred_output' },
+        { name: 'VAT - EC acquisitions', vat_only: true, system_role: 'vat_ec_acquisitions' },
+        { name: 'VAT - Input',           vat_only: true, system_role: 'vat_input' },
+        { name: 'VAT - Output',          vat_only: true, system_role: 'vat_output' },
+      ],
+    },
+    {
+      name: "Shareholders' funds",
+      ledger_key: 'shareholders_funds',
+      ledger_type: 'balance_sheet',
+      account_type: 'equity',
+      accounts: [
+        { name: 'Profit and loss account', system_role: 'retained_earnings' },
+      ],
+    },
+  ],
+};
+
 // ── Registry ────────────────────────────────────────────────────────────────
 // New template seeds slot in here — no schema changes required.
 export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
@@ -1885,7 +1995,7 @@ export const COA_SEEDS: Partial<Record<BookTemplateType, CoaTemplateSeed>> = {
   llp: LLP_COA_SEED,
   trust: TRUST_COA_SEED,
   charity: CHARITY_COA_SEED,
-  // basic:         ...  Hand-built fallback — write from scratch.
+  basic: BASIC_COA_SEED,
 };
 
 export function getCoaSeed(templateType: BookTemplateType): CoaTemplateSeed | null {
