@@ -179,8 +179,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (depnTxnErr || !depnTxn) return NextResponse.json({ error: depnTxnErr?.message ?? 'Insert failed' }, { status: 500 });
 
     const { error: depnSplitsErr } = await supabase.from('bookkeeping_transaction_splits').insert([
-      { transaction_id: depnTxn.id, line_no: 1, account_id: expenseAcct.id, debit: catchUp, credit: 0, entry_details: details },
-      { transaction_id: depnTxn.id, line_no: 2, account_id: depnChargeAcct.id, debit: 0, credit: catchUp, entry_details: details },
+      { transaction_id: depnTxn.id, line_no: 1, account_id: expenseAcct.id, debit: catchUp, credit: 0, entry_details: details, fund_id: asset.fund_id },
+      { transaction_id: depnTxn.id, line_no: 2, account_id: depnChargeAcct.id, debit: 0, credit: catchUp, entry_details: details, fund_id: asset.fund_id },
     ]);
     if (depnSplitsErr) {
       await supabase.from('bookkeeping_transactions').delete().eq('id', depnTxn.id);
@@ -239,7 +239,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { error: dispSplitsErr } = await supabase
     .from('bookkeeping_transaction_splits')
-    .insert(splits.map(s => ({ ...s, transaction_id: dispTxn.id })));
+    .insert(splits.map(s => ({ ...s, transaction_id: dispTxn.id, fund_id: asset.fund_id })));
   if (dispSplitsErr) {
     await supabase.from('bookkeeping_transactions').delete().eq('id', dispTxn.id);
     return NextResponse.json({ error: dispSplitsErr.message }, { status: 500 });

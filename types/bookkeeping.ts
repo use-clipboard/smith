@@ -342,6 +342,10 @@ export interface Asset {
   source: AssetSource;
   /** The Cost-additions split that booked an `addition`; null for b/fwd. */
   split_id: string | null;
+  /** Charity fund this asset belongs to (NULL on non-charity books).
+   *  Additions inherit it from their booking split; depreciation/disposal
+   *  journals carry it so the per-fund SOFA reconciles. */
+  fund_id: string | null;
   description: string;
   purchase_date: string;
   cost: number;

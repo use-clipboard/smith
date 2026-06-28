@@ -41,8 +41,12 @@ export const SYSTEM_ROLES = [
   'vat_deferred_output',
   'vat_ec_acquisitions',
   'net_vat_due',
-  // Year-end close target.
+  // Year-end close target (also the charity unrestricted-funds balance).
   'retained_earnings',
+  // Charity fund-balance accounts — per-fund-type close targets so a charity
+  // year-end carries each fund's surplus into the right fund balance.
+  'restricted_funds',
+  'endowment_funds',
 ] as const;
 
 export type SystemRole = (typeof SYSTEM_ROLES)[number];

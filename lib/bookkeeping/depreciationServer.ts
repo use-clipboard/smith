@@ -43,10 +43,12 @@ export async function syncAdditionAssets(
   if (!costAcct) return;
 
   // Every split touching the Cost-additions account, with its transaction.
+  // fund_id is carried so a charity's addition assets inherit their fund from
+  // the booking split.
   const { data: splits } = await supabase
     .from('bookkeeping_transaction_splits')
     .select(`
-      id, debit, credit, entry_details,
+      id, debit, credit, entry_details, fund_id,
       transaction:bookkeeping_transactions!inner(id, date, payee_text, details)
     `)
     .eq('account_id', costAcct.id);
@@ -56,7 +58,7 @@ export async function syncAdditionAssets(
   // Existing addition assets for this ledger, keyed by split_id.
   const { data: existing } = await supabase
     .from('bookkeeping_assets')
-    .select('id, split_id, cost, purchase_date, description')
+    .select('id, split_id, cost, purchase_date, description, fund_id')
     .eq('book_id', bookId)
     .eq('ledger', ledger)
     .eq('source', 'addition');
@@ -76,17 +78,19 @@ export async function syncAdditionAssets(
       (txn.details && txn.details.trim()) ||
       'Asset addition';
 
+    const splitFund = (s as { fund_id?: string | null }).fund_id ?? null;
     const found = bySplit.get(s.id);
     if (found) {
-      // Refresh in case the split was edited since it was first registered.
+      // Refresh in case the split was edited (incl. re-funded) since registered.
       if (
         Number(found.cost) !== cost ||
         found.purchase_date !== txn.date ||
-        found.description !== description
+        found.description !== description ||
+        (found.fund_id ?? null) !== splitFund
       ) {
         await supabase
           .from('bookkeeping_assets')
-          .update({ cost, purchase_date: txn.date, description, updated_at: new Date().toISOString() })
+          .update({ cost, purchase_date: txn.date, description, fund_id: splitFund, updated_at: new Date().toISOString() })
           .eq('id', found.id);
       }
     } else {
@@ -98,6 +102,7 @@ export async function syncAdditionAssets(
         description,
         purchase_date: txn.date,
         cost,
+        fund_id: splitFund,
       });
     }
   }

@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Plus, Trash2, Settings2, AlertTriangle, Check, X, PackageMinus, Pencil, Undo2, RotateCcw } from 'lucide-react';
 import DateInput, { fromIso, parseUkDateStrict } from '../input/DateInput';
+import FundPicker from '../input/FundPicker';
 import Tooltip from '@/components/ui/Tooltip';
 import { depreciationNoun } from '@/lib/bookkeeping/fixedAssets';
 import { useBookNavigation } from '../book/BookNavigationContext';
@@ -745,15 +746,27 @@ function AddBfwdAssetModal({
   const [purchaseUk, setPurchaseUk] = useState('');
   const [cost, setCost] = useState('');
   const [openingDepn, setOpeningDepn] = useState('');
+  const [fund, setFund] = useState<string | null>(null);
+  const [hasFunds, setHasFunds] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/bookkeeping/books/${bookId}/funds`)
+      .then(r => r.ok ? r.json() : { funds: [] })
+      .then(d => { if (!cancelled) setHasFunds(((d.funds ?? []) as unknown[]).length > 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [bookId]);
 
   const purchaseIso = parseUkDateStrict(purchaseUk);
   const costNum = Number(cost);
   const openingNum = openingDepn === '' ? 0 : Number(openingDepn);
   const valid =
     description.trim() && purchaseIso && cost !== '' && !Number.isNaN(costNum) && costNum >= 0 &&
-    !Number.isNaN(openingNum) && openingNum >= 0 && openingNum <= costNum;
+    !Number.isNaN(openingNum) && openingNum >= 0 && openingNum <= costNum &&
+    (!hasFunds || !!fund);
 
   async function save() {
     if (!valid) return;
@@ -769,6 +782,7 @@ function AddBfwdAssetModal({
           purchase_date: purchaseIso,
           cost: costNum,
           opening_accumulated_depn: openingNum,
+          fund_id: fund,
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -799,6 +813,11 @@ function AddBfwdAssetModal({
         <p className="text-[11px] text-slate-500">
           Opening accumulated {noun.toLowerCase()} already charged before this register existed. NBV starts at cost − this amount.
         </p>
+        {hasFunds && (
+          <Field label="Fund">
+            <FundPicker bookId={bookId} value={fund} onChange={setFund} className="w-full border border-slate-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30" placeholder="Fund…" />
+          </Field>
+        )}
         {err && <p className="text-xs text-rose-700">{err}</p>}
       </div>
       <ModalFooter onClose={onClose} onSave={() => void save()} saveDisabled={!valid || busy} busy={busy} saveLabel="Add asset" />

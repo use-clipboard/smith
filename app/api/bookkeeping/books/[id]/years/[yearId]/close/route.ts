@@ -160,20 +160,44 @@ export async function POST(
   // Resolved above (or returned with an error) — safe to treat as non-null.
   const retainedEarningsId = reAccountId as string;
 
-  // ── Aggregate each P&L account's net movement over the FY (exclude YET) ──
+  // ── Charity fund-aware close ────────────────────────────────────────────
+  // A charity carries EACH fund's surplus into that fund's balance, so the
+  // close aggregates and balances per fund. Non-charity books have no funds —
+  // every split's fund_id is null, so this collapses to one balancing entry to
+  // retained earnings, identical to the old behaviour.
+  const { data: fundsRows } = await supabase
+    .from('bookkeeping_funds').select('id, fund_type').eq('book_id', params.id);
+  const hasFunds = (fundsRows ?? []).length > 0;
+  const fundType = new Map<string, string>((fundsRows ?? []).map(f => [f.id as string, f.fund_type as string]));
+  const restrictedAcctId = allAccounts.find(a => a.system_role === 'restricted_funds' && !a.archived)?.id ?? null;
+  const endowmentAcctId  = allAccounts.find(a => a.system_role === 'endowment_funds'  && !a.archived)?.id ?? null;
+  // Which equity account a fund's surplus closes into (unrestricted/null → RE).
+  const fundTargetId = (fundId: string | null): string => {
+    if (fundId) {
+      const t = fundType.get(fundId);
+      if (t === 'restricted' && restrictedAcctId) return restrictedAcctId;
+      if (t === 'endowment'  && endowmentAcctId)  return endowmentAcctId;
+    }
+    return retainedEarningsId;
+  };
+
+  // ── Aggregate each P&L account's net movement over the FY (exclude YET),
+  //    keyed by (account, fund) so funds close independently. ───────────────
   const PAGE_SIZE = 1000;
   type SplitRow = {
     debit: number;
     credit: number;
+    fund_id: string | null;
     account: { id: string; name: string; account_type: string } | null;
   };
-  const byAccount = new Map<string, { id: string; name: string; debit: number; credit: number }>();
+  type AcctFund = { accountId: string; fundId: string | null; name: string; debit: number; credit: number };
+  const byKey = new Map<string, AcctFund>();
   let pageStart = 0;
   while (true) {
     const { data, error } = await supabase
       .from('bookkeeping_transaction_splits')
       .select(`
-        debit, credit,
+        debit, credit, fund_id,
         account:bookkeeping_accounts!inner(id, name, account_type, book_id),
         transaction:bookkeeping_transactions!inner(date, type, book_id)
       `)
@@ -188,42 +212,60 @@ export async function POST(
     const rows = (data ?? []) as unknown as SplitRow[];
     for (const r of rows) {
       if (!r.account) continue;
-      const a = byAccount.get(r.account.id) ?? { id: r.account.id, name: r.account.name, debit: 0, credit: 0 };
+      const key = `${r.account.id}::${r.fund_id ?? ''}`;
+      const a = byKey.get(key) ?? { accountId: r.account.id, fundId: r.fund_id ?? null, name: r.account.name, debit: 0, credit: 0 };
       a.debit = round2(a.debit + Number(r.debit));
       a.credit = round2(a.credit + Number(r.credit));
-      byAccount.set(r.account.id, a);
+      byKey.set(key, a);
     }
     if (rows.length < PAGE_SIZE) break;
     pageStart += PAGE_SIZE;
   }
 
-  // Closing split per P&L account: post the opposite of its net balance to
-  // flatten it to zero. netBalance = debit - credit.
-  //   • net debit (expense)  → credit the account by the balance
-  //   • net credit (income)  → debit  the account by |balance|
-  type Split = { account_id: string; debit: number; credit: number; entry_details: string };
+  // Closing split per (P&L account, fund): post the opposite of its net balance
+  // to flatten it to zero, carrying the fund_id. Accumulate each fund's net.
+  type Split = { account_id: string; debit: number; credit: number; entry_details: string; fund_id: string | null };
   const splits: Split[] = [];
-  let closeDebits = 0;
-  let closeCredits = 0;
   const detail = `Year-end close (${fmtDate(fy.start_date)} to ${fmtDate(fy.end_date)})`;
-  for (const a of byAccount.values()) {
+  const fundNet = new Map<string, { fundId: string | null; debits: number; credits: number }>();
+  for (const a of byKey.values()) {
     const bal = round2(a.debit - a.credit);
     if (Math.abs(bal) < 0.005) continue;
+    const fkey = a.fundId ?? '';
+    const fn = fundNet.get(fkey) ?? { fundId: a.fundId, debits: 0, credits: 0 };
     if (bal > 0) {
-      splits.push({ account_id: a.id, debit: 0, credit: bal, entry_details: detail });
-      closeCredits = round2(closeCredits + bal);
+      splits.push({ account_id: a.accountId, debit: 0, credit: bal, entry_details: detail, fund_id: a.fundId });
+      fn.credits = round2(fn.credits + bal);
     } else {
-      splits.push({ account_id: a.id, debit: -bal, credit: 0, entry_details: detail });
-      closeDebits = round2(closeDebits + -bal);
+      splits.push({ account_id: a.accountId, debit: -bal, credit: 0, entry_details: detail, fund_id: a.fundId });
+      fn.debits = round2(fn.debits + -bal);
     }
+    fundNet.set(fkey, fn);
   }
 
-  // Net profit (positive = profit) = total income credits - total expense
-  // debits = closeDebits (income side) - closeCredits (expense side).
-  const netProfit = round2(closeDebits - closeCredits);
-  const nilProfit = splits.length === 0 || Math.abs(netProfit) < 0.005;
+  // Balancing entry PER FUND into its fund-balance account. profit→credit, loss→debit.
+  const balancingSplits: Split[] = [];
+  for (const fn of fundNet.values()) {
+    const net = round2(fn.debits - fn.credits); // positive = surplus
+    if (Math.abs(net) < 0.005) continue;
+    balancingSplits.push({
+      account_id: fundTargetId(fn.fundId),
+      debit: net < 0 ? -net : 0,
+      credit: net > 0 ? net : 0,
+      entry_details: 'Profit/(loss) for the year carried to reserves',
+      fund_id: fn.fundId,
+    });
+  }
+
+  // Net profit (positive = profit) across all funds.
+  const netProfit = round2([...fundNet.values()].reduce((s, fn) => s + (fn.debits - fn.credits), 0));
+  // For charity, a non-nil result includes the case where funds offset to a zero
+  // total but individual funds still need carrying — so post whenever there's
+  // P&L activity. Non-charity keeps the old "skip a nil-profit year" behaviour.
+  const nilProfit = hasFunds ? splits.length === 0 : (splits.length === 0 || Math.abs(netProfit) < 0.005);
   const reName = allAccounts.find(a => a.id === retainedEarningsId)?.name ?? 'Retained earnings';
   const reLedger = allAccounts.find(a => a.id === retainedEarningsId)?.ledger ?? null;
+  const allSplits = [...splits, ...balancingSplits];
 
   // ── Preview: return the proposed journal lines without posting ──────────
   if (preview) {
@@ -244,15 +286,6 @@ export async function POST(
 
     const nameOf = (id: string) => allAccounts.find(a => a.id === id)?.name ?? id;
     const ledgerOf = (id: string) => allAccounts.find(a => a.id === id)?.ledger ?? null;
-    const previewSplits = [...splits];
-    if (!nilProfit) {
-      previewSplits.push({
-        account_id: retainedEarningsId,
-        debit: netProfit < 0 ? -netProfit : 0,
-        credit: netProfit > 0 ? netProfit : 0,
-        entry_details: 'Profit/(loss) for the year carried to reserves',
-      });
-    }
     return NextResponse.json({
       preview: true,
       period: { from: fy.start_date, to: fy.end_date },
@@ -260,8 +293,8 @@ export async function POST(
       nil_profit: nilProfit,
       existing_yets: existingYets,
       retained_earnings: { id: retainedEarningsId, name: reName, ledger: reLedger },
-      total: round2(closeDebits + (netProfit < 0 ? -netProfit : 0)),
-      lines: previewSplits.map(s => ({
+      total: round2(allSplits.reduce((s, x) => s + x.debit, 0)),
+      lines: allSplits.map(s => ({
         account_id: s.account_id,
         account_name: nameOf(s.account_id),
         ledger: ledgerOf(s.account_id),
@@ -296,22 +329,15 @@ export async function POST(
     return NextResponse.json({ closed: true, net_profit: 0, ref_no: null, transaction_id: null, year: updated });
   }
 
-  // Balancing entry to Retained earnings: profit → credit RE; loss → debit RE.
-  splits.push({
-    account_id: retainedEarningsId,
-    debit: netProfit < 0 ? -netProfit : 0,
-    credit: netProfit > 0 ? netProfit : 0,
-    entry_details: `Profit/(loss) for the year carried to reserves`,
-  });
-
   // ── Allocate the YET ref + post the journal ─────────────────────────────
+  // The per-fund balancing entries are already in allSplits.
   const { data: seq, error: seqErr } = await supabase
     .rpc('bookkeeping_next_ref', { p_book_id: params.id, p_type: 'YET' });
   if (seqErr || typeof seq !== 'number') {
     return NextResponse.json({ error: seqErr?.message ?? 'Could not allocate ref' }, { status: 500 });
   }
   const refNo = `YET ${String(seq).padStart(6, '0')}`;
-  const total = round2(closeDebits + (netProfit < 0 ? -netProfit : 0)); // total debit side
+  const total = round2(allSplits.reduce((s, x) => s + x.debit, 0)); // total debit side
 
   const { data: txn, error: txnErr } = await supabase
     .from('bookkeeping_transactions')
@@ -337,13 +363,14 @@ export async function POST(
 
   const { error: splitsErr } = await supabase
     .from('bookkeeping_transaction_splits')
-    .insert(splits.map((s, i) => ({
+    .insert(allSplits.map((s, i) => ({
       transaction_id: txn.id,
       line_no: i + 1,
       account_id: s.account_id,
       debit: s.debit,
       credit: s.credit,
       entry_details: s.entry_details,
+      fund_id: s.fund_id,
     })));
   if (splitsErr) {
     await supabase.from('bookkeeping_transactions').delete().eq('id', txn.id);

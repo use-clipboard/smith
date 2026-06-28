@@ -15,6 +15,8 @@ const CreateBody = z.object({
   purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   cost: z.number().min(0),
   opening_accumulated_depn: z.number().min(0).default(0),
+  /** Charity fund this asset belongs to (NULL on non-charity books). */
+  fund_id: z.string().uuid().nullable().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -55,6 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       purchase_date: body.purchase_date,
       cost: body.cost,
       opening_accumulated_depn: body.opening_accumulated_depn,
+      fund_id: body.fund_id ?? null,
       created_by: ctx.userId,
     })
     .select('*')
@@ -79,6 +82,7 @@ const PatchBody = z.object({
   purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   cost: z.number().min(0).optional(),
   opening_accumulated_depn: z.number().min(0).optional(),
+  fund_id: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

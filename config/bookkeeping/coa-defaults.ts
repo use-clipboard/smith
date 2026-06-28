@@ -1869,8 +1869,8 @@ export const CHARITY_COA_SEED: CoaTemplateSeed = {
       account_type: 'equity',
       accounts: [
         { name: 'Unrestricted funds', system_role: 'retained_earnings' },
-        { name: 'Restricted funds' },
-        { name: 'Endowment funds' },
+        { name: 'Restricted funds', system_role: 'restricted_funds' },
+        { name: 'Endowment funds', system_role: 'endowment_funds' },
       ],
     },
   ],

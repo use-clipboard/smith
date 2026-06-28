@@ -137,26 +137,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // Splits: Dr P&L expense, Cr accumulated-depn (the ledger's "…- charge").
+  // Grouped PER FUND (charity) so each fund's depreciation lands in its own
+  // fund; non-charity books have one null-fund group = the old single pair.
+  const byFund = new Map<string, { fundId: string | null; total: number }>();
+  for (const r of postable) {
+    const fid = r.asset.fund_id ?? null;
+    const key = fid ?? '';
+    const g = byFund.get(key) ?? { fundId: fid, total: 0 };
+    g.total = round2(g.total + r.periodCharge);
+    byFund.set(key, g);
+  }
+  const depnSplitRows: Array<{ transaction_id: string; line_no: number; account_id: string; debit: number; credit: number; entry_details: string; fund_id: string | null }> = [];
+  let line = 1;
+  for (const g of byFund.values()) {
+    if (g.total <= 0) continue;
+    depnSplitRows.push({ transaction_id: txn.id, line_no: line++, account_id: expenseAcct.id, debit: g.total, credit: 0, entry_details: details, fund_id: g.fundId });
+    depnSplitRows.push({ transaction_id: txn.id, line_no: line++, account_id: depnChargeAcct.id, debit: 0, credit: g.total, entry_details: details, fund_id: g.fundId });
+  }
   const { error: splitsErr } = await supabase
     .from('bookkeeping_transaction_splits')
-    .insert([
-      {
-        transaction_id: txn.id,
-        line_no: 1,
-        account_id: expenseAcct.id,
-        debit: total,
-        credit: 0,
-        entry_details: details,
-      },
-      {
-        transaction_id: txn.id,
-        line_no: 2,
-        account_id: depnChargeAcct.id,
-        debit: 0,
-        credit: total,
-        entry_details: details,
-      },
-    ]);
+    .insert(depnSplitRows);
   if (splitsErr) {
     await supabase.from('bookkeeping_transactions').delete().eq('id', txn.id);
     return NextResponse.json({ error: splitsErr.message }, { status: 500 });
