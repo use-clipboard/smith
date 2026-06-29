@@ -17,7 +17,7 @@ export interface NavItem {
   label: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   icon: ElementType<any>;
-  /** When true, the sidebar renders this item with a "Soon" pill regardless of module-active state. Used during in-development tool builds. */
+  /** When true, the sidebar renders this item with a "Soon" pill regardless of module-active state. Used during in-development tool builds. (Bookkeeping was released 2026-06-29.) */
   comingSoon?: boolean;
 }
 
@@ -46,7 +46,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'email-triage',  href: '/email',          label: 'Email Triage',    icon: Mail },
   { moduleId: 'hr',            href: '/hr',             label: 'HR',              icon: HeartHandshake },
   { moduleId: 'proposals',     href: '/proposals',      label: 'Proposals',       icon: FileSignature },
-  { moduleId: 'bookkeeping',   href: '/bookkeeping',    label: 'Bookkeeping',     icon: BookCopy, comingSoon: true },
+  { moduleId: 'bookkeeping',   href: '/bookkeeping',    label: 'Bookkeeping',     icon: BookCopy },
 ];
 
 /** Workspace nav items (always visible, no module gate). */

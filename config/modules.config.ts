@@ -70,6 +70,19 @@ export const MODULES: ModuleConfig[] = [
 
   // ─── Optional Tools ───────────────────────────────────────────────────────
   {
+    id: 'bookkeeping',
+    name: 'Bookkeeping',
+    description: 'Full double-entry bookkeeping — transactions, VAT returns, bank reconciliation, fixed assets, charity funds, recurring entries, year-end close and reports. VT Transaction+ inspired.',
+    iconName: 'BookCopy',
+    route: '/bookkeeping',
+    // Released 2026-06-29 to the whole firm. For the public SaaS rollout, set
+    // alwaysOn:false + a monthlyPricePence to make it a per-firm paid module.
+    alwaysOn: true,
+    monthlyPricePence: 0,
+    category: 'tool',
+    group: 'bookkeeping',
+  },
+  {
     id: 'full-analysis',
     name: 'Capture',
     description: 'Analyse invoices and receipts and produce bookkeeping entries for VT Transaction+, Capium, Xero, QuickBooks, FreeAgent, Sage, or General format.',
