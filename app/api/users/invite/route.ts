@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
-import { getBaseUrl } from '@/lib/getBaseUrl';
+import { sendInvite } from '@/lib/sendInvite';
 
 const schema = z.object({
   email: z.string().email(),
@@ -61,16 +61,21 @@ export async function POST(request: NextRequest) {
     }
     createdUserId = created.user?.id;
   } else {
-    // Send invite email via Supabase Auth
-    const { data: invited, error: inviteError } = await service.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: full_name ?? '' },
-      redirectTo: `${getBaseUrl()}/auth/callback`,
+    // Email-invite path: create the user (confirmed, no password) so they can
+    // be assigned to the firm immediately, then email a branded invite via
+    // Resend with a one-time link to set their own password. We deliberately
+    // do NOT use supabase.auth.admin.inviteUserByEmail — that sends through
+    // Supabase's SMTP, which isn't configured (sender on an unverified domain).
+    const { data: created, error: createError } = await service.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: { full_name: full_name ?? '' },
     });
-    if (inviteError) {
-      console.error('Invite error:', inviteError);
-      return NextResponse.json({ error: 'Failed to send invite. The email may already be registered.' }, { status: 400 });
+    if (createError) {
+      console.error('Invite create error:', createError);
+      return NextResponse.json({ error: 'Failed to invite. The email may already be registered.' }, { status: 400 });
     }
-    createdUserId = invited.user?.id;
+    createdUserId = created.user?.id;
   }
 
   // Set firm_id and role on the auto-created user row
@@ -79,6 +84,17 @@ export async function POST(request: NextRequest) {
       .from('users')
       .update({ firm_id: profile.firm_id, role, full_name: full_name ?? '' })
       .eq('id', createdUserId);
+  }
+
+  // Email the invite (only for the no-password path — the password path hands
+  // credentials over directly). Non-fatal: the account exists either way, and
+  // an admin can resend from the team list if delivery fails.
+  if (createdUserId && !password) {
+    try {
+      await sendInvite(email);
+    } catch (e) {
+      console.error('Invite email send failed:', e);
+    }
   }
 
   return NextResponse.json({ success: true, user_id: createdUserId });

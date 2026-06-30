@@ -27,5 +27,21 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to load users' }, { status: 500 });
   }
 
-  return NextResponse.json({ users });
+  // Derive a "pending" flag (invited but never signed in) from auth state, so
+  // the team list can show a Pending badge + Resend without a separate
+  // invitations table. One admin listUsers call, mapped by id.
+  const pendingById = new Map<string, boolean>();
+  try {
+    const service = createServiceClient();
+    const { data: authList } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    for (const au of authList?.users ?? []) {
+      pendingById.set(au.id, !au.last_sign_in_at);
+    }
+  } catch (e) {
+    console.error('GET /api/users pending-state', e);
+  }
+
+  const withPending = (users ?? []).map(u => ({ ...u, pending: pendingById.get(u.id) ?? false }));
+
+  return NextResponse.json({ users: withPending });
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
@@ -8,8 +9,12 @@ import { SmithLogoLoader } from '@/components/ui/SmithLogoLoader';
 
 type Phase = 'checking' | 'ready' | 'invalid' | 'done';
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  // Invited team members land here via ?flow=invite (set via the invite email's
+  // /auth/confirm next param). Same set-password mechanics, welcome-flavoured copy.
+  const isInvite = searchParams.get('flow') === 'invite';
 
   const [phase, setPhase] = useState<Phase>('checking');
   const [password, setPassword] = useState('');
@@ -17,9 +22,9 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // /auth/confirm verifies the token and sets the recovery session before
-  // redirecting here. If there's no session, the link was invalid, already used,
-  // or opened after expiry — send the user back to request a fresh one.
+  // /auth/confirm verifies the token and sets the session before redirecting
+  // here. If there's no session, the link was invalid, already used, or opened
+  // after expiry.
   useEffect(() => {
     let cancelled = false;
     supabase.auth.getUser().then(({ data }) => {
@@ -39,7 +44,7 @@ export default function ResetPasswordPage() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) {
       setSaving(false);
-      setError(updateError.message || 'Could not update your password. Please request a new link.');
+      setError(updateError.message || 'Could not set your password. Please request a new link.');
       return;
     }
     setPhase('done');
@@ -51,7 +56,7 @@ export default function ResetPasswordPage() {
     return (
       <div className="glass rounded-2xl p-10 w-full max-w-sm text-center text-[var(--text-muted)]">
         <SmithLogoLoader size={22} className="mx-auto mb-3" />
-        <p className="text-sm">Checking your reset link…</p>
+        <p className="text-sm">{isInvite ? 'Checking your invite…' : 'Checking your reset link…'}</p>
       </div>
     );
   }
@@ -64,10 +69,15 @@ export default function ResetPasswordPage() {
         </div>
         <h2 className="text-base font-semibold text-[var(--text-primary)] mb-2">Link expired or invalid</h2>
         <p className="text-sm text-[var(--text-muted)]">
-          This password reset link can&apos;t be used. It may have expired or already been used.
+          {isInvite
+            ? 'This invite link can’t be used. It may have expired or already been used. Ask your firm admin to resend your invite.'
+            : 'This password reset link can’t be used. It may have expired or already been used.'}
         </p>
-        <Link href="/forgot-password" className="mt-6 inline-block btn-primary px-4 py-2 text-sm">
-          Request a new link
+        <Link
+          href={isInvite ? '/login' : '/forgot-password'}
+          className="mt-6 inline-block btn-primary px-4 py-2 text-sm"
+        >
+          {isInvite ? 'Back to sign in' : 'Request a new link'}
         </Link>
       </div>
     );
@@ -79,7 +89,9 @@ export default function ResetPasswordPage() {
         <div className="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-5">
           <CheckCircle2 size={24} className="text-emerald-600" />
         </div>
-        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-2">Password updated</h2>
+        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-2">
+          {isInvite ? 'You’re all set' : 'Password updated'}
+        </h2>
         <p className="text-sm text-[var(--text-muted)]">Taking you to your dashboard…</p>
       </div>
     );
@@ -93,11 +105,16 @@ export default function ResetPasswordPage() {
           <img src="/logo.png" alt="" className="w-10 h-10 rounded-xl brightness-0" />
           <span className="text-xl font-bold text-[var(--text-primary)] tracking-tight">SMITH</span>
         </div>
-        <p className="text-sm text-[var(--text-muted)]">Choose a new password</p>
+        <p className="text-sm text-[var(--text-muted)]">{isInvite ? 'Welcome to SMITH' : 'Choose a new password'}</p>
       </div>
 
       <div className="glass rounded-2xl p-8">
-        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-6">Set a new password</h2>
+        <h2 className="text-base font-semibold text-[var(--text-primary)] mb-1">
+          {isInvite ? 'Set your password' : 'Set a new password'}
+        </h2>
+        <p className="text-sm text-[var(--text-muted)] mb-6">
+          {isInvite ? 'Choose a password to finish setting up your account.' : 'Choose a new password for your account.'}
+        </p>
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg text-sm text-red-700 dark:text-red-400">
@@ -107,7 +124,7 @@ export default function ResetPasswordPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">New password</label>
+            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">{isInvite ? 'Password' : 'New password'}</label>
             <div className="relative">
               <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input
@@ -122,7 +139,7 @@ export default function ResetPasswordPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Confirm new password</label>
+            <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">{isInvite ? 'Confirm password' : 'Confirm new password'}</label>
             <div className="relative">
               <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
               <input
@@ -143,11 +160,19 @@ export default function ResetPasswordPage() {
                 Saving…
               </>
             ) : (
-              'Update password'
+              isInvite ? 'Set password & continue' : 'Update password'
             )}
           </button>
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

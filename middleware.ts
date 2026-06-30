@@ -39,7 +39,8 @@ export async function middleware(request: NextRequest) {
   // with the recovery session it sets.)
   const isPublicAuthApi =
     request.nextUrl.pathname === '/api/auth/forgot-password' ||
-    request.nextUrl.pathname === '/api/auth/magic-link';
+    request.nextUrl.pathname === '/api/auth/magic-link' ||
+    request.nextUrl.pathname === '/api/auth/signup';
 
   // Public-by-token routes (proposal accept page + its API). No auth required.
   const isPublicProposal =

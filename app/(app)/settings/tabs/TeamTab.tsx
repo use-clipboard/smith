@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserPlus, Pencil, X, Check, KeyRound, Trash2, Loader2, ChevronDown } from 'lucide-react';
+import { UserPlus, Pencil, X, Check, KeyRound, Trash2, Loader2, ChevronDown, Send } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import DeletionRequestsPanel from '@/components/features/settings/DeletionRequestsPanel';
 
@@ -11,6 +11,8 @@ interface TeamMember {
   full_name: string | null;
   role: 'admin' | 'staff';
   created_at: string;
+  /** Invited but never signed in — shows a Pending badge + Resend invite. */
+  pending?: boolean;
 }
 
 interface EditState {
@@ -25,9 +27,10 @@ interface MemberRowProps {
   onUpdate: (id: string, data: Partial<EditState>) => Promise<string | null>;
   onRemove: (id: string, name: string) => Promise<void>;
   onResetPassword: (id: string, name: string) => Promise<void>;
+  onResendInvite: (id: string, name: string) => Promise<void>;
 }
 
-function MemberRow({ member, isSelf, onUpdate, onRemove, onResetPassword }: MemberRowProps) {
+function MemberRow({ member, isSelf, onUpdate, onRemove, onResetPassword, onResendInvite }: MemberRowProps) {
   const [editing, setEditing] = useState(false);
   const [edit, setEdit] = useState<EditState>({
     full_name: member.full_name ?? '',
@@ -39,6 +42,16 @@ function MemberRow({ member, isSelf, onUpdate, onRemove, onResetPassword }: Memb
   const [removing, setRemoving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [resetDone, setResetDone] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+
+  async function handleResendInvite() {
+    setResending(true);
+    await onResendInvite(member.id, member.full_name || member.email);
+    setResending(false);
+    setResent(true);
+    setTimeout(() => setResent(false), 3000);
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -86,10 +99,25 @@ function MemberRow({ member, isSelf, onUpdate, onRemove, onResetPassword }: Memb
             }`}>
               {member.role === 'admin' ? 'Admin' : 'Staff'}
             </span>
+            {member.pending && (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                Pending
+              </span>
+            )}
           </div>
           <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">{member.email}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {member.pending && (
+            <button
+              onClick={handleResendInvite}
+              disabled={resending || resent}
+              className="btn-secondary text-xs py-1.5 px-3 disabled:opacity-50"
+            >
+              {resending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+              {resending ? 'Sending…' : resent ? 'Sent!' : 'Resend'}
+            </button>
+          )}
           <button
             onClick={() => { setEditing(v => !v); setSaveError(null); }}
             className="btn-secondary text-xs py-1.5 px-3"
@@ -262,6 +290,12 @@ export default function TeamTab({ currentUserId }: Props) {
     if (json.error) alert(`Failed to send reset email: ${json.error}`);
   }
 
+  async function handleResendInvite(id: string, _name: string) {
+    const res = await fetch(`/api/users/${id}/resend-invite`, { method: 'POST' });
+    const json = await res.json();
+    if (json.error) alert(`Failed to resend invite: ${json.error}`);
+  }
+
   return (
     <div className="space-y-6">
       {/* Pending account-deletion requests (renders only when there are any) */}
@@ -291,7 +325,7 @@ export default function TeamTab({ currentUserId }: Props) {
           />
           <input
             type="password"
-            placeholder="Temporary password (min 8 chars)"
+            placeholder="Temporary password (optional)"
             value={invitePassword}
             onChange={e => setInvitePassword(e.target.value)}
             className="input-base"
@@ -308,11 +342,11 @@ export default function TeamTab({ currentUserId }: Props) {
             <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />
           </div>
           <button type="submit" disabled={inviting} className="btn-primary justify-center disabled:opacity-50 sm:col-span-2">
-            {inviting ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
-            {inviting ? 'Creating…' : 'Create Account'}
+            {inviting ? <Loader2 size={14} className="animate-spin" /> : invitePassword ? <UserPlus size={14} /> : <Send size={14} />}
+            {inviting ? (invitePassword ? 'Creating…' : 'Sending…') : (invitePassword ? 'Create Account' : 'Send Invite')}
           </button>
         </form>
-        <p className="text-xs text-[var(--text-muted)]">Enter a temporary password and share it with the user directly. They can change it after signing in.</p>
+        <p className="text-xs text-[var(--text-muted)]">Leave the password blank to <strong>email an invite</strong> — they&apos;ll set their own password. Or set a temporary password to create the account directly and share it yourself.</p>
         {inviteMsg && (
           <p className={`text-sm ${inviteMsg.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
             {inviteMsg.text}
@@ -341,6 +375,7 @@ export default function TeamTab({ currentUserId }: Props) {
                 onUpdate={handleUpdate}
                 onRemove={handleRemove}
                 onResetPassword={handleResetPassword}
+                onResendInvite={handleResendInvite}
               />
             ))}
           </div>
