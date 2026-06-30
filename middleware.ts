@@ -33,10 +33,13 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/signup') ||
     request.nextUrl.pathname.startsWith('/forgot-password');
 
-  // Public password-reset endpoint — must be reachable without a session so a
-  // locked-out user can request a link. (/auth/confirm is excluded at the
-  // matcher level; /reset-password is reached with the recovery session it sets.)
-  const isPublicAuthApi = request.nextUrl.pathname === '/api/auth/forgot-password';
+  // Public auth endpoints — must be reachable without a session: a locked-out
+  // user requesting a reset link, or anyone requesting a magic sign-in link.
+  // (/auth/confirm is excluded at the matcher level; /reset-password is reached
+  // with the recovery session it sets.)
+  const isPublicAuthApi =
+    request.nextUrl.pathname === '/api/auth/forgot-password' ||
+    request.nextUrl.pathname === '/api/auth/magic-link';
 
   // Public-by-token routes (proposal accept page + its API). No auth required.
   const isPublicProposal =

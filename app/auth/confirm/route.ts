@@ -18,10 +18,14 @@ export async function GET(request: NextRequest) {
   const type = (searchParams.get('type') ?? 'recovery') as EmailOtpType;
   const next = searchParams.get('next') ?? '/reset-password';
 
-  const fail = () =>
-    NextResponse.redirect(
-      `${origin}/forgot-password?error=${encodeURIComponent('This link is invalid or has expired. Please request a new one.')}`,
+  // Recovery failures go back to forgot-password; everything else (magic-link
+  // sign-in, etc.) back to the login screen, which surfaces ?error.
+  const fail = () => {
+    const back = type === 'recovery' ? '/forgot-password' : '/login';
+    return NextResponse.redirect(
+      `${origin}${back}?error=${encodeURIComponent('This link is invalid or has expired. Please request a new one.')}`,
     );
+  };
 
   if (!token_hash) return fail();
 

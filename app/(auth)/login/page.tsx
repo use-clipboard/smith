@@ -49,10 +49,19 @@ function LoginContent() {
   async function handleMagicLink(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true); setError('');
-    // Pass a flag so the callback can end other sessions after sign-in
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}/auth/callback?kick_others=1` } });
+    // Sent via our own Resend route (not supabase.auth.signInWithOtp), so it
+    // doesn't depend on Supabase SMTP. Always shows the neutral "sent" screen —
+    // the endpoint never reveals whether the address is a registered user.
+    try {
+      await fetch('/api/auth/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      // Ignore — still show the neutral confirmation.
+    }
     setLoading(false);
-    if (error) { setError('Could not send magic link. Please try again.'); return; }
     setMagicLinkSent(true);
   }
 
