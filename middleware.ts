@@ -30,7 +30,13 @@ export async function middleware(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/signup');
+    request.nextUrl.pathname.startsWith('/signup') ||
+    request.nextUrl.pathname.startsWith('/forgot-password');
+
+  // Public password-reset endpoint — must be reachable without a session so a
+  // locked-out user can request a link. (/auth/confirm is excluded at the
+  // matcher level; /reset-password is reached with the recovery session it sets.)
+  const isPublicAuthApi = request.nextUrl.pathname === '/api/auth/forgot-password';
 
   // Public-by-token routes (proposal accept page + its API). No auth required.
   const isPublicProposal =
@@ -70,7 +76,7 @@ export async function middleware(request: NextRequest) {
       (p) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/')
     );
 
-  if (!user && !isAuthRoute && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute && !isMarketing) {
+  if (!user && !isAuthRoute && !isPublicAuthApi && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute && !isMarketing) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
@@ -122,6 +128,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
+    '/((?!_next/static|_next/image|favicon.ico|auth/callback|auth/confirm|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
   ],
 };

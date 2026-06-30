@@ -96,7 +96,7 @@ export function renderTaskReminderEmail(opts: TaskReminderEmailOptions): { subje
 // the system mailbox; the task reminder cron now prefers the Gmail path.
 export async function sendTaskReminderEmail(opts: TaskReminderEmailOptions) {
   const resend = getResend();
-  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
   const { subject, html } = renderTaskReminderEmail(opts);
 
   const { error } = await resend.emails.send({
@@ -154,11 +154,57 @@ export function renderClientStepCompleteEmail(opts: ClientStepCompleteEmailOptio
 // this via the task's resolved Gmail sender (see the complete route).
 export async function sendClientStepCompleteEmail(opts: ClientStepCompleteEmailOptions) {
   const resend = getResend();
-  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
   const { subject, html } = renderClientStepCompleteEmail(opts);
 
   const { error } = await resend.emails.send({ from: fromAddress, to: opts.to, subject, html });
   if (error) throw new Error(`Failed to send client-complete email: ${error.message}`);
+}
+
+// ─── Password reset email ────────────────────────────────────────────────────
+export interface PasswordResetEmailOptions {
+  to: string;
+  recipientName: string | null;
+  /** Fully-qualified link to /auth/confirm with the recovery token_hash. */
+  resetUrl: string;
+  /** True when an admin triggered the reset (changes the copy slightly). */
+  byAdmin?: boolean;
+  fromAddress?: string;
+}
+
+export async function sendPasswordResetEmail(opts: PasswordResetEmailOptions) {
+  const resend = getResend();
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
+  const greeting = opts.recipientName ? `Hello ${escapeHtml(opts.recipientName)},` : 'Hello,';
+  const lead = opts.byAdmin
+    ? 'A password reset has been requested for your SMITH account by an administrator at your firm.'
+    : 'We received a request to reset the password for your SMITH account.';
+
+  const html = `
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <div style="background:#4F46E5;padding:20px 24px;">
+        <h1 style="color:#fff;margin:0;font-size:18px;font-weight:600;">SMITH — Reset your password</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="color:#111827;font-size:16px;margin:0 0 8px;">${greeting}</p>
+        <p style="color:#374151;font-size:14px;margin:0 0 20px;line-height:1.6;">${lead} Click the button below to choose a new password. This link can only be used once and will expire shortly for your security.</p>
+        <a href="${opts.resetUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 22px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">Reset password</a>
+        <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">Or paste this link into your browser: <span style="word-break:break-all;">${opts.resetUrl}</span></p>
+        <p style="margin:16px 0 0;font-size:13px;color:#6b7280;">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">This email was sent from SMITH.</p>
+      </div>
+    </div>
+  `;
+
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: opts.to,
+    subject: '[SMITH] Reset your password',
+    html,
+  });
+  if (error) throw new Error(`Failed to send password reset email: ${error.message}`);
 }
 
 // ─── Manager briefing notification ───────────────────────────────────────────
@@ -170,7 +216,7 @@ export interface ManagerBriefingEmailOptions {
 
 export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions) {
   const resend = getResend();
-  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
   const baseUrl = getBaseUrl();
   const link = `${baseUrl}/hr?tab=resources`;
 
@@ -309,7 +355,7 @@ async function dispatchProposalEmail(opts: ProposalDispatch): Promise<{ via: 'gm
 
   // ── Resend fallback ──────────────────────────────────────────────────
   const resend = getResend();
-  const fromAddress = overrideFrom ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <noreply@smithforaccountants.co.uk>';
+  const fromAddress = overrideFrom ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
   const { error } = await resend.emails.send({
     from: fromAddress,
     to: opts.to,

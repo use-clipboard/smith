@@ -36,6 +36,14 @@ interface AccountBalance {
 interface Props {
   bookId: string;
   onOpenAccount?: (a: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
+  /** Rendered inside the Management Accounts pack. Suppresses this tab's own
+   *  toolbar (print/export/show-zero) and print header + drops the competing
+   *  print root, so the parent owns a single print root + pack header. The
+   *  statement table itself is unchanged. */
+  embedded?: boolean;
+  /** Reports the report's CSV rows up to a parent (the MA pack's Excel export
+   *  collects them). Fires whenever the figures change. */
+  onCsvRows?: (rows: CsvRow[]) => void;
 }
 
 type BsGroup = 'fixed_assets' | 'current_assets' | 'current_liabilities' | 'long_term_liabilities' | 'equity';
@@ -126,7 +134,7 @@ async function fetchBalances(bookId: string, asAt: string | null, includeZero: b
   };
 }
 
-export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
+export default function BalanceSheetTab({ bookId, onOpenAccount, embedded, onCsvRows }: Props) {
   // Period from the header bar. Balance sheet is "as at" period.toIso —
   // the from date doesn't apply (balances are cumulative from the start
   // of the book).
@@ -264,17 +272,54 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
 
   const hasMovement = sections.some(s => s.groups.length > 0);
 
+  // CSV rows — single source for the Export button and the onCsvRows callback
+  // (so the MA pack's Excel export gets the exact on-screen shape).
+  const csvRows: CsvRow[] = useMemo(() => {
+    const curLabel = asAtCurrent ? `As at ${asAtCurrent}` : 'Current';
+    const priLabel = asAtPrior   ? `As at ${asAtPrior}`   : 'Prior';
+    const rows: CsvRow[] = [['Section', 'Ledger', 'Account', curLabel, priLabel]];
+    for (const s of sections) {
+      if (s.groups.length === 0) continue;
+      for (const g of s.groups) {
+        rows.push([s.title, g.ledger, '', '', '']);
+        for (const r of g.rows) rows.push([s.title, g.ledger, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
+        rows.push([s.title, g.ledger, `${g.ledger} total`, g.currentTotal.toFixed(2), g.priorTotal.toFixed(2)]);
+      }
+      if (s.key === 'equity' && (Math.abs(currentNetProfit) >= 0.005 || Math.abs(priorNetProfit) >= 0.005)) {
+        rows.push([s.title, '', 'Profit/(loss) for the financial year', currentNetProfit.toFixed(2), priorNetProfit.toFixed(2)]);
+      }
+      const sectionCur = s.key === 'equity' ? totals.totalCapital : s.currentTotal;
+      const sectionPri = s.key === 'equity' ? totals.priorCapital : s.priorTotal;
+      rows.push([s.title, '', `${s.title} total`, sectionCur.toFixed(2), sectionPri.toFixed(2)]);
+    }
+    rows.push(['', '', 'Total assets',      totals.totalAssets.toFixed(2),      totals.priorAssets.toFixed(2)]);
+    rows.push(['', '', 'Total liabilities', totals.totalLiabilities.toFixed(2), totals.priorLiabilities.toFixed(2)]);
+    rows.push(['', '', 'Net assets',        totals.netAssets.toFixed(2),        totals.priorNetAssets.toFixed(2)]);
+    rows.push(['', '', 'Total capital and reserves', totals.totalCapital.toFixed(2), totals.priorCapital.toFixed(2)]);
+    return rows;
+  }, [sections, totals, currentNetProfit, priorNetProfit, asAtCurrent, asAtPrior]);
+  const onCsvRowsRef = useRef(onCsvRows); onCsvRowsRef.current = onCsvRows;
+  useEffect(() => { onCsvRowsRef.current?.(csvRows); }, [csvRows]);
+
   // Empty state placed AFTER all hook calls so the hook count stays
   // constant across renders (Rules of Hooks).
   if (!activePeriod.ready) return <PeriodEmptyState reportName="balance sheet" />;
 
   return (
-    <div className="space-y-3 bk-print-root" ref={printRootRef}>
-      <ReportPrintHeader
-        bookId={bookId}
-        reportTitle="Balance Sheet"
-        periodDescription={`As at ${activePeriod.label.replace(/^Year to\s+/, '')}`}
-      />
+    <div className={`space-y-3 ${embedded ? '' : 'bk-print-root'}`} ref={printRootRef}>
+      {!embedded && (
+        <ReportPrintHeader
+          bookId={bookId}
+          reportTitle="Balance Sheet"
+          periodDescription={`As at ${activePeriod.label.replace(/^Year to\s+/, '')}`}
+        />
+      )}
+      {/* Embedded in the MA pack: a plain statement heading; the pack header
+          above carries the entity name + period. */}
+      {embedded && (
+        <h3 className="text-sm font-semibold text-slate-900 px-1">Balance Sheet</h3>
+      )}
+      {!embedded && (
       <div className="flex items-center gap-3 flex-wrap print-hidden">
         <h2 className="text-sm font-semibold text-slate-900">
           Balance Sheet
@@ -293,44 +338,13 @@ export default function BalanceSheetTab({ bookId, onOpenAccount }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => {
-            // Section → ledger → account, mirroring the on-screen layout
-            // (Fixed Assets / FA - equipment, fixture / Cost - b/fwd …).
-            // Final rows: Total assets / Total liabilities / Net assets /
-            // Total capital and reserves, matching the bottom of the BS.
-            const curLabel = asAtCurrent ? `As at ${asAtCurrent}` : 'Current';
-            const priLabel = asAtPrior   ? `As at ${asAtPrior}`   : 'Prior';
-            const rows: CsvRow[] = [['Section', 'Ledger', 'Account', curLabel, priLabel]];
-            for (const s of sections) {
-              if (s.groups.length === 0) continue;
-              for (const g of s.groups) {
-                rows.push([s.title, g.ledger, '', '', '']);
-                for (const r of g.rows) {
-                  rows.push([s.title, g.ledger, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
-                }
-                rows.push([s.title, g.ledger, `${g.ledger} total`, g.currentTotal.toFixed(2), g.priorTotal.toFixed(2)]);
-              }
-              // Derived current-year result sits inside Capital and reserves;
-              // its section total must therefore include the profit so it
-              // matches the on-screen "Total capital and reserves".
-              if (s.key === 'equity' && (Math.abs(currentNetProfit) >= 0.005 || Math.abs(priorNetProfit) >= 0.005)) {
-                rows.push([s.title, '', 'Profit/(loss) for the financial year', currentNetProfit.toFixed(2), priorNetProfit.toFixed(2)]);
-              }
-              const sectionCur = s.key === 'equity' ? totals.totalCapital : s.currentTotal;
-              const sectionPri = s.key === 'equity' ? totals.priorCapital : s.priorTotal;
-              rows.push([s.title, '', `${s.title} total`, sectionCur.toFixed(2), sectionPri.toFixed(2)]);
-            }
-            rows.push(['', '', 'Total assets',      totals.totalAssets.toFixed(2),      totals.priorAssets.toFixed(2)]);
-            rows.push(['', '', 'Total liabilities', totals.totalLiabilities.toFixed(2), totals.priorLiabilities.toFixed(2)]);
-            rows.push(['', '', 'Net assets',        totals.netAssets.toFixed(2),        totals.priorNetAssets.toFixed(2)]);
-            rows.push(['', '', 'Total capital and reserves', totals.totalCapital.toFixed(2), totals.priorCapital.toFixed(2)]);
-            exportRowsAsCsv(`Balance Sheet — ${activePeriod.label}.csv`, rows);
-          }}
+          onClick={() => exportRowsAsCsv(`Balance Sheet — ${activePeriod.label}.csv`, csvRows)}
           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Download size={12} /> Export
         </button>
       </div>
+      )}
 
       {Math.abs(totals.balanceCheck) > 0.05 && hasMovement && (
         <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 inline-flex items-center gap-2">

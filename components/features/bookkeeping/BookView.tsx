@@ -45,6 +45,7 @@ import { isInputSheetType } from '@/lib/bookkeeping/transactionTypeConfig';
 import TrialBalanceTab from './reports/TrialBalanceTab';
 import ProfitLossTab from './reports/ProfitLossTab';
 import BalanceSheetTab from './reports/BalanceSheetTab';
+import ManagementAccountsTab from './reports/ManagementAccountsTab';
 import SofaTab from './reports/SofaTab';
 import CashFlowTab from './reports/CashFlowTab';
 import VatReturnTab from './reports/VatReturnTab';
@@ -78,7 +79,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'sofa' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'mgmt-accounts' | 'sofa' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -509,6 +510,13 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         </div>
         <div hidden={tab !== 'cf'}>
           <CashFlowTab bookId={bookId} />
+        </div>
+        <div hidden={tab !== 'mgmt-accounts'}>
+          <ManagementAccountsTab
+            bookId={bookId}
+            entityName={book.client?.name ?? book.name}
+            onOpenAccount={openLedgerTab}
+          />
         </div>
         {book.template_type === 'charity' && (
           <div hidden={tab !== 'sofa'}>

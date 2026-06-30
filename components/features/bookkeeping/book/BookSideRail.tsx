@@ -24,7 +24,7 @@ import {
   Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
-  Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
+  FileText, Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
   ClipboardCheck, Gauge, ArrowUpRight, HandCoins, Repeat,
   type LucideIcon,
 } from 'lucide-react';
@@ -95,6 +95,7 @@ const REPORTS: { id: string; label: string; icon: LucideIcon; launch?: boolean; 
   { id: 'bs',             label: 'Balance Sheet',             icon: Layers },
   { id: 'sofa',           label: 'SOFA (by fund)',            icon: HandCoins, charityOnly: true },
   { id: 'cf',             label: 'Cash Flow',                 icon: BadgePoundSterling },
+  { id: 'mgmt-accounts',  label: 'Management Accounts',        icon: FileText },
   { id: 'aged-debtors',   label: 'Aged Debtors (Customers)',  icon: Clock },
   { id: 'aged-creditors', label: 'Aged Creditors (Suppliers)', icon: Clock },
   { id: 'ai-review',      label: 'AI Book Review',            icon: Sparkles },

@@ -37,6 +37,14 @@ interface AccountBalance {
 interface Props {
   bookId: string;
   onOpenAccount?: (a: { id: string; name: string; ledger: string | null; code?: string | null }) => void;
+  /** Rendered inside the Management Accounts pack. Suppresses this tab's own
+   *  toolbar (print/export/show-zero) and print header + drops the competing
+   *  print root, so the parent owns a single print root + pack header. The
+   *  statement table itself is unchanged. */
+  embedded?: boolean;
+  /** Reports the report's CSV rows up to a parent (the MA pack's Excel export
+   *  collects them). Fires whenever the figures change. */
+  onCsvRows?: (rows: CsvRow[]) => void;
 }
 
 // P&L "preferred" sections — these get a fixed slot at the top of the report
@@ -129,7 +137,7 @@ function formatUk(iso: string): string {
   return `${d}/${m}/${y.slice(2)}`;
 }
 
-export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
+export default function ProfitLossTab({ bookId, onOpenAccount, embedded, onCsvRows }: Props) {
   // Period comes from the header's year/period bar via BookNavigation. The
   // old in-tab PeriodSelector has been removed.
   const nav = useBookNavigation();
@@ -265,19 +273,47 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
 
   const hasMovement = sections.some(s => s.rows.length > 0);
 
+  // CSV rows — single source for the Export button and the onCsvRows callback
+  // (so the MA pack's Excel export gets the exact on-screen shape).
+  const csvRows: CsvRow[] = useMemo(() => {
+    const curLabel = periodHeader(period);
+    const priLabel = periodHeader(priorPeriod);
+    const rows: CsvRow[] = [['Section', 'Account', curLabel, priLabel]];
+    for (const s of sections) {
+      if (s.rows.length === 0) continue;
+      rows.push([s.title, '', '', '']);
+      for (const r of s.rows) rows.push([s.title, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
+      rows.push([s.title, `${s.title} total`, s.currentTotal.toFixed(2), s.priorTotal.toFixed(2)]);
+    }
+    rows.push(['', 'Gross profit', gross.current.toFixed(2), gross.prior.toFixed(2)]);
+    rows.push(['', 'Operating profit', operating.current.toFixed(2), operating.prior.toFixed(2)]);
+    rows.push(['', 'Net profit', net.current.toFixed(2), net.prior.toFixed(2)]);
+    return rows;
+  }, [sections, gross, operating, net, period.from, period.to, priorPeriod.from, priorPeriod.to]);
+  const onCsvRowsRef = useRef(onCsvRows); onCsvRowsRef.current = onCsvRows;
+  useEffect(() => { onCsvRowsRef.current?.(csvRows); }, [csvRows]);
+
   // Empty state when no year-end is set / no period chosen. Placed AFTER
   // every hook so the hook count stays constant across renders.
   if (!activePeriod.ready) return <PeriodEmptyState reportName="profit & loss" />;
 
   return (
-    <div className="space-y-3 bk-print-root" ref={printRootRef}>
-      <ReportPrintHeader
-        bookId={bookId}
-        reportTitle="Profit and Loss Account"
-        periodDescription={`For the year ended ${activePeriod.label.replace(/^Year to\s+/, '')}`}
-      />
+    <div className={`space-y-3 ${embedded ? '' : 'bk-print-root'}`} ref={printRootRef}>
+      {!embedded && (
+        <ReportPrintHeader
+          bookId={bookId}
+          reportTitle="Profit and Loss Account"
+          periodDescription={`For the year ended ${activePeriod.label.replace(/^Year to\s+/, '')}`}
+        />
+      )}
+      {/* Embedded in the MA pack: a plain statement heading; the pack header
+          above carries the entity name + period. */}
+      {embedded && (
+        <h3 className="text-sm font-semibold text-slate-900 px-1">Profit and Loss Account</h3>
+      )}
       {/* Period now lives in the header bar; tab toolbar only shows the
           report title + view options + actions. */}
+      {!embedded && (
       <div className="flex items-center gap-3 flex-wrap print-hidden">
         <h2 className="text-sm font-semibold text-slate-900">
           Profit &amp; Loss
@@ -296,32 +332,13 @@ export default function ProfitLossTab({ bookId, onOpenAccount }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => {
-            // Section header → account rows → section subtotal, mirroring
-            // the on-screen layout so the numbers line up with what the
-            // user sees. Last two rows: Gross profit, Operating profit,
-            // Net profit (same triple shown at the bottom of the report).
-            const curLabel = periodHeader(period);
-            const priLabel = periodHeader(priorPeriod);
-            const rows: CsvRow[] = [['Section', 'Account', curLabel, priLabel]];
-            for (const s of sections) {
-              if (s.rows.length === 0) continue;
-              rows.push([s.title, '', '', '']);
-              for (const r of s.rows) {
-                rows.push([s.title, r.name, r.current.toFixed(2), r.prior.toFixed(2)]);
-              }
-              rows.push([s.title, `${s.title} total`, s.currentTotal.toFixed(2), s.priorTotal.toFixed(2)]);
-            }
-            rows.push(['', 'Gross profit', gross.current.toFixed(2), gross.prior.toFixed(2)]);
-            rows.push(['', 'Operating profit', operating.current.toFixed(2), operating.prior.toFixed(2)]);
-            rows.push(['', 'Net profit', net.current.toFixed(2), net.prior.toFixed(2)]);
-            exportRowsAsCsv(`Profit and Loss — ${activePeriod.label}.csv`, rows);
-          }}
+          onClick={() => exportRowsAsCsv(`Profit and Loss — ${activePeriod.label}.csv`, csvRows)}
           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
         >
           <Download size={12} /> Export
         </button>
       </div>
+      )}
 
       {error && (
         <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>

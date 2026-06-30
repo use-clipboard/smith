@@ -130,7 +130,10 @@ function LoginContent() {
 
           {mode === 'password' && (
             <div>
-              <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Password</label>
+                <a href="/forgot-password" className="text-xs text-[var(--accent)] hover:underline">Forgot password?</a>
+              </div>
               <div className="relative">
                 <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase-server';
+import { createClient } from '@/lib/supabase-server';
+import { sendRecoveryEmail } from '@/lib/sendRecoveryEmail';
 
+// ── POST /api/users/[id]/reset-password ──────────────────────────────────────
+// Admin-only. Emails the target user a working password-reset link (token-hash
+// recovery flow → /auth/confirm → /reset-password). The user sets their own new
+// password; the admin never sees or chooses it.
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -14,7 +19,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-  // Fetch the target user's email
+  // Fetch the target user's email — scoped to the admin's own firm.
   const { data: target } = await supabase
     .from('users')
     .select('email')
@@ -24,14 +29,13 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   if (!target?.email) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const service = createServiceClient();
-  const { error } = await service.auth.admin.generateLink({
-    type: 'recovery',
-    email: target.email,
-  });
-
-  if (error) {
-    console.error('reset-password', error);
+  try {
+    const sent = await sendRecoveryEmail({ email: target.email, byAdmin: true });
+    if (!sent) {
+      return NextResponse.json({ error: 'Could not send the reset email for this user.' }, { status: 500 });
+    }
+  } catch (err) {
+    console.error('[users] admin reset-password', err);
     return NextResponse.json({ error: 'Failed to send reset email' }, { status: 500 });
   }
 
