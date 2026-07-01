@@ -109,17 +109,27 @@ function UnreadMessageChips() {
 function FocusModeExitChip() {
   const { focusMode, setFocusMode } = useFocusMode();
   if (!focusMode) return null;
+  // Pin to the top-right via an OUTER fixed wrapper — the button itself stays
+  // in normal flow so the Tooltip's ref span (which is `position: relative`,
+  // and would otherwise win the position cascade over a `fixed` class on it)
+  // measures the real button rather than an empty collapsed span at bottom-left.
+  //
+  // Dark slate (not accent blue) so it stands out on the blue-heavy chrome, and
+  // faded at rest → full opacity on hover (same pattern as the Ask Smith bubble)
+  // so it stays out of the way until you reach for it.
   return (
-    <Tooltip label="Exit focus mode (Esc or Ctrl+\)" side="left">
-      <button
-        onClick={() => setFocusMode(false)}
-        aria-label="Exit focus mode"
-        className="fixed top-3 right-3 z-[100] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--accent)] text-white text-xs font-semibold shadow-xl hover:brightness-110 transition-all"
-      >
-        <Minimize2 size={13} />
-        Exit focus
-      </button>
-    </Tooltip>
+    <div className="fixed top-3 right-3 z-[100]">
+      <Tooltip label="Exit focus mode (Esc or Ctrl+\)" side="bottom">
+        <button
+          onClick={() => setFocusMode(false)}
+          aria-label="Exit focus mode"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#1A1A2E] dark:bg-white text-white dark:text-[#0F0F1A] text-[11px] font-semibold shadow-lg opacity-50 hover:opacity-100 hover:scale-105 focus-visible:opacity-100 transition-all duration-200"
+        >
+          <Minimize2 size={12} />
+          Exit focus
+        </button>
+      </Tooltip>
+    </div>
   );
 }
 
