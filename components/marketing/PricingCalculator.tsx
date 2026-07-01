@@ -164,7 +164,7 @@ export default function PricingCalculator() {
 
               {annual && (
                 <div className={`mt-2 rounded-lg px-4 py-2 text-sm font-bold text-center ${tier.featured ? 'bg-emerald-400/90 text-emerald-950' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'}`}>
-                  Annual saves another {money(yearSaving)}/year
+                  Annual saves {money(yearSaving)}/year
                 </div>
               )}
 
