@@ -48,7 +48,7 @@ interface Props {
 
 const TIER_CARDS: { id: 'compliance' | 'practice'; name: string; blurb: string }[] = [
   { id: 'compliance', name: 'Compliance', blurb: 'Everything you need for your clients’ compliance work.' },
-  { id: 'practice', name: 'Practice', blurb: 'Everything in Compliance, plus tools to run your whole firm.' },
+  { id: 'practice', name: 'Practice Suite', blurb: 'Everything in Compliance, plus tools to run your whole firm.' },
 ];
 
 export default function TiersTab({ subscriptionTier, initialSeatCount }: Props) {
@@ -79,7 +79,7 @@ export default function TiersTab({ subscriptionTier, initialSeatCount }: Props) 
   const seatsDirty = seatCount !== initialSeatCount;
 
   async function handleSelectPlan(next: 'compliance' | 'practice') {
-    if (!confirm(`Switch your firm to the ${next === 'compliance' ? 'Compliance' : 'Practice'} plan? This changes which tools your whole team can use.`)) return;
+    if (!confirm(`Switch your firm to the ${next === 'compliance' ? 'Compliance' : 'Practice Suite'} plan? This changes which tools your whole team can use.`)) return;
     setSavingPlan(next);
     setPlanError(null);
     try {
@@ -245,7 +245,7 @@ export default function TiersTab({ subscriptionTier, initialSeatCount }: Props) 
           <ToolAccordion ids={complianceIds} />
         </div>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-2 px-1">Practice adds</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-2 px-1">Practice Suite adds</p>
           <ToolAccordion ids={practiceOnlyIds} />
         </div>
       </div>

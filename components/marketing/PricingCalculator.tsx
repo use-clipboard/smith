@@ -28,7 +28,7 @@ const TIERS: Tier[] = [
   {
     id: 'compliance',
     name: 'Compliance',
-    perUser: 100,
+    perUser: 60,
     tagline: 'Everything you need to do your clients’ compliance work.',
     features: [
       { label: 'Bookkeeping, Capture & Bank-to-CSV' },
@@ -41,8 +41,8 @@ const TIERS: Tier[] = [
   },
   {
     id: 'practice',
-    name: 'Practice',
-    perUser: 150,
+    name: 'Practice Suite',
+    perUser: 80,
     tagline: 'Everything in Compliance — plus run your whole firm.',
     featured: true,
     plusPrefix: true,
