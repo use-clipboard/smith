@@ -47,9 +47,11 @@ interface Props {
   loadingMore: boolean;
   pinnedIds?: Set<string>;
   onPin?: (threadId: string, pin: boolean) => void;
-  /** Map of thread ID -> ISO date the user last forwarded/replied. */
-  forwardedThreadIds?: Map<string, string>;
-  repliedThreadIds?: Map<string, string>;
+  /** Map of RFC Message-ID -> ISO date an individual email was forwarded/replied
+   *  to. Keyed per email (not per thread) so a reply on one message in a
+   *  conversation doesn't mark its siblings as replied. */
+  forwardedMsgIds?: Map<string, string>;
+  repliedMsgIds?: Map<string, string>;
   onBulkDelete?: (ids: string[]) => void;
   onBulkMarkRead?: (ids: string[]) => void;
   /** Forward each selected thread as its own email (one Send call per thread,
@@ -80,15 +82,13 @@ interface Props {
 export default function EmailList({
   threads, activeThreadId, loading, error, threadMeta, searchQuery, onSearch,
   onSelect, onRefresh, onStar, onDelete, onMarkRead, hasNextPage, onLoadMore, loadingMore,
-  pinnedIds, onPin, forwardedThreadIds, repliedThreadIds, onBulkDelete, onBulkMarkRead, onBulkForward,
+  pinnedIds, onPin, forwardedMsgIds, repliedMsgIds, onBulkDelete, onBulkMarkRead, onBulkForward,
   onBulkAllocate, onBulkPrint, onBulkDownloadAttachments,
   unreadOnly, onUnreadOnlyChange,
   taskLinkedOnly, onTaskLinkedOnlyChange,
   allocatedOnly, onAllocatedOnlyChange,
   activeLabel, userLabels,
 }: Props) {
-  const [searchOpen, setSearchOpen] = useState(false);
-
   // Filter / sort state
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortDesc, setSortDesc] = useState(true);    // true = newest first (default)
@@ -116,13 +116,15 @@ export default function EmailList({
 
   const anyFilterActive = unreadOnly || taskLinkedOnly || allocatedOnly || !sortDesc;
 
-  function handleSearchToggle() {
-    if (searchOpen && searchQuery) onSearch('');
-    setSearchOpen(o => !o);
-  }
-
   function toggleSelect(id: string, index: number, e: React.MouseEvent) {
     e.stopPropagation();
+    // Shift-click the checkbox = select the whole range from the last-clicked
+    // row (matches the row-body behaviour and Gmail). Needs a prior anchor.
+    if (e.shiftKey && lastIndexRef.current >= 0) {
+      selectRange(lastIndexRef.current, index);
+      lastIndexRef.current = index;
+      return;
+    }
     lastIndexRef.current = index;
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -235,37 +237,24 @@ export default function EmailList({
 
       {/* Toolbar */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border)] shrink-0">
-        {searchOpen ? (
-          <div className="flex-1 flex items-center gap-1.5">
-            <Search size={12} className="text-[var(--text-muted)] shrink-0" />
-            <input
-              autoFocus
-              type="text"
-              value={searchQuery}
-              onChange={e => onSearch(e.target.value)}
-              placeholder="Search emails…"
-              className="flex-1 text-xs bg-transparent outline-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-            />
-            <button onClick={handleSearchToggle} className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">
+        {/* Persistent global search — always visible so it's easy to find, and
+            it searches the WHOLE mailbox (Inbox, Sent, Spam, Trash, all labels). */}
+        <div className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[var(--border-input)] bg-[var(--bg-subtle)] focus-within:ring-2 focus-within:ring-[var(--accent)] focus-within:border-transparent">
+          <Search size={14} className="text-[var(--text-muted)] shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => onSearch(e.target.value)}
+            placeholder="Search all mail — Inbox, Sent, Spam & folders…"
+            aria-label="Search all mail"
+            className="flex-1 text-xs bg-transparent outline-none text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+          {searchQuery && (
+            <button onClick={() => onSearch('')} aria-label="Clear search" className="p-0.5 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)]">
               <X size={12} />
             </button>
-          </div>
-        ) : (
-          <>
-            <span className="text-xs text-[var(--text-muted)] flex-1">
-              {threads.length > 0 ? `${threads.length} conversation${threads.length !== 1 ? 's' : ''}` : ''}
-            </span>
-
-            {/* Search */}
-            <Tooltip label="Search emails">
-              <button
-                onClick={handleSearchToggle}
-                aria-label="Search emails"
-                className="p-1.5 rounded-lg hover:bg-[var(--bg-nav-hover)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <Search size={13} />
-              </button>
-            </Tooltip>
+          )}
+        </div>
 
             {/* Filter / sort */}
             <div className="relative" ref={filterRef}>
@@ -402,14 +391,16 @@ export default function EmailList({
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               </button>
             </Tooltip>
-          </>
-        )}
       </div>
 
-      {/* Search banner */}
+      {/* Search banner — makes clear the search spans the whole mailbox */}
       {searchQuery && (
-        <div className="px-3 py-1.5 bg-[var(--accent-light)] border-b border-[var(--border)] shrink-0">
-          <span className="text-[11px] text-[var(--accent)] font-medium">Search: "{searchQuery}"</span>
+        <div className="px-3 py-1.5 bg-[var(--accent-light)] border-b border-[var(--border)] shrink-0 flex items-center gap-2">
+          <Search size={11} className="text-[var(--accent)] shrink-0" />
+          <span className="text-[11px] text-[var(--accent)] font-medium flex-1 truncate">
+            Searching all mail for “{searchQuery}” · {threads.length} result{threads.length !== 1 ? 's' : ''}
+          </span>
+          <button onClick={() => onSearch('')} className="text-[11px] text-[var(--accent)] hover:underline shrink-0">Clear</button>
         </div>
       )}
 
@@ -536,26 +527,24 @@ export default function EmailList({
               const hasAttachments = thread.messages.some(m => m.hasAttachments || m.attachments.length > 0);
               const meta = threadMeta?.[thread.id];
               const sentMessages = thread.messages.filter(m => m.labelIds?.includes('SENT'));
-              const hasInboundMsg = thread.messages.some(m => !m.labelIds?.includes('SENT'));
-              // In non-threaded mode thread.id is a message ID; forwarded/replied sets track by real thread ID
-              const realThreadId = thread.gmailThreadId ?? thread.id;
-              // Primary source: threadMeta (set when thread is opened in this session) and
-              // repliedThreadIds (persisted to localStorage — updated both when replying through
-              // the app AND when openThread detects a SENT reply in the full thread).
-              // Threaded-mode fallback: thread has both received and sent messages (reply),
-              // or a sent message whose subject starts with "Re:" / "Fwd:" respectively.
+              // Per-email replied/forwarded: a row is replied/forwarded when one
+              // of ITS messages' RFC Message-IDs is in the per-message maps
+              // (populated from the server's reply-chain analysis + app sends).
+              // In flat view a row is a single message; in grouped view any
+              // message in the conversation counts. No thread-wide or subject
+              // heuristics — those falsely flagged merged threads / newer emails.
+              const rowRfcIds = thread.messages.map(m => m.messageId).filter(Boolean);
+              const rowRfcId = thread.messages[0]?.messageId || '';
               const isReplied = (meta?.isReplied ?? false)
-                || (repliedThreadIds?.has(realThreadId) ?? false)
-                || (hasInboundMsg && sentMessages.some(m => /^re:/i.test(m.subject)));
+                || rowRfcIds.some(id => repliedMsgIds?.has(id));
+              const isForwarded = (meta?.isForwarded ?? false)
+                || rowRfcIds.some(id => forwardedMsgIds?.has(id));
               // Match both Gmail-style "Fwd:" and Outlook-style "FW:" forward prefixes.
               const FORWARD_PREFIX = /^(fwd|fw):/i;
-              const isForwarded = (meta?.isForwarded ?? false)
-                || (forwardedThreadIds?.has(realThreadId) ?? false)
-                || sentMessages.some(m => FORWARD_PREFIX.test(m.subject));
 
-              // Find the most recent reply / forward in this thread so we can show "Replied 9 May" etc.
-              // Falls back to undefined when the thread isn't loaded with messages yet (e.g. when
-              // isReplied came from persisted localStorage); in that case we just show the bare chip.
+              // Find the most recent reply / forward date to show "Replied 9 May".
+              // In grouped view we have the SENT messages; in flat view the row
+              // has only its own message, so fall back to the per-message map date.
               function pickLatestSent(predicate: (subject: string) => boolean): string | undefined {
                 const matches = sentMessages.filter(m => predicate(m.subject ?? ''));
                 if (matches.length === 0) return undefined;
@@ -564,15 +553,8 @@ export default function EmailList({
                 );
                 return latest.date || undefined;
               }
-              // Prefer the date from a real SENT message in the thread that matches
-              // the subject prefix; fall back to the persisted timestamp captured when
-              // the user sent through the app; final fallback is the latest SENT message
-              // in the thread regardless of subject (covers Outlook-forwarded threads
-              // where the prefix didn't survive, or legacy localStorage entries with
-              // no recorded date).
-              const latestAnySent = pickLatestSent(() => true);
-              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedThreadIds?.get(realThreadId)   || latestAnySent || undefined) : undefined;
-              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedThreadIds?.get(realThreadId) || latestAnySent || undefined) : undefined;
+              const repliedAt   = isReplied   ? (pickLatestSent(s => !FORWARD_PREFIX.test(s)) || repliedMsgIds?.get(rowRfcId)   || undefined) : undefined;
+              const forwardedAt = isForwarded ? (pickLatestSent(s =>  FORWARD_PREFIX.test(s)) || forwardedMsgIds?.get(rowRfcId) || undefined) : undefined;
 
               // User-created Gmail labels applied to this thread → little tag chips.
               const threadUserLabels = (userLabels ?? []).filter(l => thread.labelIds.includes(l.id));

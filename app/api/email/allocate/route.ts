@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
   let ccAddresses = '';
   let bccAddresses = '';
   let sentAt = '';
+  // Stable, cross-mailbox identifiers for the allocated message. Gmail's
+  // thread_id/message_id are per-mailbox, so we also record the RFC 2822
+  // Message-ID + reply chain — these are identical in every recipient's
+  // mailbox, letting the allocation show for other users on the same chain.
+  let rfcMessageId = '';
+  let rfcReferences: string[] = [];
   try {
     const { data: connection } = await supabase
       .from('email_connections')
@@ -91,6 +97,14 @@ export async function POST(req: NextRequest) {
       );
       const lastMsg = messages[messages.length - 1];
       const rawLastMsg = rawMessages[rawMessages.length - 1];
+      // The RFC ids describe the specific message being allocated. When the
+      // caller named a Gmail message id, use that message's headers; otherwise
+      // fall back to the last message in the thread (matches the body we store).
+      const targetMsg = messageId ? (messages.find(m => m.id === messageId) ?? lastMsg) : lastMsg;
+      if (targetMsg) {
+        rfcMessageId = targetMsg.messageId;
+        rfcReferences = targetMsg.references;
+      }
       if (lastMsg) {
         bodyText = stripHtml(lastMsg.body).slice(0, 3000);
         attachments = lastMsg.attachments
@@ -167,6 +181,8 @@ export async function POST(req: NextRequest) {
         client_id: clientId,
         timeline_entry_id: duplicate.id,
         subject,
+        rfc_message_id: rfcMessageId || null,
+        rfc_references: rfcReferences.length ? rfcReferences : null,
       });
       results.push({ clientId, timelineEntryId: duplicate.id as string });
       continue;
@@ -219,6 +235,8 @@ export async function POST(req: NextRequest) {
       client_id: clientId,
       timeline_entry_id: note.id,
       subject,
+      rfc_message_id: rfcMessageId || null,
+      rfc_references: rfcReferences.length ? rfcReferences : null,
     });
 
     results.push({ clientId, timelineEntryId: note.id });
@@ -241,34 +259,106 @@ export async function DELETE(req: NextRequest) {
   const parsed = DeleteSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid' }, { status: 400 });
 
+  const { threadId, clientId } = parsed.data;
   const supabase = createClient();
 
-  // Unallocate the whole thread+client pair: per-message rows mean there
-  // can be multiple timeline notes attached, so we have to clean up all of
-  // them rather than the single row the legacy code assumed.
-  const { data: allocs } = await supabase
-    .from('email_allocations')
-    .select('timeline_entry_id')
-    .eq('thread_id', parsed.data.threadId)
-    .eq('client_id', parsed.data.clientId)
-    .eq('firm_id', ctx.firmId);
-
-  const timelineIds = (allocs ?? [])
-    .map(a => a.timeline_entry_id)
-    .filter((id): id is string => !!id);
-  if (timelineIds.length > 0) {
-    await supabase
-      .from('client_timeline_notes')
-      .delete()
-      .in('id', timelineIds);
+  // Gmail thread ids are per-mailbox, so an allocation made by another user on
+  // this conversation is stored under *their* thread_id. Collect the stable RFC
+  // Message-IDs of this conversation from the caller's own mailbox so we can
+  // also find (and, for admins, remove) those cross-mailbox allocations.
+  const convRfcIds = new Set<string>();
+  try {
+    const { data: connection } = await supabase
+      .from('email_connections')
+      .select('refresh_token')
+      .eq('user_id', ctx.userId)
+      .single();
+    if (connection?.refresh_token) {
+      const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
+      const threadRes = await gmail.users.threads.get({
+        userId: 'me',
+        id: threadId,
+        format: 'metadata',
+        metadataHeaders: ['Message-ID', 'References', 'In-Reply-To'],
+      });
+      for (const m of threadRes.data.messages ?? []) {
+        const pm = parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0]);
+        if (pm.messageId) convRfcIds.add(pm.messageId);
+        for (const r of pm.references) convRfcIds.add(r);
+      }
+    }
+  } catch (err) {
+    console.error('unallocate: failed to fetch conversation RFC ids:', err);
+    // Non-fatal — fall back to thread_id-only matching (own allocations still work).
   }
 
-  await supabase
-    .from('email_allocations')
-    .delete()
-    .eq('thread_id', parsed.data.threadId)
-    .eq('client_id', parsed.data.clientId)
-    .eq('firm_id', ctx.firmId);
+  // Candidate allocation rows for this client in this conversation: this
+  // mailbox's thread_id, plus any row keyed to one of the conversation's RFC
+  // ids (allocations another user made). Two queries + merge avoids fragile
+  // .or() string quoting of Message-IDs (which contain <, >, @, dots).
+  const ALLOC_SELECT = 'id, user_id, timeline_entry_id';
+  const [byThread, byRfc] = await Promise.all([
+    supabase
+      .from('email_allocations')
+      .select(ALLOC_SELECT)
+      .eq('firm_id', ctx.firmId)
+      .eq('client_id', clientId)
+      .eq('thread_id', threadId),
+    convRfcIds.size > 0
+      ? supabase
+          .from('email_allocations')
+          .select(ALLOC_SELECT)
+          .eq('firm_id', ctx.firmId)
+          .eq('client_id', clientId)
+          .in('rfc_message_id', Array.from(convRfcIds))
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const byId = new Map<string, { id: string; user_id: string; timeline_entry_id: string | null }>();
+  for (const r of [...(byThread.data ?? []), ...(byRfc.data ?? [])]) {
+    byId.set(r.id as string, r as { id: string; user_id: string; timeline_entry_id: string | null });
+  }
+  const rows = Array.from(byId.values());
+
+  const ownRows = rows.filter(r => r.user_id === ctx.userId);
+  const otherRows = rows.filter(r => r.user_id !== ctx.userId);
+  const isAdmin = ctx.userRole === 'admin';
+
+  // Non-admins may only remove their OWN allocations. If the allocation is
+  // entirely someone else's, block with a clear, user-facing reason.
+  if (!isAdmin && ownRows.length === 0 && otherRows.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'admin_required',
+        message: 'This email was allocated by a colleague. Only an admin can change another user’s client assignment.',
+      },
+      { status: 403 },
+    );
+  }
+
+  // Admins remove everything for the conversation; non-admins remove only their
+  // own rows (leaving colleagues' allocations intact).
+  const toDelete = isAdmin ? rows : ownRows;
+  const timelineIds = toDelete
+    .map(r => r.timeline_entry_id)
+    .filter((id): id is string => !!id);
+  if (timelineIds.length > 0) {
+    await supabase.from('client_timeline_notes').delete().in('id', timelineIds);
+  }
+  const deleteIds = toDelete.map(r => r.id);
+  if (deleteIds.length > 0) {
+    await supabase.from('email_allocations').delete().in('id', deleteIds);
+  }
+
+  // Non-admin left a colleague's allocation in place — tell them so the badge
+  // staying put doesn't look like a bug.
+  if (!isAdmin && otherRows.length > 0) {
+    return NextResponse.json({
+      success: true,
+      partial: true,
+      message: 'Removed your allocation. This email is still allocated by a colleague — only an admin can remove that.',
+    });
+  }
 
   return NextResponse.json({ success: true });
 }

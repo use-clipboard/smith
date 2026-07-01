@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
               userId: 'me',
               id,
               format: 'metadata',
-              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+              metadataHeaders: ['Subject', 'From', 'To', 'Date', 'Message-ID', 'References', 'In-Reply-To'],
             }), 2);
             const parsed = parseGmailMessage(msgRes.data as Parameters<typeof parseGmailMessage>[0]);
             return {
@@ -233,7 +233,7 @@ export async function GET(req: NextRequest) {
               userId: 'me',
               id,
               format: 'metadata',
-              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+              metadataHeaders: ['Subject', 'From', 'To', 'Date', 'Message-ID', 'References', 'In-Reply-To'],
             }), 2);
             const messages = (threadRes.data.messages ?? []).map(m =>
               parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0])
@@ -340,7 +340,7 @@ export async function GET(req: NextRequest) {
               userId: 'me',
               id: t.id!,
               format: 'metadata',
-              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+              metadataHeaders: ['Subject', 'From', 'To', 'Date', 'Message-ID', 'References', 'In-Reply-To'],
             }), 2);
 
             const messages = (threadRes.data.messages ?? []).map(m =>
@@ -416,7 +416,7 @@ export async function GET(req: NextRequest) {
               userId: 'me',
               id: m.id!,
               format: 'metadata',
-              metadataHeaders: ['Subject', 'From', 'To', 'Date'],
+              metadataHeaders: ['Subject', 'From', 'To', 'Date', 'Message-ID', 'References', 'In-Reply-To'],
             }), 2);
 
             const parsed = parseGmailMessage(msgRes.data as Parameters<typeof parseGmailMessage>[0]);

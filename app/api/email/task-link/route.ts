@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { getRefreshedGmailClient, parseGmailMessage } from '@/lib/gmail';
 
 const LinkSchema = z.object({
   threadId: z.string().min(1),
@@ -25,6 +26,39 @@ export async function POST(req: NextRequest) {
 
   const supabase = createClient();
 
+  // Capture the conversation's stable RFC Message-ID + reply chain so the task
+  // marker shows for other users on the same chain (their mailbox's thread_id
+  // differs). Use the last message — its References cover the whole chain.
+  let rfcMessageId = '';
+  let rfcReferences: string[] = [];
+  try {
+    const { data: connection } = await supabase
+      .from('email_connections')
+      .select('refresh_token')
+      .eq('user_id', ctx.userId)
+      .single();
+    if (connection?.refresh_token) {
+      const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
+      const threadRes = await gmail.users.threads.get({
+        userId: 'me',
+        id: parsed.data.threadId,
+        format: 'metadata',
+        metadataHeaders: ['Message-ID', 'References', 'In-Reply-To'],
+      });
+      const msgs = (threadRes.data.messages ?? []).map(m =>
+        parseGmailMessage(m as Parameters<typeof parseGmailMessage>[0])
+      );
+      const last = msgs[msgs.length - 1];
+      if (last) {
+        rfcMessageId = last.messageId;
+        rfcReferences = last.references;
+      }
+    }
+  } catch (err) {
+    console.error('task-link: failed to fetch conversation RFC ids:', err);
+    // Non-fatal — link still works, just stays mailbox-local.
+  }
+
   const { error } = await supabase
     .from('email_task_links')
     .upsert({
@@ -33,6 +67,8 @@ export async function POST(req: NextRequest) {
       thread_id: parsed.data.threadId,
       task_id: parsed.data.taskId,
       subject: parsed.data.subject,
+      rfc_message_id: rfcMessageId || null,
+      rfc_references: rfcReferences.length ? rfcReferences : null,
     }, { onConflict: 'thread_id,task_id' });
 
   if (error) {

@@ -44,6 +44,11 @@ interface ThreadDetail {
    * user's Sent folder, when no Fwd:/FW: SENT message exists in the current
    * thread (e.g. threading was broken on forward). null when no match. */
   externalForwardedAt?: string | null;
+  /** Per-email replied/forwarded status, keyed by stable RFC Message-ID. A
+   * message appears here only when one of our SENT messages descends from it
+   * in the reply chain — so it's per-email, not per-thread. */
+  replied?: { messageId: string; date: string }[];
+  forwarded?: { messageId: string; date: string }[];
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -107,6 +112,13 @@ export default function EmailTriagePage() {
   // Used to paint the list markers without opening each thread (persists on refresh).
   const [allocThreadIds, setAllocThreadIds] = useState<Set<string>>(new Set());
   const [taskThreadIds, setTaskThreadIds] = useState<Set<string>>(new Set());
+  // Stable RFC 2822 Message-IDs (own + reply-chain refs) of every allocated /
+  // task-linked conversation in the firm. Gmail thread ids are per-mailbox, so
+  // these are what let a row show as allocated / task-linked for a user who
+  // didn't create it — matched against the row's own Message-ID / References
+  // (chain-wide).
+  const [allocMsgKeys, setAllocMsgKeys] = useState<Set<string>>(new Set());
+  const [taskMsgKeys, setTaskMsgKeys] = useState<Set<string>>(new Set());
 
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
 
@@ -409,53 +421,28 @@ export default function EmailTriagePage() {
       : `Auto Triage complete — ${processed} email${processed === 1 ? '' : 's'} processed`);
   }
 
-  // Track which inbox threads have been forwarded (persisted locally)
-  const [forwardedThreadIds, setForwardedThreadIds] = useState<Map<string, string>>(() => {
+  // Track which individual EMAILS have been forwarded / replied to, keyed by
+  // stable RFC Message-ID (not Gmail thread id — that flagged whole merged
+  // threads and newer messages as replied when they hadn't been). Persisted
+  // locally as [rfcMessageId, isoDate][] so chips survive refresh; re-populated
+  // from the server (per-message reply-chain analysis) whenever a thread opens.
+  // New localStorage keys ('-msgids') — the old thread-keyed caches are ignored.
+  const parseMsgIdMap = (key: string): Map<string, string> => {
     if (typeof window === 'undefined') return new Map();
     try {
-      const stored = localStorage.getItem('email-forwarded-ids');
+      const stored = localStorage.getItem(key);
       if (!stored) return new Map();
       const parsed = JSON.parse(stored) as unknown;
-      if (Array.isArray(parsed)) {
-        return new Map(
-          parsed.map(entry =>
-            typeof entry === 'string'
-              ? [entry, ''] as const
-              : Array.isArray(entry)
-                ? [entry[0] as string, (entry[1] as string) ?? ''] as const
-                : ['', ''] as const,
-          ).filter(([id]) => id),
-        );
-      }
-      return new Map();
+      if (!Array.isArray(parsed)) return new Map();
+      return new Map(
+        parsed
+          .map(entry => (Array.isArray(entry) ? [entry[0] as string, (entry[1] as string) ?? ''] as const : ['', ''] as const))
+          .filter(([id]) => id),
+      );
     } catch { return new Map(); }
-  });
-
-  // Track which inbox threads have been replied to (persisted locally)
-  // Persisted as [id, isoDate][] tuples so we can show "Replied · 9 May" right
-  // after sending — without waiting for the next inbox poll to fetch the SENT
-  // message back from Gmail. Backwards-compatible with the old Set<string>
-  // format (just an array of IDs without dates).
-  const [repliedThreadIds, setRepliedThreadIds] = useState<Map<string, string>>(() => {
-    if (typeof window === 'undefined') return new Map();
-    try {
-      const stored = localStorage.getItem('email-replied-ids');
-      if (!stored) return new Map();
-      const parsed = JSON.parse(stored) as unknown;
-      if (Array.isArray(parsed)) {
-        return new Map(
-          parsed.map(entry =>
-            typeof entry === 'string'
-              ? [entry, ''] as const           // legacy format — no date
-              : Array.isArray(entry)            // new format — [id, date]
-                ? [entry[0] as string, (entry[1] as string) ?? ''] as const
-                : ['', ''] as const,
-          ).filter(([id]) => id),
-        );
-      }
-      return new Map();
-    } catch { return new Map(); }
-  });
+  };
+  const [forwardedMsgIds, setForwardedMsgIds] = useState<Map<string, string>>(() => parseMsgIdMap('email-forwarded-msgids'));
+  const [repliedMsgIds, setRepliedMsgIds] = useState<Map<string, string>>(() => parseMsgIdMap('email-replied-msgids'));
 
   // Email rules
   const [emailRules, setEmailRules] = useState<EmailRule[]>([]);
@@ -495,6 +482,11 @@ export default function EmailTriagePage() {
     window.setTimeout(() => {
       ids.forEach(id => pendingTrashIdsRef.current.delete(id));
     }, 60_000);
+  }
+  // Undo helper: stop hiding these ids so an undone move/trash can reappear on
+  // the next fetch instead of waiting out the 60s propagation window.
+  function unmarkPendingTrash(ids: string[]) {
+    ids.forEach(id => pendingTrashIdsRef.current.delete(id));
   }
 
   // Same propagation issue as trash — when we mark-as-read locally, Gmail's
@@ -652,13 +644,15 @@ export default function EmailTriagePage() {
   const refreshThreadMeta = useCallback(() => {
     fetch('/api/email/thread-meta')
       .then(r => r.ok ? r.json() : null)
-      .then((data: { allocatedThreadIds?: string[]; taskLinkedThreadIds?: string[] } | null) => {
+      .then((data: { allocatedThreadIds?: string[]; taskLinkedThreadIds?: string[]; allocatedMessageKeys?: string[]; taskLinkedMessageKeys?: string[] } | null) => {
         if (!data) return;
         // Union with the current sets rather than replacing — so markers we've
         // already learned (from opening a thread this session) survive even if
         // the server hasn't caught up, and removals still reflect on next load.
         setAllocThreadIds(prev => new Set([...prev, ...(data.allocatedThreadIds ?? [])]));
         setTaskThreadIds(prev => new Set([...prev, ...(data.taskLinkedThreadIds ?? [])]));
+        setAllocMsgKeys(prev => new Set([...prev, ...(data.allocatedMessageKeys ?? [])]));
+        setTaskMsgKeys(prev => new Set([...prev, ...(data.taskLinkedMessageKeys ?? [])]));
       })
       .catch(() => {});
   }, []);
@@ -723,21 +717,39 @@ export default function EmailTriagePage() {
   // by message id (flat view) but allocations/task-links are keyed by Gmail
   // thread id — so match on gmailThreadId. This makes the green/blue markers
   // persist on refresh without having to open each thread first.
+  //
+  // Gmail thread ids are per-mailbox, so `allocThreadIds` only matches for the
+  // user who made the allocation. For everyone else we match on the stable RFC
+  // Message-IDs: a row is allocated if its own Message-ID — or any message it
+  // replies to (References) — belongs to an allocated conversation. That lights
+  // the marker chain-wide across all users' mailboxes.
   useEffect(() => {
     if (threads.length === 0) return;
     setThreadMeta(prev => {
       const next = { ...prev };
       for (const t of threads) {
         const tid = t.gmailThreadId ?? t.id;
+        // Chain-wide match: does any message in this row belong to an allocated
+        // / task-linked conversation (by RFC Message-ID or reply-chain ref)?
+        let allocByChain = false;
+        let taskByChain = false;
+        if (allocMsgKeys.size > 0 || taskMsgKeys.size > 0) {
+          for (const m of t.messages ?? []) {
+            const keys = [m.messageId, ...(m.references ?? [])].filter(Boolean);
+            if (!allocByChain && keys.some(k => allocMsgKeys.has(k))) allocByChain = true;
+            if (!taskByChain && keys.some(k => taskMsgKeys.has(k))) taskByChain = true;
+            if (allocByChain && taskByChain) break;
+          }
+        }
         next[t.id] = {
           ...(next[t.id] ?? {}),
-          hasAllocation: allocThreadIds.has(tid),
-          hasTaskLink: taskThreadIds.has(tid),
+          hasAllocation: allocThreadIds.has(tid) || allocByChain,
+          hasTaskLink: taskThreadIds.has(tid) || taskByChain,
         };
       }
       return next;
     });
-  }, [threads, allocThreadIds, taskThreadIds]);
+  }, [threads, allocThreadIds, taskThreadIds, allocMsgKeys, taskMsgKeys]);
 
   // Load signature
   useEffect(() => {
@@ -897,6 +909,7 @@ export default function EmailTriagePage() {
       // searches everywhere (including archived mail).
       const hasDbFilter = taskLinkedOnly || allocatedOnly || !!clientFilter || (!!categoryFilter && categoryFilter !== 'untriaged');
 
+      const hasTextSearch = !!searchQuery.trim();
       let q = searchQuery;
       let needsScope = false;
       if (unreadOnly) { q = q ? `${q} is:unread` : 'is:unread'; needsScope = true; }
@@ -910,9 +923,15 @@ export default function EmailTriagePage() {
           q = q ? `${q} ${tq}` : tq; needsScope = true;
         }
       }
-      // Scope a query to the active folder (otherwise Gmail searches everywhere).
-      // Only when we've added folder-style filters — plain text search stays global.
-      if (needsScope) {
+      if (hasTextSearch) {
+        // A typed search spans the WHOLE mailbox — Inbox, Sent, Spam, Trash and
+        // every label. `in:anywhere` overrides Gmail's default of excluding
+        // Spam/Trash from search, and we deliberately DON'T scope to the active
+        // folder so results come from everywhere.
+        q = `${q} in:anywhere`;
+      } else if (needsScope) {
+        // Folder filters (unread/sender/time) with no typed search stay scoped to
+        // the active folder (otherwise Gmail would search everywhere).
         const labelScope: Record<string, string> = {
           INBOX: 'in:inbox', SENT: 'in:sent', STARRED: 'is:starred',
           SPAM: 'in:spam', TRASH: 'in:trash', DRAFT: 'in:drafts',
@@ -1094,20 +1113,21 @@ export default function EmailTriagePage() {
         void summariseThread(summaryKey, thread.subject, data.messages, data.allocations?.[0]?.clients?.name ?? '');
       }
 
-      // Detect replied / forwarded from the full thread messages.
-      // Gmail uses "Fwd:" prefix; Outlook uses "FW:" — match both.
-      const FORWARD_PREFIX = /^(fwd|fw):/i;
-      const sentMsgs = data.messages.filter((m: { labelIds?: string[] }) => m.labelIds?.includes('SENT'));
-      const hasInbound = data.messages.some((m: { labelIds?: string[] }) => !m.labelIds?.includes('SENT'));
-      // isReplied: there are received messages AND at least one sent message that is not a forward
-      const isReplied = hasInbound && sentMsgs.length > 0
-        && sentMsgs.some((m: { subject?: string }) => !FORWARD_PREFIX.test(m.subject ?? ''));
-      // In-thread forward = a Fwd:/FW: SENT message on this very thread. The
-      // out-of-thread case (threading broken on forward) is detected async
-      // below via the deferred /forwarded endpoint, so it never blocks render.
-      const inThreadForward = sentMsgs.some((m: { subject?: string }) => FORWARD_PREFIX.test(m.subject ?? ''));
-      const isForwarded = inThreadForward
-        || forwardedThreadIds.has(thread.gmailThreadId ?? thread.id);
+      // Replied / forwarded come from the server's per-email reply-chain
+      // analysis (data.replied / data.forwarded, keyed by stable RFC Message-ID).
+      // The viewed row is replied/forwarded when ITS message is in those sets —
+      // in flat view that's the single viewed message (thread.id); in grouped
+      // view any message in the conversation counts. This is per-email, so it no
+      // longer fires on a different correspondent's merged email or on a newer
+      // message that arrived after the reply.
+      const repliedSet = new Set((data.replied ?? []).map(r => r.messageId).filter(Boolean));
+      const forwardedSet = new Set((data.forwarded ?? []).map(f => f.messageId).filter(Boolean));
+      const viewedMsg = data.messages.find(m => m.id === thread.id);
+      const viewedRfcIds = viewedMsg
+        ? (viewedMsg.messageId ? [viewedMsg.messageId] : [])
+        : data.messages.map(m => m.messageId).filter(Boolean);
+      const isReplied = viewedRfcIds.some(id => repliedSet.has(id));
+      const isForwarded = viewedRfcIds.some(id => forwardedSet.has(id));
       setThreadMeta(prev => ({
         ...prev,
         [thread.id]: {
@@ -1139,57 +1159,43 @@ export default function EmailTriagePage() {
           return next;
         });
       }
-      // Persist detected reply/forward status to localStorage so it survives page refreshes
-      const realId = thread.gmailThreadId ?? thread.id;
-      // Pick the most recent matching SENT message's date so the chip can read
-      // a real timestamp (vs the stale "" placeholder).
-      function pickLatest(msgs: { subject?: string; date?: string }[], wantForward: boolean): string {
-        const matches = msgs.filter(m =>
-          wantForward
-            ?  FORWARD_PREFIX.test(m.subject ?? '')
-            : !FORWARD_PREFIX.test(m.subject ?? ''),
-        );
-        if (matches.length === 0) return '';
-        const latest = matches.reduce((acc, m) =>
-          (new Date(m.date ?? '').getTime() || 0) > (new Date(acc.date ?? '').getTime() || 0) ? m : acc
-        );
-        return latest.date ?? '';
-      }
-      if (isReplied) {
-        const date = pickLatest(sentMsgs, false);
-        setRepliedThreadIds(prev => {
-          if (prev.get(realId) === date) return prev;
+      // Persist per-email replied/forwarded (keyed by RFC Message-ID) so chips
+      // survive refresh without re-opening. Merge the whole thread's sets — not
+      // just the viewed message — so sibling rows in the same conversation paint
+      // correctly too.
+      if ((data.replied ?? []).length > 0) {
+        setRepliedMsgIds(prev => {
           const next = new Map(prev);
-          next.set(realId, date);
-          try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+          for (const r of data.replied ?? []) if (r.messageId) next.set(r.messageId, r.date || '');
+          try { localStorage.setItem('email-replied-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
       }
-      if (isForwarded) {
-        const date = pickLatest(sentMsgs, true) || '';
-        setForwardedThreadIds(prev => {
-          if (prev.get(realId) === date) return prev;
+      if ((data.forwarded ?? []).length > 0) {
+        setForwardedMsgIds(prev => {
           const next = new Map(prev);
-          next.set(realId, date);
-          try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+          for (const f of data.forwarded ?? []) if (f.messageId) next.set(f.messageId, f.date || '');
+          try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
           return next;
         });
       }
-      // Deferred out-of-thread forward check: when this thread has no in-thread
-      // Fwd:/FW: SENT message and we don't already know it was forwarded, ask
-      // the server to search the Sent folder. Runs *after* the messages are on
-      // screen, so the ~6 Gmail round-trips it can cost never delay the open.
-      if (!inThreadForward && !forwardedThreadIds.has(realId)) {
+      // Deferred out-of-thread forward check: when the viewed message isn't
+      // already known-forwarded, ask the server to search the Sent folder for a
+      // forward of this subject (Gmail often breaks threading on forward). Runs
+      // *after* render so its Gmail round-trips never delay the open. Attributed
+      // to the viewed message's RFC id.
+      const viewedRfc = viewedMsg?.messageId || '';
+      if (viewedRfc && !forwardedSet.has(viewedRfc) && !forwardedMsgIds.has(viewedRfc)) {
         fetch(`/api/email/thread/${detailId}/forwarded?subject=${encodeURIComponent(thread.subject || '')}`)
           .then(r => (r.ok ? r.json() : null))
           .then((d: { externalForwardedAt?: string | null } | null) => {
             const date = d?.externalForwardedAt;
             if (!date) return;
-            setForwardedThreadIds(prev => {
-              if (prev.get(realId) === date) return prev;
+            setForwardedMsgIds(prev => {
+              if (prev.get(viewedRfc) === date) return prev;
               const next = new Map(prev);
-              next.set(realId, date);
-              try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+              next.set(viewedRfc, date);
+              try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
               return next;
             });
             setThreadMeta(prev => ({
@@ -1359,11 +1365,23 @@ export default function EmailTriagePage() {
     const { clientId } = pendingRemoveAllocation;
     setRemovingAllocation(true);
     try {
-      await fetch('/api/email/allocate', {
+      const res = await fetch('/api/email/allocate', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ threadId: activeThread.gmailThreadId ?? activeThread.id, clientId }),
       });
+      // Cross-mailbox allocations made by another user can only be removed by an
+      // admin. The server returns 403 admin_required (nothing removed) or, when
+      // the caller removed their own row but a colleague's remains, partial:true.
+      const payload = await res.json().catch(() => ({} as { message?: string; partial?: boolean }));
+      if (res.status === 403) {
+        showToast('error', payload.message || 'Only an admin can change another user’s client assignment for an email.');
+        setPendingRemoveAllocation(null);
+        return;
+      }
+      if (payload.partial && payload.message) {
+        showToast('success', payload.message);
+      }
       await openThread(activeThread);
       const remaining = (threadDetail?.allocations ?? []).filter(a => a.client_id !== clientId);
       setThreadMeta(prev => {
@@ -1509,7 +1527,16 @@ export default function EmailTriagePage() {
     }
   }
 
-  function handleForwardSent(originalThreadId: string) {
+  // RFC Message-ID of the message the user is currently viewing/actioning, used
+  // to record replied/forwarded per email. Prefers the exact viewed message
+  // (flat view) and falls back to the latest message in the open conversation.
+  function viewedRfcMessageId(): string {
+    const msgs = threadDetail?.messages ?? [];
+    const viewed = activeThread ? msgs.find(m => m.id === activeThread.id) : undefined;
+    return (viewed?.messageId || msgs[msgs.length - 1]?.messageId || '');
+  }
+
+  function handleForwardSent(_originalThreadId: string) {
     // Immediately show forwarded chip in the list for the active thread
     if (activeThread) {
       setThreadMeta(prev => ({
@@ -1517,11 +1544,13 @@ export default function EmailTriagePage() {
         [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isForwarded: true },
       }));
     }
+    const rfc = viewedRfcMessageId();
+    if (!rfc) return;
     const sentAt = new Date().toISOString();
-    setForwardedThreadIds(prev => {
+    setForwardedMsgIds(prev => {
       const next = new Map(prev);
-      next.set(originalThreadId, sentAt);
-      try { localStorage.setItem('email-forwarded-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+      next.set(rfc, sentAt);
+      try { localStorage.setItem('email-forwarded-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
   }
@@ -1536,7 +1565,7 @@ export default function EmailTriagePage() {
     });
   }
 
-  function handleReplySent(originalThreadId: string) {
+  function handleReplySent(_originalThreadId: string) {
     // Immediately show replied chip in the list for the active thread
     if (activeThread) {
       setThreadMeta(prev => ({
@@ -1544,11 +1573,13 @@ export default function EmailTriagePage() {
         [activeThread.id]: { ...(prev[activeThread.id] ?? { hasAllocation: false, hasTaskLink: false }), isReplied: true },
       }));
     }
+    const rfc = viewedRfcMessageId();
+    if (!rfc) return;
     const sentAt = new Date().toISOString();
-    setRepliedThreadIds(prev => {
+    setRepliedMsgIds(prev => {
       const next = new Map(prev);
-      next.set(originalThreadId, sentAt);
-      try { localStorage.setItem('email-replied-ids', JSON.stringify([...next])); } catch { /* ignore */ }
+      next.set(rfc, sentAt);
+      try { localStorage.setItem('email-replied-msgids', JSON.stringify([...next])); } catch { /* ignore */ }
       return next;
     });
   }
@@ -1761,60 +1792,93 @@ export default function EmailTriagePage() {
     }).catch(() => {});
   }
 
-  // Drag-and-drop: an email row dropped onto a sidebar folder/label.
-  function handleDropToLabel(threadId: string, label: GmailLabel) {
-    const t = threads.find(x => x.id === threadId);
-    const gmailId = t?.gmailThreadId ?? threadId;
-
-    const removeFromList = () => {
-      setThreads(prev => prev.filter(x => x.id !== threadId));
-      if (activeThread?.id === threadId) { setActiveThread(null); setThreadDetail(null); }
+  // Drag-and-drop: one or more email rows dropped onto a folder/label tab.
+  // Accepts an array so a multi-selection moves/labels every selected email.
+  function handleDropToLabel(threadIds: string[], label: GmailLabel) {
+    if (threadIds.length === 0) return;
+    const n = threadIds.length;
+    const many = n > 1;
+    // Resolve Gmail thread ids up front — later closures (undo) run after the
+    // rows have been removed from state, so we can't look them up then.
+    const gmailIdMap = new Map(threadIds.map(id => [id, threads.find(x => x.id === id)?.gmailThreadId ?? id]));
+    const gmailIdOf = (id: string) => gmailIdMap.get(id) ?? id;
+    const modify = (gmailId: string, addLabelIds: string[], removeLabelIds: string[]) =>
+      fetch('/api/email/modify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: gmailId, addLabelIds, removeLabelIds }),
+      }).catch(() => {});
+    const removeFromList = (ids: string[]) => {
+      const set = new Set(ids);
+      setThreads(prev => prev.filter(x => !set.has(x.id)));
+      if (activeThread && set.has(activeThread.id)) { setActiveThread(null); setThreadDetail(null); }
     };
 
     if (label.id === 'STARRED') {
-      handleListStar(threadId, true);
-      showToast('success', 'Starred');
+      threadIds.forEach(id => handleListStar(id, true));
+      showToast('success', many ? `Starred ${n}` : 'Starred');
       return;
     }
     if (label.id === 'TRASH') {
-      handleListDelete(threadId);
-      showToast('success', 'Moved to Trash');
+      threadIds.forEach(id => handleListDelete(id));
+      showToast('success', many ? `Moved ${n} to Trash` : 'Moved to Trash');
       return;
     }
     if (label.id === 'SPAM') {
-      onInboxEmailRemoved(t);
-      markPendingTrash([threadId]);
-      removeFromList();
-      fetch('/api/email/modify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: gmailId, addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] }),
-      }).catch(() => {});
-      showToast('success', 'Marked as spam');
+      threadIds.forEach(id => { onInboxEmailRemoved(threads.find(x => x.id === id)); modify(gmailIdOf(id), ['SPAM'], ['INBOX']); });
+      markPendingTrash(threadIds);
+      removeFromList(threadIds);
+      showToast('success', many ? `Marked ${n} as spam` : 'Marked as spam');
       return;
     }
     if (label.id === 'INBOX') {
-      fetch('/api/email/modify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: gmailId, addLabelIds: ['INBOX'], removeLabelIds: ['SPAM'] }),
-      }).catch(() => {});
-      showToast('success', 'Moved to Inbox');
+      threadIds.forEach(id => modify(gmailIdOf(id), ['INBOX'], ['SPAM']));
+      showToast('success', many ? `Moved ${n} to Inbox` : 'Moved to Inbox');
       return;
     }
     if (label.type === 'user') {
-      // Apply the label; the email stays in the list (labelling doesn't archive).
-      setThreads(prev => prev.map(x => x.id === threadId
-        ? { ...x, labelIds: Array.from(new Set([...x.labelIds, label.id])) }
-        : x));
-      fetch('/api/email/modify', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: gmailId, addLabelIds: [label.id] }),
-      }).catch(() => {});
-      showToast('success', `Labelled "${label.name}"`, () => {
-        fetch('/api/email/modify', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ threadId: gmailId, removeLabelIds: [label.id] }),
-        }).catch(() => {});
-        showToast('success', `Removed "${label.name}"`);
+      // Dragging onto a user label MOVES it (Gmail-style): apply the label AND
+      // remove from the Inbox, then drop the row. (Just tagging without moving is
+      // the label icon above the email / the context panel — handlePanelAddLabel.)
+      // Emails not in the Inbox (e.g. viewing Sent) are only tagged — nothing to
+      // archive out of.
+      const movable: string[] = [];
+      const taggable: string[] = [];
+      for (const id of threadIds) {
+        const t = threads.find(x => x.id === id);
+        const inInbox = t?.labelIds.includes('INBOX') ?? (activeLabel === 'INBOX');
+        (inInbox ? movable : taggable).push(id);
+      }
+      // Move: archive into the label.
+      movable.forEach(id => { onInboxEmailRemoved(threads.find(x => x.id === id)); modify(gmailIdOf(id), [label.id], ['INBOX']); });
+      if (movable.length) { markPendingTrash(movable); removeFromList(movable); }
+      // Tag: apply the label, leave in place.
+      if (taggable.length) {
+        const set = new Set(taggable);
+        setThreads(prev => prev.map(x => set.has(x.id) ? { ...x, labelIds: Array.from(new Set([...x.labelIds, label.id])) } : x));
+        taggable.forEach(id => modify(gmailIdOf(id), [label.id], []));
+      }
+      const moved = movable.length, tagged = taggable.length;
+      const msg = moved && tagged
+        ? `Moved ${moved}, labelled ${tagged}`
+        : moved
+          ? (moved > 1 ? `Moved ${moved} to "${label.name}"` : `Moved to "${label.name}"`)
+          : (tagged > 1 ? `Labelled ${tagged} "${label.name}"` : `Labelled "${label.name}"`);
+      showToast('success', msg, async () => {
+        // Undo: restore moved emails to the Inbox + strip the label, and un-label
+        // the tagged ones. Optimistically clear the label chip on any still-
+        // visible (tagged) rows, and AWAIT the Gmail changes before refetching so
+        // the reappearing moved rows don't come back still carrying the label.
+        if (movable.length) unmarkPendingTrash(movable);
+        if (taggable.length) {
+          const set = new Set(taggable);
+          setThreads(prev => prev.map(x => set.has(x.id) ? { ...x, labelIds: x.labelIds.filter(l => l !== label.id) } : x));
+        }
+        await Promise.all([
+          ...movable.map(id => modify(gmailIdOf(id), ['INBOX'], [label.id])),
+          ...taggable.map(id => modify(gmailIdOf(id), [], [label.id])),
+        ]);
+        if (movable.length) fetchThreads(activeLabel);
+        showToast('success', 'Undone');
       });
       return;
     }
@@ -2368,8 +2432,8 @@ export default function EmailTriagePage() {
           loadingMore={loadingMore}
           pinnedIds={pinnedIds}
           onPin={handlePin}
-          forwardedThreadIds={forwardedThreadIds}
-          repliedThreadIds={repliedThreadIds}
+          forwardedMsgIds={forwardedMsgIds}
+          repliedMsgIds={repliedMsgIds}
           unreadOnly={unreadOnly}
           onUnreadOnlyChange={v => { setUnreadOnly(v); }}
           taskLinkedOnly={taskLinkedOnly}

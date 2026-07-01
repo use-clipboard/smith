@@ -27,11 +27,14 @@ export default function GlobalComposeWindow() {
     notifySent({ threadId, originalThreadId: null, kind: 'fresh' });
   }
   function handleReplySent(originalThreadId: string) {
-    rememberLocally('email-replied-ids', originalThreadId);
+    // Replied/forwarded status is now tracked per email (by RFC Message-ID) by
+    // the triage page's EMAIL_SENT_EVENT handler and, definitively, by the
+    // server's reply-chain analysis when the thread is next opened. We only
+    // fire the event here — no thread-keyed localStorage (that flagged whole
+    // conversations as replied when only one message was).
     notifySent({ threadId: originalThreadId, originalThreadId, kind: 'reply' });
   }
   function handleForwardSent(originalThreadId: string) {
-    rememberLocally('email-forwarded-ids', originalThreadId);
     notifySent({ threadId: originalThreadId, originalThreadId, kind: 'forward' });
   }
   function handleDiscarded() {
@@ -86,16 +89,6 @@ export default function GlobalComposeWindow() {
       onDraftCreated={handleDraftCreated}
     />
   );
-}
-
-function rememberLocally(key: string, id: string) {
-  try {
-    const raw = localStorage.getItem(key);
-    const arr: [string, string][] = raw ? JSON.parse(raw) : [];
-    const map = new Map<string, string>(arr);
-    map.set(id, new Date().toISOString());
-    localStorage.setItem(key, JSON.stringify([...map]));
-  } catch { /* ignore */ }
 }
 
 function notifySent(detail: SentDetail) {

@@ -28,9 +28,22 @@ const SYSTEM_TABS: { id: string; name: string; icon: React.ElementType }[] = [
 /** System folders an email can be dropped onto (star / mark spam / trash / un-archive). */
 const DROP_SYSTEM = ['STARRED', 'SPAM', 'TRASH', 'INBOX'];
 
-/** Read the dragged email's thread id from a drop event. */
-function draggedThreadId(e: React.DragEvent): string {
-  return e.dataTransfer.getData('application/x-smith-email') || e.dataTransfer.getData('text/plain');
+/** Read the dragged email thread id(s) from a drop event. Prefers the
+ *  multi-select payload (`application/x-smith-emails` = JSON array) so dropping
+ *  a selection moves/labels every selected email; falls back to the single id. */
+function draggedThreadIds(e: React.DragEvent): string[] {
+  const multi = e.dataTransfer.getData('application/x-smith-emails');
+  if (multi) {
+    try {
+      const arr = JSON.parse(multi) as unknown;
+      if (Array.isArray(arr)) {
+        const ids = arr.filter((x): x is string => typeof x === 'string');
+        if (ids.length) return ids;
+      }
+    } catch { /* fall through to single */ }
+  }
+  const single = e.dataTransfer.getData('application/x-smith-email') || e.dataTransfer.getData('text/plain');
+  return single ? [single] : [];
 }
 
 interface Props {
@@ -40,7 +53,7 @@ interface Props {
   onLabelCreated: (label: GmailLabel) => void;
   onCompose: () => void;
   onRules: () => void;
-  onDropThread?: (threadId: string, label: GmailLabel) => void;
+  onDropThread?: (threadIds: string[], label: GmailLabel) => void;
   /** Extra controls rendered in the right group, before the Rules button
    *  (e.g. the client/sender/time filter bar). */
   rightExtra?: React.ReactNode;
@@ -107,9 +120,9 @@ export default function EmailTopTabs({
             onDragLeave={droppable ? () => setDragOverId(p => (p === t.id ? null : p)) : undefined}
             onDrop={droppable ? e => {
               e.preventDefault();
-              const tid = draggedThreadId(e);
+              const tids = draggedThreadIds(e);
               const l = byId(t.id);
-              if (tid && l) onDropThread!(tid, l);
+              if (tids.length && l) onDropThread!(tids, l);
               setDragOverId(null);
             } : undefined}
             className={`${tabBase} ${active ? tabActive : tabIdle} ${dragOverId === t.id ? 'ring-2 ring-[var(--accent)]' : ''}`}
@@ -150,7 +163,7 @@ export default function EmailTopTabs({
                   onClick={() => { onSelectLabel(l.id); labelsMenu.setOpen(false); }}
                   onDragOver={onDropThread ? e => { e.preventDefault(); if (dragOverId !== l.id) setDragOverId(l.id); } : undefined}
                   onDragLeave={onDropThread ? () => setDragOverId(p => (p === l.id ? null : p)) : undefined}
-                  onDrop={onDropThread ? e => { e.preventDefault(); const tid = draggedThreadId(e); if (tid) onDropThread(tid, l); setDragOverId(null); labelsMenu.setOpen(false); } : undefined}
+                  onDrop={onDropThread ? e => { e.preventDefault(); const tids = draggedThreadIds(e); if (tids.length) onDropThread(tids, l); setDragOverId(null); labelsMenu.setOpen(false); } : undefined}
                   className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--bg-nav-hover)] ${activeLabel === l.id ? 'text-[var(--accent)] font-medium' : 'text-[var(--text-primary)]'} ${dragOverId === l.id ? 'bg-[var(--accent-light)]' : ''}`}
                 >
                   <Tag size={11} className="shrink-0 text-[var(--text-muted)]" />
