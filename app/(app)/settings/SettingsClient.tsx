@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -10,6 +10,7 @@ import DeleteFirmSection from '@/components/features/settings/DeleteFirmSection'
 import PreferencesTab from './tabs/PreferencesTab';
 import DashboardSettingsTab from './tabs/DashboardSettingsTab';
 import ModulesTab from './tabs/ModulesTab';
+import TiersTab from './tabs/TiersTab';
 import BillingTab from './tabs/BillingTab';
 import TeamTab from './tabs/TeamTab';
 import ApiKeySettings from '@/components/features/settings/ApiKeySettings';
@@ -26,7 +27,7 @@ import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
 
 interface Props {
   userId: string;
@@ -74,7 +75,7 @@ export default function SettingsClient({
   const resolvedTab = (rawTab === 'appearance' ? 'preferences' : rawTab) as Tab | null;
   const initialTab: Tab = resolvedTab ?? 'preferences';
   const [activeTab, setActiveTab] = useState<Tab>(
-    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'billing' ? 'preferences' : initialTab)
+    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'tiers' || initialTab === 'billing' ? 'preferences' : initialTab)
   );
 
   const [displayName, setDisplayName] = useState(userName);
@@ -103,7 +104,10 @@ export default function SettingsClient({
     { id: 'account' as Tab,     label: 'Account',     icon: Building2,         adminOnly: false, hidden: false, group: 'general' as TabGroup },
     { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true,  hidden: false, group: 'general' as TabGroup },
-    { id: 'modules' as Tab,     label: 'Tool Enabling', icon: Puzzle,          adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'tiers' as Tab,       label: 'Plan & Tiers', icon: Layers,           adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    // Tool Enabling is now dictated by the tier — hidden from the nav, kept as an
+    // internal granular override reachable via ?tab=modules.
+    { id: 'modules' as Tab,     label: 'Tool Enabling', icon: Puzzle,          adminOnly: true,  hidden: true,  group: 'general' as TabGroup },
     { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
@@ -562,14 +566,19 @@ export default function SettingsClient({
         </div>
       )}
 
-      {/* Modules tab — admin only */}
+      {/* Plan & Tiers — admin only */}
+      {activeTab === 'tiers' && isAdmin && (
+        <TiersTab subscriptionTier={subscriptionTier} initialActiveModules={activeModules} initialSeatCount={seatCount} />
+      )}
+
+      {/* Tool Enabling — hidden from nav; internal granular override (URL only) */}
       {activeTab === 'modules' && isAdmin && (
-        <ModulesTab initialActiveModules={activeModules} />
+        <ModulesTab initialActiveModules={activeModules} subscriptionTier={subscriptionTier} />
       )}
 
       {/* Billing tab — admin only */}
       {activeTab === 'billing' && isAdmin && (
-        <BillingTab initialActiveModules={activeModules} initialSeatCount={seatCount} />
+        <BillingTab initialActiveModules={activeModules} initialSeatCount={seatCount} subscriptionTier={subscriptionTier} />
       )}
 
       {/* Calendar tab — available to all users when module is active */}

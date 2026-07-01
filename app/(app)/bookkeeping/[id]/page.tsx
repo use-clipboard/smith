@@ -8,10 +8,10 @@ export default async function BookPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
-  if (!canAccessBookkeeping(user)) redirect('/bookkeeping');
 
   const ctx = await getUserContext();
   if (!ctx) redirect('/login');
+  if (!canAccessBookkeeping(ctx.activeModules)) redirect('/bookkeeping');
 
   // Author name travels with whiteboard notes so the UI can show "Posted by …"
   // without per-render joins. Fall back to email if the profile has no name.

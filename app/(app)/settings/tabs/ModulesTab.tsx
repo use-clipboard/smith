@@ -4,17 +4,21 @@ import { useState } from 'react';
 import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  Check, Loader2, AlertTriangle, Puzzle, Info, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
-  HeartHandshake, FileSignature, CalendarCheck,
+  Check, Loader2, AlertTriangle, Puzzle, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
+  HeartHandshake, FileSignature, CalendarCheck, BookCopy,
 } from 'lucide-react';
 import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
 
-// Map iconName strings to lucide components
+// Hidden from the settings nav (see SettingsClient) — tools are dictated by the
+// firm's tier now. Kept as an internal granular override reachable via
+// ?tab=modules, and because it's the source of truth for how active_modules
+// composes. Writes directly to active_modules via /api/firms/modules.
+
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
-  HeartHandshake, FileSignature, CalendarCheck,
+  HeartHandshake, FileSignature, CalendarCheck, BookCopy,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -23,47 +27,24 @@ function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
   return <Icon size={size} />;
 }
 
-function formatPrice(pence: number): string {
-  if (pence === 0) return 'Included';
-  return `£${(pence / 100).toFixed(0)}/mo`;
-}
-
-interface ModuleCardProps {
+function ModuleCard({ module, isActive, onToggle, saving }: {
   module: ModuleConfig;
   isActive: boolean;
   onToggle: (id: string, active: boolean) => void;
   saving: boolean;
-}
-
-function ModuleCard({ module, isActive, onToggle, saving }: ModuleCardProps) {
-  const enhancedByNames = (module.enhancedBy ?? []).map(id => {
-    const m = MODULES.find(m => m.id === id);
-    return m?.name ?? id;
-  });
-
+}) {
   return (
-    <div
-      className={`glass-solid rounded-xl border flex flex-col transition-all duration-150
-        ${isActive
-          ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]'
-          : 'border-[var(--border)]'
-        }`}
-    >
-      {/* Card body */}
+    <div className={`glass-solid rounded-xl border flex flex-col transition-all duration-150
+        ${isActive ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)]'}`}>
       <div className="p-4 flex flex-col gap-3 flex-1">
-
-        {/* Header row: icon + name + status badge */}
         <div className="flex items-center gap-3">
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0
-            ${isActive ? 'bg-[var(--accent-light)]' : 'bg-[var(--bg-nav-hover)]'}`}
-          >
+            ${isActive ? 'bg-[var(--accent-light)]' : 'bg-[var(--bg-nav-hover)]'}`}>
             <span className={isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}>
               <ModuleIcon name={module.iconName} size={17} />
             </span>
           </div>
-          <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight flex-1 min-w-0">
-            {module.name}
-          </p>
+          <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight flex-1 min-w-0">{module.name}</p>
           {isActive ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shrink-0">
               <Check size={10} strokeWidth={2.5} /> Active
@@ -74,29 +55,9 @@ function ModuleCard({ module, isActive, onToggle, saving }: ModuleCardProps) {
             </span>
           )}
         </div>
-
-        {/* Description */}
-        <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-          {module.description}
-        </p>
-
-        {/* Works best with */}
-        {enhancedByNames.length > 0 && (
-          <p className="text-[11px] text-[var(--text-muted)] flex items-center gap-1">
-            <Info size={10} className="shrink-0 text-[var(--accent)]" />
-            Works best with:{' '}
-            <span className="font-medium text-[var(--text-secondary)]">
-              {enhancedByNames.join(', ')}
-            </span>
-          </p>
-        )}
+        <p className="text-xs text-[var(--text-muted)] leading-relaxed">{module.description}</p>
       </div>
-
-      {/* Footer: price + toggle */}
-      <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border)]">
-        <span className="text-xs font-semibold text-[var(--text-secondary)]">
-          {formatPrice(module.monthlyPricePence)}
-        </span>
+      <div className="flex items-center justify-end px-4 py-3 border-t border-[var(--border)]">
         <button
           type="button"
           onClick={() => onToggle(module.id, !isActive)}
@@ -106,8 +67,7 @@ function ModuleCard({ module, isActive, onToggle, saving }: ModuleCardProps) {
           aria-label={isActive ? `Deactivate ${module.name}` : `Activate ${module.name}`}
         >
           <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5
-            ${isActive ? 'translate-x-5' : 'translate-x-0'}`}
-          />
+            ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
         </button>
       </div>
     </div>
@@ -116,6 +76,8 @@ function ModuleCard({ module, isActive, onToggle, saving }: ModuleCardProps) {
 
 interface Props {
   initialActiveModules: string[];
+  /** Present for the SettingsClient call signature; not used here. */
+  subscriptionTier?: string;
 }
 
 export default function ModulesTab({ initialActiveModules }: Props) {
@@ -125,8 +87,7 @@ export default function ModulesTab({ initialActiveModules }: Props) {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const optionalModules = MODULES.filter(m => !m.alwaysOn);
-  // Group modules by their functional group, preserving MODULE_GROUPS order.
-  const groupedModules: { group: typeof MODULE_GROUPS[number]; modules: ModuleConfig[] }[] = MODULE_GROUPS
+  const groupedModules = MODULE_GROUPS
     .map(group => ({ group, modules: optionalModules.filter(m => m.group === group.id) }))
     .filter(g => g.modules.length > 0);
   const ungrouped = optionalModules.filter(m => !m.group);
@@ -135,11 +96,9 @@ export default function ModulesTab({ initialActiveModules }: Props) {
     const next = shouldBeActive
       ? [...new Set([...activeModules, moduleId])]
       : activeModules.filter(id => id !== moduleId);
-
     setActiveModules(next);
     setSaving(true);
     setSaveError(null);
-
     try {
       const res = await fetch('/api/firms/modules', {
         method: 'PATCH',
@@ -161,17 +120,15 @@ export default function ModulesTab({ initialActiveModules }: Props) {
 
   return (
     <div className="space-y-6">
-
-      {/* Header bar */}
       <div className="glass-solid rounded-xl p-5">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-[var(--accent-light)] flex items-center justify-center shrink-0">
             <Puzzle size={16} className="text-[var(--accent)]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Manage Tools</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tool Enabling (internal override)</h3>
             <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
-              Activate the tools your firm needs. Inactive tools are hidden from the sidebar and Quick Launch.
+              Granular per-tool control. Customer firms get their tools from their tier — this is an internal override.
             </p>
           </div>
           <div className="shrink-0 pl-4">
@@ -187,7 +144,6 @@ export default function ModulesTab({ initialActiveModules }: Props) {
             )}
           </div>
         </div>
-
         {saveError && (
           <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
             <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
@@ -196,49 +152,30 @@ export default function ModulesTab({ initialActiveModules }: Props) {
         )}
       </div>
 
-      {/* Grouped modules — one section per functional group */}
       {groupedModules.map(({ group, modules }) => (
         <div key={group.id}>
           <div className="mb-3 px-1">
-            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-              {group.label}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)]">{group.label}</p>
             <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{group.description}</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {modules.map(module => (
-              <ModuleCard
-                key={module.id}
-                module={module}
-                isActive={activeModules.includes(module.id)}
-                onToggle={handleToggle}
-                saving={saving}
-              />
+              <ModuleCard key={module.id} module={module} isActive={activeModules.includes(module.id)} onToggle={handleToggle} saving={saving} />
             ))}
           </div>
         </div>
       ))}
 
-      {/* Fallback for any module that hasn't been assigned a group yet */}
       {ungrouped.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">
-            Other
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">Other</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {ungrouped.map(module => (
-              <ModuleCard
-                key={module.id}
-                module={module}
-                isActive={activeModules.includes(module.id)}
-                onToggle={handleToggle}
-                saving={saving}
-              />
+              <ModuleCard key={module.id} module={module} isActive={activeModules.includes(module.id)} onToggle={handleToggle} saving={saving} />
             ))}
           </div>
         </div>
       )}
-
     </div>
   );
 }

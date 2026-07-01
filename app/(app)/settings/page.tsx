@@ -79,7 +79,7 @@ export default async function SettingsPage() {
       emailTriageModuleActive={activeModules.includes('email-triage')}
       hrModuleActive={activeModules.includes('hr')}
       proposalsModuleActive={activeModules.includes('proposals')}
-      bookkeepingActive={canAccessBookkeeping(user)}
+      bookkeepingActive={canAccessBookkeeping(activeModules)}
       documentVaultActive={activeModules.includes('document-vault')}
       emailSenderName={emailSenderName}
       emailSenderAddress={emailSenderAddress}

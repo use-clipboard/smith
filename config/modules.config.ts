@@ -75,9 +75,9 @@ export const MODULES: ModuleConfig[] = [
     description: 'Full double-entry bookkeeping — transactions, VAT returns, bank reconciliation, fixed assets, charity funds, recurring entries, year-end close and reports. VT Transaction+ inspired.',
     iconName: 'BookCopy',
     route: '/bookkeeping',
-    // Released 2026-06-29 to the whole firm. For the public SaaS rollout, set
-    // alwaysOn:false + a monthlyPricePence to make it a per-firm paid module.
-    alwaysOn: true,
+    // Part of the Compliance tier (public pricing). Gated per-firm via
+    // active_modules + canAccessBookkeeping — see lib/bookkeeping/access.ts.
+    alwaysOn: false,
     monthlyPricePence: 0,
     category: 'tool',
     group: 'bookkeeping',
@@ -326,10 +326,56 @@ export const OPTIONAL_MODULE_IDS = MODULES
   .filter(m => !m.alwaysOn)
   .map(m => m.id);
 
-/** Pricing for seats (monthly, per seat, in pence) */
+/** Pricing for seats (monthly, per seat, in pence). Legacy — superseded by the
+ *  per-tier PLAN_PRICE_PENCE below now that billing is tier-based. */
 export const SEAT_PRICE_PENCE = 900; // £9/seat/month
 
 /** Get a module config by ID */
 export function getModule(id: string): ModuleConfig | undefined {
   return MODULES.find(m => m.id === id);
 }
+
+// ─── Customer tiers (public pricing) ──────────────────────────────────────────
+// Two tiers replace à la carte module selection. A tier is simply a preset that
+// fills a firm's `active_modules`, so all existing gating (isModuleActiveForFirm)
+// keeps working unchanged. 'internal' = the firm(s) we run ourselves = everything.
+
+export type PlanId = 'internal' | 'compliance' | 'practice';
+
+/** Compliance-tier tools (also included in Practice). */
+const COMPLIANCE_MODULE_IDS = [
+  'bookkeeping', 'full-analysis', 'bank-to-csv', 'landlord', 'final-accounts',
+  'performance', 'p32', 'risk-assessment', 'summarise', 'mtd-it',
+  'ch-secretarial', 'google-drive',
+];
+/** Tools that Practice adds on top of Compliance. */
+const PRACTICE_ONLY_MODULE_IDS = [
+  'tasks', 'document-vault', 'policies', 'meeting-notes', 'staff-hire',
+  'hr', 'proposals', 'email-triage', 'google-calendar',
+];
+
+/** Module IDs included in each customer tier. */
+export const PLAN_MODULES: Record<'compliance' | 'practice', string[]> = {
+  compliance: COMPLIANCE_MODULE_IDS,
+  practice: [...COMPLIANCE_MODULE_IDS, ...PRACTICE_ONLY_MODULE_IDS],
+};
+
+/** The `active_modules` a firm on `plan` should have. 'internal' (and any
+ *  unknown value) = full access to every optional module. */
+export function modulesForPlan(plan: PlanId | string): string[] {
+  if (plan === 'compliance') return PLAN_MODULES.compliance;
+  if (plan === 'practice') return PLAN_MODULES.practice;
+  return OPTIONAL_MODULE_IDS;
+}
+
+/** Per-user monthly price (pence) for each customer tier. */
+export const PLAN_PRICE_PENCE: Record<'compliance' | 'practice', number> = {
+  compliance: 10000, // £100 / user / month
+  practice: 15000,   // £150 / user / month
+};
+
+export const PLAN_LABELS: Record<string, string> = {
+  internal: 'Internal (full access)',
+  compliance: 'Compliance',
+  practice: 'Practice',
+};

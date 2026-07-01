@@ -13,8 +13,8 @@ export interface BookkeepingContext extends UserContext {
 export async function getBookkeepingContext(): Promise<BookkeepingContext | null> {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !canAccessBookkeeping(user)) return null;
+  if (!user) return null;
   const ctx = await getUserContext();
-  if (!ctx) return null;
+  if (!ctx || !canAccessBookkeeping(ctx.activeModules)) return null;
   return { ...ctx, email: user.email ?? '' };
 }

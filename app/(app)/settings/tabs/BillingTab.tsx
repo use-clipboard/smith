@@ -1,170 +1,90 @@
 'use client';
 
-import { useState } from 'react';
-import {
-  CreditCard, Users, Loader2, AlertTriangle, Info, Check,
-} from 'lucide-react';
-import {
-  MODULES, SEAT_PRICE_PENCE, type ModuleConfig,
-} from '@/config/modules.config';
+import { CreditCard, Info, Receipt, CalendarClock, Layers } from 'lucide-react';
+import { PLAN_PRICE_PENCE, PLAN_LABELS } from '@/config/modules.config';
 
 function formatPrice(pence: number): string {
-  return `£${(pence / 100).toFixed(0)}`;
-}
-
-interface LineItemProps {
-  label: string;
-  sublabel?: string;
-  price: number;
-}
-
-function LineItem({ label, sublabel, price }: LineItemProps) {
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b border-[var(--border)] last:border-0">
-      <div>
-        <p className="text-sm text-[var(--text-primary)]">{label}</p>
-        {sublabel && <p className="text-xs text-[var(--text-muted)] mt-0.5">{sublabel}</p>}
-      </div>
-      <p className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">
-        {formatPrice(price)}<span className="text-xs font-normal text-[var(--text-muted)]">/mo</span>
-      </p>
-    </div>
-  );
+  return `£${(pence / 100).toLocaleString('en-GB')}`;
 }
 
 interface Props {
   initialActiveModules: string[];
   initialSeatCount: number;
+  subscriptionTier: string;
 }
 
-export default function BillingTab({ initialActiveModules, initialSeatCount }: Props) {
-  const [seatCount, setSeatCount] = useState(initialSeatCount);
-  const [savingSeats, setSavingSeats] = useState(false);
-  const [seatSaved, setSeatSaved] = useState(false);
-  const [seatError, setSeatError] = useState<string | null>(null);
-
-  // Only optional modules that are currently active
-  const activeModuleDetails = MODULES.filter(
-    m => !m.alwaysOn && initialActiveModules.includes(m.id)
-  );
-
-  const modulesTotal = activeModuleDetails.reduce((sum, m) => sum + m.monthlyPricePence, 0);
-  const seatsTotal = seatCount * SEAT_PRICE_PENCE;
-  const grandTotal = modulesTotal + seatsTotal;
-
-  async function handleSaveSeats() {
-    setSavingSeats(true);
-    setSeatError(null);
-    try {
-      const res = await fetch('/api/firms/modules', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activeModules: initialActiveModules, seatCount }),
-      });
-      if (!res.ok) {
-        const e = await res.json();
-        throw new Error(e.message || 'Failed to save');
-      }
-      setSeatSaved(true);
-      setTimeout(() => setSeatSaved(false), 2500);
-    } catch (err) {
-      setSeatError(err instanceof Error ? err.message : 'Failed to save seat count');
-    } finally {
-      setSavingSeats(false);
-    }
-  }
+export default function BillingTab({ initialSeatCount, subscriptionTier }: Props) {
+  const plan = subscriptionTier;
+  const isInternal = plan === 'internal';
+  const perUser = plan === 'compliance' ? PLAN_PRICE_PENCE.compliance : plan === 'practice' ? PLAN_PRICE_PENCE.practice : 0;
+  const nextAmount = perUser * initialSeatCount;
 
   return (
     <div className="space-y-5">
-      {/* Read-only notice */}
+      {/* Not-yet-active notice */}
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
         <Info size={13} className="shrink-0 mt-0.5" />
         <span>
-          This is a <strong>billing estimate only</strong> — actual payments are not configured yet.
-          Stripe billing will be set up in Phase 2. Pricing shown is indicative and subject to change.
+          Billing isn&apos;t active yet — you won&apos;t be charged. Card payments and invoicing go live in Phase 2 (Stripe).
+          To change your plan or seats, use <strong>Settings → Plan &amp; Tiers</strong>.
         </span>
       </div>
 
-      {/* Seats */}
-      <div className="glass-solid rounded-xl p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <Users size={15} className="text-[var(--accent)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">User Seats</h3>
+      {isInternal ? (
+        <div className="glass-solid rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Layers size={15} className="text-[var(--accent)]" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Internal plan</h3>
+          </div>
+          <p className="text-sm text-[var(--text-muted)]">Your firm has full access to every tool and isn&apos;t billed.</p>
         </div>
-        <p className="text-xs text-[var(--text-muted)]">
-          Set the number of staff seats for your firm. Each additional seat is{' '}
-          <strong>{formatPrice(SEAT_PRICE_PENCE)}/month</strong>.
-        </p>
-        <div className="flex items-center gap-3">
-          <input
-            type="number"
-            min={1}
-            max={500}
-            value={seatCount}
-            onChange={e => setSeatCount(Math.max(1, parseInt(e.target.value) || 1))}
-            className="input-base w-24 text-center font-mono"
-          />
-          <button
-            onClick={handleSaveSeats}
-            disabled={savingSeats}
-            className="btn-secondary text-sm"
-          >
-            {savingSeats ? (
-              <><Loader2 size={13} className="animate-spin" /> Saving…</>
-            ) : seatSaved ? (
-              <><Check size={13} /> Saved</>
-            ) : (
-              'Update Seats'
-            )}
-          </button>
-          {seatError && (
-            <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-              <AlertTriangle size={12} />
-              {seatError}
-            </p>
-          )}
-        </div>
-      </div>
+      ) : (
+        <>
+          {/* Next invoice */}
+          <div className="glass-solid rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <CalendarClock size={15} className="text-[var(--accent)]" />
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Next Invoice</h3>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-[var(--text-primary)] tabular-nums">{formatPrice(nextAmount)}<span className="text-sm font-normal text-[var(--text-muted)]"> + VAT</span></p>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  {PLAN_LABELS[plan] ?? plan} · {initialSeatCount} {initialSeatCount === 1 ? 'seat' : 'seats'} × {formatPrice(perUser)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">Due</p>
+                <p className="text-sm font-semibold text-[var(--text-primary)]">— <span className="font-normal text-[var(--text-muted)]">(set when billing goes live)</span></p>
+              </div>
+            </div>
+          </div>
 
-      {/* Monthly cost breakdown */}
+          {/* Payment method */}
+          <div className="glass-solid rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <CreditCard size={15} className="text-[var(--accent)]" />
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Payment Method</h3>
+            </div>
+            <p className="text-sm text-[var(--text-muted)] mb-4">No payment method on file. You&apos;ll add a card when billing is activated.</p>
+            <button disabled className="btn-secondary text-sm opacity-60 cursor-not-allowed">
+              Manage billing details
+            </button>
+            <p className="text-[11px] text-[var(--text-muted)] mt-2">Card management opens in the Stripe customer portal once billing is live.</p>
+          </div>
+        </>
+      )}
+
+      {/* Invoice history */}
       <div className="glass-solid rounded-xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <CreditCard size={15} className="text-[var(--accent)]" />
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Estimated Monthly Cost</h3>
+        <div className="flex items-center gap-2 mb-3">
+          <Receipt size={15} className="text-[var(--accent)]" />
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Invoices</h3>
         </div>
-
-        <div className="space-y-0">
-          {activeModuleDetails.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)] py-2">No paid modules active.</p>
-          ) : (
-            activeModuleDetails.map(module => (
-              <LineItem
-                key={module.id}
-                label={module.name}
-                sublabel={module.category === 'integration' ? 'Integration' : 'Tool module'}
-                price={module.monthlyPricePence}
-              />
-            ))
-          )}
-          <LineItem
-            label="User Seats"
-            sublabel={`${seatCount} seat${seatCount !== 1 ? 's' : ''} × ${formatPrice(SEAT_PRICE_PENCE)}`}
-            price={seatsTotal}
-          />
+        <div className="text-center py-6">
+          <p className="text-sm text-[var(--text-muted)]">No invoices yet.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Your SMITH invoices will appear here once billing is active.</p>
         </div>
-
-        {/* Total */}
-        <div className="flex items-center justify-between pt-3 mt-1 border-t-2 border-[var(--border)]">
-          <p className="text-sm font-bold text-[var(--text-primary)]">Estimated Total</p>
-          <p className="text-lg font-bold text-[var(--accent)] tabular-nums">
-            {formatPrice(grandTotal)}<span className="text-xs font-normal text-[var(--text-muted)]">/mo</span>
-          </p>
-        </div>
-
-        <p className="text-xs text-[var(--text-muted)] mt-3">
-          Prices shown exclude VAT. Actual billing configuration and invoicing will be set up in Phase 2.
-          Contact your account manager to discuss enterprise pricing.
-        </p>
       </div>
     </div>
   );
