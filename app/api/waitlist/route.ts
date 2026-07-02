@@ -41,33 +41,36 @@ export async function POST(req: NextRequest) {
 
   const service = createServiceClient();
 
-  // Upsert on the lower(email) unique index — repeat signups are silent no-ops.
-  const { error, data } = await service
-    .from('waitlist')
-    .upsert(
-      {
-        email,
-        firm_name: firmName || null,
-        source: source || null,
-        user_agent: req.headers.get('user-agent')?.slice(0, 500) ?? null,
-      },
-      { onConflict: 'email', ignoreDuplicates: true },
-    )
-    .select('id');
+  // Store a normalised (lowercased) email so the case-insensitive unique index
+  // dedupes reliably. Plain insert — a duplicate raises a unique violation
+  // (23505) which we treat as "already on the list" (success, no email). This
+  // works with the `lower(email)` expression index without an ON CONFLICT
+  // target (which would require a unique index on the bare `email` column).
+  const normalizedEmail = email.toLowerCase();
 
+  const { error } = await service.from('waitlist').insert({
+    email: normalizedEmail,
+    firm_name: firmName || null,
+    source: source || null,
+    user_agent: req.headers.get('user-agent')?.slice(0, 500) ?? null,
+  });
+
+  let isNew = true;
   if (error) {
-    console.error('[waitlist] insert failed:', error.message);
-    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
+    if (error.code === '23505') {
+      // Already subscribed — silent no-op, no duplicate email.
+      isNew = false;
+    } else {
+      console.error('[waitlist] insert failed:', error.message);
+      return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 });
+    }
   }
 
-  // data is empty when the row already existed (ignoreDuplicates). Only send
-  // emails for genuinely new signups.
-  const isNew = Array.isArray(data) && data.length > 0;
   if (isNew) {
     try {
       await Promise.allSettled([
-        sendWaitlistConfirmationEmail({ to: email }),
-        sendWaitlistNotificationEmail({ email, firmName, source }),
+        sendWaitlistConfirmationEmail({ to: normalizedEmail }),
+        sendWaitlistNotificationEmail({ email: normalizedEmail, firmName, source }),
       ]);
     } catch (e) {
       // Never fail the signup because an email didn't send.
