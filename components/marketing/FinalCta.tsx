@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import WaitlistButton from './WaitlistButton';
 
 export default function FinalCta() {
   return (
@@ -12,24 +13,25 @@ export default function FinalCta() {
 
         <div className="relative mx-auto max-w-2xl">
           <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-            Try SMITH for free today
+            Be first to know when SMITH launches
           </h2>
           <p className="mt-4 text-lg text-white/85">
-            Join firms across the UK saving hours every week. No credit card required.
+            SMITH is launching soon for UK accountancy firms. Join the waitlist and we&apos;ll email
+            you the moment it&apos;s ready.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/signup"
+            <WaitlistButton
+              source="marketing_final_cta"
               className="inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 text-sm font-semibold text-primary-700 transition-transform hover:-translate-y-0.5"
             >
-              Start free trial
+              Join the waitlist
               <ArrowRight className="h-4 w-4" />
-            </Link>
+            </WaitlistButton>
             <Link
               href="#video"
               className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-7 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/10"
             >
-              Book a demo
+              See how it works
             </Link>
           </div>
         </div>

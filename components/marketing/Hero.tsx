@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import {
   LayoutDashboard, Mail, Users, ListChecks, Calendar, FileText,
-  TrendingUp, FolderLock, Sparkles, ArrowRight, Star, Check,
+  TrendingUp, FolderLock, Sparkles, ArrowRight, Check,
 } from 'lucide-react';
 import BrowserFrame from './BrowserFrame';
 import AppShot from './AppShot';
 import Reveal from './Reveal';
+import WaitlistButton from './WaitlistButton';
 
 /**
  * Landing hero. Left: headline + CTAs + social proof. Right: a faux SMITH
@@ -22,7 +23,7 @@ export default function Hero() {
           <Reveal delay={0} y={14}>
             <span className="inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3.5 py-1.5 text-xs font-semibold text-primary-700">
               <Sparkles className="h-3.5 w-3.5" />
-              AI-powered workspace for modern firms
+              Launching soon — join the waitlist
             </span>
           </Reveal>
 
@@ -42,49 +43,26 @@ export default function Hero() {
 
           <Reveal delay={270} y={14}>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link
-                href="/signup"
+              <WaitlistButton
+                source="marketing_hero"
                 className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-6 py-3.5 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] transition-all hover:-translate-y-0.5 hover:bg-primary-700"
               >
-                Start free trial
+                Join the waitlist
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </WaitlistButton>
               <Link
                 href="#video"
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-semibold text-slate-700 transition-all hover:border-slate-400 hover:bg-slate-50"
               >
-                Book a demo
+                See how it works
               </Link>
             </div>
           </Reveal>
 
           <Reveal delay={360} y={14}>
-            {/* Social proof */}
-            <div className="mt-9 flex items-center gap-4">
-              <div className="flex -space-x-2.5">
-                {['#c7d2fe', '#a5b4fc', '#818cf8', '#6366f1'].map((c, i) => (
-                  <div
-                    key={i}
-                    className="h-9 w-9 rounded-full border-2 border-white"
-                    style={{ background: c }}
-                  />
-                ))}
-              </div>
-              <div>
-                <div className="flex items-center gap-0.5 text-amber-400">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className="h-3.5 w-3.5 fill-current" />
-                  ))}
-                </div>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  Trusted by <span className="font-semibold text-slate-700">1,000+ accountants</span> across the UK
-                </p>
-              </div>
-            </div>
-
-            {/* Quick trust points */}
-            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-slate-500">
-              {['Free 14-day trial', 'No card required', 'Bank-grade security'].map((t) => (
+            {/* Honest trust points — no unearned social proof pre-launch. */}
+            <div className="mt-9 flex flex-wrap gap-x-5 gap-y-2 text-sm font-medium text-slate-500">
+              {['Built by a UK accountancy firm', 'Your data stays in the UK', 'MTD & VAT built in'].map((t) => (
                 <span key={t} className="inline-flex items-center gap-1.5">
                   <Check className="h-4 w-4 text-emerald-500" />
                   {t}

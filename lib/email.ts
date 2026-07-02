@@ -534,6 +534,67 @@ export interface ProposalReminderEmailOptions {
   customMessage: string | null;
 }
 
+// ─── Waitlist emails (pre-launch marketing) ──────────────────────────────────
+
+/** Confirmation sent to someone who joins the pre-launch waitlist. */
+export async function sendWaitlistConfirmationEmail(opts: { to: string }) {
+  const resend = getResend();
+  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
+  const html = `
+    <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <div style="background:#4F46E5;padding:20px 24px;">
+        <h1 style="color:#fff;margin:0;font-size:18px;font-weight:600;">SMITH — You're on the list</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="color:#111827;font-size:16px;margin:0 0 8px;">Thanks for your interest in SMITH.</p>
+        <p style="color:#374151;font-size:14px;margin:0 0 20px;line-height:1.6;">You've been added to our waitlist. SMITH is the all-in-one AI workspace for accounting firms — built by accountants, for accountants. We're putting the finishing touches to it now, and we'll email you the moment it's open to new firms. No spam in the meantime.</p>
+        <p style="color:#6b7280;font-size:13px;margin:0;">— The SMITH team</p>
+      </div>
+      <div style="padding:16px 24px;border-top:1px solid #e5e7eb;background:#f9fafb;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;">You received this because you asked to be notified when SMITH launches. If that wasn't you, you can ignore this email.</p>
+      </div>
+    </div>
+  `;
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: opts.to,
+    subject: "[SMITH] You're on the waitlist",
+    html,
+  });
+  if (error) throw new Error(`Failed to send waitlist confirmation: ${error.message}`);
+}
+
+/** Internal notification to the team when someone joins the waitlist. */
+export async function sendWaitlistNotificationEmail(opts: { email: string; firmName?: string | null; source?: string | null }) {
+  const resend = getResend();
+  const fromAddress = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
+  const notifyTo = process.env.WAITLIST_NOTIFY_ADDRESS ?? 'hello@smithforaccountants.co.uk';
+  const rows = [
+    ['Email', opts.email],
+    ['Firm', opts.firmName || '—'],
+    ['Source', opts.source || '—'],
+  ]
+    .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#6b7280;font-size:13px;">${k}</td><td style="padding:4px 0;color:#111827;font-size:13px;font-weight:600;">${escapeHtml(v)}</td></tr>`)
+    .join('');
+  const html = `
+    <div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      <div style="background:#4F46E5;padding:16px 24px;">
+        <h1 style="color:#fff;margin:0;font-size:16px;font-weight:600;">New waitlist signup</h1>
+      </div>
+      <div style="padding:20px 24px;">
+        <table style="border-collapse:collapse;">${rows}</table>
+      </div>
+    </div>
+  `;
+  const { error } = await resend.emails.send({
+    from: fromAddress,
+    to: notifyTo,
+    subject: `[SMITH] New waitlist signup: ${opts.email}`,
+    html,
+  });
+  if (error) throw new Error(`Failed to send waitlist notification: ${error.message}`);
+}
+
 export async function sendProposalReminderEmail(opts: ProposalReminderEmailOptions) {
   const firmDefault = await getProposalBody(opts.firmId, 'reminder');
   const messageText = opts.customMessage

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import WaitlistButton from './WaitlistButton';
 
 /**
  * Public marketing top navigation. Transparent over the hero, then fades in a
@@ -47,11 +48,16 @@ export default function MarketingNav() {
     >
       <div className="mx-auto flex h-16 w-full max-w-[1900px] items-center justify-between px-4 sm:px-6 lg:px-10">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="" className="h-8 w-8 rounded-md" />
-          <span className="text-lg font-extrabold tracking-tight text-slate-900">SMITH</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="" className="h-8 w-8 rounded-md" />
+            <span className="text-lg font-extrabold tracking-tight text-slate-900">SMITH</span>
+          </Link>
+          <span className="hidden items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 sm:inline-flex">
+            Coming soon
+          </span>
+        </div>
 
         {/* Desktop links */}
         <nav className="hidden items-center gap-8 md:flex">
@@ -74,12 +80,12 @@ export default function MarketingNav() {
           >
             Log in
           </Link>
-          <Link
-            href="/signup"
+          <WaitlistButton
+            source="marketing_nav"
             className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(79,70,229,0.35)] transition-all hover:-translate-y-0.5 hover:bg-primary-700"
           >
-            Get started free
-          </Link>
+            Join the waitlist
+          </WaitlistButton>
         </div>
 
         {/* Mobile toggle */}
@@ -125,9 +131,12 @@ export default function MarketingNav() {
               <Link href="/login" className="rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
                 Log in
               </Link>
-              <Link href="/signup" className="rounded-lg bg-primary-600 px-3 py-2.5 text-center text-sm font-semibold text-white">
-                Get started free
-              </Link>
+              <WaitlistButton
+                source="marketing_nav_mobile"
+                className="rounded-lg bg-primary-600 px-3 py-2.5 text-center text-sm font-semibold text-white"
+              >
+                Join the waitlist
+              </WaitlistButton>
             </div>
           </nav>
         </div>

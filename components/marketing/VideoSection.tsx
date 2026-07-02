@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Play } from 'lucide-react';
+import WaitlistButton from './WaitlistButton';
 
 /**
  * "See SMITH in action" — a hero welcome video plus a row of short tutorial
@@ -100,12 +101,12 @@ export default function VideoSection() {
             smarter — then short tutorials for every tool, so your team is up and
             running in minutes.
           </p>
-          <a
-            href="/signup"
+          <WaitlistButton
+            source="marketing_video"
             className="mt-7 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] transition-all hover:-translate-y-0.5 hover:bg-primary-700"
           >
-            Start free trial
-          </a>
+            Join the waitlist
+          </WaitlistButton>
         </div>
 
         <VideoFrame clip={WELCOME} large />

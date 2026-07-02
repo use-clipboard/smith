@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import MarketingNav from '@/components/marketing/MarketingNav';
 import MarketingFooter from '@/components/marketing/MarketingFooter';
+import WaitlistProvider from '@/components/marketing/WaitlistProvider';
 
 export const metadata: Metadata = {
   title: 'SMITH — The all-in-one AI workspace for accounting firms',
@@ -25,11 +26,13 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         backgroundAttachment: 'fixed',
       }}
     >
-      <MarketingNav />
-      <main className="mx-auto w-full max-w-[1900px] space-y-5 px-4 pb-16 pt-[88px] sm:px-6 sm:pt-24 lg:px-10">
-        {children}
-      </main>
-      <MarketingFooter />
+      <WaitlistProvider>
+        <MarketingNav />
+        <main className="mx-auto w-full max-w-[1900px] space-y-5 px-4 pb-16 pt-[88px] sm:px-6 sm:pt-24 lg:px-10">
+          {children}
+        </main>
+        <MarketingFooter />
+      </WaitlistProvider>
     </div>
   );
 }

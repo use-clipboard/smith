@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Check, Sparkles } from 'lucide-react';
+import WaitlistButton from './WaitlistButton';
 
 /**
  * Two-tier pricing: Compliance and Practice, priced purely per user with
@@ -191,14 +192,14 @@ export default function PricingCalculator() {
                 </li>
               </ul>
 
-              <a
-                href="/signup"
-                className={`mt-8 inline-flex items-center justify-center rounded-xl px-6 py-3.5 text-sm font-semibold transition-transform hover:-translate-y-0.5 ${
+              <WaitlistButton
+                source={`marketing_pricing_${tier.featured ? 'practice' : 'compliance'}`}
+                className={`mt-8 inline-flex w-full items-center justify-center rounded-xl px-6 py-3.5 text-sm font-semibold transition-transform hover:-translate-y-0.5 ${
                   tier.featured ? 'bg-white text-primary-700' : 'bg-primary-600 text-white'
                 }`}
               >
-                Start free trial
-              </a>
+                Join the waitlist
+              </WaitlistButton>
             </div>
           );
         })}

@@ -1,7 +1,6 @@
 import Panel from '@/components/marketing/Panel';
 import Reveal from '@/components/marketing/Reveal';
 import Hero from '@/components/marketing/Hero';
-import LogoStrip from '@/components/marketing/LogoStrip';
 import ToolsGrid from '@/components/marketing/ToolsGrid';
 import ToolShowcase from '@/components/marketing/ToolShowcase';
 import PainPoints from '@/components/marketing/PainPoints';
@@ -21,12 +20,11 @@ export default function MarketingHomePage() {
         </Panel>
       </Reveal>
 
-      {/* "Everything you need" + trusted logos + pain points share one panel,
-          mirroring the mockup's large lower-left card. */}
+      {/* "Everything you need" + pain points share one panel, mirroring the
+          mockup's large lower-left card. */}
       <Reveal>
         <Panel id="tools">
           <ToolsGrid />
-          <LogoStrip />
           <PainPoints />
         </Panel>
       </Reveal>
