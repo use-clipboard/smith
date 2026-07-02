@@ -62,6 +62,22 @@ function gmailDate(d: Date): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** Drop rows that repeat an `id` (message id in flat view, thread id in grouped
+ *  view — both globally unique per email/conversation). Gmail's paged list can
+ *  occasionally return the same item twice when the mailbox changes mid-walk;
+ *  without this, duplicate React keys break row selection and starring one row
+ *  visibly stars every copy. Keeps the first occurrence (freshest ordering). */
+function dedupeById(list: EmailThreadType[]): EmailThreadType[] {
+  const seen = new Set<string>();
+  const out: EmailThreadType[] = [];
+  for (const t of list) {
+    if (t.id && seen.has(t.id)) continue;
+    if (t.id) seen.add(t.id);
+    out.push(t);
+  }
+  return out;
+}
+
 /** Flatten a thread's messages to plain text for the AI summary (HTML stripped,
  *  each message capped so the prompt stays bounded). */
 function messagesToText(messages: EmailMessage[]): string {
@@ -989,9 +1005,9 @@ export default function EmailTriagePage() {
           };
         });
       if (pageToken) {
-        setThreads(prev => [...prev, ...newThreads]);
+        setThreads(prev => dedupeById([...prev, ...newThreads]));
       } else {
-        setThreads(newThreads);
+        setThreads(dedupeById(newThreads));
       }
       setNextPageToken(data.nextPageToken ?? null);
 

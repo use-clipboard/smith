@@ -309,6 +309,10 @@ export async function GET(req: NextRequest) {
         // page of untriaged conversations is collected (or pages run out).
         let token: string | undefined = pageToken;
         nextPageToken = null;
+        // Track ids already collected — Gmail's paged list can return the same
+        // thread on more than one page when the mailbox changes mid-walk, which
+        // would otherwise surface as duplicate rows in the client.
+        const seen = new Set<string>();
         for (let page = 0; page < UNTRIAGED_SCAN_PAGES; page++) {
           const listRes = await gmailRetry(() => gmail.users.threads.list({
             userId: 'me',
@@ -316,7 +320,11 @@ export async function GET(req: NextRequest) {
             maxResults,
             pageToken: token,
           }));
-          threadItems.push(...(listRes.data.threads ?? []).filter(t => t.id && !categorisedThreadIds!.has(t.id)));
+          for (const t of listRes.data.threads ?? []) {
+            if (!t.id || categorisedThreadIds!.has(t.id) || seen.has(t.id)) continue;
+            seen.add(t.id);
+            threadItems.push(t);
+          }
           token = listRes.data.nextPageToken ?? undefined;
           if (!token || threadItems.length >= maxResults) break;
         }
@@ -385,6 +393,10 @@ export async function GET(req: NextRequest) {
         // categorised, until a full page of untriaged messages is collected.
         let token: string | undefined = pageToken;
         nextPageToken = null;
+        // Track ids already collected — Gmail's paged list can return the same
+        // message on more than one page when the mailbox changes mid-walk, which
+        // would otherwise surface as duplicate rows in the client.
+        const seen = new Set<string>();
         for (let page = 0; page < UNTRIAGED_SCAN_PAGES; page++) {
           const listRes = await gmailRetry(() => gmail.users.messages.list({
             userId: 'me',
@@ -392,7 +404,12 @@ export async function GET(req: NextRequest) {
             maxResults,
             pageToken: token,
           }));
-          msgItems.push(...(listRes.data.messages ?? []).filter(m => !categorisedIds!.has(m.id ?? '')));
+          for (const m of listRes.data.messages ?? []) {
+            const id = m.id ?? '';
+            if (!id || categorisedIds!.has(id) || seen.has(id)) continue;
+            seen.add(id);
+            msgItems.push(m);
+          }
           token = listRes.data.nextPageToken ?? undefined;
           if (!token || msgItems.length >= maxResults) break;
         }
