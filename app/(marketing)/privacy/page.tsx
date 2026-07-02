@@ -2,8 +2,10 @@ import type { Metadata } from 'next';
 import LegalPage from '@/components/marketing/LegalPage';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — SMITH',
+  title: 'Privacy Policy',
   description: 'How SMITH collects, uses, stores and protects your data, including data accessed via Google APIs.',
+  alternates: { canonical: '/privacy' },
+  robots: { index: true, follow: true },
 };
 
 // NOTE: This is a working policy written to satisfy Google OAuth verification

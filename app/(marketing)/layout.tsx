@@ -2,11 +2,25 @@ import type { Metadata } from 'next';
 import MarketingNav from '@/components/marketing/MarketingNav';
 import MarketingFooter from '@/components/marketing/MarketingFooter';
 import WaitlistProvider from '@/components/marketing/WaitlistProvider';
+import StructuredData from '@/components/marketing/StructuredData';
+
+const HOME_DESCRIPTION =
+  'SMITH gives UK accountancy firms one secure, intelligent workspace — AI-powered bookkeeping, MTD & VAT, accounts review, email triage, document vault and client-ready outputs. Built by accountants, for accountants.';
 
 export const metadata: Metadata = {
-  title: 'SMITH — The all-in-one AI workspace for accounting firms',
-  description:
-    'SMITH gives accounting firms one secure, intelligent workspace. AI-powered email triage, accounts review, MTD & VAT, document vault and client-ready outputs — built by accountants, for accountants.',
+  title: { absolute: 'SMITH — The all-in-one AI workspace for UK accounting firms' },
+  description: HOME_DESCRIPTION,
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    url: '/',
+    title: 'SMITH — The all-in-one AI workspace for UK accounting firms',
+    description: HOME_DESCRIPTION,
+  },
+  twitter: {
+    title: 'SMITH — The all-in-one AI workspace for UK accounting firms',
+    description: HOME_DESCRIPTION,
+  },
 };
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
@@ -26,6 +40,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         backgroundAttachment: 'fixed',
       }}
     >
+      <StructuredData />
       <WaitlistProvider>
         <MarketingNav />
         <main className="mx-auto w-full max-w-[1900px] space-y-5 px-4 pb-16 pt-[88px] sm:px-6 sm:pt-24 lg:px-10">

@@ -2,8 +2,10 @@ import type { Metadata } from 'next';
 import LegalPage from '@/components/marketing/LegalPage';
 
 export const metadata: Metadata = {
-  title: 'Terms of Service — SMITH',
+  title: 'Terms of Service',
   description: 'The terms governing your use of the SMITH application.',
+  alternates: { canonical: '/terms' },
+  robots: { index: true, follow: true },
 };
 
 // NOTE: Working terms for launch / OAuth verification. Not legal advice — have a

@@ -28,9 +28,66 @@ const caveat = Caveat({
   weight: ['400', '500', '600', '700'],
 });
 
+const SITE_URL = 'https://smithforaccountants.co.uk';
+const SITE_DESCRIPTION =
+  'The all-in-one AI workspace for UK accountancy firms — bookkeeping, MTD & VAT, accounts review, email triage, document vault and client-ready outputs. Built by accountants, for accountants.';
+
 export const metadata: Metadata = {
-  title: 'SMITH',
-  description: 'AI-powered accounting workflow tools',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: 'SMITH — The AI workspace for UK accounting firms',
+    template: '%s — SMITH',
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: 'SMITH',
+  keywords: [
+    'accounting software UK',
+    'AI accounting software',
+    'accountancy practice software',
+    'practice management software for accountants',
+    'Making Tax Digital software',
+    'MTD software',
+    'MTD VAT software',
+    'MTD for Income Tax software',
+    'bookkeeping software UK',
+    'accountancy firm software',
+    'AI for accountants',
+    'accounts production software',
+  ],
+  authors: [{ name: 'SMITH for Accountants' }],
+  creator: 'SMITH for Accountants Limited',
+  publisher: 'SMITH for Accountants Limited',
+  category: 'business',
+  alternates: { canonical: '/' },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'SMITH',
+    url: SITE_URL,
+    locale: 'en_GB',
+    title: 'SMITH — The AI workspace for UK accounting firms',
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'SMITH — The AI workspace for UK accounting firms',
+    description: SITE_DESCRIPTION,
+  },
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/favicon.ico',
+    apple: '/icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

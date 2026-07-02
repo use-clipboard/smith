@@ -7,6 +7,8 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'SMITH',
   description: 'AI-powered accounting workflow tools',
+  // The authenticated app is private — never index any of it.
+  robots: { index: false, follow: false },
 };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
