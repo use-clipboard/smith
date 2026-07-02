@@ -1859,9 +1859,9 @@ export default function EmailTriagePage() {
       }
       const moved = movable.length, tagged = taggable.length;
       const msg = moved && tagged
-        ? `Moved ${moved}, labelled ${tagged}`
+        ? `Moved ${moved} to "${label.name}" · removed from inbox · labelled ${tagged}`
         : moved
-          ? (moved > 1 ? `Moved ${moved} to "${label.name}"` : `Moved to "${label.name}"`)
+          ? (moved > 1 ? `Moved ${moved} to "${label.name}" · removed from inbox` : `Moved to "${label.name}" · removed from inbox`)
           : (tagged > 1 ? `Labelled ${tagged} "${label.name}"` : `Labelled "${label.name}"`);
       showToast('success', msg, async () => {
         // Undo: restore moved emails to the Inbox + strip the label, and un-label
