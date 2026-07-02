@@ -7,6 +7,7 @@ import PainPoints from '@/components/marketing/PainPoints';
 import VideoSection from '@/components/marketing/VideoSection';
 import PricingCalculator from '@/components/marketing/PricingCalculator';
 import OurStory from '@/components/marketing/OurStory';
+import Faq from '@/components/marketing/Faq';
 import FinalCta from '@/components/marketing/FinalCta';
 
 export default function MarketingHomePage() {
@@ -50,6 +51,12 @@ export default function MarketingHomePage() {
       <Reveal>
         <Panel id="story">
           <OurStory />
+        </Panel>
+      </Reveal>
+
+      <Reveal>
+        <Panel id="faq">
+          <Faq />
         </Panel>
       </Reveal>
 

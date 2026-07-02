@@ -16,6 +16,7 @@ const NAV_LINKS = [
   { label: 'Pricing', href: '#pricing' },
   { label: 'Resources', href: '#video' },
   { label: 'About us', href: '#story' },
+  { label: 'FAQ', href: '#faq' },
 ];
 
 export default function MarketingNav() {
