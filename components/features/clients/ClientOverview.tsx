@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  CalendarClock, ClipboardCheck, Activity, Wallet, Lock, Mail, Phone, Users2, Link2,
+  CalendarClock, ClipboardCheck, Activity, Lock, Mail, Phone, Users2, Link2,
   MessageCircle, StickyNote,
   FileSearch, ArrowLeftRight, House, Gauge, Receipt, ShieldAlert, FileText, MicVocal,
   type LucideIcon,
@@ -27,6 +27,7 @@ import { useComposeWindow } from '@/components/features/email/ComposeWindowProvi
 import Avatar from '@/components/ui/Avatar';
 import Tooltip from '@/components/ui/Tooltip';
 import ClientLinksPanel from './ClientLinksPanel';
+import FinancialSnapshot from './FinancialSnapshot';
 import type { KeyContact } from './KeyContactsEditor';
 
 /** The subset of the client record this view renders. The full page Client
@@ -325,14 +326,8 @@ export default function ClientOverview({ clientId, client }: { clientId: string;
           )}
         </Card>
 
-        {/* Financial Snapshot — coming with the Bookkeeping tool */}
-        <Card title="Financial Snapshot">
-          <div className="h-full flex flex-col items-center justify-center py-8 gap-2 text-center">
-            <Wallet size={20} className="text-[var(--text-muted)] opacity-40" />
-            <p className="text-sm font-medium text-[var(--text-secondary)]">Coming soon</p>
-            <p className="text-xs text-[var(--text-muted)]">Invoice balance &amp; tax figures will link to the Bookkeeping tool.</p>
-          </div>
-        </Card>
+        {/* Financial Snapshot — latest closed-year P&L / BS from the Bookkeeping tool */}
+        <FinancialSnapshot clientId={clientId} />
       </div>
     </div>
   );
