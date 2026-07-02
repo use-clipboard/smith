@@ -7,13 +7,13 @@ import WaitlistButton from './WaitlistButton';
 /**
  * Two-tier pricing: Compliance and Practice, priced purely per user with
  * unlimited clients. A team-size slider + monthly/annual toggle drive the live
- * per-card totals. Founding offer (first 100 firms, 25% off for life) is shown
+ * per-card totals. Founding offer (first 100 firms, 20% off for life) is shown
  * as a banner above the cards.
  *
  * These are the public marketing numbers — actual Stripe billing is Phase 2.
  */
 const ANNUAL_FACTOR = 10 / 12;  // annual = 2 months free
-const FOUNDER_OFF = 0.25;       // first 100 firms, for life
+const FOUNDER_OFF = 0.20;       // first 100 firms, for life
 
 interface Tier {
   id: string;
@@ -29,7 +29,7 @@ const TIERS: Tier[] = [
   {
     id: 'compliance',
     name: 'Compliance',
-    perUser: 60,
+    perUser: 80,
     tagline: 'Everything you need to do your clients’ compliance work.',
     features: [
       { label: 'Bookkeeping, Capture & Bank-to-CSV' },
@@ -43,7 +43,7 @@ const TIERS: Tier[] = [
   {
     id: 'practice',
     name: 'Practice Suite',
-    perUser: 80,
+    perUser: 100,
     tagline: 'Everything in Compliance — plus run your whole firm.',
     featured: true,
     plusPrefix: true,
@@ -85,7 +85,7 @@ export default function PricingCalculator() {
       <div className="mx-auto mt-8 flex max-w-2xl items-center justify-center gap-2 rounded-2xl border border-primary-200 bg-primary-50 px-5 py-3 text-center text-sm font-medium text-primary-800">
         <Sparkles className="h-4 w-4 shrink-0 text-primary-600" />
         <span>
-          <strong>Founding offer:</strong> the first 100 firms lock in <strong>25% off — for life.</strong>
+          <strong>Founding offer:</strong> the first 100 firms lock in <strong>20% off — for life.</strong>
         </span>
       </div>
 
@@ -148,7 +148,7 @@ export default function PricingCalculator() {
               <div className="mt-5 flex items-center gap-2.5 flex-wrap">
                 <span className={`text-xl line-through ${tier.featured ? 'text-white/50' : 'text-slate-400'}`}>{money(headline)}</span>
                 <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${tier.featured ? 'bg-emerald-400 text-emerald-950' : 'bg-emerald-100 text-emerald-700'}`}>
-                  25% off — for life
+                  20% off — for life
                 </span>
               </div>
               <div className="mt-1 flex items-end gap-1">
