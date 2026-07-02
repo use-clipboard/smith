@@ -370,8 +370,8 @@ export function modulesForPlan(plan: PlanId | string): string[] {
 
 /** Per-user monthly price (pence) for each customer tier. */
 export const PLAN_PRICE_PENCE: Record<'compliance' | 'practice', number> = {
-  compliance: 8000,  // £80 / user / month
-  practice: 10000,   // £100 / user / month
+  compliance: 6000, // £60 / user / month
+  practice: 8000,   // £80 / user / month
 };
 
 export const PLAN_LABELS: Record<string, string> = {
