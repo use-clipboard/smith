@@ -254,12 +254,14 @@ export default function HrOrgChart({ team, departments }: Props) {
     return { nodes, edges };
   }, [team, departmentMap, highlightedDept]);
 
-  // Export the whole org chart to a single-page PDF. We screenshot ReactFlow's
-  // `.react-flow__viewport` (which holds only the nodes + edges — not the dotted
-  // background or the zoom controls) after temporarily setting its transform to
-  // frame every node, so the export always contains the full tree regardless of
-  // the user's current zoom/pan or the active highlight filter.
-  const exportPdf = useCallback(async () => {
+  // Export the whole org chart as a single high-resolution PNG. We screenshot
+  // ReactFlow's `.react-flow__viewport` (which holds only the nodes + edges — not
+  // the dotted background or the zoom controls) after temporarily setting its
+  // transform to frame every node, so the image always contains the full tree
+  // regardless of the user's current zoom/pan or the active highlight filter.
+  // A PNG (rather than a PDF) sidesteps fixed page sizes — a wide firm chart just
+  // renders as a wide image that any viewer fits to the window.
+  const exportImage = useCallback(async () => {
     const container = containerRef.current;
     const viewport = container?.querySelector<HTMLElement>('.react-flow__viewport');
     if (!viewport || nodes.length === 0) return;
@@ -273,7 +275,6 @@ export default function HrOrgChart({ team, departments }: Props) {
 
     try {
       const { default: html2canvas } = await import('html2canvas');
-      const { default: jsPDF } = await import('jspdf');
 
       const PAD = 48; // px of whitespace around the tree
       const minX = Math.min(...nodes.map(n => n.position.x));
@@ -298,12 +299,11 @@ export default function HrOrgChart({ team, departments }: Props) {
         useCORS: true,
         logging: false,
         onclone: (_doc, clonedViewport) => {
-          // Always export the complete chart: undo any highlight dimming/rings so
-          // the PDF looks the same whether or not a department filter is active.
+          // Always export the complete chart: undo any highlight dimming so the
+          // image looks the same whether or not a department filter is active.
+          // (We keep the card borders/shadows so the boxes stay well-defined.)
           clonedViewport.querySelectorAll<HTMLElement>('.react-flow__node > div').forEach(el => {
             el.style.opacity = '1';
-            el.style.boxShadow = 'none';
-            el.style.outline = 'none';
           });
           clonedViewport.querySelectorAll<HTMLElement>('.react-flow__edge path').forEach(el => {
             el.style.opacity = '1';
@@ -311,46 +311,21 @@ export default function HrOrgChart({ team, departments }: Props) {
         },
       });
 
-      // Choose a page: native size on A4 landscape if it fits; scale down onto A4
-      // landscape if that stays legible; otherwise a single wide custom sheet sized
-      // to the chart so nodes never shrink to unreadable and nothing is cropped.
-      const PX_TO_MM = 25.4 / 96;
-      const wmm = layoutW * PX_TO_MM;
-      const hmm = layoutH * PX_TO_MM;
-      const A4_W = 297, A4_H = 210, MARGIN = 10;
-      const availW = A4_W - MARGIN * 2, availH = A4_H - MARGIN * 2;
-
-      let pageW: number, pageH: number, drawW: number, drawH: number;
-      if (wmm <= availW && hmm <= availH) {
-        pageW = A4_W; pageH = A4_H; drawW = wmm; drawH = hmm;
-      } else {
-        const fit = Math.min(availW / wmm, availH / hmm);
-        if (fit >= 0.5) {
-          pageW = A4_W; pageH = A4_H; drawW = wmm * fit; drawH = hmm * fit;
-        } else {
-          pageW = wmm + MARGIN * 2; pageH = hmm + MARGIN * 2; drawW = wmm; drawH = hmm;
-        }
-      }
-
-      const landscape = pageW >= pageH;
-      const pdf = new jsPDF({
-        orientation: landscape ? 'landscape' : 'portrait',
-        unit: 'mm',
-        format: [Math.max(pageW, pageH), Math.min(pageW, pageH)],
+      const blob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob returned null'))), 'image/png');
       });
-      const actualW = pdf.internal.pageSize.getWidth();
-      const actualH = pdf.internal.pageSize.getHeight();
-      pdf.addImage(
-        canvas.toDataURL('image/png'), 'PNG',
-        (actualW - drawW) / 2, (actualH - drawH) / 2, drawW, drawH,
-      );
 
       const today = new Date();
       const stamp = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-      pdf.save(`Org-Chart-${stamp}.pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Org-Chart-${stamp}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Org chart PDF export failed', err);
-      setExportError("Sorry — we couldn't generate the PDF. Please try again.");
+      console.error('Org chart image export failed', err);
+      setExportError("Sorry — we couldn't generate the image. Please try again.");
     } finally {
       viewport.style.transform = prevTransform;
       viewport.style.width = prevWidth;
@@ -401,9 +376,9 @@ export default function HrOrgChart({ team, departments }: Props) {
           </>
         )}
 
-        {/* Download the full chart as a PDF */}
+        {/* Download the full chart as a PNG image */}
         <button
-          onClick={exportPdf}
+          onClick={exportImage}
           disabled={exporting}
           className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
         >
@@ -422,7 +397,7 @@ export default function HrOrgChart({ team, departments }: Props) {
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Download PDF
+              Download image
             </>
           )}
         </button>
