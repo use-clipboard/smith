@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MarkerType,
   type Node, type Edge, Handle, Position, type NodeProps,
@@ -197,6 +197,9 @@ interface Props {
 
 export default function HrOrgChart({ team, departments }: Props) {
   const [highlightedDept, setHighlightedDept] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const departmentMap = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
 
@@ -251,6 +254,111 @@ export default function HrOrgChart({ team, departments }: Props) {
     return { nodes, edges };
   }, [team, departmentMap, highlightedDept]);
 
+  // Export the whole org chart to a single-page PDF. We screenshot ReactFlow's
+  // `.react-flow__viewport` (which holds only the nodes + edges — not the dotted
+  // background or the zoom controls) after temporarily setting its transform to
+  // frame every node, so the export always contains the full tree regardless of
+  // the user's current zoom/pan or the active highlight filter.
+  const exportPdf = useCallback(async () => {
+    const container = containerRef.current;
+    const viewport = container?.querySelector<HTMLElement>('.react-flow__viewport');
+    if (!viewport || nodes.length === 0) return;
+
+    setExporting(true);
+    setExportError(null);
+    // Snapshot the styles we override so we can always restore the live view.
+    const prevTransform = viewport.style.transform;
+    const prevWidth = viewport.style.width;
+    const prevHeight = viewport.style.height;
+
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      const { default: jsPDF } = await import('jspdf');
+
+      const PAD = 48; // px of whitespace around the tree
+      const minX = Math.min(...nodes.map(n => n.position.x));
+      const minY = Math.min(...nodes.map(n => n.position.y));
+      const maxX = Math.max(...nodes.map(n => n.position.x + NODE_WIDTH));
+      const maxY = Math.max(...nodes.map(n => n.position.y + NODE_HEIGHT));
+      const layoutW = Math.ceil(maxX - minX + PAD * 2);
+      const layoutH = Math.ceil(maxY - minY + PAD * 2);
+
+      // Frame the whole tree at 1:1 with the top-left node at (PAD, PAD).
+      viewport.style.transform = `translate(${PAD - minX}px, ${PAD - minY}px) scale(1)`;
+      viewport.style.width = `${layoutW}px`;
+      viewport.style.height = `${layoutH}px`;
+
+      const canvas = await html2canvas(viewport, {
+        width: layoutW,
+        height: layoutH,
+        windowWidth: layoutW,
+        windowHeight: layoutH,
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        onclone: (_doc, clonedViewport) => {
+          // Always export the complete chart: undo any highlight dimming/rings so
+          // the PDF looks the same whether or not a department filter is active.
+          clonedViewport.querySelectorAll<HTMLElement>('.react-flow__node > div').forEach(el => {
+            el.style.opacity = '1';
+            el.style.boxShadow = 'none';
+            el.style.outline = 'none';
+          });
+          clonedViewport.querySelectorAll<HTMLElement>('.react-flow__edge path').forEach(el => {
+            el.style.opacity = '1';
+          });
+        },
+      });
+
+      // Choose a page: native size on A4 landscape if it fits; scale down onto A4
+      // landscape if that stays legible; otherwise a single wide custom sheet sized
+      // to the chart so nodes never shrink to unreadable and nothing is cropped.
+      const PX_TO_MM = 25.4 / 96;
+      const wmm = layoutW * PX_TO_MM;
+      const hmm = layoutH * PX_TO_MM;
+      const A4_W = 297, A4_H = 210, MARGIN = 10;
+      const availW = A4_W - MARGIN * 2, availH = A4_H - MARGIN * 2;
+
+      let pageW: number, pageH: number, drawW: number, drawH: number;
+      if (wmm <= availW && hmm <= availH) {
+        pageW = A4_W; pageH = A4_H; drawW = wmm; drawH = hmm;
+      } else {
+        const fit = Math.min(availW / wmm, availH / hmm);
+        if (fit >= 0.5) {
+          pageW = A4_W; pageH = A4_H; drawW = wmm * fit; drawH = hmm * fit;
+        } else {
+          pageW = wmm + MARGIN * 2; pageH = hmm + MARGIN * 2; drawW = wmm; drawH = hmm;
+        }
+      }
+
+      const landscape = pageW >= pageH;
+      const pdf = new jsPDF({
+        orientation: landscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: [Math.max(pageW, pageH), Math.min(pageW, pageH)],
+      });
+      const actualW = pdf.internal.pageSize.getWidth();
+      const actualH = pdf.internal.pageSize.getHeight();
+      pdf.addImage(
+        canvas.toDataURL('image/png'), 'PNG',
+        (actualW - drawW) / 2, (actualH - drawH) / 2, drawW, drawH,
+      );
+
+      const today = new Date();
+      const stamp = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+      pdf.save(`Org-Chart-${stamp}.pdf`);
+    } catch (err) {
+      console.error('Org chart PDF export failed', err);
+      setExportError("Sorry — we couldn't generate the PDF. Please try again.");
+    } finally {
+      viewport.style.transform = prevTransform;
+      viewport.style.width = prevWidth;
+      viewport.style.height = prevHeight;
+      setExporting(false);
+    }
+  }, [nodes]);
+
   if (team.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-[var(--border)] p-12 text-center">
@@ -261,38 +369,70 @@ export default function HrOrgChart({ team, departments }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* Department filter chips */}
-      {departments.length > 0 && (
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Highlight:</span>
-          <button
-            onClick={() => setHighlightedDept(null)}
-            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-              highlightedDept === null
-                ? 'bg-gray-900 text-white border-gray-900'
-                : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
-            }`}
-          >
-            All
-          </button>
-          {departments.map(d => (
+      <div className="flex flex-wrap gap-2 items-center">
+        {/* Department filter chips */}
+        {departments.length > 0 && (
+          <>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Highlight:</span>
             <button
-              key={d.id}
-              onClick={() => setHighlightedDept(highlightedDept === d.id ? null : d.id)}
-              className="text-xs px-2.5 py-1 rounded-full border transition-colors"
-              style={{
-                background: highlightedDept === d.id ? (d.color || '#6366f1') : 'white',
-                color: highlightedDept === d.id ? '#fff' : (d.color || '#374151'),
-                borderColor: d.color || '#cbd5e1',
-              }}
+              onClick={() => setHighlightedDept(null)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                highlightedDept === null
+                  ? 'bg-gray-900 text-white border-gray-900'
+                  : 'bg-white border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'
+              }`}
             >
-              {d.name}
+              All
             </button>
-          ))}
-        </div>
+            {departments.map(d => (
+              <button
+                key={d.id}
+                onClick={() => setHighlightedDept(highlightedDept === d.id ? null : d.id)}
+                className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+                style={{
+                  background: highlightedDept === d.id ? (d.color || '#6366f1') : 'white',
+                  color: highlightedDept === d.id ? '#fff' : (d.color || '#374151'),
+                  borderColor: d.color || '#cbd5e1',
+                }}
+              >
+                {d.name}
+              </button>
+            ))}
+          </>
+        )}
+
+        {/* Download the full chart as a PDF */}
+        <button
+          onClick={exportPdf}
+          disabled={exporting}
+          className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? (
+            <>
+              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generating…
+            </>
+          ) : (
+            <>
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download PDF
+            </>
+          )}
+        </button>
+      </div>
+
+      {exportError && (
+        <p className="text-xs text-red-600" role="alert">{exportError}</p>
       )}
 
-      <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden" style={{ height: 600 }}>
+      <div ref={containerRef} className="bg-white rounded-xl border border-[var(--border)] overflow-hidden" style={{ height: 600 }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
