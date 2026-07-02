@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ChevronDown, ChevronUp, Reply, Forward, Paperclip,
   UserPlus, CheckSquare, X, Trash2, Loader2,
@@ -9,6 +10,23 @@ import {
 } from 'lucide-react';
 import type { EmailThread as EmailThreadType, EmailMessage, GmailLabel } from '@/lib/gmail';
 import Tooltip from '@/components/ui/Tooltip';
+import { useTabContext, type Tab } from '@/components/ui/TabContext';
+import { TOOL_ROUTES } from '@/components/ui/TabPanels';
+import { DASHBOARD_ITEM, TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS, type NavItem } from '@/config/navItems';
+
+// Fast lookup: canonical route → its nav item (label + icon), so an internal
+// link clicked inside an email body can be opened as a properly-titled tab.
+const HREF_TO_NAV = new Map<string, NavItem>(
+  [DASHBOARD_ITEM, ...TOOL_NAV_ITEMS, ...WORKSPACE_NAV_ITEMS].map(i => [i.href, i]),
+);
+
+/** Return the canonical tool-tab route for a path (exact, then parent prefix
+ *  so `/hr/whatever` still resolves to `/hr`), or null if it isn't one. */
+function matchToolRoute(path: string): string | null {
+  if (TOOL_ROUTES.has(path)) return path;
+  for (const r of TOOL_ROUTES) if (path.startsWith(r + '/')) return r;
+  return null;
+}
 
 interface Allocation {
   client_id: string;
@@ -1033,6 +1051,36 @@ export default function EmailThread({
 function EmailBodyFrame({ html }: { html: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(160);
+  const router = useRouter();
+  const { openInNewTab } = useTabContext();
+
+  // Open an internal SMITH link (clicked inside the email body) as an in-app
+  // tab instead of a fresh browser tab. A new browser tab would reload the
+  // whole app and force a re-login — a jarring detour when the user is already
+  // signed in and looking at the email. Only same-origin links to tool routes
+  // are hijacked; external links keep the default `<base target="_blank">`
+  // behaviour. This is also what makes the "clicked within SMITH" branch of the
+  // manager-briefing button work: it lands on the HR tab, not a new window.
+  const openInternal = useCallback((route: string, path: string, search: string) => {
+    const nav = HREF_TO_NAV.get(route);
+    const opened = openInNewTab({
+      id: nav?.moduleId ?? route,
+      title: nav?.label ?? 'SMITH',
+      route,
+      icon: (nav?.icon ?? Mail) as Tab['icon'],
+    });
+    if (!opened) return; // tab limit reached — TabProvider already warned
+    // Reflect the deep URL so a freshly-mounted tool reads the right params.
+    window.history.replaceState(null, '', path + search);
+    // Tools stay mounted across tab switches, so an already-open HR tab won't
+    // remount to pick up the new params — nudge it to the requested section.
+    if (route === '/hr') {
+      const sp = new URLSearchParams(search);
+      window.dispatchEvent(new CustomEvent('smith:hr-deeplink', {
+        detail: { tab: sp.get('tab'), section: sp.get('section') },
+      }));
+    }
+  }, [openInNewTab]);
 
   const srcDoc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
     html,body{margin:0;padding:0;background:#fff;}
@@ -1052,6 +1100,38 @@ function EmailBodyFrame({ html }: { html: string }) {
     const h = Math.max(doc.documentElement?.scrollHeight ?? 0, doc.body?.scrollHeight ?? 0);
     if (h > 0) setHeight(h + 8);
   }
+
+  // Intercept clicks on internal SMITH links inside the (same-origin) email
+  // body so they open as in-app tabs. The iframe is sandboxed WITHOUT
+  // allow-scripts, so the email can't run its own JS — but we're the parent
+  // frame reaching into the same-origin child document, which is allowed.
+  // Re-attaches whenever srcDoc changes (the document is replaced on reload).
+  useEffect(() => {
+    const iframe = ref.current;
+    if (!iframe) return;
+    function onClick(e: MouseEvent) {
+      const anchor = (e.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null;
+      const href = anchor?.getAttribute('href');
+      if (!href) return;
+      let url: URL;
+      try { url = new URL(href, window.location.origin); } catch { return; }
+      if (url.origin !== window.location.origin) return;   // external — default new tab
+      if (url.pathname.startsWith('/api/')) return;         // downloads etc — leave alone
+      const route = matchToolRoute(url.pathname);
+      if (!route) return;                                   // not a tool tab — leave default
+      e.preventDefault();
+      openInternal(route, url.pathname, url.search);
+    }
+    function attach() {
+      iframe!.contentWindow?.document?.addEventListener('click', onClick);
+    }
+    attach();
+    iframe.addEventListener('load', attach);
+    return () => {
+      iframe.contentWindow?.document?.removeEventListener('click', onClick);
+      iframe.removeEventListener('load', attach);
+    };
+  }, [srcDoc, openInternal]);
 
   return (
     <iframe

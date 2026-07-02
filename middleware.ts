@@ -81,8 +81,16 @@ export async function middleware(request: NextRequest) {
     );
 
   if (!user && !isAuthRoute && !isPublicAuthApi && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute && !isMarketing) {
+    const dest = request.nextUrl.pathname + request.nextUrl.search;
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    url.search = '';
+    // Preserve the page the user was trying to reach so login can send them
+    // there afterwards (e.g. a manager-briefing email link → /hr?...). Skip
+    // API paths and the default dashboard — those don't need a round-trip.
+    if (!request.nextUrl.pathname.startsWith('/api/') && request.nextUrl.pathname !== '/dashboard') {
+      url.searchParams.set('next', dest);
+    }
     return NextResponse.redirect(url);
   }
 

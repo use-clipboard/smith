@@ -29,6 +29,23 @@ type HolidaysSub = 'mine' | 'calendar' | 'tracker' | 'approvals' | 'team' | 'abs
 type PeopleSub = 'profile' | 'team-profiles' | 'orgchart';
 type ResourcesSub = 'advice' | 'briefings' | 'confidential' | 'rights';
 
+const RESOURCES_SUBS: ResourcesSub[] = ['advice', 'briefings', 'confidential', 'rights'];
+
+/** Read the requested top tab + section from the URL. Prefers the live
+ *  `window.location` (set via history.replaceState when HR is opened as an
+ *  in-app tab from an email link) and falls back to the Next.js search params
+ *  for SSR / full-page loads (e.g. following the link from a real inbox). */
+function readInitialHrNav(params: { get(key: string): string | null }): { tab: string | null; section: string | null } {
+  let tab: string | null = null;
+  let section: string | null = null;
+  if (typeof window !== 'undefined') {
+    const sp = new URLSearchParams(window.location.search);
+    tab = sp.get('tab');
+    section = sp.get('section');
+  }
+  return { tab: tab ?? params.get('tab'), section: section ?? params.get('section') };
+}
+
 export interface TeamMember {
   id: string;
   full_name: string | null;
@@ -123,11 +140,31 @@ const STATUS_BADGE: Record<HolidayRow['status'], string> = {
 
 export default function HrClient() {
   const params = useSearchParams();
-  const initialTopTab = (params.get('tab') as TopTab) || 'overview';
+  const initialNav = readInitialHrNav(params);
+  const initialTopTab = (initialNav.tab as TopTab) || 'overview';
+  const initialResourcesSub = RESOURCES_SUBS.includes(initialNav.section as ResourcesSub)
+    ? (initialNav.section as ResourcesSub)
+    : 'advice';
   const [topTab, setTopTab] = useState<TopTab>(initialTopTab);
   const [holidaysSub, setHolidaysSub] = useState<HolidaysSub>('mine');
   const [peopleSub, setPeopleSub] = useState<PeopleSub>('profile');
-  const [resourcesSub, setResourcesSub] = useState<ResourcesSub>('advice');
+  const [resourcesSub, setResourcesSub] = useState<ResourcesSub>(initialResourcesSub);
+
+  // Respond to a deep-link fired when the HR tab is opened from an in-app link
+  // (e.g. the manager-briefing email button) while HR is ALREADY open — it
+  // stays mounted across tab switches, so it won't re-read the URL on its own.
+  useEffect(() => {
+    function onDeepLink(e: Event) {
+      const detail = (e as CustomEvent).detail as { tab?: string | null; section?: string | null };
+      if (detail?.tab) setTopTab(detail.tab as TopTab);
+      if (detail?.section && RESOURCES_SUBS.includes(detail.section as ResourcesSub)) {
+        setResourcesSub(detail.section as ResourcesSub);
+        if (!detail.tab) setTopTab('resources');
+      }
+    }
+    window.addEventListener('smith:hr-deeplink', onDeepLink);
+    return () => window.removeEventListener('smith:hr-deeplink', onDeepLink);
+  }, []);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(true);

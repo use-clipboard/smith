@@ -303,7 +303,10 @@ export async function sendManagerBriefingEmail(opts: ManagerBriefingEmailOptions
   const resend = getResend();
   const fromAddress = opts.fromAddress ?? process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
   const baseUrl = getBaseUrl();
-  const link = `${baseUrl}/hr?tab=resources`;
+  // Deep-link straight to the Manager Briefings section. Clicked inside SMITH's
+  // Email Triage this opens the HR tab on that section; clicked from a real
+  // inbox it lands here after login (middleware preserves the destination).
+  const link = `${baseUrl}/hr?tab=resources&section=briefings`;
 
   const html = `
     <div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;">

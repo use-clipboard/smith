@@ -11,6 +11,11 @@ type Mode = 'password' | 'magic-link';
 function LoginContent() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get('error');
+  // Where to land after a successful sign-in. Only allow same-site relative
+  // paths (must start with a single "/") to avoid an open-redirect; anything
+  // else falls back to the dashboard.
+  const rawNext = searchParams.get('next');
+  const nextPath = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard';
 
   const [mode, setMode] = useState<Mode>('password');
   const [email, setEmail] = useState('');
@@ -39,7 +44,7 @@ function LoginContent() {
     // user can retry without a manual refresh.
     const safety = setTimeout(() => setLoading(false), 5000);
     try {
-      window.location.assign('/dashboard');
+      window.location.assign(nextPath);
     } catch {
       clearTimeout(safety);
       setLoading(false);
@@ -56,7 +61,7 @@ function LoginContent() {
       await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, next: nextPath }),
       });
     } catch {
       // Ignore — still show the neutral confirmation.

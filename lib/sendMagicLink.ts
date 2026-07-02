@@ -14,7 +14,7 @@ import { sendMagicLinkEmail } from '@/lib/email';
  * address isn't a registered user, so callers can respond without revealing
  * whether an account exists.
  */
-export async function sendMagicLink(email: string): Promise<boolean> {
+export async function sendMagicLink(email: string, next?: string): Promise<boolean> {
   const service = createServiceClient();
   const { data, error } = await service.auth.admin.generateLink({ type: 'magiclink', email });
   if (error) return false;
@@ -22,7 +22,10 @@ export async function sendMagicLink(email: string): Promise<boolean> {
   const hashedToken = (data?.properties as { hashed_token?: string } | undefined)?.hashed_token;
   if (!hashedToken) return false;
 
-  const magicUrl = `${getBaseUrl()}/auth/confirm?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${encodeURIComponent('/dashboard')}`;
+  // Only honour same-site relative destinations (single leading "/") — guards
+  // against an open-redirect if a crafted `next` ever reaches here.
+  const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  const magicUrl = `${getBaseUrl()}/auth/confirm?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink&next=${encodeURIComponent(dest)}`;
 
   let name: string | null = null;
   try {
