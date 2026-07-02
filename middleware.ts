@@ -132,6 +132,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|auth/callback|auth/confirm|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
+    // Public SEO/crawler assets (sitemap, robots, generated OG image) are
+    // excluded so the auth gate never redirects a logged-out crawler to /login
+    // — otherwise Google receives HTML and rejects the sitemap.
+    '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|opengraph-image|auth/callback|auth/confirm|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)).*)',
   ],
 };
