@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ReactFlow, Background, Controls, MarkerType,
   type Node, type Edge, Handle, Position, type NodeProps,
@@ -190,6 +190,93 @@ function PersonNode({ data }: NodeProps) {
 
 const nodeTypes = { person: PersonNode };
 
+// ── PDF/PNG export ────────────────────────────────────────────────────────────
+// We build a self-contained SVG of the whole tree rather than screenshotting the
+// live ReactFlow canvas: html2canvas drops ReactFlow's edge SVG (so the connector
+// lines vanish) and renders the white cards indistinctly. A hand-built SVG gives
+// crisp text, guaranteed card borders, and explicit connector lines every time.
+
+const AVATAR_HEX = ['#6366f1', '#8b5cf6', '#0ea5e9', '#10b981', '#f59e0b', '#f43f5e', '#14b8a6'];
+// Mirrors avatarColour()'s hash so exported avatars match the on-screen colours.
+function avatarHex(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_HEX[hash % AVATAR_HEX.length];
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c] as string));
+}
+
+// Approximate single-line truncation to a pixel width (SVG can't auto-ellipsize).
+function fitText(s: string, maxW: number, fs: number, bold: boolean): string {
+  const charW = fs * (bold ? 0.62 : 0.55);
+  const max = Math.floor(maxW / charW);
+  if (s.length <= max) return s;
+  return s.slice(0, Math.max(1, max - 1)).trimEnd() + '…';
+}
+
+function buildOrgChartSvg(nodes: Node[], edges: Edge[]): { svg: string; width: number; height: number } {
+  const PAD = 56;
+  const minX = Math.min(...nodes.map(n => n.position.x));
+  const minY = Math.min(...nodes.map(n => n.position.y));
+  const maxX = Math.max(...nodes.map(n => n.position.x + NODE_WIDTH));
+  const maxY = Math.max(...nodes.map(n => n.position.y + NODE_HEIGHT));
+  const width = Math.ceil(maxX - minX + PAD * 2);
+  const height = Math.ceil(maxY - minY + PAD * 2);
+  const offX = PAD - minX, offY = PAD - minY;
+
+  const pos = new Map(nodes.map(n => [n.id, n.position] as const));
+
+  // Edges: orthogonal parent-bottom → child-top connectors (matches the on-screen
+  // smoothstep shape closely enough) with a small arrowhead into each report.
+  const edgeMarkup = edges.map(e => {
+    const s = pos.get(e.source), t = pos.get(e.target);
+    if (!s || !t) return '';
+    const sx = s.x + NODE_WIDTH / 2 + offX, sy = s.y + NODE_HEIGHT + offY;
+    const tx = t.x + NODE_WIDTH / 2 + offX, ty = t.y + offY;
+    const midY = (sy + ty) / 2;
+    return `<path d="M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>`;
+  }).join('');
+
+  const TEXT_W = NODE_WIDTH - 62 - 10; // card width minus avatar column and right padding
+  const nodeMarkup = nodes.map(n => {
+    const d = n.data as PersonNodeData;
+    const name = fitText(d.name || d.email, TEXT_W, 13, true);
+    const hasTitle = !!d.jobTitle;
+    const title = fitText(hasTitle ? d.jobTitle : 'No title', TEXT_W, 11, false);
+    const avatar = avatarHex(d.userId);
+    const ini = initials(d.name, d.email);
+    let badge = '';
+    if (d.departmentName) {
+      const label = d.departmentName.toUpperCase();
+      const bw = Math.min(TEXT_W, label.length * 6.4 + 16);
+      const col = d.departmentColor || '#64748b';
+      badge = `<rect x="62" y="56" width="${bw.toFixed(1)}" height="16" rx="8" fill="${col}" fill-opacity="0.15"/>`
+        + `<text x="${(62 + bw / 2).toFixed(1)}" y="67" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="0.4" fill="${col}">${escapeXml(label)}</text>`;
+    }
+    return `<g transform="translate(${n.position.x + offX} ${n.position.y + offY})">`
+      + `<rect x="0" y="0" width="${NODE_WIDTH}" height="${NODE_HEIGHT}" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#nshadow)"/>`
+      + `<circle cx="32" cy="42" r="20" fill="${avatar}"/>`
+      + `<text x="32" y="42" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="700" fill="#ffffff">${escapeXml(ini)}</text>`
+      + `<text x="62" y="34" font-size="13" font-weight="700" fill="#0f172a">${escapeXml(name)}</text>`
+      + `<text x="62" y="50" font-size="11" fill="#64748b"${hasTitle ? '' : ' font-style="italic"'}>${escapeXml(title)}</text>`
+      + badge
+      + `</g>`;
+  }).join('');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif">`
+    + '<defs>'
+    + '<filter id="nshadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.08"/></filter>'
+    + '<marker id="arrow" markerWidth="7" markerHeight="7" refX="5.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L6,3 L0,6 z" fill="#94a3b8"/></marker>'
+    + '</defs>'
+    + `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>`
+    + edgeMarkup
+    + nodeMarkup
+    + '</svg>';
+  return { svg, width, height };
+}
+
 interface Props {
   team: TeamMember[];
   departments: Department[];
@@ -199,7 +286,6 @@ export default function HrOrgChart({ team, departments }: Props) {
   const [highlightedDept, setHighlightedDept] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const departmentMap = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
 
@@ -254,85 +340,60 @@ export default function HrOrgChart({ team, departments }: Props) {
     return { nodes, edges };
   }, [team, departmentMap, highlightedDept]);
 
-  // Export the whole org chart as a single high-resolution PNG. We screenshot
-  // ReactFlow's `.react-flow__viewport` (which holds only the nodes + edges — not
-  // the dotted background or the zoom controls) after temporarily setting its
-  // transform to frame every node, so the image always contains the full tree
-  // regardless of the user's current zoom/pan or the active highlight filter.
-  // A PNG (rather than a PDF) sidesteps fixed page sizes — a wide firm chart just
-  // renders as a wide image that any viewer fits to the window.
+  // Export the whole org chart as a single high-resolution PNG. We render the tree
+  // to a self-contained SVG (see buildOrgChartSvg) and rasterise it at 2× — this
+  // always includes every node, the connector lines, and the current department
+  // colours, regardless of the on-screen zoom/pan or highlight filter. A PNG (not
+  // a PDF) sidesteps fixed page sizes: a wide firm chart is just a wide image that
+  // any viewer fits to the window.
   const exportImage = useCallback(async () => {
-    const container = containerRef.current;
-    const viewport = container?.querySelector<HTMLElement>('.react-flow__viewport');
-    if (!viewport || nodes.length === 0) return;
-
+    if (nodes.length === 0) return;
     setExporting(true);
     setExportError(null);
-    // Snapshot the styles we override so we can always restore the live view.
-    const prevTransform = viewport.style.transform;
-    const prevWidth = viewport.style.width;
-    const prevHeight = viewport.style.height;
 
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { svg, width, height } = buildOrgChartSvg(nodes, edges);
+      const SCALE = 2;
 
-      const PAD = 48; // px of whitespace around the tree
-      const minX = Math.min(...nodes.map(n => n.position.x));
-      const minY = Math.min(...nodes.map(n => n.position.y));
-      const maxX = Math.max(...nodes.map(n => n.position.x + NODE_WIDTH));
-      const maxY = Math.max(...nodes.map(n => n.position.y + NODE_HEIGHT));
-      const layoutW = Math.ceil(maxX - minX + PAD * 2);
-      const layoutH = Math.ceil(maxY - minY + PAD * 2);
+      const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new Image();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('SVG failed to load'));
+          img.src = svgUrl;
+        });
 
-      // Frame the whole tree at 1:1 with the top-left node at (PAD, PAD).
-      viewport.style.transform = `translate(${PAD - minX}px, ${PAD - minY}px) scale(1)`;
-      viewport.style.width = `${layoutW}px`;
-      viewport.style.height = `${layoutH}px`;
+        const canvas = document.createElement('canvas');
+        canvas.width = width * SCALE;
+        canvas.height = height * SCALE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        ctx.scale(SCALE, SCALE);
+        ctx.drawImage(img, 0, 0);
 
-      const canvas = await html2canvas(viewport, {
-        width: layoutW,
-        height: layoutH,
-        windowWidth: layoutW,
-        windowHeight: layoutH,
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        logging: false,
-        onclone: (_doc, clonedViewport) => {
-          // Always export the complete chart: undo any highlight dimming so the
-          // image looks the same whether or not a department filter is active.
-          // (We keep the card borders/shadows so the boxes stay well-defined.)
-          clonedViewport.querySelectorAll<HTMLElement>('.react-flow__node > div').forEach(el => {
-            el.style.opacity = '1';
-          });
-          clonedViewport.querySelectorAll<HTMLElement>('.react-flow__edge path').forEach(el => {
-            el.style.opacity = '1';
-          });
-        },
-      });
+        const blob: Blob = await new Promise((resolve, reject) => {
+          canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob returned null'))), 'image/png');
+        });
 
-      const blob: Blob = await new Promise((resolve, reject) => {
-        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob returned null'))), 'image/png');
-      });
-
-      const today = new Date();
-      const stamp = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Org-Chart-${stamp}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+        const today = new Date();
+        const stamp = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Org-Chart-${stamp}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } finally {
+        URL.revokeObjectURL(svgUrl);
+      }
     } catch (err) {
       console.error('Org chart image export failed', err);
       setExportError("Sorry — we couldn't generate the image. Please try again.");
     } finally {
-      viewport.style.transform = prevTransform;
-      viewport.style.width = prevWidth;
-      viewport.style.height = prevHeight;
       setExporting(false);
     }
-  }, [nodes]);
+  }, [nodes, edges]);
 
   if (team.length === 0) {
     return (
@@ -407,7 +468,7 @@ export default function HrOrgChart({ team, departments }: Props) {
         <p className="text-xs text-red-600" role="alert">{exportError}</p>
       )}
 
-      <div ref={containerRef} className="bg-white rounded-xl border border-[var(--border)] overflow-hidden" style={{ height: 600 }}>
+      <div className="bg-white rounded-xl border border-[var(--border)] overflow-hidden" style={{ height: 600 }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
