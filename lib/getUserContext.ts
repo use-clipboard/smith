@@ -6,6 +6,7 @@ export interface UserContext {
   firmId: string;
   userRole: 'admin' | 'staff';
   activeModules: string[];
+  email: string;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function getUserContext(): Promise<UserContext | null> {
       firmId: profile.firm_id,
       userRole: (profile.role as 'admin' | 'staff') ?? 'staff',
       activeModules,
+      email: user.email ?? '',
     };
   } catch {
     return null;

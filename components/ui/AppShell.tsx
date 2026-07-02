@@ -31,6 +31,8 @@ import { DashboardLayoutProvider } from './DashboardLayoutProvider';
 import { ChatProvider, useChatContext } from '@/components/chat/ChatProvider';
 import ConversationWindow from '@/components/chat/ConversationWindow';
 import Avatar from '@/components/ui/Avatar';
+import TimesheetsProvider from '@/components/features/timesheets/TimesheetsProvider';
+import FloatingTimer from '@/components/features/timesheets/timer/FloatingTimer';
 
 interface AppShellProps {
   children: ReactNode;
@@ -217,6 +219,7 @@ export default function AppShell({
       <FavouritesProvider initialFavourites={initialFavourites}>
       <DashboardLayoutProvider initialLayout={initialDashboardLayout}>
       <ChatProvider userId={userId} firmId={firmId}>
+       <TimesheetsProvider userId={userId} userName={userName ?? 'You'} userRole={userRole ?? 'staff'} userEmail={userEmail ?? ''}>
         <TabProvider>
           <TabActivityProvider>
             <StickyNotesProvider userId={userId}>
@@ -233,6 +236,7 @@ export default function AppShell({
                   {children}
                 </AppShellInner>
                 {/* Floating overlays — outside AppShellInner but still inside all providers */}
+                <FloatingTimer />
                 <AskSmithBubble />
                 <ConversationWindows />
                 <UnreadMessageChips />
@@ -251,6 +255,7 @@ export default function AppShell({
             </StickyNotesProvider>
           </TabActivityProvider>
         </TabProvider>
+       </TimesheetsProvider>
       </ChatProvider>
       </DashboardLayoutProvider>
       </FavouritesProvider>

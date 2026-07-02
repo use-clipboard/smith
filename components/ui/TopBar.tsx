@@ -55,6 +55,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/policies':        'Policies & Procedures',
   '/clients':         'Clients',
   '/tasks':           'Tasks',
+  '/timesheets':      'Timesheets',
   '/bookkeeping':     'Bookkeeping',
   '/help':            'Help',
   '/settings':        'Settings',

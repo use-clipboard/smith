@@ -221,6 +221,19 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
+    id: 'timesheets',
+    name: 'Timesheets',
+    description: 'AI-assisted time recording. Track billable and non-billable time, run a live timer, let SMITH detect unrecorded work from across your tools, and see utilisation, recovery, WIP and profitability at a glance.',
+    iconName: 'Clock',
+    route: '/timesheets',
+    alwaysOn: false,
+    enhancedBy: ['tasks', 'meeting-notes', 'email-triage'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'practice_ops',
+  },
+
+  {
     id: 'tasks',
     name: 'Tasks',
     description: 'Full practice management task system — create, assign and track client and internal tasks with workflow flowcharts, step-by-step progress, time tracking, recurring schedules, and email reminders.',
@@ -350,7 +363,7 @@ const COMPLIANCE_MODULE_IDS = [
 ];
 /** Tools that Practice adds on top of Compliance. */
 const PRACTICE_ONLY_MODULE_IDS = [
-  'tasks', 'document-vault', 'policies', 'meeting-notes', 'staff-hire',
+  'tasks', 'timesheets', 'document-vault', 'policies', 'meeting-notes', 'staff-hire',
   'hr', 'proposals', 'email-triage', 'google-calendar',
 ];
 

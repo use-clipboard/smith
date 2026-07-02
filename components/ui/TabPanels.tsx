@@ -20,6 +20,7 @@ import CalendarPage from '@/app/(app)/calendar/page';
 import MeetingNotesPage from '@/app/(app)/meeting-notes/page';
 import StaffHirePage from '@/app/(app)/staff-hire/page';
 import TasksPage from '@/app/(app)/tasks/page';
+import TimesheetsPage from '@/app/(app)/timesheets/page';
 import EmailPage from '@/app/(app)/email/page';
 import HrClient from '@/components/features/hr/HrClient';
 import ProposalsClient from '@/components/features/proposals/ProposalsClient';
@@ -44,6 +45,7 @@ const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   '/meeting-notes':   MeetingNotesPage,
   '/staff-hire':      StaffHirePage,
   '/tasks':           TasksPage,
+  '/timesheets':      TimesheetsPage,
   '/email':           EmailPage,
   '/hr':              HrClient,
   '/proposals':       ProposalsClient,

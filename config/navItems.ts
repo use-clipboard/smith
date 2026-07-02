@@ -8,7 +8,7 @@ import {
   LayoutDashboard, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText,
   BookOpen, Users, Settings, HelpCircle, Archive, CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
-  MessagesSquare, CalendarCheck, BookCopy,
+  MessagesSquare, CalendarCheck, BookCopy, Clock,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -43,6 +43,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'meeting-notes',  href: '/meeting-notes',  label: 'Meeting Notes',   icon: MicVocal },
   { moduleId: 'staff-hire',    href: '/staff-hire',     label: 'Staff Hire',      icon: UserPlus },
   { moduleId: 'tasks',         href: '/tasks',          label: 'Tasks',           icon: CheckSquare },
+  { moduleId: 'timesheets',    href: '/timesheets',     label: 'Timesheets',      icon: Clock, comingSoon: true },
   { moduleId: 'email-triage',  href: '/email',          label: 'Email Triage',    icon: Mail },
   { moduleId: 'hr',            href: '/hr',             label: 'HR',              icon: HeartHandshake },
   { moduleId: 'proposals',     href: '/proposals',      label: 'Proposals',       icon: FileSignature },
