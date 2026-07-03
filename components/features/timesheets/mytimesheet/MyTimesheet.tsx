@@ -60,7 +60,8 @@ function packLanes(items: TimeEntry[]): { entry: TimeEntry; lane: number; lanes:
 }
 
 export default function MyTimesheet() {
-  const { entries, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, weekStatuses } = useTimesheets();
+  const { entries, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, weekStatuses, roundingMinutes } = useTimesheets();
+  const snap = Math.max(1, roundingMinutes);
   const [selectedDay, setSelectedDay] = useState(todayIso());
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [adding, setAdding] = useState<string | null>(null); // holds date to add on
@@ -117,7 +118,7 @@ export default function MyTimesheet() {
     setDragPreview({ id: entry.id, mode, deltaMin: 0 });
     const onMove = (ev: PointerEvent) => {
       const dPx = ev.clientY - startY;
-      deltaMin = Math.round(dPx / pxPerMin / 15) * 15;
+      deltaMin = Math.round(dPx / pxPerMin / snap) * snap;
       if (Math.abs(dPx) > 4) moved = true;
       if (mode === 'move') {
         // Dropping onto a different day chip moves the entry to that date.

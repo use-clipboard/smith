@@ -9,6 +9,9 @@ import { DEPARTMENTS, SEED_ACTIVITIES } from '@/lib/timesheets/seed';
 const DEFAULTS = {
   departments: [...DEPARTMENTS] as string[],
   activities: SEED_ACTIVITIES.map(a => ({ id: a.id, label: a.label, type: a.type, department: a.department })),
+  defaultRatePence: 12000, // £120/hr — used when a user has no rate set
+  dailyTargetHours: 7.5,    // drives the utilisation target + timeline target line
+  roundingMinutes: 15,      // round timer/drag entries to this increment
 };
 
 const ActivitySchema = z.object({
@@ -20,6 +23,9 @@ const ActivitySchema = z.object({
 const SettingsSchema = z.object({
   departments: z.array(z.string().min(1).max(60)).max(40),
   activities: z.array(ActivitySchema).max(80),
+  defaultRatePence: z.number().int().min(0).max(1_000_000).optional().default(12000),
+  dailyTargetHours: z.number().min(0).max(24).optional().default(7.5),
+  roundingMinutes: z.number().int().min(1).max(60).optional().default(15),
 });
 
 // GET /api/timesheets/settings → firm departments + activities (or defaults).
@@ -37,6 +43,9 @@ export async function GET() {
   return NextResponse.json({
     departments: s?.departments?.length ? s.departments : DEFAULTS.departments,
     activities: s?.activities?.length ? s.activities : DEFAULTS.activities,
+    defaultRatePence: s?.defaultRatePence ?? DEFAULTS.defaultRatePence,
+    dailyTargetHours: s?.dailyTargetHours ?? DEFAULTS.dailyTargetHours,
+    roundingMinutes: s?.roundingMinutes ?? DEFAULTS.roundingMinutes,
   });
 }
 

@@ -19,6 +19,9 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
   const { reloadSettings } = useTimesheets();
   const [departments, setDepartments] = useState<string[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [defaultRate, setDefaultRate] = useState('120'); // pounds/hr
+  const [dailyTarget, setDailyTarget] = useState('7.5');
+  const [rounding, setRounding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -32,6 +35,9 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
         if (cancelled) return;
         setDepartments((d.departments ?? []) as string[]);
         setActivities((d.activities ?? []) as Activity[]);
+        setDefaultRate(String(Math.round((d.defaultRatePence ?? 12000) / 100)));
+        setDailyTarget(String(d.dailyTargetHours ?? 7.5));
+        setRounding(Number(d.roundingMinutes ?? 15));
       })
       .catch(() => { if (!cancelled) setError('Could not load Timesheets settings.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -62,7 +68,13 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
       const res = await fetch('/api/timesheets/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ departments: cleanDepts, activities: cleanActs }),
+        body: JSON.stringify({
+          departments: cleanDepts,
+          activities: cleanActs,
+          defaultRatePence: Math.max(0, Math.round(Number(defaultRate) || 0) * 100),
+          dailyTargetHours: Math.max(0, Math.min(24, Number(dailyTarget) || 0)),
+          roundingMinutes: rounding,
+        }),
       });
       if (!res.ok) { setError('Failed to save. Please try again.'); return; }
       setDepartments(cleanDepts);
@@ -86,6 +98,49 @@ export default function TimesheetsSettingsTab({ isAdmin = true }: { isAdmin?: bo
         <div>
           <h3 className="text-base font-semibold text-[var(--text-primary)]">Timesheets</h3>
           <p className="text-sm text-[var(--text-muted)]">Set the departments and work activities your team logs time against. These appear in the Timesheets pickers and reports.</p>
+        </div>
+      </div>
+
+      {/* General */}
+      <div className="glass-solid rounded-xl p-6">
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-[var(--text-primary)]">General</h4>
+          <p className="text-xs text-[var(--text-muted)]">Firm defaults for rates, targets and time rounding.</p>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Default charge-out rate</label>
+            <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2.5 py-2">
+              <span className="text-sm text-[var(--text-muted)]">£</span>
+              <input type="number" min={0} step={5} value={defaultRate} disabled={!isAdmin}
+                onChange={e => setDefaultRate(e.target.value)}
+                className="w-full bg-transparent px-1 text-sm font-semibold text-[var(--text-primary)] outline-none disabled:opacity-60" />
+              <span className="text-sm text-[var(--text-muted)]">/ hr</span>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">Applied to team members without their own rate set.</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Daily target hours</label>
+            <div className="flex items-center rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2.5 py-2">
+              <input type="number" min={0} max={24} step={0.5} value={dailyTarget} disabled={!isAdmin}
+                onChange={e => setDailyTarget(e.target.value)}
+                className="w-full bg-transparent text-sm font-semibold text-[var(--text-primary)] outline-none disabled:opacity-60" />
+              <span className="text-sm text-[var(--text-muted)]">h</span>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">Drives the timeline target line + utilisation target.</p>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Rounding increment</label>
+            <select value={rounding} disabled={!isAdmin} onChange={e => setRounding(Number(e.target.value))} className="input-base">
+              <option value={1}>1 min (off)</option>
+              <option value={5}>5 min</option>
+              <option value={6}>6 min</option>
+              <option value={10}>10 min</option>
+              <option value={15}>15 min</option>
+              <option value={30}>30 min</option>
+            </select>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">Timer + drag entries snap to this.</p>
+          </div>
         </div>
       </div>
 

@@ -24,7 +24,7 @@ const TYPES: { value: TimeEntryType; label: string }[] = [
 ];
 
 export default function EntryModal({ entry, defaultDate, prefill, onClose }: Props) {
-  const { clients, activities, staff, addEntry, updateEntry, deleteEntry, meId } = useTimesheets();
+  const { clients, activities, staff, addEntry, updateEntry, deleteEntry, meId, roundingMinutes } = useTimesheets();
   const editing = !!entry;
   const me = staff.find(s => s.id === meId) ?? staff[0];
 
@@ -48,6 +48,12 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
     if (a && !editing) setType(a.type);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activity]);
+
+  // Minute options follow the firm's rounding increment; always include the
+  // current value so an existing entry's odd duration still displays.
+  const inc = Math.max(1, roundingMinutes);
+  const minOptions = [...new Set([...Array.from({ length: Math.ceil(60 / inc) }, (_, i) => i * inc).filter(m => m < 60), mins])]
+    .sort((a, b) => a - b);
 
   const totalMinutes = hours * 60 + mins;
   const client = clients.find(c => c.id === clientId) ?? null;
@@ -157,7 +163,7 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
                   {Array.from({ length: 13 }, (_, i) => <option key={i} value={i}>{i}h</option>)}
                 </select>
                 <select className="input-base !px-2" value={mins} onChange={e => setMins(Number(e.target.value))}>
-                  {[0, 15, 30, 45].map(m => <option key={m} value={m}>{m}m</option>)}
+                  {minOptions.map(m => <option key={m} value={m}>{m}m</option>)}
                 </select>
               </div>
             </div>

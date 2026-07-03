@@ -176,7 +176,7 @@ function makeReports(): ReportDef[] {
 }
 
 export default function Reports() {
-  const { entries, staff, clientBudgets, setClientBudget } = useTimesheets();
+  const { entries, staff, clientBudgets, setClientBudget, dailyTargetHours } = useTimesheets();
   const [period, setPeriod] = useState<Period>('this');
   const [reportId, setReportId] = useState('client');
   const [toast, setToast] = useState('');
@@ -231,15 +231,21 @@ export default function Reports() {
     }
     if (reportId === 'utilisation') {
       const rows = perStaff(scoped, staff, todayIso());
+      // Target utilisation = firm daily target hours (×5) as a share of each
+      // person's weekly capacity.
+      const targetFor = (capacityMinutes: number) => Math.min(1, capacityMinutes ? (dailyTargetHours * 5 * 60) / capacityMinutes : 0);
       return {
-        rows: rows.map(r => ({
-          id: r.staff.id, label: r.staff.name, primary: fmtPct(r.utilisation), ratio: Math.min(1, r.utilisation),
-          color: r.utilisation >= 0.85 ? '#10B981' : r.utilisation >= 0.6 ? '#F59E0B' : '#F43F5E',
-          secondary: `${fmtDuration(r.billable)} billable`, target: 0.85,
-        })),
+        rows: rows.map(r => {
+          const tgt = targetFor(r.capacityMinutes);
+          return {
+            id: r.staff.id, label: r.staff.name, primary: fmtPct(r.utilisation), ratio: Math.min(1, r.utilisation),
+            color: r.utilisation >= tgt ? '#10B981' : r.utilisation >= tgt * 0.7 ? '#F59E0B' : '#F43F5E',
+            secondary: `${fmtDuration(r.billable)} billable`, target: tgt,
+          };
+        }),
         summary: [
           { label: 'Avg utilisation', value: fmtPct(rows.length ? rows.reduce((a, r) => a + r.utilisation, 0) / rows.length : 0) },
-          { label: 'Target', value: '85%' },
+          { label: 'Daily target', value: `${dailyTargetHours}h` },
         ],
         csv: { headers: ['Staff', 'Utilisation %', 'Billable hours'], data: rows.map(r => [r.staff.name, Math.round(r.utilisation * 100), (r.billable / 60).toFixed(2)]) },
       };
@@ -285,7 +291,7 @@ export default function Reports() {
       };
     }
     return reports.find(r => r.id === reportId)!.compute(scoped);
-  }, [reportId, scoped, staff, staffTime, reports, clientBudgets, weeks]);
+  }, [reportId, scoped, staff, staffTime, reports, clientBudgets, weeks, dailyTargetHours]);
 
   const NAV: { id: string; label: string; icon: typeof Users2 }[] = [
     { id: 'client', label: 'Time by client', icon: Users2 },

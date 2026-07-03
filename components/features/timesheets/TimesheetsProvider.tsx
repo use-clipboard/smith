@@ -42,6 +42,9 @@ interface TimesheetsContextValue {
   clients: TsClient[];
   activities: TsActivity[];
   departments: string[];
+  defaultRatePence: number;
+  dailyTargetHours: number;
+  roundingMinutes: number;
   reloadSettings: () => Promise<void>;
   suggestions: AiSuggestion[];
   scanning: boolean;
@@ -97,7 +100,6 @@ export function useTimesheets(): TimesheetsContextValue {
 
 const tmpId = () => `tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 const hashHue = (id: string) => { let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff; return h % 360; };
-const roleRate = (role: string) => (role === 'admin' ? 15000 : 11000);
 
 interface StaffDto {
   id: string;
@@ -111,18 +113,19 @@ interface StaffDto {
 
 const DEFAULT_CAPACITY_HOURS = 37.5;
 
-function mapStaff(members: StaffDto[], userId: string, userName: string): TsStaff[] {
+function mapStaff(members: StaffDto[], userId: string, userName: string, defaultRatePence: number): TsStaff[] {
   const rows = members.map(m => ({
     id: m.id,
     name: m.id === userId ? (userName || m.full_name || 'You') : (m.full_name || m.email?.split('@')[0] || 'Team member'),
     role: m.role === 'admin' ? 'Admin' : 'Staff',
     department: m.department || 'Unassigned',
     weeklyCapacityHours: m.weekly_capacity_hours ?? DEFAULT_CAPACITY_HOURS,
-    ratePence: m.charge_out_rate_pence ?? roleRate(m.role),
+    // Firm default charge-out rate applies to anyone without their own set.
+    ratePence: m.charge_out_rate_pence ?? defaultRatePence,
     hue: hashHue(m.id),
   }));
   if (!rows.some(r => r.id === userId)) {
-    rows.unshift({ id: userId, name: userName || 'You', role: 'Staff', department: 'Unassigned', weeklyCapacityHours: DEFAULT_CAPACITY_HOURS, ratePence: 12000, hue: hashHue(userId) });
+    rows.unshift({ id: userId, name: userName || 'You', role: 'Staff', department: 'Unassigned', weeklyCapacityHours: DEFAULT_CAPACITY_HOURS, ratePence: defaultRatePence, hue: hashHue(userId) });
   }
   return rows;
 }
@@ -144,6 +147,11 @@ export default function TimesheetsProvider({
   // to the built-in lists until loaded / in demo mode.
   const [activities, setActivities] = useState<TsActivity[]>(SEED_ACTIVITIES);
   const [departments, setDepartments] = useState<string[]>([...DEPARTMENTS]);
+  const [defaultRatePence, setDefaultRatePence] = useState(12000);
+  const [dailyTargetHours, setDailyTargetHours] = useState(7.5);
+  const [roundingMinutes, setRoundingMinutes] = useState(15);
+  const roundingRef = useRef(15);
+  roundingRef.current = roundingMinutes;
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [timer, setTimer] = useState<TimerState>(emptyTimer);
   const [scanning, setScanning] = useState(false);
@@ -211,12 +219,16 @@ export default function TimesheetsProvider({
               fetch('/api/timesheets/settings').then(r => r.ok ? r.json() : null).catch(() => null),
             ]);
             if (cancelled) return;
+            const firmRate = Number(settingsRes?.defaultRatePence) || 12000;
             if (settingsRes) {
               if (Array.isArray(settingsRes.activities) && settingsRes.activities.length) setActivities(settingsRes.activities as TsActivity[]);
               if (Array.isArray(settingsRes.departments) && settingsRes.departments.length) setDepartments(settingsRes.departments as string[]);
+              if (settingsRes.defaultRatePence != null) setDefaultRatePence(firmRate);
+              if (settingsRes.dailyTargetHours != null) setDailyTargetHours(Number(settingsRes.dailyTargetHours));
+              if (settingsRes.roundingMinutes != null) setRoundingMinutes(Number(settingsRes.roundingMinutes));
             }
             setEntries(data.entries as TimeEntry[]);
-            setLiveStaff(mapStaff((teamRes.members ?? []) as StaffDto[], userId, userName));
+            setLiveStaff(mapStaff((teamRes.members ?? []) as StaffDto[], userId, userName, firmRate));
             setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
               .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '', status: c.status })));
             setClientBudgets((budgetsRes.budgets ?? {}) as Record<string, number>);
@@ -346,8 +358,11 @@ export default function TimesheetsProvider({
   // ── Timer ───────────────────────────────────────────────────────────────────
   const commitTimer = useCallback((t: TimerState) => {
     const currentElapsedMs = t.accumulatedMs + (t.segmentStartedAt && !t.paused ? Date.now() - t.segmentStartedAt : 0);
-    const minutes = Math.round(currentElapsedMs / 60000);
-    if (minutes < 1) return;
+    const raw = Math.round(currentElapsedMs / 60000);
+    if (raw < 1) return;
+    // Round the tracked duration to the firm's increment (min one increment).
+    const inc = Math.max(1, roundingRef.current);
+    const minutes = Math.max(inc, Math.round(raw / inc) * inc);
     const meStaff = (modeRef.current === 'live' ? liveStaff : SEED_STAFF)?.find(s => s.id === (modeRef.current === 'live' ? userId : ME_ID));
     const now2 = new Date();
     const hh = String(now2.getHours()).padStart(2, '0');
@@ -471,6 +486,9 @@ export default function TimesheetsProvider({
       const d = await res.json();
       if (Array.isArray(d.activities) && d.activities.length) setActivities(d.activities as TsActivity[]);
       if (Array.isArray(d.departments) && d.departments.length) setDepartments(d.departments as string[]);
+      if (d.defaultRatePence != null) setDefaultRatePence(Number(d.defaultRatePence));
+      if (d.dailyTargetHours != null) setDailyTargetHours(Number(d.dailyTargetHours));
+      if (d.roundingMinutes != null) setRoundingMinutes(Number(d.roundingMinutes));
     } catch { /* ignore */ }
   }, []);
 
@@ -577,7 +595,8 @@ export default function TimesheetsProvider({
   const hasSampleData = mode === 'demo' || entries.length > 0;
 
   const value = useMemo<TimesheetsContextValue>(() => ({
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments, reloadSettings,
+    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments,
+    defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample, updateStaffRate, timer, elapsedMs,
     clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
@@ -585,7 +604,8 @@ export default function TimesheetsProvider({
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments, reloadSettings,
+    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments,
+    defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample,
     updateStaffRate, timer, elapsedMs, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,

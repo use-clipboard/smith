@@ -29,7 +29,7 @@ function buildDonutRows(slices: { id: string; label: string; minutes: number }[]
 }
 
 export default function OverviewDashboard() {
-  const { entries, staff, suggestions, meId, mode, loadSampleWeek, loadingSample } = useTimesheets();
+  const { entries, staff, suggestions, meId, mode, loadSampleWeek, loadingSample, dailyTargetHours } = useTimesheets();
   const [scope, setScope] = useState<Scope>('me');
   const [period, setPeriod] = useState<Period>('this');
 
@@ -63,7 +63,8 @@ export default function OverviewDashboard() {
   const { t, tPrev } = data;
   const dTotal = delta(t.total, tPrev.total);
   const dValue = delta(t.chargeablePence, tPrev.chargeablePence);
-  const dailyTarget = scope === 'me' ? me.weeklyCapacityHours / 5 : undefined;
+  // Firm daily target (per person); the whole-firm view scales it by headcount.
+  const dailyTarget = scope === 'me' ? dailyTargetHours : dailyTargetHours * staff.length;
 
   // Recent entries: personal, most recent first.
   const recent = useMemo(
