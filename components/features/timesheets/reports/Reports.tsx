@@ -9,13 +9,22 @@ import { useTimesheets } from '../TimesheetsProvider';
 import {
   byClient, perStaff, valueOf, recoveryFactor, defaultWeeklyBudgetMinutes,
 } from '@/lib/timesheets/compute';
-import { weekDates, addDays, todayIso, fmtDuration, fmtHours, fmtPct, fmtGBPCompact } from '@/lib/timesheets/format';
+import { weekDates, addDays, todayIso, fmtDuration, fmtHours, fmtPct, fmtGBPCompact, fmtDateUK } from '@/lib/timesheets/format';
 import { colorAt } from '@/lib/timesheets/palette';
 import { exportReportPdf } from '@/lib/timesheets/reportPdf';
 import { GlassCard } from '../shared/ui';
 import BudgetEditorModal from './BudgetEditorModal';
 
-type Period = 'this' | 'last' | 'fortnight';
+type Period = 'this' | 'last' | 'fortnight' | 'custom';
+
+/** Inclusive list of ISO dates between two dates (guarded to ~13 months). */
+function datesBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let d = from;
+  let guard = 0;
+  while (d <= to && guard++ < 400) { out.push(d); d = addDays(d, 1); }
+  return out;
+}
 
 interface ReportRow {
   id: string;
@@ -153,14 +162,22 @@ export default function Reports() {
   const [reportId, setReportId] = useState('client');
   const [toast, setToast] = useState('');
   const [editingBudgets, setEditingBudgets] = useState(false);
+  const [customFrom, setCustomFrom] = useState(() => addDays(todayIso(), -29));
+  const [customTo, setCustomTo] = useState(() => todayIso());
 
-  const weeks = period === 'fortnight' ? 2 : 1;
+  // Guard against an inverted custom range.
+  const rangeFrom = customFrom <= customTo ? customFrom : customTo;
+  const rangeTo = customFrom <= customTo ? customTo : customFrom;
+
+  const customDates = useMemo(() => datesBetween(rangeFrom, rangeTo), [rangeFrom, rangeTo]);
+  const weeks = period === 'fortnight' ? 2 : period === 'custom' ? Math.max(1, customDates.length / 7) : 1;
 
   const dateSet = useMemo(() => {
+    if (period === 'custom') return new Set(customDates);
     if (period === 'fortnight') return new Set([...weekDates(todayIso()), ...weekDates(addDays(todayIso(), -7))]);
     if (period === 'last') return new Set(weekDates(addDays(todayIso(), -7)));
     return new Set(weekDates(todayIso()));
-  }, [period]);
+  }, [period, customDates]);
 
   const scoped = useMemo(() => entries.filter(e => dateSet.has(e.date)), [entries, dateSet]);
 
@@ -292,19 +309,34 @@ export default function Reports() {
     });
   }
 
-  const periodLabel = period === 'this' ? 'This week' : period === 'last' ? 'Last week' : 'Last 2 weeks';
+  const periodLabel =
+    period === 'this' ? 'This week'
+    : period === 'last' ? 'Last week'
+    : period === 'fortnight' ? 'Last 2 weeks'
+    : `${fmtDateUK(rangeFrom)} – ${fmtDateUK(rangeTo)}`;
 
   return (
     <div className="space-y-5">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex gap-1 rounded-xl bg-[var(--bg-nav-hover)] p-1">
-          {(['this', 'last', 'fortnight'] as Period[]).map(p => (
-            <button key={p} onClick={() => setPeriod(p)}
-              className={`rounded-lg px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${period === p ? 'bg-white text-[var(--accent)] shadow-sm' : 'text-[var(--text-muted)]'}`}>
-              {p === 'this' ? 'This week' : p === 'last' ? 'Last week' : 'Fortnight'}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex gap-1 rounded-xl bg-[var(--bg-nav-hover)] p-1">
+            {(['this', 'last', 'fortnight', 'custom'] as Period[]).map(p => (
+              <button key={p} onClick={() => setPeriod(p)}
+                className={`rounded-lg px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${period === p ? 'bg-white text-[var(--accent)] shadow-sm' : 'text-[var(--text-muted)]'}`}>
+                {p === 'this' ? 'This week' : p === 'last' ? 'Last week' : p === 'fortnight' ? 'Fortnight' : 'Custom'}
+              </button>
+            ))}
+          </div>
+          {period === 'custom' && (
+            <div className="flex items-center gap-1.5 rounded-xl bg-white/70 px-2.5 py-1.5 shadow-sm">
+              <input type="date" value={customFrom} max={customTo} onChange={e => setCustomFrom(e.target.value)}
+                className="bg-transparent text-[12.5px] text-[var(--text-primary)] outline-none" />
+              <span className="text-[var(--text-muted)]">→</span>
+              <input type="date" value={customTo} min={customFrom} onChange={e => setCustomTo(e.target.value)}
+                className="bg-transparent text-[12.5px] text-[var(--text-primary)] outline-none" />
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {reportId === 'budget' && (

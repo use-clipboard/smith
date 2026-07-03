@@ -18,19 +18,34 @@ const SEGMENTS = [
   { key: 'internal', color: TYPE_COLORS.internal, label: TYPE_LABELS.internal },
 ] as const;
 
+/** Round a rough tick size up to the nearest 1 / 2 / 2.5 / 5 / 10 × 10ⁿ so
+ *  axis labels stay legible at any magnitude (9h personal → 80h+ firm-wide). */
+function niceStep(rough: number): number {
+  if (!isFinite(rough) || rough <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+  const n = rough / pow;
+  const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return nice * pow;
+}
+
 export default function WeeklyActivityChart({ days, targetHours, height = 240 }: Props) {
   const [hover, setHover] = useState<number | null>(null);
 
   const maxMin = Math.max(60, ...days.map(d => d.total));
-  // Round the axis up to a whole hour above the tallest bar.
-  const axisMax = Math.ceil(maxMin / 60) * 60;
-  const gridHours = Array.from({ length: axisMax / 60 + 1 }, (_, i) => i);
+  const maxHours = maxMin / 60;
+  // Pick a "nice" tick step so we always show ~5 readable gridlines, whether
+  // the scale is a personal ~9h day or a whole-firm ~80h day.
+  const step = niceStep(maxHours / 5);
+  const axisMaxHours = Math.max(step, Math.ceil(maxHours / step) * step);
+  const axisMax = axisMaxHours * 60; // minutes
+  const gridHours: number[] = [];
+  for (let h = 0; h <= axisMaxHours + 1e-9; h += step) gridHours.push(Math.round(h * 100) / 100);
 
   return (
     <div>
       <div className="flex" style={{ height }}>
         {/* Y axis */}
-        <div className="relative w-8 shrink-0 text-[10px] text-[var(--text-muted)]">
+        <div className="relative w-10 shrink-0 text-[10px] text-[var(--text-muted)]">
           {gridHours.slice().reverse().map(h => (
             <div
               key={h}

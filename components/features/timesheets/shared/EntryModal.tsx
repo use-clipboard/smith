@@ -11,6 +11,8 @@ interface Props {
   /** Existing entry to edit, or a partial seed (e.g. clicked day). */
   entry?: TimeEntry | null;
   defaultDate?: string;
+  /** Pre-populate a new entry (e.g. allocating a calendar event). */
+  prefill?: { date?: string; start?: string; minutes?: number; taskTitle?: string; notes?: string };
   onClose: () => void;
 }
 
@@ -20,20 +22,23 @@ const TYPES: { value: TimeEntryType; label: string }[] = [
   { value: 'internal', label: 'Internal' },
 ];
 
-export default function EntryModal({ entry, defaultDate, onClose }: Props) {
+export default function EntryModal({ entry, defaultDate, prefill, onClose }: Props) {
   const { clients, activities, staff, addEntry, updateEntry, deleteEntry, meId } = useTimesheets();
   const editing = !!entry;
   const me = staff.find(s => s.id === meId) ?? staff[0];
 
+  // Calendar events can be any length; snap the prefill to the nearest 15 min.
+  const pfMinutes = prefill?.minutes != null ? Math.max(15, Math.round(prefill.minutes / 15) * 15) : null;
+
   const [clientId, setClientId] = useState<string | null>(entry?.clientId ?? null);
   const [activity, setActivity] = useState(entry?.activity ?? activities[0].label);
   const [type, setType] = useState<TimeEntryType>(entry?.type ?? 'billable');
-  const [date, setDate] = useState(entry?.date ?? defaultDate ?? todayIso());
-  const [start, setStart] = useState(entry?.start && entry.start !== '—' ? entry.start : '09:00');
-  const [hours, setHours] = useState(entry ? Math.floor(entry.minutes / 60) : 1);
-  const [mins, setMins] = useState(entry ? entry.minutes % 60 : 0);
-  const [taskTitle, setTaskTitle] = useState(entry?.taskTitle ?? '');
-  const [notes, setNotes] = useState(entry?.notes ?? '');
+  const [date, setDate] = useState(entry?.date ?? prefill?.date ?? defaultDate ?? todayIso());
+  const [start, setStart] = useState(entry?.start && entry.start !== '—' ? entry.start : (prefill?.start ?? '09:00'));
+  const [hours, setHours] = useState(entry ? Math.floor(entry.minutes / 60) : (pfMinutes ? Math.floor(pfMinutes / 60) : 1));
+  const [mins, setMins] = useState(entry ? entry.minutes % 60 : (pfMinutes ? pfMinutes % 60 : 0));
+  const [taskTitle, setTaskTitle] = useState(entry?.taskTitle ?? prefill?.taskTitle ?? '');
+  const [notes, setNotes] = useState(entry?.notes ?? prefill?.notes ?? '');
 
   // When the picked activity changes, adopt its default type + department once.
   useEffect(() => {

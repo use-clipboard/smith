@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Play, CalendarDays, Lock, Send, CheckCircle2, RotateCcw, Clock3 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Plus, Play, CalendarDays, Lock, Send, CheckCircle2, RotateCcw, Clock3, CalendarClock } from 'lucide-react';
 import type { TimeEntry } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
 import { TYPE_COLORS } from '@/lib/timesheets/palette';
@@ -18,6 +18,16 @@ const DAY_END = 20;    // 20:00
 const HOURS = DAY_END - DAY_START;
 const PX_PER_HOUR = 56;
 const TIMELINE_H = HOURS * PX_PER_HOUR;
+
+interface TsCalEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  startHHmm: string;
+  minutes: number;
+  location?: string;
+}
 
 const parseMin = (hhmm: string): number => {
   if (!hhmm || hhmm === '—') return DAY_START * 60;
@@ -58,6 +68,30 @@ export default function MyTimesheet() {
   const [dragPreview, setDragPreview] = useState<{ id: string; mode: 'move' | 'resize'; deltaMin: number } | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null); // week-strip chip being hovered mid-drag
   const weekLockedRef = useRef(false);
+
+  // Google Calendar overlay — events for the selected day, allocatable to time.
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calEvents, setCalEvents] = useState<TsCalEvent[]>([]);
+  const [allocating, setAllocating] = useState<TsCalEvent | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/calendar/status')
+      .then(r => (r.ok ? r.json() : { connected: false }))
+      .then(d => { if (!cancelled) setCalendarConnected(!!d.connected); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!calendarConnected) { setCalEvents([]); return; }
+    let cancelled = false;
+    fetch(`/api/timesheets/calendar?date=${selectedDay}`)
+      .then(r => (r.ok ? r.json() : { events: [] }))
+      .then(d => { if (!cancelled) setCalEvents((d.events ?? []) as TsCalEvent[]); })
+      .catch(() => { if (!cancelled) setCalEvents([]); });
+    return () => { cancelled = true; };
+  }, [calendarConnected, selectedDay]);
 
   // Pointer-driven drag: move a block (change start, or drop onto another day),
   // or resize it (change duration). Snaps to 15 minutes. A press without
@@ -221,7 +255,14 @@ export default function MyTimesheet() {
               <h3 className="text-[15px] font-bold text-[var(--text-primary)]">{fmtWeekday(selectedDay)} {fmtDateUK(selectedDay)}</h3>
               <p className="text-xs text-[var(--text-muted)]">{fmtHours(dayTotals.total)} logged · {fmtHours(dayTotals.billable)} billable</p>
             </div>
-            <p className="hidden text-[11px] text-[var(--text-muted)] sm:block">Drag to move · onto a day above to reschedule · edge to resize · click to edit</p>
+            <div className="flex items-center gap-3">
+              {calendarConnected && calEvents.length > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10.5px] font-semibold text-indigo-600">
+                  <CalendarClock size={12} /> {calEvents.length} calendar
+                </span>
+              )}
+              <p className="hidden text-[11px] text-[var(--text-muted)] lg:block">Drag to move · edge to resize · click to edit</p>
+            </div>
           </div>
           <div className="p-5">
             <div className="relative flex" style={{ height: TIMELINE_H }}>
@@ -305,6 +346,34 @@ export default function MyTimesheet() {
                   </div>
                 )}
               </div>
+
+              {/* Calendar rail — the day's Google Calendar events, allocatable to time */}
+              {calendarConnected && calEvents.length > 0 && (
+                <div className="relative ml-2 w-[150px] shrink-0 border-l border-black/5 pl-2">
+                  {calEvents.map(ev => {
+                    const startM = parseMin(ev.startHHmm);
+                    const top = Math.max(0, ((startM - DAY_START * 60) / (HOURS * 60)) * TIMELINE_H);
+                    const h = Math.max(18, (ev.minutes / (HOURS * 60)) * TIMELINE_H);
+                    return (
+                      <button
+                        key={ev.id}
+                        onClick={() => { if (!locked) setAllocating(ev); }}
+                        disabled={locked}
+                        className="group absolute left-2 right-0 overflow-hidden rounded-lg border border-dashed border-indigo-300 bg-indigo-50/70 px-1.5 py-1 text-left transition-colors hover:border-indigo-400 hover:bg-indigo-50 disabled:cursor-default"
+                        style={{ top, height: h }}
+                      >
+                        <p className="truncate text-[10px] font-semibold text-indigo-900">{ev.title}</p>
+                        {h > 26 && <p className="truncate text-[9px] text-indigo-500">{ev.startHHmm} · {fmtDuration(ev.minutes)}</p>}
+                        {!locked && h > 42 && (
+                          <span className="mt-0.5 inline-flex items-center gap-0.5 text-[9px] font-semibold text-indigo-600 opacity-0 transition-opacity group-hover:opacity-100">
+                            <Plus size={9} /> Log time
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </GlassCard>
@@ -337,6 +406,18 @@ export default function MyTimesheet() {
 
       {editing && <EntryModal entry={editing} onClose={() => setEditing(null)} />}
       {adding && <EntryModal defaultDate={adding} onClose={() => setAdding(null)} />}
+      {allocating && (
+        <EntryModal
+          prefill={{
+            date: selectedDay,
+            start: allocating.startHHmm,
+            minutes: allocating.minutes,
+            taskTitle: allocating.title,
+            notes: `From calendar: ${allocating.title}`,
+          }}
+          onClose={() => setAllocating(null)}
+        />
+      )}
       {startingTimer && <TimerStartModal onClose={() => setStartingTimer(false)} />}
     </div>
   );
