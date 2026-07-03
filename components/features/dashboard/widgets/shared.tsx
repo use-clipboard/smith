@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useTabContext } from '@/components/ui/TabContext';
+import AnimatedDonut from '@/components/ui/AnimatedDonut';
 
 /** Open a tool in a tab (focuses it if already open) — used by widget "View all" links. */
 export function useOpenTool() {
@@ -62,9 +62,10 @@ export function StatRow({
   );
 }
 
-/** Lightweight SVG donut. segments are drawn in order; remainder shows as a
- *  track. When a segment carries a `label`, hovering it shows a dark pill
- *  tooltip ("Label: value") above the donut. */
+/** SVG donut — now a thin adapter over the shared AnimatedDonut so every donut
+ *  in the app (dashboard, clients, team, MTD IT) animates identically:
+ *  hovering a segment highlights it and swaps the centre to that segment's
+ *  label + value. Keeps the original `segments` API so callers don't change. */
 export function Donut({
   segments, size = 96, thickness = 13, centerValue, centerSub,
 }: {
@@ -74,60 +75,14 @@ export function Donut({
   centerValue?: string | number;
   centerSub?: string;
 }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
-  const r = (size - thickness) / 2;
-  const circ = 2 * Math.PI * r;
-  let offset = 0;
-  const active = hover != null ? segments[hover] : null;
   return (
-    <div className="relative inline-flex shrink-0">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(15,15,26,0.08)" strokeWidth={thickness} />
-          {segments.map((s, i) => {
-            const len = (s.value / total) * circ;
-            const interactive = !!s.label && s.value > 0;
-            const seg = (
-              <circle
-                key={i}
-                cx={size / 2}
-                cy={size / 2}
-                r={r}
-                fill="none"
-                stroke={s.color}
-                strokeWidth={thickness}
-                strokeDasharray={`${len} ${circ - len}`}
-                strokeDashoffset={-offset}
-                className={interactive ? 'cursor-pointer transition-opacity hover:opacity-80' : undefined}
-                onMouseEnter={interactive ? () => setHover(i) : undefined}
-                onMouseLeave={interactive ? () => setHover(prev => (prev === i ? null : prev)) : undefined}
-              />
-            );
-            offset += len;
-            return seg;
-          })}
-        </g>
-        {centerValue !== undefined && (
-          <text x="50%" y="48%" textAnchor="middle" dominantBaseline="middle" style={{ fill: 'var(--text-primary)', fontSize: 22, fontWeight: 700 }}>
-            {centerValue}
-          </text>
-        )}
-        {centerSub && (
-          <text x="50%" y="64%" textAnchor="middle" style={{ fill: 'var(--text-muted)', fontSize: 9 }}>
-            {centerSub}
-          </text>
-        )}
-      </svg>
-      {active?.label && (
-        <div
-          className="absolute left-1/2 -translate-x-1/2 -top-7 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg whitespace-nowrap pointer-events-none z-10"
-          role="tooltip"
-        >
-          {active.label}: {active.value}
-        </div>
-      )}
-    </div>
+    <AnimatedDonut
+      slices={segments.map((s, i) => ({ id: String(i), label: s.label ?? '', value: s.value, color: s.color }))}
+      size={size}
+      thickness={thickness}
+      centerValue={centerValue !== undefined ? String(centerValue) : undefined}
+      centerTitle={centerSub}
+    />
   );
 }
 

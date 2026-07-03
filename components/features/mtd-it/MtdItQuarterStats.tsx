@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, BarChart3, X } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import AnimatedDonut from '@/components/ui/AnimatedDonut';
 import { getQuartersForYear, taxYearLabel } from '@/lib/mtdIt/quarters';
 import type { MtdItClientRow as Row, MtdItQuarterStatus, MtdItQuarterType } from '@/types';
 
@@ -203,78 +204,23 @@ interface DonutProps {
   onSelect: (bucket: Bucket) => void;
 }
 
-function Donut({ quarter, monthsLabel, counts, total, onSelect }: DonutProps) {
-  // SVG donut: 100×100 viewBox, radius 40, stroke-width 14. Segments are drawn
-  // as <circle> elements using stroke-dasharray so each takes up a fraction of
-  // the circumference proportional to its share of the total.
-  const R = 40;
-  const C = 2 * Math.PI * R;
-
-  // Build the segments in the canonical order. Skip zero-count buckets so
-  // there's no sub-pixel stroke artefact at zero-length segments.
-  const segments: Array<{ bucket: Bucket; count: number; len: number }> = [];
-  for (const b of BUCKET_ORDER) {
-    const n = counts[b];
-    if (n <= 0) continue;
-    const len = (n / total) * C;
-    segments.push({ bucket: b, count: n, len });
-  }
-
-  // Hover state for the custom segment tooltip (renders inside the donut box
-  // so it tracks the donut position even on scroll, and uses the same dark
-  // pill styling as the chip tooltips below).
-  const [hover, setHover] = useState<Bucket | null>(null);
+function Donut({ quarter, monthsLabel, counts, onSelect }: DonutProps) {
+  // Shared animated donut — hovering a segment highlights it and swaps the
+  // centre from "Q{n}" to that bucket's label + count; clicking drills in.
+  const slices = BUCKET_ORDER
+    .filter(b => counts[b] > 0)
+    .map(b => ({ id: b, label: BUCKET_STYLE[b].label, value: counts[b], color: BUCKET_STYLE[b].fill }));
 
   return (
     <div className="flex flex-col items-center">
-      <div className="relative w-[112px] h-[112px]">
-        <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-          {/* Track */}
-          <circle cx="50" cy="50" r={R} fill="none" stroke="#f3f4f6" strokeWidth="14" />
-          {/* Segments */}
-          {(() => {
-            let offset = 0;
-            return segments.map(seg => {
-              const node = (
-                <circle
-                  key={seg.bucket}
-                  cx="50"
-                  cy="50"
-                  r={R}
-                  fill="none"
-                  stroke={BUCKET_STYLE[seg.bucket].fill}
-                  strokeWidth="14"
-                  strokeDasharray={`${seg.len} ${C - seg.len}`}
-                  strokeDashoffset={-offset}
-                  className="cursor-pointer transition-opacity hover:opacity-80"
-                  onMouseEnter={() => setHover(seg.bucket)}
-                  onMouseLeave={() => setHover(prev => (prev === seg.bucket ? null : prev))}
-                  onClick={() => onSelect(seg.bucket)}
-                  role="button"
-                  aria-label={`${BUCKET_STYLE[seg.bucket].label}: ${seg.count}`}
-                />
-              );
-              offset += seg.len;
-              return node;
-            });
-          })()}
-        </svg>
-        {/* Centre label */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="text-sm font-semibold text-gray-800 leading-none">Q{quarter}</div>
-          <div className="text-[10px] text-gray-500 mt-0.5">{monthsLabel}</div>
-        </div>
-        {/* Segment hover tooltip — sits above the donut so the cursor doesn't
-            cover it. Pointer-events-none so it never steals the hover. */}
-        {hover && (
-          <div
-            className="absolute left-1/2 -translate-x-1/2 -top-7 px-2.5 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg whitespace-nowrap pointer-events-none z-10"
-            role="tooltip"
-          >
-            {BUCKET_STYLE[hover].label}: {counts[hover]}
-          </div>
-        )}
-      </div>
+      <AnimatedDonut
+        size={116}
+        thickness={16}
+        slices={slices}
+        centerValue={`Q${quarter}`}
+        centerTitle={monthsLabel}
+        onSliceClick={id => onSelect(id as Bucket)}
+      />
       {/* Per-quarter counts strip — click to drill into that bucket */}
       <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1">
         {BUCKET_ORDER.map(b => {
