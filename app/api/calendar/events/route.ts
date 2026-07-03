@@ -14,6 +14,17 @@ const MEMBER_COLORS = [
   '#ef4444', '#06b6d4', '#ec4899', '#84cc16',
 ];
 
+// Deterministically map a member's user id to a palette colour so each person
+// keeps the SAME colour every time — independent of query/row order (which is
+// non-deterministic) and of who else is on the team.
+function colorForMember(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) | 0;
+  }
+  return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
+}
+
 /** GET /api/calendar/events?start=ISO&end=ISO — fetch team events */
 export async function GET(request: NextRequest) {
   const ctx = await getUserContext();
@@ -86,8 +97,8 @@ export async function GET(request: NextRequest) {
   const fetchErrors: { memberId: string; error: string }[] = [];
 
   await Promise.all(
-    teamMembers.map(async (member, i) => {
-      const color = MEMBER_COLORS[i % MEMBER_COLORS.length];
+    teamMembers.map(async (member) => {
+      const color = colorForMember(member.id);
       const token = tokenMap.get(member.id);
       const isConnected = !!token?.google_refresh_token;
 

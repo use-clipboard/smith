@@ -659,6 +659,7 @@ export default function CalendarClient() {
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
+                showOwner={visibleMembers.length > 1}
               />
             )}
             {viewMode === 'week' && (
@@ -670,6 +671,7 @@ export default function CalendarClient() {
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
+                showOwner={visibleMembers.length > 1}
               />
             )}
             {viewMode === 'agenda' && (
@@ -680,6 +682,7 @@ export default function CalendarClient() {
                 onEventClick={handleEventClick}
                 onReminderClick={(e, r) => { e.stopPropagation(); setEditingReminder(r); setShowReminderModal(true); }}
                 currentUserId={userId}
+                showOwner={visibleMembers.length > 1}
               />
             )}
           </div>
@@ -937,7 +940,7 @@ export default function CalendarClient() {
 // ── Month View ────────────────────────────────────────────────────────────────
 
 function MonthView({
-  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId,
+  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId, showOwner,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
@@ -946,6 +949,7 @@ function MonthView({
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
   onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
+  showOwner: boolean;
 }) {
   const today = new Date();
   const year = currentDate.getFullYear();
@@ -1046,7 +1050,7 @@ function MonthView({
                     </div>
                     </Tooltip>
                   ) : (
-                    <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
+                    <Tooltip key={ev.id} label={`${ev.title}${showOwner && ev.ownerName ? ` · ${ev.ownerName}` : ''}${ev.isHidden ? ' (hidden from team)' : ''}`} side="top">
                     <div
                       onClick={e => onEventClick(e, ev)}
                       className="text-[11px] leading-tight px-1.5 py-0.5 rounded cursor-pointer hover:opacity-80 flex items-center gap-0.5 overflow-hidden"
@@ -1079,7 +1083,7 @@ function MonthView({
 // ── Week View ─────────────────────────────────────────────────────────────────
 
 function WeekView({
-  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId,
+  currentDate, events, reminders, onDayClick, onEventClick, onReminderClick, currentUserId, showOwner,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
@@ -1088,6 +1092,7 @@ function WeekView({
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
   onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
+  showOwner: boolean;
 }) {
   const today = new Date();
   const startOfWeek = new Date(currentDate);
@@ -1161,7 +1166,7 @@ function WeekView({
                   </div>
                   </Tooltip>
                 ) : (
-                  <Tooltip key={ev.id} label={ev.isHidden ? `${ev.title} (hidden from team)` : ev.title} side="top">
+                  <Tooltip key={ev.id} label={`${ev.title}${showOwner && ev.ownerName ? ` · ${ev.ownerName}` : ''}${ev.isHidden ? ' (hidden from team)' : ''}`} side="top">
                   <div
                     onClick={e => onEventClick(e, ev)}
                     className="text-[11px] px-1.5 py-1 rounded cursor-pointer hover:opacity-80 overflow-hidden"
@@ -1190,7 +1195,7 @@ function WeekView({
 // ── Agenda View ───────────────────────────────────────────────────────────────
 
 function AgendaView({
-  currentDate, events, reminders, onEventClick, onReminderClick, currentUserId,
+  currentDate, events, reminders, onEventClick, onReminderClick, currentUserId, showOwner,
 }: {
   currentDate: Date;
   events: CalendarEvent[];
@@ -1198,6 +1203,7 @@ function AgendaView({
   onEventClick: (e: React.MouseEvent, ev: CalendarEvent) => void;
   onReminderClick: (e: React.MouseEvent, r: PersonalReminder) => void;
   currentUserId: string;
+  showOwner: boolean;
 }) {
   // Group events + reminders by date
   const groups: { label: string; date: Date; events: CalendarEvent[]; reminders: PersonalReminder[] }[] = [];
@@ -1295,7 +1301,7 @@ function AgendaView({
                       }
                       {!isMasked && ev.location && ` · ${ev.location}`}
                     </p>
-                    {ev.ownerName && (
+                    {showOwner && ev.ownerName && (
                       <p className="text-[11px] text-[var(--text-muted)] mt-0.5">{ev.ownerName}</p>
                     )}
                   </div>
