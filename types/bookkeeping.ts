@@ -324,7 +324,12 @@ export interface RecurringTransaction {
   frequency: RecurringFrequency;
   interval_count: number;
   next_due_date: string;
+  /** Stop once next_due_date passes this date (null = no date limit). */
   end_date: string | null;
+  /** Stop after this many posted occurrences (null = no count limit). */
+  max_occurrences: number | null;
+  /** How many occurrences have been posted so far. */
+  occurrences_posted: number;
   last_run_date: string | null;
   active: boolean;
   template: RecurringTemplate;

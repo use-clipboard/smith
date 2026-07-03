@@ -182,7 +182,7 @@ function formatDateUk(iso?: string): string {
   return `${d}/${m}/${y}`;
 }
 
-function TxnTAccountHover({
+export function TxnTAccountHover({
   txn, initialSplits, bookId, children,
 }: {
   txn: TxnLike;

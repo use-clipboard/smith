@@ -22,6 +22,7 @@ const PatchBody = z.object({
   interval_count: z.number().int().min(1).max(52).optional(),
   next_due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  max_occurrences: z.number().int().min(1).max(999).nullable().optional(),
   active: z.boolean().optional(),
 });
 
@@ -45,6 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.interval_count !== undefined) patch.interval_count = body.interval_count;
   if (body.next_due_date !== undefined) patch.next_due_date = body.next_due_date;
   if (body.end_date !== undefined) patch.end_date = body.end_date;
+  if (body.max_occurrences !== undefined) patch.max_occurrences = body.max_occurrences;
   if (body.active !== undefined) patch.active = body.active;
 
   const { data, error } = await supabase

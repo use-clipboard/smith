@@ -37,8 +37,16 @@ export function advanceDate(fromIso: string, frequency: RecurringFrequency, inte
 }
 
 /** Whether a schedule has a due occurrence on/before `todayIso`. */
-export function isDue(nextDueIso: string, active: boolean, todayIso: string, endDateIso: string | null): boolean {
+export function isDue(
+  nextDueIso: string,
+  active: boolean,
+  todayIso: string,
+  endDateIso: string | null,
+  maxOccurrences: number | null = null,
+  occurrencesPosted = 0,
+): boolean {
   if (!active) return false;
   if (endDateIso && nextDueIso > endDateIso) return false;
+  if (maxOccurrences != null && occurrencesPosted >= maxOccurrences) return false;
   return nextDueIso <= todayIso;
 }

@@ -42,6 +42,7 @@ const CreateBody = z.object({
   interval_count: z.number().int().min(1).max(52).default(1),
   next_due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  max_occurrences: z.number().int().min(1).max(999).nullable().optional(),
   template: TemplateSchema,
 });
 
@@ -64,7 +65,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const today = new Date().toISOString().slice(0, 10);
   const recurring = (data ?? []).map(r => ({
     ...r,
-    is_due: isDue(r.next_due_date as string, r.active as boolean, today, (r.end_date as string | null) ?? null),
+    is_due: isDue(
+      r.next_due_date as string,
+      r.active as boolean,
+      today,
+      (r.end_date as string | null) ?? null,
+      (r.max_occurrences as number | null) ?? null,
+      (r.occurrences_posted as number | null) ?? 0,
+    ),
   }));
   return NextResponse.json({ recurring, due_count: recurring.filter(r => r.is_due).length });
 }
@@ -98,6 +106,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       interval_count: body.interval_count,
       next_due_date: body.next_due_date,
       end_date: body.end_date ?? null,
+      max_occurrences: body.max_occurrences ?? null,
+      occurrences_posted: 0,
       template: body.template,
       created_by: ctx.userId,
     })

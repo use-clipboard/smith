@@ -31,6 +31,11 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (rec.end_date && dueDate > (rec.end_date as string)) {
     return NextResponse.json({ error: 'This recurring transaction has ended.' }, { status: 400 });
   }
+  const maxOccurrences = (rec.max_occurrences as number | null) ?? null;
+  const occurrencesPosted = (rec.occurrences_posted as number | null) ?? 0;
+  if (maxOccurrences != null && occurrencesPosted >= maxOccurrences) {
+    return NextResponse.json({ error: 'This recurring transaction has reached its occurrence limit.' }, { status: 400 });
+  }
 
   const isAdmin = ctx.userRole === 'admin';
   if (book.admin_locked && !isAdmin) return NextResponse.json({ error: 'Book is admin-locked' }, { status: 403 });
@@ -98,11 +103,21 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: splitsErr.message }, { status: 500 });
   }
 
-  // Advance the schedule by one interval.
+  // Advance the schedule by one interval and bump the occurrence counter.
+  // When a count limit is set and now reached, deactivate the schedule so it
+  // stops surfacing as due.
   const nextDue = advanceDate(dueDate, rec.frequency as RecurringFrequency, rec.interval_count as number);
+  const newPosted = occurrencesPosted + 1;
+  const reachedLimit = maxOccurrences != null && newPosted >= maxOccurrences;
   await supabase
     .from('bookkeeping_recurring_transactions')
-    .update({ next_due_date: nextDue, last_run_date: dueDate, updated_at: new Date().toISOString() })
+    .update({
+      next_due_date: nextDue,
+      last_run_date: dueDate,
+      occurrences_posted: newPosted,
+      ...(reachedLimit ? { active: false } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', params.recurringId);
 
   await supabase.from('bookkeeping_audit').insert({
