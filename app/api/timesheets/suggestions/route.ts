@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
 import { createClient } from '@/lib/supabase-server';
 import { logAiUsage } from '@/lib/driveUpload';
@@ -38,7 +37,6 @@ export async function POST(req: NextRequest) {
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const { isModuleActive } = buildModuleChecker(ctx.activeModules);
     if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-    if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
     const supabase = createClient();
     const sinceIso = new Date(Date.now() - days * 86400_000).toISOString();

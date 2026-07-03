@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createServiceClient } from '@/lib/supabase-server';
 
 const PatchSchema = z.object({
@@ -18,7 +17,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   if (ctx.userRole !== 'admin' && ctx.userId !== params.id) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

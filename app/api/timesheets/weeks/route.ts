@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createServiceClient } from '@/lib/supabase-server';
 import { createNotification } from '@/lib/notifications';
 
@@ -69,7 +68,6 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const service = createServiceClient();
   // Prefer the manager-aware select; fall back if the manager_id column isn't
@@ -110,7 +108,6 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const parsed = PostSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

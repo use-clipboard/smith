@@ -29,7 +29,7 @@ function buildDonutRows(slices: { id: string; label: string; minutes: number }[]
 }
 
 export default function OverviewDashboard() {
-  const { entries, staff, suggestions, meId, mode, loadSampleWeek, loadingSample, dailyTargetHours } = useTimesheets();
+  const { entries, staff, suggestions, meId, dailyTargetHours } = useTimesheets();
   const [scope, setScope] = useState<Scope>('me');
   const [period, setPeriod] = useState<Period>('this');
 
@@ -72,22 +72,8 @@ export default function OverviewDashboard() {
     [entries, meId],
   );
 
-  const showSamplePrompt = mode === 'live' && entries.length === 0;
-
   return (
     <div className="space-y-5">
-      {showSamplePrompt && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[var(--accent)]/20 bg-[var(--accent)]/[0.06] p-4">
-          <div>
-            <p className="text-[13.5px] font-bold text-[var(--text-primary)]">Your timesheets are connected and empty</p>
-            <p className="text-xs text-[var(--text-muted)]">Start a timer or add entries to build real data — or drop in a sample week (your own time, against your real clients) to explore the dashboards.</p>
-          </div>
-          <button onClick={loadSampleWeek} disabled={loadingSample} className="btn-secondary shrink-0">
-            {loadingSample ? 'Adding…' : 'Load sample week'}
-          </button>
-        </div>
-      )}
-
       {/* Scope + period controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegToggle<Scope>

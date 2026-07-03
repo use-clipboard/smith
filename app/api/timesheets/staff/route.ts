@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createServiceClient } from '@/lib/supabase-server';
 
 export interface StaffDto {
@@ -22,7 +21,6 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const service = createServiceClient();
 

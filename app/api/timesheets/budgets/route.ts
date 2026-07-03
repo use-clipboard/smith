@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createClient } from '@/lib/supabase-server';
 
 // GET /api/timesheets/budgets → { available, budgets: { [clientId]: weeklyMinutes } }
@@ -11,7 +10,6 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const supabase = createClient();
   const { data, error } = await supabase
@@ -41,7 +39,6 @@ export async function PUT(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const parsed = PutSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

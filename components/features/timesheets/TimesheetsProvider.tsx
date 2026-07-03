@@ -4,21 +4,14 @@ import {
   createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, ReactNode,
 } from 'react';
 import type { TimeEntry, TimerState, AiSuggestion, TimeEntryType, TsClient, TsStaff, TsActivity, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
-import {
-  SEED_STAFF, SEED_CLIENTS, SEED_ACTIVITIES, DEPARTMENTS, ME_ID, generateSeedEntries, generateSampleForUser,
-} from '@/lib/timesheets/seed';
-import { generateDemoSuggestions } from '@/lib/timesheets/suggestions';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
-import { todayIso, startOfWeek, addDays, fmtDuration } from '@/lib/timesheets/format';
+import { DEPARTMENTS, DEFAULT_ACTIVITIES } from '@/lib/timesheets/defaults';
+import { todayIso, startOfWeek, fmtDuration } from '@/lib/timesheets/format';
 
 const UNDO_MS = 8000; // window to undo a just-logged timer
-
+const DEFAULT_CAPACITY_HOURS = 37.5;
 const weekKey = (userId: string, weekStart: string) => `${userId}__${weekStart}`;
-
-const META_PREFIX = 'smith.timesheets.meta.';   // { timer, suggestions } — both modes
-const DEMO_PREFIX = 'smith.timesheets.demo.';    // { entries, seeded } — demo mode only
-
-type Mode = 'loading' | 'live' | 'demo';
+// Device-local timer + suggestions (so a running timer survives a refresh).
+const META_PREFIX = 'smith.timesheets.meta.';
 
 interface StartConfig {
   clientId: string | null;
@@ -33,9 +26,6 @@ interface StartConfig {
 
 interface TimesheetsContextValue {
   ready: boolean;
-  mode: Mode;
-  /** Whether the current user is allowed to use Timesheets (preview gate). */
-  allowed: boolean;
   userId: string;
   meId: string;
   isAdmin: boolean;
@@ -52,8 +42,6 @@ interface TimesheetsContextValue {
   reloadSettings: () => Promise<void>;
   suggestions: AiSuggestion[];
   scanning: boolean;
-  hasSampleData: boolean;
-  loadingSample: boolean;
   updateStaffRate: (id: string, patch: { ratePence?: number; weeklyCapacityHours?: number; department?: string }) => void;
 
   // Client budgets (weekly minutes) — Budget-vs-Actual report.
@@ -76,16 +64,13 @@ interface TimesheetsContextValue {
   undoTimer: () => void;
   dismissTimerUndo: () => void;
 
-  ensureSeeded: () => void;
-  loadSampleWeek: () => Promise<void>;
-
   startTimer: (cfg: StartConfig) => void;
   pauseTimer: () => void;
   resumeTimer: () => void;
   stopTimer: (save: boolean) => void;
   updateTimerMeta: (patch: Partial<StartConfig>) => void;
 
-  addEntry: (e: Omit<TimeEntry, 'id'>) => void;
+  addEntry: (e: Omit<TimeEntry, 'id'>) => string | null;
   updateEntry: (id: string, patch: Partial<TimeEntry>) => void;
   deleteEntry: (id: string) => void;
 
@@ -121,8 +106,6 @@ interface StaffDto {
   manager_id?: string | null;
 }
 
-const DEFAULT_CAPACITY_HOURS = 37.5;
-
 function mapStaff(members: StaffDto[], userId: string, userName: string, defaultRatePence: number): TsStaff[] {
   const rows = members.map(m => ({
     id: m.id,
@@ -141,22 +124,18 @@ function mapStaff(members: StaffDto[], userId: string, userName: string, default
 }
 
 export default function TimesheetsProvider({
-  userId, userName, userRole, userEmail, children,
-}: { userId: string; userName: string; userRole: string; userEmail: string; children: ReactNode }) {
-  const allowed = canAccessTimesheets(userEmail);
+  userId, userName, userRole, children,
+}: { userId: string; userName: string; userRole: string; userEmail?: string; children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<Mode>('loading');
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [liveStaff, setLiveStaff] = useState<TsStaff[] | null>(null);
   const [liveClients, setLiveClients] = useState<TsClient[] | null>(null);
   const [hasReports, setHasReports] = useState(false);
-  // Demo-mode edits to rate/capacity (live mode edits liveStaff directly).
-  const [staffOverrides, setStaffOverrides] = useState<Record<string, { ratePence?: number; weeklyCapacityHours?: number; department?: string }>>({});
   const [clientBudgets, setClientBudgets] = useState<Record<string, number>>({});
   const [weekStatuses, setWeekStatuses] = useState<Record<string, WeekStatus>>({});
   // Firm-configurable activities + departments (Settings → Timesheets); default
-  // to the built-in lists until loaded / in demo mode.
-  const [activities, setActivities] = useState<TsActivity[]>(SEED_ACTIVITIES);
+  // to the built-in lists until loaded.
+  const [activities, setActivities] = useState<TsActivity[]>(DEFAULT_ACTIVITIES);
   const [departments, setDepartments] = useState<string[]>([...DEPARTMENTS]);
   const [defaultRatePence, setDefaultRatePence] = useState(12000);
   const [dailyTargetHours, setDailyTargetHours] = useState(7.5);
@@ -169,120 +148,77 @@ export default function TimesheetsProvider({
   const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
   const pendingDeleteRef = useRef<Set<string>>(new Set()); // tmp ids deleted before their POST resolved
   const [scanning, setScanning] = useState(false);
-  const [loadingSample, setLoadingSample] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const seededRef = useRef(false);
-  const modeRef = useRef<Mode>('loading');
-  modeRef.current = mode;
 
   const metaKey = `${META_PREFIX}${userId || 'anon'}`;
-  const demoKey = `${DEMO_PREFIX}${userId || 'anon'}`;
-
-  const meId = mode === 'live' ? userId : ME_ID;
+  const meId = userId;
   const isAdmin = userRole === 'admin';
 
-  const staff = useMemo<TsStaff[]>(() => {
-    const base = mode === 'live' && liveStaff
-      ? liveStaff
-      : SEED_STAFF.map(s => (s.id === ME_ID ? { ...s, name: userName || 'You' } : s));
-    // Apply demo-mode rate/capacity overrides (live mode edits liveStaff directly).
-    if (mode === 'live') return base;
-    return base.map(s => (staffOverrides[s.id] ? { ...s, ...staffOverrides[s.id] } : s));
-  }, [mode, liveStaff, userName, staffOverrides]);
+  const staff = useMemo<TsStaff[]>(() => (
+    liveStaff ?? [{
+      id: userId, name: userName || 'You', role: isAdmin ? 'Admin' : 'Staff',
+      department: 'Unassigned', weeklyCapacityHours: DEFAULT_CAPACITY_HOURS, ratePence: defaultRatePence, hue: hashHue(userId),
+    }]
+  ), [liveStaff, userId, userName, isAdmin, defaultRatePence]);
 
-  const clients = useMemo<TsClient[]>(() => {
-    if (mode === 'live' && liveClients) return liveClients;
-    return SEED_CLIENTS;
-  }, [mode, liveClients]);
+  const clients = liveClients ?? [];
 
-  // ── Load: decide live vs demo, hydrate accordingly ─────────────────────────
+  // ── Load everything from the API ────────────────────────────────────────────
   useEffect(() => {
-    // Preview gate — users without access never load data or hit the API.
-    if (!allowed) { setMode('demo'); setReady(true); return; }
     let cancelled = false;
 
-    // Meta (timer + suggestions + demo rate overrides) is device-local.
+    // Device-local resume for a running timer + last suggestions.
     try {
       const raw = window.localStorage.getItem(metaKey);
       if (raw) {
-        const m = JSON.parse(raw) as {
-          timer?: TimerState; suggestions?: AiSuggestion[];
-          staffOverrides?: Record<string, { ratePence?: number; weeklyCapacityHours?: number; department?: string }>;
-          clientBudgets?: Record<string, number>; weekStatuses?: Record<string, WeekStatus>;
-        };
+        const m = JSON.parse(raw) as { timer?: TimerState; suggestions?: AiSuggestion[] };
         if (m.timer) setTimer(m.timer);
         if (m.suggestions) setSuggestions(m.suggestions);
-        if (m.staffOverrides) setStaffOverrides(m.staffOverrides);
-        if (m.clientBudgets) setClientBudgets(m.clientBudgets);
-        if (m.weekStatuses) setWeekStatuses(m.weekStatuses);
       }
     } catch { /* ignore */ }
 
     (async () => {
-      try {
-        const res = await fetch('/api/timesheets/entries');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.available) {
-            // LIVE mode — pull entries + real team (with rates) + clients + budgets + week statuses.
-            const [teamRes, clientsRes, budgetsRes, weeksRes, settingsRes] = await Promise.all([
-              fetch('/api/timesheets/staff').then(r => r.ok ? r.json() : { members: [] }).catch(() => ({ members: [] })),
-              fetch('/api/clients').then(r => r.ok ? r.json() : { clients: [] }).catch(() => ({ clients: [] })),
-              fetch('/api/timesheets/budgets').then(r => r.ok ? r.json() : { budgets: {} }).catch(() => ({ budgets: {} })),
-              fetch('/api/timesheets/weeks').then(r => r.ok ? r.json() : { weeks: [] }).catch(() => ({ weeks: [] })),
-              fetch('/api/timesheets/settings').then(r => r.ok ? r.json() : null).catch(() => null),
-            ]);
-            if (cancelled) return;
-            const firmRate = Number(settingsRes?.defaultRatePence) || 12000;
-            if (settingsRes) {
-              if (Array.isArray(settingsRes.activities) && settingsRes.activities.length) setActivities(settingsRes.activities as TsActivity[]);
-              if (Array.isArray(settingsRes.departments) && settingsRes.departments.length) setDepartments(settingsRes.departments as string[]);
-              if (settingsRes.defaultRatePence != null) setDefaultRatePence(firmRate);
-              if (settingsRes.dailyTargetHours != null) setDailyTargetHours(Number(settingsRes.dailyTargetHours));
-              if (settingsRes.roundingMinutes != null) setRoundingMinutes(Number(settingsRes.roundingMinutes));
-            }
-            const members = (teamRes.members ?? []) as StaffDto[];
-            setEntries(data.entries as TimeEntry[]);
-            setLiveStaff(mapStaff(members, userId, userName, firmRate));
-            setHasReports(members.some(m => m.manager_id === userId));
-            setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
-              .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '', status: c.status })));
-            setClientBudgets((budgetsRes.budgets ?? {}) as Record<string, number>);
-            const wmap: Record<string, WeekStatus> = {};
-            for (const w of (weeksRes.weeks ?? []) as WeekStatus[]) wmap[weekKey(w.userId, w.weekStart)] = w;
-            setWeekStatuses(wmap);
-            setMode('live');
-            setReady(true);
-            return;
-          }
-        }
-      } catch { /* network / not available → demo */ }
-
+      const [entriesRes, teamRes, clientsRes, budgetsRes, weeksRes, settingsRes] = await Promise.all([
+        fetch('/api/timesheets/entries').then(r => r.ok ? r.json() : { entries: [] }).catch(() => ({ entries: [] })),
+        fetch('/api/timesheets/staff').then(r => r.ok ? r.json() : { members: [] }).catch(() => ({ members: [] })),
+        fetch('/api/clients').then(r => r.ok ? r.json() : { clients: [] }).catch(() => ({ clients: [] })),
+        fetch('/api/timesheets/budgets').then(r => r.ok ? r.json() : { budgets: {} }).catch(() => ({ budgets: {} })),
+        fetch('/api/timesheets/weeks').then(r => r.ok ? r.json() : { weeks: [] }).catch(() => ({ weeks: [] })),
+        fetch('/api/timesheets/settings').then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
       if (cancelled) return;
-      // DEMO mode — hydrate entries from localStorage.
-      try {
-        const raw = window.localStorage.getItem(demoKey);
-        if (raw) {
-          const d = JSON.parse(raw) as { entries?: TimeEntry[]; seeded?: boolean };
-          if (d.entries) setEntries(d.entries);
-          seededRef.current = d.seeded ?? !!d.entries?.length;
-        }
-      } catch { /* ignore */ }
-      setMode('demo');
+
+      const firmRate = Number(settingsRes?.defaultRatePence) || 12000;
+      if (settingsRes) {
+        if (Array.isArray(settingsRes.activities) && settingsRes.activities.length) setActivities(settingsRes.activities as TsActivity[]);
+        if (Array.isArray(settingsRes.departments) && settingsRes.departments.length) setDepartments(settingsRes.departments as string[]);
+        if (settingsRes.defaultRatePence != null) setDefaultRatePence(firmRate);
+        if (settingsRes.dailyTargetHours != null) setDailyTargetHours(Number(settingsRes.dailyTargetHours));
+        if (settingsRes.roundingMinutes != null) setRoundingMinutes(Number(settingsRes.roundingMinutes));
+      }
+
+      const members = (teamRes.members ?? []) as StaffDto[];
+      setEntries((entriesRes.entries ?? []) as TimeEntry[]);
+      setLiveStaff(mapStaff(members, userId, userName, firmRate));
+      setHasReports(members.some(m => m.manager_id === userId));
+      setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
+        .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '', status: c.status })));
+      setClientBudgets((budgetsRes.budgets ?? {}) as Record<string, number>);
+      const wmap: Record<string, WeekStatus> = {};
+      for (const w of (weeksRes.weeks ?? []) as WeekStatus[]) wmap[weekKey(w.userId, w.weekStart)] = w;
+      setWeekStatuses(wmap);
       setReady(true);
     })();
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metaKey, demoKey]);
+  }, [metaKey]);
 
-  // Persist meta (timer + suggestions + demo overrides + budgets + week status).
+  // Persist timer + suggestions (device-local).
   useEffect(() => {
     if (!ready) return;
-    try {
-      window.localStorage.setItem(metaKey, JSON.stringify({ timer, suggestions, staffOverrides, clientBudgets, weekStatuses }));
-    } catch { /* quota */ }
-  }, [timer, suggestions, staffOverrides, clientBudgets, weekStatuses, ready, metaKey]);
+    try { window.localStorage.setItem(metaKey, JSON.stringify({ timer, suggestions })); } catch { /* quota */ }
+  }, [timer, suggestions, ready, metaKey]);
 
   // Refs for synchronous lock checks inside mutations.
   const entriesRef = useRef(entries);
@@ -290,16 +226,9 @@ export default function TimesheetsProvider({
   const weekStatusesRef = useRef(weekStatuses);
   weekStatusesRef.current = weekStatuses;
   const weekLockedForMe = useCallback((dateIso: string): boolean => {
-    const me = modeRef.current === 'live' ? userId : ME_ID;
-    const st = weekStatusesRef.current[weekKey(me, startOfWeek(dateIso))];
+    const st = weekStatusesRef.current[weekKey(userId, startOfWeek(dateIso))];
     return st?.status === 'submitted' || st?.status === 'approved';
   }, [userId]);
-
-  // Persist demo entries only in demo mode.
-  useEffect(() => {
-    if (!ready || mode !== 'demo') return;
-    try { window.localStorage.setItem(demoKey, JSON.stringify({ entries, seeded: seededRef.current })); } catch { /* quota */ }
-  }, [entries, ready, mode, demoKey]);
 
   const timerRef = useRef(timer);
   timerRef.current = timer;
@@ -314,30 +243,11 @@ export default function TimesheetsProvider({
     timer.accumulatedMs +
     (timer.running && !timer.paused && timer.segmentStartedAt ? now - timer.segmentStartedAt : 0);
 
-  // ── Seeding (demo mode only) ────────────────────────────────────────────────
-  const ensureSeeded = useCallback(() => {
-    if (modeRef.current !== 'demo' || seededRef.current) return;
-    seededRef.current = true;
-    const today = todayIso();
-    setEntries(prev => (prev.length ? prev : generateSeedEntries(today)));
-    setSuggestions(prev => (prev.length ? prev : generateDemoSuggestions(today)));
-    // Seed a couple of pending approvals so the admin Approvals view is alive.
-    setWeekStatuses(prev => {
-      if (Object.keys(prev).length) return prev;
-      const lastWeek = startOfWeek(addDays(today, -7));
-      return {
-        [weekKey('u-amy', lastWeek)]: { userId: 'u-amy', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null, managerId: null },
-        [weekKey('u-ben', lastWeek)]: { userId: 'u-ben', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null, managerId: null },
-      };
-    });
-  }, []);
-
-  // ── Entry CRUD (mode-aware) ─────────────────────────────────────────────────
+  // ── Entry CRUD ──────────────────────────────────────────────────────────────
   const addEntry = useCallback((e: Omit<TimeEntry, 'id'>): string | null => {
     if (weekLockedForMe(e.date)) return null; // week submitted/approved — frozen
     const optimistic: TimeEntry = { ...e, id: tmpId(), userId: e.userId };
     setEntries(prev => [optimistic, ...prev]);
-    if (modeRef.current !== 'live') return optimistic.id;
     fetch('/api/timesheets/entries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -354,7 +264,6 @@ export default function TimesheetsProvider({
             fetch(`/api/timesheets/entries/${saved.id}`, { method: 'DELETE' }).catch(() => {});
           } else {
             setEntries(prev => prev.map(x => (x.id === optimistic.id ? saved : x)));
-            // Keep the undo target pointed at the real row after the id swap.
             if (undoRef.current === optimistic.id) undoRef.current = saved.id;
           }
         }
@@ -367,7 +276,7 @@ export default function TimesheetsProvider({
     const ent = entriesRef.current.find(x => x.id === id);
     if (ent && (weekLockedForMe(ent.date) || (patch.date && weekLockedForMe(patch.date)))) return;
     setEntries(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
-    if (modeRef.current !== 'live' || id.startsWith('tmp-')) return;
+    if (id.startsWith('tmp-')) return; // will save with its create
     fetch(`/api/timesheets/entries/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -379,26 +288,24 @@ export default function TimesheetsProvider({
     const ent = entriesRef.current.find(x => x.id === id);
     if (ent && weekLockedForMe(ent.date)) return;
     setEntries(prev => prev.filter(e => e.id !== id));
-    if (modeRef.current !== 'live') return;
     // Still saving — remember to delete the real row once its POST resolves.
     if (id.startsWith('tmp-')) { pendingDeleteRef.current.add(id); return; }
     fetch(`/api/timesheets/entries/${id}`, { method: 'DELETE' }).catch(() => { /* already removed locally */ });
-  }, []);
+  }, [weekLockedForMe]);
 
   // ── Timer ───────────────────────────────────────────────────────────────────
   const commitTimer = useCallback((t: TimerState) => {
     const currentElapsedMs = t.accumulatedMs + (t.segmentStartedAt && !t.paused ? Date.now() - t.segmentStartedAt : 0);
     const raw = Math.round(currentElapsedMs / 60000);
     if (raw < 1) return;
-    // Round the tracked duration to the firm's increment (min one increment).
     const inc = Math.max(1, roundingRef.current);
     const minutes = Math.max(inc, Math.round(raw / inc) * inc);
-    const meStaff = (modeRef.current === 'live' ? liveStaff : SEED_STAFF)?.find(s => s.id === (modeRef.current === 'live' ? userId : ME_ID));
+    const meStaff = liveStaff?.find(s => s.id === userId);
     const now2 = new Date();
     const hh = String(now2.getHours()).padStart(2, '0');
     const mm = String(now2.getMinutes()).padStart(2, '0');
     const id = addEntry({
-      userId: modeRef.current === 'live' ? userId : ME_ID,
+      userId,
       date: todayIso(),
       start: `${hh}:${mm}`,
       clientId: t.clientId,
@@ -409,7 +316,7 @@ export default function TimesheetsProvider({
       department: t.department || 'General',
       type: t.type,
       minutes,
-      ratePence: t.type === 'billable' ? (meStaff?.ratePence ?? 12000) : 0,
+      ratePence: t.type === 'billable' ? (meStaff?.ratePence ?? defaultRatePence) : 0,
       notes: t.notes,
       source: 'timer',
     });
@@ -417,7 +324,7 @@ export default function TimesheetsProvider({
       undoRef.current = id;
       setTimerUndo({ label: `${t.clientName || 'Internal'} · ${fmtDuration(minutes)}`, expiresAt: Date.now() + UNDO_MS });
     }
-  }, [addEntry, liveStaff, userId]);
+  }, [addEntry, liveStaff, userId, defaultRatePence]);
 
   const startTimer = useCallback((cfg: StartConfig) => {
     if (timerRef.current.running) commitTimer(timerRef.current);
@@ -469,68 +376,38 @@ export default function TimesheetsProvider({
     setTimerUndo(null);
   }, []);
 
-  // ── Sample data (live mode, fresh firm) ─────────────────────────────────────
-  const loadSampleWeek = useCallback(async () => {
-    if (modeRef.current !== 'live') return;
-    setLoadingSample(true);
-    try {
-      const meStaff = liveStaff?.find(s => s.id === userId);
-      const sample = generateSampleForUser(
-        todayIso(), userId, meStaff?.ratePence ?? 12000,
-        (liveClients ?? []).slice(0, 12).map(c => ({ id: c.id, name: c.name })),
-      );
-      const res = await fetch('/api/timesheets/entries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entries: sample }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setEntries(prev => [...(data.entries as TimeEntry[]), ...prev]);
-      }
-    } finally {
-      setLoadingSample(false);
-    }
-  }, [liveStaff, liveClients, userId]);
-
-  // ── Staff rate / capacity ───────────────────────────────────────────────────
+  // ── Staff rate / capacity / department ──────────────────────────────────────
   const updateStaffRate = useCallback((id: string, patch: { ratePence?: number; weeklyCapacityHours?: number; department?: string }) => {
-    if (modeRef.current === 'live') {
-      setLiveStaff(prev => prev?.map(s => (s.id === id
-        ? {
-            ...s,
-            ratePence: patch.ratePence ?? s.ratePence,
-            weeklyCapacityHours: patch.weeklyCapacityHours ?? s.weeklyCapacityHours,
-            department: patch.department ?? s.department,
-          }
-        : s)) ?? prev);
-      fetch(`/api/timesheets/staff/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(patch.ratePence !== undefined ? { ratePence: patch.ratePence } : {}),
-          ...(patch.weeklyCapacityHours !== undefined ? { capacityHours: patch.weeklyCapacityHours } : {}),
-          ...(patch.department !== undefined ? { department: patch.department } : {}),
-        }),
-      }).catch(() => { /* keep optimistic value */ });
-    } else {
-      setStaffOverrides(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-    }
+    setLiveStaff(prev => prev?.map(s => (s.id === id
+      ? {
+          ...s,
+          ratePence: patch.ratePence ?? s.ratePence,
+          weeklyCapacityHours: patch.weeklyCapacityHours ?? s.weeklyCapacityHours,
+          department: patch.department ?? s.department,
+        }
+      : s)) ?? prev);
+    fetch(`/api/timesheets/staff/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(patch.ratePence !== undefined ? { ratePence: patch.ratePence } : {}),
+        ...(patch.weeklyCapacityHours !== undefined ? { capacityHours: patch.weeklyCapacityHours } : {}),
+        ...(patch.department !== undefined ? { department: patch.department } : {}),
+      }),
+    }).catch(() => { /* keep optimistic value */ });
   }, []);
 
-  // ── Client budgets ───────────────────────────────────────────────────────────
+  // ── Client budgets ──────────────────────────────────────────────────────────
   const setClientBudget = useCallback((clientId: string, weeklyMinutes: number) => {
     setClientBudgets(prev => ({ ...prev, [clientId]: weeklyMinutes }));
-    if (modeRef.current === 'live') {
-      fetch('/api/timesheets/budgets', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, weeklyMinutes }),
-      }).catch(() => { /* keep optimistic */ });
-    }
+    fetch('/api/timesheets/budgets', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, weeklyMinutes }),
+    }).catch(() => { /* keep optimistic */ });
   }, []);
 
-  // Re-pull firm activities/departments after they're edited in Settings.
+  // Re-pull firm activities/departments/defaults after they're edited in Settings.
   const reloadSettings = useCallback(async () => {
     try {
       const res = await fetch('/api/timesheets/settings');
@@ -544,51 +421,42 @@ export default function TimesheetsProvider({
     } catch { /* ignore */ }
   }, []);
 
-  // ── Week approval workflow ───────────────────────────────────────────────────
-  const meIdNow = mode === 'live' ? userId : ME_ID;
+  // ── Week approval workflow ──────────────────────────────────────────────────
   const weekStatusFor = useCallback((uid: string, weekStart: string): WeekApprovalStatus => {
     return weekStatuses[weekKey(uid, weekStart)]?.status ?? 'draft';
   }, [weekStatuses]);
   const isWeekLocked = useCallback((weekStart: string): boolean => {
-    const s = weekStatuses[weekKey(meIdNow, weekStart)]?.status;
+    const s = weekStatuses[weekKey(userId, weekStart)]?.status;
     return s === 'submitted' || s === 'approved';
-  }, [weekStatuses, meIdNow]);
+  }, [weekStatuses, userId]);
 
   const postWeek = (body: Record<string, unknown>) => {
-    if (modeRef.current === 'live') {
-      fetch('/api/timesheets/weeks', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      }).catch(() => { /* keep optimistic */ });
-    }
+    fetch('/api/timesheets/weeks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }).catch(() => { /* keep optimistic */ });
   };
 
   const submitWeek = useCallback((weekStart: string) => {
-    const uid = modeRef.current === 'live' ? userId : ME_ID;
-    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status: 'submitted', note: null, reviewedBy: null, managerId: prev[weekKey(uid, weekStart)]?.managerId ?? null } }));
+    setWeekStatuses(prev => ({ ...prev, [weekKey(userId, weekStart)]: { userId, weekStart, status: 'submitted', note: null, reviewedBy: null, managerId: prev[weekKey(userId, weekStart)]?.managerId ?? null } }));
     postWeek({ weekStart, action: 'submit' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const withdrawWeek = useCallback((weekStart: string) => {
-    const uid = modeRef.current === 'live' ? userId : ME_ID;
     setWeekStatuses(prev => {
       const next = { ...prev };
-      delete next[weekKey(uid, weekStart)];
+      delete next[weekKey(userId, weekStart)];
       return next;
     });
     postWeek({ weekStart, action: 'withdraw' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const reviewWeek = useCallback((uid: string, weekStart: string, action: 'approve' | 'reject', note?: string) => {
     const status: WeekApprovalStatus = action === 'approve' ? 'approved' : 'rejected';
-    const reviewer = modeRef.current === 'live' ? userId : ME_ID;
-    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status, note: note ?? null, reviewedBy: reviewer, managerId: prev[weekKey(uid, weekStart)]?.managerId ?? null } }));
+    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status, note: note ?? null, reviewedBy: userId, managerId: prev[weekKey(uid, weekStart)]?.managerId ?? null } }));
     postWeek({ weekStart, action, userId: uid, note });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // ── AI suggestions ───────────────────────────────────────────────────────────
+  // ── AI suggestions ──────────────────────────────────────────────────────────
   const scanForWork = useCallback(async () => {
     setScanning(true);
     try {
@@ -597,18 +465,10 @@ export default function TimesheetsProvider({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ days: 7 }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.suggestions) && data.suggestions.length) {
-          setSuggestions(data.suggestions as AiSuggestion[]);
-          return;
-        }
-      }
-      // No live signals — synthesise a demo detector so the UX is visible.
-      if (modeRef.current !== 'live') setSuggestions(generateDemoSuggestions(todayIso()));
-      else setSuggestions([]);
+      const data = res.ok ? await res.json() : { suggestions: [] };
+      setSuggestions(Array.isArray(data.suggestions) ? (data.suggestions as AiSuggestion[]) : []);
     } catch {
-      if (modeRef.current !== 'live') setSuggestions(generateDemoSuggestions(todayIso()));
+      setSuggestions([]);
     } finally {
       setScanning(false);
     }
@@ -618,9 +478,9 @@ export default function TimesheetsProvider({
     setSuggestions(prev => {
       const s = prev.find(x => x.id === id);
       if (s) {
-        const meStaff = (modeRef.current === 'live' ? liveStaff : SEED_STAFF)?.find(st => st.id === (modeRef.current === 'live' ? userId : ME_ID));
+        const meStaff = liveStaff?.find(st => st.id === userId);
         addEntry({
-          userId: modeRef.current === 'live' ? userId : ME_ID,
+          userId,
           date: s.date,
           start: '—',
           clientId: s.clientId,
@@ -631,37 +491,33 @@ export default function TimesheetsProvider({
           department: activities.find(a => a.label === s.activity)?.department ?? 'General',
           type: s.type,
           minutes: s.suggestedMinutes,
-          ratePence: s.type === 'billable' ? (meStaff?.ratePence ?? 12000) : 0,
+          ratePence: s.type === 'billable' ? (meStaff?.ratePence ?? defaultRatePence) : 0,
           notes: `Auto-captured from ${s.source.replace('_', ' ')}`,
           source: 'ai',
         });
       }
       return prev.filter(x => x.id !== id);
     });
-  }, [addEntry, liveStaff, userId, activities]);
+  }, [addEntry, liveStaff, userId, activities, defaultRatePence]);
 
   const dismissSuggestion = useCallback((id: string) => {
     setSuggestions(prev => prev.filter(x => x.id !== id));
   }, []);
 
-  const hasSampleData = mode === 'demo' || entries.length > 0;
-
   const value = useMemo<TimesheetsContextValue>(() => ({
-    ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
+    ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
-    suggestions, scanning, hasSampleData, loadingSample, updateStaffRate, timer, elapsedMs,
+    suggestions, scanning, updateStaffRate, timer, elapsedMs,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
-    ensureSeeded, loadSampleWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
-    ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
+    ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
-    suggestions, scanning, hasSampleData, loadingSample,
-    updateStaffRate, timer, elapsedMs, timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
+    suggestions, scanning, updateStaffRate, timer, elapsedMs,
+    timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
-    ensureSeeded, loadSampleWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   ]);

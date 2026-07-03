@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createClient } from '@/lib/supabase-server';
 import { fetchUserEvents } from '@/lib/googleCalendar';
 
@@ -22,7 +21,6 @@ export async function GET(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const date = new URL(req.url).searchParams.get('date') ?? '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Clock, LayoutDashboard, CalendarRange, BarChart3, SlidersHorizontal, ShieldCheck, Play, Sparkles, Timer, Wand2 } from 'lucide-react';
+import { useState } from 'react';
+import { Clock, LayoutDashboard, CalendarRange, BarChart3, SlidersHorizontal, ShieldCheck, Play } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { useTimesheets } from './TimesheetsProvider';
 import type { TimesheetTab } from '@/lib/timesheets/types';
@@ -21,47 +21,9 @@ const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function TimesheetsModule() {
-  const { ready, allowed, ensureSeeded, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId } = useTimesheets();
+  const { ready, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId } = useTimesheets();
   const [tab, setTab] = useState<TimesheetTab>('overview');
   const [startingTimer, setStartingTimer] = useState(false);
-
-  useEffect(() => { if (ready && allowed) ensureSeeded(); }, [ready, allowed, ensureSeeded]);
-
-  // Preview gate — non-allowed users see a teaser while Timesheets is in "Soon".
-  if (!allowed) {
-    return (
-      <ToolLayout title="Timesheets" description="AI-assisted time recording for accountancy firms." icon={Clock} iconColor="#7C3AED">
-        <div className="mx-auto mt-6 max-w-lg">
-          <div className="overflow-hidden rounded-[24px] border border-white/60 bg-white/70 text-center shadow-[0_8px_32px_rgba(31,38,88,0.10)] backdrop-blur-md">
-            <div className="relative flex flex-col items-center gap-3 px-8 py-10"
-              style={{ background: 'linear-gradient(140deg,#4F46E5 0%,#7C3AED 55%,#9333EA 100%)' }}>
-              <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-white/15 blur-2xl" />
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur"><Clock size={28} className="text-white" /></div>
-              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white backdrop-blur">Coming soon</span>
-              <h2 className="text-xl font-bold text-white">Timesheets is almost here</h2>
-              <p className="max-w-sm text-[13px] text-white/80">A time-recording tool that feels like an intelligent assistant — quietly capturing work as it happens, so you just confirm it.</p>
-            </div>
-            <div className="grid grid-cols-1 gap-3 px-8 py-7 sm:grid-cols-3">
-              {[
-                { icon: Timer, label: 'One-click timer', sub: 'Track any client in a tap' },
-                { icon: Wand2, label: 'AI suggestions', sub: 'Work captured automatically' },
-                { icon: Sparkles, label: 'Live insights', sub: 'Utilisation & recovery at a glance' },
-              ].map(f => (
-                <div key={f.label} className="flex flex-col items-center gap-1.5 text-center">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><f.icon size={18} /></div>
-                  <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">{f.label}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{f.sub}</p>
-                </div>
-              ))}
-            </div>
-            <div className="border-t border-black/5 px-8 py-4">
-              <p className="text-[12px] text-[var(--text-muted)]">We&apos;re polishing it now — it&apos;ll appear here for your firm shortly.</p>
-            </div>
-          </div>
-        </div>
-      </ToolLayout>
-    );
-  }
 
   // Admins approve anyone (and any week with no manager); managers approve
   // weeks routed to them.

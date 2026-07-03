@@ -43,7 +43,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'meeting-notes',  href: '/meeting-notes',  label: 'Meeting Notes',   icon: MicVocal },
   { moduleId: 'staff-hire',    href: '/staff-hire',     label: 'Staff Hire',      icon: UserPlus },
   { moduleId: 'tasks',         href: '/tasks',          label: 'Tasks',           icon: CheckSquare },
-  { moduleId: 'timesheets',    href: '/timesheets',     label: 'Timesheets',      icon: Clock, comingSoon: true },
+  { moduleId: 'timesheets',    href: '/timesheets',     label: 'Timesheets',      icon: Clock },
   { moduleId: 'email-triage',  href: '/email',          label: 'Email Triage',    icon: Mail },
   { moduleId: 'hr',            href: '/hr',             label: 'HR',              icon: HeartHandshake },
   { moduleId: 'proposals',     href: '/proposals',      label: 'Proposals',       icon: FileSignature },

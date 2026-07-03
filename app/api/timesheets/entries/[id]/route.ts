@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createClient } from '@/lib/supabase-server';
-import { mapRow } from '../route';
+import { mapRow } from '@/lib/timesheets/entryMap';
 
 const PatchSchema = z.object({
   date: z.string().optional(),
@@ -27,7 +26,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const parsed = PatchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
@@ -68,7 +66,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const supabase = createClient();
   const { error } = await supabase.from('time_entries').delete().eq('id', params.id);

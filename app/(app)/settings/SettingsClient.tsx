@@ -19,7 +19,6 @@ import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
 import MtdItSettingsTab from './tabs/MtdItSettingsTab';
 import TimesheetsSettingsTab from './tabs/TimesheetsSettingsTab';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
@@ -70,8 +69,8 @@ export default function SettingsClient({
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
-  // Timesheets is in preview — only the allowlisted user(s) see its settings tab.
-  const timesheetsAccess = activeModules.includes('timesheets') && canAccessTimesheets(userEmail);
+  // Timesheets settings show for admins when the module is active (Practice Suite).
+  const timesheetsAccess = activeModules.includes('timesheets');
   const searchParams = useSearchParams();
 
   // Allow deep-linking to a specific tab via ?tab=modules (map legacy 'appearance' → 'preferences')

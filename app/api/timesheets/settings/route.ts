@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createClient } from '@/lib/supabase-server';
-import { DEPARTMENTS, SEED_ACTIVITIES } from '@/lib/timesheets/seed';
+import { DEPARTMENTS, DEFAULT_ACTIVITIES } from '@/lib/timesheets/defaults';
 
 const DEFAULTS = {
   departments: [...DEPARTMENTS] as string[],
-  activities: SEED_ACTIVITIES.map(a => ({ id: a.id, label: a.label, type: a.type, department: a.department })),
+  activities: DEFAULT_ACTIVITIES.map(a => ({ id: a.id, label: a.label, type: a.type, department: a.department })),
   defaultRatePence: 12000, // £120/hr — used when a user has no rate set
   dailyTargetHours: 7.5,    // drives the utilisation target + timeline target line
   roundingMinutes: 15,      // round timer/drag entries to this increment
@@ -34,7 +33,6 @@ export async function GET() {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const supabase = createClient();
   const { data } = await supabase.from('firms').select('timesheet_settings').eq('id', ctx.firmId).single();
@@ -55,7 +53,6 @@ export async function PUT(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
   if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const parsed = SettingsSchema.safeParse(await req.json().catch(() => null));

@@ -2,49 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
-import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createClient } from '@/lib/supabase-server';
-
-// Shape returned to the client — matches the TimeEntry type field names so the
-// provider can consume rows directly.
-export interface ApiEntry {
-  id: string;
-  userId: string;
-  date: string;
-  start: string;
-  clientId: string | null;
-  clientName: string;
-  taskId: string | null;
-  taskTitle: string;
-  activity: string;
-  department: string;
-  type: 'billable' | 'non_billable' | 'internal';
-  minutes: number;
-  ratePence: number;
-  notes: string;
-  source: 'manual' | 'timer' | 'ai';
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function mapRow(r: any): ApiEntry {
-  return {
-    id: r.id,
-    userId: r.user_id,
-    date: r.entry_date,
-    start: r.start_time ?? '—',
-    clientId: r.client_id ?? null,
-    clientName: r.client_name ?? 'Internal',
-    taskId: r.task_id ?? null,
-    taskTitle: r.task_title ?? '',
-    activity: r.activity,
-    department: r.department ?? 'General',
-    type: r.entry_type,
-    minutes: r.minutes,
-    ratePence: r.rate_pence ?? 0,
-    notes: r.notes ?? '',
-    source: r.source ?? 'manual',
-  };
-}
+import { mapRow } from '@/lib/timesheets/entryMap';
 
 const EntrySchema = z.object({
   date: z.string(),
@@ -72,7 +31,6 @@ export async function GET(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const url = new URL(req.url);
   const from = url.searchParams.get('from');
@@ -113,7 +71,6 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('timesheets')) return moduleNotActive('timesheets');
-  if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const parsed = CreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

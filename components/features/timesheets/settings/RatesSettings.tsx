@@ -92,7 +92,7 @@ function RateRow({ s, editable, deptOptions, onCommit }: {
 }
 
 export default function RatesSettings() {
-  const { staff, meId, isAdmin, updateStaffRate, mode, departments } = useTimesheets();
+  const { staff, meId, isAdmin, updateStaffRate, departments } = useTimesheets();
   const deptOptions = [...departments, 'Unassigned'];
 
   const totalWeekly = staff.reduce((sum, s) => sum + Math.round(s.weeklyCapacityHours * s.ratePence), 0);
@@ -105,16 +105,12 @@ export default function RatesSettings() {
           subtitle="Department, standard hourly rate and contracted weekly hours per person — these drive utilisation, chargeable value, recovery, the department split and the leaderboard."
         />
 
-        <div className={`mb-4 flex items-start gap-2 rounded-xl border p-3 text-[12px] ${
-          mode === 'demo' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-[var(--accent)]/20 bg-[var(--accent)]/[0.06] text-[var(--text-secondary)]'
-        }`}>
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.06] p-3 text-[12px] text-[var(--text-secondary)]">
           <Info size={15} className="mt-0.5 shrink-0" />
           <p>
-            {mode === 'demo'
-              ? 'Demo mode — changes are saved locally on this device only. Apply the Timesheets migration to store rates firm-wide.'
-              : isAdmin
-                ? 'As an admin you can set rates and capacity for the whole team. Changes save instantly.'
-                : 'You can edit your own rate and capacity. Ask an admin to change other team members.'}
+            {isAdmin
+              ? 'As an admin you can set rates and capacity for the whole team. Changes save instantly.'
+              : 'You can edit your own rate and capacity. Ask an admin to change other team members.'}
           </p>
         </div>
 
