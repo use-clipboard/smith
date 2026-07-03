@@ -5,7 +5,9 @@ import { OPTIONAL_MODULE_IDS } from '@/config/modules.config';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'SMITH',
+  // `absolute` bypasses the root layout's '%s — SMITH' template so the tab
+  // reads just "SMITH", not "SMITH — SMITH".
+  title: { absolute: 'SMITH' },
   description: 'AI-powered accounting workflow tools',
   // The authenticated app is private — never index any of it.
   robots: { index: false, follow: false },

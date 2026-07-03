@@ -4,7 +4,7 @@ import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, Puzzle, Plus,
-  HeartHandshake, FileSignature, CalendarCheck, Landmark,
+  HeartHandshake, FileSignature, CalendarCheck, Landmark, BookCopy, Clock,
 } from 'lucide-react';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
@@ -15,7 +15,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, MicVocal, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature,
-  CalendarCheck, Landmark,
+  CalendarCheck, Landmark, BookCopy, Clock,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -147,8 +147,8 @@ export default function NewTabPage() {
           <p className="text-sm">No modules are active.</p>
           <p className="text-xs mt-1">
             An admin can enable tools in{' '}
-            <a href="/settings?tab=modules" className="text-[var(--accent)] hover:underline">
-              Settings → Modules
+            <a href="/settings?tab=tiers" className="text-[var(--accent)] hover:underline">
+              Settings → Plan &amp; Tiers
             </a>.
           </p>
         </div>
