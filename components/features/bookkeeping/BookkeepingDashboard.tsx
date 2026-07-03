@@ -249,7 +249,7 @@ export default function BookkeepingDashboard({ onOpenBook }: BookkeepingDashboar
 
         <button
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/20 transition-colors ml-auto"
+          className="inline-flex items-center gap-2 h-9 px-3.5 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-600/20 transition-colors"
         >
           <Plus size={14} />
           New book
