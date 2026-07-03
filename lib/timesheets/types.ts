@@ -25,8 +25,10 @@ export interface TsStaff {
   weeklyCapacityHours: number;
   /** Standard charge-out rate, pence per hour. */
   ratePence: number;
-  /** Stable hue used for avatar + chart colour. */
+  /** Stable hue used for chart colour (and the legacy avatar fallback). */
   hue: number;
+  /** Profile photo URL, if the member has uploaded one. */
+  avatarUrl?: string | null;
 }
 
 /** A predefined activity a user can log against (internal or client work). */

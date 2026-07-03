@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { Info, Lock } from 'lucide-react';
 import type { TsStaff } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
-import { GlassCard, SectionHeader, TsAvatar } from '../shared/ui';
+import { GlassCard, SectionHeader } from '../shared/ui';
+import Avatar from '@/components/ui/Avatar';
+import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import { fmtGBP } from '@/lib/timesheets/format';
 
 function RateRow({ s, editable, deptOptions, onCommit }: {
@@ -13,6 +15,7 @@ function RateRow({ s, editable, deptOptions, onCommit }: {
   deptOptions: string[];
   onCommit: (patch: { ratePence?: number; weeklyCapacityHours?: number; department?: string }) => void;
 }) {
+  const openProfile = useOpenProfile();
   const [rate, setRate] = useState(String(Math.round(s.ratePence / 100)));
   const [cap, setCap] = useState(String(s.weeklyCapacityHours));
 
@@ -31,9 +34,15 @@ function RateRow({ s, editable, deptOptions, onCommit }: {
 
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white/60 px-3 py-2.5">
-      <TsAvatar name={s.name} hue={s.hue} size={34} />
+      <Avatar name={s.name} avatarUrl={s.avatarUrl} userId={s.id} size={34} />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{s.name}</p>
+        <button
+          type="button"
+          onClick={() => openProfile(s.id, s.name)}
+          className="block max-w-full truncate text-left text-[13px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+        >
+          {s.name}
+        </button>
         <p className="text-[11px] text-[var(--text-muted)]">{s.role}</p>
       </div>
 

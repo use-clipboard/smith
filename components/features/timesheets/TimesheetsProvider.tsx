@@ -100,6 +100,7 @@ interface StaffDto {
   full_name: string | null;
   email: string;
   role: string;
+  avatar_url?: string | null;
   charge_out_rate_pence?: number | null;
   weekly_capacity_hours?: number | null;
   department?: string | null;
@@ -116,9 +117,10 @@ function mapStaff(members: StaffDto[], userId: string, userName: string, default
     // Firm default charge-out rate applies to anyone without their own set.
     ratePence: m.charge_out_rate_pence ?? defaultRatePence,
     hue: hashHue(m.id),
+    avatarUrl: m.avatar_url ?? null,
   }));
   if (!rows.some(r => r.id === userId)) {
-    rows.unshift({ id: userId, name: userName || 'You', role: 'Staff', department: 'Unassigned', weeklyCapacityHours: DEFAULT_CAPACITY_HOURS, ratePence: defaultRatePence, hue: hashHue(userId) });
+    rows.unshift({ id: userId, name: userName || 'You', role: 'Staff', department: 'Unassigned', weeklyCapacityHours: DEFAULT_CAPACITY_HOURS, ratePence: defaultRatePence, hue: hashHue(userId), avatarUrl: null });
   }
   return rows;
 }

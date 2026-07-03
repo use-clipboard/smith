@@ -2,7 +2,9 @@
 
 import { Users, Trophy } from 'lucide-react';
 import type { StaffRow } from '@/lib/timesheets/compute';
-import { GlassCard, SectionHeader, TsAvatar, ProgressBar } from '../shared/ui';
+import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
+import Avatar from '@/components/ui/Avatar';
+import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import { fmtDuration, fmtPct, fmtGBPCompact } from '@/lib/timesheets/format';
 
 function capColor(util: number): string {
@@ -13,6 +15,7 @@ function capColor(util: number): string {
 }
 
 export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
+  const openProfile = useOpenProfile();
   const totalLogged = rows.reduce((s, r) => s + r.minutes, 0);
   const totalCap = rows.reduce((s, r) => s + r.capacityMinutes, 0);
   const firmUtil = totalCap ? rows.reduce((s, r) => s + r.billable, 0) / totalCap : 0;
@@ -33,10 +36,16 @@ export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
           const util = r.capacityMinutes ? r.minutes / r.capacityMinutes : 0;
           return (
             <div key={r.staff.id} className="flex items-center gap-3">
-              <TsAvatar name={r.staff.name} hue={r.staff.hue} size={30} />
+              <Avatar name={r.staff.name} avatarUrl={r.staff.avatarUrl} userId={r.staff.id} size={30} />
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.staff.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => openProfile(r.staff.id, r.staff.name)}
+                    className="min-w-0 truncate text-left text-[12.5px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+                  >
+                    {r.staff.name}
+                  </button>
                   <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">
                     {fmtDuration(r.minutes)} <span className="opacity-50">/ {Math.round(r.capacityMinutes / 60)}h</span>
                   </span>
@@ -58,6 +67,7 @@ export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
 const MEDALS = ['#F59E0B', '#94A3B8', '#B45309'];
 
 export function StaffLeaderboard({ rows }: { rows: StaffRow[] }) {
+  const openProfile = useOpenProfile();
   const top = rows.slice(0, 6);
   const max = Math.max(1, ...top.map(r => r.chargeablePence));
 
@@ -78,10 +88,16 @@ export function StaffLeaderboard({ rows }: { rows: StaffRow[] }) {
                 <span className="text-[11px] font-semibold text-[var(--text-muted)]">{i + 1}</span>
               )}
             </div>
-            <TsAvatar name={r.staff.name} hue={r.staff.hue} size={30} />
+            <Avatar name={r.staff.name} avatarUrl={r.staff.avatarUrl} userId={r.staff.id} size={30} />
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.staff.name}</span>
+                <button
+                  type="button"
+                  onClick={() => openProfile(r.staff.id, r.staff.name)}
+                  className="min-w-0 truncate text-left text-[12.5px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+                >
+                  {r.staff.name}
+                </button>
                 <span className="shrink-0 text-[12px] font-bold text-[var(--text-primary)]">{fmtGBPCompact(r.chargeablePence)}</span>
               </div>
               <ProgressBar value={r.chargeablePence / max} color={`hsl(${r.staff.hue} 70% 58%)`} height={5} />

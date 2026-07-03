@@ -5,10 +5,13 @@ import { CheckCircle2, X, Clock3, Inbox, Send } from 'lucide-react';
 import { useTimesheets } from '../TimesheetsProvider';
 import { inWeek, totals } from '@/lib/timesheets/compute';
 import { fmtDateUK, fmtHours, fmtPct, addDays } from '@/lib/timesheets/format';
-import { GlassCard, SectionHeader, TsAvatar, ProgressBar } from '../shared/ui';
+import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
+import Avatar from '@/components/ui/Avatar';
+import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 
 export default function Approvals() {
   const { weekStatuses, staff, entries, reviewWeek, isAdmin, userId } = useTimesheets();
+  const openProfile = useOpenProfile();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
 
@@ -71,9 +74,19 @@ export default function Approvals() {
               return (
                 <div key={key} className="rounded-2xl border border-black/5 bg-white/60 p-3">
                   <div className="flex items-center gap-3">
-                    <TsAvatar name={r.staff?.name ?? 'Team member'} hue={r.staff?.hue ?? 220} size={36} />
+                    <Avatar name={r.staff?.name ?? 'Team member'} avatarUrl={r.staff?.avatarUrl} userId={r.staff?.id} size={36} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13.5px] font-semibold text-[var(--text-primary)]">{r.staff?.name ?? 'Team member'}</p>
+                      {r.staff?.id ? (
+                        <button
+                          type="button"
+                          onClick={() => openProfile(r.staff!.id, r.staff!.name)}
+                          className="block max-w-full truncate text-left text-[13.5px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+                        >
+                          {r.staff.name}
+                        </button>
+                      ) : (
+                        <p className="truncate text-[13.5px] font-semibold text-[var(--text-primary)]">Team member</p>
+                      )}
                       <p className="text-[11px] text-[var(--text-muted)]">Week of {fmtDateUK(r.weekStart)} – {fmtDateUK(addDays(r.weekStart, 6))}</p>
                     </div>
                     <div className="hidden text-right sm:block">
@@ -124,8 +137,18 @@ export default function Approvals() {
               const s = staffById.get(r.userId);
               return (
                 <div key={`${r.userId}__${r.weekStart}`} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                  <TsAvatar name={s?.name ?? 'Team member'} hue={s?.hue ?? 220} size={28} />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">{s?.name ?? 'Team member'}</span>
+                  <Avatar name={s?.name ?? 'Team member'} avatarUrl={s?.avatarUrl} userId={s?.id} size={28} />
+                  {s?.id ? (
+                    <button
+                      type="button"
+                      onClick={() => openProfile(s.id, s.name)}
+                      className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+                    >
+                      {s.name}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">Team member</span>
+                  )}
                   <span className="text-[11px] text-[var(--text-muted)]">Week of {fmtDateUK(r.weekStart)}</span>
                   <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                     {r.status === 'approved' ? <CheckCircle2 size={11} /> : <Send size={11} />}
