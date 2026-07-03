@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { loadTaskTimeEntriesByTask } from '@/lib/tasks/taskTime';
 
 // GET /api/tasks/history
 // Returns completed and soft-deleted tasks with full audit data:
@@ -31,8 +32,7 @@ export async function GET(req: NextRequest) {
       deleted_by_user:users!tasks_deleted_by_fkey(id, full_name, email),
       completed_by_user:users!tasks_completed_by_fkey(id, full_name, email),
       steps:task_steps(*, assignee:users(id, full_name, email)),
-      edges:task_step_edges(*),
-      time_entries:task_time_entries(*, user:users(id, full_name, email))
+      edges:task_step_edges(*)
     `)
     .eq('firm_id', ctx.firmId)
     .order('completed_at', { ascending: false, nullsFirst: false })
@@ -56,5 +56,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load history' }, { status: 500 });
   }
 
-  return NextResponse.json({ tasks: data ?? [] });
+  // Attach time entries from the unified ledger (legacy fallback inside).
+  const tasks = data ?? [];
+  const timeByTask = await loadTaskTimeEntriesByTask(supabase, tasks.map(t => t.id as string));
+  for (const t of tasks) {
+    (t as { time_entries?: unknown }).time_entries = timeByTask.get(t.id as string) ?? [];
+  }
+
+  return NextResponse.json({ tasks });
 }

@@ -14,7 +14,6 @@ import { TaskViewFlowChart } from './TaskFlowChart';
 import StepComments, { initials, avatarColour } from './StepComments';
 import AssigneePicker, { type TeamMember } from './AssigneePicker';
 import TemplateBuilder from './TemplateBuilder';
-import TaskTimesheetLink from '@/components/features/timesheets/TaskTimesheetLink';
 import { MODULES } from '@/config/modules.config';
 import type { Task, TaskStatus, StepStatus, TaskStep, RecurrenceType } from '@/types';
 
@@ -1021,13 +1020,6 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
 
           {activeTab === 'time' && (
             <div className="flex-1 overflow-y-auto p-6">
-              <TaskTimesheetLink
-                taskId={task.id}
-                taskTitle={task.title}
-                clientId={task.client_id ?? null}
-                clientName={task.client?.name ?? 'Internal'}
-                isInternal={!!task.is_internal}
-              />
               <TimeTracker
                 task={task}
                 steps={workSteps}

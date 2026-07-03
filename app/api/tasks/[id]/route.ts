@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { createNotification } from '@/lib/notifications';
 import { logTaskUpdate, logTaskDeleted } from '@/lib/taskAudit';
+import { loadTaskTimeEntriesByTask } from '@/lib/tasks/taskTime';
 import type { RecurrenceType } from '@/types';
 
 function formatStatusLabel(status: string): string {
@@ -34,14 +35,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       client:clients(id, name, client_ref, contact_email, status),
       created_by_user:users!tasks_created_by_fkey(id, full_name, email),
       steps:task_steps(*, assignee:users(id, full_name, email)),
-      edges:task_step_edges(*),
-      time_entries:task_time_entries(*, user:users(id, full_name, email))
+      edges:task_step_edges(*)
     `)
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .single();
 
   if (error || !task) return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+
+  // Time entries now live in the unified Timesheets ledger (with legacy fallback).
+  const timeByTask = await loadTaskTimeEntriesByTask(supabase, [params.id]);
+  (task as { time_entries?: unknown }).time_entries = timeByTask.get(params.id) ?? [];
+
   return NextResponse.json({ task });
 }
 
