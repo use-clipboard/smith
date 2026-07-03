@@ -14,6 +14,9 @@ interface Props {
   value: string | null;
   /** Display label when a task is linked but the list hasn't loaded yet. */
   label?: string;
+  /** When set, the list defaults to this client's tasks (with a "show all"). */
+  clientId?: string | null;
+  clientName?: string;
   onChange: (task: PickedTask | null) => void;
 }
 
@@ -26,12 +29,16 @@ interface TaskDto {
 
 /** Searchable picker over the firm's tasks. Lets a Timesheets entry/timer link
  *  to a specific task; selecting one lets the caller auto-fill the client. */
-export default function TaskCombobox({ value, label, onChange }: Props) {
+export default function TaskCombobox({ value, label, clientId, clientName, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [tasks, setTasks] = useState<PickedTask[] | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // When the client changes, default back to showing just that client's tasks.
+  useEffect(() => { setShowAll(false); }, [clientId]);
 
   // Lazy-load the task list the first time the picker opens.
   useEffect(() => {
@@ -63,14 +70,16 @@ export default function TaskCombobox({ value, label, onChange }: Props) {
   const selected = value ? (tasks?.find(t => t.id === value) ?? null) : null;
   const displayText = selected?.title || (value ? (label || 'Linked task') : null);
 
+  const scopedToClient = !!clientId && !showAll;
+
   const filtered = useMemo(() => {
     if (!tasks) return [];
+    let list = tasks;
+    if (scopedToClient) list = list.filter(t => t.clientId === clientId);
     const q = query.trim().toLowerCase();
-    const list = q
-      ? tasks.filter(t => t.title.toLowerCase().includes(q) || t.clientName.toLowerCase().includes(q))
-      : tasks;
+    if (q) list = list.filter(t => t.title.toLowerCase().includes(q) || t.clientName.toLowerCase().includes(q));
     return list.slice(0, 60);
-  }, [tasks, query]);
+  }, [tasks, query, scopedToClient, clientId]);
 
   const pick = (t: PickedTask | null) => { onChange(t); setOpen(false); setQuery(''); };
 
@@ -96,6 +105,19 @@ export default function TaskCombobox({ value, label, onChange }: Props) {
             <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search tasks…"
               className="w-full bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]" />
           </div>
+
+          {/* Client scope — default to just the selected client's tasks. */}
+          {clientId && (
+            <div className="flex items-center justify-between gap-2 border-b border-black/5 bg-black/[0.015] px-3 py-1.5 text-[11px]">
+              <span className="min-w-0 truncate text-[var(--text-muted)]">
+                {showAll ? 'All clients' : `Tasks for ${clientName || 'this client'}`}
+              </span>
+              <button type="button" onClick={() => setShowAll(v => !v)} className="shrink-0 font-semibold text-[var(--accent)] hover:underline">
+                {showAll ? 'This client only' : 'Show all clients'}
+              </button>
+            </div>
+          )}
+
           <div className="max-h-60 overflow-y-auto scrollbar-thin py-1">
             {tasks === null && <p className="px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">Loading tasks…</p>}
             {tasks !== null && filtered.map(t => (
@@ -109,7 +131,16 @@ export default function TaskCombobox({ value, label, onChange }: Props) {
               </button>
             ))}
             {tasks !== null && filtered.length === 0 && (
-              <p className="px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">No tasks match “{query}”.</p>
+              <div className="px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">
+                {query
+                  ? <>No tasks match “{query}”{scopedToClient ? ' for this client' : ''}.</>
+                  : scopedToClient
+                    ? <>No tasks for {clientName || 'this client'}.</>
+                    : 'No tasks.'}
+                {scopedToClient && (
+                  <button type="button" onClick={() => setShowAll(true)} className="ml-1 font-semibold text-[var(--accent)] hover:underline">Show all clients</button>
+                )}
+              </div>
             )}
           </div>
         </div>

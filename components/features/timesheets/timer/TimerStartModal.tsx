@@ -81,6 +81,8 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
             <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Link to task</label>
             <TaskCombobox
               value={taskId}
+              clientId={clientId}
+              clientName={client?.name}
               onChange={(t: PickedTask | null) => {
                 setTaskId(t?.id ?? null);
                 if (t) {

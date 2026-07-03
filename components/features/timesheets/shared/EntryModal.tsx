@@ -129,6 +129,8 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
             <TaskCombobox
               value={taskId}
               label={entry?.taskTitle || prefill?.taskTitle}
+              clientId={clientId}
+              clientName={client?.name}
               onChange={(t: PickedTask | null) => {
                 setTaskId(t?.id ?? null);
                 if (t) {
