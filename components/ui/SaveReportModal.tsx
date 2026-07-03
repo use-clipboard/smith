@@ -255,7 +255,7 @@ export default function SaveReportModal({
                   </div>
                   <div className="h-6 w-11 rounded-full bg-[var(--border-input)] shrink-0 ml-4 opacity-50" />
                 </div>
-                <a href="/settings?tab=modules" className="inline-flex items-center gap-1.5 mt-2 ml-5 text-xs text-[var(--accent)] hover:underline">
+                <a href="/settings?tab=tiers" className="inline-flex items-center gap-1.5 mt-2 ml-5 text-xs text-[var(--accent)] hover:underline">
                   <Settings size={11} />
                   Ask your admin to enable it in Settings → Modules
                 </a>
@@ -268,7 +268,7 @@ export default function SaveReportModal({
                 <AlertTriangle size={13} className="text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-700 dark:text-amber-400">
                   PDF will be saved to Google Drive but won&apos;t be indexed in the Document Vault.{' '}
-                  <a href="/settings?tab=modules" className="underline font-medium">Enable the Document Vault module</a> to index it automatically.
+                  <a href="/settings?tab=tiers" className="underline font-medium">Enable the Document Vault module</a> to index it automatically.
                 </p>
               </div>
             )}

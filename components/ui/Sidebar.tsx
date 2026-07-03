@@ -768,15 +768,15 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
             })}
           </div>
 
-          {/* Footer — admin shortcut to enable more modules */}
+          {/* Footer — admin shortcut to the plan (tools are set by the tier) */}
           {isAdmin && inactiveCount > 0 && (
             <Link
-              href="/settings?tab=modules"
+              href="/settings?tab=tiers"
               onClick={() => { setToolsOpen(false); setToolSearch(''); }}
               className="flex items-center gap-2 px-4 py-3 border-t border-[var(--border)] text-xs text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors shrink-0"
             >
               <Puzzle size={13} className="shrink-0" />
-              <span>{inactiveCount} inactive module{inactiveCount !== 1 ? 's' : ''} — Manage</span>
+              <span>{inactiveCount} tool{inactiveCount !== 1 ? 's' : ''} in other plans — Manage plan</span>
             </Link>
           )}
         </div>

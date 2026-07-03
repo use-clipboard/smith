@@ -267,7 +267,7 @@ export default function MtdItSaveToRecordsModal(props: Props) {
               <Lock size={14} className="shrink-0 mt-0.5" />
               <div>
                 Neither the <strong>Google Drive</strong> nor <strong>Document Vault</strong> module is active for your firm. Ask your admin to enable at least one in{' '}
-                <a href="/settings?tab=modules" className="underline font-medium">Settings → Modules</a>.
+                <a href="/settings?tab=tiers" className="underline font-medium">Settings → Plan &amp; Tiers</a>.
               </div>
             </div>
           ) : phase === 'done' ? (
@@ -367,7 +367,7 @@ export default function MtdItSaveToRecordsModal(props: Props) {
                   />
                 </div>
                 {!driveActive && !vaultActive ? null : (
-                  <a href="/settings?tab=modules" className="inline-flex items-center gap-1.5 mt-2 text-[11px] text-gray-500 hover:text-[var(--accent)]">
+                  <a href="/settings?tab=tiers" className="inline-flex items-center gap-1.5 mt-2 text-[11px] text-gray-500 hover:text-[var(--accent)]">
                     <SettingsIcon size={11} /> Manage modules
                   </a>
                 )}

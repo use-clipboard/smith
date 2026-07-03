@@ -108,9 +108,9 @@ export default function SettingsClient({
     { id: 'team' as Tab,        label: 'Team',        icon: UsersRound,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'api-key' as Tab,     label: 'AI & API Key',icon: Key,               adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'tiers' as Tab,       label: 'Plan & Tiers', icon: Layers,           adminOnly: true,  hidden: false, group: 'general' as TabGroup },
-    // Tool Enabling is now dictated by the tier — hidden from the nav, kept as an
-    // internal granular override reachable via ?tab=modules.
-    { id: 'modules' as Tab,     label: 'Tool Enabling', icon: Puzzle,          adminOnly: true,  hidden: true,  group: 'general' as TabGroup },
+    // Tools are dictated by the tier — this screen is now a read-only reflection,
+    // hidden from the nav, reachable via ?tab=modules for reference only.
+    { id: 'modules' as Tab,     label: 'Tools in your plan', icon: Puzzle,     adminOnly: true,  hidden: true,  group: 'general' as TabGroup },
     { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
@@ -575,7 +575,7 @@ export default function SettingsClient({
         <TiersTab subscriptionTier={subscriptionTier} initialActiveModules={activeModules} initialSeatCount={seatCount} />
       )}
 
-      {/* Tool Enabling — hidden from nav; internal granular override (URL only) */}
+      {/* Tools in your plan — hidden from nav; read-only reflection of the tier (URL only) */}
       {activeTab === 'modules' && isAdmin && (
         <ModulesTab initialActiveModules={activeModules} subscriptionTier={subscriptionTier} />
       )}

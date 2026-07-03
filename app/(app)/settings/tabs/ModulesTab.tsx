@@ -1,18 +1,18 @@
 'use client';
 
-import { useState } from 'react';
 import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
-  Check, Loader2, AlertTriangle, Puzzle, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
-  HeartHandshake, FileSignature, CalendarCheck, BookCopy, Landmark, Clock,
+  Check, Lock, Puzzle, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
+  HeartHandshake, FileSignature, CalendarCheck, BookCopy, Landmark, Clock, Layers,
 } from 'lucide-react';
-import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
+import { MODULES, MODULE_GROUPS, modulesForPlan, PLAN_LABELS, type ModuleConfig } from '@/config/modules.config';
 
-// Hidden from the settings nav (see SettingsClient) — tools are dictated by the
-// firm's tier now. Kept as an internal granular override reachable via
-// ?tab=modules, and because it's the source of truth for how active_modules
-// composes. Writes directly to active_modules via /api/firms/modules.
+// Read-only view. Tools are dictated entirely by the firm's plan/tier — there
+// are no per-tool toggles here any more. Each tool is shown as Included or
+// Not in your plan based on modulesForPlan(tier). To change what's enabled, the
+// admin switches plan in Settings → Plan & Tiers. Hidden from the settings nav
+// (see SettingsClient); reachable via ?tab=modules for reference only.
 
 const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
@@ -27,96 +27,51 @@ function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {
   return <Icon size={size} />;
 }
 
-function ModuleCard({ module, isActive, onToggle, saving }: {
-  module: ModuleConfig;
-  isActive: boolean;
-  onToggle: (id: string, active: boolean) => void;
-  saving: boolean;
-}) {
+function ModuleCard({ module, isIncluded }: { module: ModuleConfig; isIncluded: boolean }) {
   return (
     <div className={`glass-solid rounded-xl border flex flex-col transition-all duration-150
-        ${isActive ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)]'}`}>
+        ${isIncluded ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] opacity-70'}`}>
       <div className="p-4 flex flex-col gap-3 flex-1">
         <div className="flex items-center gap-3">
           <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0
-            ${isActive ? 'bg-[var(--accent-light)]' : 'bg-[var(--bg-nav-hover)]'}`}>
-            <span className={isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}>
+            ${isIncluded ? 'bg-[var(--accent-light)]' : 'bg-[var(--bg-nav-hover)]'}`}>
+            <span className={isIncluded ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}>
               <ModuleIcon name={module.iconName} size={17} />
             </span>
           </div>
           <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight flex-1 min-w-0">{module.name}</p>
-          {isActive ? (
+          {isIncluded ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 shrink-0">
-              <Check size={10} strokeWidth={2.5} /> Active
+              <Check size={10} strokeWidth={2.5} /> Included
             </span>
           ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--bg-nav-hover)] text-[var(--text-muted)] shrink-0">
-              Inactive
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-[var(--bg-nav-hover)] text-[var(--text-muted)] shrink-0">
+              <Lock size={10} /> Not in your plan
             </span>
           )}
         </div>
         <p className="text-xs text-[var(--text-muted)] leading-relaxed">{module.description}</p>
-      </div>
-      <div className="flex items-center justify-end px-4 py-3 border-t border-[var(--border)]">
-        <button
-          type="button"
-          onClick={() => onToggle(module.id, !isActive)}
-          disabled={saving}
-          className={`relative inline-flex h-6 w-11 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0
-            ${isActive ? 'bg-[var(--accent)]' : 'bg-[var(--border-input)]'}`}
-          aria-label={isActive ? `Deactivate ${module.name}` : `Activate ${module.name}`}
-        >
-          <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5
-            ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
-        </button>
       </div>
     </div>
   );
 }
 
 interface Props {
-  initialActiveModules: string[];
-  /** Present for the SettingsClient call signature; not used here. */
+  /** Present for the SettingsClient call signature; not used — tools follow the tier. */
+  initialActiveModules?: string[];
   subscriptionTier?: string;
 }
 
-export default function ModulesTab({ initialActiveModules }: Props) {
-  const [activeModules, setActiveModules] = useState<string[]>(initialActiveModules);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
+export default function ModulesTab({ subscriptionTier = 'internal' }: Props) {
+  // Which tools this firm's plan grants. Internal (and any legacy tier) = all.
+  const includedIds = new Set(modulesForPlan(subscriptionTier));
+  const planLabel = PLAN_LABELS[subscriptionTier] ?? subscriptionTier;
 
   const optionalModules = MODULES.filter(m => !m.alwaysOn);
   const groupedModules = MODULE_GROUPS
     .map(group => ({ group, modules: optionalModules.filter(m => m.group === group.id) }))
     .filter(g => g.modules.length > 0);
   const ungrouped = optionalModules.filter(m => !m.group);
-
-  async function handleToggle(moduleId: string, shouldBeActive: boolean) {
-    const next = shouldBeActive
-      ? [...new Set([...activeModules, moduleId])]
-      : activeModules.filter(id => id !== moduleId);
-    setActiveModules(next);
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const res = await fetch('/api/firms/modules', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ activeModules: next }),
-      });
-      if (!res.ok) {
-        const e = await res.json();
-        throw new Error(e.message || 'Failed to save');
-      }
-      setSavedAt(Date.now());
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save module settings');
-      setActiveModules(activeModules);
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -126,30 +81,21 @@ export default function ModulesTab({ initialActiveModules }: Props) {
             <Puzzle size={16} className="text-[var(--accent)]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tool Enabling (internal override)</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tools in your plan</h3>
             <p className="text-xs text-[var(--text-muted)] mt-0.5 leading-relaxed">
-              Granular per-tool control. Customer firms get their tools from their tier — this is an internal override.
+              The tools your team can use are set by your plan
+              {planLabel ? <> — you&apos;re on <strong className="text-[var(--text-primary)]">{planLabel}</strong></> : null}.
+              To turn tools on or off, change your plan in{' '}
+              <a href="/settings?tab=tiers" className="text-[var(--accent)] hover:underline font-medium">Plan &amp; Tiers</a>.
             </p>
           </div>
-          <div className="shrink-0 pl-4">
-            {saving && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                <Loader2 size={12} className="animate-spin" /> Saving…
-              </span>
-            )}
-            {!saving && savedAt && (
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                <Check size={12} /> Saved
-              </span>
-            )}
-          </div>
+          <a
+            href="/settings?tab=tiers"
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold bg-[var(--accent)] text-white hover:opacity-90 transition-opacity"
+          >
+            <Layers size={13} /> Manage plan
+          </a>
         </div>
-        {saveError && (
-          <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg">
-            <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 dark:text-red-400">{saveError}</p>
-          </div>
-        )}
       </div>
 
       {groupedModules.map(({ group, modules }) => (
@@ -160,7 +106,7 @@ export default function ModulesTab({ initialActiveModules }: Props) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {modules.map(module => (
-              <ModuleCard key={module.id} module={module} isActive={activeModules.includes(module.id)} onToggle={handleToggle} saving={saving} />
+              <ModuleCard key={module.id} module={module} isIncluded={includedIds.has(module.id)} />
             ))}
           </div>
         </div>
@@ -171,7 +117,7 @@ export default function ModulesTab({ initialActiveModules }: Props) {
           <p className="text-xs font-semibold uppercase tracking-widest text-[var(--text-muted)] mb-3 px-1">Other</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {ungrouped.map(module => (
-              <ModuleCard key={module.id} module={module} isActive={activeModules.includes(module.id)} onToggle={handleToggle} saving={saving} />
+              <ModuleCard key={module.id} module={module} isIncluded={includedIds.has(module.id)} />
             ))}
           </div>
         </div>
