@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Search, Check, CheckSquare, X } from 'lucide-react';
+import { ChevronDown, Search, Check, CheckSquare, X, CalendarDays } from 'lucide-react';
+import { fmtDateUK, todayIso } from '@/lib/timesheets/format';
 
 export interface PickedTask {
   id: string;
   title: string;
   clientId: string | null;
   clientName: string;
+  /** Task due date (yyyy-mm-dd), if set. */
+  dueDate?: string | null;
 }
 
 interface Props {
@@ -25,6 +28,7 @@ interface TaskDto {
   title: string;
   client_id?: string | null;
   client?: { name?: string } | null;
+  due_date?: string | null;
 }
 
 /** Searchable picker over the firm's tasks. Lets a Timesheets entry/timer link
@@ -50,6 +54,7 @@ export default function TaskCombobox({ value, label, clientId, clientName, onCha
         if (cancelled) return;
         const list = ((d.tasks ?? []) as TaskDto[]).map(t => ({
           id: t.id, title: t.title, clientId: t.client_id ?? null, clientName: t.client?.name ?? '',
+          dueDate: t.due_date ? t.due_date.slice(0, 10) : null,
         }));
         setTasks(list);
       })
@@ -71,6 +76,7 @@ export default function TaskCombobox({ value, label, clientId, clientName, onCha
   const displayText = selected?.title || (value ? (label || 'Linked task') : null);
 
   const scopedToClient = !!clientId && !showAll;
+  const today = todayIso();
 
   const filtered = useMemo(() => {
     if (!tasks) return [];
@@ -120,16 +126,25 @@ export default function TaskCombobox({ value, label, clientId, clientName, onCha
 
           <div className="max-h-60 overflow-y-auto scrollbar-thin py-1">
             {tasks === null && <p className="px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">Loading tasks…</p>}
-            {tasks !== null && filtered.map(t => (
-              <button key={t.id} type="button" onClick={() => pick(t)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.04]">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-[var(--text-primary)]">{t.title}</p>
-                  {t.clientName && <p className="truncate text-[10.5px] text-[var(--text-muted)]">{t.clientName}</p>}
-                </div>
-                {value === t.id && <Check size={14} className="ml-auto shrink-0 text-[var(--accent)]" />}
-              </button>
-            ))}
+            {tasks !== null && filtered.map(t => {
+              const overdue = !!t.dueDate && t.dueDate < today;
+              return (
+                <button key={t.id} type="button" onClick={() => pick(t)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.04]">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-[var(--text-primary)]">{t.title}</p>
+                    {t.clientName && <p className="truncate text-[10.5px] text-[var(--text-muted)]">{t.clientName}</p>}
+                  </div>
+                  {t.dueDate && (
+                    <span className={`flex shrink-0 items-center gap-1 text-[10.5px] tabular-nums ${overdue ? 'font-semibold text-rose-500' : 'text-[var(--text-muted)]'}`}>
+                      <CalendarDays size={11} className="shrink-0" />
+                      {fmtDateUK(t.dueDate)}
+                    </span>
+                  )}
+                  {value === t.id && <Check size={14} className="shrink-0 text-[var(--accent)]" />}
+                </button>
+              );
+            })}
             {tasks !== null && filtered.length === 0 && (
               <div className="px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">
                 {query
