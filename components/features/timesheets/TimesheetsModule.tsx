@@ -10,7 +10,6 @@ import MyTimesheet from './mytimesheet/MyTimesheet';
 import Reports from './reports/Reports';
 import RatesSettings from './settings/RatesSettings';
 import Approvals from './approvals/Approvals';
-import TimerStartModal from './timer/TimerStartModal';
 import { fmtStopwatch } from '@/lib/timesheets/format';
 
 const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
@@ -21,9 +20,8 @@ const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function TimesheetsModule() {
-  const { ready, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId } = useTimesheets();
+  const { ready, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId, openStartModal } = useTimesheets();
   const [tab, setTab] = useState<TimesheetTab>('overview');
-  const [startingTimer, setStartingTimer] = useState(false);
 
   // Admins approve anyone (and any week with no manager); managers approve
   // weeks routed to them.
@@ -45,7 +43,7 @@ export default function TimesheetsModule() {
       <span className="max-w-[120px] truncate text-[12px] text-[var(--text-secondary)]">{timer.clientName || 'Internal'}</span>
     </div>
   ) : (
-    <button onClick={() => setStartingTimer(true)} className="btn-primary"><Play size={15} /> Start timer</button>
+    <button onClick={openStartModal} className="btn-primary"><Play size={15} /> Start timer</button>
   );
 
   return (
@@ -91,8 +89,6 @@ export default function TimesheetsModule() {
           {tab === 'approvals' && canApprove && <Approvals />}
         </>
       )}
-
-      {startingTimer && <TimerStartModal onClose={() => setStartingTimer(false)} />}
     </ToolLayout>
   );
 }

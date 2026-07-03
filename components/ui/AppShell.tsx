@@ -33,6 +33,7 @@ import ConversationWindow from '@/components/chat/ConversationWindow';
 import Avatar from '@/components/ui/Avatar';
 import TimesheetsProvider from '@/components/features/timesheets/TimesheetsProvider';
 import FloatingTimer from '@/components/features/timesheets/timer/FloatingTimer';
+import GlobalTimerStartModal from '@/components/features/timesheets/timer/GlobalTimerStartModal';
 import TimerUndoToast from '@/components/features/timesheets/timer/TimerUndoToast';
 
 interface AppShellProps {
@@ -238,6 +239,7 @@ export default function AppShell({
                 </AppShellInner>
                 {/* Floating overlays — outside AppShellInner but still inside all providers */}
                 <FloatingTimer />
+                <GlobalTimerStartModal />
                 <TimerUndoToast />
                 <AskSmithBubble />
                 <ConversationWindows />

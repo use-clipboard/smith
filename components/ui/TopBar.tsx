@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
   ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
-  Maximize2,
+  Maximize2, Clock,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
@@ -15,6 +15,9 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import { useTabContext } from '@/components/ui/TabContext';
 import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
+import { useModules } from './ModulesProvider';
+import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
+import { fmtStopwatch } from '@/lib/timesheets/format';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from '@/config/navItems';
 import type { Tab } from '@/components/ui/TabContext';
@@ -154,6 +157,12 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   const { notifications, unreadCount, markAllRead: markAllReadCtx, dismiss: dismissCtx, refresh: refreshNotifs } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Timesheets quick-timer — only surfaced when the firm has the module
+  // (Practice Suite). Lets a user start/see a timer from anywhere in the app.
+  const { isModuleActive } = useModules();
+  const timesheetsActive = isModuleActive('timesheets');
+  const { timer, elapsedMs, openStartModal } = useTimesheets();
 
   // Notification toasts now live in NotificationToastNotifier (rendered at the
   // app-shell level so they anchor bottom-right of the viewport, not inside the
@@ -359,6 +368,33 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
 
       {/* Right actions */}
       <div className="flex items-center gap-2 shrink-0">
+
+        {/* Timesheets quick-timer — start/see a timer from anywhere (Practice Suite) */}
+        {timesheetsActive && (
+          <Tooltip label={timer.running ? `Timer running — ${timer.clientName || 'Internal'}` : 'Start a timer'}>
+            <button
+              onClick={openStartModal}
+              aria-label={timer.running ? 'Timer running — start another' : 'Start a timer'}
+              className={`h-8 flex items-center rounded-lg transition-all ${
+                timer.running
+                  ? 'gap-1.5 px-2 bg-[var(--accent)]/10 text-[var(--accent)]'
+                  : 'w-8 justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {timer.running ? (
+                <>
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    {!timer.paused && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />}
+                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: timer.paused ? '#94A3B8' : 'var(--accent)' }} />
+                  </span>
+                  <span className="font-mono text-[12px] font-bold tabular-nums">{fmtStopwatch(elapsedMs)}</span>
+                </>
+              ) : (
+                <Clock size={16} />
+              )}
+            </button>
+          </Tooltip>
+        )}
 
         {/* Team Messages */}
         <div className="relative">

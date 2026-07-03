@@ -70,6 +70,12 @@ interface TimesheetsContextValue {
   stopTimer: (save: boolean) => void;
   updateTimerMeta: (patch: Partial<StartConfig>) => void;
 
+  // Global "start a timer" modal — openable from anywhere (e.g. the header
+  // shortcut) so time can be captured without navigating to the Timesheets tool.
+  startModalOpen: boolean;
+  openStartModal: () => void;
+  closeStartModal: () => void;
+
   addEntry: (e: Omit<TimeEntry, 'id'>) => string | null;
   updateEntry: (id: string, patch: Partial<TimeEntry>) => void;
   deleteEntry: (id: string) => void;
@@ -146,6 +152,7 @@ export default function TimesheetsProvider({
   roundingRef.current = roundingMinutes;
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [timer, setTimer] = useState<TimerState>(emptyTimer);
+  const [startModalOpen, setStartModalOpen] = useState(false);
   const [timerUndo, setTimerUndo] = useState<{ label: string; expiresAt: number } | null>(null);
   const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
   const pendingDeleteRef = useRef<Set<string>>(new Set()); // tmp ids deleted before their POST resolved
@@ -506,6 +513,9 @@ export default function TimesheetsProvider({
     setSuggestions(prev => prev.filter(x => x.id !== id));
   }, []);
 
+  const openStartModal = useCallback(() => setStartModalOpen(true), []);
+  const closeStartModal = useCallback(() => setStartModalOpen(false), []);
+
   const value = useMemo<TimesheetsContextValue>(() => ({
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
@@ -513,6 +523,7 @@ export default function TimesheetsProvider({
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
+    startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
@@ -521,6 +532,7 @@ export default function TimesheetsProvider({
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
+    startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   ]);
 
