@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive, Clock } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -18,6 +18,8 @@ import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
 import MtdItSettingsTab from './tabs/MtdItSettingsTab';
+import TimesheetsSettingsTab from './tabs/TimesheetsSettingsTab';
+import { canAccessTimesheets } from '@/lib/timesheets/access';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
 import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
@@ -27,7 +29,7 @@ import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
 
 interface Props {
   userId: string;
@@ -68,6 +70,8 @@ export default function SettingsClient({
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
+  // Timesheets is in preview — only the allowlisted user(s) see its settings tab.
+  const timesheetsAccess = activeModules.includes('timesheets') && canAccessTimesheets(userEmail);
   const searchParams = useSearchParams();
 
   // Allow deep-linking to a specific tab via ?tab=modules (map legacy 'appearance' → 'preferences')
@@ -112,6 +116,7 @@ export default function SettingsClient({
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },
+    { id: 'timesheets' as Tab,   label: 'Timesheets',   icon: Clock,          adminOnly: true,  hidden: !timesheetsAccess,         group: 'tools' as TabGroup },
     { id: 'email-triage' as Tab, label: 'Email Triage', icon: Mail,           adminOnly: false, hidden: !emailTriageModuleActive,  group: 'tools' as TabGroup },
     { id: 'document-vault' as Tab, label: 'Document Vault', icon: FolderArchive, adminOnly: true, hidden: !documentVaultActive,    group: 'tools' as TabGroup },
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
@@ -599,6 +604,11 @@ export default function SettingsClient({
           initialEmailFromName={emailSenderName ?? null}
           initialEmailFromAddress={emailSenderAddress ?? null}
         />
+      )}
+
+      {/* Timesheets tab — admin only, preview allowlist */}
+      {activeTab === 'timesheets' && timesheetsAccess && (
+        <TimesheetsSettingsTab isAdmin={isAdmin} />
       )}
 
       {/* Email Triage tab — all users, shown when module is active */}

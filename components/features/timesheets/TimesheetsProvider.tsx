@@ -3,9 +3,9 @@
 import {
   createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, ReactNode,
 } from 'react';
-import type { TimeEntry, TimerState, AiSuggestion, TimeEntryType, TsClient, TsStaff, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
+import type { TimeEntry, TimerState, AiSuggestion, TimeEntryType, TsClient, TsStaff, TsActivity, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
 import {
-  SEED_STAFF, SEED_CLIENTS, SEED_ACTIVITIES, ME_ID, generateSeedEntries, generateSampleForUser,
+  SEED_STAFF, SEED_CLIENTS, SEED_ACTIVITIES, DEPARTMENTS, ME_ID, generateSeedEntries, generateSampleForUser,
 } from '@/lib/timesheets/seed';
 import { generateDemoSuggestions } from '@/lib/timesheets/suggestions';
 import { canAccessTimesheets } from '@/lib/timesheets/access';
@@ -40,7 +40,9 @@ interface TimesheetsContextValue {
   entries: TimeEntry[];
   staff: TsStaff[];
   clients: TsClient[];
-  activities: typeof SEED_ACTIVITIES;
+  activities: TsActivity[];
+  departments: string[];
+  reloadSettings: () => Promise<void>;
   suggestions: AiSuggestion[];
   scanning: boolean;
   hasSampleData: boolean;
@@ -138,6 +140,10 @@ export default function TimesheetsProvider({
   const [staffOverrides, setStaffOverrides] = useState<Record<string, { ratePence?: number; weeklyCapacityHours?: number; department?: string }>>({});
   const [clientBudgets, setClientBudgets] = useState<Record<string, number>>({});
   const [weekStatuses, setWeekStatuses] = useState<Record<string, WeekStatus>>({});
+  // Firm-configurable activities + departments (Settings → Timesheets); default
+  // to the built-in lists until loaded / in demo mode.
+  const [activities, setActivities] = useState<TsActivity[]>(SEED_ACTIVITIES);
+  const [departments, setDepartments] = useState<string[]>([...DEPARTMENTS]);
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [timer, setTimer] = useState<TimerState>(emptyTimer);
   const [scanning, setScanning] = useState(false);
@@ -197,13 +203,18 @@ export default function TimesheetsProvider({
           const data = await res.json();
           if (data.available) {
             // LIVE mode — pull entries + real team (with rates) + clients + budgets + week statuses.
-            const [teamRes, clientsRes, budgetsRes, weeksRes] = await Promise.all([
+            const [teamRes, clientsRes, budgetsRes, weeksRes, settingsRes] = await Promise.all([
               fetch('/api/timesheets/staff').then(r => r.ok ? r.json() : { members: [] }).catch(() => ({ members: [] })),
               fetch('/api/clients').then(r => r.ok ? r.json() : { clients: [] }).catch(() => ({ clients: [] })),
               fetch('/api/timesheets/budgets').then(r => r.ok ? r.json() : { budgets: {} }).catch(() => ({ budgets: {} })),
               fetch('/api/timesheets/weeks').then(r => r.ok ? r.json() : { weeks: [] }).catch(() => ({ weeks: [] })),
+              fetch('/api/timesheets/settings').then(r => r.ok ? r.json() : null).catch(() => null),
             ]);
             if (cancelled) return;
+            if (settingsRes) {
+              if (Array.isArray(settingsRes.activities) && settingsRes.activities.length) setActivities(settingsRes.activities as TsActivity[]);
+              if (Array.isArray(settingsRes.departments) && settingsRes.departments.length) setDepartments(settingsRes.departments as string[]);
+            }
             setEntries(data.entries as TimeEntry[]);
             setLiveStaff(mapStaff((teamRes.members ?? []) as StaffDto[], userId, userName));
             setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
@@ -452,6 +463,17 @@ export default function TimesheetsProvider({
     }
   }, []);
 
+  // Re-pull firm activities/departments after they're edited in Settings.
+  const reloadSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/timesheets/settings');
+      if (!res.ok) return;
+      const d = await res.json();
+      if (Array.isArray(d.activities) && d.activities.length) setActivities(d.activities as TsActivity[]);
+      if (Array.isArray(d.departments) && d.departments.length) setDepartments(d.departments as string[]);
+    } catch { /* ignore */ }
+  }, []);
+
   // ── Week approval workflow ───────────────────────────────────────────────────
   const meIdNow = mode === 'live' ? userId : ME_ID;
   const weekStatusFor = useCallback((uid: string, weekStart: string): WeekApprovalStatus => {
@@ -536,7 +558,7 @@ export default function TimesheetsProvider({
           taskId: null,
           taskTitle: s.taskTitle,
           activity: s.activity,
-          department: SEED_ACTIVITIES.find(a => a.label === s.activity)?.department ?? 'General',
+          department: activities.find(a => a.label === s.activity)?.department ?? 'General',
           type: s.type,
           minutes: s.suggestedMinutes,
           ratePence: s.type === 'billable' ? (meStaff?.ratePence ?? 12000) : 0,
@@ -546,7 +568,7 @@ export default function TimesheetsProvider({
       }
       return prev.filter(x => x.id !== id);
     });
-  }, [addEntry, liveStaff, userId]);
+  }, [addEntry, liveStaff, userId, activities]);
 
   const dismissSuggestion = useCallback((id: string) => {
     setSuggestions(prev => prev.filter(x => x.id !== id));
@@ -555,7 +577,7 @@ export default function TimesheetsProvider({
   const hasSampleData = mode === 'demo' || entries.length > 0;
 
   const value = useMemo<TimesheetsContextValue>(() => ({
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities: SEED_ACTIVITIES,
+    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample, updateStaffRate, timer, elapsedMs,
     clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
@@ -563,7 +585,8 @@ export default function TimesheetsProvider({
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, suggestions, scanning, hasSampleData, loadingSample,
+    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments, reloadSettings,
+    suggestions, scanning, hasSampleData, loadingSample,
     updateStaffRate, timer, elapsedMs, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     ensureSeeded, loadSampleWeek,

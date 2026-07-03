@@ -4,15 +4,13 @@ import { useState } from 'react';
 import { Info, Lock } from 'lucide-react';
 import type { TsStaff } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
-import { DEPARTMENTS } from '@/lib/timesheets/seed';
 import { GlassCard, SectionHeader, TsAvatar } from '../shared/ui';
 import { fmtGBP } from '@/lib/timesheets/format';
 
-const DEPT_OPTIONS = [...DEPARTMENTS, 'Unassigned'];
-
-function RateRow({ s, editable, onCommit }: {
+function RateRow({ s, editable, deptOptions, onCommit }: {
   s: TsStaff;
   editable: boolean;
+  deptOptions: string[];
   onCommit: (patch: { ratePence?: number; weeklyCapacityHours?: number; department?: string }) => void;
 }) {
   const [rate, setRate] = useState(String(Math.round(s.ratePence / 100)));
@@ -43,12 +41,12 @@ function RateRow({ s, editable, onCommit }: {
       <div className="hidden shrink-0 md:block">
         <label className="mb-0.5 block text-[9.5px] uppercase tracking-wide text-[var(--text-muted)]">Department</label>
         <select
-          value={DEPT_OPTIONS.includes(s.department) ? s.department : 'Unassigned'}
+          value={deptOptions.includes(s.department) ? s.department : 'Unassigned'}
           disabled={!editable}
           onChange={e => onCommit({ department: e.target.value })}
           className="rounded-lg border border-[var(--border-input)] bg-[var(--bg-input)] px-2 py-1 text-[12.5px] font-medium text-[var(--text-primary)] outline-none disabled:opacity-60"
         >
-          {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       </div>
 
@@ -94,7 +92,8 @@ function RateRow({ s, editable, onCommit }: {
 }
 
 export default function RatesSettings() {
-  const { staff, meId, isAdmin, updateStaffRate, mode } = useTimesheets();
+  const { staff, meId, isAdmin, updateStaffRate, mode, departments } = useTimesheets();
+  const deptOptions = [...departments, 'Unassigned'];
 
   const totalWeekly = staff.reduce((sum, s) => sum + Math.round(s.weeklyCapacityHours * s.ratePence), 0);
 
@@ -125,6 +124,7 @@ export default function RatesSettings() {
               key={s.id}
               s={s}
               editable={isAdmin || s.id === meId}
+              deptOptions={deptOptions}
               onCommit={patch => updateStaffRate(s.id, patch)}
             />
           ))}
