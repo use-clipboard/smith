@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Wallet, Lock, Loader2, Maximize2, X, ExternalLink } from 'lucide-react';
 import { formatMoneyOrDash } from '@/lib/bookkeeping/formatMoney';
@@ -228,8 +229,13 @@ function StatementLightbox({
     },
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:p-8 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+  // Portal to body — the snapshot card sits inside a `glass` (backdrop-blur)
+  // ancestor, which creates a containing block that would otherwise make
+  // `position: fixed` resolve against the card instead of the viewport,
+  // trapping the lightbox in the card's corner.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[1200] flex items-start justify-center p-4 sm:p-8 bg-black/40 backdrop-blur-sm" onClick={onClose}>
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
@@ -269,7 +275,8 @@ function StatementLightbox({
           </BookNavigationProvider>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

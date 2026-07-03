@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
       id, firm_id, client_id, name, template_type, base_currency,
       vat_registered, vat_scheme, vat_number, period_lock_date, vat_lock_date,
       admin_locked, archived, created_by, created_at, updated_at,
-      client:clients(id, name, client_ref),
+      client:clients(id, name, client_ref, status),
       creator:users!bookkeeping_books_created_by_fkey(id, full_name, email)
     `)
     .eq('firm_id', ctx.firmId)
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       vat_registered, vat_scheme, vat_number, period_lock_date, vat_lock_date,
       year_end_md, first_period_start, retained_earnings_account_id,
       admin_locked, archived, created_by, created_at, updated_at,
-      client:clients(id, name, client_ref),
+      client:clients(id, name, client_ref, status),
       creator:users!bookkeeping_books_created_by_fkey(id, full_name, email)
     `)
     .single();

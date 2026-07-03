@@ -27,6 +27,8 @@ export interface BookClientRef {
   id: string;
   name: string;
   client_ref: string | null;
+  /** Client record status — 'active' | 'hold' | 'inactive'. */
+  status?: string | null;
 }
 
 export interface BookCreatorRef {

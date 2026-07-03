@@ -37,7 +37,7 @@ const BOOK_SELECT = `
   vat_registered, vat_scheme, vat_number, flat_rate_percentage, period_lock_date, vat_lock_date,
   year_end_md, first_period_start, retained_earnings_account_id, current_fy_id,
   admin_locked, archived, created_by, created_at, updated_at,
-  client:clients(id, name, client_ref),
+  client:clients(id, name, client_ref, status),
   creator:users!bookkeeping_books_created_by_fkey(id, full_name, email)
 `;
 
