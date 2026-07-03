@@ -68,10 +68,6 @@ export default function MyTimesheet() {
   const [dragPreview, setDragPreview] = useState<{ id: string; mode: 'move' | 'resize'; deltaMin: number } | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null); // week-strip chip being hovered mid-drag
   const weekLockedRef = useRef(false);
-  // Set on any block press so the trailing synthetic click (fired on the
-  // timeline background because the dragged block is pointer-events:none) does
-  // NOT open the "Add entry" modal.
-  const blockInteractedRef = useRef(false);
 
   // Google Calendar overlay — events for the selected day, allocatable to time.
   const [calendarConnected, setCalendarConnected] = useState(false);
@@ -104,7 +100,12 @@ export default function MyTimesheet() {
     if (weekLockedRef.current) return; // locked week — entries are read-only
     e.preventDefault();
     e.stopPropagation();
-    blockInteractedRef.current = true; // suppress the trailing background click
+    // The dragged block is pointer-events:none (so cross-day drops register),
+    // so the click the browser fires after this press lands on the timeline
+    // background and would open "Add entry". Swallow that one click with a
+    // one-shot capture-phase listener that runs before any React handler.
+    const swallowClick = (ce: Event) => { ce.stopPropagation(); ce.stopImmediatePropagation(); };
+    window.addEventListener('click', swallowClick, { capture: true, once: true });
     const startY = e.clientY;
     const originStart = parseMin(entry.start);
     const originMinutes = entry.minutes;
@@ -134,8 +135,9 @@ export default function MyTimesheet() {
       window.removeEventListener('pointerup', onUp);
       setDragPreview(null);
       setDropDay(null);
-      // Clear after the trailing click has fired (click comes after pointerup).
-      window.setTimeout(() => { blockInteractedRef.current = false; }, 0);
+      // Backstop: if no click follows this press, drop the swallow listener so
+      // it can't eat a later, unrelated click.
+      window.setTimeout(() => window.removeEventListener('click', swallowClick, { capture: true }), 500);
       if (!moved) { setEditing(entry); return; }
       if (mode === 'move') {
         if (overDay) {
@@ -285,10 +287,10 @@ export default function MyTimesheet() {
               <div
                 className="relative flex-1 rounded-xl border border-black/5 bg-white/40"
                 onClick={e => {
-                  // Click empty space to add. Ignore the phantom click that
-                  // follows a block drag/resize (block is pointer-events:none,
-                  // so its click lands here).
-                  if (locked || blockInteractedRef.current || e.target !== e.currentTarget) return;
+                  // Click empty space to add. (The click that follows a block
+                  // drag/resize is swallowed in beginDrag, so it never reaches
+                  // here.)
+                  if (locked || e.target !== e.currentTarget) return;
                   setAdding(selectedDay);
                 }}
               >
