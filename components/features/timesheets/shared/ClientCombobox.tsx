@@ -12,6 +12,13 @@ interface Props {
   placeholder?: string;
 }
 
+// Matches the status pills used elsewhere (ClientSearchInput, MTD IT, etc.).
+const STATUS_META: Record<string, { label: string; pill: string; dot: string }> = {
+  active:   { label: 'Active',   pill: 'bg-green-100 text-green-700', dot: '#22c55e' },
+  hold:     { label: 'On hold',  pill: 'bg-amber-100 text-amber-700', dot: '#f59e0b' },
+  inactive: { label: 'Inactive', pill: 'bg-gray-100 text-gray-500',   dot: '#9ca3af' },
+};
+
 /**
  * Searchable client picker over the provider's client list — replaces a plain
  * <select> so firms with hundreds of clients can type-to-find. Filters
@@ -56,8 +63,11 @@ export default function ClientCombobox({
         onClick={() => setOpen(o => !o)}
         className="input-base flex items-center justify-between gap-2 text-left"
       >
-        <span className={`truncate ${selected ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
-          {selected ? selected.name : (value === null && allowNone ? noneLabel : placeholder)}
+        <span className={`flex min-w-0 items-center gap-1.5 ${selected ? 'text-[var(--text-primary)]' : 'text-[var(--text-muted)]'}`}>
+          {selected?.status && STATUS_META[selected.status] && (
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: STATUS_META[selected.status].dot }} />
+          )}
+          <span className="truncate">{selected ? selected.name : (value === null && allowNone ? noneLabel : placeholder)}</span>
         </span>
         <ChevronDown size={15} className="shrink-0 text-[var(--text-muted)]" />
       </button>
@@ -89,7 +99,12 @@ export default function ClientCombobox({
                   <p className="truncate text-[13px] font-medium text-[var(--text-primary)]">{c.name}</p>
                   {c.ref && <p className="truncate text-[10.5px] text-[var(--text-muted)]">{c.ref}</p>}
                 </div>
-                {value === c.id && <Check size={14} className="ml-auto shrink-0 text-[var(--accent)]" />}
+                {c.status && STATUS_META[c.status] && (
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STATUS_META[c.status].pill}`}>
+                    {STATUS_META[c.status].label}
+                  </span>
+                )}
+                {value === c.id && <Check size={14} className="shrink-0 text-[var(--accent)]" />}
               </button>
             ))}
             {filtered.length === 0 && (

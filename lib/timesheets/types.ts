@@ -11,6 +11,8 @@ export interface TsClient {
   id: string;
   name: string;
   ref: string;
+  /** 'active' | 'hold' | 'inactive' — shown in the client picker. */
+  status?: string;
 }
 
 /** A member of the firm — used for capacity, leaderboard and team views. */

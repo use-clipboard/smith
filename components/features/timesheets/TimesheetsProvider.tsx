@@ -206,8 +206,8 @@ export default function TimesheetsProvider({
             if (cancelled) return;
             setEntries(data.entries as TimeEntry[]);
             setLiveStaff(mapStaff((teamRes.members ?? []) as StaffDto[], userId, userName));
-            setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string }[])
-              .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '' })));
+            setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
+              .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '', status: c.status })));
             setClientBudgets((budgetsRes.budgets ?? {}) as Record<string, number>);
             const wmap: Record<string, WeekStatus> = {};
             for (const w of (weeksRes.weeks ?? []) as WeekStatus[]) wmap[weekKey(w.userId, w.weekStart)] = w;

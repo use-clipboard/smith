@@ -33,16 +33,16 @@ export const SEED_STAFF: TsStaff[] = [
 ];
 
 export const SEED_CLIENTS: TsClient[] = [
-  { id: 'c-acme', name: 'Acme Ltd',            ref: 'ACM01' },
-  { id: 'c-smith', name: 'Smith & Co',          ref: 'SMI01' },
-  { id: 'c-globa', name: 'Global Corp',         ref: 'GLO01' },
-  { id: 'c-brigh', name: 'Brightwater Cafés',   ref: 'BRI01' },
-  { id: 'c-north', name: 'Northgate Joinery',   ref: 'NOR01' },
-  { id: 'c-vertx', name: 'Vertex Digital',      ref: 'VER01' },
-  { id: 'c-oakle', name: 'Oakley Property LLP', ref: 'OAK01' },
-  { id: 'c-maple', name: 'Maple Health Ltd',    ref: 'MAP01' },
-  { id: 'c-riven', name: 'Riverton Motors',     ref: 'RIV01' },
-  { id: 'c-lumis', name: 'Lumis Studio',        ref: 'LUM01' },
+  { id: 'c-acme', name: 'Acme Ltd',            ref: 'ACM01', status: 'active' },
+  { id: 'c-smith', name: 'Smith & Co',          ref: 'SMI01', status: 'active' },
+  { id: 'c-globa', name: 'Global Corp',         ref: 'GLO01', status: 'active' },
+  { id: 'c-brigh', name: 'Brightwater Cafés',   ref: 'BRI01', status: 'active' },
+  { id: 'c-north', name: 'Northgate Joinery',   ref: 'NOR01', status: 'active' },
+  { id: 'c-vertx', name: 'Vertex Digital',      ref: 'VER01', status: 'active' },
+  { id: 'c-oakle', name: 'Oakley Property LLP', ref: 'OAK01', status: 'hold' },
+  { id: 'c-maple', name: 'Maple Health Ltd',    ref: 'MAP01', status: 'active' },
+  { id: 'c-riven', name: 'Riverton Motors',     ref: 'RIV01', status: 'active' },
+  { id: 'c-lumis', name: 'Lumis Studio',        ref: 'LUM01', status: 'inactive' },
 ];
 
 export const SEED_ACTIVITIES: TsActivity[] = [
