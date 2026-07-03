@@ -5,7 +5,7 @@ import {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   Check, Loader2, AlertTriangle, Puzzle, CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
-  HeartHandshake, FileSignature, CalendarCheck, BookCopy,
+  HeartHandshake, FileSignature, CalendarCheck, BookCopy, Landmark, Clock,
 } from 'lucide-react';
 import { MODULES, MODULE_GROUPS, type ModuleConfig } from '@/config/modules.config';
 
@@ -18,7 +18,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
   FileSearch, ArrowLeftRight, Building2, ClipboardCheck, Gauge,
   Receipt, ShieldAlert, FileText, BookOpen, Archive, HardDrive, House,
   CalendarDays, UserPlus, CheckSquare, MicVocal, Mail,
-  HeartHandshake, FileSignature, CalendarCheck, BookCopy,
+  HeartHandshake, FileSignature, CalendarCheck, BookCopy, Landmark, Clock,
 };
 
 function ModuleIcon({ name, size = 18 }: { name: string; size?: number }) {

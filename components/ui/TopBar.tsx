@@ -41,6 +41,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/landlord':        'Landlord Analysis',
   '/mtd-it':          'MTD IT',
   '/final-accounts':  'Accounts Review',
+  '/accounts-studio': 'Accounts Studio',
   '/performance':     'Performance Analysis',
   '/p32':             'P32 Summary',
   '/risk-assessment': 'Risk Assessment',

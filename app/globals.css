@@ -193,6 +193,39 @@ body {
 
 /* ─── Input Base ─────────────────────────────────────────────────────────── */
 @layer components {
+  /* Accounts Studio — disclosure editor + live preview typography. */
+  .studio-prose h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: var(--text-primary);
+  }
+  .studio-prose p {
+    margin: 0 0 10px;
+  }
+  .studio-prose ul {
+    margin: 0 0 10px;
+    padding-left: 20px;
+    list-style: disc;
+  }
+  .studio-prose li {
+    margin: 0 0 4px;
+  }
+  .studio-prose strong {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .studio-prose a {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .studio-preview h3 {
+    color: #1e293b;
+  }
+  .studio-preview strong {
+    color: #1e293b;
+  }
+
   .input-base {
     width: 100%;
     padding: 8px 12px;

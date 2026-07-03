@@ -128,6 +128,18 @@ export const MODULES: ModuleConfig[] = [
     group: 'accounts_compliance',
   },
   {
+    id: 'accounts-studio',
+    name: 'Accounts Studio',
+    description: 'Statutory accounts production. Turn bookkeeping data or a trial balance into fully compliant financial statements — AI prepares the accounts, applies the correct framework, drafts notes and disclosures, validates for Companies House and iXBRL, and produces the filing package for client approval and submission.',
+    iconName: 'Landmark',
+    route: '/accounts-studio',
+    alwaysOn: false,
+    enhancedBy: ['final-accounts', 'bookkeeping', 'full-analysis', 'document-vault'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'accounts_compliance',
+  },
+  {
     id: 'performance',
     name: 'Performance Analysis',
     description: 'Analyse management accounts and produce a business performance report with KPI ratios, benchmarks, and commentary. Supports yearly, quarterly, and monthly periods.',
@@ -358,7 +370,7 @@ export type PlanId = 'internal' | 'compliance' | 'practice';
 /** Compliance-tier tools (also included in Practice). */
 const COMPLIANCE_MODULE_IDS = [
   'bookkeeping', 'full-analysis', 'bank-to-csv', 'landlord', 'final-accounts',
-  'performance', 'p32', 'risk-assessment', 'summarise', 'mtd-it',
+  'accounts-studio', 'performance', 'p32', 'risk-assessment', 'summarise', 'mtd-it',
   'ch-secretarial', 'google-drive',
 ];
 /** Tools that Practice adds on top of Compliance. */
