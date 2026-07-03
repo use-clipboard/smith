@@ -420,7 +420,7 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
         </div>
 
         {/* Focus mode toggle — hides sidebar, top bar, tabs, banners */}
-        <Tooltip label="Focus mode — hide SMITH chrome (Ctrl+\)">
+        <Tooltip label="Focus Mode">
           <button
             onClick={toggleFocusMode}
             aria-label="Enter focus mode"
