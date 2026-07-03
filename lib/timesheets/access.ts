@@ -6,7 +6,7 @@
 // config/navItems.ts) to release the tool to all firms.
 
 export const TIMESHEETS_ALLOWED_EMAILS = [
-  'christos@marnerosmarcus.co.uk',
+  'christos@mmandco.com',
 ];
 
 export function canAccessTimesheets(email?: string | null): boolean {
