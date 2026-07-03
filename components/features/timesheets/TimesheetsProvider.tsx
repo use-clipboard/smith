@@ -21,6 +21,7 @@ type Mode = 'loading' | 'live' | 'demo';
 interface StartConfig {
   clientId: string | null;
   clientName: string;
+  taskId?: string | null;
   taskTitle: string;
   activity: string;
   department: string;
@@ -81,7 +82,7 @@ interface TimesheetsContextValue {
 
 const emptyTimer: TimerState = {
   running: false, paused: false, segmentStartedAt: null, accumulatedMs: 0,
-  clientId: null, clientName: '', taskTitle: '', activity: '', department: '', type: 'billable', notes: '',
+  clientId: null, clientName: '', taskId: null, taskTitle: '', activity: '', department: '', type: 'billable', notes: '',
 };
 
 const Ctx = createContext<TimesheetsContextValue | null>(null);
@@ -346,6 +347,7 @@ export default function TimesheetsProvider({
       start: `${hh}:${mm}`,
       clientId: t.clientId,
       clientName: t.clientName || 'Internal',
+      taskId: t.taskId ?? null,
       taskTitle: t.taskTitle || t.activity,
       activity: t.activity || 'Work',
       department: t.department || 'General',
@@ -361,7 +363,7 @@ export default function TimesheetsProvider({
     if (timerRef.current.running) commitTimer(timerRef.current);
     setTimer({
       running: true, paused: false, segmentStartedAt: Date.now(), accumulatedMs: 0,
-      clientId: cfg.clientId, clientName: cfg.clientName, taskTitle: cfg.taskTitle,
+      clientId: cfg.clientId, clientName: cfg.clientName, taskId: cfg.taskId ?? null, taskTitle: cfg.taskTitle,
       activity: cfg.activity, department: cfg.department, type: cfg.type, notes: cfg.notes ?? '',
     });
     setNow(Date.now());
@@ -531,6 +533,7 @@ export default function TimesheetsProvider({
           start: '—',
           clientId: s.clientId,
           clientName: s.clientName,
+          taskId: null,
           taskTitle: s.taskTitle,
           activity: s.activity,
           department: SEED_ACTIVITIES.find(a => a.label === s.activity)?.department ?? 'General',

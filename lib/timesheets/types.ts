@@ -46,6 +46,8 @@ export interface TimeEntry {
   start: string;
   clientId: string | null;
   clientName: string;
+  /** Optional link to a Tasks-tool task. */
+  taskId: string | null;
   taskTitle: string;
   activity: string;
   department: string;
@@ -67,6 +69,7 @@ export interface TimerState {
   accumulatedMs: number;
   clientId: string | null;
   clientName: string;
+  taskId: string | null;
   taskTitle: string;
   activity: string;
   department: string;

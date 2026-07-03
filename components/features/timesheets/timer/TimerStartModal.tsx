@@ -5,6 +5,7 @@ import { X, Play } from 'lucide-react';
 import type { TimeEntryType } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
 import ClientCombobox from '../shared/ClientCombobox';
+import TaskCombobox, { type PickedTask } from '../shared/TaskCombobox';
 
 const TYPES: { value: TimeEntryType; label: string }[] = [
   { value: 'billable', label: 'Billable' },
@@ -15,6 +16,7 @@ const TYPES: { value: TimeEntryType; label: string }[] = [
 export default function TimerStartModal({ onClose }: { onClose: () => void }) {
   const { clients, activities, startTimer } = useTimesheets();
   const [clientId, setClientId] = useState<string | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [activity, setActivity] = useState(activities[0].label);
   const [type, setType] = useState<TimeEntryType>('billable');
   const [taskTitle, setTaskTitle] = useState('');
@@ -29,6 +31,7 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
     startTimer({
       clientId,
       clientName: client?.name ?? 'Internal',
+      taskId,
       taskTitle: taskTitle || activity,
       activity,
       department: dept,
@@ -71,8 +74,21 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Task / description</label>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
             <input className="input-base" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder={activity} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Link to task</label>
+            <TaskCombobox
+              value={taskId}
+              onChange={(t: PickedTask | null) => {
+                setTaskId(t?.id ?? null);
+                if (t) {
+                  if (t.clientId) setClientId(t.clientId);
+                  setTaskTitle(prev => prev || t.title);
+                }
+              }}
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Notes</label>

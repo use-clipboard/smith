@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from 'react';
 import {
-  Users2, UserSquare2, Repeat2, Gauge, TrendingUp, Layers, Target, Activity, Download, Printer, Pencil,
+  Users2, UserSquare2, Repeat2, Gauge, TrendingUp, Layers, Target, Activity, Download, Printer, Pencil, CheckSquare,
 } from 'lucide-react';
 import type { TimeEntry } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
 import {
-  byClient, perStaff, valueOf, recoveryFactor, defaultWeeklyBudgetMinutes,
+  byClient, byTask, perStaff, valueOf, recoveryFactor, defaultWeeklyBudgetMinutes,
 } from '@/lib/timesheets/compute';
 import { weekDates, addDays, todayIso, fmtDuration, fmtHours, fmtPct, fmtGBPCompact, fmtDateUK } from '@/lib/timesheets/format';
 import { colorAt } from '@/lib/timesheets/palette';
@@ -151,6 +151,25 @@ function makeReports(): ReportDef[] {
         };
       },
     },
+    {
+      id: 'task', label: 'Time by task', icon: CheckSquare, description: 'Hours and fees by linked task',
+      compute: (entries) => {
+        const slices = byTask(entries);
+        const max = Math.max(1, ...slices.map(s => s.minutes));
+        const totalVal = slices.reduce((s, x) => s + x.valuePence, 0);
+        return {
+          rows: slices.map((s, i) => ({
+            id: s.id, label: s.label, primary: fmtDuration(s.minutes), ratio: s.minutes / max,
+            color: colorAt(i), secondary: fmtGBPCompact(s.valuePence),
+          })),
+          summary: [
+            { label: 'Tasks', value: String(slices.length) },
+            { label: 'Total fees', value: fmtGBPCompact(totalVal) },
+          ],
+          csv: { headers: ['Task', 'Hours', 'Chargeable (£)'], data: slices.map(s => [s.label, (s.minutes / 60).toFixed(2), (s.valuePence / 100).toFixed(2)]) },
+        };
+      },
+    },
     // 'budget' (Budget vs Actual) is computed in the component with live
     // per-client budgets — see the reportId === 'budget' branch below.
   ];
@@ -270,6 +289,7 @@ export default function Reports() {
 
   const NAV: { id: string; label: string; icon: typeof Users2 }[] = [
     { id: 'client', label: 'Time by client', icon: Users2 },
+    { id: 'task', label: 'Time by task', icon: CheckSquare },
     { id: 'staff', label: 'Time by staff', icon: UserSquare2 },
     { id: 'recovery', label: 'Recovery rate', icon: Repeat2 },
     { id: 'utilisation', label: 'Utilisation', icon: Gauge },

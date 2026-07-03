@@ -11,6 +11,7 @@ const PatchSchema = z.object({
   start: z.string().optional(),
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().optional(),
+  taskId: z.string().uuid().nullable().optional(),
   taskTitle: z.string().optional(),
   activity: z.string().optional(),
   department: z.string().optional(),
@@ -38,6 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (p.start !== undefined) patch.start_time = p.start === '—' ? null : p.start;
   if (p.clientId !== undefined) patch.client_id = p.clientId;
   if (p.clientName !== undefined) patch.client_name = p.clientName;
+  if (p.taskId !== undefined) patch.task_id = p.taskId;
   if (p.taskTitle !== undefined) patch.task_title = p.taskTitle;
   if (p.activity !== undefined) patch.activity = p.activity;
   if (p.department !== undefined) patch.department = p.department;

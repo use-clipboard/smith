@@ -14,6 +14,7 @@ export interface ApiEntry {
   start: string;
   clientId: string | null;
   clientName: string;
+  taskId: string | null;
   taskTitle: string;
   activity: string;
   department: string;
@@ -33,6 +34,7 @@ export function mapRow(r: any): ApiEntry {
     start: r.start_time ?? '—',
     clientId: r.client_id ?? null,
     clientName: r.client_name ?? 'Internal',
+    taskId: r.task_id ?? null,
     taskTitle: r.task_title ?? '',
     activity: r.activity,
     department: r.department ?? 'General',
@@ -49,6 +51,7 @@ const EntrySchema = z.object({
   start: z.string().optional().default('—'),
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().optional().default('Internal'),
+  taskId: z.string().uuid().nullable().optional(),
   taskTitle: z.string().optional().default(''),
   activity: z.string().min(1),
   department: z.string().optional().default('General'),
@@ -74,6 +77,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
+  const taskId = url.searchParams.get('taskId');
 
   const supabase = createClient();
   let q = supabase
@@ -84,6 +88,7 @@ export async function GET(req: NextRequest) {
     .limit(2000);
   if (from) q = q.gte('entry_date', from);
   if (to) q = q.lte('entry_date', to);
+  if (taskId) q = q.eq('task_id', taskId);
 
   const { data, error } = await q;
   if (error) {
@@ -118,10 +123,11 @@ export async function POST(req: NextRequest) {
     user_id: ctx.userId,
     client_id: e.clientId ?? null,
     client_name: e.clientName,
+    task_id: e.taskId ?? null,
+    task_title: e.taskTitle,
     entry_date: e.date,
     start_time: e.start === '—' ? null : e.start,
     activity: e.activity,
-    task_title: e.taskTitle,
     department: e.department,
     entry_type: e.type,
     minutes: e.minutes,
@@ -131,8 +137,21 @@ export async function POST(req: NextRequest) {
   }));
 
   const supabase = createClient();
-  const { data, error } = await supabase.from('time_entries').insert(rows).select('*');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let { data, error } = await supabase.from('time_entries').insert(rows).select('*');
 
+  // Graceful fallback if the task columns haven't been migrated yet (42703 =
+  // undefined column) — retry without task_id/task_title so entry creation
+  // never breaks on a partially-migrated database.
+  if (error?.code === '42703') {
+    const stripped = rows.map(r => {
+      const c: Record<string, unknown> = { ...r };
+      delete c.task_id;
+      delete c.task_title;
+      return c;
+    });
+    ({ data, error } = await supabase.from('time_entries').insert(stripped).select('*'));
+  }
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ entries: (data ?? []).map(mapRow) });
 }

@@ -120,6 +120,18 @@ export function byStaffDepartment(entries: TimeEntry[], staff: TsStaff[]): Slice
   return [...map.values()].sort((a, b) => b.minutes - a.minutes);
 }
 
+export function byTask(entries: TimeEntry[]): Slice[] {
+  const map = new Map<string, Slice>();
+  for (const e of entries) {
+    if (!e.taskId) continue;
+    const cur = map.get(e.taskId) ?? { id: e.taskId, label: e.taskTitle || 'Task', minutes: 0, valuePence: 0 };
+    cur.minutes += e.minutes;
+    cur.valuePence += valueOf(e);
+    map.set(e.taskId, cur);
+  }
+  return [...map.values()].sort((a, b) => b.minutes - a.minutes);
+}
+
 export function byActivity(entries: TimeEntry[]): Slice[] {
   const map = new Map<string, Slice>();
   for (const e of entries) {

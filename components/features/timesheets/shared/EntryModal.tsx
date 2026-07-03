@@ -6,13 +6,14 @@ import type { TimeEntry, TimeEntryType } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
 import { todayIso } from '@/lib/timesheets/format';
 import ClientCombobox from './ClientCombobox';
+import TaskCombobox, { type PickedTask } from './TaskCombobox';
 
 interface Props {
   /** Existing entry to edit, or a partial seed (e.g. clicked day). */
   entry?: TimeEntry | null;
   defaultDate?: string;
-  /** Pre-populate a new entry (e.g. allocating a calendar event). */
-  prefill?: { date?: string; start?: string; minutes?: number; taskTitle?: string; notes?: string };
+  /** Pre-populate a new entry (e.g. allocating a calendar event or logging to a task). */
+  prefill?: { date?: string; start?: string; minutes?: number; taskTitle?: string; notes?: string; taskId?: string | null; clientId?: string | null };
   onClose: () => void;
 }
 
@@ -30,7 +31,8 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
   // Calendar events can be any length; snap the prefill to the nearest 15 min.
   const pfMinutes = prefill?.minutes != null ? Math.max(15, Math.round(prefill.minutes / 15) * 15) : null;
 
-  const [clientId, setClientId] = useState<string | null>(entry?.clientId ?? null);
+  const [clientId, setClientId] = useState<string | null>(entry?.clientId ?? prefill?.clientId ?? null);
+  const [taskId, setTaskId] = useState<string | null>(entry?.taskId ?? prefill?.taskId ?? null);
   const [activity, setActivity] = useState(entry?.activity ?? activities[0].label);
   const [type, setType] = useState<TimeEntryType>(entry?.type ?? 'billable');
   const [date, setDate] = useState(entry?.date ?? prefill?.date ?? defaultDate ?? todayIso());
@@ -60,6 +62,7 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
       start,
       clientId,
       clientName: client?.name ?? 'Internal',
+      taskId,
       taskTitle: taskTitle || activity,
       activity,
       department: dept,
@@ -117,8 +120,23 @@ export default function EntryModal({ entry, defaultDate, prefill, onClose }: Pro
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Task / description</label>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
             <input className="input-base" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder={activity} />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Link to task</label>
+            <TaskCombobox
+              value={taskId}
+              label={entry?.taskTitle || prefill?.taskTitle}
+              onChange={(t: PickedTask | null) => {
+                setTaskId(t?.id ?? null);
+                if (t) {
+                  if (t.clientId) setClientId(t.clientId);
+                  setTaskTitle(prev => prev || t.title);
+                }
+              }}
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
