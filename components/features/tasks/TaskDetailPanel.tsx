@@ -96,6 +96,20 @@ function totalTime(task: Task) {
   return (task.time_entries ?? []).reduce((s, e) => s + (e.duration_minutes ?? 0), 0);
 }
 
+/** ISO string carrying the LOCAL wall-clock time + offset (e.g.
+ *  "2026-07-03T14:30:00+01:00"), rather than toISOString()'s UTC. Lets the
+ *  server read the correct local date/HH:mm while timestamptz columns still
+ *  parse the absolute instant correctly. */
+function toLocalIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const tz = -d.getTimezoneOffset(); // minutes east of UTC
+  const sign = tz >= 0 ? '+' : '-';
+  const abs = Math.abs(tz);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T`
+    + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    + `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+
 // ── Time tracker sub-component ────────────────────────────────────────────────
 function TimeTracker({ task, steps, onLogTime }: {
   task: Task;
@@ -129,8 +143,8 @@ function TimeTracker({ task, steps, onLogTime }: {
     try {
       await onLogTime({
         step_id: selectedStepId || undefined,
-        started_at: startedAt.toISOString(),
-        ended_at: ended.toISOString(),
+        started_at: toLocalIso(startedAt),
+        ended_at: toLocalIso(ended),
         notes: notes || undefined,
       });
       setRunning(false);
@@ -152,8 +166,8 @@ function TimeTracker({ task, steps, onLogTime }: {
       const started = new Date(now.getTime() - (h * 60 + m) * 60000);
       await onLogTime({
         step_id: selectedStepId || undefined,
-        started_at: started.toISOString(),
-        ended_at: now.toISOString(),
+        started_at: toLocalIso(started),
+        ended_at: toLocalIso(now),
         notes: notes || undefined,
       });
       setManualHours('');
