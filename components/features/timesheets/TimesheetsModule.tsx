@@ -21,7 +21,7 @@ const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function TimesheetsModule() {
-  const { ready, allowed, ensureSeeded, timer, elapsedMs, isAdmin, weekStatuses, userId } = useTimesheets();
+  const { ready, allowed, ensureSeeded, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId } = useTimesheets();
   const [tab, setTab] = useState<TimesheetTab>('overview');
   const [startingTimer, setStartingTimer] = useState(false);
 
@@ -65,7 +65,7 @@ export default function TimesheetsModule() {
 
   // Admins approve anyone (and any week with no manager); managers approve
   // weeks routed to them.
-  const isManager = Object.values(weekStatuses).some(w => w.managerId === userId);
+  const isManager = hasReports || Object.values(weekStatuses).some(w => w.managerId === userId);
   const canApprove = isAdmin || isManager;
   const pendingApprovals = Object.values(weekStatuses)
     .filter(w => w.status === 'submitted' && (isAdmin || w.managerId === userId)).length;

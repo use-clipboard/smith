@@ -12,6 +12,7 @@ export interface StaffDto {
   charge_out_rate_pence: number | null;
   weekly_capacity_hours: number | null;
   department: string | null;
+  manager_id: string | null;
 }
 
 // GET /api/timesheets/staff — firm members with charge-out rate + capacity.
@@ -30,18 +31,24 @@ export async function GET() {
   let members: StaffDto[] = [];
   const full = await service
     .from('users')
-    .select('id, full_name, email, role, charge_out_rate_pence, weekly_capacity_hours, department')
+    .select('id, full_name, email, role, charge_out_rate_pence, weekly_capacity_hours, department, manager_id')
     .eq('firm_id', ctx.firmId)
     .order('full_name');
 
   if (full.error) {
     const base = await service
       .from('users')
-      .select('id, full_name, email, role')
+      .select('id, full_name, email, role, manager_id')
       .eq('firm_id', ctx.firmId)
       .order('full_name');
-    if (base.error) return NextResponse.json({ error: base.error.message }, { status: 500 });
-    members = (base.data ?? []).map(m => ({ ...m, charge_out_rate_pence: null, weekly_capacity_hours: null, department: null })) as StaffDto[];
+    if (base.error) {
+      // manager_id may also be absent (no HR migration) — drop it too.
+      const bare = await service.from('users').select('id, full_name, email, role').eq('firm_id', ctx.firmId).order('full_name');
+      if (bare.error) return NextResponse.json({ error: bare.error.message }, { status: 500 });
+      members = (bare.data ?? []).map(m => ({ ...m, charge_out_rate_pence: null, weekly_capacity_hours: null, department: null, manager_id: null })) as StaffDto[];
+    } else {
+      members = (base.data ?? []).map(m => ({ ...m, charge_out_rate_pence: null, weekly_capacity_hours: null, department: null })) as StaffDto[];
+    }
   } else {
     members = (full.data ?? []) as StaffDto[];
   }

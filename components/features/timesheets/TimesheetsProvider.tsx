@@ -37,6 +37,8 @@ interface TimesheetsContextValue {
   userId: string;
   meId: string;
   isAdmin: boolean;
+  /** True if anyone in the firm reports to the current user (they're a manager). */
+  hasReports: boolean;
   entries: TimeEntry[];
   staff: TsStaff[];
   clients: TsClient[];
@@ -109,6 +111,7 @@ interface StaffDto {
   charge_out_rate_pence?: number | null;
   weekly_capacity_hours?: number | null;
   department?: string | null;
+  manager_id?: string | null;
 }
 
 const DEFAULT_CAPACITY_HOURS = 37.5;
@@ -139,6 +142,7 @@ export default function TimesheetsProvider({
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [liveStaff, setLiveStaff] = useState<TsStaff[] | null>(null);
   const [liveClients, setLiveClients] = useState<TsClient[] | null>(null);
+  const [hasReports, setHasReports] = useState(false);
   // Demo-mode edits to rate/capacity (live mode edits liveStaff directly).
   const [staffOverrides, setStaffOverrides] = useState<Record<string, { ratePence?: number; weeklyCapacityHours?: number; department?: string }>>({});
   const [clientBudgets, setClientBudgets] = useState<Record<string, number>>({});
@@ -227,8 +231,10 @@ export default function TimesheetsProvider({
               if (settingsRes.dailyTargetHours != null) setDailyTargetHours(Number(settingsRes.dailyTargetHours));
               if (settingsRes.roundingMinutes != null) setRoundingMinutes(Number(settingsRes.roundingMinutes));
             }
+            const members = (teamRes.members ?? []) as StaffDto[];
             setEntries(data.entries as TimeEntry[]);
-            setLiveStaff(mapStaff((teamRes.members ?? []) as StaffDto[], userId, userName, firmRate));
+            setLiveStaff(mapStaff(members, userId, userName, firmRate));
+            setHasReports(members.some(m => m.manager_id === userId));
             setLiveClients(((clientsRes.clients ?? []) as { id: string; name: string; client_ref?: string; status?: string }[])
               .map(c => ({ id: c.id, name: c.name, ref: c.client_ref ?? '', status: c.status })));
             setClientBudgets((budgetsRes.budgets ?? {}) as Record<string, number>);
@@ -595,7 +601,7 @@ export default function TimesheetsProvider({
   const hasSampleData = mode === 'demo' || entries.length > 0;
 
   const value = useMemo<TimesheetsContextValue>(() => ({
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments,
+    ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample, updateStaffRate, timer, elapsedMs,
     clientBudgets, setClientBudget,
@@ -604,7 +610,7 @@ export default function TimesheetsProvider({
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
   }), [
-    ready, mode, allowed, userId, meId, isAdmin, entries, staff, clients, activities, departments,
+    ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample,
     updateStaffRate, timer, elapsedMs, clientBudgets, setClientBudget,
