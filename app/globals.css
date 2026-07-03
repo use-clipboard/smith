@@ -85,6 +85,12 @@
   to   { stroke-dashoffset: 40.84; }
 }
 
+/* Depleting bar for the Timesheets "Time logged — Undo" toast. */
+@keyframes smith-undo-bar {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
 /* ─── Base Styles ────────────────────────────────────────────────────────── */
 * {
   box-sizing: border-box;

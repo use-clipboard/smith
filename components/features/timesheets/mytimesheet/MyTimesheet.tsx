@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Play, CalendarDays, Lock, Send, CheckCircle2, RotateCcw, Clock3, CalendarClock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, Lock, Send, CheckCircle2, RotateCcw, Clock3, CalendarClock } from 'lucide-react';
 import type { TimeEntry } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
 import { TYPE_COLORS } from '@/lib/timesheets/palette';
@@ -11,7 +11,6 @@ import {
 import { totals } from '@/lib/timesheets/compute';
 import { GlassCard, TypeBadge } from '../shared/ui';
 import EntryModal from '../shared/EntryModal';
-import TimerStartModal from '../timer/TimerStartModal';
 
 const DAY_START = 7;   // 07:00
 const DAY_END = 20;    // 20:00
@@ -65,7 +64,6 @@ export default function MyTimesheet() {
   const [selectedDay, setSelectedDay] = useState(todayIso());
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [adding, setAdding] = useState<string | null>(null); // holds date to add on
-  const [startingTimer, setStartingTimer] = useState(false);
   const [dragPreview, setDragPreview] = useState<{ id: string; mode: 'move' | 'resize'; deltaMin: number } | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null); // week-strip chip being hovered mid-drag
   const weekLockedRef = useRef(false);
@@ -187,8 +185,7 @@ export default function MyTimesheet() {
           <button onClick={() => setSelectedDay(todayIso())} className="ml-1 inline-flex items-center gap-1.5 rounded-xl bg-white/70 px-3 py-2 text-[12px] font-semibold text-[var(--text-secondary)] shadow-sm hover:bg-white"><CalendarDays size={14} /> Today</button>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setAdding(selectedDay)} disabled={locked} className="btn-secondary"><Plus size={15} /> Add entry</button>
-          <button onClick={() => setStartingTimer(true)} className="btn-primary"><Play size={15} /> Start timer</button>
+          <button onClick={() => setAdding(selectedDay)} disabled={locked} className="btn-primary"><Plus size={15} /> Add entry</button>
         </div>
       </div>
 
@@ -430,7 +427,6 @@ export default function MyTimesheet() {
           onClose={() => setAllocating(null)}
         />
       )}
-      {startingTimer && <TimerStartModal onClose={() => setStartingTimer(false)} />}
     </div>
   );
 }

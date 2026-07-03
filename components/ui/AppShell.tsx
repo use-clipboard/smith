@@ -33,6 +33,7 @@ import ConversationWindow from '@/components/chat/ConversationWindow';
 import Avatar from '@/components/ui/Avatar';
 import TimesheetsProvider from '@/components/features/timesheets/TimesheetsProvider';
 import FloatingTimer from '@/components/features/timesheets/timer/FloatingTimer';
+import TimerUndoToast from '@/components/features/timesheets/timer/TimerUndoToast';
 
 interface AppShellProps {
   children: ReactNode;
@@ -237,6 +238,7 @@ export default function AppShell({
                 </AppShellInner>
                 {/* Floating overlays — outside AppShellInner but still inside all providers */}
                 <FloatingTimer />
+                <TimerUndoToast />
                 <AskSmithBubble />
                 <ConversationWindows />
                 <UnreadMessageChips />

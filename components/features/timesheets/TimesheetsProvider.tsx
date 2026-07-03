@@ -9,7 +9,9 @@ import {
 } from '@/lib/timesheets/seed';
 import { generateDemoSuggestions } from '@/lib/timesheets/suggestions';
 import { canAccessTimesheets } from '@/lib/timesheets/access';
-import { todayIso, startOfWeek, addDays } from '@/lib/timesheets/format';
+import { todayIso, startOfWeek, addDays, fmtDuration } from '@/lib/timesheets/format';
+
+const UNDO_MS = 8000; // window to undo a just-logged timer
 
 const weekKey = (userId: string, weekStart: string) => `${userId}__${weekStart}`;
 
@@ -68,6 +70,11 @@ interface TimesheetsContextValue {
 
   timer: TimerState;
   elapsedMs: number;
+
+  // Brief undo window after a timer is stopped & logged.
+  timerUndo: { label: string; expiresAt: number } | null;
+  undoTimer: () => void;
+  dismissTimerUndo: () => void;
 
   ensureSeeded: () => void;
   loadSampleWeek: () => Promise<void>;
@@ -158,6 +165,9 @@ export default function TimesheetsProvider({
   roundingRef.current = roundingMinutes;
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [timer, setTimer] = useState<TimerState>(emptyTimer);
+  const [timerUndo, setTimerUndo] = useState<{ label: string; expiresAt: number } | null>(null);
+  const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
+  const pendingDeleteRef = useRef<Set<string>>(new Set()); // tmp ids deleted before their POST resolved
   const [scanning, setScanning] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -323,11 +333,11 @@ export default function TimesheetsProvider({
   }, []);
 
   // ── Entry CRUD (mode-aware) ─────────────────────────────────────────────────
-  const addEntry = useCallback((e: Omit<TimeEntry, 'id'>) => {
-    if (weekLockedForMe(e.date)) return; // week submitted/approved — frozen
+  const addEntry = useCallback((e: Omit<TimeEntry, 'id'>): string | null => {
+    if (weekLockedForMe(e.date)) return null; // week submitted/approved — frozen
     const optimistic: TimeEntry = { ...e, id: tmpId(), userId: e.userId };
     setEntries(prev => [optimistic, ...prev]);
-    if (modeRef.current !== 'live') return;
+    if (modeRef.current !== 'live') return optimistic.id;
     fetch('/api/timesheets/entries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -336,9 +346,21 @@ export default function TimesheetsProvider({
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         const saved = (data.entries?.[0]) as TimeEntry | undefined;
-        if (saved) setEntries(prev => prev.map(x => (x.id === optimistic.id ? saved : x)));
+        if (saved) {
+          if (pendingDeleteRef.current.has(optimistic.id)) {
+            // Deleted (e.g. undone) before this POST resolved — remove the row
+            // the server just created and don't re-add it locally.
+            pendingDeleteRef.current.delete(optimistic.id);
+            fetch(`/api/timesheets/entries/${saved.id}`, { method: 'DELETE' }).catch(() => {});
+          } else {
+            setEntries(prev => prev.map(x => (x.id === optimistic.id ? saved : x)));
+            // Keep the undo target pointed at the real row after the id swap.
+            if (undoRef.current === optimistic.id) undoRef.current = saved.id;
+          }
+        }
       })
       .catch(() => setEntries(prev => prev.filter(x => x.id !== optimistic.id)));
+    return optimistic.id;
   }, [weekLockedForMe]);
 
   const updateEntry = useCallback((id: string, patch: Partial<TimeEntry>) => {
@@ -357,7 +379,9 @@ export default function TimesheetsProvider({
     const ent = entriesRef.current.find(x => x.id === id);
     if (ent && weekLockedForMe(ent.date)) return;
     setEntries(prev => prev.filter(e => e.id !== id));
-    if (modeRef.current !== 'live' || id.startsWith('tmp-')) return;
+    if (modeRef.current !== 'live') return;
+    // Still saving — remember to delete the real row once its POST resolves.
+    if (id.startsWith('tmp-')) { pendingDeleteRef.current.add(id); return; }
     fetch(`/api/timesheets/entries/${id}`, { method: 'DELETE' }).catch(() => { /* already removed locally */ });
   }, []);
 
@@ -373,7 +397,7 @@ export default function TimesheetsProvider({
     const now2 = new Date();
     const hh = String(now2.getHours()).padStart(2, '0');
     const mm = String(now2.getMinutes()).padStart(2, '0');
-    addEntry({
+    const id = addEntry({
       userId: modeRef.current === 'live' ? userId : ME_ID,
       date: todayIso(),
       start: `${hh}:${mm}`,
@@ -389,6 +413,10 @@ export default function TimesheetsProvider({
       notes: t.notes,
       source: 'timer',
     });
+    if (id) {
+      undoRef.current = id;
+      setTimerUndo({ label: `${t.clientName || 'Internal'} · ${fmtDuration(minutes)}`, expiresAt: Date.now() + UNDO_MS });
+    }
   }, [addEntry, liveStaff, userId]);
 
   const startTimer = useCallback((cfg: StartConfig) => {
@@ -421,6 +449,24 @@ export default function TimesheetsProvider({
 
   const updateTimerMeta = useCallback((patch: Partial<StartConfig>) => {
     setTimer(prev => ({ ...prev, ...patch }));
+  }, []);
+
+  // Auto-dismiss the undo toast when its window elapses.
+  useEffect(() => {
+    if (!timerUndo) return;
+    const id = window.setTimeout(() => setTimerUndo(null), Math.max(0, timerUndo.expiresAt - Date.now()));
+    return () => window.clearTimeout(id);
+  }, [timerUndo]);
+
+  const undoTimer = useCallback(() => {
+    if (undoRef.current) deleteEntry(undoRef.current);
+    undoRef.current = null;
+    setTimerUndo(null);
+  }, [deleteEntry]);
+
+  const dismissTimerUndo = useCallback(() => {
+    undoRef.current = null;
+    setTimerUndo(null);
   }, []);
 
   // ── Sample data (live mode, fresh firm) ─────────────────────────────────────
@@ -604,7 +650,7 @@ export default function TimesheetsProvider({
     ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample, updateStaffRate, timer, elapsedMs,
-    clientBudgets, setClientBudget,
+    timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     ensureSeeded, loadSampleWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
@@ -613,7 +659,7 @@ export default function TimesheetsProvider({
     ready, mode, allowed, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, hasSampleData, loadingSample,
-    updateStaffRate, timer, elapsedMs, clientBudgets, setClientBudget,
+    updateStaffRate, timer, elapsedMs, timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     ensureSeeded, loadSampleWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
