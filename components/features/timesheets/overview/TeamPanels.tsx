@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Users, Trophy, X, Maximize2 } from 'lucide-react';
 import type { StaffRow } from '@/lib/timesheets/compute';
 import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
@@ -82,7 +83,10 @@ function ListLightbox({ title, subtitle, icon, count, onClose, children }: {
   title: string; subtitle: string; icon: React.ReactNode; count: number;
   onClose: () => void; children: React.ReactNode;
 }) {
-  return (
+  // Portal to body — an ancestor card uses backdrop-blur/transform, which would
+  // otherwise make `position: fixed` resolve against that card, not the viewport.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-[#0F0F1A]/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative flex max-h-[82vh] w-full max-w-xl flex-col rounded-[22px] bg-white shadow-2xl">
@@ -100,7 +104,8 @@ function ListLightbox({ title, subtitle, icon, count, onClose, children }: {
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
