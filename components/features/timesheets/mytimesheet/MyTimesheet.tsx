@@ -68,6 +68,10 @@ export default function MyTimesheet() {
   const [dragPreview, setDragPreview] = useState<{ id: string; mode: 'move' | 'resize'; deltaMin: number } | null>(null);
   const [dropDay, setDropDay] = useState<string | null>(null); // week-strip chip being hovered mid-drag
   const weekLockedRef = useRef(false);
+  // Set on any block press so the trailing synthetic click (fired on the
+  // timeline background because the dragged block is pointer-events:none) does
+  // NOT open the "Add entry" modal.
+  const blockInteractedRef = useRef(false);
 
   // Google Calendar overlay — events for the selected day, allocatable to time.
   const [calendarConnected, setCalendarConnected] = useState(false);
@@ -100,6 +104,7 @@ export default function MyTimesheet() {
     if (weekLockedRef.current) return; // locked week — entries are read-only
     e.preventDefault();
     e.stopPropagation();
+    blockInteractedRef.current = true; // suppress the trailing background click
     const startY = e.clientY;
     const originStart = parseMin(entry.start);
     const originMinutes = entry.minutes;
@@ -129,6 +134,8 @@ export default function MyTimesheet() {
       window.removeEventListener('pointerup', onUp);
       setDragPreview(null);
       setDropDay(null);
+      // Clear after the trailing click has fired (click comes after pointerup).
+      window.setTimeout(() => { blockInteractedRef.current = false; }, 0);
       if (!moved) { setEditing(entry); return; }
       if (mode === 'move') {
         if (overDay) {
@@ -278,8 +285,10 @@ export default function MyTimesheet() {
               <div
                 className="relative flex-1 rounded-xl border border-black/5 bg-white/40"
                 onClick={e => {
-                  // Click empty space to add at that time.
-                  if (locked || e.target !== e.currentTarget) return;
+                  // Click empty space to add. Ignore the phantom click that
+                  // follows a block drag/resize (block is pointer-events:none,
+                  // so its click lands here).
+                  if (locked || blockInteractedRef.current || e.target !== e.currentTarget) return;
                   setAdding(selectedDay);
                 }}
               >
