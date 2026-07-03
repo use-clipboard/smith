@@ -13,6 +13,7 @@ import {
   X, Save, Loader2, Check, Lock, Unlock, Archive as ArchiveIcon, AlertTriangle,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import DateInput, { fromIso, toIso } from '../input/DateInput';
 import { BASE_CURRENCY_OPTIONS, type Book } from '@/types/bookkeeping';
 import BookVatSettings from './BookVatSettings';
@@ -58,6 +59,8 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
   const [settingsTab, setSettingsTab]     = useState<SettingsTab>('general');
   const [name, setName]                   = useState(book.name);
   const [baseCurrency, setBaseCurrency]   = useState(book.base_currency);
+  const [clientId, setClientId]           = useState(book.client_id ?? '');
+  const [clientName, setClientName]       = useState(book.client?.name ?? '');
   // The DB stores MM-DD for trivial sort/parse; the UI shows DD-MM because
   // that's the UK convention the rest of the module uses for dates.
   const [yearEndDm, setYearEndDm]               = useState(mdToDm(book.year_end_md));
@@ -79,6 +82,8 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
     setSettingsTab('general');
     setName(book.name);
     setBaseCurrency(book.base_currency);
+    setClientId(book.client_id ?? '');
+    setClientName(book.client?.name ?? '');
     setYearEndDm(mdToDm(book.year_end_md));
     setFirstPeriodStartUk(fromIso(book.first_period_start ?? ''));
     setError('');
@@ -121,6 +126,11 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
         name: name.trim(),
         base_currency: baseCurrency,
       };
+      // Client allocation — send only when it actually changed so an
+      // unrelated save doesn't churn the client link.
+      if ((clientId || null) !== (book.client_id || null)) {
+        payload.client_id = clientId || null;
+      }
       if (!yearEndLocked) {
         // Convert the displayed DD-MM back to the DB's MM-DD for the API.
         const yearEndMdForApi = dmToMd(yearEndDm);
@@ -264,6 +274,31 @@ export default function BookSettingsDrawer({ open, onClose, book, isAdmin, onUpd
                   >
                     {BASE_CURRENCY_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs text-gray-600">Client</label>
+                    {clientId && (
+                      <button
+                        type="button"
+                        onClick={() => { setClientId(''); setClientName(''); }}
+                        disabled={lockedForMe}
+                        className="text-[11px] text-gray-500 hover:text-gray-800 disabled:opacity-50"
+                      >
+                        Unallocate
+                      </button>
+                    )}
+                  </div>
+                  <ClientSearchInput
+                    value={clientId}
+                    valueName={clientName}
+                    onChange={(id, n) => { setClientId(id); setClientName(n); }}
+                    disabled={lockedForMe}
+                    placeholder="Search clients… (leave empty for unallocated)"
+                  />
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Links this book to a client record. Leave unallocated to keep it standalone.
+                  </p>
                 </div>
                 <div className="space-y-3 p-3 rounded bg-indigo-50/40 border border-indigo-100">
                   <div className="flex items-center justify-between">
