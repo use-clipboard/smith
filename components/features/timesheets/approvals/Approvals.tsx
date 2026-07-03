@@ -8,29 +8,35 @@ import { fmtDateUK, fmtHours, fmtPct, addDays } from '@/lib/timesheets/format';
 import { GlassCard, SectionHeader, TsAvatar, ProgressBar } from '../shared/ui';
 
 export default function Approvals() {
-  const { weekStatuses, staff, entries, reviewWeek } = useTimesheets();
+  const { weekStatuses, staff, entries, reviewWeek, isAdmin, userId } = useTimesheets();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
 
   const staffById = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
 
+  // Admins see everything (incl. weeks with no manager — the fallback);
+  // managers see only weeks routed to them.
+  const mine = (w: { managerId: string | null }) => isAdmin || w.managerId === userId;
+
   const rows = useMemo(() => {
     return Object.values(weekStatuses)
-      .filter(w => w.status === 'submitted')
+      .filter(w => w.status === 'submitted' && mine(w))
       .map(w => {
         const own = inWeek(entries, w.weekStart, w.userId);
         const t = totals(own);
         return { ...w, staff: staffById.get(w.userId), minutes: t.total, billablePct: t.billablePct, chargeable: t.chargeablePence };
       })
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
-  }, [weekStatuses, entries, staffById]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStatuses, entries, staffById, isAdmin, userId]);
 
   const reviewedRows = useMemo(() => {
     return Object.values(weekStatuses)
-      .filter(w => w.status === 'approved' || w.status === 'rejected')
+      .filter(w => (w.status === 'approved' || w.status === 'rejected') && mine(w))
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1))
       .slice(0, 8);
-  }, [weekStatuses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStatuses, isAdmin, userId]);
 
   function doReject(userId: string, weekStart: string) {
     reviewWeek(userId, weekStart, 'reject', note.trim() || undefined);
@@ -43,7 +49,7 @@ export default function Approvals() {
       <GlassCard>
         <SectionHeader
           title="Timesheet approvals"
-          subtitle="Review and approve weeks your team has submitted."
+          subtitle={isAdmin ? 'Weeks submitted by the team — including any without a manager set.' : 'Weeks submitted by the people who report to you.'}
           right={
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-600">
               <Clock3 size={13} /> {rows.length} pending

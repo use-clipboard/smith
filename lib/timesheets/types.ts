@@ -87,6 +87,8 @@ export interface WeekStatus {
   status: WeekApprovalStatus;
   note: string | null;
   reviewedBy: string | null;
+  /** The submitter's manager at submit time (null → admins approve). */
+  managerId: string | null;
 }
 
 export type SuggestionSource =

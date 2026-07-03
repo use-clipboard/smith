@@ -4,6 +4,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { canAccessTimesheets } from '@/lib/timesheets/access';
 import { createServiceClient } from '@/lib/supabase-server';
+import { createNotification } from '@/lib/notifications';
 
 export interface WeekStatusRow {
   userId: string;
@@ -11,12 +12,56 @@ export interface WeekStatusRow {
   status: 'submitted' | 'approved' | 'rejected';
   note: string | null;
   reviewedBy: string | null;
+  managerId: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mapRow = (r: any): WeekStatusRow => ({
-  userId: r.user_id, weekStart: r.week_start, status: r.status, note: r.note ?? null, reviewedBy: r.reviewed_by ?? null,
+  userId: r.user_id, weekStart: r.week_start, status: r.status, note: r.note ?? null,
+  reviewedBy: r.reviewed_by ?? null, managerId: r.manager_id ?? null,
 });
+
+// The submitter's manager (users.manager_id). Graceful if the column/table
+// isn't there yet → null (falls back to admin approval).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function managerOf(service: any, userId: string): Promise<string | null> {
+  try {
+    const { data } = await service.from('users').select('manager_id').eq('id', userId).single();
+    return (data?.manager_id as string | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Notify whoever needs to approve a submitted week: the manager if set,
+// otherwise all firm admins (the fallback). Best-effort — never blocks submit.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function notifyApprovers(service: any, firmId: string, submitterId: string, managerId: string | null, weekStart: string) {
+  try {
+    const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
+    const name = submitter?.full_name || submitter?.email || 'A team member';
+
+    let recipients: string[] = [];
+    if (managerId && managerId !== submitterId) {
+      recipients = [managerId];
+    } else {
+      const { data: admins } = await service.from('users').select('id').eq('firm_id', firmId).eq('role', 'admin');
+      recipients = (admins ?? []).map((a: { id: string }) => a.id).filter((id: string) => id !== submitterId);
+    }
+
+    const [y, m, d] = weekStart.split('-');
+    for (const rid of recipients) {
+      void createNotification({
+        userId: rid,
+        firmId,
+        type: 'timesheet_approval',
+        title: `Timesheet submitted: ${name}`,
+        body: `Week of ${d}-${m}-${y} is awaiting your approval.`,
+        data: { link: '/timesheets' },
+      });
+    }
+  } catch { /* non-critical */ }
+}
 
 // GET /api/timesheets/weeks → { available, weeks: WeekStatusRow[] }
 export async function GET() {
@@ -27,16 +72,27 @@ export async function GET() {
   if (!canAccessTimesheets(ctx.email)) return moduleNotActive('timesheets');
 
   const service = createServiceClient();
-  const { data, error } = await service
+  // Prefer the manager-aware select; fall back if the manager_id column isn't
+  // migrated yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let res: any = await service
     .from('timesheet_week_status')
-    .select('user_id, week_start, status, note, reviewed_by')
+    .select('user_id, week_start, status, note, reviewed_by, manager_id')
     .eq('firm_id', ctx.firmId)
     .order('week_start', { ascending: false });
+  if (res.error && res.error.code === '42703') {
+    res = await service
+      .from('timesheet_week_status')
+      .select('user_id, week_start, status, note, reviewed_by')
+      .eq('firm_id', ctx.firmId)
+      .order('week_start', { ascending: false });
+  }
+  const data = res.data as unknown[] | null;
 
-  if (error) {
-    const missing = error.code === '42P01' || error.code === 'PGRST205' || /timesheet_week_status/.test(error.message ?? '');
+  if (res.error) {
+    const missing = res.error.code === '42P01' || res.error.code === 'PGRST205' || /timesheet_week_status/.test(res.error.message ?? '');
     if (missing) return NextResponse.json({ available: false, weeks: [] });
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: res.error.message }, { status: 500 });
   }
   return NextResponse.json({ available: true, weeks: (data ?? []).map(mapRow) });
 }
@@ -62,10 +118,20 @@ export async function POST(req: NextRequest) {
   const targetUser = parsed.data.userId ?? ctx.userId;
   const service = createServiceClient();
 
-  // Permission: self may submit/withdraw own weeks; admin may review anyone.
+  // Permission: self may submit/withdraw own weeks; the submitter's manager OR
+  // an admin may review. (No manager set → only admins, the fallback.)
   const isReview = action === 'approve' || action === 'reject';
   if (isReview) {
-    if (ctx.userRole !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (ctx.userRole !== 'admin') {
+      // The manager the week was routed to (snapshot), falling back to the
+      // user's current manager if the row/column predates the snapshot.
+      let rowManager: string | null = null;
+      const { data: existing } = await service
+        .from('timesheet_week_status').select('manager_id')
+        .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
+      rowManager = (existing?.manager_id as string | null) ?? await managerOf(service, targetUser);
+      if (rowManager !== ctx.userId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
   } else if (targetUser !== ctx.userId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -83,14 +149,22 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'submit') {
-    const { error } = await service
-      .from('timesheet_week_status')
-      .upsert({
-        firm_id: ctx.firmId, user_id: targetUser, week_start: weekStart,
-        status: 'submitted', note: null, submitted_at: new Date().toISOString(),
-        reviewed_by: null, reviewed_at: null,
-      }, { onConflict: 'user_id,week_start' });
+    const managerId = await managerOf(service, targetUser);
+    const row: Record<string, unknown> = {
+      firm_id: ctx.firmId, user_id: targetUser, week_start: weekStart,
+      status: 'submitted', note: null, submitted_at: new Date().toISOString(),
+      reviewed_by: null, reviewed_at: null, manager_id: managerId,
+    };
+    let { error } = await service.from('timesheet_week_status').upsert(row, { onConflict: 'user_id,week_start' });
+    // Retry without manager_id if that column isn't migrated yet.
+    if (error?.code === '42703') {
+      delete row.manager_id;
+      ({ error } = await service.from('timesheet_week_status').upsert(row, { onConflict: 'user_id,week_start' }));
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    // Route a notification to the approver(s): the manager if set, else admins.
+    void notifyApprovers(service, ctx.firmId, targetUser, managerId, weekStart);
     return NextResponse.json({ ok: true, status: 'submitted' });
   }
 

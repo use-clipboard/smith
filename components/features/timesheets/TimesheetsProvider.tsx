@@ -310,8 +310,8 @@ export default function TimesheetsProvider({
       if (Object.keys(prev).length) return prev;
       const lastWeek = startOfWeek(addDays(today, -7));
       return {
-        [weekKey('u-amy', lastWeek)]: { userId: 'u-amy', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null },
-        [weekKey('u-ben', lastWeek)]: { userId: 'u-ben', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null },
+        [weekKey('u-amy', lastWeek)]: { userId: 'u-amy', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null, managerId: null },
+        [weekKey('u-ben', lastWeek)]: { userId: 'u-ben', weekStart: lastWeek, status: 'submitted', note: null, reviewedBy: null, managerId: null },
       };
     });
   }, []);
@@ -512,7 +512,7 @@ export default function TimesheetsProvider({
 
   const submitWeek = useCallback((weekStart: string) => {
     const uid = modeRef.current === 'live' ? userId : ME_ID;
-    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status: 'submitted', note: null, reviewedBy: null } }));
+    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status: 'submitted', note: null, reviewedBy: null, managerId: prev[weekKey(uid, weekStart)]?.managerId ?? null } }));
     postWeek({ weekStart, action: 'submit' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
@@ -531,7 +531,7 @@ export default function TimesheetsProvider({
   const reviewWeek = useCallback((uid: string, weekStart: string, action: 'approve' | 'reject', note?: string) => {
     const status: WeekApprovalStatus = action === 'approve' ? 'approved' : 'rejected';
     const reviewer = modeRef.current === 'live' ? userId : ME_ID;
-    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status, note: note ?? null, reviewedBy: reviewer } }));
+    setWeekStatuses(prev => ({ ...prev, [weekKey(uid, weekStart)]: { userId: uid, weekStart, status, note: note ?? null, reviewedBy: reviewer, managerId: prev[weekKey(uid, weekStart)]?.managerId ?? null } }));
     postWeek({ weekStart, action, userId: uid, note });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
