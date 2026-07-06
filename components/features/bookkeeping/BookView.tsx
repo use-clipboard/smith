@@ -28,9 +28,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   BookCopy, ChevronLeft, Loader2, Lock,
-  Archive as ArchiveIcon,
+  Archive as ArchiveIcon, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
-import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BookHomeTab from './book/BookHomeTab';
 import BookSettingsDrawer from './book/BookSettingsDrawer';
@@ -79,7 +78,7 @@ interface Props {
 
 // Fixed tabs are always present. Dynamic tabs (per-account ledger drill-downs)
 // are added on demand by the TB and closeable.
-type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'mgmt-accounts' | 'sofa' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review' | 'ai-adviser';
+type FixedTab = 'home' | 'input' | 'tb' | 'pnl' | 'bs' | 'cf' | 'mgmt-accounts' | 'sofa' | 'vat' | 'bank' | 'customers' | 'suppliers' | 'fixed-assets' | 'import' | 'aged-debtors' | 'aged-creditors' | 'ai-review';
 interface DynamicLedgerTab {
   id: string;                  // unique tab id: `ledger:<accountId>`
   kind: 'ledger';
@@ -128,6 +127,18 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
   /** Book-wide search lightbox — opens from the Search rail button,
    *  Ctrl+K shortcut, or the home tab's "View all" recent-transactions link. */
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // AI assistant — a toggleable right-hand panel (matches Accounts Studio).
+  // Preference is remembered so it stays open/closed across books.
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  useEffect(() => {
+    try { setAssistantOpen(localStorage.getItem('smith.bookkeeping.assistantOpen') === '1'); } catch { /* ignore */ }
+  }, []);
+  const toggleAssistant = () => setAssistantOpen(v => {
+    const next = !v;
+    try { localStorage.setItem('smith.bookkeeping.assistantOpen', next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
 
   // Focus mode is a global capability — provided by FocusModeProvider in
   // AppShell (toggle lives in the TopBar). Nothing to wire up locally.
@@ -455,6 +466,16 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
               </span>
             )}
             <button
+              onClick={toggleAssistant}
+              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                assistantOpen
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700'
+              }`}
+            >
+              {assistantOpen ? <PanelRightClose size={13} /> : <PanelRightOpen size={13} />} Assistant
+            </button>
+            <button
               onClick={() => { if (onCloseBook) onCloseBook(); else router.push('/bookkeeping'); }}
               className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 hover:border-indigo-200 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 transition-colors"
             >
@@ -468,8 +489,9 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
           <VatThresholdBanner bookId={bookId} key={`vat-thresh-${refreshKey}`} />
         </div>
 
-        {/* ── Tab content — kept mounted, toggled via display ─────────────── */}
-        <div>
+        {/* ── Tab content + AI assistant panel ─────────────────────────────── */}
+        <div className="flex gap-3 items-start">
+        <div className="min-w-0 flex-1">
         <div hidden={tab !== 'home'}>
           <BookHomeTab
             book={book}
@@ -540,9 +562,6 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
         </div>
         <div hidden={tab !== 'ai-review'}>
           <BookReviewTab bookId={bookId} bookName={book.name} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
-        </div>
-        <div hidden={tab !== 'ai-adviser'}>
-          <BookAssistantTab bookId={bookId} bookName={book.name} onPosted={bumpRefresh} active={tab === 'ai-adviser'} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
         </div>
         <div hidden={tab !== 'bank'}>
           <AccountsLedgerView bookId={bookId} ledger="Bank" isAdmin={isAdmin} />
@@ -616,6 +635,13 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
             </div>
           );
         })}
+        </div>
+
+        {/* AI assistant — toggleable right-hand panel. Kept mounted and hidden
+            via display so the conversation survives closing/reopening. */}
+        <div className={assistantOpen ? 'hidden xl:block w-[380px] shrink-0 sticky top-4 self-start' : 'hidden'}>
+          <BookAssistantTab bookId={bookId} bookName={book.name} onPosted={bumpRefresh} active={assistantOpen} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
+        </div>
         </div>
       </div>
 

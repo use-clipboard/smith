@@ -24,7 +24,7 @@ import {
   Plus, Home as HomeIcon, Search as SearchIcon, Pencil, Scale, X, Settings as SettingsIcon,
   Wallet, ReceiptText, ShoppingCart, BookOpenCheck,
   TrendingUp, Layers, BadgePoundSterling, Users, Building2, FileSpreadsheet,
-  FileText, Upload, Boxes, BarChart3, Clock, Sparkles, Bot,
+  FileText, Boxes, BarChart3, Clock, Sparkles,
   ClipboardCheck, Gauge, ArrowUpRight, HandCoins, Repeat,
   type LucideIcon,
 } from 'lucide-react';
@@ -374,11 +374,6 @@ export default function BookSideRail({
           id: 'fixed-assets', label: 'Fixed assets', tooltip: 'Fixed assets — depreciation register',
           icon: Boxes, active: activeTab === 'fixed-assets',
           onClick: () => onSelectTab('fixed-assets'),
-        })}
-        {railButton({
-          id: 'ai-adviser', label: 'AI Adviser', tooltip: 'AI Adviser — discuss entries & prepare journals',
-          icon: Bot, active: activeTab === 'ai-adviser',
-          onClick: () => onSelectTab('ai-adviser'),
         })}
         {onOpenRecurring && railButton({
           id: 'recurring', label: 'Recurring', tooltip: 'Recurring (memorised) transactions',
