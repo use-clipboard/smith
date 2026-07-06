@@ -220,7 +220,7 @@ export default function StageImport({
         {IMPORT_SOURCES.map(s => (
           <button
             key={s.id}
-            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); } }}
+            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); else if (s.id === 'manual') setPhase('build'); } }}
             disabled={!s.enabled}
             aria-disabled={!s.enabled}
             className={`group flex flex-col items-start gap-3 rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all ${
