@@ -116,9 +116,10 @@ export default function StageImport({
             periodStart: isoToUk(fy.start_date),
             periodEnd: isoToUk(fy.end_date),
             comparativePeriod: priorFy ? isoToUk(priorFy.end_date) : '',
-            // Companies House filing deadline: 9 months after the year end.
-            accountsDue: isoPlusMonthsUk(fy.end_date, 9),
-            chDeadline: isoPlusMonthsUk(fy.end_date, 9),
+            // Companies House filing deadline: 9 months after the year end —
+            // but keep the CH-sourced date when the engagement is CH-linked.
+            accountsDue: e.chLinked ? e.accountsDue : isoPlusMonthsUk(fy.end_date, 9),
+            chDeadline: e.chLinked ? e.chDeadline : isoPlusMonthsUk(fy.end_date, 9),
             // Seed real-figure disclosure drafts on the first import only, so a
             // later re-import never clobbers notes the user has edited.
             disclosures: e.disclosuresSeeded
@@ -129,6 +130,7 @@ export default function StageImport({
                   framework: res.detected.framework,
                   statements: res.statements,
                   priorYear,
+                  directors: e.directors,
                 }),
             disclosuresSeeded: true,
             importInfo: {

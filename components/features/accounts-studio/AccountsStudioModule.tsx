@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Landmark, Sparkles, MessagesSquare, ChevronLeft, Plus, ArrowRight, Clock3,
   Building2, ScrollText, ShieldCheck, PanelRightClose, PanelRightOpen,
-  Loader2, Check, CloudOff,
+  Loader2, Check, CloudOff, Search as SearchIcon,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { type SelectedClient } from '@/components/ui/ClientSelector';
@@ -21,6 +21,7 @@ import StageFinalReview from './stages/StageFinalReview';
 import StagePublish from './stages/StagePublish';
 import { STAGES, ENTITY_LABELS, buildEngagement, entityFromBusinessType } from './data';
 import { createEngagement, saveEngagement } from './persistence';
+import { lookupCompany, applyCompany, lookupMessage, type StudioCompany } from './companyLookup';
 import type { Engagement, StageId, EntityType } from './types';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -154,7 +155,7 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
       }
     >
       {/* Company header */}
-      <CompanyHeader engagement={engagement} />
+      <CompanyHeader engagement={engagement} patch={patch} />
 
       {/* Stepper */}
       <div className="mb-4 mt-4 rounded-[18px] border border-white/60 bg-white/60 px-3 py-2 backdrop-blur-md">
@@ -200,7 +201,7 @@ function SaveIndicator({ state }: { state: SaveState }) {
 }
 
 // ─── Company header card ───────────────────────────────────────────────────────
-function CompanyHeader({ engagement: e }: { engagement: Engagement }) {
+function CompanyHeader({ engagement: e, patch }: { engagement: Engagement; patch: (u: (e: Engagement) => Engagement) => void }) {
   const initials = e.companyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return (
     <StudioCard className="px-5 py-4">
@@ -208,20 +209,20 @@ function CompanyHeader({ engagement: e }: { engagement: Engagement }) {
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[15px] font-bold text-[var(--accent)]">{initials}</div>
         <div className="min-w-0">
           <h3 className="text-[16px] font-bold text-[var(--text-primary)]">{e.companyName}</h3>
-          <p className="text-[12px] text-[var(--text-muted)]">Year ending {e.periodEnd}</p>
+          <p className="text-[12px] text-[var(--text-muted)]">{e.periodEnd ? `Year ending ${e.periodEnd}` : 'Year end set on import'}</p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2">
           <HeaderField label="Entity" value={ENTITY_LABELS[e.entityType]} />
           <HeaderField label="Framework" value={e.framework} />
           <HeaderField label="Company no." value={e.companyNumber} />
           <HeaderField label="Prepared by" value={e.preparedBy} />
-          <HeaderField label="Reviewed by" value={e.reviewedBy} />
           <div>
             <p className="text-[10.5px] uppercase tracking-wide text-[var(--text-muted)]">Status</p>
             <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${e.published ? 'bg-emerald-100 text-emerald-700' : 'bg-[var(--accent)]/10 text-[var(--accent)]'}`}>
               {e.published ? 'Published' : 'In progress'}
             </span>
           </div>
+          <ChLinkButton engagement={e} patch={patch} />
         </div>
       </div>
     </StudioCard>
@@ -232,7 +233,39 @@ function HeaderField({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="text-[10.5px] uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
-      <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{value}</p>
+      <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{value || '—'}</p>
+    </div>
+  );
+}
+
+// ─── Companies House lookup (header) ────────────────────────────────────────────
+function ChLinkButton({ engagement: e, patch }: { engagement: Engagement; patch: (u: (e: Engagement) => Engagement) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true); setMsg(null);
+    const res = await lookupCompany({ clientId: e.clientId });
+    if (res.found) {
+      patch(prev => applyCompany(prev, res.company));
+      setMsg(`Linked ${res.company.companyNumber}`);
+    } else {
+      setMsg(lookupMessage(res.reason));
+    }
+    setBusy(false);
+    setTimeout(() => setMsg(null), 4000);
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={run} disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[11.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-nav-hover)] disabled:opacity-50">
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <SearchIcon size={13} />}
+        {e.chLinked ? 'Refresh CH' : 'Companies House'}
+      </button>
+      {msg && (
+        <span className="absolute right-0 top-full mt-1 whitespace-nowrap rounded-md bg-slate-800 px-2 py-1 text-[10.5px] font-medium text-white shadow-lg">{msg}</span>
+      )}
     </div>
   );
 }
@@ -246,11 +279,33 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => Promise<
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
+  // Companies House lookup during setup.
+  const [ch, setCh] = useState<StudioCompany | null>(null);
+  const [chBusy, setChBusy] = useState(false);
+  const [chMsg, setChMsg] = useState('');
+  const [chNumber, setChNumber] = useState('');
+
+  function applyCh(c: StudioCompany) {
+    setCh(c);
+    setEntity(c.entityType as EntityType);
+    if (!nameEdited && c.companyName) setCompanyName(c.companyName);
+  }
+
+  async function runLookup(params: { clientId?: string | null; number?: string }) {
+    setChBusy(true); setChMsg('');
+    const res = await lookupCompany(params);
+    if (res.found) applyCh(res.company);
+    else { setCh(null); setChMsg(lookupMessage(res.reason)); }
+    setChBusy(false);
+  }
+
   function selectClient(c: SelectedClient | null) {
     setClient(c);
+    setCh(null); setChMsg(''); setChNumber('');
     if (c) {
       if (!nameEdited) setCompanyName(c.name);
       setEntity(entityFromBusinessType(c.business_type));
+      void runLookup({ clientId: c.id }); // auto-lookup from the client's CH number
     }
   }
 
@@ -265,6 +320,14 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => Promise<
         clientRef: client.client_ref,
         companyName: (companyName.trim() || client.name),
         entityType: entity,
+        companyNumber: ch?.companyNumber,
+        registeredOffice: ch?.registeredOffice ?? null,
+        incorporationDate: ch?.incorporationDate ?? null,
+        sicCodes: ch?.sicCodes,
+        directors: ch?.directors,
+        accountsDue: ch?.accountsNextDue ?? undefined,
+        chDeadline: ch?.accountsNextDue ?? undefined,
+        chLinked: !!ch,
       }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start the engagement.');
@@ -326,6 +389,44 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => Promise<
               )}
             </div>
           </div>
+
+          {/* Companies House */}
+          {client && (
+            <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+              <div className="flex items-center gap-2">
+                <Landmark size={14} className="text-[var(--accent)]" />
+                <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">Companies House</p>
+                {chBusy && <Loader2 size={13} className="animate-spin text-[var(--text-muted)]" />}
+              </div>
+              {ch ? (
+                <div className="mt-2 space-y-1 text-[12px] text-[var(--text-secondary)]">
+                  <p><span className="font-semibold text-[var(--text-primary)]">{ch.companyNumber}</span> · {ch.status || '—'}{ch.incorporationDate ? ` · incorporated ${ch.incorporationDate}` : ''}</p>
+                  {ch.registeredOffice && <p className="text-[11.5px] text-[var(--text-muted)]">{ch.registeredOffice}</p>}
+                  {ch.directors.length > 0 && <p className="text-[11.5px] text-[var(--text-muted)]">Directors: {ch.directors.join(', ')}</p>}
+                </div>
+              ) : (
+                <div className="mt-2">
+                  {chMsg && <p className="mb-2 text-[11.5px] text-amber-700">{chMsg}</p>}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={chNumber}
+                      onChange={e => setChNumber(e.target.value)}
+                      placeholder="Company number"
+                      className="input-base py-1.5 text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => chNumber.trim() && runLookup({ number: chNumber.trim() })}
+                      disabled={chBusy || !chNumber.trim()}
+                      className="btn-secondary shrink-0 disabled:opacity-50"
+                    >
+                      <SearchIcon size={13} /> Look up
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {!canStart && (
             <p className="text-[11.5px] text-[var(--text-muted)]">Select a client to continue.</p>

@@ -82,6 +82,15 @@ interface NewEngagementInput {
   clientRef: string | null;
   companyName: string;
   entityType?: EntityType;
+  /** Companies House details, when a lookup ran during setup. */
+  companyNumber?: string;
+  registeredOffice?: string | null;
+  incorporationDate?: string | null;
+  sicCodes?: string[];
+  directors?: string[];
+  accountsDue?: string;
+  chDeadline?: string;
+  chLinked?: boolean;
 }
 
 /**
@@ -89,31 +98,37 @@ interface NewEngagementInput {
  * seeded with sensible demo defaults (a real build would derive them from the
  * imported ledger + Companies House).
  */
-export function buildEngagement({ clientId, clientRef, companyName, entityType = 'limited_company' }: NewEngagementInput): Engagement {
+export function buildEngagement(input: NewEngagementInput): Engagement {
+  const { clientId, clientRef, companyName, entityType = 'limited_company' } = input;
   return {
     id: `eng-${clientId ?? 'demo'}-${clientRef ?? '0000'}`,
     clientId,
     clientRef,
     companyName,
-    companyNumber: '12345678',
+    companyNumber: input.companyNumber ?? '',
+    registeredOffice: input.registeredOffice ?? null,
+    incorporationDate: input.incorporationDate ?? null,
+    sicCodes: input.sicCodes ?? [],
+    directors: input.directors ?? [],
+    chLinked: input.chLinked ?? false,
     entityType,
     size: 'small',
     framework: 'FRS 102 Section 1A',
-    periodStart: '01-04-2025',
-    periodEnd: '31-03-2026',
-    comparativePeriod: '31-03-2025',
+    periodStart: '',
+    periodEnd: '',
+    comparativePeriod: '',
     dormant: false,
     microEligible: false,
-    preparedBy: 'George Marneros',
-    reviewedBy: 'Christos Marneros',
+    preparedBy: '',
+    reviewedBy: '',
     source: null,
-    accountsDue: '30-09-2026',
-    chDeadline: '31-12-2026',
+    accountsDue: input.accountsDue ?? '',
+    chDeadline: input.chDeadline ?? '',
     stageStatus: freshStageStatus('import'),
     review: { status: 'not-started', reviewPoints: 0, serious: 0, journalsApproved: 0, workingPapers: false },
     // Note shells (no fabricated figures) — replaced with real-figure drafts on
     // the first trial-balance import.
-    disclosures: buildDisclosures({ entityType, size: 'small', framework: 'FRS 102 Section 1A', statements: null, priorYear: '' }),
+    disclosures: buildDisclosures({ entityType, size: 'small', framework: 'FRS 102 Section 1A', statements: null, priorYear: '', directors: input.directors }),
     // Stage 5 checks are derived live from the engagement (lib/.../validations).
     validations: [],
     published: false,

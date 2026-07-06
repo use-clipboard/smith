@@ -124,6 +124,13 @@ export interface Engagement {
   clientRef: string | null;
   companyName: string;
   companyNumber: string;
+  /** Companies House details (populated by the CH lookup). */
+  registeredOffice?: string | null;
+  incorporationDate?: string | null; // dd-mm-yyyy
+  sicCodes?: string[];
+  directors?: string[];
+  /** True once real CH data has been pulled onto this engagement. */
+  chLinked?: boolean;
   entityType: EntityType;
   size: CompanySize;
   framework: string;         // e.g. "FRS 102 Section 1A"

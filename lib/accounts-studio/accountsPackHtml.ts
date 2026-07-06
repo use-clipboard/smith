@@ -109,6 +109,8 @@ export function buildAccountsPackHtml(e: Engagement): string {
       ${e.companyNumber ? `<p style="margin:0 0 4px;color:#64748b;font-size:13px">Company registration number ${escapeHtml(e.companyNumber)}</p>` : ''}
       <p style="margin:18px 0 4px;color:#334155;font-size:15px">Financial statements for the year ended ${escapeHtml(e.periodEnd)}</p>
       <p style="margin:0;color:#94a3b8;font-size:12px">${escapeHtml(e.framework)}</p>
+      ${e.registeredOffice ? `<p style="margin:20px 0 0;color:#94a3b8;font-size:11px">Registered office: ${escapeHtml(e.registeredOffice)}</p>` : ''}
+      ${e.incorporationDate ? `<p style="margin:2px 0 0;color:#cbd5e1;font-size:11px">Incorporated ${escapeHtml(e.incorporationDate)}</p>` : ''}
       <div style="margin-top:40px;color:#94a3b8;font-size:11px">
         Prepared by ${escapeHtml(e.preparedBy)}${e.reviewedBy ? ` · Reviewed by ${escapeHtml(e.reviewedBy)}` : ''}
       </div>

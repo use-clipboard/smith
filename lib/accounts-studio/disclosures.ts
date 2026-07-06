@@ -19,6 +19,8 @@ export interface DisclosureContext {
   statements: FinancialStatements | null;
   /** Prior-year label for comparatives, e.g. "2025". Empty when none. */
   priorYear: string;
+  /** Director/member names from Companies House, when linked. */
+  directors?: string[];
 }
 
 // ── Figure helpers ───────────────────────────────────────────────────────────
@@ -78,12 +80,14 @@ const NOTE_DEFS: NoteDef[] = [
     id: 'directors-report', title: "Directors' Report",
     requirement: 'Principal activity, results, dividends and directors who served in the period.',
     applies: ctx => isCompany(ctx.entityType),
-    build: () => ({
+    build: ctx => ({
       status: 'needs-review',
       content: `<h3>Directors' report</h3>`
         + `<p>The directors present their report and the financial statements for the year then ended.</p>`
         + `<p><strong>Principal activity.</strong> The principal activity of the company during the year is set out below — please confirm.</p>`
-        + `<p><strong>Directors.</strong> The directors who served during the period are listed below — please confirm.</p>`,
+        + (ctx.directors && ctx.directors.length
+          ? `<p><strong>Directors.</strong> The directors who served during the period were ${ctx.directors.join(', ')}.</p>`
+          : `<p><strong>Directors.</strong> The directors who served during the period are listed below — please confirm.</p>`),
     }),
   },
   {
