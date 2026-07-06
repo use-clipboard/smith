@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { computeBalances, type BalanceAccount } from '@/lib/bookkeeping/balances';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
 import type { TrialBalanceRow } from '@/components/features/accounts-studio/types';
@@ -40,8 +40,7 @@ function trialBalanceRows(accounts: BalanceAccount[]): TrialBalanceRow[] {
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   let body: z.infer<typeof Body>;
   try { body = Body.parse(await req.json()); }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,8 +22,7 @@ interface FinalAccountsResult {
 export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   const clientId = new URL(req.url).searchParams.get('clientId');
   if (!clientId) return NextResponse.json({ error: 'clientId is required' }, { status: 400 });

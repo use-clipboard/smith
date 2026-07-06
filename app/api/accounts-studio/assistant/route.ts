@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAnthropicForFirm, ApiKeyNotConfiguredError } from '@/lib/getAnthropicForFirm';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { logAiUsage } from '@/lib/driveUpload';
 
 export const maxDuration = 60;
@@ -51,8 +51,7 @@ export async function POST(req: NextRequest) {
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    const { isModuleActive } = buildModuleChecker(userCtx.activeModules);
-    if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+    if (!canAccessAccountsStudio(userCtx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
 

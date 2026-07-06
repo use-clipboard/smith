@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,8 +30,7 @@ const Body = z.object({
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   let body: z.infer<typeof Body>;
   try { body = Body.parse(await req.json()); }

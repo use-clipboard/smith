@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { chGet, normaliseCompanyNumber, ChRateLimitError, ChBadKeyError } from '@/lib/companiesHouse';
 
 export const dynamic = 'force-dynamic';
@@ -50,8 +50,7 @@ function joinAddress(a?: CHAddr): string | null {
 export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   const url = new URL(req.url);
   const clientId = url.searchParams.get('clientId');

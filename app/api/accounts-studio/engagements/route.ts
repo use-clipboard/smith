@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
-import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,8 +29,7 @@ const CreateBody = z.object({ data: EngagementData });
 export async function GET() {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   const supabase = createClient();
   const { data, error } = await supabase
@@ -54,8 +53,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
-  if (!isModuleActive('accounts-studio')) return moduleNotActive('accounts-studio');
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
 
   let body: z.infer<typeof CreateBody>;
   try { body = CreateBody.parse(await req.json()); }
