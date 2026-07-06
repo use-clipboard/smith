@@ -119,7 +119,7 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Cost, additions, depreciation and net book value by class of asset.',
     applies: () => true,
     build: ctx => {
-      const nbv = fig(ctx, ctx.statements?.balanceSheet.assets, ['fixed asset', 'tangible', 'plant', 'equipment', 'fixtures', 'motor', 'property']);
+      const nbv = fig(ctx, ctx.statements?.balanceSheet.fixedAssets, ['fixed asset', 'tangible', 'plant', 'equipment', 'fixtures', 'motor', 'property']);
       return {
         status: nbv ? 'complete' : 'needs-review',
         content: `<h3>Tangible fixed assets</h3><p>The net book value of tangible fixed assets at the year end was ${nbv ?? PH}. A full movement note (cost, additions, disposals and depreciation) should be completed for the accounts.</p>`,
@@ -131,7 +131,7 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Amounts falling due within and after more than one year.',
     applies: () => true,
     build: ctx => {
-      const d = fig(ctx, ctx.statements?.balanceSheet.assets, ['debtor', 'receivable', 'prepay']);
+      const d = fig(ctx, ctx.statements?.balanceSheet.currentAssets, ['debtor', 'receivable', 'prepay']);
       return {
         status: d ? 'complete' : 'needs-review',
         content: `<h3>Debtors</h3><p>Debtors — amounts falling due within one year — totalled ${d ?? PH} at the balance sheet date.</p>`,
@@ -143,7 +143,7 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Amounts falling due within and after more than one year, including tax and VAT.',
     applies: () => true,
     build: ctx => {
-      const c = fig(ctx, ctx.statements?.balanceSheet.liabilities, ['creditor', 'payable', 'tax', 'vat', 'loan', 'accrual']);
+      const c = fig(ctx, ctx.statements?.balanceSheet.creditorsWithin, ['creditor', 'payable', 'tax', 'vat', 'loan', 'accrual']);
       return {
         status: c ? 'complete' : 'needs-review',
         content: `<h3>Creditors</h3><p>Creditors — amounts falling due within one year — totalled ${c ?? PH} at the balance sheet date, including taxation and social security.</p>`,
@@ -164,7 +164,7 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Allotted, called up and fully paid share capital.',
     applies: ctx => isCompany(ctx.entityType),
     build: ctx => {
-      const sc = fig(ctx, ctx.statements?.balanceSheet.equity, ['share capital', 'called up', 'ordinary']);
+      const sc = fig(ctx, ctx.statements?.balanceSheet.capitalAndReserves, ['share capital', 'called up', 'ordinary']);
       return {
         status: sc ? 'complete' : 'needs-review',
         content: `<h3>Share capital</h3><p>Allotted, called up and fully paid share capital at the year end was ${sc ?? PH}.</p>`,

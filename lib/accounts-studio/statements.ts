@@ -32,13 +32,24 @@ export interface ProfitLoss {
   taxation: StmtGroup[];
   netProfit: number;       netProfitPrior: number | null;
 }
+// Companies Act small-company balance-sheet format: fixed assets, current
+// assets, creditors < 1yr, net current assets, total assets less current
+// liabilities, creditors > 1yr, provisions, net assets, capital & reserves.
 export interface BalanceSheet {
-  assets: StmtGroup[];        totalAssets: number;      totalAssetsPrior: number | null;
-  liabilities: StmtGroup[];   totalLiabilities: number; totalLiabilitiesPrior: number | null;
-  netAssets: number;          netAssetsPrior: number | null;
-  equity: StmtGroup[];
-  profitForYear: number;      profitForYearPrior: number | null;
-  totalEquity: number;        totalEquityPrior: number | null;
+  fixedAssets: StmtGroup[];         fixedAssetsTotal: number;         fixedAssetsTotalPrior: number | null;
+  currentAssets: StmtGroup[];       currentAssetsTotal: number;       currentAssetsTotalPrior: number | null;
+  creditorsWithin: StmtGroup[];     creditorsWithinTotal: number;     creditorsWithinTotalPrior: number | null;
+  netCurrentAssets: number;         netCurrentAssetsPrior: number | null;
+  totalAssetsLessCurrent: number;   totalAssetsLessCurrentPrior: number | null;
+  creditorsAfter: StmtGroup[];      creditorsAfterTotal: number;      creditorsAfterTotalPrior: number | null;
+  provisions: StmtGroup[];          provisionsTotal: number;          provisionsTotalPrior: number | null;
+  netAssets: number;                netAssetsPrior: number | null;
+  capitalAndReserves: StmtGroup[];  capitalTotal: number;             capitalTotalPrior: number | null;
+  profitForYear: number;            profitForYearPrior: number | null;
+  totalEquity: number;              totalEquityPrior: number | null;
+  // Convenience aggregates (used by size detection, validations, headline figures).
+  totalAssets: number;              totalAssetsPrior: number | null;
+  totalLiabilities: number;         totalLiabilitiesPrior: number | null;
 }
 export interface FinancialStatements {
   hasPrior: boolean;
@@ -62,6 +73,22 @@ const incomeAmt: AmountOf = a => r2(a.credit_total - a.debit_total);
 const costAmt:   AmountOf = a => r2(a.debit_total - a.credit_total);
 const assetAmt:  AmountOf = a => r2(a.debit_total - a.credit_total);
 const liabEqAmt: AmountOf = a => r2(a.credit_total - a.debit_total);
+
+// ── Statutory balance-sheet classification (heuristic, name/ledger-based) ─────
+/** Fixed (non-current) asset vs current asset. Current keywords win. */
+function assetIsFixed(ledger: string | null, name: string): boolean {
+  const s = `${ledger ?? ''} ${name}`.toLowerCase();
+  if (/current asset|debtor|receivable|prepay|accrued income|stock|inventor|work in progress|\bwip\b|\bbank\b|\bcash\b|petty|deposit account/.test(s)) return false;
+  return /fixed asset|tangible|intangible|goodwill|plant|machinery|equipment|fixture|fitting|motor|vehicle|property|\bland\b|building|freehold|leasehold|depreciation|amortis|investment/.test(s);
+}
+type LiabClass = 'within' | 'after' | 'provision';
+/** Split creditors into <1yr, >1yr and provisions. Defaults to within one year. */
+function liabilityClass(ledger: string | null, name: string): LiabClass {
+  const s = `${ledger ?? ''} ${name}`.toLowerCase();
+  if (/provision|deferred tax/.test(s)) return 'provision';
+  if (/after (more than )?one year|> ?1 ?year|over one year|long[- ]term|non[- ]current|mortgage|debenture|falling due after/.test(s)) return 'after';
+  return 'within';
+}
 
 /**
  * Group current + prior accounts into ledger sections, matching lines by name
@@ -135,24 +162,46 @@ export function buildStatements(current: PeriodInput, prior?: PeriodInput | null
   const operatingProfitPrior = hasPrior ? r2((grossProfitPrior ?? 0) - (expTotalPrior ?? 0)) : null;
   const netProfitPrior = hasPrior ? r2((operatingProfitPrior ?? 0) - (taxTotalPrior ?? 0)) : null;
 
-  // ── Balance Sheet ──────────────────────────────────────────────────────────
-  const assets      = groupWithPrior(current.bs.filter(a => a.account_type === 'asset'),     priorBs?.filter(a => a.account_type === 'asset') ?? null,     assetAmt);
-  const liabilities = groupWithPrior(current.bs.filter(a => a.account_type === 'liability'), priorBs?.filter(a => a.account_type === 'liability') ?? null, liabEqAmt);
-  const equity      = groupWithPrior(current.bs.filter(a => a.account_type === 'equity'),    priorBs?.filter(a => a.account_type === 'equity') ?? null,    liabEqAmt);
+  // ── Balance Sheet (Companies Act small-company format) ───────────────────────
+  const curAsset = current.bs.filter(a => a.account_type === 'asset');
+  const priAsset = priorBs?.filter(a => a.account_type === 'asset') ?? null;
+  const curLiab  = current.bs.filter(a => a.account_type === 'liability');
+  const priLiab  = priorBs?.filter(a => a.account_type === 'liability') ?? null;
 
-  const totalAssets = sumTotal(assets);
-  const totalLiabilities = sumTotal(liabilities);
-  const netAssets = r2(totalAssets - totalLiabilities);
-  const equityBooked = sumTotal(equity);
-  const profitForYear = r2(current.bsNetProfit);
-  const totalEquity = r2(equityBooked + profitForYear);
+  const fixedAssets   = groupWithPrior(curAsset.filter(a => assetIsFixed(a.ledger, a.name)),  priAsset?.filter(a => assetIsFixed(a.ledger, a.name)) ?? null,  assetAmt);
+  const currentAssets = groupWithPrior(curAsset.filter(a => !assetIsFixed(a.ledger, a.name)), priAsset?.filter(a => !assetIsFixed(a.ledger, a.name)) ?? null, assetAmt);
+  const creditorsWithin = groupWithPrior(curLiab.filter(a => liabilityClass(a.ledger, a.name) === 'within'), priLiab?.filter(a => liabilityClass(a.ledger, a.name) === 'within') ?? null, liabEqAmt);
+  const creditorsAfter  = groupWithPrior(curLiab.filter(a => liabilityClass(a.ledger, a.name) === 'after'),  priLiab?.filter(a => liabilityClass(a.ledger, a.name) === 'after') ?? null,  liabEqAmt);
+  const provisions      = groupWithPrior(curLiab.filter(a => liabilityClass(a.ledger, a.name) === 'provision'), priLiab?.filter(a => liabilityClass(a.ledger, a.name) === 'provision') ?? null, liabEqAmt);
+  const capitalAndReserves = groupWithPrior(current.bs.filter(a => a.account_type === 'equity'), priorBs?.filter(a => a.account_type === 'equity') ?? null, liabEqAmt);
 
-  const totalAssetsPrior = sumTotalPrior(assets, hasPrior);
-  const totalLiabilitiesPrior = sumTotalPrior(liabilities, hasPrior);
-  const netAssetsPrior = hasPrior ? r2((totalAssetsPrior ?? 0) - (totalLiabilitiesPrior ?? 0)) : null;
-  const equityBookedPrior = sumTotalPrior(equity, hasPrior);
-  const profitForYearPrior = hasPrior ? r2(prior!.bsNetProfit) : null;
-  const totalEquityPrior = hasPrior ? r2((equityBookedPrior ?? 0) + (profitForYearPrior ?? 0)) : null;
+  const fixedAssetsTotal      = sumTotal(fixedAssets);
+  const currentAssetsTotal    = sumTotal(currentAssets);
+  const creditorsWithinTotal  = sumTotal(creditorsWithin);
+  const creditorsAfterTotal   = sumTotal(creditorsAfter);
+  const provisionsTotal       = sumTotal(provisions);
+  const netCurrentAssets      = r2(currentAssetsTotal - creditorsWithinTotal);
+  const totalAssetsLessCurrent = r2(fixedAssetsTotal + netCurrentAssets);
+  const netAssets             = r2(totalAssetsLessCurrent - creditorsAfterTotal - provisionsTotal);
+  const capitalTotal          = sumTotal(capitalAndReserves);
+  const profitForYear         = r2(current.bsNetProfit);
+  const totalEquity           = r2(capitalTotal + profitForYear);
+  const totalAssets           = r2(fixedAssetsTotal + currentAssetsTotal);
+  const totalLiabilities      = r2(creditorsWithinTotal + creditorsAfterTotal + provisionsTotal);
+
+  const fixedAssetsTotalPrior     = sumTotalPrior(fixedAssets, hasPrior);
+  const currentAssetsTotalPrior   = sumTotalPrior(currentAssets, hasPrior);
+  const creditorsWithinTotalPrior = sumTotalPrior(creditorsWithin, hasPrior);
+  const creditorsAfterTotalPrior  = sumTotalPrior(creditorsAfter, hasPrior);
+  const provisionsTotalPrior      = sumTotalPrior(provisions, hasPrior);
+  const netCurrentAssetsPrior     = hasPrior ? r2((currentAssetsTotalPrior ?? 0) - (creditorsWithinTotalPrior ?? 0)) : null;
+  const totalAssetsLessCurrentPrior = hasPrior ? r2((fixedAssetsTotalPrior ?? 0) + (netCurrentAssetsPrior ?? 0)) : null;
+  const netAssetsPrior            = hasPrior ? r2((totalAssetsLessCurrentPrior ?? 0) - (creditorsAfterTotalPrior ?? 0) - (provisionsTotalPrior ?? 0)) : null;
+  const capitalTotalPrior         = sumTotalPrior(capitalAndReserves, hasPrior);
+  const profitForYearPrior        = hasPrior ? r2(prior!.bsNetProfit) : null;
+  const totalEquityPrior          = hasPrior ? r2((capitalTotalPrior ?? 0) + (profitForYearPrior ?? 0)) : null;
+  const totalAssetsPrior          = hasPrior ? r2((fixedAssetsTotalPrior ?? 0) + (currentAssetsTotalPrior ?? 0)) : null;
+  const totalLiabilitiesPrior     = hasPrior ? r2((creditorsWithinTotalPrior ?? 0) + (creditorsAfterTotalPrior ?? 0) + (provisionsTotalPrior ?? 0)) : null;
 
   return {
     hasPrior,
@@ -163,11 +212,19 @@ export function buildStatements(current: PeriodInput, prior?: PeriodInput | null
       taxation, netProfit, netProfitPrior,
     },
     balanceSheet: {
-      assets, totalAssets, totalAssetsPrior,
-      liabilities, totalLiabilities, totalLiabilitiesPrior,
+      fixedAssets, fixedAssetsTotal, fixedAssetsTotalPrior,
+      currentAssets, currentAssetsTotal, currentAssetsTotalPrior,
+      creditorsWithin, creditorsWithinTotal, creditorsWithinTotalPrior,
+      netCurrentAssets, netCurrentAssetsPrior,
+      totalAssetsLessCurrent, totalAssetsLessCurrentPrior,
+      creditorsAfter, creditorsAfterTotal, creditorsAfterTotalPrior,
+      provisions, provisionsTotal, provisionsTotalPrior,
       netAssets, netAssetsPrior,
-      equity, profitForYear, profitForYearPrior,
+      capitalAndReserves, capitalTotal, capitalTotalPrior,
+      profitForYear, profitForYearPrior,
       totalEquity, totalEquityPrior,
+      totalAssets, totalAssetsPrior,
+      totalLiabilities, totalLiabilitiesPrior,
     },
   };
 }

@@ -97,16 +97,39 @@ export default function StatementsView({
       </StatementTable>
 
       <StatementTable title="Balance Sheet" period={`As at ${periodLabel.replace(/^.*to /i, '')}`} hasPrior={hasPrior} priorLabel={priorLabel}>
-        {groupRows(bs.assets, hasPrior, 1)}
-        <Row label="Total assets" hasPrior={hasPrior} bold rule current={bs.totalAssets} prior={bs.totalAssetsPrior} />
-        {bs.liabilities.length > 0 && (
+        {bs.fixedAssets.length > 0 && (
           <>
-            {groupRows(bs.liabilities, hasPrior, -1)}
-            <Row label="Total liabilities" hasPrior={hasPrior} bold rule current={-bs.totalLiabilities} prior={bs.totalLiabilitiesPrior === null ? null : -bs.totalLiabilitiesPrior} />
+            <Row label="Fixed assets" hasPrior={hasPrior} muted current={null} prior={null} />
+            {groupRows(bs.fixedAssets, hasPrior, 1)}
+            <Row label="" hasPrior={hasPrior} bold rule current={bs.fixedAssetsTotal} prior={bs.fixedAssetsTotalPrior} />
+          </>
+        )}
+        <Row label="Current assets" hasPrior={hasPrior} muted current={null} prior={null} />
+        {groupRows(bs.currentAssets, hasPrior, 1)}
+        <Row label="" hasPrior={hasPrior} current={bs.currentAssetsTotal} prior={bs.currentAssetsTotalPrior} />
+        {bs.creditorsWithin.length > 0 && (
+          <>
+            <Row label="Creditors: amounts falling due within one year" hasPrior={hasPrior} muted current={null} prior={null} />
+            {groupRows(bs.creditorsWithin, hasPrior, -1)}
+          </>
+        )}
+        <Row label="Net current assets" hasPrior={hasPrior} bold rule current={bs.netCurrentAssets} prior={bs.netCurrentAssetsPrior} />
+        <Row label="Total assets less current liabilities" hasPrior={hasPrior} bold current={bs.totalAssetsLessCurrent} prior={bs.totalAssetsLessCurrentPrior} />
+        {bs.creditorsAfter.length > 0 && (
+          <>
+            <Row label="Creditors: amounts falling due after more than one year" hasPrior={hasPrior} muted current={null} prior={null} />
+            {groupRows(bs.creditorsAfter, hasPrior, -1)}
+          </>
+        )}
+        {bs.provisions.length > 0 && (
+          <>
+            <Row label="Provisions for liabilities" hasPrior={hasPrior} muted current={null} prior={null} />
+            {groupRows(bs.provisions, hasPrior, -1)}
           </>
         )}
         <Row label="Net assets" hasPrior={hasPrior} bold rule current={bs.netAssets} prior={bs.netAssetsPrior} />
-        {groupRows(bs.equity, hasPrior, 1)}
+        <Row label="Capital and reserves" hasPrior={hasPrior} muted current={null} prior={null} />
+        {groupRows(bs.capitalAndReserves, hasPrior, 1)}
         <Row label="Profit for the financial year" hasPrior={hasPrior} muted current={bs.profitForYear} prior={bs.profitForYearPrior} />
         <Row label="Total equity" hasPrior={hasPrior} bold rule current={bs.totalEquity} prior={bs.totalEquityPrior} />
       </StatementTable>

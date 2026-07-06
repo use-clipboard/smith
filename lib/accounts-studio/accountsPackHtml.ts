@@ -72,11 +72,18 @@ function statementsHtml(
       <h2 style="font-size:15px;margin:0 0 2px">Balance Sheet</h2>
       <p style="margin:0 0 10px;color:#64748b;font-size:11px">As at ${asAt}</p>
       <table style="width:100%;border-collapse:collapse;font-size:12.5px">${head}<tbody>
-        ${groupRows(bs.assets, hasPrior, 1)}
-        ${row('Total assets', bs.totalAssets, bs.totalAssetsPrior, hasPrior, { bold: true, rule: true })}
-        ${bs.liabilities.length ? groupRows(bs.liabilities, hasPrior, -1) + row('Total liabilities', -bs.totalLiabilities, bs.totalLiabilitiesPrior === null ? null : -bs.totalLiabilitiesPrior, hasPrior, { bold: true, rule: true }) : ''}
+        ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true }) + groupRows(bs.fixedAssets, hasPrior, 1) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true }) : ''}
+        ${row('Current assets', null, null, hasPrior, { muted: true })}
+        ${groupRows(bs.currentAssets, hasPrior, 1)}
+        ${row('', bs.currentAssetsTotal, bs.currentAssetsTotalPrior, hasPrior, {})}
+        ${bs.creditorsWithin.length ? row('Creditors: amounts falling due within one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsWithin, hasPrior, -1) : ''}
+        ${row('Net current assets', bs.netCurrentAssets, bs.netCurrentAssetsPrior, hasPrior, { bold: true, rule: true })}
+        ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true })}
+        ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsAfter, hasPrior, -1) : ''}
+        ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true }) + groupRows(bs.provisions, hasPrior, -1) : ''}
         ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true })}
-        ${groupRows(bs.equity, hasPrior, 1)}
+        ${row('Capital and reserves', null, null, hasPrior, { muted: true })}
+        ${groupRows(bs.capitalAndReserves, hasPrior, 1)}
         ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true })}
         ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true })}
       </tbody></table>
