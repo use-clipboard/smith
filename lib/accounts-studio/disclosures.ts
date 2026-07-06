@@ -50,6 +50,30 @@ function fig(ctx: DisclosureContext, groups: StmtGroup[] | undefined, keywords: 
 
 const PH = '£[ ]'; // placeholder shown before import / when not derivable
 
+// ── Note tables (sub-analysis with comparatives) ─────────────────────────────
+interface NoteLine { label: string; current: number; prior: number | null }
+/** Collect individual account lines from BS groups whose group/line matches a keyword (empty = all). */
+function collectLines(groups: StmtGroup[] | undefined, keywords: string[]): NoteLine[] {
+  const out: NoteLine[] = [];
+  for (const g of groups ?? []) {
+    for (const l of g.lines) {
+      const s = `${g.title} ${l.label}`.toLowerCase();
+      if (keywords.length === 0 || keywords.some(k => s.includes(k))) out.push({ label: l.label, current: l.current, prior: l.prior });
+    }
+  }
+  return out;
+}
+const num0 = (n: number) => Math.round(n).toLocaleString('en-GB');
+/** A note sub-analysis table (Account | £ | prior £) with a Total row. */
+function noteTableHtml(lines: NoteLine[], hasPrior: boolean, priorYear: string): string {
+  const total = lines.reduce((s, l) => s + l.current, 0);
+  const totalPrior = hasPrior ? lines.reduce((s, l) => s + (l.prior ?? 0), 0) : 0;
+  const head = `<tr><td></td><td style="text-align:right;font-weight:600">£</td>${hasPrior ? `<td style="text-align:right;font-weight:600">${priorYear || 'Prior'} £</td>` : ''}</tr>`;
+  const body = lines.map(l => `<tr><td>${l.label}</td><td style="text-align:right">${num0(l.current)}</td>${hasPrior ? `<td style="text-align:right;color:#64748b">${num0(l.prior ?? 0)}</td>` : ''}</tr>`).join('');
+  const foot = `<tr><td style="font-weight:600;border-top:1px solid #cbd5e1">Total</td><td style="text-align:right;font-weight:600;border-top:1px solid #cbd5e1">${num0(total)}</td>${hasPrior ? `<td style="text-align:right;font-weight:600;border-top:1px solid #cbd5e1;color:#64748b">${num0(totalPrior)}</td>` : ''}</tr>`;
+  return `<table style="width:100%;border-collapse:collapse;margin-top:6px"><tbody>${head}${body}${foot}</tbody></table>`;
+}
+
 // ── Note definitions ─────────────────────────────────────────────────────────
 interface NoteDef {
   id: string;
@@ -119,6 +143,14 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Cost, additions, depreciation and net book value by class of asset.',
     applies: () => true,
     build: ctx => {
+      const lines = collectLines(ctx.statements?.balanceSheet.fixedAssets, []);
+      if (lines.length) {
+        return {
+          status: 'complete',
+          content: `<h3>Fixed assets</h3><p>Net book value by class of asset:</p>${noteTableHtml(lines, ctx.statements!.hasPrior, ctx.priorYear)}`
+            + `<p style="font-size:12px;color:#64748b;margin-top:8px">A full movement schedule (cost, additions, disposals and depreciation charge) should be completed before filing.</p>`,
+        };
+      }
       const nbv = fig(ctx, ctx.statements?.balanceSheet.fixedAssets, ['fixed asset', 'tangible', 'plant', 'equipment', 'fixtures', 'motor', 'property']);
       return {
         status: nbv ? 'complete' : 'needs-review',
@@ -131,6 +163,13 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Amounts falling due within and after more than one year.',
     applies: () => true,
     build: ctx => {
+      const lines = collectLines(ctx.statements?.balanceSheet.currentAssets, ['debtor', 'receivable', 'prepay', 'accrued income']);
+      if (lines.length) {
+        return {
+          status: 'complete',
+          content: `<h3>Debtors</h3><p>Amounts falling due within one year:</p>${noteTableHtml(lines, ctx.statements!.hasPrior, ctx.priorYear)}`,
+        };
+      }
       const d = fig(ctx, ctx.statements?.balanceSheet.currentAssets, ['debtor', 'receivable', 'prepay']);
       return {
         status: d ? 'complete' : 'needs-review',
@@ -143,6 +182,15 @@ const NOTE_DEFS: NoteDef[] = [
     requirement: 'Amounts falling due within and after more than one year, including tax and VAT.',
     applies: () => true,
     build: ctx => {
+      const within = collectLines(ctx.statements?.balanceSheet.creditorsWithin, []);
+      const after = collectLines(ctx.statements?.balanceSheet.creditorsAfter, []);
+      if (within.length || after.length) {
+        const hasPrior = ctx.statements!.hasPrior;
+        let html = `<h3>Creditors</h3>`;
+        if (within.length) html += `<p>Amounts falling due within one year:</p>${noteTableHtml(within, hasPrior, ctx.priorYear)}`;
+        if (after.length) html += `<p style="margin-top:10px">Amounts falling due after more than one year:</p>${noteTableHtml(after, hasPrior, ctx.priorYear)}`;
+        return { status: 'complete', content: html };
+      }
       const c = fig(ctx, ctx.statements?.balanceSheet.creditorsWithin, ['creditor', 'payable', 'tax', 'vat', 'loan', 'accrual']);
       return {
         status: c ? 'complete' : 'needs-review',
