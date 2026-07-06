@@ -92,6 +92,10 @@ export default function StageDisclosures({
             entityType: ENTITY_LABELS[engagement.entityType],
             framework: engagement.framework,
             periodEnd: engagement.periodEnd,
+            turnover: engagement.statements?.profitLoss.turnoverTotal ?? null,
+            netProfit: engagement.statements?.profitLoss.netProfit ?? null,
+            totalAssets: engagement.statements?.balanceSheet.totalAssets ?? null,
+            netAssets: engagement.statements?.balanceSheet.netAssets ?? null,
           },
         }),
       });

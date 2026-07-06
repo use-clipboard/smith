@@ -3,9 +3,10 @@ import {
   ClipboardPaste, FileSpreadsheet, Files,
 } from 'lucide-react';
 import type {
-  Engagement, StageId, ImportSourceId, DisclosureSection, ValidationCheck,
-  OutputDoc, EntityType, CompanySize,
+  Engagement, StageId, ImportSourceId, ValidationCheck,
+  EntityType, CompanySize,
 } from './types';
+import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 
 export const STAGES: { id: StageId; label: string; blurb: string }[] = [
   { id: 'import',       label: 'Import Data',        blurb: 'Bring in the ledger or trial balance' },
@@ -51,131 +52,6 @@ export const IMPORT_SOURCES: {
   { id: 'vt',          name: 'VT Transaction+',   sub: 'Import file',             icon: Table2,                          enabled: false },
 ];
 
-// ─── Stage 4: disclosure section templates ───────────────────────────────────
-function draftHistory(content: string): DisclosureSection['history'] {
-  return [{ id: 'v1', label: 'AI draft', at: '03-07-2026 09:12', content }];
-}
-
-export const DISCLOSURE_TEMPLATE: DisclosureSection[] = [
-  {
-    id: 'policies', title: 'Accounting Policies', status: 'complete',
-    requirement: 'Basis of preparation and the specific policies applied to material balances.',
-    content: `<h3>Accounting policies</h3><p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with FRS 102 Section 1A "The Financial Reporting Standard applicable in the UK and Republic of Ireland" and the Companies Act 2006, under the historical cost convention.</p><p><strong>Turnover.</strong> Turnover represents amounts receivable for services net of VAT and trade discounts, recognised in the period in which the service is provided.</p><p><strong>Tangible fixed assets.</strong> Depreciation is provided to write off the cost less estimated residual value of each asset over its expected useful life.</p>`,
-    priorYearContent: `<h3>Accounting policies</h3><p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with FRS 102 Section 1A and the Companies Act 2006, under the historical cost convention.</p>`,
-    history: draftHistory('<p>AI draft of accounting policies.</p>'),
-  },
-  {
-    id: 'directors-report', title: "Directors' Report", status: 'needs-review',
-    requirement: 'Principal activity, results, dividends and directors who served in the period.',
-    content: `<h3>Directors' report</h3><p>The directors present their report and the financial statements for the year ended 31 March 2026.</p><p><strong>Principal activity.</strong> The principal activity of the company continued to be the provision of accountancy and taxation services.</p><p><strong>Business review.</strong> The results for the year and the state of affairs of the company are set out in the financial statements.</p><p><strong>Directors.</strong> The directors who served during the period were G Marneros and C Marneros.</p>`,
-    priorYearContent: `<h3>Directors' report</h3><p>The directors present their report and the financial statements for the year ended 31 March 2025.</p><p><strong>Principal activity.</strong> The principal activity of the company continued to be the provision of accountancy services.</p>`,
-    history: draftHistory("<p>AI draft of the directors' report.</p>"),
-    entityTypes: ['limited_company', 'cic', 'dormant_company'],
-  },
-  {
-    id: 'strategic-report', title: 'Strategic Report', status: 'complete',
-    requirement: 'Fair review of the business and description of principal risks (medium+ companies).',
-    content: `<h3>Strategic report</h3><p>The company delivered steady growth in the year, supported by continued demand for compliance and advisory services. The directors monitor gross margin, staff utilisation and cash conversion as the principal performance indicators.</p>`,
-    history: draftHistory('<p>AI draft of the strategic report.</p>'),
-    entityTypes: ['limited_company', 'cic'],
-  },
-  {
-    id: 'members-report', title: "Members' Report", status: 'draft',
-    requirement: "Designated members and members' interests for an LLP.",
-    content: `<h3>Members' report</h3><p>The designated members present their report for the financial year.</p>`,
-    history: draftHistory("<p>AI draft of the members' report.</p>"),
-    entityTypes: ['llp'],
-  },
-  {
-    id: 'employees', title: 'Employees', status: 'complete',
-    requirement: 'Average monthly number of employees during the period.',
-    content: `<h3>Employees</h3><p>The average monthly number of employees during the year was 16 (2025: 14).</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'fixed-assets', title: 'Fixed Assets', status: 'complete',
-    requirement: 'Cost, additions, depreciation and net book value by class of asset.',
-    content: `<h3>Tangible fixed assets</h3><p>Additions in the year comprised office and computer equipment. Net book value at the year end was £48,200 (2025: £41,750).</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'debtors', title: 'Debtors', status: 'needs-review',
-    requirement: 'Amounts falling due within and after more than one year.',
-    content: `<h3>Debtors</h3><p>Trade debtors £126,400 (2025: £98,900). Other debtors and prepayments £14,100 (2025: £11,300).</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'creditors', title: 'Creditors', status: 'complete',
-    requirement: 'Amounts falling due within and after more than one year, including tax and VAT.',
-    content: `<h3>Creditors</h3><p>Trade creditors £22,700 (2025: £19,400). Taxation and social security £41,900. Other creditors £8,200.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'related-parties', title: 'Related Parties', status: 'needs-review',
-    requirement: 'Transactions with directors and other related parties, including loan balances.',
-    content: `<h3>Related party transactions</h3><p>The directors' loan account was overdrawn by £6,295 at the year end. Interest has been charged at the official rate.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'share-capital', title: 'Share Capital', status: 'complete',
-    requirement: 'Allotted, called up and fully paid share capital.',
-    content: `<h3>Share capital</h3><p>100 ordinary shares of £1 each, allotted, called up and fully paid.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-    entityTypes: ['limited_company', 'cic', 'dormant_company'],
-  },
-  {
-    id: 'going-concern', title: 'Going Concern', status: 'complete',
-    requirement: 'Basis for the going concern assumption and any material uncertainties.',
-    content: `<h3>Going concern</h3><p>Based on the current financial position and cash flow forecasts, the directors have a reasonable expectation that the company has adequate resources to continue in operational existence for the foreseeable future. Accordingly the going concern basis has been adopted.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'events', title: 'Events after Year End', status: 'missing',
-    requirement: 'Adjusting and non-adjusting events between the year end and approval.',
-    content: '',
-    history: [],
-  },
-  {
-    id: 'financial-instruments', title: 'Financial Instruments', status: 'complete',
-    requirement: 'Basic financial instruments measured at amortised cost.',
-    content: `<h3>Financial instruments</h3><p>The company holds only basic financial instruments, measured at amortised cost.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'commitments', title: 'Commitments', status: 'draft',
-    requirement: 'Capital and other financial commitments not provided for.',
-    content: `<h3>Commitments</h3><p>Total future minimum lease payments under non-cancellable operating leases were £36,000.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'contingencies', title: 'Contingencies', status: 'complete',
-    requirement: 'Contingent liabilities and assets not recognised in the balance sheet.',
-    content: `<h3>Contingent liabilities</h3><p>There were no contingent liabilities at the balance sheet date.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-  },
-  {
-    id: 'charity', title: 'Charity Disclosures', status: 'draft',
-    requirement: 'SORP-compliant fund accounting, trustees and public benefit statement.',
-    content: `<h3>Charity disclosures</h3><p>The accounts are prepared in accordance with the Charities SORP (FRS 102). Funds are analysed between unrestricted, restricted and endowment funds.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-    entityTypes: ['charity'],
-  },
-  {
-    id: 'llp', title: 'LLP Disclosures', status: 'draft',
-    requirement: "Members' remuneration, capital and division of profits under the LLP SORP.",
-    content: `<h3>LLP disclosures</h3><p>Members' remuneration and the division of profits are presented in accordance with the LLP SORP.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-    entityTypes: ['llp'],
-  },
-  {
-    id: 'trust', title: 'Trust Disclosures', status: 'draft',
-    requirement: 'Trustee information, beneficiary classes and trust income treatment.',
-    content: `<h3>Trust disclosures</h3><p>Disclosures relating to the trust, its trustees and beneficiaries.</p>`,
-    history: draftHistory('<p>AI draft.</p>'),
-    entityTypes: ['trust'],
-  },
-];
-
 // ─── Stage 5: compliance validation checks ───────────────────────────────────
 export const VALIDATION_TEMPLATE: ValidationCheck[] = [
   { id: 'ch',          label: 'Companies House validation', status: 'pass', detail: 'iXBRL accounts pass all filing rules — no validation errors.' },
@@ -189,17 +65,6 @@ export const VALIDATION_TEMPLATE: ValidationCheck[] = [
   { id: 'deadlines',   label: 'Filing deadlines',           status: 'pass', detail: 'Companies House deadline 31-12-2026 — 181 days remaining.' },
 ];
 
-// ─── Stage 6: output documents ───────────────────────────────────────────────
-export const OUTPUT_DOCS: OutputDoc[] = [
-  { id: 'statutory',  title: 'Statutory Accounts',        description: 'Full signed financial statements', format: 'PDF' },
-  { id: 'ixbrl',      title: 'iXBRL Accounts',            description: 'FRC-tagged for online filing',      format: 'iXBRL' },
-  { id: 'ch-package', title: 'Companies House Package',   description: 'Ready-to-submit filing bundle',     format: 'ZIP' },
-  { id: 'ct',         title: 'Corporation Tax Accounts',  description: 'Accounts for the CT600',            format: 'iXBRL' },
-  { id: 'approval',   title: 'Client Approval Pack',      description: 'For e-signature approval',          format: 'PDF' },
-  { id: 'rep-letter', title: 'Director Representation Letter', description: 'Management representations',   format: 'DOCX' },
-  { id: 'management', title: 'Management Copy',           description: 'Internal working copy',             format: 'PDF' },
-];
-
 // ─── Engagement factory ──────────────────────────────────────────────────────
 const ALL_STAGES: StageId[] = ['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'];
 
@@ -210,13 +75,6 @@ export function freshStageStatus(active: StageId): Engagement['stageStatus'] {
     map[s] = i < activeIdx ? 'complete' : i === activeIdx ? 'active' : 'upcoming';
   });
   return map;
-}
-
-/** Disclosure sections relevant to a given entity type. */
-export function disclosuresForEntity(entity: EntityType): DisclosureSection[] {
-  return DISCLOSURE_TEMPLATE
-    .filter(s => !s.entityTypes || s.entityTypes.includes(entity))
-    .map(s => ({ ...s, history: [...s.history] }));
 }
 
 /** Best-effort map a client's stored business_type to an Accounts Studio entity. */
@@ -266,9 +124,12 @@ export function buildEngagement({ clientId, clientRef, companyName, entityType =
     chDeadline: '31-12-2026',
     stageStatus: freshStageStatus('import'),
     review: { status: 'not-started', reviewPoints: 0, serious: 0, journalsApproved: 0, workingPapers: false },
-    disclosures: disclosuresForEntity(entityType),
+    // Note shells (no fabricated figures) — replaced with real-figure drafts on
+    // the first trial-balance import.
+    disclosures: buildDisclosures({ entityType, size: 'small', framework: 'FRS 102 Section 1A', statements: null, priorYear: '' }),
     validations: VALIDATION_TEMPLATE.map(v => ({ ...v })),
     published: false,
+    disclosuresSeeded: false,
   };
 }
 

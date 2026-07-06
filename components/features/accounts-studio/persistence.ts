@@ -58,3 +58,28 @@ export async function deleteEngagement(id: string): Promise<void> {
   const r = await fetch(`${BASE}/${id}`, { method: 'DELETE' });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Delete failed.');
 }
+
+/** Record the published statutory accounts against the client record. Returns the outputs.id. */
+export async function publishEngagement(e: Engagement): Promise<string> {
+  const s = e.statements;
+  const r = await fetch(`${BASE}/${e.id}/publish`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      clientId: e.clientId,
+      clientName: e.companyName,
+      clientCode: e.clientRef,
+      companyName: e.companyName,
+      entityType: e.entityType,
+      framework: e.framework,
+      periodStart: e.periodStart,
+      periodEnd: e.periodEnd,
+      turnover: s?.profitLoss.turnoverTotal ?? null,
+      netProfit: s?.profitLoss.netProfit ?? null,
+      totalAssets: s?.balanceSheet.totalAssets ?? null,
+      netAssets: s?.balanceSheet.netAssets ?? null,
+      outputId: e.publishedOutputId ?? null,
+    }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Publish failed.');
+  return (await r.json()).outputId as string;
+}

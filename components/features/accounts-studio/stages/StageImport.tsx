@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
+import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { StudioCard } from '../primitives';
 import StatementsView from '../StatementsView';
 import type { Engagement, FinancialStatements, TrialBalanceRow } from '../types';
@@ -96,6 +97,7 @@ export default function StageImport({
         engagement={engagement}
         onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
         onImported={(res, fy, priorFy) => {
+          const priorYear = priorFy ? priorFy.end_date.slice(0, 4) : '';
           patch(e => ({
             ...e,
             source: 'bookkeeping',
@@ -107,6 +109,18 @@ export default function StageImport({
             periodStart: isoToUk(fy.start_date),
             periodEnd: isoToUk(fy.end_date),
             comparativePeriod: priorFy ? isoToUk(priorFy.end_date) : '',
+            // Seed real-figure disclosure drafts on the first import only, so a
+            // later re-import never clobbers notes the user has edited.
+            disclosures: e.disclosuresSeeded
+              ? e.disclosures
+              : buildDisclosures({
+                  entityType: e.entityType,
+                  size: res.detected.size,
+                  framework: res.detected.framework,
+                  statements: res.statements,
+                  priorYear,
+                }),
+            disclosuresSeeded: true,
             importInfo: {
               bookId: res.book.id,
               bookName: res.book.name,

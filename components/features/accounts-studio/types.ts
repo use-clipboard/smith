@@ -146,6 +146,11 @@ export interface Engagement {
   importInfo?: ImportInfo | null;
   trialBalance?: TrialBalanceRow[] | null;
   statements?: FinancialStatements | null;
+  /** True once disclosures have been seeded from a real import (so a re-import
+   *  never clobbers notes the user has since edited). */
+  disclosuresSeeded?: boolean;
+  /** outputs.id of the audit row written when the accounts were published. */
+  publishedOutputId?: string | null;
 }
 
 export interface AssistantMessage {

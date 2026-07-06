@@ -12,6 +12,11 @@ const ContextSchema = z.object({
   entityType: z.string().default(''),
   framework: z.string().default(''),
   periodEnd: z.string().default(''),
+  // Real headline figures from the imported statements (optional).
+  turnover: z.number().nullable().optional(),
+  netProfit: z.number().nullable().optional(),
+  totalAssets: z.number().nullable().optional(),
+  netAssets: z.number().nullable().optional(),
 });
 
 const RequestSchema = z.object({
@@ -51,7 +56,15 @@ export async function POST(req: NextRequest) {
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
 
-    const ctxLine = `Engagement context — Company: ${context.companyName || 'n/a'}; Entity: ${context.entityType || 'n/a'}; Framework: ${context.framework || 'n/a'}; Year end: ${context.periodEnd || 'n/a'}.`;
+    const gbp = (n: number | null | undefined) => (n === null || n === undefined) ? null : `£${Math.round(n).toLocaleString('en-GB')}`;
+    const figs = [
+      gbp(context.turnover) && `Turnover ${gbp(context.turnover)}`,
+      gbp(context.netProfit) && `Profit for the year ${gbp(context.netProfit)}`,
+      gbp(context.totalAssets) && `Total assets ${gbp(context.totalAssets)}`,
+      gbp(context.netAssets) && `Net assets ${gbp(context.netAssets)}`,
+    ].filter(Boolean).join('; ');
+    const ctxLine = `Engagement context — Company: ${context.companyName || 'n/a'}; Entity: ${context.entityType || 'n/a'}; Framework: ${context.framework || 'n/a'}; Year end: ${context.periodEnd || 'n/a'}.`
+      + (figs ? `\nKey figures from the accounts — ${figs}. Use these real figures where relevant; do not invent numbers.` : '');
 
     let system = BASE_SYSTEM + '\n\n' + ctxLine;
     let apiMessages: { role: 'user' | 'assistant'; content: string }[];
