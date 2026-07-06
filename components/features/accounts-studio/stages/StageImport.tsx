@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine } from 'lucide-react';
+import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine, FileSpreadsheet, Upload, Download, type LucideIcon } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
@@ -72,11 +72,12 @@ export default function StageImport({
   advance: () => void;
 }) {
   const imported = !!(engagement.statements && engagement.importInfo);
-  const [phase, setPhase] = useState<'source' | 'configure' | 'manual' | 'build'>(
+  const [phase, setPhase] = useState<'source' | 'configure' | 'manual' | 'build' | 'csv'>(
     !imported && engagement.source === 'bookkeeping' ? 'configure'
       : !imported && engagement.source === 'clipboard' ? 'manual'
         : !imported && engagement.source === 'manual' ? 'build'
-          : 'source',
+          : !imported && engagement.source === 'csv' ? 'csv'
+            : 'source',
   );
 
   // Shared apply for the Paste/CSV and Build-manually modes.
@@ -209,26 +210,30 @@ export default function StageImport({
     );
   }
 
-  // ── Paste / CSV ─────────────────────────────────────────────────────────────
+  const backToSource = () => { patch(e => ({ ...e, source: null })); setPhase('source'); };
+
+  // ── Clipboard (paste) ────────────────────────────────────────────────────────
   if (phase === 'manual') {
-    return (
-      <ManualImport
-        engagement={engagement}
-        onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
-        onImported={applyManual}
-      />
-    );
+    return <ManualImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
   }
 
   // ── Build manually ──────────────────────────────────────────────────────────
   if (phase === 'build') {
     return (
-      <ManualBuilder
+      <TbEditor
         engagement={engagement}
-        onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
+        onBack={backToSource}
         onImported={applyManual}
+        source="manual"
+        sourceLabel="Manual entry"
+        heading={{ icon: PencilLine, title: 'Build a trial balance', sub: 'Add each account, set its type, and enter the debit or credit.' }}
       />
     );
+  }
+
+  // ── CSV upload ────────────────────────────────────────────────────────────────
+  if (phase === 'csv') {
+    return <CsvImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
   }
 
   // ── Source picker ──────────────────────────────────────────────────────────
@@ -242,7 +247,7 @@ export default function StageImport({
         {IMPORT_SOURCES.map(s => (
           <button
             key={s.id}
-            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); else if (s.id === 'manual') setPhase('build'); } }}
+            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); else if (s.id === 'manual') setPhase('build'); else if (s.id === 'csv') setPhase('csv'); } }}
             disabled={!s.enabled}
             aria-disabled={!s.enabled}
             className={`group flex flex-col items-start gap-3 rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all ${
@@ -455,7 +460,7 @@ function BookkeepingImport({
 type BalType = BalanceAccountType;
 interface ManualRow { name: string; type: BalType; ledger: string; debit: number; credit: number }
 interface ManualPayload {
-  source: 'clipboard' | 'manual';
+  source: 'clipboard' | 'manual' | 'csv';
   sourceLabel: string;
   statements: FinancialStatements;
   trialBalance: TrialBalanceRow[];
@@ -618,7 +623,7 @@ function ManualImport({
     const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
     const framework = detectFramework(engagement.entityType, size);
     const trialBalance: TrialBalanceRow[] = rows.map(r => ({ name: r.name, ledger: r.ledger, accountType: r.type, debit: r.debit, credit: r.credit }));
-    onImported({ source: 'clipboard', sourceLabel: 'Manual / CSV entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk });
+    onImported({ source: 'clipboard', sourceLabel: 'Clipboard entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk });
   }
 
   return (
@@ -742,18 +747,32 @@ function netProfitOf(accts: BalanceAccount[]): number {
     .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
 }
 
-function ManualBuilder({
-  engagement, onBack, onImported,
+interface SeedRow { name: string; type: BalType; debit: number; credit: number }
+
+/** The shared trial-balance editor — used by "Build manually" (empty) and the
+ *  CSV import (seeded from an uploaded file). Rows, saved-TB loader, prior-year
+ *  comparatives, balance check and build all live here. */
+function TbEditor({
+  engagement, onBack, onImported, source, sourceLabel, heading, seed, backLabel, topSlot,
 }: {
   engagement: Engagement;
   onBack: () => void;
   onImported: (p: ManualPayload) => void;
+  source: 'manual' | 'csv';
+  sourceLabel: string;
+  heading: { icon: LucideIcon; title: string; sub: string };
+  seed?: SeedRow[];
+  backLabel?: string;
+  topSlot?: React.ReactNode;
 }) {
   const idRef = useRef(0);
-  const blank = useCallback((seed?: Partial<BuilderRow>): BuilderRow => ({
-    id: idRef.current++, name: '', type: 'expense', debit: '', credit: '', priorDebit: '', priorCredit: '', ...seed,
+  const blank = useCallback((over?: Partial<BuilderRow>): BuilderRow => ({
+    id: idRef.current++, name: '', type: 'expense', debit: '', credit: '', priorDebit: '', priorCredit: '', ...over,
   }), []);
-  const [rows, setRows] = useState<BuilderRow[]>(() => [blank(), blank(), blank()]);
+  const [rows, setRows] = useState<BuilderRow[]>(() =>
+    seed && seed.length
+      ? seed.map(s => blank({ name: s.name, type: s.type, debit: s.debit ? String(s.debit) : '', credit: s.credit ? String(s.credit) : '' }))
+      : [blank(), blank(), blank()]);
   const [includePrior, setIncludePrior] = useState(false);
   const [toIso, setToIso] = useState('');
   const [fromIso, setFromIso] = useState('');
@@ -822,29 +841,32 @@ function ManualBuilder({
     const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
     const framework = detectFramework(engagement.entityType, size);
     const trialBalance: TrialBalanceRow[] = clean.map(r => ({ name: r.name.trim(), ledger: r.name.trim(), accountType: r.type, debit: parseNum(r.debit), credit: parseNum(r.credit) }));
-    onImported({ source: 'manual', sourceLabel: 'Manual entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk: includePrior ? priorEndUk(toIso) : '' });
+    onImported({ source, sourceLabel, statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk: includePrior ? priorEndUk(toIso) : '' });
   }
 
   const amtInput = 'w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-right text-[12px] tabular-nums';
 
+  const HeadingIcon = heading.icon;
   return (
     <div className="mx-auto max-w-3xl">
       <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-        <ChevronLeft size={13} /> Choose a different source
+        <ChevronLeft size={13} /> {backLabel ?? 'Choose a different source'}
       </button>
 
       <StudioCard className="p-5">
         <div className="mb-4 flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><PencilLine size={18} /></span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><HeadingIcon size={18} /></span>
           <div className="flex-1">
-            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Build a trial balance</h3>
-            <p className="text-[12px] text-[var(--text-muted)]">Add each account, set its type, and enter the debit or credit.</p>
+            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">{heading.title}</h3>
+            <p className="text-[12px] text-[var(--text-muted)]">{heading.sub}</p>
           </div>
           <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)]">
             <input type="checkbox" checked={includePrior} onChange={e => setIncludePrior(e.target.checked)} className="rounded" />
             Include last year
           </label>
         </div>
+
+        {topSlot}
 
         {/* Saved trial balances */}
         {saved.length > 0 && (
@@ -966,6 +988,113 @@ function ManualBuilder({
         <button onClick={build} disabled={!toIso} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
           <Table2 size={15} /> Build accounts
         </button>
+      </StudioCard>
+    </div>
+  );
+}
+
+// ─── CSV upload panel ────────────────────────────────────────────────────────
+const CSV_TEMPLATE =
+  'Account,Type,Debit,Credit\n'
+  + 'Turnover,income,0,120000\n'
+  + 'Cost of sales,expense,40000,0\n'
+  + 'Administrative expenses,expense,30000,0\n'
+  + 'Tangible fixed assets,asset,48000,0\n'
+  + 'Debtors,asset,26000,0\n'
+  + 'Cash at bank and in hand,asset,5000,0\n'
+  + 'Creditors,liability,0,15000\n'
+  + 'Taxation,liability,0,4000\n'
+  + 'Share capital,equity,0,100\n'
+  + 'Retained earnings,equity,0,63900\n';
+
+function CsvImport({
+  engagement, onBack, onImported,
+}: {
+  engagement: Engagement;
+  onBack: () => void;
+  onImported: (p: ManualPayload) => void;
+}) {
+  const [parsed, setParsed] = useState<SeedRow[] | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [fileKey, setFileKey] = useState(0);
+  const [error, setError] = useState('');
+
+  function downloadTemplate() {
+    const blob = new Blob([CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'trial-balance-template.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // let the same file be re-selected
+    if (!f) return;
+    setError('');
+    try {
+      const text = await f.text();
+      const rows = parseTrialBalance(text);
+      if (!rows.length) { setError('Could not read any rows — download the template to see the expected columns.'); return; }
+      setParsed(rows.map(r => ({ name: r.name, type: r.type, debit: r.debit, credit: r.credit })));
+      setFileName(f.name);
+      setFileKey(k => k + 1);
+    } catch {
+      setError('Could not read that file. Make sure it is a .csv.');
+    }
+  }
+
+  // Once a file is parsed, drop into the shared editor seeded with its rows.
+  if (parsed) {
+    return (
+      <TbEditor
+        key={fileKey}
+        engagement={engagement}
+        onBack={() => setParsed(null)}
+        backLabel="Upload a different file"
+        onImported={onImported}
+        source="csv"
+        sourceLabel="CSV import"
+        seed={parsed}
+        heading={{ icon: FileSpreadsheet, title: 'Review the imported trial balance', sub: `${parsed.length} row${parsed.length === 1 ? '' : 's'} from ${fileName} — check the types and balance, then edit if needed.` }}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+        <ChevronLeft size={13} /> Choose a different source
+      </button>
+
+      <StudioCard className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><FileSpreadsheet size={18} /></span>
+          <div>
+            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Import from CSV</h3>
+            <p className="text-[12px] text-[var(--text-muted)]">Upload a trial balance CSV. Columns: Account, Type, Debit, Credit.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={downloadTemplate} className="btn-secondary">
+            <Download size={14} /> Download template
+          </button>
+          <label className="btn-primary cursor-pointer">
+            <Upload size={14} /> Upload CSV
+            <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+          </label>
+        </div>
+
+        <p className="mt-3 text-[11.5px] text-[var(--text-muted)]">
+          <strong>Type</strong> is one of income, expense, asset, liability or equity. A header row is optional — SMITH also reads Account / Debit / Credit columns in any order. You can edit everything after uploading.
+        </p>
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
       </StudioCard>
     </div>
   );
