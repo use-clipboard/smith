@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type {
   Engagement, StageId, ImportSourceId, DisclosureSection, ValidationCheck,
-  OutputDoc, EntityType, CompanySize, PreparationStep,
+  OutputDoc, EntityType, CompanySize,
 } from './types';
 
 export const STAGES: { id: StageId; label: string; blurb: string }[] = [
@@ -41,37 +41,14 @@ export const IMPORT_SOURCES: {
   id: ImportSourceId; name: string; sub: string; icon: typeof Landmark; native?: boolean; enabled: boolean;
 }[] = [
   { id: 'bookkeeping', name: 'SMITH Bookkeeping', sub: 'Live trial balance',      icon: BookCopy,          native: true, enabled: true },
-  { id: 'clipboard',   name: 'Clipboard',         sub: 'Paste a trial balance',   icon: ClipboardPaste,                  enabled: true },
-  { id: 'csv',         name: 'CSV',               sub: 'Upload a file',           icon: FileSpreadsheet,                 enabled: true },
-  { id: 'excel',       name: 'Excel',             sub: 'Upload a workbook',       icon: Files,                           enabled: true },
+  { id: 'clipboard',   name: 'Clipboard',         sub: 'Paste a trial balance',   icon: ClipboardPaste,                  enabled: false },
+  { id: 'csv',         name: 'CSV',               sub: 'Upload a file',           icon: FileSpreadsheet,                 enabled: false },
+  { id: 'excel',       name: 'Excel',             sub: 'Upload a workbook',       icon: Files,                           enabled: false },
   { id: 'xero',        name: 'Xero',              sub: 'Connected ledger',        icon: Cloud,                           enabled: false },
   { id: 'quickbooks',  name: 'QuickBooks',        sub: 'Connected ledger',        icon: Calculator,                      enabled: false },
   { id: 'sage',        name: 'Sage',              sub: 'Connected ledger',        icon: ReceiptText,                     enabled: false },
   { id: 'freeagent',   name: 'FreeAgent',         sub: 'Connected ledger',        icon: Wallet,                          enabled: false },
   { id: 'vt',          name: 'VT Transaction+',   sub: 'Import file',             icon: Table2,                          enabled: false },
-];
-
-/** Animated messages shown while importing (Stage 1). */
-export const IMPORT_STEPS: string[] = [
-  'Reading ledger',
-  'Detecting company',
-  'Detecting framework',
-  'Matching prior year',
-  'Preparing statutory accounts',
-];
-
-/** AI preparation checklist (Stage 2). */
-export const PREPARATION_STEPS: PreparationStep[] = [
-  { id: 'entity',    label: 'Entity detected' },
-  { id: 'framework', label: 'Framework selected' },
-  { id: 'tb',        label: 'Trial balance mapped' },
-  { id: 'comps',     label: 'Comparatives identified' },
-  { id: 'fs',        label: 'Financial statements built' },
-  { id: 'soce',      label: 'Statement of changes in equity prepared' },
-  { id: 'notes',     label: 'Notes generated' },
-  { id: 'policies',  label: 'Accounting policies drafted' },
-  { id: 'directors', label: "Directors' report drafted" },
-  { id: 'validate',  label: 'Companies House validation' },
 ];
 
 // ─── Stage 4: disclosure section templates ───────────────────────────────────
@@ -295,16 +272,6 @@ export function buildEngagement({ clientId, clientRef, companyName, entityType =
   };
 }
 
-/** The Acme Ltd sample used on the dashboard + when opening a demo engagement. */
-export function demoEngagement(): Engagement {
-  const e = buildEngagement({ clientId: null, clientRef: 'ACME01', companyName: 'Acme Ltd' });
-  e.id = 'eng-demo-acme';
-  e.source = 'bookkeeping';
-  e.stageStatus = { import: 'complete', preparation: 'complete', review: 'complete', disclosures: 'active', 'final-review': 'upcoming', publish: 'upcoming' };
-  e.review = { status: 'complete', reviewPoints: 17, serious: 4, journalsApproved: 3, workingPapers: true, outputId: null };
-  return e;
-}
-
 // ─── History list ──────────────────────────────────────────────────────────
 export type EngagementStatusTone = 'draft' | 'progress' | 'ready' | 'filed';
 
@@ -333,89 +300,3 @@ export function stageProgress(e: Engagement): number {
     .filter(s => e.stageStatus[s] === 'complete').length;
 }
 
-function makeHistoryItem(
-  opts: {
-    id: string; company: string; ref: string; entity: EntityType;
-    framework: string; periodEnd: string; comparativePeriod: string;
-    preparedBy: string; date: string; mine: boolean;
-    stageStatus: Engagement['stageStatus']; published: boolean;
-    review: Engagement['review'];
-  },
-): AccountsHistoryItem {
-  const e = buildEngagement({ clientId: null, clientRef: opts.ref, companyName: opts.company, entityType: opts.entity });
-  e.id = opts.id;
-  e.framework = opts.framework;
-  e.periodEnd = opts.periodEnd;
-  e.periodStart = shiftYearStart(opts.periodEnd);
-  e.comparativePeriod = opts.comparativePeriod;
-  e.preparedBy = opts.preparedBy;
-  e.source = 'bookkeeping';
-  e.stageStatus = opts.stageStatus;
-  e.published = opts.published;
-  e.review = opts.review;
-  return { id: opts.id, engagement: e, date: opts.date, mine: opts.mine };
-}
-
-/** dd-mm-yyyy one year + one day before a period end (for the period start). */
-function shiftYearStart(periodEnd: string): string {
-  const [d, m, y] = periodEnd.split('-').map(Number);
-  return `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y - 1}`;
-}
-
-const DONE = 'complete' as const;
-const reviewDone = (rp: number, ser: number, jn: number): Engagement['review'] =>
-  ({ status: 'complete', reviewPoints: rp, serious: ser, journalsApproved: jn, workingPapers: true, outputId: null });
-
-/** Demo history — a spread of statuses so the list looks lived-in. */
-export function demoHistory(): AccountsHistoryItem[] {
-  return [
-    {
-      id: 'eng-demo-acme',
-      engagement: demoEngagement(),
-      date: '03-07-2026 09:12',
-      mine: true,
-    },
-    makeHistoryItem({
-      id: 'eng-fusion', company: 'Fusion Hair Design Studio Ltd', ref: 'F173', entity: 'limited_company',
-      framework: 'FRS 105 (Micro-entity)', periodEnd: '30-04-2026', comparativePeriod: '30-04-2025',
-      preparedBy: 'Christos Marneros', date: '01-07-2026 16:07', mine: true,
-      stageStatus: { import: DONE, preparation: DONE, review: DONE, disclosures: DONE, 'final-review': DONE, publish: 'active' },
-      published: false, review: reviewDone(6, 0, 2),
-    }),
-    makeHistoryItem({
-      id: 'eng-cherry', company: 'Cherry Tree Fencing Ltd', ref: 'C368', entity: 'limited_company',
-      framework: 'FRS 102 Section 1A', periodEnd: '31-12-2025', comparativePeriod: '31-12-2024',
-      preparedBy: 'George Marneros', date: '18-06-2026 11:36', mine: false,
-      stageStatus: { import: DONE, preparation: DONE, review: DONE, disclosures: DONE, 'final-review': DONE, publish: DONE },
-      published: true, review: reviewDone(12, 1, 5),
-    }),
-    makeHistoryItem({
-      id: 'eng-bigfryer', company: 'Big Fryer Limited', ref: 'B1235', entity: 'limited_company',
-      framework: 'FRS 102 Section 1A', periodEnd: '31-03-2026', comparativePeriod: '31-03-2025',
-      preparedBy: 'Christos Marneros', date: '16-06-2026 21:00', mine: true,
-      stageStatus: { import: DONE, preparation: DONE, review: 'active', disclosures: 'upcoming', 'final-review': 'upcoming', publish: 'upcoming' },
-      published: false, review: { status: 'in-progress', reviewPoints: 0, serious: 0, journalsApproved: 0, workingPapers: false },
-    }),
-    makeHistoryItem({
-      id: 'eng-meadow', company: 'Meadow View LLP', ref: 'M204', entity: 'llp',
-      framework: 'FRS 102 Section 1A (LLP SORP)', periodEnd: '31-03-2026', comparativePeriod: '31-03-2025',
-      preparedBy: 'George Marneros', date: '11-06-2026 10:22', mine: false,
-      stageStatus: { import: DONE, preparation: DONE, review: DONE, disclosures: 'active', 'final-review': 'upcoming', publish: 'upcoming' },
-      published: false, review: reviewDone(9, 2, 3),
-    }),
-    makeHistoryItem({
-      id: 'eng-social', company: 'Social Storie Ltd', ref: 'S486', entity: 'limited_company',
-      framework: 'FRS 102 Section 1A', periodEnd: '30-09-2025', comparativePeriod: '30-09-2024',
-      preparedBy: 'Christos Marneros', date: '27-05-2026 16:04', mine: true,
-      stageStatus: { import: DONE, preparation: DONE, review: DONE, disclosures: DONE, 'final-review': DONE, publish: DONE },
-      published: true, review: reviewDone(11, 0, 4),
-    }),
-    makeHistoryItem({
-      id: 'eng-oak', company: 'Oak & Stone Joinery', ref: 'O091', entity: 'sole_trader',
-      framework: 'FRS 105', periodEnd: '05-04-2026', comparativePeriod: '05-04-2025',
-      preparedBy: 'George Marneros', date: '20-05-2026 09:48', mine: false,
-      stageStatus: { import: DONE, preparation: 'active', review: 'upcoming', disclosures: 'upcoming', 'final-review': 'upcoming', publish: 'upcoming' },
-      published: false, review: { status: 'not-started', reviewPoints: 0, serious: 0, journalsApproved: 0, workingPapers: false },
-    }),
-  ];
-}

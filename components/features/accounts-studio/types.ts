@@ -65,6 +65,29 @@ export interface DisclosureSection {
   entityTypes?: EntityType[];
 }
 
+// ── Imported ledger data (Stage 1 → real trial balance + statements) ─────────
+import type { FinancialStatements } from '@/lib/accounts-studio/statements';
+export type { FinancialStatements };
+
+export interface TrialBalanceRow {
+  name: string;
+  ledger: string | null;
+  accountType: string;
+  debit: number;
+  credit: number;
+}
+
+/** Where/when the trial balance was pulled from. */
+export interface ImportInfo {
+  bookId: string;
+  bookName: string;
+  from: string;              // yyyy-mm-dd (period start)
+  to: string;                // yyyy-mm-dd (period end)
+  priorFrom: string | null;  // yyyy-mm-dd (prior period start)
+  priorTo: string | null;    // yyyy-mm-dd (prior period end)
+  importedAt: string;        // dd-mm-yyyy HH:mm
+}
+
 export type ValidationStatus = 'pass' | 'warn' | 'fail' | 'running';
 
 export interface ValidationCheck {
@@ -119,6 +142,10 @@ export interface Engagement {
   disclosures: DisclosureSection[];
   validations: ValidationCheck[];
   published: boolean;
+  /** Real imported ledger data (populated by Stage 1 from a bookkeeping book). */
+  importInfo?: ImportInfo | null;
+  trialBalance?: TrialBalanceRow[] | null;
+  statements?: FinancialStatements | null;
 }
 
 export interface AssistantMessage {

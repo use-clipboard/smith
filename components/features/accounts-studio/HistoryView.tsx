@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Landmark, Plus, Search, X, FolderOpen, Download, Trash2, Loader2, Sparkles,
-  User as UserIcon, Filter, SlidersHorizontal,
+  User as UserIcon, Filter, SlidersHorizontal, AlertCircle,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -11,7 +11,8 @@ import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { EngagementStatusBadge } from './primitives';
-import { ENTITY_LABELS, engagementStatus, stageProgress, demoHistory, type AccountsHistoryItem } from './data';
+import { ENTITY_LABELS, engagementStatus, stageProgress, type AccountsHistoryItem } from './data';
+import { listEngagements, deleteEngagement } from './persistence';
 import type { Engagement } from './types';
 
 interface ColumnConfig {
@@ -44,7 +45,9 @@ export default function HistoryView({
   onNew: () => void;
   onOpen: (e: Engagement) => void;
 }) {
-  const [items, setItems] = useState<AccountsHistoryItem[]>(() => demoHistory());
+  const [items, setItems] = useState<AccountsHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [mineOnly, setMineOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
@@ -68,6 +71,16 @@ export default function HistoryView({
     });
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setLoadError('');
+    listEngagements()
+      .then(rows => { if (!cancelled) setItems(rows); })
+      .catch(err => { if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Could not load accounts.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -98,9 +111,16 @@ export default function HistoryView({
     }
   }
 
-  function remove(id: string) {
-    setItems(prev => prev.filter(i => i.id !== id));
+  async function remove(id: string) {
     setConfirmDeleteId(null);
+    const prev = items;
+    setItems(list => list.filter(i => i.id !== id)); // optimistic
+    try {
+      await deleteEngagement(id);
+    } catch {
+      setItems(prev); // restore on failure
+      alert('Could not delete this engagement. Please try again.');
+    }
   }
 
   const colCount = COLUMNS.filter(c => colVisible(c.key)).length + 1; // + actions
@@ -228,7 +248,25 @@ export default function HistoryView({
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={colCount} className="py-14 text-center">
+                    <Loader2 size={22} className="mx-auto mb-3 animate-spin text-[var(--accent)]" />
+                    <p className="text-sm text-[var(--text-muted)]">Loading accounts…</p>
+                  </td>
+                </tr>
+              )}
+
+              {!loading && loadError && (
+                <tr>
+                  <td colSpan={colCount} className="py-14 text-center">
+                    <AlertCircle size={26} className="mx-auto mb-3 text-red-400" />
+                    <p className="text-sm text-red-600">{loadError}</p>
+                  </td>
+                </tr>
+              )}
+
+              {!loading && !loadError && filtered.length === 0 && (
                 <tr>
                   <td colSpan={colCount} className="py-14 text-center">
                     <Landmark size={28} className="mx-auto mb-3 text-gray-300" />

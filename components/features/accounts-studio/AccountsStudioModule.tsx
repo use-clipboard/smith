@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Landmark, Sparkles, MessagesSquare, ChevronLeft, Plus, ArrowRight, Clock3,
   Building2, ScrollText, ShieldCheck, PanelRightClose, PanelRightOpen,
+  Loader2, Check, CloudOff,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { type SelectedClient } from '@/components/ui/ClientSelector';
@@ -19,7 +20,10 @@ import StageDisclosures from './stages/StageDisclosures';
 import StageFinalReview from './stages/StageFinalReview';
 import StagePublish from './stages/StagePublish';
 import { STAGES, ENTITY_LABELS, buildEngagement, entityFromBusinessType } from './data';
+import { createEngagement, saveEngagement } from './persistence';
 import type { Engagement, StageId, EntityType } from './types';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const ALL_STAGES: StageId[] = ['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'];
 const ENTITY_CHOICES: EntityType[] = ['limited_company', 'sole_trader', 'partnership', 'llp', 'cic', 'charity', 'trust', 'dormant_company'];
@@ -30,6 +34,30 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
   const [engagement, setEngagement] = useState<Engagement | null>(null);
   const [stage, setStage] = useState<StageId>('import');
   const [assistantOpen, setAssistantOpen] = useState(true);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+
+  // Autosave plumbing. `lastSaved` holds the JSON we last persisted (or loaded)
+  // so we don't re-save an untouched engagement — e.g. right after opening one.
+  const lastSaved = useRef<string>('');
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced autosave whenever the engagement changes and differs from what's
+  // stored. Skips engagements without a persisted id (shouldn't happen — every
+  // engagement is created server-side before it opens).
+  useEffect(() => {
+    if (!engagement) return;
+    const snapshot = JSON.stringify(engagement);
+    if (snapshot === lastSaved.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaveState('saving');
+    saveTimer.current = setTimeout(() => {
+      const toSave = engagement;
+      saveEngagement(toSave)
+        .then(() => { lastSaved.current = snapshot; setSaveState('saved'); })
+        .catch(() => setSaveState('error'));
+    }, 900);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [engagement]);
 
   // ── Preview gate ────────────────────────────────────────────────────────────
   if (!allowed) return <ComingSoon />;
@@ -39,6 +67,8 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
   }
 
   function openEngagement(e: Engagement) {
+    lastSaved.current = JSON.stringify(e); // freshly loaded — nothing to save yet
+    setSaveState('idle');
     setEngagement(e);
     // Land on the stage the user was last working in: the active stage, else the
     // first incomplete stage, else the final stage (published / all-complete).
@@ -49,7 +79,18 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
     setAssistantOpen(active !== 'disclosures');
   }
 
-  function closeEngagement() {
+  /** Create the engagement server-side, then open it. */
+  async function startNewEngagement(built: Engagement) {
+    const created = await createEngagement(built);
+    openEngagement(created);
+  }
+
+  async function closeEngagement() {
+    // Flush any unsaved edits so the history list reflects the latest state.
+    if (engagement && JSON.stringify(engagement) !== lastSaved.current) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      try { await saveEngagement(engagement); } catch { /* leave draft; user can retry */ }
+    }
     setEngagement(null);
     setView('history');
   }
@@ -83,7 +124,7 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
           iconColor="#6366F1"
           wide
         >
-          <NewAccounts onStart={openEngagement} onBack={() => setView('history')} />
+          <NewAccounts onStart={startNewEngagement} onBack={() => setView('history')} />
         </ToolLayout>
       );
     }
@@ -102,6 +143,7 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
       wide
       headerRight={
         <div className="flex items-center gap-2">
+          <SaveIndicator state={saveState} />
           <button onClick={() => setAssistantOpen(v => !v)} className="btn-secondary">
             {assistantOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} Assistant
           </button>
@@ -145,6 +187,18 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
   );
 }
 
+// ─── Autosave indicator ────────────────────────────────────────────────────────
+function SaveIndicator({ state }: { state: SaveState }) {
+  if (state === 'idle') return null;
+  const map: Record<Exclude<SaveState, 'idle'>, { icon: React.ReactNode; text: string; cls: string }> = {
+    saving: { icon: <Loader2 size={12} className="animate-spin" />, text: 'Saving…',  cls: 'text-[var(--text-muted)]' },
+    saved:  { icon: <Check size={12} />,                            text: 'Saved',     cls: 'text-emerald-600' },
+    error:  { icon: <CloudOff size={12} />,                         text: 'Not saved', cls: 'text-red-600' },
+  };
+  const m = map[state];
+  return <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${m.cls}`}>{m.icon}{m.text}</span>;
+}
+
 // ─── Company header card ───────────────────────────────────────────────────────
 function CompanyHeader({ engagement: e }: { engagement: Engagement }) {
   const initials = e.companyName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -184,11 +238,13 @@ function HeaderField({ label, value }: { label: string; value: string }) {
 }
 
 // ─── New accounts setup (mirrors the Performance "Business Details" step) ─────────
-function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => void; onBack: () => void }) {
+function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => Promise<void>; onBack: () => void }) {
   const [client, setClient] = useState<SelectedClient | null>(null);
   const [companyName, setCompanyName] = useState('');
   const [entity, setEntity] = useState<EntityType>('limited_company');
   const [nameEdited, setNameEdited] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState('');
 
   function selectClient(c: SelectedClient | null) {
     setClient(c);
@@ -198,16 +254,22 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => void; on
     }
   }
 
-  const canStart = !!client;
+  const canStart = !!client && !creating;
 
-  function startNew() {
+  async function startNew() {
     if (!client) return;
-    onStart(buildEngagement({
-      clientId: client.id,
-      clientRef: client.client_ref,
-      companyName: (companyName.trim() || client.name),
-      entityType: entity,
-    }));
+    setCreating(true); setError('');
+    try {
+      await onStart(buildEngagement({
+        clientId: client.id,
+        clientRef: client.client_ref,
+        companyName: (companyName.trim() || client.name),
+        entityType: entity,
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start the engagement.');
+      setCreating(false);
+    }
   }
 
   return (
@@ -304,13 +366,19 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => void; on
         </div>
       </div>
 
+      {error && (
+        <p className="text-right text-[12px] font-medium text-red-600">{error}</p>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="btn-secondary bg-white text-[var(--text-primary)]">
           <ChevronLeft size={14} /> Back
         </button>
         <button onClick={startNew} disabled={!canStart} className="btn-primary disabled:opacity-40">
-          <Plus size={15} /> Start accounts production <ArrowRight size={15} />
+          {creating ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+          {creating ? 'Starting…' : 'Start accounts production'}
+          {!creating && <ArrowRight size={15} />}
         </button>
       </div>
     </div>
