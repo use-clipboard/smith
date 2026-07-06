@@ -490,15 +490,15 @@ function ProposalCard({
 
       {/* Lines */}
       <div className="px-3.5 py-2.5">
-        <div className="grid grid-cols-[1fr_92px_92px_28px] gap-x-2 gap-y-1 items-center text-[11px] text-slate-400 uppercase tracking-wide mb-1">
+        <div className="grid grid-cols-[minmax(0,1fr)_84px_84px_24px] gap-x-2 gap-y-1 items-center text-[11px] text-slate-400 uppercase tracking-wide mb-1">
           <span>Account</span>
           <span className="text-right">Debit</span>
           <span className="text-right">Credit</span>
           <span />
         </div>
         {entry.splits.map(s => (
-          <div key={s.key} className="grid grid-cols-[1fr_92px_92px_28px] gap-x-2 gap-y-1 items-start py-1 border-t border-slate-50 first:border-t-0">
-            <div>
+          <div key={s.key} className="grid grid-cols-[minmax(0,1fr)_84px_84px_24px] gap-x-2 gap-y-1 items-start py-1 border-t border-slate-50 first:border-t-0">
+            <div className="min-w-0">
               {posted ? (
                 <span className="text-sm text-slate-700">{s.account_display}</span>
               ) : (
@@ -567,7 +567,7 @@ function ProposalCard({
         ))}
 
         {/* Totals + add line */}
-        <div className="grid grid-cols-[1fr_92px_92px_28px] gap-x-2 items-center pt-2 mt-1 border-t border-slate-200 text-sm">
+        <div className="grid grid-cols-[minmax(0,1fr)_84px_84px_24px] gap-x-2 items-center pt-2 mt-1 border-t border-slate-200 text-sm">
           {!posted ? (
             <button
               type="button"

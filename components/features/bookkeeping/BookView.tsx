@@ -639,7 +639,7 @@ export default function BookView({ bookId, userRole, currentUserId, currentUserN
 
         {/* AI assistant — toggleable right-hand panel. Kept mounted and hidden
             via display so the conversation survives closing/reopening. */}
-        <div className={assistantOpen ? 'hidden xl:block w-[380px] shrink-0 sticky top-4 self-start' : 'hidden'}>
+        <div className={assistantOpen ? 'hidden xl:block w-[420px] shrink-0 sticky top-4 self-start' : 'hidden'}>
           <BookAssistantTab bookId={bookId} bookName={book.name} onPosted={bumpRefresh} active={assistantOpen} fromIso={activePeriod.fromIso} toIso={activePeriod.toIso} />
         </div>
         </div>
