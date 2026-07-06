@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
-  Loader2, Send, Signature, Landmark, Archive, PartyPopper, Download, AlertCircle,
+  Loader2, Send, Signature, Landmark, Archive, PartyPopper, Download, AlertCircle, Scissors, Info,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
+import { filletEligibility } from '@/lib/accounts-studio/statements';
 import { publishEngagement } from '../persistence';
 import type { Engagement } from '../types';
 
@@ -48,11 +49,12 @@ export default function StagePublish({
   const [error, setError] = useState('');
 
   const ready = !!engagement.statements;
+  const fillet = filletEligibility(engagement.entityType, engagement.size);
 
-  async function download(suffix: string, docId: string) {
+  async function download(suffix: string, docId: string, filleted = false) {
     setBusyDoc(docId); setError('');
     try {
-      const blob = await generatePdfBlob(buildAccountsPackHtml(engagement));
+      const blob = await generatePdfBlob(buildAccountsPackHtml(engagement, { filleted }));
       downloadBlob(blob, fileName(engagement, suffix));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the PDF.');
@@ -143,6 +145,31 @@ export default function StagePublish({
               </div>
             );
           })}
+          {/* Filleted accounts for Companies House — only when the company/LLP
+              qualifies for the small companies regime. */}
+          {fillet.eligible && (
+            <div className="flex items-center gap-3 px-6 py-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Scissors size={17} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">Filleted Accounts</p>
+                <p className="text-[11px] text-[var(--text-muted)]">For filing with Companies House — balance sheet + notes, no P&amp;L or directors&apos; report.</p>
+              </div>
+              <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-indigo-600">Companies House</span>
+              <button onClick={() => download('Filleted_Accounts', 'filleted', true)} disabled={busyDoc !== null}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-50">
+                {busyDoc === 'filleted' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} {busyDoc === 'filleted' ? 'Building…' : 'Download'}
+              </button>
+            </div>
+          )}
+          {fillet.filingEntity && !fillet.eligible && (
+            <div className="flex items-start gap-3 px-6 py-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><Info size={17} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">Filleted accounts not available</p>
+                <p className="text-[11px] text-[var(--text-muted)]">{fillet.reason}</p>
+              </div>
+            </div>
+          )}
           {COMING_SOON.map(doc => {
             const Icon = doc.icon;
             return (

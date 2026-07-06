@@ -189,6 +189,31 @@ export function detectSize(turnover: number, grossAssets: number): StudioSize {
   return 'large';
 }
 
+// ── Filleted accounts eligibility (Companies House filing) ───────────────────
+// Only companies/LLPs that qualify as small (or micro) under the small companies
+// regime may deliver "filleted" accounts (balance sheet + notes, no P&L /
+// directors' report). Medium/large entities must file full accounts.
+const FILING_ENTITIES = ['limited_company', 'cic', 'dormant_company', 'llp'];
+
+export function filletEligibility(entityType: string, size: StudioSize): {
+  filingEntity: boolean;   // files at Companies House at all
+  eligible: boolean;       // may fillet
+  reason: string;          // why not, when !eligible
+} {
+  if (!FILING_ENTITIES.includes(entityType)) {
+    return { filingEntity: false, eligible: false, reason: 'Filleted accounts apply only to companies and LLPs that file at Companies House.' };
+  }
+  if (size === 'micro' || size === 'small') {
+    return { filingEntity: true, eligible: true, reason: '' };
+  }
+  const kind = entityType === 'llp' ? 'LLP' : 'company';
+  return {
+    filingEntity: true,
+    eligible: false,
+    reason: `This is a ${size}-sized ${kind}, so it doesn't qualify for the small companies regime. Full accounts must be delivered to Companies House — filleted accounts aren't permitted.`,
+  };
+}
+
 /** Applicable framework label from entity type + size. */
 export function detectFramework(entityType: string, size: StudioSize): string {
   if (entityType === 'charity') return 'FRS 102 (Charities SORP)';
