@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft } from 'lucide-react';
+import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2 } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
+import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
+import type { BalanceAccount, BalanceAccountType } from '@/lib/bookkeeping/balances';
 import { StudioCard } from '../primitives';
 import StatementsView from '../StatementsView';
 import type { Engagement, FinancialStatements, TrialBalanceRow } from '../types';
@@ -13,6 +15,7 @@ interface BookRow {
   name: string;
   client_id: string | null;
   base_currency: string;
+  client?: { id: string; name: string; client_ref: string | null } | null;
 }
 interface FyRow { id: string; start_date: string; end_date: string; status: string }
 
@@ -52,8 +55,10 @@ export default function StageImport({
   advance: () => void;
 }) {
   const imported = !!(engagement.statements && engagement.importInfo);
-  const [phase, setPhase] = useState<'source' | 'configure'>(
-    engagement.source === 'bookkeeping' && !imported ? 'configure' : 'source',
+  const [phase, setPhase] = useState<'source' | 'configure' | 'manual'>(
+    !imported && engagement.source === 'bookkeeping' ? 'configure'
+      : !imported && engagement.source === 'clipboard' ? 'manual'
+        : 'source',
   );
 
   // ── Imported summary (real data) ───────────────────────────────────────────
@@ -84,7 +89,7 @@ export default function StageImport({
 
         <div className="flex items-center justify-between">
           <button
-            onClick={() => { patch(e => ({ ...e, statements: null, importInfo: null, trialBalance: null })); setPhase('configure'); }}
+            onClick={() => { patch(e => ({ ...e, statements: null, importInfo: null, trialBalance: null, source: null })); setPhase('source'); }}
             className="btn-secondary bg-white text-[var(--text-primary)]"
           >
             <RefreshCw size={14} /> Re-import
@@ -148,6 +153,52 @@ export default function StageImport({
     );
   }
 
+  // ── Paste / CSV (manual) ────────────────────────────────────────────────────
+  if (phase === 'manual') {
+    return (
+      <ManualImport
+        engagement={engagement}
+        onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
+        onImported={(p) => {
+          patch(e => ({
+            ...e,
+            source: 'clipboard',
+            statements: p.statements,
+            trialBalance: p.trialBalance,
+            size: p.size,
+            microEligible: p.size === 'micro',
+            framework: p.framework,
+            periodStart: isoToUk(p.fromIso),
+            periodEnd: isoToUk(p.toIso),
+            comparativePeriod: '',
+            accountsDue: e.chLinked ? e.accountsDue : isoPlusMonthsUk(p.toIso, 9),
+            chDeadline: e.chLinked ? e.chDeadline : isoPlusMonthsUk(p.toIso, 9),
+            disclosures: e.disclosuresSeeded
+              ? e.disclosures
+              : buildDisclosures({
+                  entityType: e.entityType,
+                  size: p.size,
+                  framework: p.framework,
+                  statements: p.statements,
+                  priorYear: '',
+                  directors: e.directors,
+                }),
+            disclosuresSeeded: true,
+            importInfo: {
+              bookId: '',
+              bookName: 'Manual / CSV entry',
+              from: p.fromIso,
+              to: p.toIso,
+              priorFrom: null,
+              priorTo: null,
+              importedAt: nowStamp(),
+            },
+          }));
+        }}
+      />
+    );
+  }
+
   // ── Source picker ──────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl">
@@ -159,7 +210,7 @@ export default function StageImport({
         {IMPORT_SOURCES.map(s => (
           <button
             key={s.id}
-            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); } }}
+            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); } }}
             disabled={!s.enabled}
             aria-disabled={!s.enabled}
             className={`group flex flex-col items-start gap-3 rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all ${
@@ -205,7 +256,9 @@ function BookkeepingImport({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
 
-  // Load the client's books.
+  // Load ALL the firm's books. The client's own books are grouped first, but a
+  // book that isn't linked to this client can still be chosen (some firms keep a
+  // single book, or the allocation just hasn't been set).
   useEffect(() => {
     let cancelled = false;
     setLoadingBooks(true); setError('');
@@ -213,9 +266,10 @@ function BookkeepingImport({
       .then(r => r.ok ? r.json() : Promise.reject(new Error('Could not load books')))
       .then((d: { books: BookRow[] }) => {
         if (cancelled) return;
-        const mine = (d.books ?? []).filter(b => b.client_id === engagement.clientId);
-        setBooks(mine);
-        if (mine.length === 1) setBookId(mine[0].id);
+        const all = d.books ?? [];
+        setBooks(all);
+        const mine = all.filter(b => b.client_id === engagement.clientId);
+        if (mine.length === 1) setBookId(mine[0].id); // auto-select the obvious one
       })
       .catch(() => { if (!cancelled) setError('Could not load bookkeeping books.'); })
       .finally(() => { if (!cancelled) setLoadingBooks(false); });
@@ -243,6 +297,15 @@ function BookkeepingImport({
   const priorFy = selectedFy
     ? years.filter(y => y.end_date < selectedFy.end_date).sort((a, b) => b.end_date.localeCompare(a.end_date))[0] ?? null
     : null;
+
+  const clientBooks = books.filter(b => b.client_id === engagement.clientId);
+  const otherBooks  = books.filter(b => b.client_id !== engagement.clientId);
+  const selectedBook = books.find(b => b.id === bookId) ?? null;
+  const bookUnlinked = !!selectedBook && selectedBook.client_id !== engagement.clientId;
+  const bookLabel = (b: BookRow) => {
+    const owner = b.client ? ` — ${b.client.name}` : (b.client_id ? '' : ' — Unallocated');
+    return `${b.name}${owner} · ${b.base_currency}`;
+  };
 
   async function runImport() {
     if (!bookId || !selectedFy) return;
@@ -288,7 +351,7 @@ function BookkeepingImport({
           <div className="flex items-center gap-2 py-8 text-sm text-[var(--text-muted)]"><Loader2 size={15} className="animate-spin" /> Loading books…</div>
         ) : books.length === 0 ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-            No bookkeeping books are linked to this client yet. Create one in the Bookkeeping tool (and allocate it to this client) first.
+            No bookkeeping books exist in your firm yet. Create one in the Bookkeeping tool first, then come back to import.
           </div>
         ) : (
           <div className="space-y-4">
@@ -296,8 +359,23 @@ function BookkeepingImport({
               <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Book</label>
               <select value={bookId} onChange={e => setBookId(e.target.value)} className="input-base py-2 text-sm">
                 <option value="">Select a book…</option>
-                {books.map(b => <option key={b.id} value={b.id}>{b.name} · {b.base_currency}</option>)}
+                {clientBooks.length > 0 && (
+                  <optgroup label="This client's books">
+                    {clientBooks.map(b => <option key={b.id} value={b.id}>{bookLabel(b)}</option>)}
+                  </optgroup>
+                )}
+                {otherBooks.length > 0 && (
+                  <optgroup label={clientBooks.length > 0 ? 'Other books' : 'All books (not linked to this client)'}>
+                    {otherBooks.map(b => <option key={b.id} value={b.id}>{bookLabel(b)}</option>)}
+                  </optgroup>
+                )}
               </select>
+              {clientBooks.length === 0 && (
+                <p className="mt-1.5 text-[11.5px] text-amber-700">No book is linked to this client — pick one below, or allocate a book to the client in Bookkeeping.</p>
+              )}
+              {bookUnlinked && (
+                <p className="mt-1.5 text-[11.5px] text-[var(--text-muted)]">This book isn&apos;t linked to {engagement.companyName} — its trial balance will be used as-is.</p>
+              )}
             </div>
 
             <div>
@@ -336,6 +414,250 @@ function BookkeepingImport({
             </button>
           </div>
         )}
+      </StudioCard>
+    </div>
+  );
+}
+
+// ─── Manual / CSV import panel ───────────────────────────────────────────────
+type BalType = BalanceAccountType;
+interface ManualRow { name: string; type: BalType; ledger: string; debit: number; credit: number }
+interface ManualPayload {
+  statements: FinancialStatements;
+  trialBalance: TrialBalanceRow[];
+  size: Engagement['size'];
+  framework: string;
+  fromIso: string;
+  toIso: string;
+}
+
+const TYPE_OPTIONS: { value: BalType; label: string }[] = [
+  { value: 'income', label: 'Income' },
+  { value: 'expense', label: 'Expense' },
+  { value: 'asset', label: 'Asset' },
+  { value: 'liability', label: 'Liability' },
+  { value: 'equity', label: 'Equity' },
+];
+
+function parseNum(s: string): number {
+  const t = (s ?? '').replace(/[£$,\s]/g, '').trim();
+  if (!t || t === '-') return 0;
+  if (/^\(.*\)$/.test(t)) return -Math.abs(parseFloat(t.replace(/[()]/g, '')) || 0);
+  const n = parseFloat(t);
+  return isNaN(n) ? 0 : n;
+}
+function defaultLedger(type: BalType): string {
+  switch (type) {
+    case 'income': return 'Income';
+    case 'expense': return 'Administrative expenses';
+    case 'asset': return 'Fixed assets';
+    case 'liability': return 'Creditors';
+    case 'equity': return 'Capital and reserves';
+  }
+}
+function mapTypeCell(s: string): BalType | null {
+  if (!s) return null;
+  if (/income|revenue|sales|turnover/.test(s)) return 'income';
+  if (/expense|cost|overhead|admin/.test(s)) return 'expense';
+  if (/asset/.test(s)) return 'asset';
+  if (/liab|creditor|payable/.test(s)) return 'liability';
+  if (/equity|capital|reserve/.test(s)) return 'equity';
+  return null;
+}
+/** Heuristic classification of an account name into a statement type + ledger. */
+function classify(name: string): { type: BalType; ledger: string } {
+  const n = name.toLowerCase();
+  if (/(sales|revenue|turnover|fees|takings|grant income|rental income|\bincome\b)/.test(n)) return { type: 'income', ledger: 'Income' };
+  if (/(cost of sales|cogs|purchases|materials|direct cost|opening stock|closing stock)/.test(n)) return { type: 'expense', ledger: 'Cost of sales' };
+  if (/(debtor|receivable|prepay|accrued income)/.test(n)) return { type: 'asset', ledger: 'Debtors' };
+  if (/(bank|cash|petty)/.test(n)) return { type: 'asset', ledger: 'Cash at bank and in hand' };
+  if (/(stock|inventory|work in progress|\bwip\b)/.test(n)) return { type: 'asset', ledger: 'Stocks' };
+  if (/(fixed asset|equipment|plant|machinery|vehicle|motor|fixtures|fittings|property|land|building|computer|goodwill|intangible|investment)/.test(n)) return { type: 'asset', ledger: 'Fixed assets' };
+  if (/(\bvat\b|paye|\bnic\b|corporation tax|\btax\b)/.test(n)) return { type: 'liability', ledger: 'Taxation and social security' };
+  if (/(creditor|payable|accrual|loan|overdraft|deferred|hire purchase|\bhp\b)/.test(n)) return { type: 'liability', ledger: 'Creditors' };
+  if (/(share capital|called up|ordinary shares|capital account|reserve|retained|p&l reserve|profit and loss account|drawings|equity)/.test(n)) return { type: 'equity', ledger: 'Capital and reserves' };
+  return { type: 'expense', ledger: 'Administrative expenses' };
+}
+/** Parse pasted / CSV trial-balance text into classified rows. */
+function parseTrialBalance(raw: string): ManualRow[] {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const splitLine = (l: string) => (l.includes('\t') ? l.split('\t') : l.split(',')).map(c => c.trim());
+
+  let startIdx = 0, idxName = 0, idxDebit = -1, idxCredit = -1, idxType = -1, idxAmount = -1;
+  const first = splitLine(lines[0]).map(c => c.toLowerCase());
+  if (first.some(c => /debit|credit|amount|balance|account|nominal/.test(c))) {
+    startIdx = 1;
+    first.forEach((c, i) => {
+      if (/account|name|nominal|description/.test(c) && idxName === 0) idxName = i;
+      if (/debit|\bdr\b/.test(c)) idxDebit = i;
+      if (/credit|\bcr\b/.test(c)) idxCredit = i;
+      if (/type|category|class/.test(c)) idxType = i;
+      if (/amount|balance/.test(c)) idxAmount = i;
+    });
+  }
+
+  const rows: ManualRow[] = [];
+  for (let i = startIdx; i < lines.length; i++) {
+    const cells = splitLine(lines[i]);
+    if (cells.length < 2) continue;
+    const name = (cells[idxName] ?? cells[0] ?? '').trim();
+    if (!name) continue;
+    let debit = 0, credit = 0;
+    if (idxDebit >= 0 || idxCredit >= 0) {
+      debit = parseNum(cells[idxDebit] ?? ''); credit = parseNum(cells[idxCredit] ?? '');
+    } else if (idxAmount >= 0) {
+      const amt = parseNum(cells[idxAmount] ?? ''); if (amt >= 0) debit = amt; else credit = -amt;
+    } else {
+      const nums = cells.slice(1);
+      if (nums.length >= 2) { debit = parseNum(nums[nums.length - 2]); credit = parseNum(nums[nums.length - 1]); }
+      else if (nums.length === 1) { const amt = parseNum(nums[0]); if (amt >= 0) debit = amt; else credit = -amt; }
+    }
+    if (Math.abs(debit) < 0.005 && Math.abs(credit) < 0.005) continue;
+    const typeCell = idxType >= 0 ? (cells[idxType] ?? '').toLowerCase() : '';
+    const mapped = mapTypeCell(typeCell);
+    const c = mapped ? { type: mapped, ledger: defaultLedger(mapped) } : classify(name);
+    rows.push({ name, type: c.type, ledger: c.ledger, debit, credit });
+  }
+  return rows;
+}
+/** yyyy-mm-dd one year and a day earlier (default period start from a year end). */
+function defaultStart(toIso: string): string {
+  const [y, m, d] = toIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y - 1, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+const money0 = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
+
+function ManualImport({
+  engagement, onBack, onImported,
+}: {
+  engagement: Engagement;
+  onBack: () => void;
+  onImported: (p: ManualPayload) => void;
+}) {
+  const [raw, setRaw] = useState('');
+  const [rows, setRows] = useState<ManualRow[]>([]);
+  const [toIso, setToIso] = useState('');
+  const [fromIso, setFromIso] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => { setRows(raw.trim() ? parseTrialBalance(raw) : []); }, [raw]);
+
+  const totalDr = rows.reduce((s, r) => s + r.debit, 0);
+  const totalCr = rows.reduce((s, r) => s + r.credit, 0);
+  const diff = Math.abs(totalDr - totalCr);
+  const balanced = diff < 0.5;
+
+  function setType(i: number, type: BalType) {
+    setRows(rs => rs.map((r, idx) => idx === i ? { ...r, type, ledger: defaultLedger(type) } : r));
+  }
+
+  function build() {
+    if (!rows.length) { setError('Paste a trial balance first.'); return; }
+    if (!toIso) { setError('Enter the year-end date.'); return; }
+    setError('');
+    const accounts: BalanceAccount[] = rows.map((r, i) => ({
+      id: `m${i}`, name: r.name, ledger: r.ledger, account_type: r.type, code: null,
+      debit_total: +r.debit.toFixed(2), credit_total: +r.credit.toFixed(2), balance: +(r.debit - r.credit).toFixed(2),
+    }));
+    const bsNetProfit = +accounts
+      .filter(a => a.account_type === 'income' || a.account_type === 'expense')
+      .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
+    const statements = buildStatements({ pl: accounts, bs: accounts, bsNetProfit }, null);
+    const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
+    const framework = detectFramework(engagement.entityType, size);
+    const trialBalance: TrialBalanceRow[] = rows.map(r => ({ name: r.name, ledger: r.ledger, accountType: r.type, debit: r.debit, credit: r.credit }));
+    onImported({ statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso });
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+        <ChevronLeft size={13} /> Choose a different source
+      </button>
+
+      <StudioCard className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><ClipboardPaste size={18} /></span>
+          <div>
+            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Paste a trial balance</h3>
+            <p className="text-[12px] text-[var(--text-muted)]">Paste from a spreadsheet or CSV — SMITH classifies each line; correct any it gets wrong.</p>
+          </div>
+        </div>
+
+        <textarea
+          value={raw}
+          onChange={e => setRaw(e.target.value)}
+          rows={6}
+          placeholder={'Account, Debit, Credit\nSales, 0, 120000\nCost of sales, 40000, 0\nRent, 12000, 0\nBank, 5000, 0\nTrade debtors, 26000, 0\nTrade creditors, 0, 8000\nShare capital, 0, 100'}
+          className="input-base w-full font-mono text-[12px] leading-relaxed"
+        />
+
+        {rows.length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-xs font-semibold text-[var(--text-secondary)]">{rows.length} account{rows.length === 1 ? '' : 's'} detected</p>
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${balanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {balanced ? <><Check size={11} /> Balanced</> : <><AlertCircle size={11} /> Out by {money0(diff)}</>}
+              </span>
+            </div>
+            <div className="max-h-64 overflow-y-auto rounded-xl border border-[var(--border)]">
+              <table className="w-full text-[12px]">
+                <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-semibold">Account</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Type</th>
+                    <th className="px-2 py-1.5 text-right font-semibold">Debit</th>
+                    <th className="px-2 py-1.5 text-right font-semibold">Credit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-2 py-1 text-[var(--text-primary)]">{r.name}</td>
+                      <td className="px-2 py-1">
+                        <select value={r.type} onChange={e => setType(i, e.target.value as BalType)}
+                          className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11.5px]">
+                          {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums text-[var(--text-secondary)]">{r.debit ? r.debit.toLocaleString('en-GB', { minimumFractionDigits: 2 }) : ''}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-[var(--text-secondary)]">{r.credit ? r.credit.toLocaleString('en-GB', { minimumFractionDigits: 2 }) : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Period start</label>
+                <input type="date" value={fromIso} onChange={e => setFromIso(e.target.value)} className="input-base py-1.5 text-sm" />
+                <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Optional — defaults to a year before the end.</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
+                <input type="date" value={toIso} onChange={e => setToIso(e.target.value)} className="input-base py-1.5 text-sm" />
+              </div>
+            </div>
+
+            {!balanced && (
+              <p className="mt-2 text-[11.5px] text-amber-700">Debits and credits don&apos;t agree — check the paste, then continue if it&apos;s expected.</p>
+            )}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
+
+        <button onClick={build} disabled={!rows.length || !toIso} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
+          <Table2 size={15} /> Build accounts from {rows.length || 0} row{rows.length === 1 ? '' : 's'}
+        </button>
       </StudioCard>
     </div>
   );

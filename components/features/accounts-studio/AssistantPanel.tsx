@@ -74,7 +74,6 @@ export default function AssistantPanel({ engagement }: { engagement: Engagement 
           <p className="text-[13px] font-bold text-[var(--text-primary)]">AI assistant</p>
           <p className="truncate text-[11px] text-[var(--text-muted)]">Statutory accounts &amp; UK standards</p>
         </div>
-        <span className="rounded-full bg-[var(--accent)]/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--accent)]">Beta</span>
       </div>
 
       {/* Messages */}
