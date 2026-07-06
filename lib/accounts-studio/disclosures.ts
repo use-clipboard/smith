@@ -92,18 +92,24 @@ const NOTE_DEFS: NoteDef[] = [
     id: 'policies', title: 'Accounting Policies',
     requirement: 'Basis of preparation and the specific policies applied to material balances.',
     applies: () => true,
-    build: ctx => ({
-      status: 'complete',
-      content: `<h3>Accounting policies</h3>`
-        + `<p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with ${ctx.framework} and the Companies Act 2006, under the historical cost convention.</p>`
-        + `<p><strong>Turnover.</strong> Turnover represents amounts receivable for goods and services net of VAT and trade discounts, recognised in the period in which the goods or services are provided.</p>`
-        + `<p><strong>Tangible fixed assets.</strong> Tangible fixed assets are stated at cost less accumulated depreciation. Depreciation is provided to write off the cost less estimated residual value of each asset over its expected useful life.</p>`,
-    }),
+    build: ctx => isMicro(ctx)
+      ? ({
+          // Micro-entity accounts need only a basis-of-preparation statement.
+          status: 'complete',
+          content: `<h3>Basis of preparation</h3><p>These financial statements have been prepared in accordance with the micro-entity provisions of FRS 105 "The Financial Reporting Standard applicable to the Micro-entities Regime" and the Companies Act 2006, under the historical cost convention.</p>`,
+        })
+      : ({
+          status: 'complete',
+          content: `<h3>Accounting policies</h3>`
+            + `<p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with ${ctx.framework} and the Companies Act 2006, under the historical cost convention.</p>`
+            + `<p><strong>Turnover.</strong> Turnover represents amounts receivable for goods and services net of VAT and trade discounts, recognised in the period in which the goods or services are provided.</p>`
+            + `<p><strong>Tangible fixed assets.</strong> Tangible fixed assets are stated at cost less accumulated depreciation. Depreciation is provided to write off the cost less estimated residual value of each asset over its expected useful life.</p>`,
+        }),
   },
   {
     id: 'directors-report', title: "Directors' Report",
     requirement: 'Principal activity, results, dividends and directors who served in the period.',
-    applies: ctx => isCompany(ctx.entityType),
+    applies: ctx => isCompany(ctx.entityType) && !isMicro(ctx),
     build: ctx => ({
       status: 'needs-review',
       content: `<h3>Directors' report</h3>`
@@ -141,7 +147,7 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'fixed-assets', title: 'Fixed Assets',
     requirement: 'Cost, additions, depreciation and net book value by class of asset.',
-    applies: () => true,
+    applies: ctx => !isMicro(ctx),
     build: ctx => {
       const lines = collectLines(ctx.statements?.balanceSheet.fixedAssets, []);
       if (lines.length) {
@@ -161,7 +167,7 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'debtors', title: 'Debtors',
     requirement: 'Amounts falling due within and after more than one year.',
-    applies: () => true,
+    applies: ctx => !isMicro(ctx),
     build: ctx => {
       const lines = collectLines(ctx.statements?.balanceSheet.currentAssets, ['debtor', 'receivable', 'prepay', 'accrued income']);
       if (lines.length) {
@@ -180,7 +186,7 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'creditors', title: 'Creditors',
     requirement: 'Amounts falling due within and after more than one year, including tax and VAT.',
-    applies: () => true,
+    applies: ctx => !isMicro(ctx),
     build: ctx => {
       const within = collectLines(ctx.statements?.balanceSheet.creditorsWithin, []);
       const after = collectLines(ctx.statements?.balanceSheet.creditorsAfter, []);
@@ -201,16 +207,36 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'related-parties', title: 'Related Parties',
     requirement: 'Transactions with directors and other related parties, including loan balances.',
-    applies: () => true,
+    applies: ctx => !isMicro(ctx),
     build: () => ({
       status: 'needs-review',
       content: `<h3>Related party transactions</h3><p>Details of any transactions with directors and other related parties, including any loan balances and the terms on which they arose, should be set out here.</p>`,
     }),
   },
   {
+    // Micro-entity footnote (FRS 105) — advances, credit and guarantees to directors.
+    id: 'micro-directors', title: "Directors' Advances & Guarantees",
+    requirement: 'Advances, credit and guarantees granted to directors (micro-entity footnote).',
+    applies: ctx => isMicro(ctx) && isCompany(ctx.entityType),
+    build: () => ({
+      status: 'needs-review',
+      content: `<h3>Advances, credit and guarantees granted to directors</h3><p>There were no advances, credits or guarantees granted to the directors during the year — please confirm, or set out the details required by section 413 of the Companies Act 2006.</p>`,
+    }),
+  },
+  {
+    // Micro-entity footnote (FRS 105) — guarantees and other financial commitments.
+    id: 'micro-commitments', title: 'Financial Commitments',
+    requirement: 'Guarantees and other financial commitments (micro-entity footnote).',
+    applies: ctx => isMicro(ctx),
+    build: () => ({
+      status: 'needs-review',
+      content: `<h3>Guarantees and other financial commitments</h3><p>The total amount of financial commitments, guarantees and contingencies not included in the balance sheet was £nil — please confirm.</p>`,
+    }),
+  },
+  {
     id: 'share-capital', title: 'Share Capital',
     requirement: 'Allotted, called up and fully paid share capital.',
-    applies: ctx => isCompany(ctx.entityType),
+    applies: ctx => isCompany(ctx.entityType) && !isMicro(ctx),
     build: ctx => {
       const sc = fig(ctx, ctx.statements?.balanceSheet.capitalAndReserves, ['share capital', 'called up', 'ordinary']);
       return {
@@ -249,7 +275,7 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'events', title: 'Events after Year End',
     requirement: 'Adjusting and non-adjusting events between the year end and approval.',
-    applies: () => true,
+    applies: ctx => !isMicro(ctx),
     build: () => ({ status: 'missing', content: '' }),
   },
   {
