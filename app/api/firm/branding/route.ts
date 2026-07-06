@@ -10,13 +10,13 @@ export async function GET() {
     const supabase = createClient();
     const { data } = await supabase
       .from('firms')
-      .select('logo_url')
+      .select('name, logo_url')
       .eq('id', userCtx.firmId)
       .single();
 
-    const logoUrl = (data as { logo_url?: string | null } | null)?.logo_url ?? null;
-    return NextResponse.json({ logoUrl });
+    const firm = data as { name?: string | null; logo_url?: string | null } | null;
+    return NextResponse.json({ logoUrl: firm?.logo_url ?? null, firmName: firm?.name ?? null });
   } catch {
-    return NextResponse.json({ logoUrl: null });
+    return NextResponse.json({ logoUrl: null, firmName: null });
   }
 }

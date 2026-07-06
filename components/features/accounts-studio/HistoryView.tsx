@@ -11,6 +11,7 @@ import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
+import { getFirmBranding } from './branding';
 import { EngagementStatusBadge } from './primitives';
 import { ENTITY_LABELS, engagementStatus, stageProgress, type AccountsHistoryItem } from './data';
 import { listEngagements, deleteEngagement } from './persistence';
@@ -103,7 +104,8 @@ export default function HistoryView({
   async function downloadPack(e: Engagement) {
     setBusyId(e.id);
     try {
-      const blob = await generatePdfBlob(buildAccountsPackHtml(e));
+      const branding = await getFirmBranding();
+      const blob = await generatePdfBlob(buildAccountsPackHtml(e, { firmName: branding.firmName, firmLogoUrl: branding.logoUrl }));
       downloadBlob(blob, `Statutory_Accounts_${e.companyName.replace(/\s+/g, '_')}_${e.periodEnd}.pdf`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Download failed');

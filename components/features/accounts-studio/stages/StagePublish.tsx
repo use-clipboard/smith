@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
   Loader2, Send, Signature, Landmark, Archive, PartyPopper, Download, AlertCircle, Scissors, Info,
@@ -10,6 +10,7 @@ import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { filletEligibility } from '@/lib/accounts-studio/statements';
 import { publishEngagement } from '../persistence';
+import { getFirmBranding, type FirmBranding } from '../branding';
 import type { Engagement } from '../types';
 
 // Documents we genuinely produce now (all render the real statutory pack PDF).
@@ -51,10 +52,13 @@ export default function StagePublish({
   const ready = !!engagement.statements;
   const fillet = filletEligibility(engagement.entityType, engagement.size);
 
+  const [branding, setBranding] = useState<FirmBranding>({ firmName: null, logoUrl: null });
+  useEffect(() => { getFirmBranding().then(setBranding); }, []);
+
   async function download(suffix: string, docId: string, filleted = false) {
     setBusyDoc(docId); setError('');
     try {
-      const blob = await generatePdfBlob(buildAccountsPackHtml(engagement, { filleted }));
+      const blob = await generatePdfBlob(buildAccountsPackHtml(engagement, { filleted, firmName: branding.firmName, firmLogoUrl: branding.logoUrl }));
       downloadBlob(blob, fileName(engagement, suffix));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the PDF.');
