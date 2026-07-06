@@ -245,11 +245,18 @@ export default function StageImport({
                 : 'cursor-not-allowed opacity-55'
             }`}
           >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
-              s.native ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'
-            } ${s.enabled ? 'group-hover:bg-[var(--accent)]/10 group-hover:text-[var(--accent)]' : ''}`}>
-              <s.icon size={19} />
-            </div>
+            {s.logo ? (
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.logo} alt={`${s.name} logo`} className="h-7 w-7 object-contain" />
+              </div>
+            ) : (
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl transition-colors ${
+                s.native ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'
+              } ${s.enabled ? 'group-hover:bg-[var(--accent)]/10 group-hover:text-[var(--accent)]' : ''}`}>
+                <s.icon size={19} />
+              </div>
+            )}
             <div>
               <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[var(--text-primary)]">
                 {s.name}

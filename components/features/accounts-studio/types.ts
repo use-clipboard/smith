@@ -36,6 +36,7 @@ export type ImportSourceId =
   | 'sage'
   | 'freeagent'
   | 'vt'
+  | 'capium'
   | 'clipboard'
   | 'csv'
   | 'excel'

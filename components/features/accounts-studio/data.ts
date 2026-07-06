@@ -40,16 +40,19 @@ export const SIZE_LABELS: Record<CompanySize, string> = {
 // connectors/parsers.
 export const IMPORT_SOURCES: {
   id: ImportSourceId; name: string; sub: string; icon: typeof Landmark; native?: boolean; enabled: boolean;
+  /** Provider logo (rendered as a circular badge). Overrides `icon` when set. */
+  logo?: string;
 }[] = [
   { id: 'bookkeeping', name: 'SMITH Bookkeeping', sub: 'Live trial balance',      icon: BookCopy,          native: true, enabled: true },
   { id: 'manual',      name: 'Build manually',    sub: 'Enter a trial balance',   icon: PencilLine,                      enabled: true },
   { id: 'clipboard',   name: 'Clipboard',         sub: 'Paste a trial balance',   icon: ClipboardPaste,                  enabled: true },
   { id: 'csv',         name: 'CSV',               sub: 'Upload a file',           icon: FileSpreadsheet,                 enabled: true },
-  { id: 'xero',        name: 'Xero',              sub: 'Connected ledger',        icon: Cloud,                           enabled: false },
-  { id: 'quickbooks',  name: 'QuickBooks',        sub: 'Connected ledger',        icon: Calculator,                      enabled: false },
-  { id: 'sage',        name: 'Sage',              sub: 'Connected ledger',        icon: ReceiptText,                     enabled: false },
-  { id: 'freeagent',   name: 'FreeAgent',         sub: 'Connected ledger',        icon: Wallet,                          enabled: false },
-  { id: 'vt',          name: 'VT Transaction+',   sub: 'Import file',             icon: Table2,                          enabled: false },
+  { id: 'xero',        name: 'Xero',              sub: 'Connected ledger',        icon: Cloud,                           enabled: false, logo: '/logos/xero.png' },
+  { id: 'quickbooks',  name: 'QuickBooks',        sub: 'Connected ledger',        icon: Calculator,                      enabled: false, logo: '/logos/quickbooks.png' },
+  { id: 'sage',        name: 'Sage',              sub: 'Connected ledger',        icon: ReceiptText,                     enabled: false, logo: '/logos/sage.png' },
+  { id: 'freeagent',   name: 'FreeAgent',         sub: 'Connected ledger',        icon: Wallet,                          enabled: false, logo: '/logos/freeagent.png' },
+  { id: 'capium',      name: 'Capium',            sub: 'Connected ledger',        icon: Calculator,                      enabled: false, logo: '/logos/capium.png' },
+  { id: 'vt',          name: 'VT Transaction+',   sub: 'Import file',             icon: Table2,                          enabled: false, logo: '/logos/vt.png' },
 ];
 
 // ─── Engagement factory ──────────────────────────────────────────────────────
