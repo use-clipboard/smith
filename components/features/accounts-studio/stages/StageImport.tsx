@@ -52,17 +52,6 @@ function fyLabel(fy: FyRow): string {
 function tbToSavedRows(tb: TrialBalanceRow[]): SavedTbRow[] {
   return tb.map(r => ({ name: r.name, type: r.accountType as BalanceAccountType, ledger: r.ledger, debit: r.debit, credit: r.credit }));
 }
-/** SavedTbRow[] → BalanceAccount[] (for using a saved TB as prior-year comparatives). */
-function savedRowsToBalanceAccounts(rows: SavedTbRow[]): BalanceAccount[] {
-  return rows.map((r, i) => ({
-    id: `p${i}`, name: r.name, ledger: r.ledger ?? r.name, account_type: r.type, code: null,
-    debit_total: +r.debit.toFixed(2), credit_total: +r.credit.toFixed(2), balance: +(r.debit - r.credit).toFixed(2),
-  }));
-}
-function savedNetProfit(accts: BalanceAccount[]): number {
-  return +accts.filter(a => a.account_type === 'income' || a.account_type === 'expense')
-    .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
-}
 
 export default function StageImport({
   engagement, patch, advance,
@@ -214,7 +203,7 @@ export default function StageImport({
 
   // ── Clipboard (paste) ────────────────────────────────────────────────────────
   if (phase === 'manual') {
-    return <ManualImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
+    return <ClipboardImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
   }
 
   // ── Build manually ──────────────────────────────────────────────────────────
@@ -571,7 +560,7 @@ function defaultStart(toIso: string): string {
 }
 const money0 = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
 
-function ManualImport({
+function ClipboardImport({
   engagement, onBack, onImported,
 }: {
   engagement: Engagement;
@@ -579,51 +568,38 @@ function ManualImport({
   onImported: (p: ManualPayload) => void;
 }) {
   const [raw, setRaw] = useState('');
-  const [rows, setRows] = useState<ManualRow[]>([]);
-  const [toIso, setToIso] = useState('');
-  const [fromIso, setFromIso] = useState('');
+  const [parsed, setParsed] = useState<SeedRow[] | null>(null);
+  const [seedKey, setSeedKey] = useState(0);
   const [error, setError] = useState('');
 
-  useEffect(() => { setRows(raw.trim() ? parseTrialBalance(raw) : []); }, [raw]);
+  // Live feedback on the paste before continuing.
+  const detected = raw.trim() ? parseTrialBalance(raw) : [];
+  const dr = detected.reduce((s, r) => s + r.debit, 0);
+  const cr = detected.reduce((s, r) => s + r.credit, 0);
+  const balanced = Math.abs(dr - cr) < 0.5;
 
-  const totalDr = rows.reduce((s, r) => s + r.debit, 0);
-  const totalCr = rows.reduce((s, r) => s + r.credit, 0);
-  const diff = Math.abs(totalDr - totalCr);
-  const balanced = diff < 0.5;
-
-  function setType(i: number, type: BalType) {
-    setRows(rs => rs.map((r, idx) => idx === i ? { ...r, type, ledger: defaultLedger(type) } : r));
+  function review() {
+    if (!detected.length) { setError('Nothing detected — paste rows like "Account, Debit, Credit".'); return; }
+    setError('');
+    setParsed(detected.map(r => ({ name: r.name, type: r.type, debit: r.debit, credit: r.credit })));
+    setSeedKey(k => k + 1);
   }
 
-  async function build() {
-    if (!rows.length) { setError('Paste a trial balance first.'); return; }
-    if (!toIso) { setError('Enter the year-end date.'); return; }
-    setError('');
-    const accounts: BalanceAccount[] = rows.map((r, i) => ({
-      id: `m${i}`, name: r.name, ledger: r.ledger, account_type: r.type, code: null,
-      debit_total: +r.debit.toFixed(2), credit_total: +r.credit.toFixed(2), balance: +(r.debit - r.credit).toFixed(2),
-    }));
-    const bsNetProfit = +accounts
-      .filter(a => a.account_type === 'income' || a.account_type === 'expense')
-      .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
-
-    // Auto prior-year: pull last year's saved TB from the library as comparatives.
-    let prior: { pl: BalanceAccount[]; bs: BalanceAccount[]; bsNetProfit: number } | null = null;
-    let comparativePeriodUk = '';
-    if (engagement.clientId) {
-      const pTb = await getSavedTb(engagement.clientId, priorPeriodEnd(toIso));
-      if (pTb && pTb.rows.length) {
-        const pa = savedRowsToBalanceAccounts(pTb.rows);
-        prior = { pl: pa, bs: pa, bsNetProfit: savedNetProfit(pa) };
-        comparativePeriodUk = isoToUk(pTb.periodEnd);
-      }
-    }
-
-    const statements = buildStatements({ pl: accounts, bs: accounts, bsNetProfit }, prior);
-    const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
-    const framework = detectFramework(engagement.entityType, size);
-    const trialBalance: TrialBalanceRow[] = rows.map(r => ({ name: r.name, ledger: r.ledger, accountType: r.type, debit: r.debit, credit: r.credit }));
-    onImported({ source: 'clipboard', sourceLabel: 'Clipboard entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk });
+  // Once parsed, drop into the shared editor (same as CSV / Build manually).
+  if (parsed) {
+    return (
+      <TbEditor
+        key={seedKey}
+        engagement={engagement}
+        onBack={() => setParsed(null)}
+        backLabel="Paste again"
+        onImported={onImported}
+        source="clipboard"
+        sourceLabel="Clipboard entry"
+        seed={parsed}
+        heading={{ icon: ClipboardPaste, title: 'Review the pasted trial balance', sub: `${parsed.length} row${parsed.length === 1 ? '' : 's'} detected — check the types and balance, then edit if needed.` }}
+      />
+    );
   }
 
   return (
@@ -637,70 +613,24 @@ function ManualImport({
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><ClipboardPaste size={18} /></span>
           <div>
             <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Paste a trial balance</h3>
-            <p className="text-[12px] text-[var(--text-muted)]">Paste from a spreadsheet or CSV — SMITH classifies each line; correct any it gets wrong.</p>
+            <p className="text-[12px] text-[var(--text-muted)]">Paste from a spreadsheet — Account, Debit, Credit (an optional Type column is used if present).</p>
           </div>
         </div>
 
         <textarea
           value={raw}
           onChange={e => setRaw(e.target.value)}
-          rows={6}
+          rows={8}
           placeholder={'Account, Debit, Credit\nSales, 0, 120000\nCost of sales, 40000, 0\nRent, 12000, 0\nBank, 5000, 0\nTrade debtors, 26000, 0\nTrade creditors, 0, 8000\nShare capital, 0, 100'}
           className="input-base w-full font-mono text-[12px] leading-relaxed"
         />
 
-        {rows.length > 0 && (
-          <div className="mt-4">
-            <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-xs font-semibold text-[var(--text-secondary)]">{rows.length} account{rows.length === 1 ? '' : 's'} detected</p>
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${balanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                {balanced ? <><Check size={11} /> Balanced</> : <><AlertCircle size={11} /> Out by {money0(diff)}</>}
-              </span>
-            </div>
-            <div className="max-h-64 overflow-y-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full text-[12px]">
-                <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
-                  <tr>
-                    <th className="px-2 py-1.5 text-left font-semibold">Account</th>
-                    <th className="px-2 py-1.5 text-left font-semibold">Type</th>
-                    <th className="px-2 py-1.5 text-right font-semibold">Debit</th>
-                    <th className="px-2 py-1.5 text-right font-semibold">Credit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i} className="border-t border-slate-100">
-                      <td className="px-2 py-1 text-[var(--text-primary)]">{r.name}</td>
-                      <td className="px-2 py-1">
-                        <select value={r.type} onChange={e => setType(i, e.target.value as BalType)}
-                          className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11.5px]">
-                          {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-2 py-1 text-right tabular-nums text-[var(--text-secondary)]">{r.debit ? r.debit.toLocaleString('en-GB', { minimumFractionDigits: 2 }) : ''}</td>
-                      <td className="px-2 py-1 text-right tabular-nums text-[var(--text-secondary)]">{r.credit ? r.credit.toLocaleString('en-GB', { minimumFractionDigits: 2 }) : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Period start</label>
-                <input type="date" value={fromIso} onChange={e => setFromIso(e.target.value)} className="input-base py-1.5 text-sm" />
-                <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Optional — defaults to a year before the end.</p>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
-                <input type="date" value={toIso} onChange={e => setToIso(e.target.value)} className="input-base py-1.5 text-sm" />
-                <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Last year&apos;s saved trial balance (if any) is added as comparatives automatically.</p>
-              </div>
-            </div>
-
-            {!balanced && (
-              <p className="mt-2 text-[11.5px] text-amber-700">Debits and credits don&apos;t agree — check the paste, then continue if it&apos;s expected.</p>
-            )}
+        {detected.length > 0 && (
+          <div className="mt-2 flex items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+            <span className="font-semibold">{detected.length} account{detected.length === 1 ? '' : 's'} detected</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${balanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+              {balanced ? <><Check size={11} /> Balanced</> : <><AlertCircle size={11} /> Out by {money0(Math.abs(dr - cr))}</>}
+            </span>
           </div>
         )}
 
@@ -710,8 +640,8 @@ function ManualImport({
           </div>
         )}
 
-        <button onClick={build} disabled={!rows.length || !toIso} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
-          <Table2 size={15} /> Build accounts from {rows.length || 0} row{rows.length === 1 ? '' : 's'}
+        <button onClick={review} disabled={!detected.length} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
+          <Table2 size={15} /> Review &amp; edit {detected.length || ''} row{detected.length === 1 ? '' : 's'}
         </button>
       </StudioCard>
     </div>
@@ -758,7 +688,7 @@ function TbEditor({
   engagement: Engagement;
   onBack: () => void;
   onImported: (p: ManualPayload) => void;
-  source: 'manual' | 'csv';
+  source: 'manual' | 'csv' | 'clipboard';
   sourceLabel: string;
   heading: { icon: LucideIcon; title: string; sub: string };
   seed?: SeedRow[];
