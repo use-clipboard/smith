@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive, Clock } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive, Clock, Landmark } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -25,10 +25,12 @@ import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
 import AgentSmithSettingsTab from './tabs/AgentSmithSettingsTab';
 import CommunityTab from './tabs/CommunityTab';
 import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
+import AccountsStudioDefaultsTab from './tabs/AccountsStudioDefaultsTab';
+import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
 
 interface Props {
   userId: string;
@@ -71,6 +73,8 @@ export default function SettingsClient({
   const isAdmin = userRole === 'admin';
   // Timesheets settings show for admins when the module is active (Practice Suite).
   const timesheetsAccess = activeModules.includes('timesheets');
+  // Accounts Studio is preview-gated by email allowlist (not a firm module yet).
+  const accountsStudioAllowed = canAccessAccountsStudio(userEmail);
   const searchParams = useSearchParams();
 
   // Allow deep-linking to a specific tab via ?tab=modules (map legacy 'appearance' → 'preferences')
@@ -122,6 +126,7 @@ export default function SettingsClient({
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
     { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
+    { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
     // Community is cross-firm and always available — sits in General, not Tools.
     { id: 'community' as Tab,    label: 'Community',    icon: MessagesSquare, adminOnly: false, hidden: false,                     group: 'general' as TabGroup },
@@ -633,6 +638,11 @@ export default function SettingsClient({
       {/* Bookkeeping tab — gated by canAccessBookkeeping (server-side) */}
       {activeTab === 'bookkeeping' && bookkeepingActive && (
         <BookkeepingSettingsTab />
+      )}
+
+      {/* Accounts Studio defaults — admin only, preview allowlist */}
+      {activeTab === 'accounts-studio-defaults' && isAdmin && accountsStudioAllowed && (
+        <AccountsStudioDefaultsTab />
       )}
 
       {/* Agent Smith tab — admin only */}

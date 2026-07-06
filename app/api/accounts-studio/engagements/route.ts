@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
+import { getAccountsStudioFirmSettings, firmDefaultNotes } from '@/lib/accounts-studio/firmSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,22 @@ export async function POST(req: NextRequest) {
 
   const clientId = (body.data.clientId as string | null | undefined) ?? null;
   const engagementData: Record<string, unknown> = { ...body.data, preparedBy: authorName };
+
+  // Seed the firm's default notes (accountants' report, accountant details,
+  // governing body) into the disclosures so house-style wording appears
+  // automatically. Skips any already present by id.
+  try {
+    const settings = await getAccountsStudioFirmSettings(supabase, ctx.firmId);
+    const now = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${p(now.getDate())}-${p(now.getMonth() + 1)}-${now.getFullYear()} ${p(now.getHours())}:${p(now.getMinutes())}`;
+    const defaults = firmDefaultNotes(settings, stamp);
+    if (defaults.length) {
+      const existing = Array.isArray(engagementData.disclosures) ? engagementData.disclosures as { id?: string }[] : [];
+      const have = new Set(existing.map(d => d.id));
+      engagementData.disclosures = [...existing, ...defaults.filter(d => !have.has(d.id))];
+    }
+  } catch { /* firm settings optional — never block creation */ }
 
   const { data, error } = await supabase
     .from('accounts_studio_engagements')
