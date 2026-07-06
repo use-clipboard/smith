@@ -112,7 +112,7 @@ export function buildAccountsPackHtml(e: Engagement, opts: { filleted?: boolean;
   // Filleted accounts don't file the directors' / strategic / members' reports.
   const excludeNotes = filleted ? new Set(['directors-report', 'strategic-report', 'members-report']) : new Set<string>();
   const notes = e.disclosures
-    .filter(s => s.content && s.content.trim() && !excludeNotes.has(s.id))
+    .filter(s => s.included !== false && s.content && s.content.trim() && !excludeNotes.has(s.id))
     .map((s, i) => `<div class="paper" style="margin-bottom:20px">
       <p style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:0 0 2px">Note ${i + 1}</p>
       <div style="font-size:12.5px;line-height:1.55;color:#1e293b">${s.content}</div>

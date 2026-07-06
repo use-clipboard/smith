@@ -3,10 +3,11 @@
 import { useState, useRef, useCallback } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
-  ArrowRight, Check, Loader2, X, FileText, Wand2,
+  ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
 import { ENTITY_LABELS } from '../data';
+import { OPTIONAL_NOTES, makeOptionalNote } from '@/lib/accounts-studio/disclosures';
 import type { Engagement, DisclosureSection, SectionStatus } from '../types';
 
 export default function StageDisclosures({
@@ -22,15 +23,32 @@ export default function StageDisclosures({
   const [aiBusy, setAiBusy] = useState<'rewrite' | 'explain' | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showAddNote, setShowAddNote] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
 
-  const completeCount = sections.filter(s => s.status === 'complete').length;
+  const isIncluded = (s: DisclosureSection) => s.included !== false;
+  const includedSections = sections.filter(isIncluded);
+  const completeCount = includedSections.filter(s => s.status === 'complete').length;
+  const addable = OPTIONAL_NOTES.filter(t => !sections.some(s => s.id === t.id));
 
   const updateSection = useCallback((id: string, updater: (s: DisclosureSection) => DisclosureSection) => {
     patch(e => ({ ...e, disclosures: e.disclosures.map(s => s.id === id ? updater(s) : s) }));
   }, [patch]);
+
+  function toggleIncluded(id: string) {
+    updateSection(id, s => ({ ...s, included: s.included === false ? true : false }));
+  }
+
+  function addNote(templateId: string) {
+    const t = OPTIONAL_NOTES.find(x => x.id === templateId);
+    if (!t) return;
+    const note = makeOptionalNote(t);
+    patch(e => ({ ...e, disclosures: [...e.disclosures, note] }));
+    setShowAddNote(false);
+    selectSection(note.id);
+  }
 
   function selectSection(id: string) {
     setSelectedId(id);
@@ -123,24 +141,54 @@ export default function StageDisclosures({
       <StudioCard className="flex max-h-[calc(100vh-240px)] flex-col overflow-hidden">
         <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
           <p className="text-[13px] font-bold text-[var(--text-primary)]">Disclosures</p>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{completeCount}/{sections.length}</span>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">{completeCount}/{includedSections.length}</span>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {sections.map(s => {
             const active = s.id === section.id;
+            const included = isIncluded(s);
             return (
-              <button
+              <div
                 key={s.id}
-                onClick={() => selectSection(s.id)}
-                className={`mb-0.5 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-colors ${
-                  active ? 'bg-[var(--accent)]/10' : 'hover:bg-black/[0.03]'
-                }`}
+                className={`mb-0.5 flex items-center gap-1 rounded-xl pr-1 transition-colors ${active ? 'bg-[var(--accent)]/10' : 'hover:bg-black/[0.03]'}`}
               >
-                <SectionStatusDot status={s.status} />
-                <span className={`flex-1 truncate text-[12.5px] font-medium ${active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
-              </button>
+                <button onClick={() => selectSection(s.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left">
+                  <SectionStatusDot status={s.status} />
+                  <span className={`flex-1 truncate text-[12.5px] font-medium ${!included ? 'text-[var(--text-muted)] line-through' : active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
+                </button>
+                <button
+                  onClick={() => toggleIncluded(s.id)}
+                  aria-label={included ? 'Exclude from accounts' : 'Include in accounts'}
+                  title={included ? 'Included — click to exclude' : 'Excluded — click to include'}
+                  className={`shrink-0 rounded p-1 transition-colors ${included ? 'text-[var(--text-muted)] hover:text-[var(--text-primary)]' : 'text-[var(--text-muted)]/60 hover:text-[var(--text-primary)]'} hover:bg-black/[0.06]`}
+                >
+                  {included ? <Eye size={13} /> : <EyeOff size={13} />}
+                </button>
+              </div>
             );
           })}
+        </div>
+        <div className="relative border-t border-black/5 p-2">
+          <button
+            onClick={() => setShowAddNote(v => !v)}
+            disabled={!addable.length}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/40 hover:text-[var(--accent)] disabled:opacity-40"
+          >
+            <Plus size={13} /> Add note
+          </button>
+          {showAddNote && addable.length > 0 && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowAddNote(false)} />
+              <div className="absolute bottom-full left-2 right-2 z-40 mb-1 max-h-64 overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-1 shadow-xl">
+                {addable.map(t => (
+                  <button key={t.id} onClick={() => addNote(t.id)} className="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-[var(--accent)]/5">
+                    <span className="block text-[12.5px] font-medium text-[var(--text-primary)]">{t.title}</span>
+                    <span className="block text-[10.5px] text-[var(--text-muted)]">{t.requirement}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </StudioCard>
 

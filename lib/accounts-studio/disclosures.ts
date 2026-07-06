@@ -74,6 +74,28 @@ function noteTableHtml(lines: NoteLine[], hasPrior: boolean, priorYear: string):
   return `<table style="width:100%;border-collapse:collapse;margin-top:6px"><tbody>${head}${body}${foot}</tbody></table>`;
 }
 
+// ── Optional notes library (user can add these via "＋ Add note") ────────────
+export interface OptionalNoteTemplate { id: string; title: string; requirement: string; content: string }
+export const OPTIONAL_NOTES: OptionalNoteTemplate[] = [
+  { id: 'dividends', title: 'Dividends', requirement: 'Dividends declared and paid in the period.', content: `<h3>Dividends</h3><p>Dividends of £[ ] were declared and paid during the year.</p>` },
+  { id: 'government-grants', title: 'Government Grants', requirement: 'Grants recognised and any conditions attaching.', content: `<h3>Government grants</h3><p>Government grants of £[ ] were recognised in the period.</p>` },
+  { id: 'pensions', title: 'Pension Commitments', requirement: 'Defined contribution pension costs and outstanding contributions.', content: `<h3>Pension commitments</h3><p>The company operates a defined contribution pension scheme. The pension charge for the year was £[ ].</p>` },
+  { id: 'operating-leases', title: 'Operating Lease Commitments', requirement: 'Future minimum lease payments under non-cancellable operating leases.', content: `<h3>Operating lease commitments</h3><p>Total future minimum lease payments under non-cancellable operating leases were £[ ].</p>` },
+  { id: 'post-bs-events', title: 'Events after the Reporting Date', requirement: 'Adjusting and non-adjusting events after the balance sheet date.', content: `<h3>Events after the reporting date</h3><p>There were no material events after the reporting date requiring disclosure — please confirm.</p>` },
+  { id: 'accountants-report', title: "Accountants' Report", requirement: 'Report of the reporting accountants on the unaudited accounts.', content: `<h3>Accountants' report to the board of directors</h3><p>In accordance with our engagement letter, and in order to assist you to fulfil your duties under the Companies Act 2006, we have compiled the financial statements from the accounting records and the information and explanations supplied to us.</p>` },
+  { id: 'audit-exemption', title: 'Audit Exemption', requirement: "Directors' statement claiming exemption from audit.", content: `<h3>Audit exemption</h3><p>For the year in question the company was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies, and the members have not required an audit.</p>` },
+  { id: 'controlling-party', title: 'Controlling Party', requirement: 'Ultimate controlling party, where applicable.', content: `<h3>Controlling party</h3><p>The company was under the control of [ ] throughout the current and previous year.</p>` },
+];
+
+/** Turn an optional-note template into a fresh disclosure section. */
+export function makeOptionalNote(t: OptionalNoteTemplate): DisclosureSection {
+  return {
+    id: t.id, title: t.title, status: 'needs-review', requirement: t.requirement,
+    content: t.content, history: [{ id: 'v1', label: 'Added', at: nowStamp(), content: t.content }],
+    included: true,
+  };
+}
+
 // ── Note definitions ─────────────────────────────────────────────────────────
 interface NoteDef {
   id: string;

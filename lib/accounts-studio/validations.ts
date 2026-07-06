@@ -53,10 +53,11 @@ export function computeValidations(e: Engagement): ValidationCheck[] {
   push('comparatives', 'Comparative figures', s?.hasPrior ? 'pass' : 'warn',
     s?.hasPrior ? 'Prior-year comparatives are included.' : 'No prior-year comparatives — first-year accounts or no prior financial year found.');
 
-  // 5. Disclosure completeness.
-  const total = e.disclosures.length;
-  const complete = e.disclosures.filter(d => d.status === 'complete').length;
-  const outstanding = e.disclosures.filter(d => d.status !== 'complete').map(d => d.title);
+  // 5. Disclosure completeness (included notes only).
+  const includedNotes = e.disclosures.filter(d => d.included !== false);
+  const total = includedNotes.length;
+  const complete = includedNotes.filter(d => d.status === 'complete').length;
+  const outstanding = includedNotes.filter(d => d.status !== 'complete').map(d => d.title);
   push('disclosures', 'Disclosure completeness', complete === total ? 'pass' : 'warn',
     complete === total
       ? `All ${total} disclosures marked complete.`

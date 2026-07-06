@@ -65,6 +65,8 @@ export interface DisclosureSection {
   history: DisclosureVersion[];
   /** Only show this section for these entity types (empty = always). */
   entityTypes?: EntityType[];
+  /** Whether the note is included in the accounts. Defaults to true (undefined). */
+  included?: boolean;
 }
 
 // ── Imported ledger data (Stage 1 → real trial balance + statements) ─────────
