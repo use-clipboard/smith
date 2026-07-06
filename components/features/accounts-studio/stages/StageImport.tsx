@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
@@ -55,11 +55,45 @@ export default function StageImport({
   advance: () => void;
 }) {
   const imported = !!(engagement.statements && engagement.importInfo);
-  const [phase, setPhase] = useState<'source' | 'configure' | 'manual'>(
+  const [phase, setPhase] = useState<'source' | 'configure' | 'manual' | 'build'>(
     !imported && engagement.source === 'bookkeeping' ? 'configure'
       : !imported && engagement.source === 'clipboard' ? 'manual'
-        : 'source',
+        : !imported && engagement.source === 'manual' ? 'build'
+          : 'source',
   );
+
+  // Shared apply for the Paste/CSV and Build-manually modes.
+  function applyManual(p: ManualPayload) {
+    patch(e => ({
+      ...e,
+      source: p.source,
+      statements: p.statements,
+      trialBalance: p.trialBalance,
+      size: p.size,
+      microEligible: p.size === 'micro',
+      framework: p.framework,
+      periodStart: isoToUk(p.fromIso),
+      periodEnd: isoToUk(p.toIso),
+      comparativePeriod: p.comparativePeriodUk,
+      accountsDue: e.chLinked ? e.accountsDue : isoPlusMonthsUk(p.toIso, 9),
+      chDeadline: e.chLinked ? e.chDeadline : isoPlusMonthsUk(p.toIso, 9),
+      disclosures: e.disclosuresSeeded
+        ? e.disclosures
+        : buildDisclosures({
+            entityType: e.entityType,
+            size: p.size,
+            framework: p.framework,
+            statements: p.statements,
+            priorYear: p.comparativePeriodUk ? p.comparativePeriodUk.slice(-4) : '',
+            directors: e.directors,
+          }),
+      disclosuresSeeded: true,
+      importInfo: {
+        bookId: '', bookName: p.sourceLabel,
+        from: p.fromIso, to: p.toIso, priorFrom: null, priorTo: null, importedAt: nowStamp(),
+      },
+    }));
+  }
 
   // ── Imported summary (real data) ───────────────────────────────────────────
   if (imported && engagement.statements && engagement.importInfo) {
@@ -153,48 +187,24 @@ export default function StageImport({
     );
   }
 
-  // ── Paste / CSV (manual) ────────────────────────────────────────────────────
+  // ── Paste / CSV ─────────────────────────────────────────────────────────────
   if (phase === 'manual') {
     return (
       <ManualImport
         engagement={engagement}
         onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
-        onImported={(p) => {
-          patch(e => ({
-            ...e,
-            source: 'clipboard',
-            statements: p.statements,
-            trialBalance: p.trialBalance,
-            size: p.size,
-            microEligible: p.size === 'micro',
-            framework: p.framework,
-            periodStart: isoToUk(p.fromIso),
-            periodEnd: isoToUk(p.toIso),
-            comparativePeriod: '',
-            accountsDue: e.chLinked ? e.accountsDue : isoPlusMonthsUk(p.toIso, 9),
-            chDeadline: e.chLinked ? e.chDeadline : isoPlusMonthsUk(p.toIso, 9),
-            disclosures: e.disclosuresSeeded
-              ? e.disclosures
-              : buildDisclosures({
-                  entityType: e.entityType,
-                  size: p.size,
-                  framework: p.framework,
-                  statements: p.statements,
-                  priorYear: '',
-                  directors: e.directors,
-                }),
-            disclosuresSeeded: true,
-            importInfo: {
-              bookId: '',
-              bookName: 'Manual / CSV entry',
-              from: p.fromIso,
-              to: p.toIso,
-              priorFrom: null,
-              priorTo: null,
-              importedAt: nowStamp(),
-            },
-          }));
-        }}
+        onImported={applyManual}
+      />
+    );
+  }
+
+  // ── Build manually ──────────────────────────────────────────────────────────
+  if (phase === 'build') {
+    return (
+      <ManualBuilder
+        engagement={engagement}
+        onBack={() => { patch(e => ({ ...e, source: null })); setPhase('source'); }}
+        onImported={applyManual}
       />
     );
   }
@@ -423,12 +433,16 @@ function BookkeepingImport({
 type BalType = BalanceAccountType;
 interface ManualRow { name: string; type: BalType; ledger: string; debit: number; credit: number }
 interface ManualPayload {
+  source: 'clipboard' | 'manual';
+  sourceLabel: string;
   statements: FinancialStatements;
   trialBalance: TrialBalanceRow[];
   size: Engagement['size'];
   framework: string;
   fromIso: string;
   toIso: string;
+  /** Prior year end (dd-mm-yyyy) when comparatives were entered; '' otherwise. */
+  comparativePeriodUk: string;
 }
 
 const TYPE_OPTIONS: { value: BalType; label: string }[] = [
@@ -569,7 +583,7 @@ function ManualImport({
     const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
     const framework = detectFramework(engagement.entityType, size);
     const trialBalance: TrialBalanceRow[] = rows.map(r => ({ name: r.name, ledger: r.ledger, accountType: r.type, debit: r.debit, credit: r.credit }));
-    onImported({ statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso });
+    onImported({ source: 'clipboard', sourceLabel: 'Manual / CSV entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk: '' });
   }
 
   return (
@@ -657,6 +671,199 @@ function ManualImport({
 
         <button onClick={build} disabled={!rows.length || !toIso} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
           <Table2 size={15} /> Build accounts from {rows.length || 0} row{rows.length === 1 ? '' : 's'}
+        </button>
+      </StudioCard>
+    </div>
+  );
+}
+
+// ─── Build-manually panel ────────────────────────────────────────────────────
+interface BuilderRow { id: number; name: string; type: BalType; debit: string; credit: string; priorDebit: string; priorCredit: string }
+
+const COMMON_ACCOUNTS: { name: string; type: BalType }[] = [
+  { name: 'Turnover', type: 'income' },
+  { name: 'Cost of sales', type: 'expense' },
+  { name: 'Administrative expenses', type: 'expense' },
+  { name: 'Wages and salaries', type: 'expense' },
+  { name: 'Tangible fixed assets', type: 'asset' },
+  { name: 'Debtors', type: 'asset' },
+  { name: 'Cash at bank and in hand', type: 'asset' },
+  { name: 'Creditors', type: 'liability' },
+  { name: 'Taxation', type: 'liability' },
+  { name: 'Share capital', type: 'equity' },
+  { name: 'Retained earnings', type: 'equity' },
+];
+
+function priorEndUk(toIso: string): string {
+  const [y, m, d] = toIso.split('-');
+  return `${d}-${m}-${Number(y) - 1}`;
+}
+function toBalanceAccount(i: number, name: string, type: BalType, debit: number, credit: number): BalanceAccount {
+  return { id: `b${i}`, name, ledger: name, account_type: type, code: null, debit_total: +debit.toFixed(2), credit_total: +credit.toFixed(2), balance: +(debit - credit).toFixed(2) };
+}
+function netProfitOf(accts: BalanceAccount[]): number {
+  return +accts.filter(a => a.account_type === 'income' || a.account_type === 'expense')
+    .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
+}
+
+function ManualBuilder({
+  engagement, onBack, onImported,
+}: {
+  engagement: Engagement;
+  onBack: () => void;
+  onImported: (p: ManualPayload) => void;
+}) {
+  const idRef = useRef(0);
+  const blank = useCallback((seed?: Partial<BuilderRow>): BuilderRow => ({
+    id: idRef.current++, name: '', type: 'expense', debit: '', credit: '', priorDebit: '', priorCredit: '', ...seed,
+  }), []);
+  const [rows, setRows] = useState<BuilderRow[]>(() => [blank(), blank(), blank()]);
+  const [includePrior, setIncludePrior] = useState(false);
+  const [toIso, setToIso] = useState('');
+  const [fromIso, setFromIso] = useState('');
+  const [error, setError] = useState('');
+
+  const set = (id: number, patch: Partial<BuilderRow>) => setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
+  const remove = (id: number) => setRows(rs => rs.filter(r => r.id !== id));
+  const addCommon = (name: string, type: BalType) => setRows(rs => [...rs, blank({ name, type })]);
+
+  const curDr = rows.reduce((s, r) => s + parseNum(r.debit), 0);
+  const curCr = rows.reduce((s, r) => s + parseNum(r.credit), 0);
+  const priDr = rows.reduce((s, r) => s + parseNum(r.priorDebit), 0);
+  const priCr = rows.reduce((s, r) => s + parseNum(r.priorCredit), 0);
+  const curBalanced = Math.abs(curDr - curCr) < 0.5;
+  const priBalanced = Math.abs(priDr - priCr) < 0.5;
+
+  function build() {
+    const clean = rows.filter(r => r.name.trim() && (parseNum(r.debit) || parseNum(r.credit) || (includePrior && (parseNum(r.priorDebit) || parseNum(r.priorCredit)))));
+    if (!clean.length) { setError('Add at least one account with an amount.'); return; }
+    if (!toIso) { setError('Enter the year-end date.'); return; }
+    setError('');
+    const cur = clean.map((r, i) => toBalanceAccount(i, r.name.trim(), r.type, parseNum(r.debit), parseNum(r.credit)));
+    const prior = includePrior ? clean.map((r, i) => toBalanceAccount(i, r.name.trim(), r.type, parseNum(r.priorDebit), parseNum(r.priorCredit))) : null;
+    const statements = buildStatements(
+      { pl: cur, bs: cur, bsNetProfit: netProfitOf(cur) },
+      prior ? { pl: prior, bs: prior, bsNetProfit: netProfitOf(prior) } : null,
+    );
+    const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
+    const framework = detectFramework(engagement.entityType, size);
+    const trialBalance: TrialBalanceRow[] = clean.map(r => ({ name: r.name.trim(), ledger: r.name.trim(), accountType: r.type, debit: parseNum(r.debit), credit: parseNum(r.credit) }));
+    onImported({ source: 'manual', sourceLabel: 'Manual entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk: includePrior ? priorEndUk(toIso) : '' });
+  }
+
+  const amtInput = 'w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-right text-[12px] tabular-nums';
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+        <ChevronLeft size={13} /> Choose a different source
+      </button>
+
+      <StudioCard className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><PencilLine size={18} /></span>
+          <div className="flex-1">
+            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Build a trial balance</h3>
+            <p className="text-[12px] text-[var(--text-muted)]">Add each account, set its type, and enter the debit or credit.</p>
+          </div>
+          <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)]">
+            <input type="checkbox" checked={includePrior} onChange={e => setIncludePrior(e.target.checked)} className="rounded" />
+            Include last year
+          </label>
+        </div>
+
+        {/* Quick add */}
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {COMMON_ACCOUNTS.map(c => (
+            <button key={c.name} onClick={() => addCommon(c.name, c.type)}
+              className="rounded-full border border-[var(--border)] bg-white px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5">
+              + {c.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+          <table className="w-full text-[12px]">
+            <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+              <tr>
+                <th className="px-2 py-1.5 text-left font-semibold">Account</th>
+                <th className="px-2 py-1.5 text-left font-semibold">Type</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Debit</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Credit</th>
+                {includePrior && <th className="px-2 py-1.5 text-right font-semibold">Debit (prior)</th>}
+                {includePrior && <th className="px-2 py-1.5 text-right font-semibold">Credit (prior)</th>}
+                <th className="px-1 py-1.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-t border-slate-100">
+                  <td className="px-2 py-1">
+                    <input value={r.name} onChange={e => set(r.id, { name: e.target.value })} placeholder="Account name"
+                      className="w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-[12px]" />
+                  </td>
+                  <td className="px-2 py-1">
+                    <select value={r.type} onChange={e => set(r.id, { type: e.target.value as BalType })}
+                      className="rounded border border-slate-200 bg-white px-1 py-1 text-[11.5px]">
+                      {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1"><input value={r.debit} onChange={e => set(r.id, { debit: e.target.value })} inputMode="decimal" className={amtInput} /></td>
+                  <td className="px-2 py-1"><input value={r.credit} onChange={e => set(r.id, { credit: e.target.value })} inputMode="decimal" className={amtInput} /></td>
+                  {includePrior && <td className="px-2 py-1"><input value={r.priorDebit} onChange={e => set(r.id, { priorDebit: e.target.value })} inputMode="decimal" className={amtInput} /></td>}
+                  {includePrior && <td className="px-2 py-1"><input value={r.priorCredit} onChange={e => set(r.id, { priorCredit: e.target.value })} inputMode="decimal" className={amtInput} /></td>}
+                  <td className="px-1 py-1 text-center">
+                    <button onClick={() => remove(r.id)} aria-label="Remove" className="text-slate-300 hover:text-rose-600">✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t border-slate-200 bg-slate-50/70 text-[11.5px] font-semibold text-[var(--text-secondary)]">
+              <tr>
+                <td className="px-2 py-1.5" colSpan={2}>Totals</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{money0(curDr)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{money0(curCr)}</td>
+                {includePrior && <td className="px-2 py-1.5 text-right tabular-nums">{money0(priDr)}</td>}
+                {includePrior && <td className="px-2 py-1.5 text-right tabular-nums">{money0(priCr)}</td>}
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button onClick={() => setRows(rs => [...rs, blank()])} className="text-[12px] font-medium text-[var(--accent)] hover:underline">+ Add account</button>
+          <div className="flex-1" />
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${curBalanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {curBalanced ? <><Check size={11} /> Balanced</> : <><AlertCircle size={11} /> Out by {money0(Math.abs(curDr - curCr))}</>}
+          </span>
+          {includePrior && (
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${priBalanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+              Prior {priBalanced ? '✓' : `out ${money0(Math.abs(priDr - priCr))}`}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Period start</label>
+            <input type="date" value={fromIso} onChange={e => setFromIso(e.target.value)} className="input-base py-1.5 text-sm" />
+            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Optional — defaults to a year before the end.</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
+            <input type="date" value={toIso} onChange={e => setToIso(e.target.value)} className="input-base py-1.5 text-sm" />
+          </div>
+        </div>
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
+
+        <button onClick={build} disabled={!toIso} className="btn-primary mt-4 w-full justify-center disabled:opacity-40">
+          <Table2 size={15} /> Build accounts
         </button>
       </StudioCard>
     </div>

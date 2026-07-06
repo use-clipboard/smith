@@ -29,6 +29,7 @@ export type CompanySize = 'micro' | 'small' | 'medium' | 'large';
 
 export type ImportSourceId =
   | 'bookkeeping'
+  | 'manual'
   | 'capture'
   | 'xero'
   | 'quickbooks'

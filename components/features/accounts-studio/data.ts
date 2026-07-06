@@ -1,6 +1,6 @@
 import {
   Landmark, BookCopy, Cloud, Calculator, ReceiptText, Wallet, Table2,
-  ClipboardPaste, Files,
+  ClipboardPaste, Files, PencilLine,
 } from 'lucide-react';
 import type {
   Engagement, StageId, ImportSourceId,
@@ -42,6 +42,7 @@ export const IMPORT_SOURCES: {
   id: ImportSourceId; name: string; sub: string; icon: typeof Landmark; native?: boolean; enabled: boolean;
 }[] = [
   { id: 'bookkeeping', name: 'SMITH Bookkeeping', sub: 'Live trial balance',      icon: BookCopy,          native: true, enabled: true },
+  { id: 'manual',      name: 'Build manually',    sub: 'Enter a trial balance',   icon: PencilLine,                      enabled: true },
   { id: 'clipboard',   name: 'Paste / CSV',       sub: 'Paste a trial balance',   icon: ClipboardPaste,                  enabled: true },
   { id: 'excel',       name: 'Excel',             sub: 'Upload a workbook',       icon: Files,                           enabled: false },
   { id: 'xero',        name: 'Xero',              sub: 'Connected ledger',        icon: Cloud,                           enabled: false },
