@@ -1,33 +1,29 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, AlertTriangle, ArrowRight, RefreshCw, ShieldCheck, Clock3 } from 'lucide-react';
 import { StudioCard, ValidationStyle } from '../primitives';
+import { computeValidations } from '@/lib/accounts-studio/validations';
 import type { Engagement, ValidationCheck } from '../types';
 
 export default function StageFinalReview({
-  engagement, patch, advance,
+  engagement, advance,
 }: {
   engagement: Engagement;
-  patch: (u: (e: Engagement) => Engagement) => void;
   advance: () => void;
 }) {
   const [running, setRunning] = useState(false);
-  const checks = engagement.validations;
+  // Checks are DERIVED live from the engagement — always current, no template.
+  const checks = useMemo(() => computeValidations(engagement), [engagement]);
   const passed = checks.filter(c => c.status === 'pass').length;
   const warnings = checks.filter(c => c.status === 'warn').length;
   const failed = checks.filter(c => c.status === 'fail').length;
   const allClear = warnings === 0 && failed === 0;
 
+  // Re-run is a light re-check affordance — the checks already reflect live state.
   function rerun() {
     setRunning(true);
-    patch(e => ({ ...e, validations: e.validations.map(c => ({ ...c, status: 'running' as const })) }));
-    // Restore the original statuses after a short animated pass.
-    const original = checks.map(c => ({ ...c }));
-    setTimeout(() => {
-      patch(e => ({ ...e, validations: original }));
-      setRunning(false);
-    }, 1600);
+    setTimeout(() => setRunning(false), 450);
   }
 
   return (
@@ -57,7 +53,7 @@ export default function StageFinalReview({
 
       {/* Validation cards */}
       <div className="grid gap-3 sm:grid-cols-2">
-        {checks.map(c => <ValidationCard key={c.id} check={c} />)}
+        {checks.map(c => <ValidationCard key={c.id} check={running ? { ...c, status: 'running' } : c} />)}
       </div>
 
       <div className="mt-5">

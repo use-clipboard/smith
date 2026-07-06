@@ -28,6 +28,13 @@ function isoToUk(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${d}-${m}-${y}`;
 }
+/** yyyy-mm-dd + N months → dd-mm-yyyy (Companies House filing deadline maths). */
+function isoPlusMonthsUk(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(dt.getUTCDate())}-${p(dt.getUTCMonth() + 1)}-${dt.getUTCFullYear()}`;
+}
 function nowStamp(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
@@ -109,6 +116,9 @@ export default function StageImport({
             periodStart: isoToUk(fy.start_date),
             periodEnd: isoToUk(fy.end_date),
             comparativePeriod: priorFy ? isoToUk(priorFy.end_date) : '',
+            // Companies House filing deadline: 9 months after the year end.
+            accountsDue: isoPlusMonthsUk(fy.end_date, 9),
+            chDeadline: isoPlusMonthsUk(fy.end_date, 9),
             // Seed real-figure disclosure drafts on the first import only, so a
             // later re-import never clobbers notes the user has edited.
             disclosures: e.disclosuresSeeded

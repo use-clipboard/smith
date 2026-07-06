@@ -174,7 +174,7 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
           {stage === 'preparation' && <StagePreparation engagement={engagement} advance={() => advanceFrom('preparation')} />}
           {stage === 'review' && <StageReview engagement={engagement} patch={patch} advance={() => advanceFrom('review')} />}
           {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} />}
-          {stage === 'final-review' && <StageFinalReview engagement={engagement} patch={patch} advance={() => advanceFrom('final-review')} />}
+          {stage === 'final-review' && <StageFinalReview engagement={engagement} advance={() => advanceFrom('final-review')} />}
           {stage === 'publish' && <StagePublish engagement={engagement} patch={patch} />}
         </div>
         {assistantOpen && (

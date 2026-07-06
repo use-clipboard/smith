@@ -3,7 +3,7 @@ import {
   ClipboardPaste, FileSpreadsheet, Files,
 } from 'lucide-react';
 import type {
-  Engagement, StageId, ImportSourceId, ValidationCheck,
+  Engagement, StageId, ImportSourceId,
   EntityType, CompanySize,
 } from './types';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
@@ -50,19 +50,6 @@ export const IMPORT_SOURCES: {
   { id: 'sage',        name: 'Sage',              sub: 'Connected ledger',        icon: ReceiptText,                     enabled: false },
   { id: 'freeagent',   name: 'FreeAgent',         sub: 'Connected ledger',        icon: Wallet,                          enabled: false },
   { id: 'vt',          name: 'VT Transaction+',   sub: 'Import file',             icon: Table2,                          enabled: false },
-];
-
-// ─── Stage 5: compliance validation checks ───────────────────────────────────
-export const VALIDATION_TEMPLATE: ValidationCheck[] = [
-  { id: 'ch',          label: 'Companies House validation', status: 'pass', detail: 'iXBRL accounts pass all filing rules — no validation errors.' },
-  { id: 'ixbrl',       label: 'iXBRL tagging',              status: 'pass', detail: 'All mandatory facts tagged against the FRC taxonomy.' },
-  { id: 'disclosure',  label: 'Disclosure completeness',   status: 'warn', detail: '13 of 14 required disclosures complete — Events after Year End needs review.' },
-  { id: 'signatures',  label: 'Required signatures',        status: 'warn', detail: "Directors' report awaiting signature before filing." },
-  { id: 'reports',     label: 'Required reports',           status: 'pass', detail: "Directors' report and balance sheet statements present." },
-  { id: 'comparatives',label: 'Comparative figures',       status: 'pass', detail: 'Prior year figures reconcile to the 2025 filed accounts.' },
-  { id: 'policies',    label: 'Accounting policy consistency', status: 'pass', detail: 'Policies consistent with prior year; no unexplained changes.' },
-  { id: 'framework',   label: 'Framework compliance',       status: 'pass', detail: 'FRS 102 Section 1A small-company exemptions correctly applied.' },
-  { id: 'deadlines',   label: 'Filing deadlines',           status: 'pass', detail: 'Companies House deadline 31-12-2026 — 181 days remaining.' },
 ];
 
 // ─── Engagement factory ──────────────────────────────────────────────────────
@@ -127,7 +114,8 @@ export function buildEngagement({ clientId, clientRef, companyName, entityType =
     // Note shells (no fabricated figures) — replaced with real-figure drafts on
     // the first trial-balance import.
     disclosures: buildDisclosures({ entityType, size: 'small', framework: 'FRS 102 Section 1A', statements: null, priorYear: '' }),
-    validations: VALIDATION_TEMPLATE.map(v => ({ ...v })),
+    // Stage 5 checks are derived live from the engagement (lib/.../validations).
+    validations: [],
     published: false,
     disclosuresSeeded: false,
   };
