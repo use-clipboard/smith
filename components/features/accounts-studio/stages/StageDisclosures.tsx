@@ -24,6 +24,7 @@ export default function StageDisclosures({
   const [explanation, setExplanation] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+  const [draftingAll, setDraftingAll] = useState<{ done: number; total: number } | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
@@ -135,6 +136,41 @@ export default function StageDisclosures({
     }
   }
 
+  const aiContext = () => ({
+    companyName: engagement.companyName,
+    entityType: ENTITY_LABELS[engagement.entityType],
+    framework: engagement.framework,
+    periodEnd: engagement.periodEnd,
+    turnover: engagement.statements?.profitLoss.turnoverTotal ?? null,
+    netProfit: engagement.statements?.profitLoss.netProfit ?? null,
+    totalAssets: engagement.statements?.balanceSheet.totalAssets ?? null,
+    netAssets: engagement.statements?.balanceSheet.netAssets ?? null,
+  });
+
+  // Draft every included note that isn't complete yet, one at a time.
+  const draftTargets = includedSections.filter(s => s.status !== 'complete');
+  async function draftAll() {
+    if (!draftTargets.length || draftingAll) return;
+    setDraftingAll({ done: 0, total: draftTargets.length });
+    for (let i = 0; i < draftTargets.length; i++) {
+      const t = draftTargets[i];
+      try {
+        const res = await fetch('/api/accounts-studio/assistant', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'rewrite', section: { title: t.title, requirement: t.requirement, content: stripHtml(t.content) }, context: aiContext() }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const html = data.html || textToHtml(data.reply || '');
+          if (html) updateSection(t.id, s => ({ ...s, content: html, status: 'needs-review', history: [{ id: `v${s.history.length + 1}`, label: 'Drafted with SMITH', at: nowStamp(), content: html }, ...s.history] }));
+        }
+      } catch { /* skip this note, keep going */ }
+      setDraftingAll({ done: i + 1, total: draftTargets.length });
+    }
+    setDraftingAll(null);
+    setMountKey(k => k + 1); // reflect the selected note's new content in the editor
+  }
+
   return (
     <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1fr)]">
       {/* ── Section navigation ─────────────────────────────────────────────── */}
@@ -202,6 +238,15 @@ export default function StageDisclosures({
             </div>
             <p className="truncate text-[11px] text-[var(--text-muted)]">{section.requirement}</p>
           </div>
+          <button
+            onClick={draftAll}
+            disabled={aiBusy !== null || draftingAll !== null || draftTargets.length === 0}
+            title="Draft every note that isn't complete with SMITH"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/15 disabled:opacity-50"
+          >
+            {draftingAll ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            {draftingAll ? `Drafting ${draftingAll.done}/${draftingAll.total}…` : 'Draft all'}
+          </button>
         </div>
 
         {/* Toolbar */}
