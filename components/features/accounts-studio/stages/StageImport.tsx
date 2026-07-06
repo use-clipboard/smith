@@ -6,6 +6,7 @@ import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
 import type { BalanceAccount, BalanceAccountType } from '@/lib/bookkeeping/balances';
+import { saveTb, listSavedTbs, getSavedTb, priorPeriodEnd, type SavedTbMeta, type SavedTbRow } from '../trialBalanceStore';
 import { StudioCard } from '../primitives';
 import StatementsView from '../StatementsView';
 import type { Engagement, FinancialStatements, TrialBalanceRow } from '../types';
@@ -45,6 +46,22 @@ function nowStamp(): string {
 }
 function fyLabel(fy: FyRow): string {
   return `Year to ${isoToUk(fy.end_date)}`;
+}
+
+/** TrialBalanceRow[] → the library's SavedTbRow[] shape. */
+function tbToSavedRows(tb: TrialBalanceRow[]): SavedTbRow[] {
+  return tb.map(r => ({ name: r.name, type: r.accountType as BalanceAccountType, ledger: r.ledger, debit: r.debit, credit: r.credit }));
+}
+/** SavedTbRow[] → BalanceAccount[] (for using a saved TB as prior-year comparatives). */
+function savedRowsToBalanceAccounts(rows: SavedTbRow[]): BalanceAccount[] {
+  return rows.map((r, i) => ({
+    id: `p${i}`, name: r.name, ledger: r.ledger ?? r.name, account_type: r.type, code: null,
+    debit_total: +r.debit.toFixed(2), credit_total: +r.credit.toFixed(2), balance: +(r.debit - r.credit).toFixed(2),
+  }));
+}
+function savedNetProfit(accts: BalanceAccount[]): number {
+  return +accts.filter(a => a.account_type === 'income' || a.account_type === 'expense')
+    .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
 }
 
 export default function StageImport({
@@ -93,6 +110,8 @@ export default function StageImport({
         from: p.fromIso, to: p.toIso, priorFrom: null, priorTo: null, importedAt: nowStamp(),
       },
     }));
+    // Snapshot into the per-client trial balance library (reuse + prior year).
+    void saveTb(engagement.clientId, p.toIso, p.source, tbToSavedRows(p.trialBalance));
   }
 
   // ── Imported summary (real data) ───────────────────────────────────────────
@@ -182,6 +201,9 @@ export default function StageImport({
               importedAt: nowStamp(),
             },
           }));
+          // Snapshot the ledger TB into the library so it's available as a
+          // future year's comparatives even when this year came from bookkeeping.
+          void saveTb(engagement.clientId, fy.end_date, 'bookkeeping', tbToSavedRows(res.trialBalance));
         }}
       />
     );
@@ -568,7 +590,7 @@ function ManualImport({
     setRows(rs => rs.map((r, idx) => idx === i ? { ...r, type, ledger: defaultLedger(type) } : r));
   }
 
-  function build() {
+  async function build() {
     if (!rows.length) { setError('Paste a trial balance first.'); return; }
     if (!toIso) { setError('Enter the year-end date.'); return; }
     setError('');
@@ -579,11 +601,24 @@ function ManualImport({
     const bsNetProfit = +accounts
       .filter(a => a.account_type === 'income' || a.account_type === 'expense')
       .reduce((s, a) => s + (a.credit_total - a.debit_total), 0).toFixed(2);
-    const statements = buildStatements({ pl: accounts, bs: accounts, bsNetProfit }, null);
+
+    // Auto prior-year: pull last year's saved TB from the library as comparatives.
+    let prior: { pl: BalanceAccount[]; bs: BalanceAccount[]; bsNetProfit: number } | null = null;
+    let comparativePeriodUk = '';
+    if (engagement.clientId) {
+      const pTb = await getSavedTb(engagement.clientId, priorPeriodEnd(toIso));
+      if (pTb && pTb.rows.length) {
+        const pa = savedRowsToBalanceAccounts(pTb.rows);
+        prior = { pl: pa, bs: pa, bsNetProfit: savedNetProfit(pa) };
+        comparativePeriodUk = isoToUk(pTb.periodEnd);
+      }
+    }
+
+    const statements = buildStatements({ pl: accounts, bs: accounts, bsNetProfit }, prior);
     const size = detectSize(statements.profitLoss.turnoverTotal, statements.balanceSheet.totalAssets);
     const framework = detectFramework(engagement.entityType, size);
     const trialBalance: TrialBalanceRow[] = rows.map(r => ({ name: r.name, ledger: r.ledger, accountType: r.type, debit: r.debit, credit: r.credit }));
-    onImported({ source: 'clipboard', sourceLabel: 'Manual / CSV entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk: '' });
+    onImported({ source: 'clipboard', sourceLabel: 'Manual / CSV entry', statements, trialBalance, size, framework, fromIso: fromIso || defaultStart(toIso), toIso, comparativePeriodUk });
   }
 
   return (
@@ -654,6 +689,7 @@ function ManualImport({
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
                 <input type="date" value={toIso} onChange={e => setToIso(e.target.value)} className="input-base py-1.5 text-sm" />
+                <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Last year&apos;s saved trial balance (if any) is added as comparatives automatically.</p>
               </div>
             </div>
 
@@ -722,10 +758,48 @@ function ManualBuilder({
   const [toIso, setToIso] = useState('');
   const [fromIso, setFromIso] = useState('');
   const [error, setError] = useState('');
+  const clientId = engagement.clientId;
+
+  // Saved trial balance library for this client.
+  const [saved, setSaved] = useState<SavedTbMeta[]>([]);
+  const [priorLoaded, setPriorLoaded] = useState(false);
+  useEffect(() => { if (clientId) listSavedTbs(clientId).then(setSaved); }, [clientId]);
+
+  // A saved prior-year TB is available when one exists for (year-end − 1 year).
+  const priorMeta = toIso ? (saved.find(s => s.periodEnd === priorPeriodEnd(toIso)) ?? null) : null;
 
   const set = (id: number, patch: Partial<BuilderRow>) => setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
   const remove = (id: number) => setRows(rs => rs.filter(r => r.id !== id));
   const addCommon = (name: string, type: BalType) => setRows(rs => [...rs, blank({ name, type })]);
+
+  const num = (n: number) => (n ? String(n) : '');
+
+  async function loadSaved(periodEnd: string) {
+    if (!clientId) return;
+    const tb = await getSavedTb(clientId, periodEnd);
+    if (!tb) return;
+    setRows(tb.rows.map(r => blank({ name: r.name, type: r.type, debit: num(r.debit), credit: num(r.credit) })));
+    setToIso(periodEnd);
+    setPriorLoaded(false);
+  }
+
+  async function loadPriorYear() {
+    if (!clientId || !priorMeta) return;
+    const tb = await getSavedTb(clientId, priorMeta.periodEnd);
+    if (!tb) return;
+    setIncludePrior(true);
+    setRows(rs => {
+      const next = rs.map(r => ({ ...r }));
+      const byName = new Map(next.map((r, i) => [r.name.trim().toLowerCase(), i] as const));
+      for (const pr of tb.rows) {
+        const idx = byName.get(pr.name.trim().toLowerCase());
+        if (idx !== undefined) { next[idx].priorDebit = num(pr.debit); next[idx].priorCredit = num(pr.credit); }
+        else next.push(blank({ name: pr.name, type: pr.type, priorDebit: num(pr.debit), priorCredit: num(pr.credit) }));
+      }
+      return next;
+    });
+    setPriorLoaded(true);
+  }
 
   const curDr = rows.reduce((s, r) => s + parseNum(r.debit), 0);
   const curCr = rows.reduce((s, r) => s + parseNum(r.credit), 0);
@@ -771,6 +845,33 @@ function ManualBuilder({
             Include last year
           </label>
         </div>
+
+        {/* Saved trial balances */}
+        {saved.length > 0 && (
+          <div className="mb-3">
+            <select
+              value=""
+              onChange={e => { if (e.target.value) void loadSaved(e.target.value); }}
+              className="input-base py-1.5 text-sm"
+            >
+              <option value="">Load a saved trial balance…</option>
+              {saved.map(s => (
+                <option key={s.id} value={s.periodEnd}>Year to {isoToUk(s.periodEnd)}{s.source ? ` · ${s.source}` : ''} ({s.rowCount} rows)</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Prior-year available */}
+        {priorMeta && !priorLoaded && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+            <Check size={14} className="text-[var(--accent)]" />
+            A saved trial balance for the year to {isoToUk(priorMeta.periodEnd)} is available.
+            <button type="button" onClick={() => void loadPriorYear()} className="ml-auto rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[11.5px] font-semibold text-white hover:opacity-90">
+              Load as comparatives
+            </button>
+          </div>
+        )}
 
         {/* Quick add */}
         <div className="mb-3 flex flex-wrap gap-1.5">
@@ -852,7 +953,7 @@ function ManualBuilder({
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
-            <input type="date" value={toIso} onChange={e => setToIso(e.target.value)} className="input-base py-1.5 text-sm" />
+            <input type="date" value={toIso} onChange={e => { setToIso(e.target.value); setPriorLoaded(false); }} className="input-base py-1.5 text-sm" />
           </div>
         </div>
 
