@@ -5,6 +5,7 @@
 // dates. Re-running just re-derives from current state.
 
 import type { Engagement, ValidationCheck, ValidationStatus } from '@/components/features/accounts-studio/types';
+import { checkDisclosures } from './disclosureCheck';
 
 function whole(n: number): string {
   return `£${Math.round(Math.abs(n)).toLocaleString('en-GB')}`;
@@ -63,6 +64,16 @@ export function computeValidations(e: Engagement): ValidationCheck[] {
       ? `All ${total} disclosures marked complete.`
       : `${complete} of ${total} complete — outstanding: ${outstanding.slice(0, 3).join(', ')}${outstanding.length > 3 ? `, +${outstanding.length - 3} more` : ''}.`);
 
+  // 5b. Disclosure coverage — are the notes the figures call for actually in?
+  const gaps = checkDisclosures(e);
+  const gapWarns = gaps.filter(g => g.severity === 'warn');
+  if (s) {
+    push('disclosure-coverage', 'Disclosure coverage', gapWarns.length === 0 ? 'pass' : 'warn',
+      gapWarns.length === 0
+        ? gaps.length === 0 ? 'All notes required by the figures are included.' : 'Required notes are all included.'
+        : `${gapWarns.length} likely missing: ${gapWarns.map(g => g.noteId).slice(0, 3).join(', ')}${gapWarns.length > 3 ? `, +${gapWarns.length - 3} more` : ''}.`);
+  }
+
   // 6. Required primary statement / report present.
   if (isCompany(e.entityType)) {
     const dr = e.disclosures.find(d => d.id === 'directors-report');
@@ -92,12 +103,6 @@ export function computeValidations(e: Engagement): ValidationCheck[] {
     else if (days <= 30) push('deadline', 'Filing deadline', 'warn', `Due in ${days} days (${e.chDeadline}).`);
     else push('deadline', 'Filing deadline', 'pass', `${days} days remaining (due ${e.chDeadline}).`);
   }
-
-  // 10. Accounts Review linked.
-  push('review', 'Accounts Review', e.review.status === 'complete' ? 'pass' : 'warn',
-    e.review.status === 'complete'
-      ? `Linked — ${e.review.reviewPoints} review point${e.review.reviewPoints === 1 ? '' : 's'}, ${e.review.journalsApproved} journal${e.review.journalsApproved === 1 ? '' : 's'}, working papers ${e.review.workingPapers ? 'received' : 'not received'}.`
-      : 'Accounts Review not linked — run it and receive results in the Accounts Review stage.');
 
   return checks;
 }

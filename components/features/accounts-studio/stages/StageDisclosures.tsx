@@ -4,10 +4,12 @@ import { useState, useRef, useCallback } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
   ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
+  AlertTriangle, Info, ChevronDown, ShieldCheck,
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
 import { ENTITY_LABELS } from '../data';
 import { OPTIONAL_NOTES, makeOptionalNote } from '@/lib/accounts-studio/disclosures';
+import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
 import type { Engagement, DisclosureSection, SectionStatus } from '../types';
 
 export default function StageDisclosures({
@@ -25,6 +27,9 @@ export default function StageDisclosures({
   const [showHistory, setShowHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [draftingAll, setDraftingAll] = useState<{ done: number; total: number } | null>(null);
+  const [checksOpen, setChecksOpen] = useState(true);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewReply, setReviewReply] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
@@ -33,6 +38,27 @@ export default function StageDisclosures({
   const includedSections = sections.filter(isIncluded);
   const completeCount = includedSections.filter(s => s.status === 'complete').length;
   const addable = OPTIONAL_NOTES.filter(t => !sections.some(s => s.id === t.id));
+
+  // Deterministic "is a needed note missing?" check (see disclosureCheck.ts).
+  const warnings = checkDisclosures(engagement);
+  const warnCount = warnings.filter(w => w.severity === 'warn').length;
+
+  // One-click resolution for a warning: re-include an excluded note, add one
+  // from the optional library, or (fallback) just jump to it.
+  function resolveWarning(noteId: string) {
+    const existing = sections.find(s => s.id === noteId);
+    if (existing) {
+      if (existing.included === false) toggleIncluded(noteId);
+      selectSection(noteId);
+      return;
+    }
+    if (OPTIONAL_NOTES.some(t => t.id === noteId)) addNote(noteId);
+  }
+  const resolveLabel = (noteId: string) => {
+    const existing = sections.find(s => s.id === noteId);
+    if (existing) return existing.included === false ? 'Include' : 'Open';
+    return OPTIONAL_NOTES.some(t => t.id === noteId) ? 'Add note' : null;
+  };
 
   const updateSection = useCallback((id: string, updater: (s: DisclosureSection) => DisclosureSection) => {
     patch(e => ({ ...e, disclosures: e.disclosures.map(s => s.id === id ? updater(s) : s) }));
@@ -171,7 +197,100 @@ export default function StageDisclosures({
     setMountKey(k => k + 1); // reflect the selected note's new content in the editor
   }
 
+  // Ask SMITH for a second opinion on the disclosure set as a whole.
+  async function runReview() {
+    if (reviewBusy) return;
+    setReviewBusy(true); setReviewReply(null); setChecksOpen(true);
+    const included = includedSections.map(s => `${s.title}${s.status === 'complete' ? '' : ' (draft)'}`).join(', ') || 'none';
+    const excluded = sections.filter(s => s.included === false).map(s => s.title).join(', ') || 'none';
+    const flagged = warnings.map(w => `- ${w.message}`).join('\n') || 'none flagged by the automated check';
+    const prompt = [
+      `Please review the disclosure notes selected for these statutory accounts and tell me if anything required is missing, thin, or included unnecessarily. Be specific and concise — a short bulleted list.`,
+      ``,
+      `Notes currently included: ${included}.`,
+      `Notes excluded: ${excluded}.`,
+      ``,
+      `The automated check flagged:\n${flagged}`,
+    ].join('\n');
+    try {
+      const res = await fetch('/api/accounts-studio/assistant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'chat', context: aiContext(), messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error || 'The assistant is unavailable right now.');
+      }
+      const data = await res.json();
+      setReviewReply(data.reply || 'No response.');
+    } catch (err) {
+      setReviewReply(err instanceof Error ? err.message : 'Something went wrong.');
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+
   return (
+    <div className="flex flex-col gap-3">
+    {/* ── Disclosure check banner ──────────────────────────────────────────── */}
+    {(warnings.length > 0 || reviewReply) && (
+      <StudioCard className={`overflow-hidden border ${warnCount > 0 ? 'border-amber-300/70 bg-amber-50/60' : 'border-sky-200/70 bg-sky-50/50'}`}>
+        <div className="flex items-center gap-2.5 px-4 py-2.5">
+          {warnCount > 0
+            ? <AlertTriangle size={16} className="shrink-0 text-amber-600" />
+            : <Info size={16} className="shrink-0 text-sky-600" />}
+          <button onClick={() => setChecksOpen(o => !o)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+            <span className="text-[13px] font-bold text-[var(--text-primary)]">
+              {warnings.length === 0
+                ? 'Disclosure check passed'
+                : `${warnings.length} disclosure ${warnings.length === 1 ? 'suggestion' : 'suggestions'}${warnCount > 0 ? ` · ${warnCount} to review` : ''}`}
+            </span>
+            <ChevronDown size={14} className={`text-[var(--text-muted)] transition-transform ${checksOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <button
+            onClick={runReview}
+            disabled={reviewBusy}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] ring-1 ring-[var(--accent)]/20 transition-colors hover:bg-white disabled:opacity-50"
+          >
+            {reviewBusy ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={13} />} Review with SMITH
+          </button>
+        </div>
+        {checksOpen && (
+          <div className="space-y-1.5 border-t border-black/5 px-4 py-3">
+            {warnings.map(w => {
+              const label = resolveLabel(w.noteId);
+              return (
+                <div key={w.id} className="flex items-start gap-2.5">
+                  {w.severity === 'warn'
+                    ? <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-500" />
+                    : <Info size={13} className="mt-0.5 shrink-0 text-sky-500" />}
+                  <p className="flex-1 text-[12.5px] leading-relaxed text-[var(--text-secondary)]">{w.message}</p>
+                  {label && (
+                    <button
+                      onClick={() => resolveWarning(w.noteId)}
+                      className="shrink-0 rounded-md bg-white px-2 py-0.5 text-[11.5px] font-semibold text-[var(--accent)] ring-1 ring-[var(--accent)]/20 transition-colors hover:bg-[var(--accent)]/5"
+                    >
+                      {label}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {warnings.length === 0 && (
+              <p className="text-[12.5px] text-[var(--text-secondary)]">The automated check didn&apos;t find any missing notes for this entity and framework.</p>
+            )}
+            {reviewReply && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-[var(--accent)]/20 bg-white/70 px-3 py-2.5">
+                <Sparkles size={14} className="mt-0.5 shrink-0 text-[var(--accent)]" />
+                <p className="flex-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--text-secondary)]">{reviewReply}</p>
+                <button onClick={() => setReviewReply(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={13} /></button>
+              </div>
+            )}
+          </div>
+        )}
+      </StudioCard>
+    )}
+
     <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)_minmax(0,1fr)]">
       {/* ── Section navigation ─────────────────────────────────────────────── */}
       <StudioCard className="flex max-h-[calc(100vh-240px)] flex-col overflow-hidden">
@@ -358,6 +477,7 @@ export default function StageDisclosures({
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 }

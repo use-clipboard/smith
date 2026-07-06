@@ -11,7 +11,6 @@ import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 export const STAGES: { id: StageId; label: string; blurb: string }[] = [
   { id: 'import',       label: 'Import Data',        blurb: 'Bring in the ledger or trial balance' },
   { id: 'preparation',  label: 'AI Preparation',     blurb: 'SMITH builds the statutory accounts' },
-  { id: 'review',       label: 'Accounts Review',    blurb: 'Validate the numbers' },
   { id: 'disclosures',  label: 'Notes & Disclosures', blurb: 'Draft and finalise disclosures' },
   { id: 'final-review', label: 'Final Review',        blurb: 'Compliance validation' },
   { id: 'publish',      label: 'Approve & Publish',   blurb: 'File and archive' },
@@ -56,7 +55,7 @@ export const IMPORT_SOURCES: {
 ];
 
 // ─── Engagement factory ──────────────────────────────────────────────────────
-const ALL_STAGES: StageId[] = ['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'];
+const ALL_STAGES: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
 
 export function freshStageStatus(active: StageId): Engagement['stageStatus'] {
   const activeIdx = ALL_STAGES.indexOf(active);
@@ -154,16 +153,16 @@ export interface AccountsHistoryItem {
 /** Derive a headline status for the history list from stage progress. */
 export function engagementStatus(e: Engagement): { label: string; tone: EngagementStatusTone } {
   if (e.published) return { label: 'Filed', tone: 'filed' };
-  const stages: StageId[] = ['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'];
-  const allButPublishDone = stages.slice(0, 5).every(s => e.stageStatus[s] === 'complete');
+  const stages: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
+  const allButPublishDone = stages.slice(0, stages.length - 1).every(s => e.stageStatus[s] === 'complete');
   if (allButPublishDone) return { label: 'Ready to file', tone: 'ready' };
   const started = stages.some(s => e.stageStatus[s] === 'complete');
   return started ? { label: 'In progress', tone: 'progress' } : { label: 'Draft', tone: 'draft' };
 }
 
-/** How many of the six stages are complete. */
+/** How many of the five stages are complete. */
 export function stageProgress(e: Engagement): number {
-  return (['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'] as StageId[])
+  return (['import', 'preparation', 'disclosures', 'final-review', 'publish'] as StageId[])
     .filter(s => e.stageStatus[s] === 'complete').length;
 }
 

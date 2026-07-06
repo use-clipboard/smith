@@ -15,7 +15,6 @@ import AssistantPanel from './AssistantPanel';
 import { StudioCard } from './primitives';
 import StageImport from './stages/StageImport';
 import StagePreparation from './stages/StagePreparation';
-import StageReview from './stages/StageReview';
 import StageDisclosures from './stages/StageDisclosures';
 import StageFinalReview from './stages/StageFinalReview';
 import StagePublish from './stages/StagePublish';
@@ -26,7 +25,7 @@ import type { Engagement, StageId, EntityType } from './types';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
-const ALL_STAGES: StageId[] = ['import', 'preparation', 'review', 'disclosures', 'final-review', 'publish'];
+const ALL_STAGES: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
 const ENTITY_CHOICES: EntityType[] = ['limited_company', 'sole_trader', 'partnership', 'llp', 'cic', 'charity', 'trust', 'dormant_company'];
 
 export default function AccountsStudioModule({ userEmail }: { userEmail: string | null }) {
@@ -173,7 +172,6 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
         <div className="min-w-0 flex-1">
           {stage === 'import' && <StageImport engagement={engagement} patch={patch} advance={() => advanceFrom('import')} />}
           {stage === 'preparation' && <StagePreparation engagement={engagement} advance={() => advanceFrom('preparation')} />}
-          {stage === 'review' && <StageReview engagement={engagement} patch={patch} advance={() => advanceFrom('review')} />}
           {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} />}
           {stage === 'final-review' && <StageFinalReview engagement={engagement} advance={() => advanceFrom('final-review')} />}
           {stage === 'publish' && <StagePublish engagement={engagement} patch={patch} />}

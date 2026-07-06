@@ -106,7 +106,7 @@ export default function StagePreparation({
 
       <div className="flex justify-end">
         <button onClick={advance} className="btn-primary">
-          Continue to Accounts Review <ArrowRight size={15} />
+          Continue to Notes & Disclosures <ArrowRight size={15} />
         </button>
       </div>
     </div>

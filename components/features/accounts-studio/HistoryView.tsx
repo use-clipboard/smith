@@ -13,7 +13,7 @@ import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { getFirmBranding } from './branding';
 import { EngagementStatusBadge } from './primitives';
-import { ENTITY_LABELS, engagementStatus, stageProgress, type AccountsHistoryItem } from './data';
+import { ENTITY_LABELS, engagementStatus, stageProgress, STAGES, type AccountsHistoryItem } from './data';
 import { listEngagements, deleteEngagement } from './persistence';
 import type { Engagement } from './types';
 
@@ -327,9 +327,9 @@ export default function HistoryView({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
-                            <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(progress / 6) * 100}%` }} />
+                            <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(progress / STAGES.length) * 100}%` }} />
                           </div>
-                          <span className="text-[11px] tabular-nums text-[var(--text-muted)]">{progress}/6</span>
+                          <span className="text-[11px] tabular-nums text-[var(--text-muted)]">{progress}/{STAGES.length}</span>
                         </div>
                       </td>
                     )}

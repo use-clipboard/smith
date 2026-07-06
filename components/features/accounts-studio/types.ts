@@ -8,7 +8,6 @@
 export type StageId =
   | 'import'
   | 'preparation'
-  | 'review'
   | 'disclosures'
   | 'final-review'
   | 'publish';
