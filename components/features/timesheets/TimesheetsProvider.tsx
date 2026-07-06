@@ -50,6 +50,7 @@ interface TimesheetsContextValue {
 
   // Week approval workflow.
   weekStatuses: Record<string, WeekStatus>;   // keyed `${userId}__${weekStart}`
+  refreshWeeks: () => Promise<void>;           // re-pull submitted/approved weeks (e.g. new approvals)
   weekStatusFor: (userId: string, weekStart: string) => WeekApprovalStatus;
   isWeekLocked: (weekStart: string) => boolean; // for the current user
   submitWeek: (weekStart: string) => void;
@@ -431,6 +432,33 @@ export default function TimesheetsProvider({
   }, []);
 
   // ── Week approval workflow ──────────────────────────────────────────────────
+  // Re-pull week statuses on demand. Workspace tabs stay mounted (display:none),
+  // so the one-time load on mount can go stale — e.g. a teammate submits a week
+  // hours after this tab was opened. Refetch on focus and when Approvals opens so
+  // pending approvals actually appear without a hard refresh.
+  const loadWeeks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/timesheets/weeks');
+      if (!res.ok) return;
+      const d = await res.json();
+      const wmap: Record<string, WeekStatus> = {};
+      for (const w of (d.weeks ?? []) as WeekStatus[]) wmap[weekKey(w.userId, w.weekStart)] = w;
+      setWeekStatuses(wmap);
+    } catch { /* keep current */ }
+  }, []);
+
+  // Refetch when the app regains focus / becomes visible again.
+  useEffect(() => {
+    if (!ready) return;
+    const onVisible = () => { if (document.visibilityState === 'visible') void loadWeeks(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [ready, loadWeeks]);
+
   const weekStatusFor = useCallback((uid: string, weekStart: string): WeekApprovalStatus => {
     return weekStatuses[weekKey(uid, weekStart)]?.status ?? 'draft';
   }, [weekStatuses]);
@@ -521,7 +549,7 @@ export default function TimesheetsProvider({
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timer, elapsedMs,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
-    weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
+    weekStatuses, refreshWeeks: loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
@@ -530,7 +558,7 @@ export default function TimesheetsProvider({
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timer, elapsedMs,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
-    weekStatuses, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
+    weekStatuses, loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,

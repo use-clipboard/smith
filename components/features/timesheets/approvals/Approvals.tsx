@@ -1,19 +1,31 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { CheckCircle2, X, Clock3, Inbox, Send } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, X, Clock3, Inbox, Send, RefreshCw } from 'lucide-react';
 import { useTimesheets } from '../TimesheetsProvider';
 import { inWeek, totals } from '@/lib/timesheets/compute';
+import type { TimeEntry } from '@/lib/timesheets/types';
 import { fmtDateUK, fmtHours, fmtPct, addDays } from '@/lib/timesheets/format';
 import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
 import Avatar from '@/components/ui/Avatar';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 
 export default function Approvals() {
-  const { weekStatuses, staff, entries, reviewWeek, isAdmin, userId } = useTimesheets();
+  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, isAdmin, userId } = useTimesheets();
   const openProfile = useOpenProfile();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // The provider loads week statuses once on mount, but the Timesheets tab stays
+  // mounted for the whole session — so a teammate's later submission wouldn't show
+  // until a hard refresh. Re-pull whenever this view is opened.
+  useEffect(() => { void refreshWeeks(); }, [refreshWeeks]);
+
+  async function manualRefresh() {
+    setRefreshing(true);
+    try { await refreshWeeks(); } finally { setRefreshing(false); }
+  }
 
   const staffById = useMemo(() => new Map(staff.map(s => [s.id, s])), [staff]);
 
@@ -24,14 +36,34 @@ export default function Approvals() {
   const rows = useMemo(() => {
     return Object.values(weekStatuses)
       .filter(w => w.status === 'submitted' && mine(w))
-      .map(w => {
-        const own = inWeek(entries, w.weekStart, w.userId);
-        const t = totals(own);
-        return { ...w, staff: staffById.get(w.userId), minutes: t.total, billablePct: t.billablePct, chargeable: t.chargeablePence };
-      })
+      .map(w => ({ ...w, staff: staffById.get(w.userId) }))
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStatuses, entries, staffById, isAdmin, userId]);
+  }, [weekStatuses, staffById, isAdmin, userId]);
+
+  // The normal entries feed is RLS-scoped to the current user, so a submitter's
+  // hours aren't in `entries`. Fetch each pending week's entries (permission-
+  // checked server-side) so the approver sees real hours, not zeros. Own weeks
+  // use the already-loaded local entries.
+  const [weekEntries, setWeekEntries] = useState<Record<string, TimeEntry[]>>({});
+  const fetchedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    for (const r of rows) {
+      const key = `${r.userId}__${r.weekStart}`;
+      if (r.userId === userId) {
+        setWeekEntries(prev => ({ ...prev, [key]: inWeek(entries, r.weekStart, userId) }));
+        continue;
+      }
+      if (fetchedRef.current.has(key)) continue;
+      fetchedRef.current.add(key);
+      fetch(`/api/timesheets/week-entries?userId=${r.userId}&weekStart=${r.weekStart}`)
+        .then(res => (res.ok ? res.json() : { entries: [] }))
+        .then(d => { if (!cancelled) setWeekEntries(prev => ({ ...prev, [key]: (d.entries ?? []) as TimeEntry[] })); })
+        .catch(() => { fetchedRef.current.delete(key); });
+    }
+    return () => { cancelled = true; };
+  }, [rows, entries, userId]);
 
   const reviewedRows = useMemo(() => {
     return Object.values(weekStatuses)
@@ -54,9 +86,19 @@ export default function Approvals() {
           title="Timesheet approvals"
           subtitle={isAdmin ? 'Weeks submitted by the team — including any without a manager set.' : 'Weeks submitted by the people who report to you.'}
           right={
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-600">
-              <Clock3 size={13} /> {rows.length} pending
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={manualRefresh}
+                disabled={refreshing}
+                aria-label="Refresh pending approvals"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold text-[var(--text-muted)] transition-colors hover:bg-black/[0.04] hover:text-[var(--text-secondary)] disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} /> Refresh
+              </button>
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-600">
+                <Clock3 size={13} /> {rows.length} pending
+              </span>
+            </div>
           }
         />
 
@@ -71,6 +113,8 @@ export default function Approvals() {
             {rows.map(r => {
               const key = `${r.userId}__${r.weekStart}`;
               const isRejecting = rejecting === key;
+              const ents = weekEntries[key];
+              const t = ents ? totals(ents) : null;
               return (
                 <div key={key} className="rounded-2xl border border-black/5 bg-white/60 p-3">
                   <div className="flex items-center gap-3">
@@ -90,8 +134,14 @@ export default function Approvals() {
                       <p className="text-[11px] text-[var(--text-muted)]">Week of {fmtDateUK(r.weekStart)} – {fmtDateUK(addDays(r.weekStart, 6))}</p>
                     </div>
                     <div className="hidden text-right sm:block">
-                      <p className="text-[13px] font-bold text-[var(--text-primary)]">{fmtHours(r.minutes)}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">{fmtPct(r.billablePct)} billable</p>
+                      {t ? (
+                        <>
+                          <p className="text-[13px] font-bold text-[var(--text-primary)]">{fmtHours(t.total)}</p>
+                          <p className="text-[10px] text-[var(--text-muted)]">{fmtPct(t.billablePct)} billable</p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-[var(--text-muted)]">Loading…</p>
+                      )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       <button
@@ -109,7 +159,7 @@ export default function Approvals() {
                     </div>
                   </div>
                   <div className="mt-2 pl-[48px]">
-                    <ProgressBar value={r.billablePct} color="#10B981" height={5} />
+                    <ProgressBar value={t?.billablePct ?? 0} color="#10B981" height={5} />
                   </div>
                   {isRejecting && (
                     <div className="mt-3 flex items-center gap-2 pl-[48px]">
