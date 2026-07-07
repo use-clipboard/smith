@@ -94,6 +94,8 @@ export function frameworkTier(ctx: DisclosureContext): FrameworkTier {
 
 const COMPANIES: EntityType[] = ['limited_company', 'cic', 'dormant_company'];
 const COMPANIES_LLP: EntityType[] = [...COMPANIES, 'llp'];
+const PARTNERSHIPS: EntityType[] = ['partnership'];
+const PARTNERSHIP_LLP: EntityType[] = ['partnership', 'llp'];
 const T_MICRO: FrameworkTier[] = ['frs105'];
 const T_NONMICRO: FrameworkTier[] = ['frs102-1a', 'frs102-full'];
 const T_ALL_FRS: FrameworkTier[] = ['frs105', 'frs102-1a', 'frs102-full'];
@@ -115,6 +117,14 @@ const tHasDirectorBalance = (ctx: DisclosureContext) => {
   if (!bs) return false;
   return [...bs.creditorsWithin, ...bs.creditorsAfter, ...bs.currentAssets]
     .some(g => `${g.title} ${g.lines.map(l => l.label).join(' ')}`.toLowerCase().includes('director'));
+};
+const tHasPartnerLoan = (ctx: DisclosureContext) => {
+  const bs = ctx.statements?.balanceSheet;
+  if (!bs) return false;
+  return [...bs.creditorsWithin, ...bs.creditorsAfter, ...bs.currentAssets].some(g => {
+    const s = `${g.title} ${g.lines.map(l => l.label).join(' ')}`.toLowerCase();
+    return /partner|member/.test(s) && /loan/.test(s);
+  });
 };
 
 const isLlpEntity = (e: EntityType) => e === 'llp';
@@ -223,7 +233,7 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'accountants-report', title: "Accountants' Report",
     requirement: 'Report of the reporting accountants on the unaudited financial statements.',
-    frameworks: T_SMALL_MICRO, entityTypes: COMPANIES_LLP, level: 'mandatory',
+    frameworks: T_SMALL_MICRO, entityTypes: [...COMPANIES_LLP, 'partnership'], level: 'mandatory',
     build: ctx => ({ status: 'needs-review', content: accountantsReportHtml(ctx) }),
   },
   {
@@ -247,7 +257,7 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'taxation', title: 'Taxation',
     requirement: 'Analysis of the tax charge on the profit for the year.',
-    frameworks: T_NONMICRO, level: 'conditional', trigger: tHasTax,
+    frameworks: T_NONMICRO, entityTypes: COMPANIES, level: 'conditional', trigger: tHasTax,
     build: ctx => {
       const lines = collectLines(ctx.statements?.profitLoss.taxation, []);
       if (lines.length) {
@@ -382,11 +392,64 @@ const NOTE_RULES: NoteRule[] = [
     frameworks: T_NONMICRO, entityTypes: ['charity'], level: 'mandatory',
     build: staticNote(`<h3>Charity disclosures</h3><p>The accounts are prepared in accordance with the Charities SORP (FRS 102). Funds are analysed between unrestricted, restricted and endowment funds, with a public benefit statement and trustee information to follow.</p>`),
   },
+  // ── Traditional partnership ──
   {
-    id: 'llp', title: 'LLP Disclosures',
-    requirement: "Members' remuneration, capital and division of profits under the LLP SORP.",
+    id: 'partnership-tax', title: 'Taxation',
+    requirement: 'The partnership is not itself taxed — profits are taxed on the partners/members.',
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIP_LLP, level: 'mandatory',
+    build: ctx => {
+      const llp = isLlpEntity(ctx.entityType);
+      return { status: 'complete', content: `<h3>Taxation</h3><p>The ${llp ? 'LLP' : 'partnership'} is not itself subject to taxation on its profits. The profits are allocated to the ${llp ? 'members' : 'partners'}, who are individually responsible for income tax and national insurance (or corporation tax, for any corporate ${llp ? 'member' : 'partner'}) on their share.</p>` };
+    },
+  },
+  {
+    id: 'appropriation', title: 'Appropriation Account',
+    requirement: 'Allocation of the net profit between the partners.',
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIPS, level: 'mandatory',
+    build: staticNote(`<h3>Appropriation of profit</h3><p>The profit for the financial year is allocated between the partners as follows — complete with each partner's share: interest on capital £[ ]; partners' salaries £[ ]; interest on drawings £([ ]); and the balance of profit £[ ] shared in the profit-sharing ratio.</p>`),
+  },
+  {
+    id: 'capital-accounts', title: "Partners' Capital Accounts",
+    requirement: "Movement on each partner's capital account.",
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIPS, level: 'mandatory',
+    build: staticNote(`<h3>Partners' capital accounts</h3><p>The movement on the partners' capital accounts is set out below — for each partner: opening capital, capital introduced, capital withdrawn, and closing capital.</p>`),
+  },
+  {
+    id: 'current-accounts', title: "Partners' Current Accounts",
+    requirement: "Movement on each partner's current account.",
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIPS, level: 'mandatory',
+    build: staticNote(`<h3>Partners' current accounts</h3><p>The movement on the partners' current accounts is set out below — for each partner: opening balance, profit share, salary, interest on capital, drawings, and closing balance.</p>`),
+  },
+  {
+    id: 'profit-sharing', title: 'Profit-Sharing Ratios',
+    requirement: 'The basis on which profits are shared between the partners.',
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIPS, level: 'mandatory',
+    build: staticNote(`<h3>Profit-sharing arrangements</h3><p>Profits and losses are shared between the partners in accordance with the partnership agreement. Set out the profit-sharing ratios, together with any partners' salaries and any interest on capital or drawings.</p>`),
+  },
+  {
+    id: 'partner-loans', title: 'Loans from Partners',
+    requirement: 'Loans from (or to) partners/members, with terms and interest.',
+    frameworks: T_ALL_FRS, entityTypes: PARTNERSHIP_LLP, level: 'conditional', trigger: tHasPartnerLoan,
+    build: ctx => ({ status: 'needs-review', content: `<h3>Loans ${isLlpEntity(ctx.entityType) ? 'from members' : 'from partners'}</h3><p>Set out the amounts, interest rates and repayment terms of any loans ${isLlpEntity(ctx.entityType) ? 'from or to members' : 'from or to partners'}.</p>` }),
+  },
+  // ── LLP SORP ──
+  {
+    id: 'members-interests', title: "Members' Interests",
+    requirement: "Members' capital, current accounts, loans and amounts due under the LLP SORP.",
     frameworks: T_ALL_FRS, entityTypes: ['llp'], level: 'mandatory',
-    build: staticNote(`<h3>LLP disclosures</h3><p>Members' remuneration and the division of profits are presented in accordance with the LLP SORP.</p>`),
+    build: staticNote(`<h3>Members' interests</h3><p>Members' interests are analysed between members' capital, members' current accounts, loans and other amounts due to members, in accordance with the LLP SORP. Show the movement (opening, amounts introduced, profit allocated, drawings and closing) for each category.</p>`),
+  },
+  {
+    id: 'members-remuneration', title: "Members' Remuneration",
+    requirement: "Members' remuneration charged as an expense and profit attributable to members.",
+    frameworks: T_ALL_FRS, entityTypes: ['llp'], level: 'mandatory',
+    build: staticNote(`<h3>Members' remuneration</h3><p>Set out the members' remuneration charged as an expense, the profit available for discretionary division among members, and (where required) the amount attributable to the highest-paid member.</p>`),
+  },
+  {
+    id: 'participation-rights', title: "Members' Participation Rights",
+    requirement: "Classification of members' interests between equity and liabilities under the LLP SORP.",
+    frameworks: T_ALL_FRS, entityTypes: ['llp'], level: 'mandatory',
+    build: staticNote(`<h3>Members' participation rights</h3><p>Amounts due to members are classified between equity and liabilities in accordance with the LLP SORP, according to whether the LLP has an unconditional right to avoid delivering cash or other assets. State the basis of classification (equity, liability or hybrid).</p>`),
   },
   {
     id: 'trust', title: 'Trust Disclosures',
