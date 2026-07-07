@@ -13,6 +13,19 @@ const SUGGESTIONS = [
   'Explain the Companies House validation',
 ];
 
+// The assistant replies in plain prose, but strip any stray markdown it slips
+// in — bold markers, horizontal-rule dividers, hash headings and list bullets.
+function cleanMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/^\s*([-*_]\s*){3,}\s*$/gm, '')   // divider lines --- *** ___
+    .replace(/^\s*#{1,6}\s+/gm, '')            // ### headings
+    .replace(/^\s*[*-]\s+/gm, '• ')            // list markers → bullet
+    .replace(/\n{3,}/g, '\n\n')                // collapse gaps left by removed dividers
+    .trim();
+}
+
 export default function AssistantPanel({ engagement }: { engagement: Engagement }) {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState('');
@@ -55,7 +68,7 @@ export default function AssistantPanel({ engagement }: { engagement: Engagement 
         throw new Error(e.error || 'The assistant is unavailable right now.');
       }
       const data = await res.json();
-      setMessages(m => [...m, { role: 'assistant', content: data.reply || 'No response.' }]);
+      setMessages(m => [...m, { role: 'assistant', content: cleanMarkdown(data.reply || 'No response.') }]);
     } catch (err) {
       setMessages(m => [...m, { role: 'assistant', content: err instanceof Error ? err.message : 'Something went wrong.' }]);
     } finally {
