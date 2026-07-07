@@ -7,15 +7,16 @@ import {
   AlertTriangle, Info, ChevronDown, ShieldCheck,
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
+import Tooltip from '@/components/ui/Tooltip';
 import { ENTITY_LABELS } from '../data';
 import { addableNotes, makeNote, noteRuleMeta, type DisclosureContext } from '@/lib/accounts-studio/disclosures';
 import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
 import type { Engagement, DisclosureSection, SectionStatus, NoteLevel } from '../types';
 
-const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string }> = {
-  mandatory: { label: 'Required', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
-  conditional: { label: 'Conditional', cls: 'bg-sky-100 text-sky-700', dot: 'bg-sky-400' },
-  optional: { label: 'Optional', cls: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300' },
+const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; hint: string }> = {
+  mandatory: { label: 'Required', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400', hint: 'Required — this note must be included in the accounts under the applicable framework.' },
+  conditional: { label: 'Conditional', cls: 'bg-sky-100 text-sky-700', dot: 'bg-sky-400', hint: 'Conditional — included because the figures in the trial balance call for it (e.g. there are fixed assets or creditors).' },
+  optional: { label: 'Optional', cls: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300', hint: 'Optional — a best-practice note. Include it only if it is relevant to these accounts.' },
 };
 
 export default function StageDisclosures({
@@ -326,7 +327,11 @@ export default function StageDisclosures({
                 <button onClick={() => selectSection(s.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left">
                   <SectionStatusDot status={s.status} />
                   <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${!included ? 'text-[var(--text-muted)] line-through' : active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
-                  {levelOf(s) && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_BADGE[levelOf(s)!].dot}`} aria-label={LEVEL_BADGE[levelOf(s)!].label} />}
+                  {levelOf(s) && (
+                    <Tooltip label={LEVEL_BADGE[levelOf(s)!].hint} side="top">
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_BADGE[levelOf(s)!].dot}`} aria-label={`${LEVEL_BADGE[levelOf(s)!].label} note`} />
+                    </Tooltip>
+                  )}
                 </button>
                 <button
                   onClick={() => toggleIncluded(s.id)}
@@ -356,7 +361,9 @@ export default function StageDisclosures({
                   <button key={t.id} onClick={() => addNote(t.id)} className="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-[var(--accent)]/5">
                     <span className="flex items-center gap-1.5">
                       <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">{t.title}</span>
-                      <span className={`shrink-0 rounded-full px-1.5 py-px text-[9px] font-bold ${LEVEL_BADGE[t.level].cls}`}>{LEVEL_BADGE[t.level].label}</span>
+                      <Tooltip label={LEVEL_BADGE[t.level].hint} side="top">
+                        <span aria-label={LEVEL_BADGE[t.level].label} className={`shrink-0 cursor-help rounded-full px-1.5 py-px text-[9px] font-bold ${LEVEL_BADGE[t.level].cls}`}>{LEVEL_BADGE[t.level].label}</span>
+                      </Tooltip>
                     </span>
                     <span className="block text-[10.5px] text-[var(--text-muted)]">{t.requirement}</span>
                   </button>
@@ -374,7 +381,11 @@ export default function StageDisclosures({
             <div className="flex items-center gap-2">
               <h3 className="truncate text-[14px] font-bold text-[var(--text-primary)]">{section.title}</h3>
               <SectionStatusPill status={section.status} />
-              {levelOf(section) && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${LEVEL_BADGE[levelOf(section)!].cls}`}>{LEVEL_BADGE[levelOf(section)!].label}</span>}
+              {levelOf(section) && (
+                <Tooltip label={LEVEL_BADGE[levelOf(section)!].hint} side="bottom">
+                  <span aria-label={LEVEL_BADGE[levelOf(section)!].label} className={`shrink-0 cursor-help rounded-full px-2 py-0.5 text-[10px] font-bold ${LEVEL_BADGE[levelOf(section)!].cls}`}>{LEVEL_BADGE[levelOf(section)!].label}</span>
+                </Tooltip>
+              )}
             </div>
             <p className="truncate text-[11px] text-[var(--text-muted)]">{section.requirement}</p>
           </div>
