@@ -130,7 +130,23 @@ function incomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, pri
   </tbody></table>`;
 }
 
+/** True for a retained-earnings / P&L reserve equity ledger (not share capital,
+ *  share premium or revaluation reserve — those stay as their own lines). */
+function isRetainedGroup(title: string): boolean {
+  const t = title.toLowerCase();
+  return t.includes('profit and loss') || t.includes('retained') || t.includes('p&l') || t.includes('accumulated');
+}
+
 function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string): string {
+  // Fold any retained-earnings ledger from the trial balance into a single
+  // "Profit and loss account" reserve line together with the year's profit, so
+  // the balance sheet never shows two P&L-account lines. Other equity (share
+  // capital, share premium, revaluation reserve) keeps its own line.
+  const otherCapital = bs.capitalAndReserves.filter(g => !isRetainedGroup(g.title));
+  const reserveGroups = bs.capitalAndReserves.filter(g => isRetainedGroup(g.title));
+  const reserveCur = reserveGroups.reduce((s, g) => s + g.total, 0) + bs.profitForYear;
+  const reservePrior = hasPrior ? reserveGroups.reduce((s, g) => s + (g.totalPrior ?? 0), 0) + (bs.profitForYearPrior ?? 0) : null;
+
   return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>
     ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('fixed-assets') }) + groupRows(bs.fixedAssets, hasPrior, 1, true) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
     ${row('Current assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('debtors') })}
@@ -143,8 +159,8 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
     ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true, notesCol: true }) + groupRows(bs.provisions, hasPrior, -1, true) : ''}
     ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
     ${row('Capital and reserves', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('share-capital') })}
-    ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
-    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('reserves') })}
+    ${groupRows(otherCapital, hasPrior, 1, true)}
+    ${row('Profit and loss account', reserveCur, reservePrior, hasPrior, { notesCol: true, noteRef: noteNo('reserves') })}
     ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
   </tbody></table>`;
 }

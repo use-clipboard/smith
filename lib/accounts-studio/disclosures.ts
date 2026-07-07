@@ -296,26 +296,28 @@ const NOTE_DEFS: NoteDef[] = [
       if (!pl || !bs) {
         return { status: 'needs-review', content: `<h3>Profit and loss account</h3><p>The movement on the profit and loss account reserve, including the profit for the year and any dividends, should be set out here.</p>` };
       }
-      // Retained-earnings reserve brought forward, from the equity groups if the
-      // ledger separates it; otherwise the carried-forward balance is left to be
-      // confirmed alongside any dividends.
-      const retained = findGroup(bs.capitalAndReserves, ['profit and loss', 'retained', 'p&l', 'income reserve']);
-      const bfwd = retained && retained.prior !== null ? retained.prior : null;
-      const profit = pl.netProfit;
-      const cfwd = retained ? retained.current : null;
+      // Closing reserve = any retained-earnings ledger from the trial balance +
+      // the year's profit. This mirrors the balance sheet's single P&L-account
+      // line, so the note's carried-forward figure agrees with the statement.
+      const hasPrior = ctx.statements!.hasPrior;
+      const retained = findGroup(bs.capitalAndReserves, ['profit and loss', 'retained', 'p&l', 'accumulated']);
+      const retCur = retained ? retained.current : 0;
+      const retPrior = retained && retained.prior !== null ? retained.prior : 0;
+      const profit = bs.profitForYear;
+      const cfwd = retCur + profit;
+      const bfwd = hasPrior ? retPrior + (bs.profitForYearPrior ?? 0) : null;
       const rows: string[] = [];
       if (bfwd !== null) rows.push(`<tr><td>Balance brought forward</td><td style="text-align:right">${num0(bfwd)}</td></tr>`);
       rows.push(`<tr><td>Profit for the financial year</td><td style="text-align:right">${num0(profit)}</td></tr>`);
-      // Reconstruct distributions as the balancing figure when both ends are known.
-      if (bfwd !== null && cfwd !== null) {
+      // Distributions reconstructed as the balancing figure when both ends known.
+      if (bfwd !== null) {
         const dividends = bfwd + profit - cfwd;
         if (Math.abs(dividends) >= 1) rows.push(`<tr><td>Dividends paid</td><td style="text-align:right">(${num0(Math.abs(dividends))})</td></tr>`);
       }
-      rows.push(`<tr><td style="font-weight:600;border-top:1px solid #cbd5e1">Balance carried forward</td><td style="text-align:right;font-weight:600;border-top:1px solid #cbd5e1">${cfwd !== null ? num0(cfwd) : '&mdash;'}</td></tr>`);
+      rows.push(`<tr><td style="font-weight:600;border-top:1px solid #cbd5e1">Balance carried forward</td><td style="text-align:right;font-weight:600;border-top:1px solid #cbd5e1">${num0(cfwd)}</td></tr>`);
       return {
-        status: cfwd !== null ? 'complete' : 'needs-review',
-        content: `<h3>Profit and loss account</h3><table style="width:100%;border-collapse:collapse;margin-top:6px"><tbody>${rows.join('')}</tbody></table>`
-          + (cfwd === null ? `<p style="font-size:12px;color:#64748b;margin-top:8px">Confirm the balance carried forward and any dividends paid during the year.</p>` : ''),
+        status: 'complete',
+        content: `<h3>Profit and loss account</h3><table style="width:100%;border-collapse:collapse;margin-top:6px"><tbody>${rows.join('')}</tbody></table>`,
       };
     },
   },
