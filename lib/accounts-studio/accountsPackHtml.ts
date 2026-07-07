@@ -185,6 +185,12 @@ function detailedIncomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: str
   </tbody></table>`;
 }
 
+/** The director/member who signs — the chosen signatory, else the first. */
+function signatoryName(e: Engagement): string {
+  const dirs = (e.directors ?? []).filter(Boolean);
+  return (e.signatory && e.signatory.trim()) || dirs[0] || e.preparedBy || '';
+}
+
 // ── Section-specific bodies ──────────────────────────────────────────────────
 
 function companyInfoBody(e: Engagement, accountantDetails: string, firmName: string): string {
@@ -206,7 +212,7 @@ function directorsReportBody(e: Engagement, isLlp: boolean): string {
   const reportId = isLlp ? 'members-report' : 'directors-report';
   const disc = e.disclosures.find(s => s.id === reportId && s.included !== false && s.content && s.content.trim());
   const officer = isLlp ? 'member' : 'director';
-  const dir = (e.directors ?? []).filter(Boolean)[0] || e.preparedBy || '';
+  const dir = signatoryName(e);
 
   const body = disc
     ? `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">${disc.content}</div>`
@@ -260,7 +266,7 @@ function accountantsReportBody(e: Engagement, accountantsReport: string, account
 function sofpFooter(e: Engagement): string {
   const isLlp = e.entityType === 'llp';
   const officer = isLlp ? 'members' : 'director';
-  const dir = (e.directors ?? []).filter(Boolean)[0] || e.preparedBy || '';
+  const dir = signatoryName(e);
   // The audit-exemption / responsibility statements are an editable section
   // ('balance-sheet-statements'); fall back to standard wording if absent.
   const disc = e.disclosures.find(s => s.id === 'balance-sheet-statements' && s.included !== false && s.content && s.content.trim());

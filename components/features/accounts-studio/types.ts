@@ -132,6 +132,8 @@ export interface Engagement {
   incorporationDate?: string | null; // dd-mm-yyyy
   sicCodes?: string[];
   directors?: string[];
+  /** The director who signs the report and balance sheet (defaults to the first). */
+  signatory?: string | null;
   /** True once real CH data has been pulled onto this engagement. */
   chLinked?: boolean;
   entityType: EntityType;

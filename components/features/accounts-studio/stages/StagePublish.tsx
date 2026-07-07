@@ -52,6 +52,9 @@ export default function StagePublish({
   const ready = !!engagement.statements;
   const fillet = filletEligibility(engagement.entityType, engagement.size);
 
+  const directors = (engagement.directors ?? []).filter(Boolean);
+  const signatory = (engagement.signatory && directors.includes(engagement.signatory)) ? engagement.signatory : directors[0];
+
   const [branding, setBranding] = useState<FirmBranding>({ firmName: null, logoUrl: null, accountantDetails: null, accountantsReport: null });
   useEffect(() => { getFirmBranding().then(setBranding); }, []);
 
@@ -200,6 +203,20 @@ export default function StagePublish({
       </StudioCard>
 
       <div className="space-y-3 lg:col-span-2">
+        {directors.length > 1 && (
+          <StudioCard className="p-4">
+            <h4 className="mb-1 flex items-center gap-1.5 px-1 text-[13px] font-bold text-[var(--text-primary)]"><Signature size={14} /> Signatory</h4>
+            <p className="mb-2 px-1 text-[11px] text-[var(--text-muted)]">The director who signs the report and balance sheet.</p>
+            <select
+              value={signatory ?? ''}
+              onChange={ev => { const v = ev.target.value; patch(e => ({ ...e, signatory: v })); }}
+              className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            >
+              {directors.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </StudioCard>
+        )}
+
         <StudioCard className="p-4">
           <h4 className="mb-2 px-1 text-[13px] font-bold text-[var(--text-primary)]">Publish &amp; distribute</h4>
           <div className="space-y-1.5">
