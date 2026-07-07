@@ -1,10 +1,12 @@
 'use client';
 
-import { ArrowRight, Building2, Ruler, BookOpen, CalendarRange, Sparkles, TrendingUp, Scale, AlertCircle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ArrowRight, Building2, Ruler, BookOpen, CalendarRange, Sparkles, TrendingUp, Scale, AlertCircle, Users, Plus, Check } from 'lucide-react';
 import { ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { StudioCard } from '../primitives';
 import StatementsView from '../StatementsView';
-import type { Engagement } from '../types';
+import { computePartners, blankPartner } from '@/lib/accounts-studio/partners';
+import type { Engagement, PartnerRecord } from '../types';
 
 function money(n: number): string {
   const v = Math.round(n * 100) / 100;
@@ -17,15 +19,14 @@ function isoToUk(iso: string): string {
 }
 
 export default function StagePreparation({
-  engagement, advance,
+  engagement, patch, advance,
 }: {
   engagement: Engagement;
+  patch: (u: (e: Engagement) => Engagement) => void;
   advance: () => void;
 }) {
   const stmts = engagement.statements;
 
-  // Statements are built during Import. If we somehow got here without them,
-  // guide the user back rather than showing an empty shell.
   if (!stmts || !engagement.importInfo) {
     return (
       <div className="mx-auto max-w-lg">
@@ -40,6 +41,7 @@ export default function StagePreparation({
 
   const info = engagement.importInfo;
   const periodLabel = `For the period ${isoToUk(info.from)} to ${isoToUk(info.to)}`;
+  const isPartnershipFamily = engagement.entityType === 'partnership' || engagement.entityType === 'llp';
 
   const detections = [
     { icon: Building2,     label: 'Entity type',      value: ENTITY_LABELS[engagement.entityType] },
@@ -71,7 +73,6 @@ export default function StagePreparation({
         </div>
       </StudioCard>
 
-      {/* Detection + headline figures */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <StudioCard className="p-5">
           <h4 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-[var(--text-primary)]"><Building2 size={14} className="text-[var(--accent)]" /> What SMITH detected</h4>
@@ -101,7 +102,12 @@ export default function StagePreparation({
         </StudioCard>
       </div>
 
-      {/* The real statements */}
+      {/* Partner / member data — drives the appropriation account and the
+          capital & current account schedules. */}
+      {isPartnershipFamily && (
+        <PartnersEditor engagement={engagement} patch={patch} />
+      )}
+
       <StatementsView statements={stmts} periodLabel={periodLabel} />
 
       <div className="flex justify-end">
@@ -110,5 +116,116 @@ export default function StagePreparation({
         </button>
       </div>
     </div>
+  );
+}
+
+// ── Partners / members editor ────────────────────────────────────────────────
+const parseNum = (s: string) => { const n = parseFloat((s || '').replace(/[£,\s]/g, '')); return isNaN(n) ? 0 : n; };
+const numStr = (n: number) => (n ? String(n) : '');
+
+function PartnersEditor({ engagement, patch }: { engagement: Engagement; patch: (u: (e: Engagement) => Engagement) => void }) {
+  const isLlp = engagement.entityType === 'llp';
+  const ownerPlural = isLlp ? 'Members' : 'Partners';
+  const netProfit = engagement.statements?.profitLoss.netProfit ?? 0;
+  const netAssets = engagement.statements?.balanceSheet.netAssets ?? 0;
+
+  const nextId = useRef(0);
+  const [rows, setRows] = useState<PartnerRecord[]>(() => {
+    if (engagement.partners?.length) return engagement.partners;
+    const names = (engagement.directors ?? engagement.partners?.map(p => p.name) ?? []).filter(Boolean);
+    if (names.length) return names.map((n, i) => ({ ...blankPartner(`p${i}`), name: n }));
+    return [blankPartner('p0'), blankPartner('p1')];
+  });
+
+  const save = (next: PartnerRecord[]) => { setRows(next); patch(e => ({ ...e, partners: next })); };
+  const setField = (id: string, field: keyof PartnerRecord, value: string) =>
+    save(rows.map(r => r.id === id ? { ...r, [field]: field === 'name' ? value : parseNum(value) } : r));
+  const addRow = () => save([...rows, blankPartner(`p-${nextId.current++}-${rows.length}`)]);
+  const removeRow = (id: string) => save(rows.filter(r => r.id !== id));
+
+  const comp = computePartners(rows, netProfit);
+  const fundsMatch = Math.abs(comp.totals.partnersFunds - netAssets) < 1;
+
+  const COLS: { key: keyof PartnerRecord; label: string }[] = [
+    { key: 'profitShare', label: 'Profit share' },
+    { key: 'salary', label: 'Salary' },
+    { key: 'interestOnCapital', label: 'Int. on capital' },
+    { key: 'openingCapital', label: 'Opening capital' },
+    { key: 'capitalIntroduced', label: 'Capital in' },
+    { key: 'capitalWithdrawn', label: 'Capital out' },
+    { key: 'openingCurrent', label: 'Opening current' },
+    { key: 'drawings', label: 'Drawings' },
+  ];
+  const amt = 'w-[74px] rounded border border-slate-200 bg-white px-1.5 py-1 text-right text-[12px] tabular-nums';
+
+  return (
+    <StudioCard className="p-5">
+      <div className="mb-1 flex items-center gap-1.5">
+        <Users size={15} className="text-[var(--accent)]" />
+        <h4 className="text-[13px] font-bold text-[var(--text-primary)]">{ownerPlural} — capital, current accounts &amp; profit share</h4>
+      </div>
+      <p className="mb-3 text-[11.5px] text-[var(--text-muted)]">
+        Enter each {isLlp ? 'member' : 'partner'}&apos;s figures. SMITH allocates the profit for the year (interest on capital and salaries first, then the balance in the profit-share ratio) and reconciles the capital and current accounts into the Appropriation Account and the {isLlp ? 'members' : 'partners'}&apos; schedules.
+      </p>
+
+      <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
+        <table className="w-full text-[12px]">
+          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+            <tr>
+              <th className="px-2 py-1.5 text-left font-semibold">{isLlp ? 'Member' : 'Partner'}</th>
+              {COLS.map(c => <th key={c.key} className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">{c.label}</th>)}
+              <th className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">Closing current</th>
+              <th className="px-1 py-1.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const c = comp.partners.find(p => p.id === r.id);
+              return (
+                <tr key={r.id} className="border-t border-slate-100">
+                  <td className="px-2 py-1">
+                    <input value={r.name} onChange={e => setField(r.id, 'name', e.target.value)} placeholder="Name"
+                      className="w-[130px] rounded border border-slate-200 bg-white px-1.5 py-1 text-[12px]" />
+                  </td>
+                  {COLS.map(col => (
+                    <td key={col.key} className="px-2 py-1">
+                      <input value={numStr(r[col.key] as number)} onChange={e => setField(r.id, col.key, e.target.value)} inputMode="decimal" className={amt} />
+                    </td>
+                  ))}
+                  <td className="px-2 py-1 text-right tabular-nums text-[var(--text-secondary)]">{money(c?.closingCurrent ?? 0)}</td>
+                  <td className="px-1 py-1 text-center">
+                    <button onClick={() => removeRow(r.id)} aria-label="Remove" className="text-slate-300 hover:text-rose-600">✕</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot className="border-t border-slate-200 bg-slate-50/70 text-[11.5px] font-semibold text-[var(--text-secondary)]">
+            <tr>
+              <td className="px-2 py-1.5">Total</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{comp.totals && rows.reduce((s, r) => s + (r.profitShare || 0), 0)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.salary)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.interestOnCapital)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.openingCapital)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.capitalIntroduced)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.capitalWithdrawn)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.openingCurrent)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.drawings)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{money(comp.totals.closingCurrent)}</td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button onClick={addRow} className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--accent)] hover:underline"><Plus size={13} /> Add {isLlp ? 'member' : 'partner'}</button>
+        <div className="flex-1" />
+        <span className="text-[11.5px] text-[var(--text-muted)]">Profit for the year <strong className="text-[var(--text-secondary)]">{money(netProfit)}</strong></span>
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${fundsMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+          {fundsMatch ? <><Check size={11} /> Funds tie to net assets</> : <><AlertCircle size={11} /> Funds {money(comp.totals.partnersFunds)} vs net assets {money(netAssets)}</>}
+        </span>
+      </div>
+    </StudioCard>
   );
 }

@@ -127,6 +127,24 @@ export interface ReviewSummary {
   outputId?: string | null;
 }
 
+/** A partner / LLP member's figures for the appropriation and capital/current
+ *  account schedules (Phase 2 Layer 3 — partnership & LLP accounts). */
+export interface PartnerRecord {
+  id: string;
+  name: string;
+  /** Profit-share ratio (as a number — treated proportionally; e.g. 50 / 60). */
+  profitShare: number;
+  openingCapital: number;
+  capitalIntroduced: number;
+  capitalWithdrawn: number;
+  openingCurrent: number;
+  /** Appropriation before the residual split. */
+  salary: number;
+  interestOnCapital: number;
+  /** Current-account drawings during the year. */
+  drawings: number;
+}
+
 export interface Engagement {
   id: string;
   clientId: string | null;
@@ -138,6 +156,8 @@ export interface Engagement {
   incorporationDate?: string | null; // dd-mm-yyyy
   sicCodes?: string[];
   directors?: string[];
+  /** Partners / LLP members and their figures (partnership & LLP engagements). */
+  partners?: PartnerRecord[];
   /** The director who signs the report and balance sheet (defaults to the first). */
   signatory?: string | null;
   /** True once real CH data has been pulled onto this engagement. */

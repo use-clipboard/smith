@@ -171,7 +171,7 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
       <div className="flex gap-4">
         <div className="min-w-0 flex-1">
           {stage === 'import' && <StageImport engagement={engagement} patch={patch} advance={() => advanceFrom('import')} />}
-          {stage === 'preparation' && <StagePreparation engagement={engagement} advance={() => advanceFrom('preparation')} />}
+          {stage === 'preparation' && <StagePreparation engagement={engagement} patch={patch} advance={() => advanceFrom('preparation')} />}
           {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} />}
           {stage === 'final-review' && <StageFinalReview engagement={engagement} advance={() => advanceFrom('final-review')} />}
           {stage === 'publish' && <StagePublish engagement={engagement} patch={patch} />}

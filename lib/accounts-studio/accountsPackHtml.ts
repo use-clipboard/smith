@@ -12,6 +12,7 @@
 
 import type { Engagement } from '@/components/features/accounts-studio/types';
 import type { FinancialStatements, ProfitLoss, StmtGroup } from '@/lib/accounts-studio/statements';
+import { computePartners, hasPartnerData, type PartnerComputation } from '@/lib/accounts-studio/partners';
 
 export interface AccountsPackOptions {
   filleted?: boolean;
@@ -137,7 +138,7 @@ function isRetainedGroup(title: string): boolean {
   return t.includes('profit and loss') || t.includes('retained') || t.includes('p&l') || t.includes('accumulated');
 }
 
-function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string, prof: EntityProfile): string {
+function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string, prof: EntityProfile, comp: PartnerComputation | null): string {
   // Everything down to net assets is common to all entities.
   const assetsAndLiabilities = `
     ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('fixed-assets') }) + groupRows(bs.fixedAssets, hasPrior, 1, true) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
@@ -153,14 +154,24 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
 
   let capital: string;
   if (prof.isPartnershipFamily) {
-    // Partnership / LLP: partners'/members' capital and current accounts, then
-    // the year's profit (to be appropriated / allocated), totalling to funds.
     const ref = prof.isLlp ? noteNo('members-interests') : noteNo('capital-accounts');
-    capital = `
-      ${row(prof.capitalHeader, null, null, hasPrior, { muted: true, notesCol: true, noteRef: ref })}
-      ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
-      ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { notesCol: true })}
-      ${row(prof.fundsLabel, bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+    if (comp) {
+      // Partner data entered: show the reconciled capital and current account
+      // totals, footing to partners'/members' funds.
+      capital = `
+        ${row(prof.capitalHeader, null, null, hasPrior, { muted: true, notesCol: true, noteRef: ref })}
+        ${row(`${prof.ownerTitlePlural}' capital accounts`, comp.totals.closingCapital, null, hasPrior, { notesCol: true })}
+        ${row(`${prof.ownerTitlePlural}' current accounts`, comp.totals.closingCurrent, null, hasPrior, { notesCol: true })}
+        ${row(prof.fundsLabel, comp.totals.partnersFunds, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+    } else {
+      // No partner data yet: fall back to the ledger equity groups + the year's
+      // profit (to be appropriated / allocated), totalling to funds.
+      capital = `
+        ${row(prof.capitalHeader, null, null, hasPrior, { muted: true, notesCol: true, noteRef: ref })}
+        ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
+        ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { notesCol: true })}
+        ${row(prof.fundsLabel, bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+    }
   } else {
     // Company: capital & reserves, with retained earnings folded into a single
     // "Profit and loss account" line so it never shows twice.
@@ -198,14 +209,52 @@ function detailedIncomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: str
   </tbody></table>`;
 }
 
+/** A per-partner schedule (Partner | col… | Total). */
+function partnerTable(title: string, ownerCol: string, cols: string[], rows: { label: string; values: number[] }[], totals: number[]): string {
+  const th = `<th style="text-align:left;font-size:11px;font-weight:700;color:#475569;padding-bottom:4px">${ownerCol}</th>`
+    + cols.map(c => `<th style="${AMT}font-size:11px;font-weight:700;color:#475569;padding-bottom:4px">${c}</th>`).join('');
+  const body = rows.map(r => `<tr><td style="${LBL}">${escapeHtml(r.label || '—')}</td>${r.values.map(v => `<td style="${AMT}">${money(v)}</td>`).join('')}</tr>`).join('');
+  const foot = `<tr><td style="${LBL}font-weight:700;border-top:1px solid #cbd5e1">Total</td>${totals.map(v => `<td style="${AMT}font-weight:700;border-top:1px solid #cbd5e1">${money(v)}</td>`).join('')}</tr>`;
+  return `<h4 style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 4px">${title}</h4>`
+    + `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px"><thead><tr>${th}</tr></thead><tbody>${body}${foot}</tbody></table>`;
+}
+
+/** Partners'/members' capital and current account reconciliations. */
+function partnerScheduleTables(comp: PartnerComputation, prof: EntityProfile): string {
+  const t = comp.totals;
+  const capital = partnerTable(`${prof.ownerTitlePlural}' capital accounts`, prof.ownerTitle,
+    ['Opening', 'Introduced', 'Withdrawn', 'Closing'],
+    comp.partners.map(p => ({ label: p.name, values: [p.openingCapital, p.capitalIntroduced, p.capitalWithdrawn, p.closingCapital] })),
+    [t.openingCapital, t.capitalIntroduced, t.capitalWithdrawn, t.closingCapital]);
+  const current = partnerTable(`${prof.ownerTitlePlural}' current accounts`, prof.ownerTitle,
+    ['Opening', 'Profit allocated', 'Drawings', 'Closing'],
+    comp.partners.map(p => ({ label: p.name, values: [p.openingCurrent, p.profitAllocated, p.drawings, p.closingCurrent] })),
+    [t.openingCurrent, t.profitAllocated, t.drawings, t.closingCurrent]);
+  return capital + current;
+}
+
 /** Partnership Appropriation Account — the profit for the year and its allocation
- *  between the partners (the detailed split comes from the editable note). */
-function appropriationStatement(e: Engagement, pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string): string {
+ *  between the partners. Computed from partner data when present; otherwise the
+ *  profit for the year plus the editable appropriation note. */
+function appropriationStatement(e: Engagement, pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string, comp: PartnerComputation | null): string {
+  if (comp) {
+    const t = comp.totals;
+    const summary = `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><tbody>
+      ${row('Profit for the financial year', comp.netProfit, null, false, { bold: true })}
+      ${t.interestOnCapital ? row('Interest on capital', -t.interestOnCapital, null, false, {}) : ''}
+      ${t.salary ? row("Partners' salaries", -t.salary, null, false, {}) : ''}
+      ${(t.interestOnCapital || t.salary) ? row('Balance of profit shared in the profit-sharing ratio', t.residual, null, false, { bold: true, rule: true }) : ''}
+    </tbody></table>`;
+    const alloc = `<div style="margin-top:18px">${partnerTable('Allocation to partners', 'Partner', ['Interest', 'Salary', 'Profit share', 'Total'],
+      comp.partners.map(p => ({ label: p.name, values: [p.interestOnCapital, p.salary, p.residualShare, p.profitAllocated] })),
+      [t.interestOnCapital, t.salary, t.residual, t.profitAllocated])}</div>`;
+    return summary + alloc;
+  }
   const disc = e.disclosures.find(s => s.id === 'appropriation' && s.included !== false && s.content && s.content.trim());
-  const alloc = disc ? `<div style="margin-top:14px;font-size:12px;line-height:1.55;color:#1e293b">${disc.content}</div>` : '';
+  const allocNote = disc ? `<div style="margin-top:14px;font-size:12px;line-height:1.55;color:#1e293b">${disc.content}</div>` : '';
   return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
     ${row('Profit for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
-  </tbody></table>${alloc}`;
+  </tbody></table>${allocNote}`;
 }
 
 /** The director/member/partner who signs — the chosen signatory, else the first. */
@@ -386,6 +435,10 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   const prof = entityProfile(e);
   const isLlp = prof.isLlp;
   const s = e.statements;
+  // Partner appropriation + capital/current-account reconciliations, when the
+  // partner data has been entered (partnership / LLP only).
+  const partnerComp: PartnerComputation | null = (prof.isPartnershipFamily && s && hasPartnerData(e.partners))
+    ? computePartners(e.partners!, s.profitLoss.netProfit) : null;
   const hasPrior = !!s?.hasPrior;
   const curYear = yearOf(e.periodEnd);
   const priorYear = e.comparativePeriod ? yearOf(e.comparativePeriod) : '';
@@ -431,13 +484,20 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   if (!filleted && prof.isPartnership && s) {
     parts.push(section('appropriation-account', 'Appropriation account',
       sectionHead(e.companyName, 'Appropriation Account', periodLine) +
-      appropriationStatement(e, s.profitLoss, hasPrior, curYear, priorYear)));
+      appropriationStatement(e, s.profitLoss, hasPrior, curYear, priorYear, partnerComp)));
   }
 
   // 5. Statement of Financial Position
   parts.push(section('sofp', 'Statement of financial position',
     sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, prof.registered ? (e.companyNumber || undefined) : undefined) +
-    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo, prof) + sofpFooter(e, prof) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo, prof, partnerComp) + sofpFooter(e, prof) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+
+  // 5b. Partners'/Members' capital & current account schedules (when entered).
+  if (partnerComp) {
+    parts.push(section('partner-accounts', `${prof.ownerTitlePlural}' capital and current accounts`,
+      sectionHead(e.companyName, `${prof.ownerTitlePlural}' Capital and Current Accounts`, periodLine) +
+      partnerScheduleTables(partnerComp, prof)));
+  }
 
   // 6. Notes to the Financial Statements
   const notes = notesBody(e, excludeIds);
