@@ -174,8 +174,9 @@ export interface NoteRule {
   entityTypes?: EntityType[];
   /** 'full-only' notes are dropped from filleted filing copies. */
   filing?: 'both' | 'full-only';
-  /** How the note is required. Conditional notes seed only when `trigger` fires. */
-  level: NoteLevel;
+  /** How the note is required — a fixed level, or one that varies by context
+   *  (e.g. Employees is mandatory for small companies but optional for micro). */
+  level: NoteLevel | ((ctx: DisclosureContext) => NoteLevel);
   /** Data trigger for conditional notes (evaluated against the trial balance). */
   trigger?: (ctx: DisclosureContext) => boolean;
   priorYearContent?: string;
@@ -235,11 +236,12 @@ const NOTE_RULES: NoteRule[] = [
   // ── Standard notes ──
   {
     id: 'employees', title: 'Employees',
-    requirement: 'Average monthly number of employees during the period.',
-    frameworks: T_NONMICRO, level: 'mandatory',
+    requirement: 'Average number of employees during the period.',
+    // Required for small companies; permitted but not required for micro-entities.
+    frameworks: T_ALL_FRS, level: ctx => frameworkTier(ctx) === 'frs105' ? 'optional' : 'mandatory',
     build: ctx => ({
       status: 'needs-review',
-      content: `<h3>Employees</h3><p>The average monthly number of employees during the year was ${PH}${ctx.priorYear ? ` (${ctx.priorYear}: ${PH})` : ''}.</p>`,
+      content: `<h3>Employees</h3><p>The average number of employees during the year was [ ]${ctx.priorYear ? ` (${ctx.priorYear}: [ ])` : ''}.</p>`,
     }),
   },
   {
@@ -456,6 +458,11 @@ function applicable(rule: NoteRule, ctx: DisclosureContext): boolean {
     && (!rule.entityTypes || rule.entityTypes.includes(ctx.entityType));
 }
 
+/** Resolve a rule's level for this context (a level may be fixed or contextual). */
+function resolveLevel(rule: NoteRule, ctx: DisclosureContext): NoteLevel {
+  return typeof rule.level === 'function' ? rule.level(ctx) : rule.level;
+}
+
 /** True if a conditional rule's trigger fires (a rule with no trigger always seeds). */
 function triggered(rule: NoteRule, ctx: DisclosureContext): boolean {
   return rule.trigger ? rule.trigger(ctx) : true;
@@ -463,8 +470,11 @@ function triggered(rule: NoteRule, ctx: DisclosureContext): boolean {
 
 /** Rules that should be seeded into the accounts: mandatory + triggered-conditional. */
 function seededRules(ctx: DisclosureContext): NoteRule[] {
-  return NOTE_RULES.filter(r => applicable(r, ctx)
-    && (r.level === 'mandatory' || (r.level === 'conditional' && triggered(r, ctx))));
+  return NOTE_RULES.filter(r => {
+    if (!applicable(r, ctx)) return false;
+    const level = resolveLevel(r, ctx);
+    return level === 'mandatory' || (level === 'conditional' && triggered(r, ctx));
+  });
 }
 
 function nowStamp(): string {
@@ -482,7 +492,7 @@ function toSection(rule: NoteRule, ctx: DisclosureContext): DisclosureSection {
     status,
     requirement: rule.requirement,
     content,
-    level: rule.level,
+    level: resolveLevel(rule, ctx),
     included: true,
     priorYearContent: rule.priorYearContent,
     history: content ? [{ id: 'v1', label, at: nowStamp(), content }] : [],
@@ -499,7 +509,7 @@ export function addableNotes(ctx: DisclosureContext, existingIds: string[]): { i
   const have = new Set(existingIds);
   return NOTE_RULES
     .filter(r => applicable(r, ctx) && !have.has(r.id))
-    .map(r => ({ id: r.id, title: r.title, requirement: r.requirement, level: r.level }));
+    .map(r => ({ id: r.id, title: r.title, requirement: r.requirement, level: resolveLevel(r, ctx) }));
 }
 
 /** Build a fresh section for a note id (used when the user adds one). */
@@ -511,11 +521,14 @@ export function makeNote(id: string, ctx: DisclosureContext): DisclosureSection 
 /** Notes that SHOULD be present for this context (mandatory + triggered-conditional) —
  *  used by the missing-note check. */
 export function expectedNotes(ctx: DisclosureContext): { id: string; title: string; level: NoteLevel }[] {
-  return seededRules(ctx).map(r => ({ id: r.id, title: r.title, level: r.level }));
+  return seededRules(ctx).map(r => ({ id: r.id, title: r.title, level: resolveLevel(r, ctx) }));
 }
 
-/** The rule metadata for a note id (level, filing…), if known. */
-export function noteRuleMeta(id: string): { level: NoteLevel; filing: 'both' | 'full-only' } | null {
+/** The rule metadata for a note id (level, filing…), if known. Pass ctx to
+ *  resolve a contextual level (else a fixed level, or 'conditional' as neutral). */
+export function noteRuleMeta(id: string, ctx?: DisclosureContext): { level: NoteLevel; filing: 'both' | 'full-only' } | null {
   const r = NOTE_RULES.find(x => x.id === id);
-  return r ? { level: r.level, filing: r.filing ?? 'both' } : null;
+  if (!r) return null;
+  const level = typeof r.level === 'function' ? (ctx ? r.level(ctx) : 'conditional') : r.level;
+  return { level, filing: r.filing ?? 'both' };
 }

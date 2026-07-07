@@ -50,7 +50,7 @@ export default function StageDisclosures({
     priorYear: engagement.comparativePeriod ? engagement.comparativePeriod.slice(-4) : '',
     directors: engagement.directors,
   };
-  const levelOf = (s: DisclosureSection): NoteLevel | undefined => s.level ?? noteRuleMeta(s.id)?.level ?? undefined;
+  const levelOf = (s: DisclosureSection): NoteLevel | undefined => s.level ?? noteRuleMeta(s.id, dctx)?.level ?? undefined;
 
   const isIncluded = (s: DisclosureSection) => s.included !== false;
   const includedSections = sections.filter(isIncluded);
