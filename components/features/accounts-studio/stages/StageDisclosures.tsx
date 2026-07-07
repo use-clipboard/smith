@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
   ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
@@ -37,7 +37,20 @@ export default function StageDisclosures({
   const [checksOpen, setChecksOpen] = useState(true);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewReply, setReviewReply] = useState<string | null>(null);
+  // Prior-period note wording for this client (roll a note forward year to year).
+  const [priorNotes, setPriorNotes] = useState<Record<string, { title: string; content: string }>>({});
+  const [priorLabel, setPriorLabel] = useState('');
+  const [priorOpen, setPriorOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!engagement.clientId) return;
+    const params = new URLSearchParams({ clientId: engagement.clientId, periodEnd: engagement.periodEnd, excludeId: engagement.id });
+    fetch(`/api/accounts-studio/prior-disclosures?${params.toString()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.found) { setPriorNotes(d.notes ?? {}); setPriorLabel(typeof d.periodEnd === 'string' ? d.periodEnd.slice(-4) : ''); } })
+      .catch(() => {});
+  }, [engagement.clientId, engagement.periodEnd, engagement.id]);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
 
@@ -98,6 +111,7 @@ export default function StageDisclosures({
     setSelectedId(id);
     setExplanation(null);
     setShowHistory(false);
+    setPriorOpen(false);
     setMountKey(k => k + 1);
   }
 
@@ -125,9 +139,11 @@ export default function StageDisclosures({
     onEditorInput();
   }
 
-  function usePriorYear() {
-    if (!section.priorYearContent) return;
-    replaceContent(section.priorYearContent, 'Prior year wording');
+  const priorNote = priorNotes[section.id];
+  function applyPriorYear() {
+    if (!priorNote) return;
+    replaceContent(priorNote.content, `Prior year${priorLabel ? ` (${priorLabel})` : ''}`);
+    setPriorOpen(false);
   }
 
   function restoreVersion(html: string) {
@@ -415,15 +431,29 @@ export default function StageDisclosures({
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04] disabled:opacity-50">
             {aiBusy === 'explain' ? <Loader2 size={13} className="animate-spin" /> : <HelpCircle size={13} />} Explain requirement
           </button>
-          {section.priorYearContent && (
-            <button onClick={usePriorYear} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04]">
-              <RotateCcw size={13} /> Prior year wording
+          {priorNote && (
+            <button onClick={() => { setPriorOpen(o => !o); setShowHistory(false); }} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${priorOpen ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-black/[0.04]'}`}>
+              <RotateCcw size={13} /> Last year{priorLabel ? ` (${priorLabel})` : ''}
             </button>
           )}
-          <button onClick={() => setShowHistory(v => !v)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04]">
+          <button onClick={() => { setShowHistory(v => !v); setPriorOpen(false); }} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)] transition-colors hover:bg-black/[0.04]">
             <History size={13} /> History
           </button>
         </div>
+
+        {/* Last year's wording — view and roll forward */}
+        {priorOpen && priorNote && (
+          <div className="mx-3 mt-3 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-3 py-2.5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Last year&apos;s wording{priorLabel ? ` · ${priorLabel}` : ''}</p>
+              <div className="flex items-center gap-2">
+                <button onClick={applyPriorYear} className="rounded-md bg-[var(--accent)] px-2 py-0.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90">Use this wording</button>
+                <button onClick={() => setPriorOpen(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={13} /></button>
+              </div>
+            </div>
+            <div className="studio-prose max-h-52 overflow-y-auto rounded-lg bg-white/70 p-2.5 text-[12px] leading-relaxed text-[var(--text-secondary)]" dangerouslySetInnerHTML={{ __html: priorNote.content }} />
+          </div>
+        )}
 
         {/* Explanation callout */}
         {explanation && (
