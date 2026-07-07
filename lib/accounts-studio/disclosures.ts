@@ -463,6 +463,12 @@ function resolveLevel(rule: NoteRule, ctx: DisclosureContext): NoteLevel {
   return typeof rule.level === 'function' ? rule.level(ctx) : rule.level;
 }
 
+/** The level shown to the user: the true level for a note that belongs to this
+ *  framework, else 'optional' for one borrowed from another tier. */
+function effectiveLevel(rule: NoteRule, ctx: DisclosureContext): NoteLevel {
+  return rule.frameworks.includes(frameworkTier(ctx)) ? resolveLevel(rule, ctx) : 'optional';
+}
+
 /** True if a conditional rule's trigger fires (a rule with no trigger always seeds). */
 function triggered(rule: NoteRule, ctx: DisclosureContext): boolean {
   return rule.trigger ? rule.trigger(ctx) : true;
@@ -492,7 +498,7 @@ function toSection(rule: NoteRule, ctx: DisclosureContext): DisclosureSection {
     status,
     requirement: rule.requirement,
     content,
-    level: resolveLevel(rule, ctx),
+    level: effectiveLevel(rule, ctx),
     included: true,
     priorYearContent: rule.priorYearContent,
     history: content ? [{ id: 'v1', label, at: nowStamp(), content }] : [],
@@ -504,12 +510,20 @@ export function buildDisclosures(ctx: DisclosureContext): DisclosureSection[] {
   return seededRules(ctx).map(r => toSection(r, ctx));
 }
 
-/** Notes applicable to this context that aren't already present — the "＋ Add note" library. */
+/** The "＋ Add note" library — EVERY note relevant to this entity type that isn't
+ *  already present, so nothing is ever a dead-end. Framework governs what's
+ *  auto-seeded and what the checklist expects, not what can be added. Notes that
+ *  belong to another framework tier are offered as 'optional' (voluntary here). */
 export function addableNotes(ctx: DisclosureContext, existingIds: string[]): { id: string; title: string; requirement: string; level: NoteLevel }[] {
   const have = new Set(existingIds);
   return NOTE_RULES
-    .filter(r => applicable(r, ctx) && !have.has(r.id))
-    .map(r => ({ id: r.id, title: r.title, requirement: r.requirement, level: resolveLevel(r, ctx) }));
+    .filter(r => (!r.entityTypes || r.entityTypes.includes(ctx.entityType)) && !have.has(r.id))
+    .map(r => ({
+      id: r.id,
+      title: r.title,
+      requirement: r.requirement,
+      level: effectiveLevel(r, ctx),
+    }));
 }
 
 /** Build a fresh section for a note id (used when the user adds one). */
