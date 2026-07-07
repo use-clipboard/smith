@@ -24,6 +24,9 @@ export interface PdfPaginationOptions {
   coverSelector?: string;      // e.g. '[data-cover]' — rendered as its own page
   pageMarginPx?: number;       // per-page top/bottom margin (matches live, e.g. 48)
   avoidSplitSelector?: string; // blocks that must not be cut across a page break
+  // ── Accounts-pack layout (string path only; opt-in so other tools are unchanged) ──
+  hardPageBreaks?: boolean;    // every `.force-page-start` element begins a fresh page
+  pageNumbers?: boolean;       // draw "N of T" bottom-centre on every page except the first (cover)
 }
 
 export async function generatePdfBlob(
@@ -154,6 +157,50 @@ export async function generatePdfBlob(
       }
     };
 
+    // Force every element matching `selector` to begin at the top of a fresh
+    // page (hard page break), by padding out the remainder of the current page.
+    // Used by the accounts pack so each statement/report starts on its own page.
+    const hardBreak = (selector: string, maxPasses: number) => {
+      const injectBudget = captureTarget.scrollHeight + PAGE_H_PX * 16;
+      let injected = 0;
+      for (let pass = 0; pass < maxPasses; pass++) {
+        let inserted = false;
+        void captureTarget.offsetHeight;
+        const originY = captureTarget.getBoundingClientRect().top;
+        for (const el of Array.from(captureTarget.querySelectorAll(selector)) as HTMLElement[]) {
+          const top = Math.round(el.getBoundingClientRect().top - originY);
+          const rem = top % PAGE_H_PX;
+          if (top > 2 && rem > 2) {            // not already at a page top
+            const pushBy = PAGE_H_PX - rem;
+            if (injected + pushBy > injectBudget) return; // runaway guard
+            injected += pushBy;
+            const spacer = document.createElement('div');
+            spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
+            el.parentNode!.insertBefore(spacer, el);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) break;
+      }
+    };
+
+    // Contents page: write each section's real page number into its matching
+    // cell. `[data-toc="key"]` marks a section; `[data-toc-fill="key"]` is the
+    // number cell on the contents page. Measured after all breaks are inserted,
+    // and writing the number doesn't change layout (the cell is pre-sized).
+    const fillTocPageNumbers = () => {
+      void captureTarget.offsetHeight;
+      const originY = captureTarget.getBoundingClientRect().top;
+      for (const el of Array.from(captureTarget.querySelectorAll('[data-toc]')) as HTMLElement[]) {
+        const top = Math.round(el.getBoundingClientRect().top - originY);
+        const page = Math.floor(top / PAGE_H_PX) + 1; // cover is page 1
+        const key = el.getAttribute('data-toc');
+        const target = key && captureTarget.querySelector(`[data-toc-fill="${CSS.escape(key)}"]`);
+        if (target) target.textContent = String(page);
+      }
+    };
+
     // ── Cover (perfMode): capture it as its own full-bleed first page, then
     //    remove it so the body content paginates on its own clean grid. ──
     let coverCanvas: HTMLCanvasElement | null = null;
@@ -173,6 +220,12 @@ export async function generatePdfBlob(
       // Keep whole blocks (headings, paragraphs, tables, lists) off page breaks,
       // mirroring the live paginator's whole-block behaviour.
       if (opts?.avoidSplitSelector) avoidSplit(opts.avoidSplitSelector, 80);
+    } else if (opts?.hardPageBreaks) {
+      // Accounts pack: keep blocks together, then force each section to a fresh
+      // page (authoritative), then compute the contents-page numbers.
+      avoidSplit('.paper', 140);
+      hardBreak('.force-page-start', 200);
+      fillTocPageNumbers();
     } else {
       // Working-papers / Accounts Review behaviour (unchanged).
       for (let pass = 0; pass < 20; pass++) {
@@ -218,12 +271,22 @@ export async function generatePdfBlob(
 
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     let firstPage = true;
-    const newPage = () => { if (!firstPage) pdf.addPage(); firstPage = false; };
+    let pageCount = 0;
+    const newPage = () => { if (!firstPage) pdf.addPage(); firstPage = false; pageCount++; };
+    // "N of T" bottom-centre, skipping the cover (page 1).
+    const stampPageNumber = () => {
+      if (!opts?.pageNumbers || pageCount <= 1) return;
+      pdf.setFontSize(9);
+      pdf.setTextColor(130);
+      pdf.text(`${pageCount} of ${totalPages}`, A4_W_MM / 2, A4_H_MM - 7, { align: 'center' });
+      pdf.setTextColor(0);
+    };
 
     // Cover page (perfMode) — full bleed.
     if (coverCanvas) {
       newPage();
       pdf.addImage(coverCanvas.toDataURL('image/png'), 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+      stampPageNumber();
     }
 
     // Body pages — one canvas slice per page, placed within the page margins.
@@ -245,6 +308,7 @@ export async function generatePdfBlob(
 
       newPage();
       pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', imgX, imgY, imgW, imgH);
+      stampPageNumber();
     }
 
     return pdf.output('blob');

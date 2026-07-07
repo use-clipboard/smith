@@ -52,13 +52,20 @@ export default function StagePublish({
   const ready = !!engagement.statements;
   const fillet = filletEligibility(engagement.entityType, engagement.size);
 
-  const [branding, setBranding] = useState<FirmBranding>({ firmName: null, logoUrl: null });
+  const [branding, setBranding] = useState<FirmBranding>({ firmName: null, logoUrl: null, accountantDetails: null, accountantsReport: null });
   useEffect(() => { getFirmBranding().then(setBranding); }, []);
 
   async function download(suffix: string, docId: string, filleted = false) {
     setBusyDoc(docId); setError('');
     try {
-      const blob = await generatePdfBlob(buildAccountsPackHtml(engagement, { filleted, firmName: branding.firmName, firmLogoUrl: branding.logoUrl }));
+      const blob = await generatePdfBlob(
+        buildAccountsPackHtml(engagement, {
+          filleted, firmName: branding.firmName, firmLogoUrl: branding.logoUrl,
+          accountantDetails: branding.accountantDetails, accountantsReport: branding.accountantsReport,
+        }),
+        undefined,
+        { hardPageBreaks: true, pageNumbers: true },
+      );
       downloadBlob(blob, fileName(engagement, suffix));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the PDF.');

@@ -105,7 +105,14 @@ export default function HistoryView({
     setBusyId(e.id);
     try {
       const branding = await getFirmBranding();
-      const blob = await generatePdfBlob(buildAccountsPackHtml(e, { firmName: branding.firmName, firmLogoUrl: branding.logoUrl }));
+      const blob = await generatePdfBlob(
+        buildAccountsPackHtml(e, {
+          firmName: branding.firmName, firmLogoUrl: branding.logoUrl,
+          accountantDetails: branding.accountantDetails, accountantsReport: branding.accountantsReport,
+        }),
+        undefined,
+        { hardPageBreaks: true, pageNumbers: true },
+      );
       downloadBlob(blob, `Statutory_Accounts_${e.companyName.replace(/\s+/g, '_')}_${e.periodEnd}.pdf`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Download failed');

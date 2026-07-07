@@ -1,193 +1,349 @@
 // Accounts Studio — build the full statutory-accounts PDF pack as HTML.
 //
-// Consumed by generatePdfBlob() (utils/pdfFromHtml) via its HTML-string path,
-// so it uses inline styles only and wraps keep-together blocks in `.paper`
-// (the string path runs avoidSplit('.paper, …') to stop blocks splitting across
-// a page break). The pack is a real deliverable built from the engagement's
-// imported statements + drafted disclosures — no placeholders.
+// Consumed by generatePdfBlob() (utils/pdfFromHtml) via its HTML-string path
+// with { hardPageBreaks: true, pageNumbers: true }. Structure follows the
+// standard UK small-company layout (Capium-style): a cover, a contents page
+// with live page numbers, then Company Information, the Director's Report, the
+// Accountants' Report, the Income Statement, the Statement of Financial
+// Position, the Notes, and (full only) a Detailed Income Statement — each
+// starting on a fresh page. Inline styles only; keep-together blocks use
+// `.paper`, and each section wrapper is `.paper.force-page-start` + a
+// `data-toc` key that the contents page references via `data-toc-fill`.
 
 import type { Engagement } from '@/components/features/accounts-studio/types';
-import type { FinancialStatements, StmtGroup } from '@/lib/accounts-studio/statements';
+import type { FinancialStatements, ProfitLoss, StmtGroup } from '@/lib/accounts-studio/statements';
 
-function money(n: number): string {
+export interface AccountsPackOptions {
+  filleted?: boolean;
+  firmName?: string | null;
+  firmLogoUrl?: string | null;
+  /** Firm house-style Accountant Details block (HTML) — Settings → Accounts Studio. */
+  accountantDetails?: string | null;
+  /** Firm house-style Accountants' Report wording (HTML). */
+  accountantsReport?: string | null;
+}
+
+// ── Formatting helpers ───────────────────────────────────────────────────────
+
+function money(n: number | null): string {
+  if (n === null) return '';
   const v = Math.round(n * 100) / 100;
   if (Math.abs(v) < 0.005) return '—';
   const abs = Math.abs(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return v < 0 ? `(${abs})` : abs;
 }
 
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** dd-mm-yyyy → "31 December 2024" (falls back to the raw string). */
+function longDate(dmy: string): string {
+  const m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec((dmy || '').trim());
+  if (!m) return dmy || '';
+  const mi = parseInt(m[2], 10) - 1;
+  if (mi < 0 || mi > 11) return dmy;
+  return `${parseInt(m[1], 10)} ${MONTHS[mi]} ${m[3]}`;
+}
+
+/** dd-mm-yyyy → "2024" (year label for the amount columns). */
+function yearOf(dmy: string): string {
+  const m = /(\d{4})$/.exec((dmy || '').trim());
+  return m ? m[1] : '';
+}
+
+function escapeHtml(s: string): string {
+  return (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+}
+
 const AMT = 'text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:3px 0 3px 18px;';
 const LBL = 'padding:3px 0;';
 
-function row(label: string, current: number | null, prior: number | null, hasPrior: boolean, opts: { bold?: boolean; rule?: boolean; muted?: boolean } = {}): string {
+function row(label: string, current: number | null, prior: number | null, hasPrior: boolean, opts: { bold?: boolean; rule?: boolean; muted?: boolean; indent?: boolean } = {}): string {
   const weight = opts.bold ? 'font-weight:700;' : '';
   const colour = opts.muted ? 'color:#64748b;' : opts.bold ? 'color:#0f172a;' : 'color:#334155;';
   const borderTop = opts.rule ? 'border-top:1px solid #cbd5e1;' : '';
-  const cur = current === null ? '' : money(current);
-  const pri = prior === null ? '' : money(prior);
+  const pad = opts.indent ? 'padding-left:16px;' : '';
   return `<tr style="${borderTop}">
-    <td style="${LBL}${weight}${colour}">${label}</td>
-    <td style="${AMT}${weight}${colour}">${cur}</td>
-    ${hasPrior ? `<td style="${AMT}${weight}color:#64748b;">${pri}</td>` : ''}
+    <td style="${LBL}${pad}${weight}${colour}">${label}</td>
+    <td style="${AMT}${weight}${colour}">${money(current)}</td>
+    ${hasPrior ? `<td style="${AMT}${weight}color:#64748b;">${money(prior)}</td>` : ''}
   </tr>`;
 }
 
 function groupRows(groups: StmtGroup[], hasPrior: boolean, sign: 1 | -1): string {
-  return groups.map(g => row(
-    g.title,
-    sign * g.total,
-    g.totalPrior === null ? null : sign * g.totalPrior,
-    hasPrior,
-  )).join('');
+  return groups.map(g => row(g.title, sign * g.total, g.totalPrior === null ? null : sign * g.totalPrior, hasPrior)).join('');
 }
 
-function statementsHtml(
-  s: FinancialStatements, periodLabel: string, asAt: string, priorLabel: string,
-  opts: { filleted?: boolean; filletNote?: string } = {},
-): string {
-  const { profitLoss: pl, balanceSheet: bs, hasPrior } = s;
-  const head = `<thead><tr style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8">
+function amountHead(hasPrior: boolean, curYear: string, priorYear: string): string {
+  return `<thead><tr style="font-size:11px;font-weight:700;color:#475569">
     <th style="text-align:left;padding-bottom:4px"></th>
-    <th style="${AMT}padding-bottom:4px">£</th>
-    ${hasPrior ? `<th style="${AMT}padding-bottom:4px">${priorLabel}</th>` : ''}
-  </tr></thead>`;
-
-  const pnl = `
-    <div class="paper" style="margin-bottom:26px">
-      <h2 style="font-size:15px;margin:0 0 2px">Profit and Loss Account</h2>
-      <p style="margin:0 0 10px;color:#64748b;font-size:11px">${periodLabel}</p>
-      <table style="width:100%;border-collapse:collapse;font-size:12.5px">${head}<tbody>
-        ${groupRows(pl.turnover, hasPrior, 1)}
-        ${row('Turnover', pl.turnoverTotal, pl.turnoverTotalPrior, hasPrior, { bold: true, rule: true })}
-        ${pl.costOfSales.length ? groupRows(pl.costOfSales, hasPrior, -1) + row('Gross profit', pl.grossProfit, pl.grossProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
-        ${groupRows(pl.expenses, hasPrior, -1)}
-        ${pl.expenses.length ? row('Operating profit', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
-        ${groupRows(pl.taxation, hasPrior, -1)}
-        ${row('Profit for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
-      </tbody></table>
-    </div>`;
-
-  const balance = `
-    <div class="paper" style="margin-bottom:26px">
-      <h2 style="font-size:15px;margin:0 0 2px">Balance Sheet</h2>
-      <p style="margin:0 0 10px;color:#64748b;font-size:11px">As at ${asAt}</p>
-      <table style="width:100%;border-collapse:collapse;font-size:12.5px">${head}<tbody>
-        ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true }) + groupRows(bs.fixedAssets, hasPrior, 1) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true }) : ''}
-        ${row('Current assets', null, null, hasPrior, { muted: true })}
-        ${groupRows(bs.currentAssets, hasPrior, 1)}
-        ${row('', bs.currentAssetsTotal, bs.currentAssetsTotalPrior, hasPrior, {})}
-        ${bs.creditorsWithin.length ? row('Creditors: amounts falling due within one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsWithin, hasPrior, -1) : ''}
-        ${row('Net current assets', bs.netCurrentAssets, bs.netCurrentAssetsPrior, hasPrior, { bold: true, rule: true })}
-        ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true })}
-        ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsAfter, hasPrior, -1) : ''}
-        ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true }) + groupRows(bs.provisions, hasPrior, -1) : ''}
-        ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true })}
-        ${row('Capital and reserves', null, null, hasPrior, { muted: true })}
-        ${groupRows(bs.capitalAndReserves, hasPrior, 1)}
-        ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true })}
-        ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true })}
-      </tbody></table>
-      ${opts.filletNote ? `<p style="margin-top:16px;font-size:11px;color:#475569;line-height:1.5">${opts.filletNote}</p>` : ''}
-    </div>`;
-
-  // Filleted accounts omit the profit and loss account.
-  return opts.filleted ? balance : pnl + balance;
+    <th style="${AMT}padding-bottom:4px">${curYear || '£'}</th>
+    ${hasPrior ? `<th style="${AMT}padding-bottom:4px">${priorYear}</th>` : ''}
+  </tr>
+  <tr style="font-size:11px;color:#94a3b8"><th style="text-align:left"></th><th style="${AMT}">£</th>${hasPrior ? `<th style="${AMT}">£</th>` : ''}</tr></thead>`;
 }
 
-/**
- * Statutory-accounts pack HTML for the engagement.
- * `filleted` produces the Companies House filing version: balance sheet + notes
- * only (no P&L), directors'/strategic/members' reports omitted, plus the s444
- * (small companies regime) filing statement.
- */
-export function buildAccountsPackHtml(e: Engagement, opts: { filleted?: boolean; firmName?: string | null; firmLogoUrl?: string | null } = {}): string {
-  const filleted = !!opts.filleted;
-  const firmName = opts.firmName?.trim() || '';
-  const logo = opts.firmLogoUrl || '';
-  const info = e.importInfo;
-  const asAt = e.periodEnd;
-  const periodLabel = info ? `For the period ${uk(info.from)} to ${uk(info.to)}` : `For the year ended ${e.periodEnd}`;
-  const priorLabel = e.comparativePeriod ? `${e.comparativePeriod.slice(-4)}` : 'Prior';
+// ── Section chrome ───────────────────────────────────────────────────────────
 
-  // Filleted accounts don't file the directors' / strategic / members' reports.
-  const excludeNotes = filleted ? new Set(['directors-report', 'strategic-report', 'members-report']) : new Set<string>();
-  const notes = e.disclosures
-    .filter(s => s.included !== false && s.content && s.content.trim() && !excludeNotes.has(s.id))
-    .map((s, i) => `<div class="paper" style="margin-bottom:20px">
-      <p style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:0 0 2px">Note ${i + 1}</p>
-      <div style="font-size:12.5px;line-height:1.55;color:#1e293b">${s.content}</div>
-    </div>`).join('');
+const H_COMPANY = 'font-size:13px;font-weight:700;color:#0f172a;margin:0;text-align:center';
+const H_TITLE = 'font-size:17px;font-weight:700;color:#0f172a;margin:6px 0 2px;text-align:center';
+const H_PERIOD = 'font-size:11.5px;color:#64748b;margin:0 0 4px;text-align:center';
 
-  const statements = e.statements
-    ? statementsHtml(e.statements, periodLabel, asAt, priorLabel, { filleted, filletNote: filleted ? filletStatement(e.entityType) : undefined })
-    : '<p class="paper" style="color:#94a3b8">No financial statements imported.</p>';
-
-  const kicker = filleted ? 'Filleted Accounts' : 'Statutory Accounts';
-  const filingLine = filleted
-    ? `<p style="margin:12px 0 0;color:#6366f1;font-size:12px;font-weight:600">Prepared for filing with the Registrar of Companies under the small ${e.entityType === 'llp' ? 'LLPs' : 'companies'} regime</p>`
-    : '';
-
+function sectionHead(companyName: string, title: string, periodLine: string, regNo?: string): string {
   return `
-  <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a">
-    <!-- Cover — sized to fill the first A4 page -->
-    <div class="paper" style="min-height:1040px;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 40px">
-      ${logo ? `<img src="${logo}" alt="" crossorigin="anonymous" style="max-height:64px;max-width:240px;object-fit:contain;margin:0 auto 26px" />` : ''}
-      <p style="font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:#6366f1;margin:0 0 18px;font-weight:700">${kicker}</p>
-      <h1 style="font-size:30px;margin:0 0 10px">${escapeHtml(e.companyName)}</h1>
-      ${e.companyNumber ? `<p style="margin:0 0 4px;color:#64748b;font-size:13px">Company registration number ${escapeHtml(e.companyNumber)}</p>` : ''}
-      <p style="margin:18px 0 4px;color:#334155;font-size:15px">Financial statements for the year ended ${escapeHtml(e.periodEnd)}</p>
-      <p style="margin:0;color:#94a3b8;font-size:12px">${escapeHtml(e.framework)}</p>
-      ${filingLine}
-      ${e.registeredOffice ? `<p style="margin:20px 0 0;color:#94a3b8;font-size:11px">Registered office: ${escapeHtml(e.registeredOffice)}</p>` : ''}
-      ${e.incorporationDate ? `<p style="margin:2px 0 0;color:#cbd5e1;font-size:11px">Incorporated ${escapeHtml(e.incorporationDate)}</p>` : ''}
-      <div style="margin-top:40px;font-size:11px;color:#94a3b8">
-        ${firmName ? `<div style="color:#475569;font-size:13px;font-weight:600;margin-bottom:6px">${escapeHtml(firmName)}</div>` : ''}
-        Prepared by ${escapeHtml(e.preparedBy)}${e.reviewedBy ? ` · Reviewed by ${escapeHtml(e.reviewedBy)}` : ''}
-      </div>
-    </div>
+    ${regNo ? `<p style="font-size:11px;color:#475569;margin:0 0 2px;text-align:center">Registered Number: ${escapeHtml(regNo)}</p>` : ''}
+    <p style="${H_COMPANY}">${escapeHtml(companyName)}</p>
+    <h2 style="${H_TITLE}">${escapeHtml(title)}</h2>
+    <p style="${H_PERIOD}">${escapeHtml(periodLine)}</p>
+    <div style="border-bottom:1px solid #e2e8f0;margin:0 0 16px"></div>`;
+}
 
-    <!-- Statements -->
-    <div class="force-page-start">${statements}</div>
+interface Part { key: string; label: string; html: string }
 
-    <!-- Notes -->
-    ${notes ? `<div class="force-page-start"><h2 style="font-size:15px;margin:0 0 12px">Notes to the Financial Statements</h2>${notes}</div>` : ''}
+function section(key: string, label: string, inner: string): Part {
+  return { key, label, html: `<div class="paper force-page-start" data-toc="${key}" style="margin-bottom:0">${inner}</div>` };
+}
 
-    <!-- Approval -->
-    <div class="paper force-page-start" style="margin-top:24px;border-top:2px solid #e2e8f0;padding-top:16px">
-      <h2 style="font-size:14px;margin:0 0 8px">Approval</h2>
-      <p style="font-size:12.5px;color:#334155;line-height:1.6">
-        These financial statements were approved by the ${boardWord(e.entityType)} and authorised for issue.
-      </p>
-      <div style="margin-top:36px;display:flex;gap:60px">
-        <div style="flex:1"><div style="border-top:1px solid #94a3b8;padding-top:6px;font-size:11px;color:#64748b">Signed on behalf of the ${boardWord(e.entityType)}</div></div>
-        <div style="width:160px"><div style="border-top:1px solid #94a3b8;padding-top:6px;font-size:11px;color:#64748b">Date</div></div>
-      </div>
-      <p style="margin-top:28px;color:#cbd5e1;font-size:10px">${firmName ? escapeHtml(firmName) + ' · ' : ''}Prepared using SMITH Accounts Studio</p>
-    </div>
+// ── Statement blocks ─────────────────────────────────────────────────────────
+
+function incomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string): string {
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
+    ${groupRows(pl.turnover, hasPrior, 1)}
+    ${row('Turnover', pl.turnoverTotal, pl.turnoverTotalPrior, hasPrior, { bold: true, rule: true })}
+    ${pl.costOfSales.length ? groupRows(pl.costOfSales, hasPrior, -1) + row('Gross profit', pl.grossProfit, pl.grossProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
+    ${groupRows(pl.expenses, hasPrior, -1)}
+    ${pl.expenses.length ? row('Operating profit', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
+    ${groupRows(pl.taxation, hasPrior, -1)}
+    ${row('Profit/(loss) for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
+  </tbody></table>`;
+}
+
+function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string): string {
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
+    ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true }) + groupRows(bs.fixedAssets, hasPrior, 1) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true }) : ''}
+    ${row('Current assets', null, null, hasPrior, { muted: true })}
+    ${groupRows(bs.currentAssets, hasPrior, 1)}
+    ${row('', bs.currentAssetsTotal, bs.currentAssetsTotalPrior, hasPrior, {})}
+    ${bs.creditorsWithin.length ? row('Creditors: amounts falling due within one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsWithin, hasPrior, -1) : ''}
+    ${row('Net current assets', bs.netCurrentAssets, bs.netCurrentAssetsPrior, hasPrior, { bold: true, rule: true })}
+    ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true })}
+    ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsAfter, hasPrior, -1) : ''}
+    ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true }) + groupRows(bs.provisions, hasPrior, -1) : ''}
+    ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true })}
+    ${row('Capital and reserves', null, null, hasPrior, { muted: true })}
+    ${groupRows(bs.capitalAndReserves, hasPrior, 1)}
+    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true })}
+    ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true })}
+  </tbody></table>`;
+}
+
+/** Per-category breakdown of the P&L (full accounts only). */
+function detailedIncomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string): string {
+  const block = (heading: string, groups: StmtGroup[], sign: 1 | -1, subtotal: number, subtotalPrior: number | null): string => {
+    if (!groups.length) return '';
+    // Show raw (positive) line values; the subtotal carries the sign.
+    const rawLines = groups.flatMap(g => g.lines.map(l => row(l.label, l.current, l.prior, hasPrior, { indent: true })));
+    return `<tr><td style="${LBL}font-weight:700;color:#0f172a">${heading}</td><td></td>${hasPrior ? '<td></td>' : ''}</tr>
+      ${rawLines.join('')}
+      ${row('', sign * subtotal, subtotalPrior === null ? null : sign * subtotalPrior, hasPrior, { bold: true, rule: true })}`;
+  };
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
+    ${block('Turnover', pl.turnover, 1, pl.turnoverTotal, pl.turnoverTotalPrior)}
+    ${pl.costOfSales.length ? block('Cost of sales', pl.costOfSales, -1, pl.costOfSales.reduce((t, g) => t + g.total, 0), hasPrior ? pl.costOfSales.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null) + row('Gross profit', pl.grossProfit, pl.grossProfitPrior, hasPrior, { bold: true }) : ''}
+    ${block('Administrative expenses', pl.expenses, -1, pl.expenses.reduce((t, g) => t + g.total, 0), hasPrior ? pl.expenses.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null)}
+    ${pl.expenses.length ? row('Operating profit', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
+    ${pl.taxation.length ? block('Tax on profit', pl.taxation, -1, pl.taxation.reduce((t, g) => t + g.total, 0), hasPrior ? pl.taxation.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null) : ''}
+    ${row('Profit/(loss) for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
+  </tbody></table>`;
+}
+
+// ── Section-specific bodies ──────────────────────────────────────────────────
+
+function companyInfoBody(e: Engagement, accountantDetails: string, firmName: string): string {
+  const dirs = (e.directors ?? []).filter(Boolean);
+  const dirLabel = dirs.length > 1 ? 'Directors' : 'Director';
+  const dirValue = dirs.length ? dirs.map(escapeHtml).join('<br>') : '—';
+  const acct = accountantDetails.trim() || (firmName ? escapeHtml(firmName) : '—');
+  const infoRow = (label: string, value: string) =>
+    `<tr><td style="padding:6px 24px 6px 0;color:#64748b;font-size:12px;vertical-align:top;white-space:nowrap">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:12.5px;line-height:1.5">${value}</td></tr>`;
+  return `<table style="width:100%;border-collapse:collapse">
+    ${infoRow(dirLabel, dirValue)}
+    ${infoRow('Registered Number', e.companyNumber ? escapeHtml(e.companyNumber) : '—')}
+    ${e.registeredOffice ? infoRow('Registered Office', escapeHtml(e.registeredOffice).replace(/, /g, '<br>')) : ''}
+    ${infoRow('Accountants', acct)}
+  </table>`;
+}
+
+function directorsReportBody(e: Engagement, isLlp: boolean): string {
+  const reportId = isLlp ? 'members-report' : 'directors-report';
+  const disc = e.disclosures.find(s => s.id === reportId && s.included !== false && s.content && s.content.trim());
+  const officer = isLlp ? 'member' : 'director';
+  const dir = (e.directors ?? []).filter(Boolean)[0] || e.preparedBy || '';
+
+  const body = disc
+    ? `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">${disc.content}</div>`
+    : `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">
+        <p style="margin:0 0 10px">The ${officer} presents ${isLlp ? 'their' : 'his/her/their'} annual report and the financial statements for the year ended ${longDate(e.periodEnd)}.</p>
+        <p style="font-weight:700;margin:14px 0 4px">${isLlp ? 'Members' : 'Director'}</p>
+        <p style="margin:0 0 10px">The ${officer}${(e.directors ?? []).length > 1 ? 's who served' : ' who served'} the ${isLlp ? 'LLP' : 'company'} during the year ${(e.directors ?? []).length > 1 ? 'were' : 'was'} as follows:</p>
+        <p style="margin:0 0 10px">${((e.directors ?? []).filter(Boolean).map(escapeHtml).join('<br>')) || '—'}</p>
+        <p style="font-weight:700;margin:14px 0 4px">Statement of ${officer}'s responsibilities</p>
+        <p style="margin:0 0 10px">The ${officer} is responsible for preparing the report and the financial statements in accordance with applicable law and United Kingdom Generally Accepted Accounting Practice.</p>
+        <p style="margin:0 0 10px">Company law requires the ${officer} to prepare financial statements for each financial year which give a true and fair view of the state of affairs of the ${isLlp ? 'LLP' : 'company'} and of its profit or loss for that period. In preparing these financial statements the ${officer} is required to select suitable accounting policies and apply them consistently; make judgements and estimates that are reasonable and prudent; and prepare the financial statements on the going concern basis unless it is inappropriate to presume that the ${isLlp ? 'LLP' : 'company'} will continue in business.</p>
+        <p style="margin:0 0 10px">The ${officer} is responsible for keeping adequate accounting records that are sufficient to show and explain the ${isLlp ? 'LLP' : 'company'}'s transactions and disclose with reasonable accuracy at any time the financial position of the ${isLlp ? 'LLP' : 'company'}, and to enable them to ensure that the financial statements comply with the Companies Act 2006. They are also responsible for safeguarding the assets of the ${isLlp ? 'LLP' : 'company'} and hence for taking reasonable steps for the prevention and detection of fraud and other irregularities.</p>
+      </div>`;
+
+  const signature = `
+    <div class="paper" style="margin-top:34px">
+      <p style="font-size:12.5px;color:#334155;margin:0 0 30px">${isLlp ? 'On behalf of the members.' : 'On behalf of the board.'}</p>
+      <div style="border-top:1px solid #94a3b8;width:240px;padding-top:6px;font-size:12px;color:#0f172a">${escapeHtml(dir)}</div>
+      <p style="font-size:11.5px;color:#64748b;margin:2px 0 0">${isLlp ? 'Member' : 'Director'}</p>
+      <p style="font-size:11.5px;color:#64748b;margin:14px 0 0">Date approved: ______________________</p>
+    </div>`;
+
+  return body + signature;
+}
+
+function accountantsReportBody(e: Engagement, accountantsReport: string, accountantDetails: string, firmName: string): string {
+  const disc = e.disclosures.find(s => (s.id === 'accountants-report' || s.id === 'firm-accountants-report') && s.included !== false && s.content && s.content.trim());
+  const custom = (disc?.content && disc.content.trim()) || (accountantsReport && accountantsReport.trim());
+  const isLlp = e.entityType === 'llp';
+  const officer = isLlp ? 'members' : 'director';
+
+  const bodyHtml = custom
+    ? `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">${custom}</div>`
+    : `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">
+        <p style="margin:0 0 10px">In order to assist you to fulfil your duties under the Companies Act 2006, we have prepared for your approval the financial statements of ${escapeHtml(e.companyName)} for the year ended ${longDate(e.periodEnd)}, which comprise the Income Statement, the Statement of Financial Position and the related notes, from the accounting records and the information and explanations you have given to us.</p>
+        <p style="margin:0 0 10px">This report is made solely to the ${officer} of ${escapeHtml(e.companyName)}, in accordance with the terms of our engagement letter. Our work has been undertaken so that we might state to the ${officer} those matters we have agreed to state to them in this report and for no other purpose.</p>
+        <p style="margin:0 0 10px">We have not been instructed to carry out an audit or a review of the financial statements and consequently express no opinion on them.</p>
+      </div>`;
+
+  const acct = accountantDetails.trim() || (firmName ? `<p style="margin:0">${escapeHtml(firmName)}</p>` : '');
+  const sign = acct
+    ? `<div class="paper" style="margin-top:30px;font-size:12px;color:#334155;line-height:1.5">
+        <div style="border-top:1px solid #94a3b8;width:240px;padding-top:6px;margin-bottom:8px"></div>
+        ${acct}
+        <p style="margin:14px 0 0;color:#64748b">Date: ______________________</p>
+      </div>`
+    : '';
+  return bodyHtml + sign;
+}
+
+function sofpFooter(e: Engagement): string {
+  const isLlp = e.entityType === 'llp';
+  const officer = isLlp ? 'members' : 'director';
+  const dir = (e.directors ?? []).filter(Boolean)[0] || e.preparedBy || '';
+  return `<div class="paper" style="margin-top:20px;font-size:11.5px;line-height:1.55;color:#475569">
+    <p style="margin:0 0 8px">For the year ended ${longDate(e.periodEnd)} the ${isLlp ? 'LLP' : 'company'} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>
+    <p style="margin:0 0 4px;font-weight:600;color:#334155">${isLlp ? 'Members' : "Director"}'s responsibilities:</p>
+    <p style="margin:0 0 4px">1. The members have not required the ${isLlp ? 'LLP' : 'company'} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>
+    <p style="margin:0 0 8px">2. The ${officer} acknowledge${isLlp ? '' : 's'} their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>
+    <p style="margin:0 0 14px">These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>
+    <p style="margin:0 0 26px">The financial statements were approved by the ${officer} and were signed by:</p>
+    <div style="border-top:1px solid #94a3b8;width:240px;padding-top:6px;color:#0f172a">${escapeHtml(dir)}</div>
+    <p style="margin:2px 0 0;color:#64748b">${isLlp ? 'Member' : 'Director'}</p>
   </div>`;
 }
 
-/** The filing/exemption statement shown on a filleted balance sheet. */
-function filletStatement(entityType: string): string {
-  if (entityType === 'llp') {
-    return 'These financial statements have been prepared in accordance with the provisions applicable to LLPs subject to the small LLPs regime. In accordance with the Limited Liability Partnerships (Accounts and Audit) (Application of Companies Act 2006) Regulations 2008, the profit and loss account has not been delivered to the Registrar of Companies.';
+function notesBody(e: Engagement, excludeIds: Set<string>): { html: string; hasNotes: boolean } {
+  const notes = e.disclosures.filter(s => s.included !== false && s.content && s.content.trim() && !excludeIds.has(s.id));
+  if (!notes.length) return { html: '', hasNotes: false };
+  const genInfo = `<div class="paper" style="margin-bottom:16px">
+    <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 4px">General Information</p>
+    <p style="font-size:12px;line-height:1.55;color:#475569;margin:0">${escapeHtml(e.companyName)} is ${e.entityType === 'llp' ? 'a limited liability partnership' : 'a private company, limited by shares'}, registered in the United Kingdom${e.companyNumber ? `, registration number ${escapeHtml(e.companyNumber)}` : ''}${e.registeredOffice ? `, registered office ${escapeHtml(e.registeredOffice)}` : ''}. The presentation currency is £ sterling.</p>
+  </div>`;
+  const body = notes.map((s, i) => `<div class="paper" style="margin-bottom:16px">
+    <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 3px">${i + 1}. ${escapeHtml(s.title)}</p>
+    <div style="font-size:12px;line-height:1.55;color:#1e293b">${s.content}</div>
+  </div>`).join('');
+  return { html: genInfo + body, hasNotes: true };
+}
+
+// ── Main entry point ─────────────────────────────────────────────────────────
+
+export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions = {}): string {
+  const filleted = !!opts.filleted;
+  const firmName = opts.firmName?.trim() || '';
+  const logo = opts.firmLogoUrl || '';
+  const accountantDetails = opts.accountantDetails || '';
+  const accountantsReport = opts.accountantsReport || '';
+
+  const isLlp = e.entityType === 'llp';
+  const s = e.statements;
+  const hasPrior = !!s?.hasPrior;
+  const curYear = yearOf(e.periodEnd);
+  const priorYear = e.comparativePeriod ? yearOf(e.comparativePeriod) : '';
+  const periodLine = `For the year ended ${longDate(e.periodEnd)}`;
+
+  const parts: Part[] = [];
+
+  // 1. Company Information
+  parts.push(section('company-info', 'Company information',
+    sectionHead(e.companyName, 'Company Information', periodLine) + companyInfoBody(e, accountantDetails, firmName)));
+
+  // 2. Director's / Members' Report (omitted from filleted filing copy)
+  if (!filleted) {
+    parts.push(section('directors-report', isLlp ? "Members' report" : "Director's report",
+      sectionHead(e.companyName, isLlp ? "Members' Report" : "Director's Report", periodLine) + directorsReportBody(e, isLlp)));
   }
-  return 'These financial statements have been prepared and delivered in accordance with the provisions applicable to companies subject to the small companies regime. As permitted by section 444 of the Companies Act 2006, the profit and loss account and the directors&apos; report have not been delivered to the Registrar of Companies.';
-}
 
-function boardWord(entity: string): string {
-  if (entity === 'llp') return 'members';
-  if (entity === 'charity' || entity === 'trust') return 'trustees';
-  if (entity === 'sole_trader') return 'proprietor';
-  if (entity === 'partnership') return 'partners';
-  return 'board';
-}
+  // 3. Accountants' Report
+  parts.push(section('accountants-report', "Accountants' report",
+    sectionHead(e.companyName, "Accountants' Report", periodLine) + accountantsReportBody(e, accountantsReport, accountantDetails, firmName)));
 
-function uk(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${d}-${m}-${y}`;
-}
+  // 4. Income Statement (omitted from filleted filing copy)
+  if (!filleted) {
+    parts.push(section('income-statement', 'Income statement',
+      sectionHead(e.companyName, 'Income Statement', periodLine) +
+      (s ? incomeStatement(s.profitLoss, hasPrior, curYear, priorYear) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+  }
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+  // 5. Statement of Financial Position
+  parts.push(section('sofp', 'Statement of financial position',
+    sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, e.companyNumber || undefined) +
+    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear) + sofpFooter(e) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+
+  // 6. Notes to the Financial Statements
+  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body']);
+  const notes = notesBody(e, excludeIds);
+  if (notes.hasNotes) {
+    parts.push(section('notes', 'Notes to the financial statements',
+      sectionHead(e.companyName, 'Notes to the Financial Statements', periodLine) + notes.html));
+  }
+
+  // 7. Detailed Income Statement (full accounts only)
+  if (!filleted && s) {
+    parts.push(section('detailed-income', 'Detailed Income Statement',
+      sectionHead(e.companyName, 'Detailed Income Statement', periodLine) +
+      detailedIncomeStatement(s.profitLoss, hasPrior, curYear, priorYear)));
+  }
+
+  // ── Cover ──
+  const kicker = filleted ? 'Filleted Accounts for Filing' : 'Report of the Director and Unaudited Financial Statements';
+  const cover = `
+    <div class="paper" style="min-height:1000px;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 48px">
+      ${logo ? `<img src="${logo}" alt="" crossorigin="anonymous" style="max-height:64px;max-width:240px;object-fit:contain;margin:0 auto 30px" />` : ''}
+      ${e.companyNumber ? `<p style="font-size:12px;color:#64748b;margin:0 0 14px">Registered Number: ${escapeHtml(e.companyNumber)}</p>` : ''}
+      <h1 style="font-size:30px;margin:0 0 16px;color:#0f172a">${escapeHtml(e.companyName)}</h1>
+      <p style="font-size:14px;color:#334155;margin:0 0 30px">${kicker}</p>
+      <p style="font-size:13px;font-weight:700;color:#475569;margin:0 0 4px">Period of accounts</p>
+      <p style="font-size:12.5px;color:#334155;margin:0">Start date: ${longDate(e.periodStart)}</p>
+      <p style="font-size:12.5px;color:#334155;margin:2px 0 0">End date: ${longDate(e.periodEnd)}</p>
+      <p style="font-size:11px;color:#94a3b8;margin:24px 0 0">${escapeHtml(e.framework)}</p>
+      ${firmName ? `<div style="margin-top:40px;color:#475569;font-size:13px;font-weight:600">${escapeHtml(firmName)}</div>` : ''}
+    </div>`;
+
+  // ── Contents ──
+  const contentsRows = parts.map(p => `<tr>
+      <td style="padding:6px 0;font-size:12.5px;color:#0f172a">${escapeHtml(p.label)}</td>
+      <td style="padding:6px 0;text-align:right;font-size:12.5px;color:#334155;width:48px" data-toc-fill="${p.key}"></td>
+    </tr>`).join('');
+  const contents = `
+    <div class="paper force-page-start">
+      ${sectionHead(e.companyName, 'Contents Page', periodLine)}
+      <table style="width:100%;border-collapse:collapse">${contentsRows}</table>
+    </div>`;
+
+  const body = parts.map(p => p.html).join('');
+
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a">${cover}${contents}${body}</div>`;
 }
