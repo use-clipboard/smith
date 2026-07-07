@@ -167,6 +167,25 @@ const NOTE_DEFS: NoteDef[] = [
     }),
   },
   {
+    id: 'taxation', title: 'Taxation',
+    requirement: 'Analysis of the tax charge on the profit for the year.',
+    applies: ctx => !isMicro(ctx),
+    build: ctx => {
+      const lines = collectLines(ctx.statements?.profitLoss.taxation, []);
+      if (lines.length) {
+        return {
+          status: 'complete',
+          content: `<h3>Tax on profit on ordinary activities</h3><p>Analysis of the tax charge for the year:</p>${noteTableHtml(lines, ctx.statements!.hasPrior, ctx.priorYear)}`,
+        };
+      }
+      const t = fig(ctx, ctx.statements?.profitLoss.taxation, ['tax', 'corporation']);
+      return {
+        status: t ? 'complete' : 'needs-review',
+        content: `<h3>Tax on profit on ordinary activities</h3><p>The tax charge on the profit on ordinary activities for the year was ${t ?? PH}.</p>`,
+      };
+    },
+  },
+  {
     id: 'fixed-assets', title: 'Fixed Assets',
     requirement: 'Cost, additions, depreciation and net book value by class of asset.',
     applies: ctx => !isMicro(ctx),
@@ -264,6 +283,39 @@ const NOTE_DEFS: NoteDef[] = [
       return {
         status: sc ? 'complete' : 'needs-review',
         content: `<h3>Share capital</h3><p>Allotted, called up and fully paid share capital at the year end was ${sc ?? PH}.</p>`,
+      };
+    },
+  },
+  {
+    id: 'reserves', title: 'Profit and Loss Account',
+    requirement: 'Movement on the profit and loss account reserve, including profit and distributions.',
+    applies: ctx => isCompany(ctx.entityType) && !isMicro(ctx),
+    build: ctx => {
+      const pl = ctx.statements?.profitLoss;
+      const bs = ctx.statements?.balanceSheet;
+      if (!pl || !bs) {
+        return { status: 'needs-review', content: `<h3>Profit and loss account</h3><p>The movement on the profit and loss account reserve, including the profit for the year and any dividends, should be set out here.</p>` };
+      }
+      // Retained-earnings reserve brought forward, from the equity groups if the
+      // ledger separates it; otherwise the carried-forward balance is left to be
+      // confirmed alongside any dividends.
+      const retained = findGroup(bs.capitalAndReserves, ['profit and loss', 'retained', 'p&l', 'income reserve']);
+      const bfwd = retained && retained.prior !== null ? retained.prior : null;
+      const profit = pl.netProfit;
+      const cfwd = retained ? retained.current : null;
+      const rows: string[] = [];
+      if (bfwd !== null) rows.push(`<tr><td>Balance brought forward</td><td style="text-align:right">${num0(bfwd)}</td></tr>`);
+      rows.push(`<tr><td>Profit for the financial year</td><td style="text-align:right">${num0(profit)}</td></tr>`);
+      // Reconstruct distributions as the balancing figure when both ends are known.
+      if (bfwd !== null && cfwd !== null) {
+        const dividends = bfwd + profit - cfwd;
+        if (Math.abs(dividends) >= 1) rows.push(`<tr><td>Dividends paid</td><td style="text-align:right">(${num0(Math.abs(dividends))})</td></tr>`);
+      }
+      rows.push(`<tr><td style="font-weight:600;border-top:1px solid #cbd5e1">Balance carried forward</td><td style="text-align:right;font-weight:600;border-top:1px solid #cbd5e1">${cfwd !== null ? num0(cfwd) : '&mdash;'}</td></tr>`);
+      return {
+        status: cfwd !== null ? 'complete' : 'needs-review',
+        content: `<h3>Profit and loss account</h3><table style="width:100%;border-collapse:collapse;margin-top:6px"><tbody>${rows.join('')}</tbody></table>`
+          + (cfwd === null ? `<p style="font-size:12px;color:#64748b;margin-top:8px">Confirm the balance carried forward and any dividends paid during the year.</p>` : ''),
       };
     },
   },

@@ -144,7 +144,7 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
     ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
     ${row('Capital and reserves', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('share-capital') })}
     ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
-    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true, notesCol: true })}
+    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('reserves') })}
     ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
   </tbody></table>`;
 }
