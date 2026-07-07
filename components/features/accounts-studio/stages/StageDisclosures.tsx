@@ -8,9 +8,15 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
 import { ENTITY_LABELS } from '../data';
-import { OPTIONAL_NOTES, makeOptionalNote } from '@/lib/accounts-studio/disclosures';
+import { addableNotes, makeNote, noteRuleMeta, type DisclosureContext } from '@/lib/accounts-studio/disclosures';
 import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
-import type { Engagement, DisclosureSection, SectionStatus } from '../types';
+import type { Engagement, DisclosureSection, SectionStatus, NoteLevel } from '../types';
+
+const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string }> = {
+  mandatory: { label: 'Required', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400' },
+  conditional: { label: 'Conditional', cls: 'bg-sky-100 text-sky-700', dot: 'bg-sky-400' },
+  optional: { label: 'Optional', cls: 'bg-slate-100 text-slate-500', dot: 'bg-slate-300' },
+};
 
 export default function StageDisclosures({
   engagement, patch, advance,
@@ -34,17 +40,28 @@ export default function StageDisclosures({
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
 
+  // Rule-engine context for this engagement (drives the ＋ Add note library + badges).
+  const dctx: DisclosureContext = {
+    entityType: engagement.entityType,
+    size: engagement.size,
+    framework: engagement.framework,
+    statements: engagement.statements ?? null,
+    priorYear: engagement.comparativePeriod ? engagement.comparativePeriod.slice(-4) : '',
+    directors: engagement.directors,
+  };
+  const levelOf = (s: DisclosureSection): NoteLevel | undefined => s.level ?? noteRuleMeta(s.id)?.level ?? undefined;
+
   const isIncluded = (s: DisclosureSection) => s.included !== false;
   const includedSections = sections.filter(isIncluded);
   const completeCount = includedSections.filter(s => s.status === 'complete').length;
-  const addable = OPTIONAL_NOTES.filter(t => !sections.some(s => s.id === t.id));
+  const addable = addableNotes(dctx, sections.map(s => s.id));
 
   // Deterministic "is a needed note missing?" check (see disclosureCheck.ts).
   const warnings = checkDisclosures(engagement);
   const warnCount = warnings.filter(w => w.severity === 'warn').length;
 
   // One-click resolution for a warning: re-include an excluded note, add one
-  // from the optional library, or (fallback) just jump to it.
+  // from the library, or (fallback) just jump to it.
   function resolveWarning(noteId: string) {
     const existing = sections.find(s => s.id === noteId);
     if (existing) {
@@ -52,12 +69,12 @@ export default function StageDisclosures({
       selectSection(noteId);
       return;
     }
-    if (OPTIONAL_NOTES.some(t => t.id === noteId)) addNote(noteId);
+    if (addable.some(t => t.id === noteId)) addNote(noteId);
   }
   const resolveLabel = (noteId: string) => {
     const existing = sections.find(s => s.id === noteId);
     if (existing) return existing.included === false ? 'Include' : 'Open';
-    return OPTIONAL_NOTES.some(t => t.id === noteId) ? 'Add note' : null;
+    return addable.some(t => t.id === noteId) ? 'Add note' : null;
   };
 
   const updateSection = useCallback((id: string, updater: (s: DisclosureSection) => DisclosureSection) => {
@@ -68,10 +85,9 @@ export default function StageDisclosures({
     updateSection(id, s => ({ ...s, included: s.included === false ? true : false }));
   }
 
-  function addNote(templateId: string) {
-    const t = OPTIONAL_NOTES.find(x => x.id === templateId);
-    if (!t) return;
-    const note = makeOptionalNote(t);
+  function addNote(noteId: string) {
+    const note = makeNote(noteId, dctx);
+    if (!note) return;
     patch(e => ({ ...e, disclosures: [...e.disclosures, note] }));
     setShowAddNote(false);
     selectSection(note.id);
@@ -309,7 +325,8 @@ export default function StageDisclosures({
               >
                 <button onClick={() => selectSection(s.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left">
                   <SectionStatusDot status={s.status} />
-                  <span className={`flex-1 truncate text-[12.5px] font-medium ${!included ? 'text-[var(--text-muted)] line-through' : active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
+                  <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${!included ? 'text-[var(--text-muted)] line-through' : active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
+                  {levelOf(s) && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_BADGE[levelOf(s)!].dot}`} aria-label={LEVEL_BADGE[levelOf(s)!].label} />}
                 </button>
                 <button
                   onClick={() => toggleIncluded(s.id)}
@@ -337,7 +354,10 @@ export default function StageDisclosures({
               <div className="absolute bottom-full left-2 right-2 z-40 mb-1 max-h-64 overflow-y-auto rounded-xl border border-[var(--border)] bg-white p-1 shadow-xl">
                 {addable.map(t => (
                   <button key={t.id} onClick={() => addNote(t.id)} className="block w-full rounded-lg px-2.5 py-1.5 text-left hover:bg-[var(--accent)]/5">
-                    <span className="block text-[12.5px] font-medium text-[var(--text-primary)]">{t.title}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">{t.title}</span>
+                      <span className={`shrink-0 rounded-full px-1.5 py-px text-[9px] font-bold ${LEVEL_BADGE[t.level].cls}`}>{LEVEL_BADGE[t.level].label}</span>
+                    </span>
                     <span className="block text-[10.5px] text-[var(--text-muted)]">{t.requirement}</span>
                   </button>
                 ))}
@@ -354,6 +374,7 @@ export default function StageDisclosures({
             <div className="flex items-center gap-2">
               <h3 className="truncate text-[14px] font-bold text-[var(--text-primary)]">{section.title}</h3>
               <SectionStatusPill status={section.status} />
+              {levelOf(section) && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${LEVEL_BADGE[levelOf(section)!].cls}`}>{LEVEL_BADGE[levelOf(section)!].label}</span>}
             </div>
             <p className="truncate text-[11px] text-[var(--text-muted)]">{section.requirement}</p>
           </div>

@@ -42,8 +42,11 @@ export type ImportSourceId =
   | 'excel'
   | 'prior-year';
 
-/** Status shared by disclosure sections. */
+/** Status shared by disclosure sections (the drafting/editing state). */
 export type SectionStatus = 'complete' | 'needs-review' | 'missing' | 'draft';
+
+/** How a disclosure is required by the framework + data (the rule-engine tier). */
+export type NoteLevel = 'mandatory' | 'conditional' | 'optional';
 
 export interface DisclosureVersion {
   id: string;
@@ -67,6 +70,8 @@ export interface DisclosureSection {
   entityTypes?: EntityType[];
   /** Whether the note is included in the accounts. Defaults to true (undefined). */
   included?: boolean;
+  /** Rule-engine classification: mandatory / conditional / optional (for the badge). */
+  level?: NoteLevel;
 }
 
 // ── Imported ledger data (Stage 1 → real trial balance + statements) ─────────
