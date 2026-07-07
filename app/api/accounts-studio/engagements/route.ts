@@ -81,9 +81,15 @@ export async function POST(req: NextRequest) {
     const stamp = `${p(now.getDate())}-${p(now.getMonth() + 1)}-${now.getFullYear()} ${p(now.getHours())}:${p(now.getMinutes())}`;
     const defaults = firmDefaultNotes(settings, stamp);
     if (defaults.length) {
-      const existing = Array.isArray(engagementData.disclosures) ? engagementData.disclosures as { id?: string }[] : [];
-      const have = new Set(existing.map(d => d.id));
-      engagementData.disclosures = [...existing, ...defaults.filter(d => !have.has(d.id))];
+      const existing = (Array.isArray(engagementData.disclosures) ? engagementData.disclosures : []) as { id?: string }[];
+      // Firm house-style overrides a generated section of the same id (e.g. the
+      // accountants' report); otherwise it's appended.
+      for (const d of defaults) {
+        const idx = existing.findIndex(x => x.id === d.id);
+        if (idx >= 0) existing[idx] = { ...existing[idx], ...d };
+        else existing.push(d);
+      }
+      engagementData.disclosures = existing;
     }
   } catch { /* firm settings optional — never block creation */ }
 

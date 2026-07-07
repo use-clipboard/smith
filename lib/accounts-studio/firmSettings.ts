@@ -36,7 +36,9 @@ export function firmDefaultNotes(s: AccountsStudioFirmSettings, at: string): Dis
     id, title, status: 'complete', requirement, content,
     history: [{ id: 'v1', label: 'Firm default', at, content }], included: true,
   });
-  if (s.accountantsReport.trim()) notes.push(mk('firm-accountants-report', "Accountants' Report", "Firm default — reporting accountants' report.", s.accountantsReport));
+  // Uses the same id as the auto-generated accountants' report so the firm's
+  // house-style overrides the standard template rather than duplicating it.
+  if (s.accountantsReport.trim()) notes.push(mk('accountants-report', "Accountants' Report", "Firm default — reporting accountants' report.", s.accountantsReport));
   if (s.accountantDetails.trim()) notes.push(mk('firm-accountant-details', 'Accountant Details', 'Firm default — accountant details.', s.accountantDetails));
   if (s.governingBody.trim()) notes.push(mk('firm-governing-body', 'Governing Body', 'Firm default — governing body statement.', s.governingBody));
   return notes;

@@ -82,7 +82,6 @@ export const OPTIONAL_NOTES: OptionalNoteTemplate[] = [
   { id: 'pensions', title: 'Pension Commitments', requirement: 'Defined contribution pension costs and outstanding contributions.', content: `<h3>Pension commitments</h3><p>The company operates a defined contribution pension scheme. The pension charge for the year was £[ ].</p>` },
   { id: 'operating-leases', title: 'Operating Lease Commitments', requirement: 'Future minimum lease payments under non-cancellable operating leases.', content: `<h3>Operating lease commitments</h3><p>Total future minimum lease payments under non-cancellable operating leases were £[ ].</p>` },
   { id: 'post-bs-events', title: 'Events after the Reporting Date', requirement: 'Adjusting and non-adjusting events after the balance sheet date.', content: `<h3>Events after the reporting date</h3><p>There were no material events after the reporting date requiring disclosure — please confirm.</p>` },
-  { id: 'accountants-report', title: "Accountants' Report", requirement: 'Report of the reporting accountants on the unaudited accounts.', content: `<h3>Accountants' report to the board of directors</h3><p>In accordance with our engagement letter, and in order to assist you to fulfil your duties under the Companies Act 2006, we have compiled the financial statements from the accounting records and the information and explanations supplied to us.</p>` },
   { id: 'audit-exemption', title: 'Audit Exemption', requirement: "Directors' statement claiming exemption from audit.", content: `<h3>Audit exemption</h3><p>For the year in question the company was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies, and the members have not required an audit.</p>` },
   { id: 'controlling-party', title: 'Controlling Party', requirement: 'Ultimate controlling party, where applicable.', content: `<h3>Controlling party</h3><p>The company was under the control of [ ] throughout the current and previous year.</p>` },
 ];
@@ -109,6 +108,49 @@ interface NoteDef {
 const isCompany = (e: EntityType) => e === 'limited_company' || e === 'cic' || e === 'dormant_company';
 const isMicro = (ctx: DisclosureContext) => ctx.size === 'micro';
 
+// ── Report prose (seeded as editable sections) ───────────────────────────────
+// The full statutory wording lives here (not in the PDF builder) so the user can
+// edit every word in the Notes & Disclosures step. Entity-aware (director vs
+// member, company vs LLP).
+
+function directorsReportHtml(ctx: DisclosureContext, isLlp: boolean): string {
+  const officer = isLlp ? 'members' : 'director';
+  const Officer = isLlp ? 'Members' : 'Director';
+  const entity = isLlp ? 'LLP' : 'company';
+  const dirs = (ctx.directors ?? []).filter(Boolean);
+  const many = dirs.length > 1;
+  const served = dirs.length
+    ? `<p>The ${officer}${many ? '' : ''} who served the ${entity} during the year ${many || isLlp ? 'were' : 'was'} as follows:</p><p>${dirs.join('<br>')}</p>`
+    : `<p>The ${officer} who served the ${entity} during the year ${isLlp ? 'are' : 'is'} set out below — please confirm.</p>`;
+  return `<h3>${isLlp ? "Members' report" : "Director's report"}</h3>`
+    + `<p>The ${officer} present${many || isLlp ? '' : 's'} ${isLlp ? 'their' : 'their'} annual report and the financial statements for the year then ended.</p>`
+    + `<p><strong>Principal activity.</strong> The principal activity of the ${entity} during the financial year is set out below — please confirm.</p>`
+    + `<p><strong>${Officer}${isLlp ? '' : ''}.</strong></p>${served}`
+    + `<p><strong>Statement of ${officer}' responsibilities.</strong> The ${officer} ${isLlp ? 'are' : 'is'} responsible for preparing the report and the financial statements in accordance with applicable law and United Kingdom Generally Accepted Accounting Practice.</p>`
+    + `<p>Company law requires the ${officer} to prepare financial statements for each financial year which give a true and fair view of the state of affairs of the ${entity} and of its profit or loss for that period. In preparing these financial statements the ${officer} ${isLlp ? 'are' : 'is'} required to select suitable accounting policies and apply them consistently; make judgements and accounting estimates that are reasonable and prudent; and prepare the financial statements on the going concern basis unless it is inappropriate to presume that the ${entity} will continue in business.</p>`
+    + `<p>The ${officer} ${isLlp ? 'are' : 'is'} responsible for keeping adequate accounting records that are sufficient to show and explain the ${entity}'s transactions and disclose with reasonable accuracy at any time the financial position of the ${entity}, and to enable them to ensure that the financial statements comply with the Companies Act 2006. They are also responsible for safeguarding the assets of the ${entity} and hence for taking reasonable steps for the prevention and detection of fraud and other irregularities.</p>`;
+}
+
+function accountantsReportHtml(ctx: DisclosureContext): string {
+  const isLlp = ctx.entityType === 'llp';
+  const officer = isLlp ? 'members' : 'board of directors';
+  return `<h3>Accountants' report to the ${officer}</h3>`
+    + `<p>In order to assist you to fulfil your duties under the Companies Act 2006, we have prepared for your approval the financial statements which comprise the Income Statement, the Statement of Financial Position and the related notes from the accounting records and the information and explanations you have given to us.</p>`
+    + `<p>This report is made solely to the ${officer}, in accordance with the terms of our engagement letter. Our work has been undertaken so that we might state to the ${officer} those matters we have agreed to state to them in this report and for no other purpose.</p>`
+    + `<p>We have not been instructed to carry out an audit or a review of the financial statements and consequently we express no opinion on them.</p>`;
+}
+
+function balanceSheetStatementsHtml(ctx: DisclosureContext): string {
+  const isLlp = ctx.entityType === 'llp';
+  const officer = isLlp ? 'members' : 'director';
+  const entity = isLlp ? 'LLP' : 'company';
+  return `<p>For the financial year the ${entity} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>`
+    + `<p>${isLlp ? 'Members' : "Director"}' responsibilities:</p>`
+    + `<p>1. The members have not required the ${entity} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>`
+    + `<p>2. The ${officer} acknowledge${isLlp ? '' : 's'} their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>`
+    + `<p>These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>`;
+}
+
 const NOTE_DEFS: NoteDef[] = [
   {
     id: 'policies', title: 'Accounting Policies',
@@ -131,16 +173,20 @@ const NOTE_DEFS: NoteDef[] = [
   {
     id: 'directors-report', title: "Directors' Report",
     requirement: 'Principal activity, results, dividends and directors who served in the period.',
-    applies: ctx => isCompany(ctx.entityType) && !isMicro(ctx),
-    build: ctx => ({
-      status: 'needs-review',
-      content: `<h3>Directors' report</h3>`
-        + `<p>The directors present their report and the financial statements for the year then ended.</p>`
-        + `<p><strong>Principal activity.</strong> The principal activity of the company during the year is set out below — please confirm.</p>`
-        + (ctx.directors && ctx.directors.length
-          ? `<p><strong>Directors.</strong> The directors who served during the period were ${ctx.directors.join(', ')}.</p>`
-          : `<p><strong>Directors.</strong> The directors who served during the period are listed below — please confirm.</p>`),
-    }),
+    applies: ctx => isCompany(ctx.entityType),
+    build: ctx => ({ status: 'needs-review', content: directorsReportHtml(ctx, false) }),
+  },
+  {
+    id: 'accountants-report', title: "Accountants' Report",
+    requirement: 'Report of the reporting accountants on the unaudited financial statements.',
+    applies: ctx => isCompany(ctx.entityType) || ctx.entityType === 'llp',
+    build: ctx => ({ status: 'needs-review', content: accountantsReportHtml(ctx) }),
+  },
+  {
+    id: 'balance-sheet-statements', title: 'Balance Sheet Statements',
+    requirement: 'Audit-exemption and responsibility statements shown on the balance sheet.',
+    applies: ctx => isCompany(ctx.entityType) || ctx.entityType === 'llp',
+    build: ctx => ({ status: 'needs-review', content: balanceSheetStatementsHtml(ctx) }),
   },
   {
     id: 'strategic-report', title: 'Strategic Report',
@@ -155,7 +201,7 @@ const NOTE_DEFS: NoteDef[] = [
     id: 'members-report', title: "Members' Report",
     requirement: "Designated members and members' interests for an LLP.",
     applies: ctx => ctx.entityType === 'llp',
-    build: () => ({ status: 'needs-review', content: `<h3>Members' report</h3><p>The designated members present their report for the financial year.</p>` }),
+    build: ctx => ({ status: 'needs-review', content: directorsReportHtml(ctx, true) }),
   },
   {
     id: 'employees', title: 'Employees',

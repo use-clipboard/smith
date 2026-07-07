@@ -261,13 +261,19 @@ function sofpFooter(e: Engagement): string {
   const isLlp = e.entityType === 'llp';
   const officer = isLlp ? 'members' : 'director';
   const dir = (e.directors ?? []).filter(Boolean)[0] || e.preparedBy || '';
+  // The audit-exemption / responsibility statements are an editable section
+  // ('balance-sheet-statements'); fall back to standard wording if absent.
+  const disc = e.disclosures.find(s => s.id === 'balance-sheet-statements' && s.included !== false && s.content && s.content.trim());
+  const statements = disc
+    ? disc.content
+    : `<p style="margin:0 0 8px">For the financial year the ${isLlp ? 'LLP' : 'company'} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>
+       <p style="margin:0 0 4px;font-weight:600;color:#334155">${isLlp ? 'Members' : "Director"}'s responsibilities:</p>
+       <p style="margin:0 0 4px">1. The members have not required the ${isLlp ? 'LLP' : 'company'} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>
+       <p style="margin:0 0 8px">2. The ${officer} acknowledge${isLlp ? '' : 's'} their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>
+       <p style="margin:0 0 14px">These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>`;
   return `<div class="paper" style="margin-top:20px;font-size:11.5px;line-height:1.55;color:#475569">
-    <p style="margin:0 0 8px">For the year ended ${longDate(e.periodEnd)} the ${isLlp ? 'LLP' : 'company'} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>
-    <p style="margin:0 0 4px;font-weight:600;color:#334155">${isLlp ? 'Members' : "Director"}'s responsibilities:</p>
-    <p style="margin:0 0 4px">1. The members have not required the ${isLlp ? 'LLP' : 'company'} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>
-    <p style="margin:0 0 8px">2. The ${officer} acknowledge${isLlp ? '' : 's'} their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>
-    <p style="margin:0 0 14px">These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>
-    <p style="margin:0 0 26px">The financial statements were approved by the ${officer} and were signed by:</p>
+    ${statements}
+    <p style="margin:14px 0 26px">The financial statements were approved by the ${officer} and were signed by:</p>
     <div style="border-top:1px solid #94a3b8;width:240px;padding-top:6px;color:#0f172a">${escapeHtml(dir)}</div>
     <p style="margin:2px 0 0;color:#64748b">${isLlp ? 'Member' : 'Director'}</p>
   </div>`;
@@ -312,7 +318,7 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   // Notes that appear on the Notes page — used both to number the notes and to
   // resolve statement note references (id → "3"). Kept in one place so the
   // Income Statement / SoFP references always match the printed note numbers.
-  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body']);
+  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body', 'balance-sheet-statements']);
   const noteList = renderedNoteList(e, excludeIds);
   const noteNo = (id: string): string => {
     const i = noteList.findIndex(n => n.id === id);
