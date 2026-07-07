@@ -20,7 +20,7 @@ const ContextSchema = z.object({
 });
 
 const RequestSchema = z.object({
-  mode: z.enum(['chat', 'rewrite', 'explain']),
+  mode: z.enum(['chat', 'rewrite', 'explain', 'suggest-default']),
   context: ContextSchema,
   messages: z.array(z.object({
     role: z.enum(['user', 'assistant']),
@@ -31,7 +31,25 @@ const RequestSchema = z.object({
     requirement: z.string().default(''),
     content: z.string().default(''),
   }).optional(),
+  // For mode 'suggest-default' — which firm-wide house-style note to draft.
+  field: z.enum(['accountantsReport', 'accountantDetails', 'governingBody']).optional(),
 });
+
+// Guidance for the firm-wide default drafting (mode 'suggest-default').
+const DEFAULT_FIELDS: Record<string, { title: string; guidance: string }> = {
+  accountantsReport: {
+    title: "Accountants' Report",
+    guidance: "the reporting accountants' report on the UNAUDITED financial statements — the standard wording an accountancy firm addresses to the board/members confirming they compiled the accounts from the records and information supplied, and the scope/limitations of that engagement",
+  },
+  accountantDetails: {
+    title: 'Accountant Details',
+    guidance: "the firm's own details block as it should appear in the accounts — firm name, office address, and regulatory/professional-body wording (e.g. 'Chartered Accountants')",
+  },
+  governingBody: {
+    title: 'Governing Body',
+    guidance: 'standard wording describing the governing body of the entity (e.g. the board of directors / the members / the trustees) and their responsibility for the financial statements',
+  },
+};
 
 const BASE_SYSTEM = `You are SMITH, an expert assistant for a UK accountancy firm, embedded inside the Accounts Studio statutory accounts production tool.
 
@@ -47,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
-    const { mode, context, messages, section } = parsed.data;
+    const { mode, context, messages, section, field } = parsed.data;
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -72,6 +90,14 @@ export async function POST(req: NextRequest) {
     if (mode === 'chat') {
       apiMessages = (messages && messages.length > 0) ? messages : [{ role: 'user', content: 'Introduce how you can help with these accounts.' }];
       maxTokens = 1200;
+    } else if (mode === 'suggest-default') {
+      const def = DEFAULT_FIELDS[field ?? 'accountantsReport'] ?? DEFAULT_FIELDS.accountantsReport;
+      system = BASE_SYSTEM
+        + `\n\nThe user is an admin setting a FIRM-WIDE house-style default that will be inserted automatically into EVERY new set of statutory accounts this firm prepares, then lightly edited per client. Draft ${def.guidance}.`
+        + ` Write generic, reusable wording that suits a typical UK accountancy practice. Use square-bracket placeholders (e.g. [Firm name], [Address], [Date]) for anything firm- or client-specific you cannot know — never invent a real firm name, address or figures.`
+        + ` Return ONLY the note as clean HTML using <h3> for the heading and <p> paragraphs (with <ul>/<li> if a list helps). No preamble, no explanation, no markdown fences.`;
+      apiMessages = [{ role: 'user', content: `Draft the "${def.title}" firm-wide default.` }];
+      maxTokens = 900;
     } else if (mode === 'explain') {
       const s = section;
       system += `\n\nThe user wants to understand a disclosure requirement. Explain, in 2–4 short sentences, WHY the "${s?.title}" disclosure is required for this entity under the applicable framework, and what must be included. Do not rewrite the disclosure — just explain the requirement.`;
@@ -103,7 +129,7 @@ export async function POST(req: NextRequest) {
       outputTokens: response.usage.output_tokens,
     });
 
-    if (mode === 'rewrite') {
+    if (mode === 'rewrite' || mode === 'suggest-default') {
       let html = text;
       if (html.startsWith('```html')) html = html.slice(7).trim();
       if (html.startsWith('```')) html = html.slice(3).trim();
