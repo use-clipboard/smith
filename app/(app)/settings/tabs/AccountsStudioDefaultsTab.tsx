@@ -113,7 +113,7 @@ export default function AccountsStudioDefaultsTab() {
             <input
               type="text" value={settings.accountantName}
               onChange={e => patch('accountantName', e.target.value)}
-              placeholder="Marneros Marcus &amp; Co Limited"
+              placeholder="ABC Accountants Limited"
               className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500"
             />
           </div>
@@ -122,7 +122,7 @@ export default function AccountsStudioDefaultsTab() {
             <textarea
               rows={4} value={settings.accountantAddress}
               onChange={e => patch('accountantAddress', e.target.value)}
-              placeholder={'First Floor Hagley Court\n40 Vicarage Road Edgbaston\nBirmingham\nB15 3EZ'}
+              placeholder={'1 Example Street\nSample Business Park\nLondon\nEC1A 1AA'}
               className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-relaxed text-gray-900 outline-none focus:border-indigo-500"
             />
             <p className="mt-1 text-[11px] text-gray-400">One line per row — each line prints on its own line.</p>

@@ -209,7 +209,7 @@ export const AGENT_TOOLS: Anthropic.Messages.Tool[] = [
       properties: {
         client_id: { type: 'string', description: 'Internal SMITH client id (preferred — use search_clients first if you only know the name).' },
         name_contains: { type: 'string', description: 'Case-insensitive partial match on client name. Only used when client_id is not provided.' },
-        companies_house_number: { type: 'string', description: 'Raw Companies House number, e.g. "09899441". Used when neither id nor name is known.' },
+        companies_house_number: { type: 'string', description: 'Raw Companies House number, e.g. "12345678". Used when neither id nor name is known.' },
       },
       additionalProperties: false,
     },
