@@ -137,17 +137,9 @@ function isRetainedGroup(title: string): boolean {
   return t.includes('profit and loss') || t.includes('retained') || t.includes('p&l') || t.includes('accumulated');
 }
 
-function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string): string {
-  // Fold any retained-earnings ledger from the trial balance into a single
-  // "Profit and loss account" reserve line together with the year's profit, so
-  // the balance sheet never shows two P&L-account lines. Other equity (share
-  // capital, share premium, revaluation reserve) keeps its own line.
-  const otherCapital = bs.capitalAndReserves.filter(g => !isRetainedGroup(g.title));
-  const reserveGroups = bs.capitalAndReserves.filter(g => isRetainedGroup(g.title));
-  const reserveCur = reserveGroups.reduce((s, g) => s + g.total, 0) + bs.profitForYear;
-  const reservePrior = hasPrior ? reserveGroups.reduce((s, g) => s + (g.totalPrior ?? 0), 0) + (bs.profitForYearPrior ?? 0) : null;
-
-  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>
+function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string, prof: EntityProfile): string {
+  // Everything down to net assets is common to all entities.
+  const assetsAndLiabilities = `
     ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('fixed-assets') }) + groupRows(bs.fixedAssets, hasPrior, 1, true) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
     ${row('Current assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('debtors') })}
     ${groupRows(bs.currentAssets, hasPrior, 1, true)}
@@ -157,12 +149,33 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
     ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true, notesCol: true })}
     ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('creditors') }) + groupRows(bs.creditorsAfter, hasPrior, -1, true) : ''}
     ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true, notesCol: true }) + groupRows(bs.provisions, hasPrior, -1, true) : ''}
-    ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
-    ${row('Capital and reserves', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('share-capital') })}
-    ${groupRows(otherCapital, hasPrior, 1, true)}
-    ${row('Profit and loss account', reserveCur, reservePrior, hasPrior, { notesCol: true, noteRef: noteNo('reserves') })}
-    ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
-  </tbody></table>`;
+    ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+
+  let capital: string;
+  if (prof.isPartnershipFamily) {
+    // Partnership / LLP: partners'/members' capital and current accounts, then
+    // the year's profit (to be appropriated / allocated), totalling to funds.
+    const ref = prof.isLlp ? noteNo('members-interests') : noteNo('capital-accounts');
+    capital = `
+      ${row(prof.capitalHeader, null, null, hasPrior, { muted: true, notesCol: true, noteRef: ref })}
+      ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
+      ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { notesCol: true })}
+      ${row(prof.fundsLabel, bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+  } else {
+    // Company: capital & reserves, with retained earnings folded into a single
+    // "Profit and loss account" line so it never shows twice.
+    const otherCapital = bs.capitalAndReserves.filter(g => !isRetainedGroup(g.title));
+    const reserveGroups = bs.capitalAndReserves.filter(g => isRetainedGroup(g.title));
+    const reserveCur = reserveGroups.reduce((s, g) => s + g.total, 0) + bs.profitForYear;
+    const reservePrior = hasPrior ? reserveGroups.reduce((s, g) => s + (g.totalPrior ?? 0), 0) + (bs.profitForYearPrior ?? 0) : null;
+    capital = `
+      ${row('Capital and reserves', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('share-capital') })}
+      ${groupRows(otherCapital, hasPrior, 1, true)}
+      ${row('Profit and loss account', reserveCur, reservePrior, hasPrior, { notesCol: true, noteRef: noteNo('reserves') })}
+      ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
+  }
+
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>${assetsAndLiabilities}${capital}</tbody></table>`;
 }
 
 /** Per-category breakdown of the P&L (full accounts only). */
@@ -185,25 +198,68 @@ function detailedIncomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: str
   </tbody></table>`;
 }
 
-/** The director/member who signs — the chosen signatory, else the first. */
+/** Partnership Appropriation Account — the profit for the year and its allocation
+ *  between the partners (the detailed split comes from the editable note). */
+function appropriationStatement(e: Engagement, pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string): string {
+  const disc = e.disclosures.find(s => s.id === 'appropriation' && s.included !== false && s.content && s.content.trim());
+  const alloc = disc ? `<div style="margin-top:14px;font-size:12px;line-height:1.55;color:#1e293b">${disc.content}</div>` : '';
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
+    ${row('Profit for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
+  </tbody></table>${alloc}`;
+}
+
+/** The director/member/partner who signs — the chosen signatory, else the first. */
 function signatoryName(e: Engagement): string {
   const dirs = (e.directors ?? []).filter(Boolean);
   return (e.signatory && e.signatory.trim()) || dirs[0] || e.preparedBy || '';
 }
 
+/** Entity-aware labels/flags for the pack (company vs LLP vs traditional partnership). */
+interface EntityProfile {
+  isLlp: boolean;
+  isPartnership: boolean;        // traditional partnership
+  isPartnershipFamily: boolean;  // LLP or traditional partnership
+  registered: boolean;           // registered at Companies House (company / LLP)
+  ownerSingular: string;         // director / member / partner
+  ownerPlural: string;
+  ownerTitle: string;            // Director / Member / Partner
+  ownerTitlePlural: string;
+  entityNoun: string;            // company / LLP / partnership
+  fundsLabel: string;            // Total equity / Members' funds / Partners' funds
+  capitalHeader: string;         // Capital and reserves / Capital and current accounts
+  infoTitle: string;             // Company / LLP / Partnership Information
+}
+function entityProfile(e: Engagement): EntityProfile {
+  const isLlp = e.entityType === 'llp';
+  const isPartnership = e.entityType === 'partnership';
+  const fam = isLlp || isPartnership;
+  return {
+    isLlp, isPartnership, isPartnershipFamily: fam,
+    registered: e.entityType !== 'partnership',
+    ownerSingular: isPartnership ? 'partner' : isLlp ? 'member' : 'director',
+    ownerPlural: isPartnership ? 'partners' : isLlp ? 'members' : 'directors',
+    ownerTitle: isPartnership ? 'Partner' : isLlp ? 'Member' : 'Director',
+    ownerTitlePlural: isPartnership ? 'Partners' : isLlp ? 'Members' : 'Directors',
+    entityNoun: isPartnership ? 'partnership' : isLlp ? 'LLP' : 'company',
+    fundsLabel: isPartnership ? "Partners' funds" : isLlp ? "Members' funds" : 'Total equity',
+    capitalHeader: fam ? 'Capital and current accounts' : 'Capital and reserves',
+    infoTitle: isPartnership ? 'Partnership Information' : isLlp ? 'LLP Information' : 'Company Information',
+  };
+}
+
 // ── Section-specific bodies ──────────────────────────────────────────────────
 
-function companyInfoBody(e: Engagement, accountantDetails: string, firmName: string): string {
+function companyInfoBody(e: Engagement, accountantDetails: string, firmName: string, prof: EntityProfile): string {
   const dirs = (e.directors ?? []).filter(Boolean);
-  const dirLabel = dirs.length > 1 ? 'Directors' : 'Director';
-  const dirValue = dirs.length ? dirs.map(escapeHtml).join('<br>') : '—';
+  const ownerLabel = dirs.length > 1 ? prof.ownerTitlePlural : prof.ownerTitle;
+  const ownerValue = dirs.length ? dirs.map(escapeHtml).join('<br>') : '—';
   const acct = accountantDetails.trim() || (firmName ? escapeHtml(firmName) : '—');
   const infoRow = (label: string, value: string) =>
     `<tr><td style="padding:6px 24px 6px 0;color:#64748b;font-size:12px;vertical-align:top;white-space:nowrap">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:12.5px;line-height:1.5">${value}</td></tr>`;
   return `<table style="width:100%;border-collapse:collapse">
-    ${infoRow(dirLabel, dirValue)}
-    ${infoRow('Registered Number', e.companyNumber ? escapeHtml(e.companyNumber) : '—')}
-    ${e.registeredOffice ? infoRow('Registered Office', escapeHtml(e.registeredOffice).replace(/, /g, '<br>')) : ''}
+    ${infoRow(ownerLabel, ownerValue)}
+    ${prof.registered ? infoRow('Registered Number', e.companyNumber ? escapeHtml(e.companyNumber) : '—') : ''}
+    ${e.registeredOffice ? infoRow(prof.registered ? 'Registered Office' : 'Business Address', escapeHtml(e.registeredOffice).replace(/, /g, '<br>')) : ''}
     ${infoRow('Accountants', acct)}
   </table>`;
 }
@@ -263,25 +319,29 @@ function accountantsReportBody(e: Engagement, accountantsReport: string, account
   return bodyHtml + sign;
 }
 
-function sofpFooter(e: Engagement): string {
-  const isLlp = e.entityType === 'llp';
-  const officer = isLlp ? 'members' : 'director';
+function sofpFooter(e: Engagement, prof: EntityProfile): string {
   const dir = signatoryName(e);
-  // The audit-exemption / responsibility statements are an editable section
-  // ('balance-sheet-statements'); fall back to standard wording if absent.
-  const disc = e.disclosures.find(s => s.id === 'balance-sheet-statements' && s.included !== false && s.content && s.content.trim());
-  const statements = disc
-    ? disc.content
-    : `<p style="margin:0 0 8px">For the financial year the ${isLlp ? 'LLP' : 'company'} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>
-       <p style="margin:0 0 4px;font-weight:600;color:#334155">${isLlp ? 'Members' : "Director"}'s responsibilities:</p>
-       <p style="margin:0 0 4px">1. The members have not required the ${isLlp ? 'LLP' : 'company'} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>
-       <p style="margin:0 0 8px">2. The ${officer} acknowledge${isLlp ? '' : 's'} their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>
-       <p style="margin:0 0 14px">These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>`;
+  const isLlp = prof.isLlp;
+  // Traditional partnerships aren't under the Companies Act — no s477 audit
+  // exemption statement, just approval by the partners.
+  let statements = '';
+  if (!prof.isPartnership) {
+    // The audit-exemption / responsibility statements are an editable section
+    // ('balance-sheet-statements'); fall back to standard wording if absent.
+    const disc = e.disclosures.find(s => s.id === 'balance-sheet-statements' && s.included !== false && s.content && s.content.trim());
+    statements = disc
+      ? disc.content
+      : `<p style="margin:0 0 8px">For the financial year the ${isLlp ? 'LLP' : 'company'} was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.</p>
+         <p style="margin:0 0 4px;font-weight:600;color:#334155">${isLlp ? 'Members' : "Director"}'s responsibilities:</p>
+         <p style="margin:0 0 4px">1. The members have not required the ${isLlp ? 'LLP' : 'company'} to obtain an audit of its accounts for the year in question in accordance with section 476.</p>
+         <p style="margin:0 0 8px">2. The ${prof.ownerPlural} acknowledge their responsibilities for complying with the requirements of the Companies Act 2006 with respect to accounting records and the preparation of accounts.</p>
+         <p style="margin:0 0 14px">These financial statements have been prepared in accordance with the provisions applicable to ${isLlp ? 'LLPs subject to the small LLPs regime' : 'companies subject to the small companies regime'}.</p>`;
+  }
   return `<div class="paper" style="margin-top:20px;font-size:11.5px;line-height:1.55;color:#475569">
     ${statements}
-    <p style="margin:14px 0 26px">The financial statements were approved by the ${officer} and were signed by:</p>
+    <p style="margin:14px 0 26px">The financial statements were approved by the ${prof.ownerPlural} and were signed on their behalf by:</p>
     <div style="border-top:1px solid #94a3b8;width:240px;padding-top:6px;color:#0f172a">${escapeHtml(dir)}</div>
-    <p style="margin:2px 0 0;color:#64748b">${isLlp ? 'Member' : 'Director'}</p>
+    <p style="margin:2px 0 0;color:#64748b">${prof.ownerTitle}</p>
   </div>`;
 }
 
@@ -294,9 +354,18 @@ function renderedNoteList(e: Engagement, excludeIds: Set<string>): Engagement['d
 function notesBody(e: Engagement, excludeIds: Set<string>): { html: string; hasNotes: boolean } {
   const notes = renderedNoteList(e, excludeIds);
   if (!notes.length) return { html: '', hasNotes: false };
+  const desc = e.entityType === 'llp' ? 'a limited liability partnership'
+    : e.entityType === 'partnership' ? 'a partnership'
+    : 'a private company, limited by shares';
+  const reg = e.entityType === 'partnership'
+    ? ''
+    : `, registered in the United Kingdom${e.companyNumber ? `, registration number ${escapeHtml(e.companyNumber)}` : ''}`;
+  const office = e.registeredOffice
+    ? `, ${e.entityType === 'partnership' ? 'trading from' : 'registered office'} ${escapeHtml(e.registeredOffice)}`
+    : '';
   const genInfo = `<div class="paper" style="margin-bottom:16px">
     <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 4px">General Information</p>
-    <p style="font-size:12px;line-height:1.55;color:#475569;margin:0">${escapeHtml(e.companyName)} is ${e.entityType === 'llp' ? 'a limited liability partnership' : 'a private company, limited by shares'}, registered in the United Kingdom${e.companyNumber ? `, registration number ${escapeHtml(e.companyNumber)}` : ''}${e.registeredOffice ? `, registered office ${escapeHtml(e.registeredOffice)}` : ''}. The presentation currency is £ sterling.</p>
+    <p style="font-size:12px;line-height:1.55;color:#475569;margin:0">${escapeHtml(e.companyName)} is ${desc}${reg}${office}. The presentation currency is £ sterling.</p>
   </div>`;
   const body = notes.map((s, i) => `<div class="paper" style="margin-bottom:16px">
     <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 3px">${i + 1}. ${escapeHtml(s.title)}</p>
@@ -314,7 +383,8 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   const accountantDetails = opts.accountantDetails || '';
   const accountantsReport = opts.accountantsReport || '';
 
-  const isLlp = e.entityType === 'llp';
+  const prof = entityProfile(e);
+  const isLlp = prof.isLlp;
   const s = e.statements;
   const hasPrior = !!s?.hasPrior;
   const curYear = yearOf(e.periodEnd);
@@ -324,7 +394,9 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   // Notes that appear on the Notes page — used both to number the notes and to
   // resolve statement note references (id → "3"). Kept in one place so the
   // Income Statement / SoFP references always match the printed note numbers.
-  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body', 'balance-sheet-statements']);
+  // Reports and primary statements (incl. the partnership appropriation account)
+  // are their own sections, not numbered notes.
+  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body', 'balance-sheet-statements', 'appropriation']);
   const noteList = renderedNoteList(e, excludeIds);
   const noteNo = (id: string): string => {
     const i = noteList.findIndex(n => n.id === id);
@@ -333,12 +405,13 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
 
   const parts: Part[] = [];
 
-  // 1. Company Information
-  parts.push(section('company-info', 'Company information',
-    sectionHead(e.companyName, 'Company Information', periodLine) + companyInfoBody(e, accountantDetails, firmName)));
+  // 1. Company / LLP / Partnership Information
+  parts.push(section('company-info', prof.infoTitle,
+    sectionHead(e.companyName, prof.infoTitle, periodLine) + companyInfoBody(e, accountantDetails, firmName, prof)));
 
-  // 2. Director's / Members' Report (omitted from filleted filing copy)
-  if (!filleted) {
+  // 2. Director's / Members' Report — companies and LLPs only (a traditional
+  //    partnership prepares no statutory report). Omitted from filleted copies.
+  if (!filleted && !prof.isPartnership) {
     parts.push(section('directors-report', isLlp ? "Members' report" : "Director's report",
       sectionHead(e.companyName, isLlp ? "Members' Report" : "Director's Report", periodLine) + directorsReportBody(e, isLlp)));
   }
@@ -354,10 +427,17 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
       (s ? incomeStatement(s.profitLoss, hasPrior, curYear, priorYear, noteNo) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
   }
 
+  // 4b. Appropriation Account — traditional partnerships only (full copy).
+  if (!filleted && prof.isPartnership && s) {
+    parts.push(section('appropriation-account', 'Appropriation account',
+      sectionHead(e.companyName, 'Appropriation Account', periodLine) +
+      appropriationStatement(e, s.profitLoss, hasPrior, curYear, priorYear)));
+  }
+
   // 5. Statement of Financial Position
   parts.push(section('sofp', 'Statement of financial position',
-    sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, e.companyNumber || undefined) +
-    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo) + sofpFooter(e) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+    sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, prof.registered ? (e.companyNumber || undefined) : undefined) +
+    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo, prof) + sofpFooter(e, prof) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
 
   // 6. Notes to the Financial Statements
   const notes = notesBody(e, excludeIds);
@@ -374,7 +454,10 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   }
 
   // ── Cover ──
-  const kicker = filleted ? 'Filleted Accounts for Filing' : 'Report of the Director and Unaudited Financial Statements';
+  const kicker = filleted ? 'Filleted Accounts for Filing'
+    : prof.isPartnership ? 'Report of the Partners and Unaudited Financial Statements'
+    : prof.isLlp ? 'Report of the Members and Unaudited Financial Statements'
+    : 'Report of the Director and Unaudited Financial Statements';
   const cover = `
     <div class="paper" style="min-height:1000px;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 48px">
       ${logo ? `<img src="${logo}" alt="" crossorigin="anonymous" style="max-height:64px;max-width:240px;object-fit:contain;margin:0 auto 30px" />` : ''}
