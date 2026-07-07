@@ -57,29 +57,36 @@ function escapeHtml(s: string): string {
 const AMT = 'text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding:3px 0 3px 18px;';
 const LBL = 'padding:3px 0;';
 
-function row(label: string, current: number | null, prior: number | null, hasPrior: boolean, opts: { bold?: boolean; rule?: boolean; muted?: boolean; indent?: boolean } = {}): string {
+const NOTE_TD = 'text-align:center;font-size:11px;color:#64748b;padding:3px 6px;white-space:nowrap;';
+
+function row(label: string, current: number | null, prior: number | null, hasPrior: boolean, opts: { bold?: boolean; rule?: boolean; muted?: boolean; indent?: boolean; notesCol?: boolean; noteRef?: string } = {}): string {
   const weight = opts.bold ? 'font-weight:700;' : '';
   const colour = opts.muted ? 'color:#64748b;' : opts.bold ? 'color:#0f172a;' : 'color:#334155;';
   const borderTop = opts.rule ? 'border-top:1px solid #cbd5e1;' : '';
   const pad = opts.indent ? 'padding-left:16px;' : '';
+  const noteTd = opts.notesCol ? `<td style="${NOTE_TD}">${opts.noteRef ?? ''}</td>` : '';
   return `<tr style="${borderTop}">
     <td style="${LBL}${pad}${weight}${colour}">${label}</td>
+    ${noteTd}
     <td style="${AMT}${weight}${colour}">${money(current)}</td>
     ${hasPrior ? `<td style="${AMT}${weight}color:#64748b;">${money(prior)}</td>` : ''}
   </tr>`;
 }
 
-function groupRows(groups: StmtGroup[], hasPrior: boolean, sign: 1 | -1): string {
-  return groups.map(g => row(g.title, sign * g.total, g.totalPrior === null ? null : sign * g.totalPrior, hasPrior)).join('');
+function groupRows(groups: StmtGroup[], hasPrior: boolean, sign: 1 | -1, notesCol = false): string {
+  return groups.map(g => row(g.title, sign * g.total, g.totalPrior === null ? null : sign * g.totalPrior, hasPrior, { notesCol })).join('');
 }
 
-function amountHead(hasPrior: boolean, curYear: string, priorYear: string): string {
+function amountHead(hasPrior: boolean, curYear: string, priorYear: string, notesCol = false): string {
+  const noteTh = notesCol ? '<th style="text-align:center;font-size:11px;font-weight:700;color:#475569;padding-bottom:4px">Notes</th>' : '';
+  const noteTh2 = notesCol ? '<th></th>' : '';
   return `<thead><tr style="font-size:11px;font-weight:700;color:#475569">
     <th style="text-align:left;padding-bottom:4px"></th>
+    ${noteTh}
     <th style="${AMT}padding-bottom:4px">${curYear || '£'}</th>
     ${hasPrior ? `<th style="${AMT}padding-bottom:4px">${priorYear}</th>` : ''}
   </tr>
-  <tr style="font-size:11px;color:#94a3b8"><th style="text-align:left"></th><th style="${AMT}">£</th>${hasPrior ? `<th style="${AMT}">£</th>` : ''}</tr></thead>`;
+  <tr style="font-size:11px;color:#94a3b8"><th style="text-align:left"></th>${noteTh2}<th style="${AMT}">£</th>${hasPrior ? `<th style="${AMT}">£</th>` : ''}</tr></thead>`;
 }
 
 // ── Section chrome ───────────────────────────────────────────────────────────
@@ -105,34 +112,40 @@ function section(key: string, label: string, inner: string): Part {
 
 // ── Statement blocks ─────────────────────────────────────────────────────────
 
-function incomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string): string {
-  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
-    ${groupRows(pl.turnover, hasPrior, 1)}
-    ${row('Turnover', pl.turnoverTotal, pl.turnoverTotalPrior, hasPrior, { bold: true, rule: true })}
-    ${pl.costOfSales.length ? groupRows(pl.costOfSales, hasPrior, -1) + row('Gross profit', pl.grossProfit, pl.grossProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
-    ${groupRows(pl.expenses, hasPrior, -1)}
-    ${pl.expenses.length ? row('Operating profit', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, rule: true }) : ''}
-    ${groupRows(pl.taxation, hasPrior, -1)}
-    ${row('Profit/(loss) for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true })}
+function incomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string): string {
+  const taxTotal = pl.taxation.reduce((t, g) => t + g.total, 0);
+  const taxTotalPrior = hasPrior ? pl.taxation.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null;
+  const beforeTax = pl.netProfit + taxTotal;
+  const beforeTaxPrior = hasPrior && pl.netProfitPrior != null ? pl.netProfitPrior + (taxTotalPrior ?? 0) : null;
+  const hasTax = pl.taxation.length > 0 || Math.abs(taxTotal) >= 0.005;
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>
+    ${groupRows(pl.turnover, hasPrior, 1, true)}
+    ${row('Turnover', pl.turnoverTotal, pl.turnoverTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
+    ${pl.costOfSales.length ? groupRows(pl.costOfSales, hasPrior, -1, true) + row('Gross profit', pl.grossProfit, pl.grossProfitPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
+    ${groupRows(pl.expenses, hasPrior, -1, true)}
+    ${pl.expenses.length ? row('Operating profit', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
+    ${hasTax ? row('Profit/(loss) on ordinary activities before taxation', beforeTax, beforeTaxPrior, hasPrior, { bold: true, notesCol: true }) : ''}
+    ${hasTax ? row('Tax on profit on ordinary activities', -taxTotal, taxTotalPrior === null ? null : -taxTotalPrior, hasPrior, { notesCol: true, noteRef: noteNo('taxation') }) : ''}
+    ${row('Profit/(loss) for the financial year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
   </tbody></table>`;
 }
 
-function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string): string {
-  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear)}<tbody>
-    ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true }) + groupRows(bs.fixedAssets, hasPrior, 1) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true }) : ''}
-    ${row('Current assets', null, null, hasPrior, { muted: true })}
-    ${groupRows(bs.currentAssets, hasPrior, 1)}
-    ${row('', bs.currentAssetsTotal, bs.currentAssetsTotalPrior, hasPrior, {})}
-    ${bs.creditorsWithin.length ? row('Creditors: amounts falling due within one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsWithin, hasPrior, -1) : ''}
-    ${row('Net current assets', bs.netCurrentAssets, bs.netCurrentAssetsPrior, hasPrior, { bold: true, rule: true })}
-    ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true })}
-    ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true }) + groupRows(bs.creditorsAfter, hasPrior, -1) : ''}
-    ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true }) + groupRows(bs.provisions, hasPrior, -1) : ''}
-    ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true })}
-    ${row('Capital and reserves', null, null, hasPrior, { muted: true })}
-    ${groupRows(bs.capitalAndReserves, hasPrior, 1)}
-    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true })}
-    ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true })}
+function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string): string {
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>
+    ${bs.fixedAssets.length ? row('Fixed assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('fixed-assets') }) + groupRows(bs.fixedAssets, hasPrior, 1, true) + row('', bs.fixedAssetsTotal, bs.fixedAssetsTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
+    ${row('Current assets', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('debtors') })}
+    ${groupRows(bs.currentAssets, hasPrior, 1, true)}
+    ${row('', bs.currentAssetsTotal, bs.currentAssetsTotalPrior, hasPrior, { notesCol: true })}
+    ${bs.creditorsWithin.length ? row('Creditors: amounts falling due within one year', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('creditors') }) + groupRows(bs.creditorsWithin, hasPrior, -1, true) : ''}
+    ${row('Net current assets', bs.netCurrentAssets, bs.netCurrentAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
+    ${row('Total assets less current liabilities', bs.totalAssetsLessCurrent, bs.totalAssetsLessCurrentPrior, hasPrior, { bold: true, notesCol: true })}
+    ${bs.creditorsAfter.length ? row('Creditors: amounts falling due after more than one year', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('creditors') }) + groupRows(bs.creditorsAfter, hasPrior, -1, true) : ''}
+    ${bs.provisions.length ? row('Provisions for liabilities', null, null, hasPrior, { muted: true, notesCol: true }) + groupRows(bs.provisions, hasPrior, -1, true) : ''}
+    ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
+    ${row('Capital and reserves', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('share-capital') })}
+    ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
+    ${row('Profit and loss account', bs.profitForYear, bs.profitForYearPrior, hasPrior, { muted: true, notesCol: true })}
+    ${row('Total equity', bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
   </tbody></table>`;
 }
 
@@ -244,8 +257,14 @@ function sofpFooter(e: Engagement): string {
   </div>`;
 }
 
+/** The disclosures that become numbered notes, in order (shared so statement
+ *  note references and the Notes page agree on numbering). */
+function renderedNoteList(e: Engagement, excludeIds: Set<string>): Engagement['disclosures'] {
+  return e.disclosures.filter(s => s.included !== false && s.content && s.content.trim() && !excludeIds.has(s.id));
+}
+
 function notesBody(e: Engagement, excludeIds: Set<string>): { html: string; hasNotes: boolean } {
-  const notes = e.disclosures.filter(s => s.included !== false && s.content && s.content.trim() && !excludeIds.has(s.id));
+  const notes = renderedNoteList(e, excludeIds);
   if (!notes.length) return { html: '', hasNotes: false };
   const genInfo = `<div class="paper" style="margin-bottom:16px">
     <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 4px">General Information</p>
@@ -274,6 +293,16 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   const priorYear = e.comparativePeriod ? yearOf(e.comparativePeriod) : '';
   const periodLine = `For the year ended ${longDate(e.periodEnd)}`;
 
+  // Notes that appear on the Notes page — used both to number the notes and to
+  // resolve statement note references (id → "3"). Kept in one place so the
+  // Income Statement / SoFP references always match the printed note numbers.
+  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body']);
+  const noteList = renderedNoteList(e, excludeIds);
+  const noteNo = (id: string): string => {
+    const i = noteList.findIndex(n => n.id === id);
+    return i >= 0 ? String(i + 1) : '';
+  };
+
   const parts: Part[] = [];
 
   // 1. Company Information
@@ -294,16 +323,15 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   if (!filleted) {
     parts.push(section('income-statement', 'Income statement',
       sectionHead(e.companyName, 'Income Statement', periodLine) +
-      (s ? incomeStatement(s.profitLoss, hasPrior, curYear, priorYear) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+      (s ? incomeStatement(s.profitLoss, hasPrior, curYear, priorYear, noteNo) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
   }
 
   // 5. Statement of Financial Position
   parts.push(section('sofp', 'Statement of financial position',
     sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, e.companyNumber || undefined) +
-    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear) + sofpFooter(e) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+    (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo) + sofpFooter(e) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
 
   // 6. Notes to the Financial Statements
-  const excludeIds = new Set(['directors-report', 'strategic-report', 'members-report', 'accountants-report', 'firm-accountants-report', 'firm-accountant-details', 'firm-governing-body']);
   const notes = notesBody(e, excludeIds);
   if (notes.hasNotes) {
     parts.push(section('notes', 'Notes to the financial statements',
