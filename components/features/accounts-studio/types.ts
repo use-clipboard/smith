@@ -38,6 +38,7 @@ export type ImportSourceId =
   | 'capium'
   | 'clipboard'
   | 'csv'
+  | 'scan'
   | 'excel'
   | 'prior-year';
 

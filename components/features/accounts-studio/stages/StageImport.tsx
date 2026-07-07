@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine, FileSpreadsheet, Upload, Download, type LucideIcon } from 'lucide-react';
+import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine, FileSpreadsheet, Upload, Download, ScanLine, Sparkles, type LucideIcon } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
@@ -61,12 +61,13 @@ export default function StageImport({
   advance: () => void;
 }) {
   const imported = !!(engagement.statements && engagement.importInfo);
-  const [phase, setPhase] = useState<'source' | 'configure' | 'manual' | 'build' | 'csv'>(
+  const [phase, setPhase] = useState<'source' | 'configure' | 'manual' | 'build' | 'csv' | 'scan'>(
     !imported && engagement.source === 'bookkeeping' ? 'configure'
       : !imported && engagement.source === 'clipboard' ? 'manual'
         : !imported && engagement.source === 'manual' ? 'build'
           : !imported && engagement.source === 'csv' ? 'csv'
-            : 'source',
+            : !imported && engagement.source === 'scan' ? 'scan'
+              : 'source',
   );
 
   // Shared apply for the Paste/CSV and Build-manually modes.
@@ -225,6 +226,11 @@ export default function StageImport({
     return <CsvImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
   }
 
+  // ── PDF / image scan (AI extraction) ──────────────────────────────────────────
+  if (phase === 'scan') {
+    return <ScanImport engagement={engagement} onBack={backToSource} onImported={applyManual} />;
+  }
+
   // ── Source picker ──────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl">
@@ -236,7 +242,7 @@ export default function StageImport({
         {IMPORT_SOURCES.map(s => (
           <button
             key={s.id}
-            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); else if (s.id === 'manual') setPhase('build'); else if (s.id === 'csv') setPhase('csv'); } }}
+            onClick={() => { if (s.enabled) { patch(e => ({ ...e, source: s.id })); if (s.id === 'bookkeeping') setPhase('configure'); else if (s.id === 'clipboard') setPhase('manual'); else if (s.id === 'manual') setPhase('build'); else if (s.id === 'csv') setPhase('csv'); else if (s.id === 'scan') setPhase('scan'); } }}
             disabled={!s.enabled}
             aria-disabled={!s.enabled}
             className={`group flex flex-col items-start gap-3 rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all ${
@@ -456,7 +462,7 @@ function BookkeepingImport({
 type BalType = BalanceAccountType;
 interface ManualRow { name: string; type: BalType; ledger: string; debit: number; credit: number }
 interface ManualPayload {
-  source: 'clipboard' | 'manual' | 'csv';
+  source: 'clipboard' | 'manual' | 'csv' | 'scan';
   sourceLabel: string;
   statements: FinancialStatements;
   trialBalance: TrialBalanceRow[];
@@ -695,7 +701,7 @@ function TbEditor({
   engagement: Engagement;
   onBack: () => void;
   onImported: (p: ManualPayload) => void;
-  source: 'manual' | 'csv' | 'clipboard';
+  source: 'manual' | 'csv' | 'clipboard' | 'scan';
   sourceLabel: string;
   heading: { icon: LucideIcon; title: string; sub: string };
   seed?: SeedRow[];
@@ -1025,6 +1031,129 @@ function CsvImport({
 
         <p className="mt-3 text-[11.5px] text-[var(--text-muted)]">
           <strong>Type</strong> is one of income, expense, asset, liability or equity. A header row is optional — SMITH also reads Account / Debit / Credit columns in any order. You can edit everything after uploading.
+        </p>
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" /> {error}
+          </div>
+        )}
+      </StudioCard>
+    </div>
+  );
+}
+
+// ─── PDF / image scan panel (AI extraction) ──────────────────────────────────
+function readBase64(file: File): Promise<{ name: string; mimeType: string; base64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = reader.result as string;
+      resolve({ name: file.name, mimeType: file.type || 'application/octet-stream', base64: res.includes(',') ? res.split(',')[1] : res });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/** dd-mm-yyyy from a yyyy-mm-dd, for the detected-date hint. */
+function ukFromIso(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+}
+
+function ScanImport({
+  engagement, onBack, onImported,
+}: {
+  engagement: Engagement;
+  onBack: () => void;
+  onImported: (p: ManualPayload) => void;
+}) {
+  const [parsed, setParsed] = useState<SeedRow[] | null>(null);
+  const [note, setNote] = useState('');
+  const [detectedYearEnd, setDetectedYearEnd] = useState<string | null>(null);
+  const [fileLabel, setFileLabel] = useState('');
+  const [fileKey, setFileKey] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // allow re-selecting the same file
+    if (!files.length) return;
+    setLoading(true); setError('');
+    try {
+      const payload = await Promise.all(files.map(readBase64));
+      const res = await fetch('/api/accounts-studio/extract-tb', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: payload }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? 'Could not read the trial balance.');
+      const rows = (d.rows ?? []) as { name: string; type: BalType; debit: number; credit: number }[];
+      if (!rows.length) throw new Error('No account lines were found — try a clearer scan.');
+      setParsed(rows.map(r => ({ name: r.name, type: r.type, debit: r.debit, credit: r.credit })));
+      setNote(typeof d.note === 'string' ? d.note : '');
+      setDetectedYearEnd(typeof d.detectedYearEnd === 'string' ? d.detectedYearEnd : null);
+      setFileLabel(files.length === 1 ? files[0].name : `${files.length} files`);
+      setFileKey(k => k + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the trial balance.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Once extracted, drop into the shared editor seeded with the read rows.
+  if (parsed) {
+    return (
+      <TbEditor
+        key={fileKey}
+        engagement={engagement}
+        onBack={() => setParsed(null)}
+        backLabel="Scan a different file"
+        onImported={onImported}
+        source="scan"
+        sourceLabel="PDF / image scan"
+        seed={parsed}
+        heading={{ icon: ScanLine, title: 'Review the scanned trial balance', sub: `${parsed.length} row${parsed.length === 1 ? '' : 's'} read from ${fileLabel} — check the types and balance, then edit anything SMITH misread.` }}
+        topSlot={(note || detectedYearEnd) ? (
+          <div className="mb-3 flex items-start gap-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+            <Sparkles size={14} className="mt-0.5 shrink-0 text-[var(--accent)]" />
+            <span>
+              {note}
+              {detectedYearEnd && <> {note ? ' ' : ''}Detected year end: <strong>{ukFromIso(detectedYearEnd)}</strong> — set it below.</>}
+            </span>
+          </div>
+        ) : undefined}
+      />
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <button onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+        <ChevronLeft size={13} /> Choose a different source
+      </button>
+
+      <StudioCard className="p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><ScanLine size={18} /></span>
+          <div>
+            <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Scan a trial balance</h3>
+            <p className="text-[12px] text-[var(--text-muted)]">Upload a PDF or photo/scan of the trial balance — SMITH reads it and you check it.</p>
+          </div>
+        </div>
+
+        <label className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--border)] bg-white/50 px-4 py-8 text-center transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--accent)]/5 ${loading ? 'pointer-events-none opacity-60' : ''}`}>
+          {loading ? <Loader2 size={22} className="animate-spin text-[var(--accent)]" /> : <Upload size={22} className="text-[var(--text-muted)]" />}
+          <span className="text-[13px] font-semibold text-[var(--text-primary)]">{loading ? 'SMITH is reading the trial balance…' : 'Upload PDF, JPG or PNG'}</span>
+          <span className="text-[11.5px] text-[var(--text-muted)]">{loading ? 'This can take a few seconds.' : 'Click to choose a file (multiple pages allowed).'}</span>
+          <input type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple onChange={onFile} disabled={loading} className="hidden" />
+        </label>
+
+        <p className="mt-3 text-[11.5px] text-[var(--text-muted)]">
+          SMITH extracts each account, its type and its debit/credit. It&apos;s not always perfect on a scan — you&apos;ll review and can edit every row before building the accounts.
         </p>
 
         {error && (

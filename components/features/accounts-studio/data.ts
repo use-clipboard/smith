@@ -1,6 +1,6 @@
 import {
   Landmark, BookCopy, Cloud, Calculator, ReceiptText, Wallet, Table2,
-  ClipboardPaste, FileSpreadsheet, PencilLine,
+  ClipboardPaste, FileSpreadsheet, PencilLine, ScanLine,
 } from 'lucide-react';
 import type {
   Engagement, StageId, ImportSourceId,
@@ -46,6 +46,7 @@ export const IMPORT_SOURCES: {
   { id: 'manual',      name: 'Build manually',    sub: 'Enter a trial balance',   icon: PencilLine,                      enabled: true },
   { id: 'clipboard',   name: 'Clipboard',         sub: 'Paste a trial balance',   icon: ClipboardPaste,                  enabled: true },
   { id: 'csv',         name: 'CSV',               sub: 'Upload a file',           icon: FileSpreadsheet,                 enabled: true },
+  { id: 'scan',        name: 'PDF / image',       sub: 'SMITH reads a scan',      icon: ScanLine,          native: true, enabled: true },
   { id: 'xero',        name: 'Xero',              sub: 'Connected ledger',        icon: Cloud,                           enabled: false, logo: '/logos/xero.png' },
   { id: 'quickbooks',  name: 'QuickBooks',        sub: 'Connected ledger',        icon: Calculator,                      enabled: false, logo: '/logos/quickbooks.png' },
   { id: 'sage',        name: 'Sage',              sub: 'Connected ledger',        icon: ReceiptText,                     enabled: false, logo: '/logos/sage.png' },
