@@ -8,23 +8,37 @@ type DB = ReturnType<typeof createClient>;
 export interface AccountsStudioFirmSettings {
   accountantsReport: string;
   accountantDetails: string;
+  /** Structured accountant name + address (used on the accounts). */
+  accountantName: string;
+  accountantAddress: string;
   governingBody: string;
 }
 
 export const EMPTY_FIRM_SETTINGS: AccountsStudioFirmSettings = {
-  accountantsReport: '', accountantDetails: '', governingBody: '',
+  accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '',
 };
 
 export async function getAccountsStudioFirmSettings(supabase: DB, firmId: string): Promise<AccountsStudioFirmSettings> {
-  const { data } = await supabase
+  // Prefer the structured columns; fall back gracefully if they aren't migrated yet.
+  let res = await supabase
     .from('accounts_studio_firm_settings')
-    .select('accountants_report, accountant_details, governing_body')
+    .select('accountants_report, accountant_details, accountant_name, accountant_address, governing_body')
     .eq('firm_id', firmId)
     .maybeSingle();
+  if (res.error?.code === '42703') {
+    res = await supabase
+      .from('accounts_studio_firm_settings')
+      .select('accountants_report, accountant_details, governing_body')
+      .eq('firm_id', firmId)
+      .maybeSingle();
+  }
+  const data = res.data as Record<string, unknown> | null;
   if (!data) return EMPTY_FIRM_SETTINGS;
   return {
     accountantsReport: (data.accountants_report as string | null) ?? '',
     accountantDetails: (data.accountant_details as string | null) ?? '',
+    accountantName: (data.accountant_name as string | null) ?? '',
+    accountantAddress: (data.accountant_address as string | null) ?? '',
     governingBody: (data.governing_body as string | null) ?? '',
   };
 }

@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic';
 const Body = z.object({
   accountantsReport: z.string().max(20000).default(''),
   accountantDetails: z.string().max(20000).default(''),
+  accountantName: z.string().max(500).default(''),
+  accountantAddress: z.string().max(2000).default(''),
   governingBody: z.string().max(20000).default(''),
 }).strict();
 
@@ -36,15 +38,22 @@ export async function PUT(req: NextRequest) {
   catch (e) { return NextResponse.json({ error: 'Invalid payload', detail: String(e) }, { status: 400 }); }
 
   const supabase = createClient();
-  const { error } = await supabase
-    .from('accounts_studio_firm_settings')
-    .upsert({
-      firm_id: ctx.firmId,
-      accountants_report: body.accountantsReport,
-      accountant_details: body.accountantDetails,
-      governing_body: body.governingBody,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'firm_id' });
+  const row: Record<string, unknown> = {
+    firm_id: ctx.firmId,
+    accountants_report: body.accountantsReport,
+    accountant_details: body.accountantDetails,
+    accountant_name: body.accountantName,
+    accountant_address: body.accountantAddress,
+    governing_body: body.governingBody,
+    updated_at: new Date().toISOString(),
+  };
+  let { error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' });
+  // Retry without the structured columns if they aren't migrated yet.
+  if (error?.code === '42703') {
+    delete row.accountant_name;
+    delete row.accountant_address;
+    ({ error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' }));
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });

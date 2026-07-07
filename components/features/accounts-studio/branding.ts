@@ -13,6 +13,20 @@ export interface FirmBranding {
 let cache: FirmBranding | undefined;
 let inflight: Promise<FirmBranding> | null = null;
 
+const esc = (s: string) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
+
+/** Build the accountant block HTML from structured name + address, else fall
+ *  back to the free-text details field. Name bold, one line per address line. */
+function composeAccountantDetails(name: string, address: string, details: string): string | null {
+  const n = name.trim();
+  const addrLines = address.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (n || addrLines.length) {
+    return (n ? `<p style="margin:0;font-weight:600">${esc(n)}</p>` : '')
+      + addrLines.map(l => `<p style="margin:0">${esc(l)}</p>`).join('');
+  }
+  return details.trim() || null;
+}
+
 export function getFirmBranding(): Promise<FirmBranding> {
   if (cache) return Promise.resolve(cache);
   if (!inflight) {
@@ -20,12 +34,12 @@ export function getFirmBranding(): Promise<FirmBranding> {
       fetch('/api/firm/branding').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
       fetch('/api/accounts-studio/firm-settings').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
     ])
-      .then(([brand, settings]: [{ firmName?: string | null; logoUrl?: string | null }, { settings?: { accountantDetails?: string; accountantsReport?: string } }]) => {
+      .then(([brand, settings]: [{ firmName?: string | null; logoUrl?: string | null }, { settings?: { accountantDetails?: string; accountantsReport?: string; accountantName?: string; accountantAddress?: string } }]) => {
         const s = settings?.settings ?? {};
         cache = {
           firmName: brand.firmName ?? null,
           logoUrl: brand.logoUrl ?? null,
-          accountantDetails: s.accountantDetails ?? null,
+          accountantDetails: composeAccountantDetails(s.accountantName ?? '', s.accountantAddress ?? '', s.accountantDetails ?? ''),
           accountantsReport: s.accountantsReport ?? null,
         };
         return cache;

@@ -6,21 +6,20 @@ import RichTextEditor from '@/components/ui/RichTextEditor';
 
 interface Settings {
   accountantsReport: string;
-  accountantDetails: string;
+  accountantDetails: string;   // legacy free-text — preserved, superseded by name+address
+  accountantName: string;
+  accountantAddress: string;
   governingBody: string;
 }
-const EMPTY: Settings = { accountantsReport: '', accountantDetails: '', governingBody: '' };
+const EMPTY: Settings = { accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '' };
 
-const FIELDS: { key: keyof Settings; title: string; blurb: string; placeholder: string }[] = [
+// Rich-text (HTML) fields — the AI-drafted note wording.
+type RichKey = 'accountantsReport' | 'governingBody';
+const RICH_FIELDS: { key: RichKey; title: string; blurb: string; placeholder: string }[] = [
   {
     key: 'accountantsReport', title: "Accountants' Report",
     blurb: "The reporting accountants' report on the unaudited accounts, added to every new set of accounts.",
     placeholder: 'In accordance with our engagement letter…',
-  },
-  {
-    key: 'accountantDetails', title: 'Accountant Details',
-    blurb: 'Your firm name, address and regulatory details as they should appear in the accounts.',
-    placeholder: 'Firm name, address, regulated by…',
   },
   {
     key: 'governingBody', title: 'Governing Body',
@@ -35,12 +34,8 @@ export default function AccountsStudioDefaultsTab() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [suggesting, setSuggesting] = useState<keyof Settings | null>(null);
-  // RichTextEditor takes its content only on mount; bump a field's key to remount
-  // it with AI-suggested content.
-  const [editorKeys, setEditorKeys] = useState<Record<keyof Settings, number>>({
-    accountantsReport: 0, accountantDetails: 0, governingBody: 0,
-  });
+  const [suggesting, setSuggesting] = useState<RichKey | null>(null);
+  const [editorKeys, setEditorKeys] = useState<Record<RichKey, number>>({ accountantsReport: 0, governingBody: 0 });
 
   useEffect(() => {
     fetch('/api/accounts-studio/firm-settings')
@@ -55,7 +50,7 @@ export default function AccountsStudioDefaultsTab() {
     setSaved(false);
   }
 
-  async function aiSuggest(key: keyof Settings) {
+  async function aiSuggest(key: RichKey) {
     setSuggesting(key); setError('');
     try {
       const r = await fetch('/api/accounts-studio/assistant', {
@@ -67,7 +62,7 @@ export default function AccountsStudioDefaultsTab() {
       const html = (d.html || d.reply || '').trim();
       if (!html) throw new Error('No suggestion returned.');
       setSettings(s => ({ ...s, [key]: html }));
-      setEditorKeys(k => ({ ...k, [key]: k[key] + 1 })); // remount editor with new content
+      setEditorKeys(k => ({ ...k, [key]: k[key] + 1 }));
       setSaved(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not draft a suggestion.');
@@ -103,11 +98,39 @@ export default function AccountsStudioDefaultsTab() {
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Landmark size={18} /></div>
         <div>
           <h2 className="text-base font-semibold text-gray-900">Accounts Studio defaults</h2>
-          <p className="mt-0.5 text-sm text-gray-500">Firm-wide house-style notes. These are added automatically to every new set of accounts, where you can edit or remove them per client. Use <span className="font-medium text-indigo-600">AI Suggest</span> for a first draft, then tailor it to your firm.</p>
+          <p className="mt-0.5 text-sm text-gray-500">Firm-wide details and house-style notes used on every set of accounts. Use <span className="font-medium text-indigo-600">AI Suggest</span> for a first draft of the wording, then tailor it to your firm.</p>
         </div>
       </div>
 
-      {FIELDS.map(f => (
+      {/* Accountant name + address — used on the Company Information page and the
+          Accountants' Report. */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+        <h3 className="text-sm font-semibold text-gray-800">Accountant details</h3>
+        <p className="mb-3 text-xs text-gray-500">Your firm&apos;s name and address exactly as they should appear on the accounts. If left blank, the firm name is used.</p>
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Accountant / firm name</label>
+            <input
+              type="text" value={settings.accountantName}
+              onChange={e => patch('accountantName', e.target.value)}
+              placeholder="Marneros Marcus &amp; Co Limited"
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Address</label>
+            <textarea
+              rows={4} value={settings.accountantAddress}
+              onChange={e => patch('accountantAddress', e.target.value)}
+              placeholder={'First Floor Hagley Court\n40 Vicarage Road Edgbaston\nBirmingham\nB15 3EZ'}
+              className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm leading-relaxed text-gray-900 outline-none focus:border-indigo-500"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">One line per row — each line prints on its own line.</p>
+          </div>
+        </div>
+      </div>
+
+      {RICH_FIELDS.map(f => (
         <div key={f.key}>
           <div className="mb-1.5 flex items-start justify-between gap-3">
             <div>
