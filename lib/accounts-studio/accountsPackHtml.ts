@@ -233,6 +233,27 @@ function partnerScheduleTables(comp: PartnerComputation, prof: EntityProfile): s
   return capital + current;
 }
 
+/** LLP SORP members' interests — a movement table split between members' capital
+ *  and current accounts, computed from partner data. */
+function membersInterestsTable(comp: PartnerComputation): string {
+  const t = comp.totals;
+  const rr = (label: string, cap: number, cur: number, foot = false) => {
+    const b = foot ? 'font-weight:700;border-top:1px solid #cbd5e1;' : '';
+    return `<tr><td style="${LBL}${b}">${label}</td><td style="${AMT}${b}">${money(cap)}</td><td style="${AMT}${b}">${money(cur)}</td><td style="${AMT}${b}">${money(cap + cur)}</td></tr>`;
+  };
+  const head = `<tr><th style="text-align:left;padding-bottom:4px"></th>${['Capital', 'Current', 'Total'].map(c => `<th style="${AMT}font-size:11px;font-weight:700;color:#475569;padding-bottom:4px">${c}</th>`).join('')}</tr>`;
+  const rows = [
+    rr('At the start of the year', t.openingCapital, t.openingCurrent),
+    t.profitAllocated ? rr('Profit for the year allocated', 0, t.profitAllocated) : '',
+    t.capitalIntroduced ? rr('Amounts introduced', t.capitalIntroduced, 0) : '',
+    t.capitalWithdrawn ? rr('Amounts withdrawn', -t.capitalWithdrawn, 0) : '',
+    t.drawings ? rr('Drawings', 0, -t.drawings) : '',
+    rr('At the end of the year', t.closingCapital, t.closingCurrent, true),
+  ].filter(Boolean).join('');
+  return `<p style="margin:0 0 4px">Members' interests are analysed between members' capital and members' current accounts as follows:</p>`
+    + `<table style="width:100%;border-collapse:collapse;font-size:12px;margin:2px 0 8px"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+
 /** Partnership Appropriation Account — the profit for the year and its allocation
  *  between the partners. Computed from partner data when present; otherwise the
  *  profit for the year plus the editable appropriation note. */
@@ -400,7 +421,7 @@ function renderedNoteList(e: Engagement, excludeIds: Set<string>): Engagement['d
   return e.disclosures.filter(s => s.included !== false && s.content && s.content.trim() && !excludeIds.has(s.id));
 }
 
-function notesBody(e: Engagement, excludeIds: Set<string>): { html: string; hasNotes: boolean } {
+function notesBody(e: Engagement, excludeIds: Set<string>, noteOverrides: Record<string, string> = {}): { html: string; hasNotes: boolean } {
   const notes = renderedNoteList(e, excludeIds);
   if (!notes.length) return { html: '', hasNotes: false };
   const desc = e.entityType === 'llp' ? 'a limited liability partnership'
@@ -418,7 +439,7 @@ function notesBody(e: Engagement, excludeIds: Set<string>): { html: string; hasN
   </div>`;
   const body = notes.map((s, i) => `<div class="paper" style="margin-bottom:16px">
     <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 3px">${i + 1}. ${escapeHtml(s.title)}</p>
-    <div style="font-size:12px;line-height:1.55;color:#1e293b">${s.content}</div>
+    <div style="font-size:12px;line-height:1.55;color:#1e293b">${noteOverrides[s.id] ?? ''}${s.content}</div>
   </div>`).join('');
   return { html: genInfo + body, hasNotes: true };
 }
@@ -492,15 +513,18 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
     sectionHead(e.companyName, 'Statement of Financial Position', `As at ${longDate(e.periodEnd)}`, prof.registered ? (e.companyNumber || undefined) : undefined) +
     (s ? balanceSheet(s.balanceSheet, hasPrior, curYear, priorYear, noteNo, prof, partnerComp) + sofpFooter(e, prof) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
 
-  // 5b. Partners'/Members' capital & current account schedules (when entered).
-  if (partnerComp) {
+  // 5b. Partners' capital & current account schedules — traditional partnership
+  //     only (for an LLP the movement goes into the members' interests note).
+  if (partnerComp && prof.isPartnership) {
     parts.push(section('partner-accounts', `${prof.ownerTitlePlural}' capital and current accounts`,
       sectionHead(e.companyName, `${prof.ownerTitlePlural}' Capital and Current Accounts`, periodLine) +
       partnerScheduleTables(partnerComp, prof)));
   }
 
-  // 6. Notes to the Financial Statements
-  const notes = notesBody(e, excludeIds);
+  // 6. Notes to the Financial Statements. For an LLP with partner data, feed the
+  //    computed members' interests movement into the members' interests note.
+  const noteOverrides: Record<string, string> = (prof.isLlp && partnerComp) ? { 'members-interests': membersInterestsTable(partnerComp) } : {};
+  const notes = notesBody(e, excludeIds, noteOverrides);
   if (notes.hasNotes) {
     parts.push(section('notes', 'Notes to the financial statements',
       sectionHead(e.companyName, 'Notes to the Financial Statements', periodLine) + notes.html));
