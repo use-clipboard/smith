@@ -3,6 +3,7 @@
 
 import type { TimeEntry, TsStaff, TimeEntryType } from './types';
 import { weekDates, fmtWeekday } from './format';
+import { TYPE_LABELS } from './palette';
 
 const BILLABLE: TimeEntryType = 'billable';
 
@@ -212,4 +213,58 @@ export interface Delta {
 export function delta(current: number, previous: number): Delta {
   const ratio = previous ? (current - previous) / previous : 0;
   return { current, previous, ratio };
+}
+
+// ─── Drill-down grouping ──────────────────────────────────────────────────────
+// A generic tree builder: group entries by an ordered list of dimensions
+// (e.g. client › staff › task) so Reports can drill from a total all the way
+// down to the individual entries.
+
+export type GroupDim = 'client' | 'staff' | 'task' | 'activity' | 'department' | 'type';
+
+export interface GroupNode {
+  key: string;
+  label: string;
+  minutes: number;
+  billableMinutes: number;
+  valuePence: number;
+  /** Present for non-leaf levels. */
+  children?: GroupNode[];
+  /** Present at the deepest level — the actual entries. */
+  entries?: TimeEntry[];
+}
+
+function dimKeyLabel(e: TimeEntry, dim: GroupDim, staffName: (id: string) => string): { key: string; label: string } {
+  switch (dim) {
+    case 'client':     return { key: e.clientId ?? '_internal', label: e.clientId ? (e.clientName || 'Client') : 'Internal / non-client' };
+    case 'staff':      return { key: e.userId, label: staffName(e.userId) };
+    case 'task':       return { key: e.taskId ?? '_none', label: e.taskId ? (e.taskTitle || 'Task') : 'No linked task' };
+    case 'activity':   return { key: e.activity || '_none', label: e.activity || 'Unspecified activity' };
+    case 'department': return { key: e.department || '_none', label: e.department || 'Unassigned' };
+    case 'type':       return { key: e.type, label: TYPE_LABELS[e.type] };
+  }
+}
+
+/** Build a hierarchical breakdown of `entries` by the given `dims`, in order.
+ *  Each node carries rolled-up minutes / billable minutes / chargeable value;
+ *  the last dimension attaches the raw entries (newest first). Sorted by time. */
+export function groupTree(entries: TimeEntry[], dims: GroupDim[], staffName: (id: string) => string): GroupNode[] {
+  if (dims.length === 0) return [];
+  const [dim, ...rest] = dims;
+  const buckets = new Map<string, { label: string; items: TimeEntry[] }>();
+  for (const e of entries) {
+    const { key, label } = dimKeyLabel(e, dim, staffName);
+    const b = buckets.get(key) ?? { label, items: [] };
+    b.items.push(e);
+    buckets.set(key, b);
+  }
+  return [...buckets.entries()].map(([key, b]) => {
+    const minutes = b.items.reduce((s, e) => s + e.minutes, 0);
+    const billableMinutes = b.items.reduce((s, e) => s + (e.type === 'billable' ? e.minutes : 0), 0);
+    const valuePence = b.items.reduce((s, e) => s + valueOf(e), 0);
+    const node: GroupNode = { key, label: b.label, minutes, billableMinutes, valuePence };
+    if (rest.length > 0) node.children = groupTree(b.items, rest, staffName);
+    else node.entries = [...b.items].sort((a, c) => (a.date < c.date ? 1 : a.date > c.date ? -1 : 0));
+    return node;
+  }).sort((a, c) => c.minutes - a.minutes);
 }
