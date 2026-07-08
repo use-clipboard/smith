@@ -98,6 +98,8 @@ const PARTNERSHIPS: EntityType[] = ['partnership'];
 const PARTNERSHIP_LLP: EntityType[] = ['partnership', 'llp'];
 const SOLE: EntityType[] = ['sole_trader'];
 const TRUST: EntityType[] = ['trust'];
+const CHARITY: EntityType[] = ['charity'];
+const TRUST_CHARITY: EntityType[] = ['trust', 'charity'];
 const T_MICRO: FrameworkTier[] = ['frs105'];
 const T_NONMICRO: FrameworkTier[] = ['frs102-1a', 'frs102-full'];
 const T_ALL_FRS: FrameworkTier[] = ['frs105', 'frs102-1a', 'frs102-full'];
@@ -208,18 +210,28 @@ const NOTE_RULES: NoteRule[] = [
     id: 'policies', title: 'Accounting Policies',
     requirement: 'Basis of preparation and the specific policies applied to material balances.',
     frameworks: ['frs105', 'frs102-1a', 'frs102-full', 'ifrs'], level: 'mandatory',
-    build: ctx => frameworkTier(ctx) === 'frs105'
-      ? ({
-          status: 'complete',
-          content: `<h3>Basis of preparation</h3><p>These financial statements have been prepared in accordance with the micro-entity provisions of FRS 105 "The Financial Reporting Standard applicable to the Micro-entities Regime" and the Companies Act 2006, under the historical cost convention.</p>`,
-        })
-      : ({
+    build: ctx => {
+      if (frameworkTier(ctx) === 'frs105') {
+        return { status: 'complete', content: `<h3>Basis of preparation</h3><p>These financial statements have been prepared in accordance with the micro-entity provisions of FRS 105 "The Financial Reporting Standard applicable to the Micro-entities Regime" and the Companies Act 2006, under the historical cost convention.</p>` };
+      }
+      if (ctx.entityType === 'charity') {
+        return {
           status: 'complete',
           content: `<h3>Accounting policies</h3>`
-            + `<p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with ${ctx.framework} and the Companies Act 2006, under the historical cost convention.</p>`
-            + `<p><strong>Turnover.</strong> Turnover represents amounts receivable for goods and services net of VAT and trade discounts, recognised in the period in which the goods or services are provided.</p>`
-            + `<p><strong>Tangible fixed assets.</strong> Tangible fixed assets are stated at cost less accumulated depreciation. Depreciation is provided to write off the cost less estimated residual value of each asset over its expected useful life.</p>`,
-        }),
+            + `<p><strong>Basis of preparation.</strong> The financial statements have been prepared in accordance with the Charities SORP (FRS 102), FRS 102 and the Charities Act 2011, under the historical cost convention.</p>`
+            + `<p><strong>Fund accounting.</strong> Unrestricted funds are available for use at the discretion of the trustees. Restricted funds may only be used for the particular purposes specified by the donor. Endowment funds are held on trust to be retained as a capital fund.</p>`
+            + `<p><strong>Income.</strong> Income is recognised when the charity is entitled to it, receipt is probable and the amount can be measured reliably. Grants are recognised when the conditions attaching to them have been met.</p>`
+            + `<p><strong>Expenditure.</strong> Expenditure is recognised on an accruals basis, analysed between the costs of raising funds, charitable activities, and governance and support costs.</p>`,
+        };
+      }
+      return {
+        status: 'complete',
+        content: `<h3>Accounting policies</h3>`
+          + `<p><strong>Basis of preparation.</strong> These financial statements have been prepared in accordance with ${ctx.framework} and the Companies Act 2006, under the historical cost convention.</p>`
+          + `<p><strong>Turnover.</strong> Turnover represents amounts receivable for goods and services net of VAT and trade discounts, recognised in the period in which the goods or services are provided.</p>`
+          + `<p><strong>Tangible fixed assets.</strong> Tangible fixed assets are stated at cost less accumulated depreciation. Depreciation is provided to write off the cost less estimated residual value of each asset over its expected useful life.</p>`,
+      };
+    },
   },
   {
     id: 'directors-report', title: "Directors' Report",
@@ -395,11 +407,72 @@ const NOTE_RULES: NoteRule[] = [
   },
 
   // ── Entity-specific ──
+  // ── Charity (Charities SORP) ──
   {
-    id: 'charity', title: 'Charity Disclosures',
-    requirement: 'SORP-compliant fund accounting, trustees and public benefit statement.',
-    frameworks: T_NONMICRO, entityTypes: ['charity'], level: 'mandatory',
-    build: staticNote(`<h3>Charity disclosures</h3><p>The accounts are prepared in accordance with the Charities SORP (FRS 102). Funds are analysed between unrestricted, restricted and endowment funds, with a public benefit statement and trustee information to follow.</p>`),
+    id: 'charity-information', title: 'Reference and Administrative Details',
+    requirement: 'Charity name, number, trustees, governing document and independent examiner.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Reference and administrative details</h3><p>Charity name: [ ]. Registered charity number: [ ]. Governing document: [ ]. Trustees: [ ]. Principal office: [ ]. Independent examiner / auditor: [ ].</p>`),
+  },
+  {
+    id: 'objects-activities', title: 'Objects and Activities',
+    requirement: "The charity's objects, activities and how it delivers public benefit.",
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Objects and activities</h3><p>The charity's objects are [ ]. Its principal activities during the year were [ ]. Set out the main achievements in furtherance of the charity's objects for the public benefit.</p>`),
+  },
+  {
+    id: 'public-benefit', title: 'Statement of Public Benefit',
+    requirement: 'Trustees confirm they have had regard to Charity Commission public-benefit guidance.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Public benefit statement</h3><p>The trustees confirm that they have complied with their duty in section 17 of the Charities Act 2011 to have due regard to the guidance published by the Charity Commission on public benefit.</p>`),
+  },
+  {
+    id: 'reserves-policy', title: 'Reserves Policy',
+    requirement: 'Target and actual reserves, and the reasons for holding them.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Reserves policy</h3><p>The trustees have established a policy whereby the free reserves held by the charity should be between £[ ] and £[ ]. At the year end the free reserves (unrestricted funds not committed or invested in fixed assets) were £[ ].</p>`),
+  },
+  {
+    id: 'funds-note', title: 'Funds',
+    requirement: 'Reconciliation of unrestricted, restricted and endowment funds, and their purposes.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Analysis of charitable funds</h3><p>Movements on each fund — unrestricted, restricted and endowment — are set out below: opening balance, income, expenditure, transfers, and closing balance, together with the purpose of each restricted and endowment fund.</p>`),
+  },
+  {
+    id: 'charity-taxation', title: 'Taxation',
+    requirement: 'The charity is exempt from tax on its charitable activities.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'mandatory',
+    build: staticNote(`<h3>Taxation</h3><p>The charity is exempt from corporation tax on its charitable activities, to the extent that its income and gains are applied for charitable purposes, in accordance with the Corporation Tax Act 2010.</p>`),
+  },
+  {
+    id: 'grants-payable', title: 'Grants Payable',
+    requirement: 'Grants awarded — recipients, purpose, amounts and outstanding balances.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'optional',
+    build: staticNote(`<h3>Grants payable</h3><p>Grants awarded during the year, analysed by recipient and purpose, together with any amounts committed but not yet paid, are set out below.</p>`),
+  },
+  {
+    id: 'donations-income', title: 'Donations and Legacies',
+    requirement: 'Analysis of donations, legacies and grant income by source.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'optional',
+    build: staticNote(`<h3>Donations, legacies and grants</h3><p>Income from donations and legacies, and from grants, analysed by source (individuals, corporate, appeals, government, lottery and other), is set out below.</p>`),
+  },
+  {
+    id: 'gift-aid', title: 'Gift Aid',
+    requirement: 'Gift Aid claimed and receivable.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'optional',
+    build: staticNote(`<h3>Gift Aid</h3><p>Gift Aid of £[ ] was claimed during the year, and £[ ] was receivable at the year end.</p>`),
+  },
+  {
+    id: 'heritage-assets', title: 'Heritage Assets',
+    requirement: 'Valuation policy, additions and restrictions on heritage assets.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'optional',
+    build: staticNote(`<h3>Heritage assets</h3><p>Set out the nature and valuation policy for the charity's heritage assets, together with any additions, disposals and restrictions.</p>`),
+  },
+  {
+    id: 'volunteers', title: 'Volunteer Contributions',
+    requirement: 'Policy on volunteer contributions and their significance.',
+    frameworks: T_NONMICRO, entityTypes: CHARITY, level: 'optional',
+    build: staticNote(`<h3>Volunteers</h3><p>The charity benefits from the contribution of volunteers. In accordance with the Charities SORP, the value of volunteers' time is not recognised in the accounts, but their contribution is described here.</p>`),
   },
   // ── Traditional partnership ──
   {
@@ -519,7 +592,7 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'investment-portfolio', title: 'Investment Portfolio',
     requirement: 'Opening/closing value, purchases, sales and revaluations by class of investment.',
-    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'conditional', trigger: tHasInvestments,
+    frameworks: T_NONMICRO, entityTypes: TRUST_CHARITY, level: 'conditional', trigger: tHasInvestments,
     build: staticNote(`<h3>Investments</h3><p>The trust's investments are analysed between listed investments, unlisted investments, property and cash. Set out the opening value, purchases, sales, revaluations and closing value for each class.</p>`),
   },
   {
@@ -531,8 +604,8 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'trustee-remuneration', title: 'Trustee Remuneration',
     requirement: 'Remuneration and expenses paid to the trustees.',
-    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'optional',
-    build: staticNote(`<h3>Trustee remuneration and expenses</h3><p>Remuneration paid to the trustees during the year was £[ ], and expenses reimbursed to the trustees were £[ ].</p>`),
+    frameworks: T_NONMICRO, entityTypes: TRUST_CHARITY, level: 'optional',
+    build: staticNote(`<h3>Trustee remuneration and expenses</h3><p>No trustee received any remuneration during the year — please confirm, or set out the amounts and the authority for any remuneration. Expenses reimbursed to the trustees were £[ ].</p>`),
   },
   {
     id: 'trust-deed-restrictions', title: 'Trust Deed Restrictions',
