@@ -97,6 +97,7 @@ const COMPANIES_LLP: EntityType[] = [...COMPANIES, 'llp'];
 const PARTNERSHIPS: EntityType[] = ['partnership'];
 const PARTNERSHIP_LLP: EntityType[] = ['partnership', 'llp'];
 const SOLE: EntityType[] = ['sole_trader'];
+const TRUST: EntityType[] = ['trust'];
 const T_MICRO: FrameworkTier[] = ['frs105'];
 const T_NONMICRO: FrameworkTier[] = ['frs102-1a', 'frs102-full'];
 const T_ALL_FRS: FrameworkTier[] = ['frs105', 'frs102-1a', 'frs102-full'];
@@ -126,6 +127,11 @@ const tHasPartnerLoan = (ctx: DisclosureContext) => {
     const s = `${g.title} ${g.lines.map(l => l.label).join(' ')}`.toLowerCase();
     return /partner|member/.test(s) && /loan/.test(s);
   });
+};
+const tHasInvestments = (ctx: DisclosureContext) => {
+  const bs = ctx.statements?.balanceSheet;
+  if (!bs) return false;
+  return titleMatch(bs.fixedAssets, /investment/i) || titleMatch(bs.currentAssets, /investment/i);
 };
 
 const isLlpEntity = (e: EntityType) => e === 'llp';
@@ -250,8 +256,8 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'employees', title: 'Employees',
     requirement: 'Average number of employees during the period.',
-    // Required for small companies; optional for micro-entities and sole traders.
-    frameworks: T_ALL_FRS, level: ctx => (frameworkTier(ctx) === 'frs105' || ctx.entityType === 'sole_trader') ? 'optional' : 'mandatory',
+    // Required for small companies; optional for micro-entities, sole traders and trusts.
+    frameworks: T_ALL_FRS, level: ctx => (frameworkTier(ctx) === 'frs105' || ctx.entityType === 'sole_trader' || ctx.entityType === 'trust') ? 'optional' : 'mandatory',
     build: ctx => ({
       status: 'needs-review',
       content: `<h3>Employees</h3><p>The average number of employees during the year was [ ]${ctx.priorYear ? ` (${ctx.priorYear}: [ ])` : ''}.</p>`,
@@ -364,13 +370,13 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'financial-instruments', title: 'Financial Instruments',
     requirement: 'Basic financial instruments measured at amortised cost.',
-    frameworks: T_NONMICRO, level: ctx => ctx.entityType === 'sole_trader' ? 'optional' : 'mandatory',
+    frameworks: T_NONMICRO, level: ctx => (ctx.entityType === 'sole_trader' || ctx.entityType === 'trust') ? 'optional' : 'mandatory',
     build: () => ({ status: 'complete', content: `<h3>Financial instruments</h3><p>The company holds only basic financial instruments, measured at amortised cost.</p>` }),
   },
   {
     id: 'contingencies', title: 'Contingencies',
     requirement: 'Contingent liabilities and assets not recognised in the balance sheet.',
-    frameworks: T_NONMICRO, level: ctx => ctx.entityType === 'sole_trader' ? 'optional' : 'mandatory',
+    frameworks: T_NONMICRO, level: ctx => (ctx.entityType === 'sole_trader' || ctx.entityType === 'trust') ? 'optional' : 'mandatory',
     build: () => ({ status: 'complete', content: `<h3>Contingent liabilities</h3><p>There were no contingent liabilities at the balance sheet date.</p>` }),
   },
 
@@ -479,11 +485,66 @@ const NOTE_RULES: NoteRule[] = [
     frameworks: T_ALL_FRS, entityTypes: ['llp'], level: 'mandatory',
     build: staticNote(`<h3>Members' participation rights</h3><p>Amounts due to members are classified between equity and liabilities in accordance with the LLP SORP, according to whether the LLP has an unconditional right to avoid delivering cash or other assets. State the basis of classification (equity, liability or hybrid).</p>`),
   },
+  // ── Trust ──
   {
-    id: 'trust', title: 'Trust Disclosures',
-    requirement: 'Trustee information, beneficiary classes and trust income treatment.',
-    frameworks: T_NONMICRO, entityTypes: ['trust'], level: 'mandatory',
-    build: staticNote(`<h3>Trust disclosures</h3><p>Disclosures relating to the trust, its trustees and beneficiaries should be set out here.</p>`),
+    id: 'trust-information', title: 'Trust Information',
+    requirement: 'Trust name, type, date created, settlor, trustees and beneficiaries.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'mandatory',
+    build: staticNote(`<h3>Trust information</h3><p>Trust name: [ ]. Date created: [ ]. Settlor: [ ]. Trustees: [ ]. Class of beneficiaries: [ ].</p>`),
+  },
+  {
+    id: 'nature-of-trust', title: 'Nature of the Trust',
+    requirement: 'Whether discretionary, interest in possession, bare, accumulation, etc.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'mandatory',
+    build: staticNote(`<h3>Nature of the trust</h3><p>The trust is a [discretionary / interest in possession / bare / accumulation and maintenance] trust. The terms of the trust and any restrictions on the distribution of income and capital are governed by the trust deed.</p>`),
+  },
+  {
+    id: 'trust-taxation', title: 'Taxation',
+    requirement: 'Income tax and capital gains tax borne by the trust.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'mandatory',
+    build: staticNote(`<h3>Taxation</h3><p>The trust is liable to income tax on its income and to capital gains tax on chargeable gains, at the rates applicable to trusts. Income distributed to beneficiaries carries a tax credit, reported to them on form R185.</p>`),
+  },
+  {
+    id: 'capital-fund', title: 'Capital Fund',
+    requirement: 'Movement on the capital fund — settled capital, additions, gains and distributions.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'mandatory',
+    build: staticNote(`<h3>Capital fund</h3><p>The movement on the capital fund is set out below: opening capital, capital introduced, realised capital gains, capital distributions, giving the closing capital fund.</p>`),
+  },
+  {
+    id: 'income-fund', title: 'Income Fund',
+    requirement: 'Movement on the income fund — income, expenses and distributions.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'mandatory',
+    build: staticNote(`<h3>Income fund</h3><p>The movement on the income fund is set out below: opening income, income for the year, expenses, distributions to beneficiaries, giving the closing income fund.</p>`),
+  },
+  {
+    id: 'investment-portfolio', title: 'Investment Portfolio',
+    requirement: 'Opening/closing value, purchases, sales and revaluations by class of investment.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'conditional', trigger: tHasInvestments,
+    build: staticNote(`<h3>Investments</h3><p>The trust's investments are analysed between listed investments, unlisted investments, property and cash. Set out the opening value, purchases, sales, revaluations and closing value for each class.</p>`),
+  },
+  {
+    id: 'beneficiary-distributions', title: 'Beneficiary Distributions',
+    requirement: 'Income and capital distributed to beneficiaries during the year.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'optional',
+    build: staticNote(`<h3>Distributions to beneficiaries</h3><p>Distributions to beneficiaries during the year, analysed between income and capital, are set out below.</p>`),
+  },
+  {
+    id: 'trustee-remuneration', title: 'Trustee Remuneration',
+    requirement: 'Remuneration and expenses paid to the trustees.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'optional',
+    build: staticNote(`<h3>Trustee remuneration and expenses</h3><p>Remuneration paid to the trustees during the year was £[ ], and expenses reimbursed to the trustees were £[ ].</p>`),
+  },
+  {
+    id: 'trust-deed-restrictions', title: 'Trust Deed Restrictions',
+    requirement: 'Restrictions on investments and on income/capital distributions.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'optional',
+    build: staticNote(`<h3>Trust deed restrictions</h3><p>The trust deed places the following restrictions on the investment of the trust fund and on distributions of income and capital: [ ].</p>`),
+  },
+  {
+    id: 'trustee-changes', title: 'Changes in Trustees',
+    requirement: 'Appointments, retirements and deaths of trustees.',
+    frameworks: T_NONMICRO, entityTypes: TRUST, level: 'optional',
+    build: staticNote(`<h3>Changes in trustees</h3><p>The following changes in the trustees took place during the year: [ ].</p>`),
   },
 
   // ── Optional / best-practice (never auto-seeded; offered in "＋ Add note") ──

@@ -131,6 +131,25 @@ function incomeStatement(pl: ProfitLoss, hasPrior: boolean, curYear: string, pri
   </tbody></table>`;
 }
 
+/** Trust Statement of Financial Activities — income and expenditure of the trust,
+ *  ending in the net income for the year (no trading gross-profit framing). */
+function trustSofa(pl: ProfitLoss, hasPrior: boolean, curYear: string, priorYear: string, noteNo: (id: string) => string): string {
+  const expTotal = pl.expenses.reduce((t, g) => t + g.total, 0);
+  const expTotalPrior = hasPrior ? pl.expenses.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null;
+  const taxTotal = pl.taxation.reduce((t, g) => t + g.total, 0);
+  const taxTotalPrior = hasPrior ? pl.taxation.reduce((t, g) => t + (g.totalPrior ?? 0), 0) : null;
+  const hasTax = pl.taxation.length > 0 || Math.abs(taxTotal) >= 0.005;
+  return `<table style="width:100%;border-collapse:collapse;font-size:12.5px">${amountHead(hasPrior, curYear, priorYear, true)}<tbody>
+    ${row('Income', null, null, hasPrior, { muted: true, notesCol: true, noteRef: noteNo('investment-portfolio') })}
+    ${groupRows(pl.turnover, hasPrior, 1, true)}
+    ${row('Total income', pl.turnoverTotal, pl.turnoverTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
+    ${pl.expenses.length ? row('Expenditure', null, null, hasPrior, { muted: true, notesCol: true }) + groupRows(pl.expenses, hasPrior, -1, true) + row('Total expenditure', -expTotal, expTotalPrior === null ? null : -expTotalPrior, hasPrior, { bold: true, rule: true, notesCol: true }) : ''}
+    ${row('Net income before taxation', pl.operatingProfit, pl.operatingProfitPrior, hasPrior, { bold: true, notesCol: true })}
+    ${hasTax ? row('Taxation', -taxTotal, taxTotalPrior === null ? null : -taxTotalPrior, hasPrior, { notesCol: true, noteRef: noteNo('trust-taxation') }) : ''}
+    ${row('Net income for the year', pl.netProfit, pl.netProfitPrior, hasPrior, { bold: true, rule: true, notesCol: true })}
+  </tbody></table>`;
+}
+
 /** True for a retained-earnings / P&L reserve equity ledger (not share capital,
  *  share premium or revaluation reserve — those stay as their own lines). */
 function isRetainedGroup(title: string): boolean {
@@ -154,7 +173,7 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
 
   let capital: string;
   if (prof.ownerManaged) {
-    const ref = prof.isLlp ? noteNo('members-interests') : prof.isSoleTrader ? noteNo('capital-account') : noteNo('capital-accounts');
+    const ref = prof.isLlp ? noteNo('members-interests') : prof.isSoleTrader ? noteNo('capital-account') : prof.isTrust ? noteNo('capital-fund') : noteNo('capital-accounts');
     if (comp) {
       // Partner data entered: show the reconciled capital and current account
       // totals, footing to partners'/members' funds.
@@ -169,7 +188,7 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
       capital = `
         ${row(prof.capitalHeader, null, null, hasPrior, { muted: true, notesCol: true, noteRef: ref })}
         ${groupRows(bs.capitalAndReserves, hasPrior, 1, true)}
-        ${row('Profit for the financial year', bs.profitForYear, bs.profitForYearPrior, hasPrior, { notesCol: true })}
+        ${row(prof.resultLabel, bs.profitForYear, bs.profitForYearPrior, hasPrior, { notesCol: true })}
         ${row(prof.fundsLabel, bs.totalEquity, bs.totalEquityPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
     }
   } else {
@@ -286,42 +305,50 @@ function signatoryName(e: Engagement): string {
 
 /** Entity-aware labels/flags for the pack (company / LLP / partnership / sole trader). */
 interface EntityProfile {
+  isCompany: boolean;
   isLlp: boolean;
   isPartnership: boolean;        // traditional partnership
   isSoleTrader: boolean;
+  isTrust: boolean;
   isPartnershipFamily: boolean;  // LLP or traditional partnership (has partner data)
-  ownerManaged: boolean;         // partnership / LLP / sole trader — capital-account style
+  ownerManaged: boolean;         // partnership / LLP / sole trader / trust — non-company capital section
   registered: boolean;           // registered at Companies House (company / LLP)
   hasStatutoryReport: boolean;   // directors' / members' report (company / LLP)
   hasAuditExemption: boolean;    // s477 audit-exemption statement (company / LLP)
-  ownerSingular: string;         // director / member / partner / proprietor
+  ownerSingular: string;         // director / member / partner / proprietor / trustee
   ownerPlural: string;
-  ownerTitle: string;            // Director / Member / Partner / Proprietor
+  ownerTitle: string;            // Director / Member / Partner / Proprietor / Trustee
   ownerTitlePlural: string;
-  entityNoun: string;            // company / LLP / partnership / business
-  fundsLabel: string;            // Total equity / Members' funds / Partners' funds / Proprietor's funds
-  capitalHeader: string;         // Capital and reserves / Capital and current accounts / Capital account
-  infoTitle: string;             // Company / LLP / Partnership / Business Information
+  entityNoun: string;            // company / LLP / partnership / business / trust
+  fundsLabel: string;            // Total equity / Members' funds / Partners' funds / Proprietor's funds / Trust funds
+  capitalHeader: string;         // Capital and reserves / Capital and current accounts / Capital account / Funds of the trust
+  resultLabel: string;           // Profit for the financial year / Net income for the year
+  incomeTitle: string;           // Income Statement / Statement of Financial Activities
+  infoTitle: string;             // Company / LLP / Partnership / Business / Trust Information
 }
 function entityProfile(e: Engagement): EntityProfile {
+  const isCompany = e.entityType === 'limited_company' || e.entityType === 'cic' || e.entityType === 'dormant_company';
   const isLlp = e.entityType === 'llp';
   const isPartnership = e.entityType === 'partnership';
   const isSoleTrader = e.entityType === 'sole_trader';
+  const isTrust = e.entityType === 'trust';
   const fam = isLlp || isPartnership;
   return {
-    isLlp, isPartnership, isSoleTrader, isPartnershipFamily: fam,
-    ownerManaged: fam || isSoleTrader,
-    registered: !isPartnership && !isSoleTrader,
-    hasStatutoryReport: isLlp || (!fam && !isSoleTrader), // company or LLP
-    hasAuditExemption: isLlp || (!fam && !isSoleTrader),
-    ownerSingular: isPartnership ? 'partner' : isLlp ? 'member' : isSoleTrader ? 'proprietor' : 'director',
-    ownerPlural: isPartnership ? 'partners' : isLlp ? 'members' : isSoleTrader ? 'proprietor' : 'directors',
-    ownerTitle: isPartnership ? 'Partner' : isLlp ? 'Member' : isSoleTrader ? 'Proprietor' : 'Director',
-    ownerTitlePlural: isPartnership ? 'Partners' : isLlp ? 'Members' : isSoleTrader ? 'Proprietor' : 'Directors',
-    entityNoun: isPartnership ? 'partnership' : isLlp ? 'LLP' : isSoleTrader ? 'business' : 'company',
-    fundsLabel: isPartnership ? "Partners' funds" : isLlp ? "Members' funds" : isSoleTrader ? "Proprietor's funds" : 'Total equity',
-    capitalHeader: isSoleTrader ? 'Capital account' : fam ? 'Capital and current accounts' : 'Capital and reserves',
-    infoTitle: isPartnership ? 'Partnership Information' : isLlp ? 'LLP Information' : isSoleTrader ? 'Business Information' : 'Company Information',
+    isCompany, isLlp, isPartnership, isSoleTrader, isTrust, isPartnershipFamily: fam,
+    ownerManaged: fam || isSoleTrader || isTrust,
+    registered: isCompany || isLlp,
+    hasStatutoryReport: isCompany || isLlp,
+    hasAuditExemption: isCompany || isLlp,
+    ownerSingular: isPartnership ? 'partner' : isLlp ? 'member' : isSoleTrader ? 'proprietor' : isTrust ? 'trustee' : 'director',
+    ownerPlural: isPartnership ? 'partners' : isLlp ? 'members' : isSoleTrader ? 'proprietor' : isTrust ? 'trustees' : 'directors',
+    ownerTitle: isPartnership ? 'Partner' : isLlp ? 'Member' : isSoleTrader ? 'Proprietor' : isTrust ? 'Trustee' : 'Director',
+    ownerTitlePlural: isPartnership ? 'Partners' : isLlp ? 'Members' : isSoleTrader ? 'Proprietor' : isTrust ? 'Trustees' : 'Directors',
+    entityNoun: isPartnership ? 'partnership' : isLlp ? 'LLP' : isSoleTrader ? 'business' : isTrust ? 'trust' : 'company',
+    fundsLabel: isPartnership ? "Partners' funds" : isLlp ? "Members' funds" : isSoleTrader ? "Proprietor's funds" : isTrust ? 'Trust funds' : 'Total equity',
+    capitalHeader: isSoleTrader ? 'Capital account' : isTrust ? 'Funds of the trust' : fam ? 'Capital and current accounts' : 'Capital and reserves',
+    resultLabel: isTrust ? 'Net income for the year' : 'Profit for the financial year',
+    incomeTitle: isTrust ? 'Statement of Financial Activities' : 'Income Statement',
+    infoTitle: isPartnership ? 'Partnership Information' : isLlp ? 'LLP Information' : isSoleTrader ? 'Business Information' : isTrust ? 'Trust Information' : 'Company Information',
   };
 }
 
@@ -433,10 +460,11 @@ function renderedNoteList(e: Engagement, excludeIds: Set<string>): Engagement['d
 function notesBody(e: Engagement, excludeIds: Set<string>, noteOverrides: Record<string, string> = {}): { html: string; hasNotes: boolean } {
   const notes = renderedNoteList(e, excludeIds);
   if (!notes.length) return { html: '', hasNotes: false };
-  const unregistered = e.entityType === 'partnership' || e.entityType === 'sole_trader';
+  const unregistered = e.entityType === 'partnership' || e.entityType === 'sole_trader' || e.entityType === 'trust';
   const desc = e.entityType === 'llp' ? 'a limited liability partnership'
     : e.entityType === 'partnership' ? 'a partnership'
     : e.entityType === 'sole_trader' ? 'a sole trader business'
+    : e.entityType === 'trust' ? 'a trust established under a trust deed'
     : 'a private company, limited by shares';
   const reg = unregistered
     ? ''
@@ -505,11 +533,13 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   parts.push(section('accountants-report', "Accountants' report",
     sectionHead(e.companyName, "Accountants' Report", periodLine) + accountantsReportBody(e, accountantsReport, accountantDetails, firmName, prof)));
 
-  // 4. Income Statement (omitted from filleted filing copy)
+  // 4. Income Statement / Statement of Financial Activities (omitted from filleted).
   if (!filleted) {
-    parts.push(section('income-statement', 'Income statement',
-      sectionHead(e.companyName, 'Income Statement', periodLine) +
-      (s ? incomeStatement(s.profitLoss, hasPrior, curYear, priorYear, noteNo) : '<p style="color:#94a3b8">No financial statements imported.</p>')));
+    parts.push(section('income-statement', prof.incomeTitle.toLowerCase(),
+      sectionHead(e.companyName, prof.incomeTitle, periodLine) +
+      (s
+        ? (prof.isTrust ? trustSofa(s.profitLoss, hasPrior, curYear, priorYear, noteNo) : incomeStatement(s.profitLoss, hasPrior, curYear, priorYear, noteNo))
+        : '<p style="color:#94a3b8">No financial statements imported.</p>')));
   }
 
   // 4b. Appropriation Account — traditional partnerships only (full copy).
@@ -541,8 +571,9 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
       sectionHead(e.companyName, 'Notes to the Financial Statements', periodLine) + notes.html));
   }
 
-  // 7. Detailed Income Statement (full accounts only)
-  if (!filleted && s) {
+  // 7. Detailed Income Statement (full accounts only; not for trusts — their
+  //    income isn't a trading account).
+  if (!filleted && s && !prof.isTrust) {
     parts.push(section('detailed-income', 'Detailed Income Statement',
       sectionHead(e.companyName, 'Detailed Income Statement', periodLine) +
       detailedIncomeStatement(s.profitLoss, hasPrior, curYear, priorYear)));
@@ -550,7 +581,7 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
 
   // ── Cover ──
   const kicker = filleted ? 'Filleted Accounts for Filing'
-    : prof.isSoleTrader ? 'Unaudited Financial Statements'
+    : prof.isSoleTrader || prof.isTrust ? 'Unaudited Financial Statements'
     : prof.isPartnership ? 'Report of the Partners and Unaudited Financial Statements'
     : prof.isLlp ? 'Report of the Members and Unaudited Financial Statements'
     : 'Report of the Director and Unaudited Financial Statements';
