@@ -17,7 +17,7 @@ import { useFocusMode } from './FocusModeProvider';
 import { useNotifications } from './NotificationsProvider';
 import { useModules } from './ModulesProvider';
 import { useTimesheets } from '@/components/features/timesheets/TimesheetsProvider';
-import { fmtStopwatch } from '@/lib/timesheets/format';
+import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
 import { TOOL_NAV_ITEMS, WORKSPACE_NAV_ITEMS } from '@/config/navItems';
 import type { Tab } from '@/components/ui/TabContext';
@@ -162,7 +162,8 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
   // (Practice Suite). Lets a user start/see a timer from anywhere in the app.
   const { isModuleActive } = useModules();
   const timesheetsActive = isModuleActive('timesheets');
-  const { timer, elapsedMs, openStartModal } = useTimesheets();
+  const { timers, nowMs, openStartModal } = useTimesheets();
+  const activeTimer = timers.find(t => !t.paused) ?? null; // the one counting, if any
 
   // Notification toasts now live in NotificationToastNotifier (rendered at the
   // app-shell level so they anchor bottom-right of the viewport, not inside the
@@ -369,28 +370,38 @@ export default function TopBar({ userName, avatarUrl }: TopBarProps) {
       {/* Right actions */}
       <div className="flex items-center gap-2 shrink-0">
 
-        {/* Timesheets quick-timer — start/see a timer from anywhere (Practice Suite) */}
+        {/* Timesheets quick-timer — start/see timers from anywhere (Practice Suite) */}
         {timesheetsActive && (
-          <Tooltip label={timer.running ? `Timer running — ${timer.clientName || 'Internal'}` : 'Start a timer'}>
+          <Tooltip label={
+            activeTimer ? `Timer running — ${activeTimer.label || activeTimer.clientName || 'Internal'}${timers.length > 1 ? ` (+${timers.length - 1} paused)` : ''}`
+            : timers.length > 0 ? `${timers.length} timer${timers.length > 1 ? 's' : ''} paused — start another`
+            : 'Start a timer'
+          }>
             <button
               onClick={openStartModal}
-              aria-label={timer.running ? 'Timer running — start another' : 'Start a timer'}
-              className={`h-8 flex items-center rounded-lg transition-all ${
-                timer.running
-                  ? 'gap-1.5 px-2 bg-[var(--accent)]/10 text-[var(--accent)]'
+              aria-label="Timers"
+              className={`relative h-8 flex items-center rounded-lg transition-all ${
+                activeTimer
+                  ? 'gap-1.5 px-2'
                   : 'w-8 justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
               }`}
+              style={activeTimer ? { background: `${activeTimer.color}1A`, color: activeTimer.color } : undefined}
             >
-              {timer.running ? (
+              {activeTimer ? (
                 <>
                   <span className="relative flex h-2 w-2 shrink-0">
-                    {!timer.paused && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />}
-                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: timer.paused ? '#94A3B8' : 'var(--accent)' }} />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: activeTimer.color }} />
+                    <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: activeTimer.color }} />
                   </span>
-                  <span className="font-mono text-[12px] font-bold tabular-nums">{fmtStopwatch(elapsedMs)}</span>
+                  <span className="font-mono text-[12px] font-bold tabular-nums">{fmtStopwatch(timerElapsedMs(activeTimer, nowMs))}</span>
                 </>
               ) : (
                 <Clock size={16} />
+              )}
+              {timers.length > 1 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] flex items-center justify-center rounded-full bg-[var(--accent)] text-white text-[9px] font-bold px-0.5 leading-none">
+                  {timers.length}
+                </span>
               )}
             </button>
           </Tooltip>

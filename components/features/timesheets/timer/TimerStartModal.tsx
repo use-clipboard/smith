@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Play } from 'lucide-react';
+import { X, Play, AlertTriangle } from 'lucide-react';
 import type { TimeEntryType } from '@/lib/timesheets/types';
 import { useTimesheets } from '../TimesheetsProvider';
+import { TIMER_COLORS, nextTimerColor } from '@/lib/timesheets/palette';
 import ClientCombobox from '../shared/ClientCombobox';
 import TaskCombobox, { type PickedTask } from '../shared/TaskCombobox';
 
@@ -14,16 +15,18 @@ const TYPES: { value: TimeEntryType; label: string }[] = [
 ];
 
 export default function TimerStartModal({ onClose }: { onClose: () => void }) {
-  const { clients, activities, startTimer } = useTimesheets();
+  const { clients, activities, startTimer, timers, canAddTimer } = useTimesheets();
   const [clientId, setClientId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [activity, setActivity] = useState(activities[0].label);
   const [type, setType] = useState<TimeEntryType>('billable');
   const [taskTitle, setTaskTitle] = useState('');
   const [notes, setNotes] = useState('');
+  const [label, setLabel] = useState('');
+  const [color, setColor] = useState<string>(() => nextTimerColor(timers.map(t => t.color)));
 
   const client = clients.find(c => c.id === clientId) ?? null;
-  const canStart = type !== 'billable' || !!clientId;
+  const canStart = (type !== 'billable' || !!clientId) && canAddTimer;
 
   function handleStart() {
     if (!canStart) return;
@@ -37,6 +40,8 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
       department: dept,
       type,
       notes,
+      label: label.trim(),
+      color,
     });
     onClose();
   }
@@ -50,6 +55,12 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-black/5"><X size={18} /></button>
         </div>
         <div className="space-y-4 px-6 py-5">
+          {!canAddTimer && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-700">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              You have 3 timers open — the maximum. Stop or finish one to start another.
+            </div>
+          )}
           <div className="inline-flex w-full gap-1 rounded-xl bg-[var(--bg-nav-hover)] p-1">
             {TYPES.map(t => (
               <button key={t.value} onClick={() => setType(t.value)}
@@ -77,6 +88,32 @@ export default function TimerStartModal({ onClose }: { onClose: () => void }) {
             <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
             <input className="input-base" value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder={activity} />
           </div>
+
+          {/* Timer name + colour — so concurrent timers are easy to tell apart. */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timer name &amp; colour</label>
+            <div className="flex items-center gap-2">
+              <input
+                className="input-base flex-1"
+                value={label}
+                onChange={e => setLabel(e.target.value)}
+                placeholder={client?.name || activity || 'Name this timer'}
+              />
+              <div className="flex shrink-0 items-center gap-1.5">
+                {TIMER_COLORS.map(c => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setColor(c)}
+                    aria-label={`Colour ${c}`}
+                    className={`h-6 w-6 rounded-full transition-transform ${color === c ? 'ring-2 ring-offset-1 ring-[var(--text-primary)] scale-110' : 'hover:scale-105'}`}
+                    style={{ background: c }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Link to task</label>
             <TaskCombobox

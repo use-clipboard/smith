@@ -1,6 +1,13 @@
 // Formatting helpers for the Timesheets module.
 // UK conventions throughout: dd-mm-yyyy dates, GBP, "2h 15m" durations.
 
+import type { TimerState } from './types';
+
+/** Live elapsed milliseconds for a timer, given the current epoch ms. */
+export function timerElapsedMs(t: TimerState, now: number): number {
+  return t.accumulatedMs + (t.running && !t.paused && t.segmentStartedAt ? now - t.segmentStartedAt : 0);
+}
+
 /** "2h 15m" · "45m" · "3h". Rounds to the nearest minute. */
 export function fmtDuration(minutes: number): string {
   const m = Math.max(0, Math.round(minutes));

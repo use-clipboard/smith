@@ -35,3 +35,18 @@ export const TYPE_LABELS = {
 export function hueColor(hue: number, s = 70, l = 58): string {
   return `hsl(${hue} ${s}% ${l}%)`;
 }
+
+/** Distinct swatches a user can pick to tell concurrent timers apart. */
+export const TIMER_COLORS = [
+  '#6366F1', // indigo
+  '#10B981', // emerald
+  '#F59E0B', // amber
+  '#EC4899', // pink
+  '#0EA5E9', // sky
+  '#8B5CF6', // violet
+] as const;
+
+/** Pick the first palette colour not already used by an open timer. */
+export function nextTimerColor(used: string[]): string {
+  return TIMER_COLORS.find(c => !used.includes(c)) ?? TIMER_COLORS[used.length % TIMER_COLORS.length];
+}

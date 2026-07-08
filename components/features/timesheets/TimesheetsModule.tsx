@@ -10,7 +10,7 @@ import MyTimesheet from './mytimesheet/MyTimesheet';
 import Reports from './reports/Reports';
 import RatesSettings from './settings/RatesSettings';
 import Approvals from './approvals/Approvals';
-import { fmtStopwatch } from '@/lib/timesheets/format';
+import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
 
 const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -20,8 +20,10 @@ const BASE_TABS: { id: TimesheetTab; label: string; icon: typeof Clock }[] = [
 ];
 
 export default function TimesheetsModule() {
-  const { ready, timer, elapsedMs, isAdmin, hasReports, weekStatuses, userId, openStartModal } = useTimesheets();
+  const { ready, timers, nowMs, canAddTimer, isAdmin, hasReports, weekStatuses, userId, openStartModal } = useTimesheets();
   const [tab, setTab] = useState<TimesheetTab>('overview');
+  // The timer currently counting (if any) — shown live in the header.
+  const activeTimer = timers.find(t => !t.paused) ?? null;
 
   // Admins approve anyone (and any week with no manager); managers approve
   // weeks routed to them.
@@ -33,17 +35,22 @@ export default function TimesheetsModule() {
     ? [...BASE_TABS, { id: 'approvals' as TimesheetTab, label: 'Approvals', icon: ShieldCheck }]
     : BASE_TABS;
 
-  const headerRight = timer.running ? (
-    <div className="flex items-center gap-2 rounded-xl bg-[var(--accent)]/10 px-3 py-2">
-      <span className="relative flex h-2 w-2">
-        {!timer.paused && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-60" />}
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
-      </span>
-      <span className="font-mono text-[13px] font-bold tabular-nums text-[var(--accent)]">{fmtStopwatch(elapsedMs)}</span>
-      <span className="max-w-[120px] truncate text-[12px] text-[var(--text-secondary)]">{timer.clientName || 'Internal'}</span>
+  const headerRight = (
+    <div className="flex items-center gap-2">
+      {activeTimer && (
+        <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: `${activeTimer.color}1A` }}>
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ background: activeTimer.color }} />
+            <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: activeTimer.color }} />
+          </span>
+          <span className="font-mono text-[13px] font-bold tabular-nums" style={{ color: activeTimer.color }}>{fmtStopwatch(timerElapsedMs(activeTimer, nowMs))}</span>
+          <span className="max-w-[120px] truncate text-[12px] text-[var(--text-secondary)]">{activeTimer.label || activeTimer.clientName || 'Internal'}</span>
+        </div>
+      )}
+      <button onClick={openStartModal} disabled={!canAddTimer} className="btn-primary disabled:opacity-50">
+        <Play size={15} /> {timers.length > 0 ? 'New timer' : 'Start timer'}
+      </button>
     </div>
-  ) : (
-    <button onClick={openStartModal} className="btn-primary"><Play size={15} /> Start timer</button>
   );
 
   return (

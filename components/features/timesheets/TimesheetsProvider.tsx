@@ -3,9 +3,11 @@
 import {
   createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, ReactNode,
 } from 'react';
-import type { TimeEntry, TimerState, AiSuggestion, TimeEntryType, TsClient, TsStaff, TsActivity, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
+import type { TimeEntry, TimerState, TimerInstance, AiSuggestion, TimeEntryType, TsClient, TsStaff, TsActivity, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
+import { MAX_TIMERS } from '@/lib/timesheets/types';
 import { DEPARTMENTS, DEFAULT_ACTIVITIES } from '@/lib/timesheets/defaults';
 import { todayIso, startOfWeek, fmtDuration } from '@/lib/timesheets/format';
+import { nextTimerColor, TIMER_COLORS } from '@/lib/timesheets/palette';
 
 const UNDO_MS = 8000; // window to undo a just-logged timer
 const DEFAULT_CAPACITY_HOURS = 37.5;
@@ -22,7 +24,12 @@ interface StartConfig {
   department: string;
   type: TimeEntryType;
   notes?: string;
+  /** Optional display name + colour for the floating timer card. */
+  label?: string;
+  color?: string;
 }
+
+type TimerMetaPatch = Partial<StartConfig>;
 
 interface TimesheetsContextValue {
   ready: boolean;
@@ -59,19 +66,25 @@ interface TimesheetsContextValue {
   reopenWeek: (weekStart: string) => void;
   reviewWeek: (userId: string, weekStart: string, action: 'approve' | 'reject', note?: string) => void;
 
-  timer: TimerState;
-  elapsedMs: number;
+  // Up to MAX_TIMERS concurrent timers; only one ever runs (unpaused) at a time.
+  timers: TimerInstance[];
+  /** Live epoch ms, ticked each second while a timer runs — for elapsed calc. */
+  nowMs: number;
+  /** False once MAX_TIMERS are open (stop one to start another). */
+  canAddTimer: boolean;
 
   // Brief undo window after a timer is stopped & logged.
   timerUndo: { label: string; expiresAt: number } | null;
   undoTimer: () => void;
   dismissTimerUndo: () => void;
 
+  /** Start a new timer (pauses any running one). No-op when MAX_TIMERS are open. */
   startTimer: (cfg: StartConfig) => void;
-  pauseTimer: () => void;
-  resumeTimer: () => void;
-  stopTimer: (save: boolean) => void;
-  updateTimerMeta: (patch: Partial<StartConfig>) => void;
+  pauseTimer: (id: string) => void;
+  /** Resume a paused timer — pauses whichever timer was running first. */
+  resumeTimer: (id: string) => void;
+  stopTimer: (id: string, save: boolean) => void;
+  updateTimerMeta: (id: string, patch: TimerMetaPatch) => void;
 
   // Global "start a timer" modal — openable from anywhere (e.g. the header
   // shortcut) so time can be captured without navigating to the Timesheets tool.
@@ -88,10 +101,18 @@ interface TimesheetsContextValue {
   dismissSuggestion: (id: string) => void;
 }
 
-const emptyTimer: TimerState = {
-  running: false, paused: false, segmentStartedAt: null, accumulatedMs: 0,
-  clientId: null, clientName: '', taskId: null, taskTitle: '', activity: '', department: '', type: 'billable', notes: '',
-};
+const tmpTimerId = () => `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/** Bank a running timer's elapsed time and pause it (no-op if already paused). */
+function pauseInstance(t: TimerInstance): TimerInstance {
+  if (t.paused) return t;
+  return {
+    ...t,
+    paused: true,
+    accumulatedMs: t.accumulatedMs + (t.segmentStartedAt ? Date.now() - t.segmentStartedAt : 0),
+    segmentStartedAt: null,
+  };
+}
 
 const Ctx = createContext<TimesheetsContextValue | null>(null);
 
@@ -154,7 +175,7 @@ export default function TimesheetsProvider({
   const roundingRef = useRef(15);
   roundingRef.current = roundingMinutes;
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
-  const [timer, setTimer] = useState<TimerState>(emptyTimer);
+  const [timers, setTimers] = useState<TimerInstance[]>([]);
   const [startModalOpen, setStartModalOpen] = useState(false);
   const [timerUndo, setTimerUndo] = useState<{ label: string; expiresAt: number } | null>(null);
   const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
@@ -179,12 +200,17 @@ export default function TimesheetsProvider({
   useEffect(() => {
     let cancelled = false;
 
-    // Device-local resume for a running timer + last suggestions.
+    // Device-local resume for running timers + last suggestions.
     try {
       const raw = window.localStorage.getItem(metaKey);
       if (raw) {
-        const m = JSON.parse(raw) as { timer?: TimerState; suggestions?: AiSuggestion[] };
-        if (m.timer) setTimer(m.timer);
+        const m = JSON.parse(raw) as { timers?: TimerInstance[]; timer?: TimerState; suggestions?: AiSuggestion[] };
+        if (Array.isArray(m.timers)) {
+          setTimers(m.timers.slice(0, MAX_TIMERS));
+        } else if (m.timer && (m.timer.running || m.timer.accumulatedMs > 0)) {
+          // Migrate the old single-timer shape into the new array.
+          setTimers([{ ...m.timer, id: tmpTimerId(), label: '', color: TIMER_COLORS[0] }]);
+        }
         if (m.suggestions) setSuggestions(m.suggestions);
       }
     } catch { /* ignore */ }
@@ -226,11 +252,11 @@ export default function TimesheetsProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metaKey]);
 
-  // Persist timer + suggestions (device-local).
+  // Persist timers + suggestions (device-local).
   useEffect(() => {
     if (!ready) return;
-    try { window.localStorage.setItem(metaKey, JSON.stringify({ timer, suggestions })); } catch { /* quota */ }
-  }, [timer, suggestions, ready, metaKey]);
+    try { window.localStorage.setItem(metaKey, JSON.stringify({ timers, suggestions })); } catch { /* quota */ }
+  }, [timers, suggestions, ready, metaKey]);
 
   // Refs for synchronous lock checks inside mutations.
   const entriesRef = useRef(entries);
@@ -261,18 +287,17 @@ export default function TimesheetsProvider({
     if (st === 'submitted' || st === 'approved') reopenWeek(ws);
   }, [userId, reopenWeek]);
 
-  const timerRef = useRef(timer);
-  timerRef.current = timer;
+  const timersRef = useRef(timers);
+  timersRef.current = timers;
 
+  const anyRunning = timers.some(t => t.running && !t.paused);
   useEffect(() => {
-    if (!timer.running || timer.paused) return;
+    if (!anyRunning) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [timer.running, timer.paused]);
+  }, [anyRunning]);
 
-  const elapsedMs =
-    timer.accumulatedMs +
-    (timer.running && !timer.paused && timer.segmentStartedAt ? now - timer.segmentStartedAt : 0);
+  const canAddTimer = timers.length < MAX_TIMERS;
 
   // ── Entry CRUD ──────────────────────────────────────────────────────────────
   const addEntry = useCallback((e: Omit<TimeEntry, 'id'>): string | null => {
@@ -358,36 +383,45 @@ export default function TimesheetsProvider({
     }
   }, [addEntry, liveStaff, userId, defaultRatePence]);
 
+  // Start a new timer. Pauses whichever timer was running (only one counts at a
+  // time) and adds the new one. No-op when MAX_TIMERS are already open.
   const startTimer = useCallback((cfg: StartConfig) => {
-    if (timerRef.current.running) commitTimer(timerRef.current);
-    setTimer({
-      running: true, paused: false, segmentStartedAt: Date.now(), accumulatedMs: 0,
-      clientId: cfg.clientId, clientName: cfg.clientName, taskId: cfg.taskId ?? null, taskTitle: cfg.taskTitle,
-      activity: cfg.activity, department: cfg.department, type: cfg.type, notes: cfg.notes ?? '',
+    setTimers(prev => {
+      if (prev.length >= MAX_TIMERS) return prev;
+      const paused = prev.map(pauseInstance);
+      const inst: TimerInstance = {
+        id: tmpTimerId(),
+        label: cfg.label?.trim() || cfg.clientName || cfg.activity || 'Timer',
+        color: cfg.color || nextTimerColor(prev.map(t => t.color)),
+        running: true, paused: false, segmentStartedAt: Date.now(), accumulatedMs: 0,
+        clientId: cfg.clientId, clientName: cfg.clientName, taskId: cfg.taskId ?? null, taskTitle: cfg.taskTitle,
+        activity: cfg.activity, department: cfg.department, type: cfg.type, notes: cfg.notes ?? '',
+      };
+      return [...paused, inst];
     });
-    setNow(Date.now());
-  }, [commitTimer]);
-
-  const pauseTimer = useCallback(() => {
-    setTimer(prev => {
-      if (!prev.running || prev.paused) return prev;
-      const banked = prev.accumulatedMs + (prev.segmentStartedAt ? Date.now() - prev.segmentStartedAt : 0);
-      return { ...prev, paused: true, accumulatedMs: banked, segmentStartedAt: null };
-    });
-  }, []);
-
-  const resumeTimer = useCallback(() => {
-    setTimer(prev => (prev.running && prev.paused ? { ...prev, paused: false, segmentStartedAt: Date.now() } : prev));
     setNow(Date.now());
   }, []);
 
-  const stopTimer = useCallback((save: boolean) => {
-    if (save && timerRef.current.running) commitTimer(timerRef.current);
-    setTimer(emptyTimer);
+  const pauseTimer = useCallback((id: string) => {
+    setTimers(prev => prev.map(t => (t.id === id ? pauseInstance(t) : t)));
+  }, []);
+
+  // Resume a paused timer, pausing whichever one was running so only one counts.
+  const resumeTimer = useCallback((id: string) => {
+    setTimers(prev => prev.map(t => (
+      t.id === id ? { ...t, paused: false, segmentStartedAt: Date.now() } : pauseInstance(t)
+    )));
+    setNow(Date.now());
+  }, []);
+
+  const stopTimer = useCallback((id: string, save: boolean) => {
+    const t = timersRef.current.find(x => x.id === id);
+    if (t && save) commitTimer(t);
+    setTimers(prev => prev.filter(x => x.id !== id));
   }, [commitTimer]);
 
-  const updateTimerMeta = useCallback((patch: Partial<StartConfig>) => {
-    setTimer(prev => ({ ...prev, ...patch }));
+  const updateTimerMeta = useCallback((id: string, patch: TimerMetaPatch) => {
+    setTimers(prev => prev.map(t => (t.id === id ? { ...t, ...patch } : t)));
   }, []);
 
   // Auto-dismiss the undo toast when its window elapses.
@@ -569,7 +603,7 @@ export default function TimesheetsProvider({
   const value = useMemo<TimesheetsContextValue>(() => ({
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
-    suggestions, scanning, updateStaffRate, timer, elapsedMs,
+    suggestions, scanning, updateStaffRate, timers, nowMs: now, canAddTimer,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, refreshWeeks: loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
@@ -578,7 +612,7 @@ export default function TimesheetsProvider({
   }), [
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
-    suggestions, scanning, updateStaffRate, timer, elapsedMs,
+    suggestions, scanning, updateStaffRate, timers, now, canAddTimer,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
     weekStatuses, loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,

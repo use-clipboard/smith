@@ -63,7 +63,8 @@ export interface TimeEntry {
   source: 'manual' | 'timer' | 'ai';
 }
 
-/** The single live timer. Persisted so it survives refresh + tab switches. */
+/** A live timer's stopwatch + what it's tracking. Persisted so it survives
+ *  refresh + tab switches. */
 export interface TimerState {
   running: boolean;
   paused: boolean;
@@ -80,6 +81,17 @@ export interface TimerState {
   type: TimeEntryType;
   notes: string;
 }
+
+/** One of up to 3 concurrent timers. Only ever one runs (unpaused) at a time —
+ *  the rest are paused. `label` + `color` let the user tell them apart. */
+export interface TimerInstance extends TimerState {
+  id: string;
+  label: string;
+  color: string;
+}
+
+/** Max concurrent timers a user can have open at once. */
+export const MAX_TIMERS = 3;
 
 export type WeekApprovalStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
 
