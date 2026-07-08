@@ -59,7 +59,8 @@ function packLanes(items: TimeEntry[]): { entry: TimeEntry; lane: number; lanes:
 }
 
 export default function MyTimesheet() {
-  const { entries, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, reopenWeek, weekStatuses, roundingMinutes } = useTimesheets();
+  const { entries, staff, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, reopenWeek, weekStatuses, roundingMinutes } = useTimesheets();
+  const editorName = (id: string) => staff.find(s => s.id === id)?.name ?? 'a manager';
   const snap = Math.max(1, roundingMinutes);
   const [selectedDay, setSelectedDay] = useState(todayIso());
   const [editing, setEditing] = useState<TimeEntry | null>(null);
@@ -411,6 +412,11 @@ export default function MyTimesheet() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[12px] font-semibold text-[var(--text-primary)]">{e.clientName}</p>
                   <p className="truncate text-[10.5px] text-[var(--text-muted)]">{e.start} · {e.activity}</p>
+                  {e.editedBy && e.editedBy !== meId && (
+                    <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-700">
+                      Adjusted by {editorName(e.editedBy)}
+                    </span>
+                  )}
                 </div>
                 <span className="shrink-0 text-[12px] font-bold text-[var(--text-primary)]">{fmtDuration(e.minutes)}</span>
               </button>

@@ -18,6 +18,9 @@ export interface ApiEntry {
   ratePence: number;
   notes: string;
   source: 'manual' | 'timer' | 'ai';
+  /** Set when an approver (not the owner) last edited this entry. */
+  editedBy: string | null;
+  editedAt: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,5 +41,7 @@ export function mapRow(r: any): ApiEntry {
     ratePence: r.rate_pence ?? 0,
     notes: r.notes ?? '',
     source: r.source ?? 'manual',
+    editedBy: r.edited_by ?? null,
+    editedAt: r.edited_at ?? null,
   };
 }

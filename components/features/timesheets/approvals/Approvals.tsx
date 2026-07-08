@@ -1,21 +1,47 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, X, Clock3, Inbox, Send, RefreshCw } from 'lucide-react';
+import { CheckCircle2, X, Clock3, Inbox, Send, RefreshCw, ChevronDown, Pencil } from 'lucide-react';
 import { useTimesheets } from '../TimesheetsProvider';
-import { inWeek, totals } from '@/lib/timesheets/compute';
+import { inWeek, totals, valueOf } from '@/lib/timesheets/compute';
 import type { TimeEntry } from '@/lib/timesheets/types';
-import { fmtDateUK, fmtHours, fmtPct, addDays } from '@/lib/timesheets/format';
+import { fmtDateUK, fmtHours, fmtPct, fmtDuration, fmtGBPCompact, addDays } from '@/lib/timesheets/format';
+import { TYPE_COLORS } from '@/lib/timesheets/palette';
 import { GlassCard, SectionHeader, ProgressBar } from '../shared/ui';
 import Avatar from '@/components/ui/Avatar';
 import { useOpenProfile } from '@/components/features/team/useOpenProfile';
+import AdjustEntryModal, { type AdjustPatch } from './AdjustEntryModal';
 
 export default function Approvals() {
-  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, isAdmin, userId } = useTimesheets();
+  const { weekStatuses, staff, entries, reviewWeek, refreshWeeks, isAdmin, userId, defaultRatePence } = useTimesheets();
   const openProfile = useOpenProfile();
   const [rejecting, setRejecting] = useState<string | null>(null); // `${userId}__${weekStart}`
   const [note, setNote] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ entry: TimeEntry; ownerId: string; ownerName: string; key: string } | null>(null);
+  const [savingAdjust, setSavingAdjust] = useState(false);
+  const [toast, setToast] = useState('');
+
+  async function saveAdjust(patch: AdjustPatch) {
+    if (!editing) return;
+    setSavingAdjust(true);
+    try {
+      const res = await fetch(`/api/timesheets/entries/${editing.entry.id}/adjust`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const { entry: updated } = await res.json() as { entry: TimeEntry };
+      setWeekEntries(prev => ({ ...prev, [editing.key]: (prev[editing.key] ?? []).map(e => (e.id === updated.id ? updated : e)) }));
+      setToast(`Entry adjusted — ${editing.ownerName.split(' ')[0]} notified`);
+      setEditing(null);
+    } catch {
+      setToast('Could not save the adjustment');
+    } finally {
+      setSavingAdjust(false);
+      window.setTimeout(() => setToast(''), 2800);
+    }
+  }
 
   // The provider loads week statuses once on mount, but the Timesheets tab stays
   // mounted for the whole session — so a teammate's later submission wouldn't show
@@ -161,6 +187,45 @@ export default function Approvals() {
                   <div className="mt-2 pl-[48px]">
                     <ProgressBar value={t?.billablePct ?? 0} color="#10B981" height={5} />
                   </div>
+
+                  {/* View & adjust the underlying entries */}
+                  <div className="pl-[48px]">
+                    <button
+                      onClick={() => setExpandedKey(k => (k === key ? null : key))}
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline"
+                    >
+                      <ChevronDown size={12} className={`transition-transform ${expandedKey === key ? 'rotate-180' : ''}`} />
+                      {expandedKey === key ? 'Hide entries' : `View & adjust ${ents ? `${ents.length} ` : ''}entries`}
+                    </button>
+                    {expandedKey === key && (
+                      <div className="mt-2 space-y-0.5 rounded-xl border border-black/5 bg-black/[0.015] p-1.5">
+                        {!ents && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">Loading…</p>}
+                        {ents && ents.length === 0 && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">No entries this week.</p>}
+                        {ents && ents.map(e => (
+                          <div key={e.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/80">
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: TYPE_COLORS[e.type] }} />
+                            <span className="w-11 shrink-0 text-[10.5px] tabular-nums text-[var(--text-muted)]">{fmtDateUK(e.date).slice(0, 5)}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">{e.taskTitle || e.activity || 'Work'}</p>
+                              <p className="truncate text-[10px] text-[var(--text-muted)]">
+                                {e.clientName || 'Internal'}{e.editedBy ? <span className="text-amber-600"> · adjusted</span> : null}
+                              </p>
+                            </div>
+                            <span className="w-12 shrink-0 text-right text-[11.5px] font-semibold tabular-nums text-[var(--text-primary)]">{fmtDuration(e.minutes)}</span>
+                            <span className="w-12 shrink-0 text-right text-[10.5px] tabular-nums text-[var(--text-muted)]">{e.type === 'billable' ? fmtGBPCompact(valueOf(e)) : '—'}</span>
+                            <button
+                              onClick={() => setEditing({ entry: e, ownerId: r.userId, ownerName: r.staff?.name ?? 'Team member', key })}
+                              className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] hover:bg-black/10 hover:text-[var(--accent)]"
+                              aria-label="Adjust this entry"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {isRejecting && (
                     <div className="mt-3 flex items-center gap-2 pl-[48px]">
                       <input
@@ -209,6 +274,23 @@ export default function Approvals() {
             })}
           </div>
         </GlassCard>
+      )}
+
+      {editing && (
+        <AdjustEntryModal
+          entry={editing.entry}
+          ownerName={editing.ownerName}
+          ownerRatePence={staffById.get(editing.ownerId)?.ratePence ?? defaultRatePence}
+          saving={savingAdjust}
+          onSave={saveAdjust}
+          onClose={() => setEditing(null)}
+        />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[90] flex items-center gap-2 rounded-xl bg-[#1A1A2E] px-4 py-3 text-sm font-medium text-white shadow-lg">
+          <CheckCircle2 size={15} /> {toast}
+        </div>
       )}
     </div>
   );

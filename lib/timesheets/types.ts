@@ -61,6 +61,9 @@ export interface TimeEntry {
   ratePence: number;
   notes: string;
   source: 'manual' | 'timer' | 'ai';
+  /** User id of an approver who edited this entry (null when owner-entered). */
+  editedBy?: string | null;
+  editedAt?: string | null;
 }
 
 /** A live timer's stopwatch + what it's tracking. Persisted so it survives
