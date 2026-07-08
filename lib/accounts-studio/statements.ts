@@ -277,10 +277,10 @@ export function detectFramework(entityType: string, size: StudioSize): string {
   if (size === 'micro' && (entityType === 'limited_company' || entityType === 'sole_trader' || entityType === 'partnership')) {
     return 'FRS 105 (Micro-entity)';
   }
-  // Traditional partnerships aren't under the Companies Act small-companies
-  // regime, so they use full FRS 102 (never "Section 1A" — that's for small
-  // companies and LLPs). LLPs get 1A + the LLP SORP.
-  if (entityType === 'partnership') return 'FRS 102';
+  // Traditional partnerships and sole traders aren't under the Companies Act
+  // small-companies regime, so they use full FRS 102 (never "Section 1A" —
+  // that's for small companies and LLPs). LLPs get 1A + the LLP SORP.
+  if (entityType === 'partnership' || entityType === 'sole_trader') return 'FRS 102';
   const base = size === 'small' ? 'FRS 102 Section 1A' : 'FRS 102';
   if (entityType === 'llp') return `${base} (LLP SORP)`;
   return base;

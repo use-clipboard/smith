@@ -96,6 +96,7 @@ const COMPANIES: EntityType[] = ['limited_company', 'cic', 'dormant_company'];
 const COMPANIES_LLP: EntityType[] = [...COMPANIES, 'llp'];
 const PARTNERSHIPS: EntityType[] = ['partnership'];
 const PARTNERSHIP_LLP: EntityType[] = ['partnership', 'llp'];
+const SOLE: EntityType[] = ['sole_trader'];
 const T_MICRO: FrameworkTier[] = ['frs105'];
 const T_NONMICRO: FrameworkTier[] = ['frs102-1a', 'frs102-full'];
 const T_ALL_FRS: FrameworkTier[] = ['frs105', 'frs102-1a', 'frs102-full'];
@@ -153,9 +154,11 @@ function directorsReportHtml(ctx: DisclosureContext, isLlp: boolean): string {
 }
 
 function accountantsReportHtml(ctx: DisclosureContext): string {
-  const officer = isLlpEntity(ctx.entityType) ? 'members' : 'board of directors';
+  const e = ctx.entityType;
+  const officer = e === 'sole_trader' ? 'proprietor' : e === 'partnership' ? 'partners' : isLlpEntity(e) ? 'members' : 'board of directors';
+  const duties = (COMPANIES.includes(e) || isLlpEntity(e)) ? 'fulfil your duties under the Companies Act 2006' : 'fulfil your reporting obligations';
   return `<h3>Accountants' report to the ${officer}</h3>`
-    + `<p>In order to assist you to fulfil your duties under the Companies Act 2006, we have prepared for your approval the financial statements which comprise the Income Statement, the Statement of Financial Position and the related notes from the accounting records and the information and explanations you have given to us.</p>`
+    + `<p>In order to assist you to ${duties}, we have prepared for your approval the financial statements which comprise the Income Statement, the Statement of Financial Position and the related notes from the accounting records and the information and explanations you have given to us.</p>`
     + `<p>This report is made solely to the ${officer}, in accordance with the terms of our engagement letter. Our work has been undertaken so that we might state to the ${officer} those matters we have agreed to state to them in this report and for no other purpose.</p>`
     + `<p>We have not been instructed to carry out an audit or a review of the financial statements and consequently we express no opinion on them.</p>`;
 }
@@ -233,7 +236,7 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'accountants-report', title: "Accountants' Report",
     requirement: 'Report of the reporting accountants on the unaudited financial statements.',
-    frameworks: T_SMALL_MICRO, entityTypes: [...COMPANIES_LLP, 'partnership'], level: 'mandatory',
+    frameworks: T_SMALL_MICRO, entityTypes: [...COMPANIES_LLP, 'partnership', 'sole_trader'], level: 'mandatory',
     build: ctx => ({ status: 'needs-review', content: accountantsReportHtml(ctx) }),
   },
   {
@@ -247,8 +250,8 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'employees', title: 'Employees',
     requirement: 'Average number of employees during the period.',
-    // Required for small companies; permitted but not required for micro-entities.
-    frameworks: T_ALL_FRS, level: ctx => frameworkTier(ctx) === 'frs105' ? 'optional' : 'mandatory',
+    // Required for small companies; optional for micro-entities and sole traders.
+    frameworks: T_ALL_FRS, level: ctx => (frameworkTier(ctx) === 'frs105' || ctx.entityType === 'sole_trader') ? 'optional' : 'mandatory',
     build: ctx => ({
       status: 'needs-review',
       content: `<h3>Employees</h3><p>The average number of employees during the year was [ ]${ctx.priorYear ? ` (${ctx.priorYear}: [ ])` : ''}.</p>`,
@@ -361,13 +364,13 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'financial-instruments', title: 'Financial Instruments',
     requirement: 'Basic financial instruments measured at amortised cost.',
-    frameworks: T_NONMICRO, level: 'mandatory',
+    frameworks: T_NONMICRO, level: ctx => ctx.entityType === 'sole_trader' ? 'optional' : 'mandatory',
     build: () => ({ status: 'complete', content: `<h3>Financial instruments</h3><p>The company holds only basic financial instruments, measured at amortised cost.</p>` }),
   },
   {
     id: 'contingencies', title: 'Contingencies',
     requirement: 'Contingent liabilities and assets not recognised in the balance sheet.',
-    frameworks: T_NONMICRO, level: 'mandatory',
+    frameworks: T_NONMICRO, level: ctx => ctx.entityType === 'sole_trader' ? 'optional' : 'mandatory',
     build: () => ({ status: 'complete', content: `<h3>Contingent liabilities</h3><p>There were no contingent liabilities at the balance sheet date.</p>` }),
   },
 
@@ -431,6 +434,31 @@ const NOTE_RULES: NoteRule[] = [
     requirement: 'Loans from (or to) partners/members, with terms and interest.',
     frameworks: T_ALL_FRS, entityTypes: PARTNERSHIP_LLP, level: 'conditional', trigger: tHasPartnerLoan,
     build: ctx => ({ status: 'needs-review', content: `<h3>Loans ${isLlpEntity(ctx.entityType) ? 'from members' : 'from partners'}</h3><p>Set out the amounts, interest rates and repayment terms of any loans ${isLlpEntity(ctx.entityType) ? 'from or to members' : 'from or to partners'}.</p>` }),
+  },
+  // ── Sole trader ──
+  {
+    id: 'sole-trader-tax', title: 'Taxation',
+    requirement: 'The business is not itself taxed — profits are taxed on the proprietor.',
+    frameworks: T_ALL_FRS, entityTypes: SOLE, level: 'mandatory',
+    build: staticNote(`<h3>Taxation</h3><p>As a sole trader, the business does not itself pay tax. The profit for the year is taxable on the proprietor personally through Self Assessment, along with their other income.</p>`),
+  },
+  {
+    id: 'capital-account', title: 'Capital Account',
+    requirement: "Movement on the proprietor's capital account.",
+    frameworks: T_ALL_FRS, entityTypes: SOLE, level: 'mandatory',
+    build: staticNote(`<h3>Capital account</h3><p>The movement on the proprietor's capital account is set out below: opening capital, capital introduced, profit for the year, and drawings, giving the closing capital.</p>`),
+  },
+  {
+    id: 'business-description', title: 'Business Description',
+    requirement: 'A short description of the business (often appreciated by lenders).',
+    frameworks: T_ALL_FRS, entityTypes: SOLE, level: 'optional',
+    build: staticNote(`<h3>Business description</h3><p>The principal activity of the business during the year was [ ].</p>`),
+  },
+  {
+    id: 'drawings', title: 'Drawings',
+    requirement: 'Drawings taken by the proprietor during the year.',
+    frameworks: T_ALL_FRS, entityTypes: SOLE, level: 'optional',
+    build: staticNote(`<h3>Drawings</h3><p>Drawings taken by the proprietor during the year were £[ ], analysed between cash £[ ], goods £[ ] and private expenses £[ ].</p>`),
   },
   // ── LLP SORP ──
   {

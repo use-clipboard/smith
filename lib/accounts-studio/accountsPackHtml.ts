@@ -153,8 +153,8 @@ function balanceSheet(bs: FinancialStatements['balanceSheet'], hasPrior: boolean
     ${row('Net assets', bs.netAssets, bs.netAssetsPrior, hasPrior, { bold: true, rule: true, notesCol: true })}`;
 
   let capital: string;
-  if (prof.isPartnershipFamily) {
-    const ref = prof.isLlp ? noteNo('members-interests') : noteNo('capital-accounts');
+  if (prof.ownerManaged) {
+    const ref = prof.isLlp ? noteNo('members-interests') : prof.isSoleTrader ? noteNo('capital-account') : noteNo('capital-accounts');
     if (comp) {
       // Partner data entered: show the reconciled capital and current account
       // totals, footing to partners'/members' funds.
@@ -284,36 +284,44 @@ function signatoryName(e: Engagement): string {
   return (e.signatory && e.signatory.trim()) || dirs[0] || e.preparedBy || '';
 }
 
-/** Entity-aware labels/flags for the pack (company vs LLP vs traditional partnership). */
+/** Entity-aware labels/flags for the pack (company / LLP / partnership / sole trader). */
 interface EntityProfile {
   isLlp: boolean;
   isPartnership: boolean;        // traditional partnership
-  isPartnershipFamily: boolean;  // LLP or traditional partnership
+  isSoleTrader: boolean;
+  isPartnershipFamily: boolean;  // LLP or traditional partnership (has partner data)
+  ownerManaged: boolean;         // partnership / LLP / sole trader — capital-account style
   registered: boolean;           // registered at Companies House (company / LLP)
-  ownerSingular: string;         // director / member / partner
+  hasStatutoryReport: boolean;   // directors' / members' report (company / LLP)
+  hasAuditExemption: boolean;    // s477 audit-exemption statement (company / LLP)
+  ownerSingular: string;         // director / member / partner / proprietor
   ownerPlural: string;
-  ownerTitle: string;            // Director / Member / Partner
+  ownerTitle: string;            // Director / Member / Partner / Proprietor
   ownerTitlePlural: string;
-  entityNoun: string;            // company / LLP / partnership
-  fundsLabel: string;            // Total equity / Members' funds / Partners' funds
-  capitalHeader: string;         // Capital and reserves / Capital and current accounts
-  infoTitle: string;             // Company / LLP / Partnership Information
+  entityNoun: string;            // company / LLP / partnership / business
+  fundsLabel: string;            // Total equity / Members' funds / Partners' funds / Proprietor's funds
+  capitalHeader: string;         // Capital and reserves / Capital and current accounts / Capital account
+  infoTitle: string;             // Company / LLP / Partnership / Business Information
 }
 function entityProfile(e: Engagement): EntityProfile {
   const isLlp = e.entityType === 'llp';
   const isPartnership = e.entityType === 'partnership';
+  const isSoleTrader = e.entityType === 'sole_trader';
   const fam = isLlp || isPartnership;
   return {
-    isLlp, isPartnership, isPartnershipFamily: fam,
-    registered: e.entityType !== 'partnership',
-    ownerSingular: isPartnership ? 'partner' : isLlp ? 'member' : 'director',
-    ownerPlural: isPartnership ? 'partners' : isLlp ? 'members' : 'directors',
-    ownerTitle: isPartnership ? 'Partner' : isLlp ? 'Member' : 'Director',
-    ownerTitlePlural: isPartnership ? 'Partners' : isLlp ? 'Members' : 'Directors',
-    entityNoun: isPartnership ? 'partnership' : isLlp ? 'LLP' : 'company',
-    fundsLabel: isPartnership ? "Partners' funds" : isLlp ? "Members' funds" : 'Total equity',
-    capitalHeader: fam ? 'Capital and current accounts' : 'Capital and reserves',
-    infoTitle: isPartnership ? 'Partnership Information' : isLlp ? 'LLP Information' : 'Company Information',
+    isLlp, isPartnership, isSoleTrader, isPartnershipFamily: fam,
+    ownerManaged: fam || isSoleTrader,
+    registered: !isPartnership && !isSoleTrader,
+    hasStatutoryReport: isLlp || (!fam && !isSoleTrader), // company or LLP
+    hasAuditExemption: isLlp || (!fam && !isSoleTrader),
+    ownerSingular: isPartnership ? 'partner' : isLlp ? 'member' : isSoleTrader ? 'proprietor' : 'director',
+    ownerPlural: isPartnership ? 'partners' : isLlp ? 'members' : isSoleTrader ? 'proprietor' : 'directors',
+    ownerTitle: isPartnership ? 'Partner' : isLlp ? 'Member' : isSoleTrader ? 'Proprietor' : 'Director',
+    ownerTitlePlural: isPartnership ? 'Partners' : isLlp ? 'Members' : isSoleTrader ? 'Proprietor' : 'Directors',
+    entityNoun: isPartnership ? 'partnership' : isLlp ? 'LLP' : isSoleTrader ? 'business' : 'company',
+    fundsLabel: isPartnership ? "Partners' funds" : isLlp ? "Members' funds" : isSoleTrader ? "Proprietor's funds" : 'Total equity',
+    capitalHeader: isSoleTrader ? 'Capital account' : fam ? 'Capital and current accounts' : 'Capital and reserves',
+    infoTitle: isPartnership ? 'Partnership Information' : isLlp ? 'LLP Information' : isSoleTrader ? 'Business Information' : 'Company Information',
   };
 }
 
@@ -364,17 +372,18 @@ function directorsReportBody(e: Engagement, isLlp: boolean): string {
   return body + signature;
 }
 
-function accountantsReportBody(e: Engagement, accountantsReport: string, accountantDetails: string, firmName: string): string {
+function accountantsReportBody(e: Engagement, accountantsReport: string, accountantDetails: string, firmName: string, prof: EntityProfile): string {
   const disc = e.disclosures.find(s => (s.id === 'accountants-report' || s.id === 'firm-accountants-report') && s.included !== false && s.content && s.content.trim());
   const custom = (disc?.content && disc.content.trim()) || (accountantsReport && accountantsReport.trim());
-  const isLlp = e.entityType === 'llp';
-  const officer = isLlp ? 'members' : 'director';
+  // Companies and LLPs have Companies Act duties; sole traders / partnerships don't.
+  const duties = prof.registered ? 'fulfil your duties under the Companies Act 2006' : 'fulfil your reporting obligations';
+  const who = prof.isSoleTrader ? 'proprietor' : prof.ownerPlural;
 
   const bodyHtml = custom
     ? `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">${custom}</div>`
     : `<div style="font-size:12.5px;line-height:1.6;color:#1e293b">
-        <p style="margin:0 0 10px">In order to assist you to fulfil your duties under the Companies Act 2006, we have prepared for your approval the financial statements of ${escapeHtml(e.companyName)} for the year ended ${longDate(e.periodEnd)}, which comprise the Income Statement, the Statement of Financial Position and the related notes, from the accounting records and the information and explanations you have given to us.</p>
-        <p style="margin:0 0 10px">This report is made solely to the ${officer} of ${escapeHtml(e.companyName)}, in accordance with the terms of our engagement letter. Our work has been undertaken so that we might state to the ${officer} those matters we have agreed to state to them in this report and for no other purpose.</p>
+        <p style="margin:0 0 10px">In order to assist you to ${duties}, we have prepared for your approval the financial statements of ${escapeHtml(e.companyName)} for the year ended ${longDate(e.periodEnd)}, which comprise the Income Statement, the Statement of Financial Position and the related notes, from the accounting records and the information and explanations you have given to us.</p>
+        <p style="margin:0 0 10px">This report is made solely to the ${who} of ${escapeHtml(e.companyName)}, in accordance with the terms of our engagement letter. Our work has been undertaken so that we might state to the ${who} those matters we have agreed to state in this report and for no other purpose.</p>
         <p style="margin:0 0 10px">We have not been instructed to carry out an audit or a review of the financial statements and consequently express no opinion on them.</p>
       </div>`;
 
@@ -392,10 +401,10 @@ function accountantsReportBody(e: Engagement, accountantsReport: string, account
 function sofpFooter(e: Engagement, prof: EntityProfile): string {
   const dir = signatoryName(e);
   const isLlp = prof.isLlp;
-  // Traditional partnerships aren't under the Companies Act — no s477 audit
-  // exemption statement, just approval by the partners.
+  // Partnerships and sole traders aren't under the Companies Act — no s477 audit
+  // exemption statement, just approval by the proprietor / partners.
   let statements = '';
-  if (!prof.isPartnership) {
+  if (prof.hasAuditExemption) {
     // The audit-exemption / responsibility statements are an editable section
     // ('balance-sheet-statements'); fall back to standard wording if absent.
     const disc = e.disclosures.find(s => s.id === 'balance-sheet-statements' && s.included !== false && s.content && s.content.trim());
@@ -424,14 +433,16 @@ function renderedNoteList(e: Engagement, excludeIds: Set<string>): Engagement['d
 function notesBody(e: Engagement, excludeIds: Set<string>, noteOverrides: Record<string, string> = {}): { html: string; hasNotes: boolean } {
   const notes = renderedNoteList(e, excludeIds);
   if (!notes.length) return { html: '', hasNotes: false };
+  const unregistered = e.entityType === 'partnership' || e.entityType === 'sole_trader';
   const desc = e.entityType === 'llp' ? 'a limited liability partnership'
     : e.entityType === 'partnership' ? 'a partnership'
+    : e.entityType === 'sole_trader' ? 'a sole trader business'
     : 'a private company, limited by shares';
-  const reg = e.entityType === 'partnership'
+  const reg = unregistered
     ? ''
     : `, registered in the United Kingdom${e.companyNumber ? `, registration number ${escapeHtml(e.companyNumber)}` : ''}`;
   const office = e.registeredOffice
-    ? `, ${e.entityType === 'partnership' ? 'trading from' : 'registered office'} ${escapeHtml(e.registeredOffice)}`
+    ? `, ${unregistered ? 'trading from' : 'registered office'} ${escapeHtml(e.registeredOffice)}`
     : '';
   const genInfo = `<div class="paper" style="margin-bottom:16px">
     <p style="font-size:12.5px;font-weight:700;color:#0f172a;margin:0 0 4px">General Information</p>
@@ -483,16 +494,16 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   parts.push(section('company-info', prof.infoTitle,
     sectionHead(e.companyName, prof.infoTitle, periodLine) + companyInfoBody(e, accountantDetails, firmName, prof)));
 
-  // 2. Director's / Members' Report — companies and LLPs only (a traditional
-  //    partnership prepares no statutory report). Omitted from filleted copies.
-  if (!filleted && !prof.isPartnership) {
+  // 2. Director's / Members' Report — companies and LLPs only (partnerships and
+  //    sole traders prepare no statutory report). Omitted from filleted copies.
+  if (!filleted && prof.hasStatutoryReport) {
     parts.push(section('directors-report', isLlp ? "Members' report" : "Director's report",
       sectionHead(e.companyName, isLlp ? "Members' Report" : "Director's Report", periodLine) + directorsReportBody(e, isLlp)));
   }
 
   // 3. Accountants' Report
   parts.push(section('accountants-report', "Accountants' report",
-    sectionHead(e.companyName, "Accountants' Report", periodLine) + accountantsReportBody(e, accountantsReport, accountantDetails, firmName)));
+    sectionHead(e.companyName, "Accountants' Report", periodLine) + accountantsReportBody(e, accountantsReport, accountantDetails, firmName, prof)));
 
   // 4. Income Statement (omitted from filleted filing copy)
   if (!filleted) {
@@ -539,6 +550,7 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
 
   // ── Cover ──
   const kicker = filleted ? 'Filleted Accounts for Filing'
+    : prof.isSoleTrader ? 'Unaudited Financial Statements'
     : prof.isPartnership ? 'Report of the Partners and Unaudited Financial Statements'
     : prof.isLlp ? 'Report of the Members and Unaudited Financial Statements'
     : 'Report of the Director and Unaudited Financial Statements';
