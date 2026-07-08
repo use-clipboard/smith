@@ -123,7 +123,7 @@ function ViewAllButton({ onClick }: { onClick: () => void }) {
 
 // ─── Panels ───────────────────────────────────────────────────────────────────
 
-export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
+export function TeamCapacityPanel({ rows, periodNoun = 'week' }: { rows: StaffRow[]; periodNoun?: string }) {
   const openProfile = useOpenProfile();
   const [showAll, setShowAll] = useState(false);
   const totalLogged = rows.reduce((s, r) => s + r.minutes, 0);
@@ -135,7 +135,7 @@ export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
     <GlassCard>
       <SectionHeader
         title="Team capacity"
-        subtitle="Logged vs contracted hours this week"
+        subtitle={`Logged vs contracted hours this ${periodNoun}`}
         right={
           <div className="flex items-center gap-2.5">
             {overflowing && <ViewAllButton onClick={() => setShowAll(true)} />}
@@ -176,7 +176,7 @@ export function TeamCapacityPanel({ rows }: { rows: StaffRow[] }) {
   );
 }
 
-export function StaffLeaderboard({ rows }: { rows: StaffRow[] }) {
+export function StaffLeaderboard({ rows, periodNoun = 'week' }: { rows: StaffRow[]; periodNoun?: string }) {
   const openProfile = useOpenProfile();
   const [showAll, setShowAll] = useState(false);
   const max = Math.max(1, ...rows.map(r => r.chargeablePence));
@@ -186,7 +186,7 @@ export function StaffLeaderboard({ rows }: { rows: StaffRow[] }) {
     <GlassCard>
       <SectionHeader
         title="Staff leaderboard"
-        subtitle="Chargeable value generated this week"
+        subtitle={`Chargeable value generated this ${periodNoun}`}
         right={
           <div className="flex items-center gap-2.5">
             {overflowing && <ViewAllButton onClick={() => setShowAll(true)} />}

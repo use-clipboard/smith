@@ -2,8 +2,10 @@
 // Pure functions over TimeEntry[] — no React, no side effects.
 
 import type { TimeEntry, TsStaff, TimeEntryType } from './types';
-import { weekDates, fmtWeekday } from './format';
+import { weekDates, fmtWeekday, addDays } from './format';
 import { TYPE_LABELS } from './palette';
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const BILLABLE: TimeEntryType = 'billable';
 
@@ -35,6 +37,11 @@ const recoveredValueOf = (e: TimeEntry): number =>
 export function inWeek(entries: TimeEntry[], anchorIso: string, userId?: string): TimeEntry[] {
   const days = new Set(weekDates(anchorIso));
   return entries.filter(e => days.has(e.date) && (!userId || e.userId === userId));
+}
+
+/** Entries within an inclusive ISO date range (yyyy-mm-dd compares lexically). */
+export function inRange(entries: TimeEntry[], from: string, to: string, userId?: string): TimeEntry[] {
+  return entries.filter(e => e.date >= from && e.date <= to && (!userId || e.userId === userId));
 }
 
 // ─── Scalar rollups ───────────────────────────────────────────────────────────
@@ -172,6 +179,43 @@ export function byDay(entries: TimeEntry[], anchorIso: string): DayBucket[] {
   return days.map(d => buckets[d]);
 }
 
+function addSegment(b: DayBucket, e: TimeEntry) {
+  if (e.type === 'billable') b.billable += e.minutes;
+  else if (e.type === 'non_billable') b.nonBillable += e.minutes;
+  else b.internal += e.minutes;
+  b.total += e.minutes;
+}
+
+/** Stacked activity buckets across an arbitrary range — one bar per day (for a
+ *  month view) or per month (for a year view). Empty buckets are kept so the
+ *  axis is continuous. */
+export function bucketActivity(entries: TimeEntry[], from: string, to: string, granularity: 'day' | 'month'): DayBucket[] {
+  const order: string[] = [];
+  const map = new Map<string, DayBucket>();
+
+  if (granularity === 'month') {
+    let y = +from.slice(0, 4), m = +from.slice(5, 7);
+    const ey = +to.slice(0, 4), em = +to.slice(5, 7);
+    let guard = 0;
+    while ((y < ey || (y === ey && m <= em)) && guard++ < 240) {
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      map.set(key, { date: key, label: MONTHS_SHORT[m - 1], billable: 0, nonBillable: 0, internal: 0, total: 0 });
+      order.push(key);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    for (const e of entries) { const b = map.get(e.date.slice(0, 7)); if (b) addSegment(b, e); }
+  } else {
+    let d = from, guard = 0;
+    while (d <= to && guard++ < 400) {
+      map.set(d, { date: d, label: String(+d.slice(-2)), billable: 0, nonBillable: 0, internal: 0, total: 0 });
+      order.push(d);
+      d = addDays(d, 1);
+    }
+    for (const e of entries) { const b = map.get(e.date); if (b) addSegment(b, e); }
+  }
+  return order.map(k => map.get(k)!);
+}
+
 // ─── Per-staff (leaderboard + capacity) ──────────────────────────────────────
 
 export interface StaffRow {
@@ -196,6 +240,26 @@ export function perStaff(entries: TimeEntry[], staff: TsStaff[], anchorIso: stri
       utilisation: utilisation(t.billable, s.weeklyCapacityHours),
       chargeablePence: t.chargeablePence,
       capacityMinutes: s.weeklyCapacityHours * 60,
+    };
+  });
+  return rows.sort((a, b) => b.chargeablePence - a.chargeablePence);
+}
+
+/** Per-staff rollup over an arbitrary date range. Capacity is the weekly
+ *  contracted hours scaled by how many weeks the range spans. */
+export function perStaffRange(entries: TimeEntry[], staff: TsStaff[], from: string, to: string, weeks: number): StaffRow[] {
+  const rows = staff.map(s => {
+    const own = inRange(entries, from, to, s.id);
+    const t = totals(own);
+    const capacityMinutes = s.weeklyCapacityHours * 60 * weeks;
+    return {
+      staff: s,
+      minutes: t.total,
+      billable: t.billable,
+      billablePct: t.billablePct,
+      utilisation: capacityMinutes ? t.billable / capacityMinutes : 0,
+      chargeablePence: t.chargeablePence,
+      capacityMinutes,
     };
   });
   return rows.sort((a, b) => b.chargeablePence - a.chargeablePence);
