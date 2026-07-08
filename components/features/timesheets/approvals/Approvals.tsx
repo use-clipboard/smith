@@ -105,6 +105,56 @@ export default function Approvals() {
     setNote('');
   }
 
+  // Lazily fetch entries for an expanded *reviewed* (approved) week — pending
+  // weeks are fetched eagerly above; reviewed ones only when opened.
+  useEffect(() => {
+    if (!expandedKey) return;
+    const r = reviewedRows.find(x => `${x.userId}__${x.weekStart}` === expandedKey);
+    if (!r || r.status !== 'approved') return;
+    if (weekEntries[expandedKey] || fetchedRef.current.has(expandedKey)) return;
+    if (r.userId === userId) { setWeekEntries(prev => ({ ...prev, [expandedKey]: inWeek(entries, r.weekStart, userId) })); return; }
+    fetchedRef.current.add(expandedKey);
+    let cancelled = false;
+    fetch(`/api/timesheets/week-entries?userId=${r.userId}&weekStart=${r.weekStart}`)
+      .then(res => (res.ok ? res.json() : { entries: [] }))
+      .then(d => { if (!cancelled) setWeekEntries(prev => ({ ...prev, [expandedKey]: (d.entries ?? []) as TimeEntry[] })); })
+      .catch(() => fetchedRef.current.delete(expandedKey));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedKey, reviewedRows, entries, userId]);
+
+  // Shared renderer for a week's entries with a per-entry adjust pencil.
+  const renderEntries = (key: string, ownerId: string, ownerName: string) => {
+    const ents = weekEntries[key];
+    return (
+      <div className="mt-2 space-y-0.5 rounded-xl border border-black/5 bg-black/[0.015] p-1.5">
+        {!ents && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">Loading…</p>}
+        {ents && ents.length === 0 && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">No entries this week.</p>}
+        {ents && ents.map(e => (
+          <div key={e.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/80">
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: TYPE_COLORS[e.type] }} />
+            <span className="w-11 shrink-0 text-[10.5px] tabular-nums text-[var(--text-muted)]">{fmtDateUK(e.date).slice(0, 5)}</span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">{e.taskTitle || e.activity || 'Work'}</p>
+              <p className="truncate text-[10px] text-[var(--text-muted)]">
+                {e.clientName || 'Internal'}{e.editedBy ? <span className="text-amber-600"> · adjusted</span> : null}
+              </p>
+            </div>
+            <span className="w-12 shrink-0 text-right text-[11.5px] font-semibold tabular-nums text-[var(--text-primary)]">{fmtDuration(e.minutes)}</span>
+            <span className="w-12 shrink-0 text-right text-[10.5px] tabular-nums text-[var(--text-muted)]">{e.type === 'billable' ? fmtGBPCompact(valueOf(e)) : '—'}</span>
+            <button
+              onClick={() => setEditing({ entry: e, ownerId, ownerName, key })}
+              className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] hover:bg-black/10 hover:text-[var(--accent)]"
+              aria-label="Adjust this entry"
+            >
+              <Pencil size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <GlassCard>
@@ -197,33 +247,7 @@ export default function Approvals() {
                       <ChevronDown size={12} className={`transition-transform ${expandedKey === key ? 'rotate-180' : ''}`} />
                       {expandedKey === key ? 'Hide entries' : `View & adjust ${ents ? `${ents.length} ` : ''}entries`}
                     </button>
-                    {expandedKey === key && (
-                      <div className="mt-2 space-y-0.5 rounded-xl border border-black/5 bg-black/[0.015] p-1.5">
-                        {!ents && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">Loading…</p>}
-                        {ents && ents.length === 0 && <p className="py-3 text-center text-[11px] text-[var(--text-muted)]">No entries this week.</p>}
-                        {ents && ents.map(e => (
-                          <div key={e.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/80">
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: TYPE_COLORS[e.type] }} />
-                            <span className="w-11 shrink-0 text-[10.5px] tabular-nums text-[var(--text-muted)]">{fmtDateUK(e.date).slice(0, 5)}</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">{e.taskTitle || e.activity || 'Work'}</p>
-                              <p className="truncate text-[10px] text-[var(--text-muted)]">
-                                {e.clientName || 'Internal'}{e.editedBy ? <span className="text-amber-600"> · adjusted</span> : null}
-                              </p>
-                            </div>
-                            <span className="w-12 shrink-0 text-right text-[11.5px] font-semibold tabular-nums text-[var(--text-primary)]">{fmtDuration(e.minutes)}</span>
-                            <span className="w-12 shrink-0 text-right text-[10.5px] tabular-nums text-[var(--text-muted)]">{e.type === 'billable' ? fmtGBPCompact(valueOf(e)) : '—'}</span>
-                            <button
-                              onClick={() => setEditing({ entry: e, ownerId: r.userId, ownerName: r.staff?.name ?? 'Team member', key })}
-                              className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] hover:bg-black/10 hover:text-[var(--accent)]"
-                              aria-label="Adjust this entry"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {expandedKey === key && renderEntries(key, r.userId, r.staff?.name ?? 'Team member')}
                   </div>
 
                   {isRejecting && (
@@ -250,25 +274,40 @@ export default function Approvals() {
           <div className="space-y-1.5">
             {reviewedRows.map(r => {
               const s = staffById.get(r.userId);
+              const key = `${r.userId}__${r.weekStart}`;
+              const canAdjust = r.status === 'approved';
               return (
-                <div key={`${r.userId}__${r.weekStart}`} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                  <Avatar name={s?.name ?? 'Team member'} avatarUrl={s?.avatarUrl} userId={s?.id} size={28} />
-                  {s?.id ? (
-                    <button
-                      type="button"
-                      onClick={() => openProfile(s.id, s.name)}
-                      className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
-                    >
-                      {s.name}
-                    </button>
-                  ) : (
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">Team member</span>
+                <div key={key}>
+                  <div className="flex items-center gap-3 rounded-xl px-2 py-2">
+                    <Avatar name={s?.name ?? 'Team member'} avatarUrl={s?.avatarUrl} userId={s?.id} size={28} />
+                    {s?.id ? (
+                      <button
+                        type="button"
+                        onClick={() => openProfile(s.id, s.name)}
+                        className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline transition-colors"
+                      >
+                        {s.name}
+                      </button>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--text-primary)]">Team member</span>
+                    )}
+                    <span className="text-[11px] text-[var(--text-muted)]">Week of {fmtDateUK(r.weekStart)}</span>
+                    {canAdjust && (
+                      <button
+                        onClick={() => setExpandedKey(k => (k === key ? null : key))}
+                        className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-[var(--accent)] hover:underline"
+                      >
+                        <ChevronDown size={12} className={`transition-transform ${expandedKey === key ? 'rotate-180' : ''}`} /> Adjust
+                      </button>
+                    )}
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                      {r.status === 'approved' ? <CheckCircle2 size={11} /> : <Send size={11} />}
+                      {r.status === 'approved' ? 'Approved' : 'Returned'}
+                    </span>
+                  </div>
+                  {canAdjust && expandedKey === key && (
+                    <div className="pl-9">{renderEntries(key, r.userId, s?.name ?? 'Team member')}</div>
                   )}
-                  <span className="text-[11px] text-[var(--text-muted)]">Week of {fmtDateUK(r.weekStart)}</span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.status === 'approved' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                    {r.status === 'approved' ? <CheckCircle2 size={11} /> : <Send size={11} />}
-                    {r.status === 'approved' ? 'Approved' : 'Returned'}
-                  </span>
                 </div>
               );
             })}
