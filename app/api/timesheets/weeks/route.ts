@@ -62,6 +62,37 @@ async function notifyApprovers(service: any, firmId: string, submitterId: string
   } catch { /* non-critical */ }
 }
 
+// Notify the approver that a week they'd already approved has been reopened
+// (the owner edited it, so it needs approving again). Falls back to admins if we
+// can't tell who approved it. Best-effort — never blocks the reopen.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function notifyReopen(service: any, firmId: string, submitterId: string, approverId: string | null, weekStart: string) {
+  try {
+    const { data: submitter } = await service.from('users').select('full_name, email').eq('id', submitterId).single();
+    const name = submitter?.full_name || submitter?.email || 'A team member';
+
+    let recipients: string[] = [];
+    if (approverId && approverId !== submitterId) {
+      recipients = [approverId];
+    } else {
+      const { data: admins } = await service.from('users').select('id').eq('firm_id', firmId).eq('role', 'admin');
+      recipients = (admins ?? []).map((a: { id: string }) => a.id).filter((id: string) => id !== submitterId);
+    }
+
+    const [y, m, d] = weekStart.split('-');
+    for (const rid of recipients) {
+      void createNotification({
+        userId: rid,
+        firmId,
+        type: 'timesheet_approval',
+        title: `Timesheet reopened: ${name}`,
+        body: `The approved week of ${d}-${m}-${y} was reopened and will need approving again.`,
+        data: { link: '/timesheets' },
+      });
+    }
+  } catch { /* non-critical */ }
+}
+
 // GET /api/timesheets/weeks → { available, weeks: WeekStatusRow[] }
 export async function GET() {
   const ctx = await getUserContext();
@@ -149,13 +180,23 @@ export async function POST(req: NextRequest) {
 
   if (action === 'reopen') {
     // Back to draft from ANY state, including approved — the owner edited the
-    // week (or reopened it manually) so it needs approving again.
+    // week (or reopened it manually) so it needs approving again. Read the row
+    // first so we can tell the approver if it had already been approved.
+    const { data: existing } = await service
+      .from('timesheet_week_status')
+      .select('status, reviewed_by')
+      .eq('user_id', targetUser).eq('week_start', weekStart).maybeSingle();
+
     const { error } = await service
       .from('timesheet_week_status')
       .delete()
       .eq('user_id', targetUser)
       .eq('week_start', weekStart);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    if (existing?.status === 'approved') {
+      void notifyReopen(service, ctx.firmId, targetUser, (existing.reviewed_by as string | null) ?? null, weekStart);
+    }
     return NextResponse.json({ ok: true, status: 'draft' });
   }
 
