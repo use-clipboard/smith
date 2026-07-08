@@ -926,6 +926,14 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
     setSteps(prev => prev.map(s => s.step_key === selectedStepKey ? { ...s, ...updates } : s));
   }
 
+  /** Set the default assignee on every team-member step at once. Client/any
+   *  steps are left untouched. Called from the "Apply to all team steps" link. */
+  function assignAllTeamSteps(assigneeId: string | null) {
+    setSteps(prev => prev.map(s =>
+      s.assignee_role === 'team_member' ? { ...s, default_assignee_id: assigneeId } : s
+    ));
+  }
+
   async function handleSave() {
     // edit-task mode skips name validation (the task title isn't being changed here)
     if (!isEditTaskMode && !name.trim()) { setError(isTaskMode ? 'Task title is required.' : 'Template name is required.'); return; }
@@ -1673,6 +1681,15 @@ export default function TemplateBuilder({ template, initialData, teamMembers, ex
                       <option value="">Unassigned</option>
                       {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name ?? m.email}</option>)}
                     </select>
+                    {steps.filter(s => s.assignee_role === 'team_member').length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => assignAllTeamSteps(selectedStep.default_assignee_id ?? null)}
+                        className="mt-1.5 text-xs text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        Apply this assignee to all team steps
+                      </button>
+                    )}
                   </div>
                 )}
 

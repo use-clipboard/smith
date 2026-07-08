@@ -634,6 +634,33 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
               ) : (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500 mb-4">Assign team members to each step. Client steps will be sent to the client.</p>
+
+                  {/* Assign-all shortcut — fills every non-client step at once */}
+                  {steps.filter(s => !s.is_client_step).length > 1 && (
+                    <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2.5 mb-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-indigo-900">Assign all steps to</p>
+                        <p className="text-xs text-indigo-500">Applies to every team step below. Client steps are unaffected.</p>
+                      </div>
+                      <select
+                        value=""
+                        onChange={e => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          setAssigneeMap(prev => {
+                            const next = { ...prev };
+                            steps.forEach(s => { if (!s.is_client_step) next[s.step_key] = id; });
+                            return next;
+                          });
+                        }}
+                        className="text-sm border border-indigo-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
+                      >
+                        <option value="">Choose a person…</option>
+                        {teamMembers.map(m => <option key={m.id} value={m.id}>{m.full_name ?? m.email}</option>)}
+                      </select>
+                    </div>
+                  )}
+
                   {steps.map(s => (
                     <div key={s.step_key} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
                       <div className="flex-1 min-w-0">

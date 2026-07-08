@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createClient } from '@/lib/supabase';
 import {
   RefreshCw, Loader2, ChevronRight, Trash2, XCircle,
   UserCheck, Check, Users, Building2,
@@ -674,39 +675,63 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
   const assigneeMode = !!assigneeId;
   const [statusTab, setStatusTab] = useState<'open' | 'complete'>('open');
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const tasksUrl = clientId ? `/api/tasks?client_id=${clientId}` : `/api/tasks?assignee_id=${assigneeId}`;
-        const [tasksRes, meRes, teamRes, chLinksRes] = await Promise.all([
-          fetch(tasksUrl),
-          fetch('/api/users/me'),
-          fetch('/api/users/team'),
-          // CH-deadline links are client-specific — only fetched in client mode.
-          clientId ? fetch(`/api/ch-secretarial/deadline-links?client_id=${clientId}`) : Promise.resolve(null),
-        ]);
-        if (tasksRes.ok) {
-          const d = await tasksRes.json();
-          setTasks(d.tasks ?? []);
-        }
-        if (meRes.ok) {
-          const d = await meRes.json();
-          setCurrentUserId(d.userId ?? '');
-          setCurrentUserRole(d.userRole === 'admin' ? 'admin' : 'staff');
-        }
-        if (teamRes.ok) {
-          const d = await teamRes.json();
-          setTeamMembers(d.members ?? []);
-        }
-        if (chLinksRes && chLinksRes.ok) {
-          const d = await chLinksRes.json() as { links?: Array<{ task_id: string }> };
-          setChLinkedTaskIds(new Set((d.links ?? []).map(l => l.task_id).filter(Boolean)));
-        }
-      } finally { setLoading(false); }
-    }
-    void load();
+  // `showSpinner` is only true for the initial load — realtime-triggered
+  // refreshes refetch silently so the list doesn't flash a spinner.
+  const load = useCallback(async ({ showSpinner = true }: { showSpinner?: boolean } = {}) => {
+    if (showSpinner) setLoading(true);
+    try {
+      const tasksUrl = clientId ? `/api/tasks?client_id=${clientId}` : `/api/tasks?assignee_id=${assigneeId}`;
+      const [tasksRes, meRes, teamRes, chLinksRes] = await Promise.all([
+        fetch(tasksUrl),
+        fetch('/api/users/me'),
+        fetch('/api/users/team'),
+        // CH-deadline links are client-specific — only fetched in client mode.
+        clientId ? fetch(`/api/ch-secretarial/deadline-links?client_id=${clientId}`) : Promise.resolve(null),
+      ]);
+      if (tasksRes.ok) {
+        const d = await tasksRes.json();
+        setTasks(d.tasks ?? []);
+      }
+      if (meRes.ok) {
+        const d = await meRes.json();
+        setCurrentUserId(d.userId ?? '');
+        setCurrentUserRole(d.userRole === 'admin' ? 'admin' : 'staff');
+      }
+      if (teamRes.ok) {
+        const d = await teamRes.json();
+        setTeamMembers(d.members ?? []);
+      }
+      if (chLinksRes && chLinksRes.ok) {
+        const d = await chLinksRes.json() as { links?: Array<{ task_id: string }> };
+        setChLinkedTaskIds(new Set((d.links ?? []).map(l => l.task_id).filter(Boolean)));
+      }
+    } finally { if (showSpinner) setLoading(false); }
   }, [clientId, assigneeId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Realtime: when a task or step changes for this firm (created, edited,
+  // reassigned, completed) refetch silently so a task created elsewhere — the
+  // client-page pill, the Tasks tab, a teammate — appears here without a manual
+  // page refresh. RLS scopes the stream to the firm; we refetch and re-filter
+  // client-side rather than reconcile individual rows. Mirrors TasksCountProvider.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const supabase = createClient();
+    const refreshDebounced = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => { void load({ showSpinner: false }); }, 300);
+    };
+    const channel = supabase
+      .channel('client-tasks-panel-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, refreshDebounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_steps' }, refreshDebounced)
+      .subscribe();
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [load]);
 
   const handleStepUpdate = useCallback(async (taskId: string, stepId: string, updates: Partial<TaskStep>) => {
     const r = await fetch(`/api/tasks/${taskId}/steps/${stepId}`, {
