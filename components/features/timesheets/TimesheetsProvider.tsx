@@ -55,6 +55,8 @@ interface TimesheetsContextValue {
   isWeekLocked: (weekStart: string) => boolean; // for the current user
   submitWeek: (weekStart: string) => void;
   withdrawWeek: (weekStart: string) => void;
+  /** Clear a week's status back to draft from any state (incl. approved). */
+  reopenWeek: (weekStart: string) => void;
   reviewWeek: (userId: string, weekStart: string, action: 'approve' | 'reject', note?: string) => void;
 
   timer: TimerState;
@@ -235,10 +237,29 @@ export default function TimesheetsProvider({
   entriesRef.current = entries;
   const weekStatusesRef = useRef(weekStatuses);
   weekStatusesRef.current = weekStatuses;
-  const weekLockedForMe = useCallback((dateIso: string): boolean => {
-    const st = weekStatusesRef.current[weekKey(userId, startOfWeek(dateIso))];
-    return st?.status === 'submitted' || st?.status === 'approved';
+  // Clear a week's status back to draft (from any state, incl. approved).
+  const reopenWeek = useCallback((weekStart: string) => {
+    const key = weekKey(userId, weekStart);
+    setWeekStatuses(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    fetch('/api/timesheets/weeks', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weekStart, action: 'reopen' }),
+    }).catch(() => { /* keep optimistic */ });
   }, [userId]);
+
+  // Approval is a checkpoint, not a freeze: editing a submitted/approved week
+  // reopens it to draft so the user is never blocked mid-week. They resubmit and
+  // the manager re-approves.
+  const reopenWeekIfNeeded = useCallback((dateIso: string) => {
+    const ws = startOfWeek(dateIso);
+    const st = weekStatusesRef.current[weekKey(userId, ws)]?.status;
+    if (st === 'submitted' || st === 'approved') reopenWeek(ws);
+  }, [userId, reopenWeek]);
 
   const timerRef = useRef(timer);
   timerRef.current = timer;
@@ -255,7 +276,7 @@ export default function TimesheetsProvider({
 
   // ── Entry CRUD ──────────────────────────────────────────────────────────────
   const addEntry = useCallback((e: Omit<TimeEntry, 'id'>): string | null => {
-    if (weekLockedForMe(e.date)) return null; // week submitted/approved — frozen
+    reopenWeekIfNeeded(e.date); // editing an approved/submitted week reopens it
     const optimistic: TimeEntry = { ...e, id: tmpId(), userId: e.userId };
     setEntries(prev => [optimistic, ...prev]);
     fetch('/api/timesheets/entries', {
@@ -280,11 +301,12 @@ export default function TimesheetsProvider({
       })
       .catch(() => setEntries(prev => prev.filter(x => x.id !== optimistic.id)));
     return optimistic.id;
-  }, [weekLockedForMe]);
+  }, [reopenWeekIfNeeded]);
 
   const updateEntry = useCallback((id: string, patch: Partial<TimeEntry>) => {
     const ent = entriesRef.current.find(x => x.id === id);
-    if (ent && (weekLockedForMe(ent.date) || (patch.date && weekLockedForMe(patch.date)))) return;
+    if (ent) reopenWeekIfNeeded(ent.date);
+    if (patch.date) reopenWeekIfNeeded(patch.date);
     setEntries(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
     if (id.startsWith('tmp-')) return; // will save with its create
     fetch(`/api/timesheets/entries/${id}`, {
@@ -292,16 +314,16 @@ export default function TimesheetsProvider({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     }).catch(() => { /* keep optimistic value */ });
-  }, [weekLockedForMe]);
+  }, [reopenWeekIfNeeded]);
 
   const deleteEntry = useCallback((id: string) => {
     const ent = entriesRef.current.find(x => x.id === id);
-    if (ent && weekLockedForMe(ent.date)) return;
+    if (ent) reopenWeekIfNeeded(ent.date);
     setEntries(prev => prev.filter(e => e.id !== id));
     // Still saving — remember to delete the real row once its POST resolves.
     if (id.startsWith('tmp-')) { pendingDeleteRef.current.add(id); return; }
     fetch(`/api/timesheets/entries/${id}`, { method: 'DELETE' }).catch(() => { /* already removed locally */ });
-  }, [weekLockedForMe]);
+  }, [reopenWeekIfNeeded]);
 
   // ── Timer ───────────────────────────────────────────────────────────────────
   const commitTimer = useCallback((t: TimerState) => {
@@ -549,7 +571,7 @@ export default function TimesheetsProvider({
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timer, elapsedMs,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
-    weekStatuses, refreshWeeks: loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
+    weekStatuses, refreshWeeks: loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,
@@ -558,7 +580,7 @@ export default function TimesheetsProvider({
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timer, elapsedMs,
     timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
-    weekStatuses, loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reviewWeek,
+    weekStatuses, loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
     addEntry, updateEntry, deleteEntry, scanForWork, acceptSuggestion, dismissSuggestion,

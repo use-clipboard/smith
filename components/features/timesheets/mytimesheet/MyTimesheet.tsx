@@ -59,7 +59,7 @@ function packLanes(items: TimeEntry[]): { entry: TimeEntry; lane: number; lanes:
 }
 
 export default function MyTimesheet() {
-  const { entries, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, weekStatuses, roundingMinutes } = useTimesheets();
+  const { entries, meId, updateEntry, weekStatusFor, submitWeek, withdrawWeek, reopenWeek, weekStatuses, roundingMinutes } = useTimesheets();
   const snap = Math.max(1, roundingMinutes);
   const [selectedDay, setSelectedDay] = useState(todayIso());
   const [editing, setEditing] = useState<TimeEntry | null>(null);
@@ -157,7 +157,10 @@ export default function MyTimesheet() {
   const days = weekDates(anchor);
   const weekStart = startOfWeek(anchor);
   const weekStatus = weekStatusFor(meId, weekStart);
-  const locked = weekStatus === 'submitted' || weekStatus === 'approved';
+  // Approval is a checkpoint, not a freeze — a submitted/approved week stays
+  // editable; editing it reopens it for re-approval (handled in the provider).
+  const locked = false;
+  const willReopen = weekStatus === 'submitted' || weekStatus === 'approved';
   weekLockedRef.current = locked;
 
   const myEntries = useMemo(() => entries.filter(e => e.userId === meId), [entries, meId]);
@@ -236,7 +239,7 @@ export default function MyTimesheet() {
           </div>
           <div>
             <p className="text-[13px] font-bold text-[var(--text-primary)]">
-              {weekStatus === 'approved' ? 'Week approved & locked'
+              {weekStatus === 'approved' ? 'Week approved'
                 : weekStatus === 'submitted' ? 'Submitted — awaiting approval'
                 : weekStatus === 'rejected' ? 'Changes requested — please review and resubmit'
                 : 'Week open for editing'}
@@ -244,13 +247,23 @@ export default function MyTimesheet() {
             <p className="text-[11px] text-[var(--text-muted)]">
               Week of {fmtDateUK(weekStart)} · {fmtHours(weekMinutes)} logged{weekNote ? ` · “${weekNote}”` : ''}
             </p>
+            {willReopen && (
+              <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                You can still add or edit time — doing so reopens this week for approval.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {weekStatus === 'draft' && <button onClick={() => submitWeek(weekStart)} className="btn-primary"><Send size={14} /> Submit for approval</button>}
           {weekStatus === 'submitted' && <button onClick={() => withdrawWeek(weekStart)} className="btn-secondary"><RotateCcw size={14} /> Withdraw</button>}
           {weekStatus === 'rejected' && <button onClick={() => submitWeek(weekStart)} className="btn-primary"><Send size={14} /> Resubmit</button>}
-          {weekStatus === 'approved' && <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600"><Lock size={13} /> Locked</span>}
+          {weekStatus === 'approved' && (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600"><CheckCircle2 size={13} /> Approved</span>
+              <button onClick={() => reopenWeek(weekStart)} className="btn-secondary"><RotateCcw size={14} /> Reopen</button>
+            </>
+          )}
         </div>
       </div>
 

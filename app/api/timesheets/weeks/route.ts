@@ -97,7 +97,9 @@ export async function GET() {
 
 const PostSchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  action: z.enum(['submit', 'withdraw', 'approve', 'reject']),
+  // 'reopen' clears the status back to draft from ANY state (incl. approved) —
+  // used when a user edits an already-approved week (approval is a checkpoint).
+  action: z.enum(['submit', 'withdraw', 'reopen', 'approve', 'reject']),
   userId: z.string().uuid().optional(),   // target user (admin review); defaults to self
   note: z.string().max(500).optional(),
 });
@@ -141,6 +143,18 @@ export async function POST(req: NextRequest) {
       .eq('user_id', targetUser)
       .eq('week_start', weekStart)
       .neq('status', 'approved');
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true, status: 'draft' });
+  }
+
+  if (action === 'reopen') {
+    // Back to draft from ANY state, including approved — the owner edited the
+    // week (or reopened it manually) so it needs approving again.
+    const { error } = await service
+      .from('timesheet_week_status')
+      .delete()
+      .eq('user_id', targetUser)
+      .eq('week_start', weekStart);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ ok: true, status: 'draft' });
   }
