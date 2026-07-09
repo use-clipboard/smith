@@ -9,6 +9,7 @@ import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { filletEligibility } from '@/lib/accounts-studio/statements';
+import { buildIxbrl, ddmmyyyyToIso, type IxbrlFramework } from '@/lib/accounts-studio/ixbrl';
 import { publishEngagement } from '../persistence';
 import { getFirmBranding, type FirmBranding } from '../branding';
 import type { Engagement } from '../types';
@@ -72,6 +73,33 @@ export default function StagePublish({
       downloadBlob(blob, fileName(engagement, suffix));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the PDF.');
+    } finally {
+      setBusyDoc(null);
+    }
+  }
+
+  // iXBRL spike — generate a draft FRC-tagged Inline XBRL file from the
+  // structured statements. Not yet filing-valid: run through the CH iXBRL test
+  // validation service before filing. See lib/accounts-studio/ixbrl.ts.
+  function downloadIxbrl() {
+    if (!engagement.statements) return;
+    setBusyDoc('ixbrl'); setError('');
+    try {
+      const ii = engagement.importInfo;
+      const framework: IxbrlFramework = /105/.test(engagement.framework) ? 'frs105' : 'frs102-1a';
+      const html = buildIxbrl({
+        companyName: engagement.companyName,
+        companyNumber: engagement.companyNumber,
+        periodStartIso: ii?.from ?? ddmmyyyyToIso(engagement.periodStart),
+        periodEndIso: ii?.to ?? ddmmyyyyToIso(engagement.periodEnd),
+        priorStartIso: ii?.priorFrom ?? null,
+        priorEndIso: ii?.priorTo ?? (engagement.comparativePeriod ? ddmmyyyyToIso(engagement.comparativePeriod) : null),
+        framework,
+        statements: engagement.statements,
+      });
+      downloadBlob(new Blob([html], { type: 'application/xhtml+xml' }), `iXBRL_${engagement.companyName.replace(/\s+/g, '_')}_${engagement.periodEnd}.html`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not generate iXBRL.');
     } finally {
       setBusyDoc(null);
     }
@@ -186,15 +214,23 @@ export default function StagePublish({
           )}
           {COMING_SOON.map(doc => {
             const Icon = doc.icon;
+            const isIxbrl = doc.id === 'ixbrl';
             return (
-              <div key={doc.id} className="flex items-center gap-3 px-6 py-3 opacity-60">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><Icon size={17} /></div>
+              <div key={doc.id} className={`flex items-center gap-3 px-6 py-3 ${isIxbrl ? '' : 'opacity-60'}`}>
+                <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${isIxbrl ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-400'}`}><Icon size={17} /></div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-[var(--text-primary)]">{doc.title}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{doc.description}</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">{isIxbrl ? 'FRC-tagged draft — validate via the CH iXBRL test service before filing.' : doc.description}</p>
                 </div>
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-500">{doc.format}</span>
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-amber-700">Soon</span>
+                {isIxbrl ? (
+                  <button onClick={downloadIxbrl} disabled={busyDoc !== null || !engagement.statements}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-50">
+                    {busyDoc === 'ixbrl' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download (beta)
+                  </button>
+                ) : (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-amber-700">Soon</span>
+                )}
               </div>
             );
           })}
