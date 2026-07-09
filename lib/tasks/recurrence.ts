@@ -133,8 +133,20 @@ export async function spawnNextRecurrence(
         position_y: s.position_y,
         status: 'not_started',
       })),
-    ).select('id, email_reminder_enabled');
+    ).select('id, email_reminder_enabled, is_client_step');
     if (stepErr) console.error('spawnNextRecurrence steps', stepErr);
+
+    // Mint a fresh client portal token for every cloned client step — without
+    // this the recurring occurrence's client steps have no working portal link
+    // (and their reminder emails would point at a dead URL). token + expires_at
+    // use the DB defaults (gen_random_bytes + now()+30 days), same as create.
+    const clientStepIds = (newSteps ?? []).filter((s: any) => s.is_client_step).map((s: any) => s.id);
+    if (clientStepIds.length > 0) {
+      const { error: tokenErr } = await supabase.from('task_client_tokens').insert(
+        clientStepIds.map((stepId: string) => ({ task_id: newTask.id, step_id: stepId, firm_id: firmId })),
+      );
+      if (tokenErr) console.error('spawnNextRecurrence client tokens', tokenErr);
+    }
 
     // Queue email reminders for the new occurrence's reminder-enabled steps.
     const reminderStepIds = (newSteps ?? []).filter((s: any) => s.email_reminder_enabled).map((s: any) => s.id);

@@ -674,6 +674,9 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
   // Open / Complete sub-tabs, instead of the client page's recurring/one-off grouping.
   const assigneeMode = !!assigneeId;
   const [statusTab, setStatusTab] = useState<'open' | 'complete'>('open');
+  // Client-mode grouping hides completed tasks by default so recurring
+  // occurrences and closed one-offs don't pile up. Toggle reveals the history.
+  const [showCompleted, setShowCompleted] = useState(false);
 
   // `showSpinner` is only true for the initial load — realtime-triggered
   // refreshes refetch silently so the list doesn't flash a spinner.
@@ -780,10 +783,14 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
     });
   }
 
-  const recurringTasks = sortByDue(tasks.filter(t => t.recurrence_type && t.recurrence_type !== 'once'));
+  // Hide completed tasks unless the user opts to show them.
+  const notDone        = (t: Task) => t.status !== 'complete';
+  const visible        = (arr: Task[]) => showCompleted ? arr : arr.filter(notDone);
+  const recurringTasks = visible(sortByDue(tasks.filter(t => t.recurrence_type && t.recurrence_type !== 'once')));
   const allOneOff      = tasks.filter(t => !t.recurrence_type || t.recurrence_type === 'once');
-  const chLinkedTasks  = sortByDue(allOneOff.filter(t => chLinkedTaskIds.has(t.id)));
-  const oneOffTasks    = sortByDue(allOneOff.filter(t => !chLinkedTaskIds.has(t.id)));
+  const chLinkedTasks  = visible(sortByDue(allOneOff.filter(t => chLinkedTaskIds.has(t.id))));
+  const oneOffTasks    = visible(sortByDue(allOneOff.filter(t => !chLinkedTaskIds.has(t.id))));
+  const completedCount = tasks.filter(t => t.status === 'complete').length;
   const isAdmin        = currentUserRole === 'admin';
 
   const commonRowProps = {
@@ -874,6 +881,26 @@ export default function ClientTasksPanel({ clientId, assigneeId }: Props) {
 
   return (
     <div className="space-y-5">
+
+      {/* Show/hide completed toggle — completed tasks are hidden by default. */}
+      {completedCount > 0 && (
+        <div className="flex justify-end -mb-1">
+          <button
+            onClick={() => setShowCompleted(v => !v)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 transition-colors"
+          >
+            <Check className="h-3.5 w-3.5" />
+            {showCompleted ? 'Hide' : 'Show'} completed ({completedCount})
+          </button>
+        </div>
+      )}
+
+      {/* All tasks done (and hidden) → gentle placeholder instead of a bare screen. */}
+      {recurringTasks.length === 0 && chLinkedTasks.length === 0 && oneOffTasks.length === 0 && (
+        <div className="glass rounded-xl py-10 text-center text-sm text-[var(--text-muted)]">
+          No open tasks{completedCount > 0 ? ' — all caught up.' : '.'}
+        </div>
+      )}
 
       {/* Recurring tasks */}
       {recurringTasks.length > 0 && (
