@@ -5,7 +5,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { createNotification } from '@/lib/notifications';
 import { logTaskUpdate, logTaskDeleted } from '@/lib/taskAudit';
 import { loadTaskTimeEntriesByTask } from '@/lib/tasks/taskTime';
-import type { RecurrenceType } from '@/types';
+import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
 
 function formatStatusLabel(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -135,12 +135,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
   }
 
-  // Handle recurrence: if completing a recurring task, spawn the next one
+  // Handle recurrence: if completing a recurring task, spawn the next one.
+  // spawnNextRecurrence re-checks recurrence_type and is idempotent per parent,
+  // so it's safe even if the step-completion path already spawned the child.
   if (parsed.data.status === 'complete' && existing.status !== 'complete') {
-    const recType = (parsed.data.recurrence_type ?? existing.recurrence_type) as RecurrenceType | null;
-    if (recType && recType !== 'once') {
-      await spawnNextRecurrence(supabase, params.id, ctx.firmId, ctx.userId);
-    }
+    await spawnNextRecurrence(supabase, params.id, ctx.firmId, ctx.userId);
   }
 
   return NextResponse.json({ task });
@@ -190,85 +189,4 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
 
   return NextResponse.json({ success: true });
-}
-
-// ── Recurrence helper ─────────────────────────────────────────────────────────
-
-async function spawnNextRecurrence(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  completedTaskId: string,
-  firmId: string,
-  userId: string
-) {
-  const { data: completed } = await supabase
-    .from('tasks')
-    .select('*, steps:task_steps(*), edges:task_step_edges(*)')
-    .eq('id', completedTaskId)
-    .single();
-
-  if (!completed) return;
-
-  const nextDue = computeNextDueDate(completed.due_date, completed.recurrence_type, completed.recurrence_interval_days);
-
-  const { data: newTask, error } = await supabase.from('tasks').insert({
-    firm_id: firmId,
-    client_id: completed.client_id,
-    template_id: completed.template_id,
-    created_by: userId,
-    title: completed.title,
-    description: completed.description,
-    status: 'not_started',
-    due_date: nextDue,
-    is_internal: completed.is_internal,
-    recurrence_type: completed.recurrence_type,
-    recurrence_interval_days: completed.recurrence_interval_days,
-    parent_task_id: completedTaskId,
-  }).select().single();
-
-  if (error || !newTask) { console.error('spawnNextRecurrence', error); return; }
-
-  if (completed.steps?.length > 0) {
-    await supabase.from('task_steps').insert(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      completed.steps.map((s: any) => ({
-        task_id: newTask.id,
-        // Carry template lineage forward so the "Custom" badge stays accurate
-        template_step_id: s.template_step_id ?? null,
-        step_key: s.step_key,
-        title: s.title,
-        description: s.description,
-        assignee_id: s.assignee_id,
-        is_client_step: s.is_client_step,
-        tool_module_id: s.tool_module_id,
-        email_reminder_enabled: s.email_reminder_enabled,
-        email_reminder_config: s.email_reminder_config,
-        position_x: s.position_x,
-        position_y: s.position_y,
-        status: 'not_started',
-      }))
-    );
-  }
-
-  if (completed.edges?.length > 0) {
-    await supabase.from('task_step_edges').insert(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      completed.edges.map((e: any) => ({ task_id: newTask.id, from_step_key: e.from_step_key, to_step_key: e.to_step_key, label: e.label }))
-    );
-  }
-}
-
-function computeNextDueDate(currentDue: string | null, recType: string, intervalDays: number | null): string | null {
-  const base = currentDue ? new Date(currentDue) : new Date();
-  switch (recType) {
-    case 'weekly':       base.setDate(base.getDate() + 7); break;
-    case 'bi-weekly':    base.setDate(base.getDate() + 14); break;
-    case 'four-weekly':  base.setDate(base.getDate() + 28); break;
-    case 'monthly':      base.setMonth(base.getMonth() + 1); break;
-    case 'quarterly':    base.setMonth(base.getMonth() + 3); break;
-    case 'annually':     base.setFullYear(base.getFullYear() + 1); break;
-    case 'custom':       base.setDate(base.getDate() + (intervalDays ?? 30)); break;
-    default:             return null;
-  }
-  return base.toISOString().split('T')[0];
 }

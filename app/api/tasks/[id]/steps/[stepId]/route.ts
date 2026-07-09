@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments, createNotification } from '@/lib/notifications';
+import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
 
 function formatStatusLabel(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -144,17 +145,36 @@ async function syncTaskStatus(
     taskStatus = 'in_progress';
   }
 
-  const updates: Record<string, unknown> = { status: taskStatus, updated_at: new Date().toISOString() };
-  if (taskStatus === 'complete') {
-    // Pull the task's current status so we only stamp completion metadata
-    // on the transition INTO 'complete' — re-saving an already-completed
-    // task (e.g. re-ticking a step) must not clobber the original actor.
-    const { data: cur } = await supabase.from('tasks').select('status').eq('id', taskId).maybeSingle();
-    if (cur?.status !== 'complete') {
-      updates.completed_at = new Date().toISOString();
-      if (actorUserId) updates.completed_by = actorUserId;
-    }
+  const now = new Date().toISOString();
+
+  if (taskStatus !== 'complete') {
+    await supabase.from('tasks').update({ status: taskStatus, updated_at: now }).eq('id', taskId).eq('firm_id', firmId);
+    return;
   }
 
-  await supabase.from('tasks').update(updates).eq('id', taskId).eq('firm_id', firmId);
+  // Transition INTO 'complete'. Do it as a single guarded update
+  // (`.neq('status', 'complete')`) so that concurrent step ticks — e.g. the
+  // "complete all" button firing every step at once — can't each flip the
+  // task and spawn a duplicate next occurrence. Only the update that actually
+  // performs the transition gets a row back; that one owns the recurrence.
+  const { data: flipped } = await supabase
+    .from('tasks')
+    .update({ status: 'complete', completed_at: now, completed_by: actorUserId ?? null, updated_at: now })
+    .eq('id', taskId)
+    .eq('firm_id', firmId)
+    .neq('status', 'complete')
+    .select('id, recurrence_type')
+    .maybeSingle();
+
+  // No row back → the task was already complete (a concurrent tick won the
+  // race, or this is a re-tick of a finished task). Nothing more to do.
+  if (!flipped) return;
+
+  // Recurring task just completed via the step path → roll forward. Previously
+  // recurrence only fired from the task PUT route, so tasks finished by ticking
+  // their last step never spawned the next occurrence. spawnNextRecurrence
+  // re-checks recurrence_type and is idempotent per parent.
+  if (flipped.recurrence_type && flipped.recurrence_type !== 'once') {
+    await spawnNextRecurrence(supabase, taskId, firmId, actorUserId ?? '');
+  }
 }
