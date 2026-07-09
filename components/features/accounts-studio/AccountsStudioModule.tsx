@@ -4,10 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Landmark, Sparkles, MessagesSquare, ChevronLeft, Plus, ArrowRight, Clock3,
   Building2, ScrollText, ShieldCheck, PanelRightClose, PanelRightOpen,
-  Loader2, Check, CloudOff, Search as SearchIcon,
+  Loader2, Check, CloudOff, Search as SearchIcon, Mail,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { type SelectedClient } from '@/components/ui/ClientSelector';
+import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import HistoryView from './HistoryView';
 import Stepper from './Stepper';
@@ -213,6 +214,8 @@ function CompanyHeader({ engagement: e, patch }: { engagement: Engagement; patch
           <HeaderField label="Entity" value={ENTITY_LABELS[e.entityType]} />
           <HeaderField label="Framework" value={e.framework} />
           <HeaderField label="Company no." value={e.companyNumber} />
+          <HeaderField label="Client ref" value={e.clientRef ?? '—'} />
+          <ClientEmailField engagement={e} />
           <HeaderField label="Prepared by" value={e.preparedBy} />
           <div>
             <p className="text-[10.5px] uppercase tracking-wide text-[var(--text-muted)]">Status</p>
@@ -232,6 +235,43 @@ function HeaderField({ label, value }: { label: string; value: string }) {
     <div className="min-w-0">
       <p className="text-[10.5px] uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
       <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{value || '—'}</p>
+    </div>
+  );
+}
+
+// Client email — fetched from the client record (not stored on the engagement).
+// Renders the shared ClientEmailLink: opens the Email Triage compose window with
+// the client pre-filled + allocated when triage is on, or a mailto: fallback.
+function ClientEmailField({ engagement: e }: { engagement: Engagement }) {
+  const [email, setEmail] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!e.clientId) { setEmail(null); setLoaded(true); return; }
+    setLoaded(false);
+    fetch(`/api/clients/${e.clientId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) { setEmail(d?.client?.contact_email ?? null); setLoaded(true); } })
+      .catch(() => { if (!cancelled) setLoaded(true); });
+    return () => { cancelled = true; };
+  }, [e.clientId]);
+
+  return (
+    <div className="min-w-0 max-w-[220px]">
+      <p className="text-[10.5px] uppercase tracking-wide text-[var(--text-muted)]">Client email</p>
+      {email && e.clientId ? (
+        <ClientEmailLink
+          email={email}
+          client={{ id: e.clientId, name: e.companyName, client_ref: e.clientRef, contact_email: email }}
+          className="flex max-w-full items-center gap-1 text-[13px] font-semibold text-[var(--accent)] hover:underline"
+        >
+          <Mail size={12} className="shrink-0" />
+          <span className="truncate">{email}</span>
+        </ClientEmailLink>
+      ) : (
+        <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{loaded ? '—' : '…'}</p>
+      )}
     </div>
   );
 }
