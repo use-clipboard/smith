@@ -6,7 +6,6 @@ import {
   Landmark, Users, BarChart3, SlidersHorizontal, Plus, Sparkles,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
-import { GlassCard } from '@/components/features/timesheets/shared/ui';
 import BillingOverview from './overview/BillingOverview';
 import InvoicesTab from './invoices/InvoicesTab';
 import NewInvoiceDrawer from './invoices/NewInvoiceDrawer';
@@ -15,6 +14,8 @@ import RecurringTab from './recurring/RecurringTab';
 import CreditControlTab from './credit/CreditControlTab';
 import PaymentsTab from './payments/PaymentsTab';
 import DirectDebitsTab from './directdebits/DirectDebitsTab';
+import ReportsTab from './reports/ReportsTab';
+import ClientsBillingTab from './clients/ClientsBillingTab';
 
 type BillingTab =
   | 'overview' | 'invoices' | 'recurring' | 'credit_control'
@@ -31,12 +32,6 @@ const TABS: { id: BillingTab; label: string; icon: typeof ReceiptText }[] = [
   { id: 'reports',        label: 'Reports',        icon: BarChart3 },
   { id: 'settings',       label: 'Settings',       icon: SlidersHorizontal },
 ];
-
-/** Which phase each not-yet-built tab is scheduled for (see docs/billing-module.md). */
-const PHASE_NOTES: Partial<Record<BillingTab, { phase: string; blurb: string }>> = {
-  clients:        { phase: 'Phase E', blurb: 'Per-client billing view — statements, balances, payment history and recurring lines in one place.' },
-  reports:        { phase: 'Phase E', blurb: 'MRR / ARR, aged debtors, debtor days, revenue by client / manager / service, and real recovery from Timesheets.' },
-};
 
 export default function BillingModule() {
   const [tab, setTab] = useState<BillingTab>('overview');
@@ -92,38 +87,13 @@ export default function BillingModule() {
       {tab === 'credit_control' && <CreditControlTab onGoToSettings={() => setTab('settings')} />}
       {tab === 'payments' && <PaymentsTab />}
       {tab === 'direct_debits' && <DirectDebitsTab />}
+      {tab === 'clients' && <ClientsBillingTab />}
+      {tab === 'reports' && <ReportsTab />}
       {tab === 'settings' && <BillingSettingsTab />}
-      {tab !== 'overview' && tab !== 'invoices' && tab !== 'settings' && tab !== 'recurring' && tab !== 'credit_control' && tab !== 'payments' && tab !== 'direct_debits' && (
-        <PhasePlaceholder tab={tab} />
-      )}
 
       {newInvoiceOpen && (
         <NewInvoiceDrawer onClose={() => setNewInvoiceOpen(false)} onSaved={handleSaved} />
       )}
     </ToolLayout>
-  );
-}
-
-function PhasePlaceholder({ tab }: { tab: BillingTab }) {
-  const note = PHASE_NOTES[tab];
-  const meta = TABS.find(t => t.id === tab);
-  const Icon = meta?.icon ?? ReceiptText;
-  return (
-    <GlassCard className="mx-auto max-w-xl text-center">
-      <div className="flex flex-col items-center gap-3 py-8">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)]">
-          <Icon size={26} />
-        </div>
-        <h3 className="text-lg font-bold text-[var(--text-primary)]">{meta?.label}</h3>
-        {note && (
-          <>
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-700 border border-amber-200">
-              {note.phase}
-            </span>
-            <p className="max-w-md text-sm text-[var(--text-muted)]">{note.blurb}</p>
-          </>
-        )}
-      </div>
-    </GlassCard>
   );
 }
