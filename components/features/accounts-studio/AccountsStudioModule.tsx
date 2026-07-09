@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  Landmark, Sparkles, MessagesSquare, ChevronLeft, Plus, ArrowRight, Clock3,
+  Landmark, Sparkles, MessagesSquare, ChevronLeft, ArrowLeft, Plus, ArrowRight, Clock3,
   Building2, ScrollText, ShieldCheck, PanelRightClose, PanelRightOpen,
   Loader2, Check, CloudOff, Search as SearchIcon, Mail,
 } from 'lucide-react';
@@ -148,12 +148,17 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
           <button onClick={() => setAssistantOpen(v => !v)} className="btn-secondary">
             {assistantOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} Assistant
           </button>
-          <button onClick={closeEngagement} className="btn-secondary">
-            <ChevronLeft size={14} /> All accounts
-          </button>
         </div>
       }
     >
+      {/* Back to history — standard app style */}
+      <button
+        onClick={closeEngagement}
+        className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] drop-shadow-sm transition-colors hover:text-[var(--text-primary)]"
+      >
+        <ArrowLeft size={13} /> Back to history
+      </button>
+
       {/* Company header */}
       <CompanyHeader engagement={engagement} patch={patch} />
 
@@ -377,9 +382,9 @@ function NewAccounts({ onStart, onBack }: { onStart: (e: Engagement) => Promise<
     <div className="space-y-5">
       <button
         onClick={onBack}
-        className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+        className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] drop-shadow-sm transition-colors hover:text-[var(--text-primary)]"
       >
-        <ChevronLeft size={13} /> Back to accounts
+        <ArrowLeft size={13} /> Back to history
       </button>
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">

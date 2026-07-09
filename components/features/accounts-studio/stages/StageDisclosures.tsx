@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
   ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
-  AlertTriangle, Info, ChevronDown, ShieldCheck,
+  AlertTriangle, Info, ChevronDown, ShieldCheck, Undo2, Redo2,
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
 import Tooltip from '@/components/ui/Tooltip';
@@ -55,6 +55,14 @@ export default function StageDisclosures({
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
 
+  // HTML fed to the editor's dangerouslySetInnerHTML. Captured at MOUNT only
+  // (keyed by section + mountKey) and NOT updated as the user types — otherwise
+  // React re-applies innerHTML on every keystroke and the caret jumps to the
+  // start. Live edits flow out via onEditorInput; deliberate resets (section
+  // switch, AI rewrite, restore, draft-all) bump mountKey to remount with fresh HTML.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const editorHtml = useMemo(() => section?.content || '<p></p>', [section?.id, mountKey]);
+
   // Rule-engine context for this engagement (drives the ＋ Add note library + badges).
   const dctx: DisclosureContext = {
     entityType: engagement.entityType,
@@ -100,19 +108,73 @@ export default function StageDisclosures({
     patch(e => ({ ...e, disclosures: e.disclosures.map(s => s.id === id ? updater(s) : s) }));
   }, [patch]);
 
+  // ── Undo / redo over the whole disclosures array ────────────────────────────
+  // A snapshot stack. Discrete actions (AI rewrite, add/remove note, include/
+  // exclude, mark complete, restore) push one step; a typing burst is coalesced
+  // into a single step via a debounce so undo doesn't go character-by-character.
+  const undoPast = useRef<DisclosureSection[][]>([]);
+  const undoFuture = useRef<DisclosureSection[][]>([]);
+  const [, bumpHist] = useState(0);
+  const bump = useCallback(() => bumpHist(n => n + 1), []);
+  const preEditRef = useRef<DisclosureSection[] | null>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushTyping = useCallback(() => {
+    if (typingTimer.current) { clearTimeout(typingTimer.current); typingTimer.current = null; }
+    if (preEditRef.current) {
+      undoPast.current.push(preEditRef.current);
+      preEditRef.current = null;
+      bump();
+    }
+  }, [bump]);
+
+  // Record the current disclosures, then apply a discrete change.
+  const commitDisclosures = useCallback((updater: (ds: DisclosureSection[]) => DisclosureSection[]) => {
+    flushTyping();
+    undoPast.current.push(engagement.disclosures);
+    undoFuture.current = [];
+    patch(e => ({ ...e, disclosures: updater(e.disclosures) }));
+    bump();
+  }, [engagement.disclosures, patch, flushTyping, bump]);
+
+  const canUndo = undoPast.current.length > 0 || preEditRef.current !== null;
+  const canRedo = undoFuture.current.length > 0;
+
+  const undo = useCallback(() => {
+    flushTyping();
+    const prev = undoPast.current.pop();
+    if (!prev) return;
+    undoFuture.current.push(engagement.disclosures);
+    patch(e => ({ ...e, disclosures: prev }));
+    setMountKey(k => k + 1);
+    bump();
+  }, [engagement.disclosures, patch, flushTyping, bump]);
+
+  const redo = useCallback(() => {
+    const next = undoFuture.current.pop();
+    if (!next) return;
+    undoPast.current.push(engagement.disclosures);
+    patch(e => ({ ...e, disclosures: next }));
+    setMountKey(k => k + 1);
+    bump();
+  }, [engagement.disclosures, patch, bump]);
+
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
+
   function toggleIncluded(id: string) {
-    updateSection(id, s => ({ ...s, included: s.included === false ? true : false }));
+    commitDisclosures(ds => ds.map(s => s.id === id ? { ...s, included: s.included === false ? true : false } : s));
   }
 
   function addNote(noteId: string) {
     const note = makeNote(noteId, dctx);
     if (!note) return;
-    patch(e => ({ ...e, disclosures: [...e.disclosures, note] }));
+    commitDisclosures(ds => [...ds, note]);
     setShowAddNote(false);
     selectSection(note.id);
   }
 
   function selectSection(id: string) {
+    flushTyping();
     setSelectedId(id);
     setExplanation(null);
     setShowHistory(false);
@@ -124,17 +186,21 @@ export default function StageDisclosures({
   // because we never re-set the editor's children after mount).
   function onEditorInput() {
     const html = editorRef.current?.innerHTML ?? '';
+    // Begin a typing burst — snapshot the pre-edit state once and drop the redo stack.
+    if (!preEditRef.current) { preEditRef.current = engagement.disclosures; undoFuture.current = []; bump(); }
     updateSection(section.id, s => ({ ...s, content: html, status: s.status === 'missing' ? 'draft' : s.status }));
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => flushTyping(), 700);
   }
 
   function replaceContent(html: string, versionLabel: string, newStatus?: SectionStatus) {
     if (editorRef.current) editorRef.current.innerHTML = html;
-    updateSection(section.id, s => ({
+    commitDisclosures(ds => ds.map(s => s.id === section.id ? {
       ...s,
       content: html,
       status: newStatus ?? s.status,
       history: [{ id: `v${s.history.length + 1}`, label: versionLabel, at: nowStamp(), content: html }, ...s.history],
-    }));
+    } : s));
     setMountKey(k => k + 1);
   }
 
@@ -157,7 +223,7 @@ export default function StageDisclosures({
   }
 
   function markReviewed() {
-    updateSection(section.id, s => ({ ...s, status: 'complete' }));
+    commitDisclosures(ds => ds.map(s => s.id === section.id ? { ...s, status: 'complete' } : s));
   }
 
   async function aiAction(mode: 'rewrite' | 'explain') {
@@ -215,6 +281,11 @@ export default function StageDisclosures({
   const draftTargets = includedSections.filter(s => s.status !== 'complete');
   async function draftAll() {
     if (!draftTargets.length || draftingAll) return;
+    // One undo step for the whole batch.
+    flushTyping();
+    undoPast.current.push(engagement.disclosures);
+    undoFuture.current = [];
+    bump();
     setDraftingAll({ done: 0, total: draftTargets.length });
     for (let i = 0; i < draftTargets.length; i++) {
       const t = draftTargets[i];
@@ -435,6 +506,9 @@ export default function StageDisclosures({
 
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-1 border-b border-black/5 px-3 py-2">
+          <ToolBtn onClick={undo} label="Undo" disabled={!canUndo}><Undo2 size={14} /></ToolBtn>
+          <ToolBtn onClick={redo} label="Redo" disabled={!canRedo}><Redo2 size={14} /></ToolBtn>
+          <div className="mx-1 h-5 w-px bg-black/10" />
           <ToolBtn onClick={() => format('bold')} label="Bold"><Bold size={14} /></ToolBtn>
           <ToolBtn onClick={() => format('italic')} label="Italic"><Italic size={14} /></ToolBtn>
           <ToolBtn onClick={() => format('insertUnorderedList')} label="List"><List size={14} /></ToolBtn>
@@ -507,7 +581,7 @@ export default function StageDisclosures({
               contentEditable
               suppressContentEditableWarning
               onInput={onEditorInput}
-              dangerouslySetInnerHTML={{ __html: section.content || '<p></p>' }}
+              dangerouslySetInnerHTML={{ __html: editorHtml }}
               className="studio-prose min-h-[200px] text-[13.5px] leading-relaxed text-[var(--text-primary)] outline-none"
             />
           ) : (
@@ -567,10 +641,10 @@ export default function StageDisclosures({
   );
 }
 
-function ToolBtn({ children, onClick, label }: { children: React.ReactNode; onClick: () => void; label: string }) {
+function ToolBtn({ children, onClick, label, disabled }: { children: React.ReactNode; onClick: () => void; label: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick} aria-label={label}
-      className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-black/[0.05] hover:text-[var(--text-primary)]">
+    <button onClick={onClick} aria-label={label} disabled={disabled}
+      className={`flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-black/[0.05] hover:text-[var(--text-primary)]'}`}>
       {children}
     </button>
   );
