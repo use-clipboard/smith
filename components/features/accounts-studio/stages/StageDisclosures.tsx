@@ -11,6 +11,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import { ENTITY_LABELS } from '../data';
 import { addableNotes, makeNote, noteRuleMeta, type DisclosureContext } from '@/lib/accounts-studio/disclosures';
 import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
+import { hasPlaceholders, countPlaceholders, highlightPlaceholders } from '@/lib/accounts-studio/placeholders';
 import type { Engagement, DisclosureSection, SectionStatus, NoteLevel } from '../types';
 
 const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; hint: string }> = {
@@ -69,6 +70,10 @@ export default function StageDisclosures({
   const includedSections = sections.filter(isIncluded);
   const completeCount = includedSections.filter(s => s.status === 'complete').length;
   const addable = addableNotes(dctx, sections.map(s => s.id));
+
+  // Notes that still contain a placeholder / "please confirm" the user must fill.
+  const notesNeedingInput = includedSections.filter(s => hasPlaceholders(s.content));
+  const currentPh = countPlaceholders(section?.content ?? '');
 
   // Deterministic "is a needed note missing?" check (see disclosureCheck.ts).
   const warnings = checkDisclosures(engagement);
@@ -343,6 +348,11 @@ export default function StageDisclosures({
                 <button onClick={() => selectSection(s.id)} className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left">
                   <SectionStatusDot status={s.status} />
                   <span className={`min-w-0 flex-1 truncate text-[12.5px] font-medium ${!included ? 'text-[var(--text-muted)] line-through' : active ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}>{s.title}</span>
+                  {included && hasPlaceholders(s.content) && (
+                    <Tooltip label="Has details to complete" side="top">
+                      <AlertTriangle size={11} className="shrink-0 text-amber-500" aria-label="Has details to complete" />
+                    </Tooltip>
+                  )}
                   {levelOf(s) && (
                     <Tooltip label={LEVEL_BADGE[levelOf(s)!].hint} side="top">
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${LEVEL_BADGE[levelOf(s)!].dot}`} aria-label={`${LEVEL_BADGE[levelOf(s)!].label} note`} />
@@ -400,6 +410,13 @@ export default function StageDisclosures({
               {levelOf(section) && (
                 <Tooltip label={LEVEL_BADGE[levelOf(section)!].hint} side="bottom">
                   <span aria-label={LEVEL_BADGE[levelOf(section)!].label} className={`shrink-0 cursor-help rounded-full px-2 py-0.5 text-[10px] font-bold ${LEVEL_BADGE[levelOf(section)!].cls}`}>{LEVEL_BADGE[levelOf(section)!].label}</span>
+                </Tooltip>
+              )}
+              {currentPh > 0 && (
+                <Tooltip label="Details you need to enter — highlighted in yellow in the preview" side="bottom">
+                  <span aria-label={`${currentPh} to complete`} className="inline-flex shrink-0 cursor-help items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+                    <AlertTriangle size={10} /> {currentPh} to complete
+                  </span>
                 </Tooltip>
               )}
             </div>
@@ -529,11 +546,17 @@ export default function StageDisclosures({
             </div>
             <div
               className="studio-prose studio-preview text-[12px] leading-relaxed text-slate-700"
-              dangerouslySetInnerHTML={{ __html: section.content || '<p style="color:#94a3b8">This disclosure has not been drafted yet.</p>' }}
+              dangerouslySetInnerHTML={{ __html: section.content ? highlightPlaceholders(section.content) : '<p style="color:#94a3b8">This disclosure has not been drafted yet.</p>' }}
             />
           </div>
         </div>
         <div className="mt-3">
+          {notesNeedingInput.length > 0 && (
+            <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] font-medium text-amber-700">
+              <AlertTriangle size={13} className="shrink-0" />
+              {notesNeedingInput.length} note{notesNeedingInput.length === 1 ? '' : 's'} still {notesNeedingInput.length === 1 ? 'has' : 'have'} details to complete — highlighted in yellow.
+            </div>
+          )}
           <button onClick={advance} className="btn-primary w-full justify-center">
             Continue to Final Review <ArrowRight size={15} />
           </button>

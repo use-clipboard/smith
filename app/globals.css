@@ -225,6 +225,18 @@ body {
   .studio-preview strong {
     color: #1e293b;
   }
+  /* Accounts Studio — yellow highlight for unfilled placeholders / prompts
+     ("£[ ]", "[describe…]", "please confirm") in the disclosure live preview. */
+  .studio-prose .as-ph,
+  mark.as-ph {
+    background: #fef08a;
+    color: #854d0e;
+    border-radius: 3px;
+    padding: 0 3px;
+    font-style: normal;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
 
   .input-base {
     width: 100%;
