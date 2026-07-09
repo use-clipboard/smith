@@ -1,17 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { renderTaskReminderEmail } from '@/lib/email';
 import { resolveTaskEmailSender } from '@/lib/tasks/taskEmailSender';
 import { buildRawMessage } from '@/lib/gmail';
 import { createNotification } from '@/lib/notifications';
+import { isAuthorisedCron } from '@/lib/cronAuth';
 import type { MergeTagContext } from '@/lib/emailMergeTags';
 
-// POST /api/tasks/reminders/process
-// Called by Vercel Cron — processes pending email reminders that are due.
-// Secured by CRON_SECRET header.
-export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
+// GET /api/tasks/reminders/process
+// Called by Vercel Cron (GET + Authorization: Bearer <CRON_SECRET>) — processes
+// pending email reminders that are due. Previously exported POST with a custom
+// header, which Vercel never invoked, so reminders never went out.
+export async function GET(req: Request) {
+  if (!isAuthorisedCron(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   }
 

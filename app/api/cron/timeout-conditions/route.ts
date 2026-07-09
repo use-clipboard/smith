@@ -1,17 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 import { renderTaskReminderEmail } from '@/lib/email';
 import { resolveTaskEmailSender } from '@/lib/tasks/taskEmailSender';
 import { buildRawMessage } from '@/lib/gmail';
 import { createNotification } from '@/lib/notifications';
+import { isAuthorisedCron } from '@/lib/cronAuth';
 
-// POST /api/cron/timeout-conditions
-// Runs daily via Vercel Cron. Finds task steps whose incoming timeout-condition
-// edge has elapsed without the step being completed, and sends a reminder email.
-// Secured by CRON_SECRET header.
-export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret');
-  if (secret !== process.env.CRON_SECRET) {
+// GET /api/cron/timeout-conditions
+// Runs daily via Vercel Cron (GET + Authorization: Bearer <CRON_SECRET>). Finds
+// task steps whose incoming timeout-condition edge has elapsed without the step
+// being completed, and sends a reminder email. Previously exported POST with a
+// custom header, which Vercel never invoked, so this never ran.
+export async function GET(req: Request) {
+  if (!isAuthorisedCron(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   }
 
