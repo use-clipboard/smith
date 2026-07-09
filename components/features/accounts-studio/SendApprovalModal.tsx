@@ -2,72 +2,33 @@
 
 import { useEffect, useState } from 'react';
 import { X, Send, Loader2, Mail } from 'lucide-react';
-import { generatePdfBlob } from '@/utils/pdfFromHtml';
-import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
-import { getFirmBranding } from './branding';
-import { sendForApproval } from './persistence';
+import { useSendApproval } from './useSendApproval';
 import type { Engagement } from './types';
 
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onloadend = () => resolve(String(r.result).split(',')[1] ?? '');
-    r.onerror = reject;
-    r.readAsDataURL(blob);
-  });
-}
-
 export default function SendApprovalModal({
-  engagement, onClose, onSent,
+  engagement, initialEmail = '', onClose, onSent,
 }: {
   engagement: Engagement;
+  initialEmail?: string;
   onClose: () => void;
   onSent: (e: Engagement) => void;
 }) {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [coverNote, setCoverNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [loadingEmail, setLoadingEmail] = useState(true);
+  const [loadingEmail, setLoadingEmail] = useState(!initialEmail);
+  const { send, sending, error, triageActive } = useSendApproval(engagement, (e) => { onSent(e); onClose(); });
 
-  // Prefill the recipient from the client record.
+  // Prefill the recipient from the client record (unless one was passed in).
   useEffect(() => {
     let cancelled = false;
-    if (!engagement.clientId) { setLoadingEmail(false); return; }
+    if (initialEmail || !engagement.clientId) { setLoadingEmail(false); return; }
     fetch(`/api/clients/${engagement.clientId}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (!cancelled) setEmail(d?.client?.contact_email ?? ''); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoadingEmail(false); });
     return () => { cancelled = true; };
-  }, [engagement.clientId]);
-
-  async function send() {
-    if (!email.trim()) { setError('Enter the client’s email address.'); return; }
-    setBusy(true); setError('');
-    try {
-      const branding = await getFirmBranding();
-      const s = engagement.statements;
-      const summaryLines = s ? [
-        { label: 'Turnover', value: `£${Math.round(s.profitLoss.turnoverTotal).toLocaleString('en-GB')}` },
-        { label: 'Profit for the year', value: `£${Math.round(s.profitLoss.netProfit).toLocaleString('en-GB')}` },
-        { label: 'Net assets', value: `£${Math.round(s.balanceSheet.netAssets).toLocaleString('en-GB')}` },
-      ] : [];
-      const html = buildAccountsPackHtml(engagement, {
-        firmName: branding.firmName, firmLogoUrl: branding.logoUrl,
-        accountantDetails: branding.accountantDetails, accountantsReport: branding.accountantsReport,
-        comparatives: engagement.showComparatives ?? true, amended: engagement.amended ?? false,
-      });
-      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true });
-      const pdfBase64 = await blobToBase64(blob);
-      await sendForApproval(engagement.id, { recipientEmail: email.trim(), coverNote: coverNote.trim() || null, pdfBase64, summaryLines });
-      onSent({ ...engagement, approvalStatus: 'sent', sentAt: new Date().toISOString() });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not send for approval.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  }, [engagement.clientId, initialEmail]);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -78,7 +39,11 @@ export default function SendApprovalModal({
           <button onClick={onClose} aria-label="Close" className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={16} /></button>
         </div>
         <div className="space-y-4 px-5 py-4">
-          <p className="text-[12.5px] text-[var(--text-muted)]">Emails {engagement.companyName}&apos;s accounts (PDF attached) to the client to review and sign. Sent from your connected Gmail.</p>
+          <p className="text-[12.5px] text-[var(--text-muted)]">
+            {triageActive
+              ? `Opens a draft email with ${engagement.companyName}'s accounts attached and the client allocated — review and send it from the compose window.`
+              : `Emails ${engagement.companyName}'s accounts (PDF attached) to the client from your connected Gmail.`}
+          </p>
           <div>
             <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-secondary)]">Client email</label>
             <input value={email} onChange={e => setEmail(e.target.value)} placeholder={loadingEmail ? 'Loading…' : 'client@example.com'} className="input-base w-full" />
@@ -90,9 +55,9 @@ export default function SendApprovalModal({
           {error && <p className="text-[12px] text-red-600">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 border-t border-black/5 px-5 py-3.5">
-          <button onClick={onClose} disabled={busy} className="btn-secondary">Cancel</button>
-          <button onClick={send} disabled={busy || !email.trim()} className="btn-primary disabled:opacity-50">
-            {busy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send for approval
+          <button onClick={onClose} disabled={sending} className="btn-secondary">Cancel</button>
+          <button onClick={() => send(email, coverNote.trim() || null)} disabled={sending || !email.trim()} className="btn-primary disabled:opacity-50">
+            {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {triageActive ? 'Open draft' : 'Send for approval'}
           </button>
         </div>
       </div>

@@ -14,6 +14,8 @@ import { buildIxbrl, ddmmyyyyToIso, type IxbrlFramework } from '@/lib/accounts-s
 import { publishEngagement, markSubmitted } from '../persistence';
 import { getFirmBranding, type FirmBranding } from '../branding';
 import SendApprovalModal from '../SendApprovalModal';
+import { useSendApproval } from '../useSendApproval';
+import { useModules } from '@/components/ui/ModulesProvider';
 import type { Engagement } from '../types';
 
 function ukDate(iso?: string): string {
@@ -50,8 +52,32 @@ export default function StagePublish({
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
   const [showSend, setShowSend] = useState(false);
+  const [prefillEmail, setPrefillEmail] = useState('');
+  const [sendBusy, setSendBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const status = engagement.approvalStatus;
+
+  const { isModuleActive } = useModules();
+  const { send: sendApproval, sending: sendingApproval } = useSendApproval(engagement, (e) => patch(() => e));
+
+  // Prefer opening the in-app compose window directly (like MTD IT): fetch the
+  // client's email; if Email Triage is on and we have it, hand straight to the
+  // compose toast. Otherwise fall back to the modal to collect the address.
+  async function startSend() {
+    setError('');
+    let email = '';
+    if (engagement.clientId) {
+      setSendBusy(true);
+      try { const r = await fetch(`/api/clients/${engagement.clientId}`); if (r.ok) email = (await r.json())?.client?.contact_email ?? ''; } catch { /* ignore */ }
+      setSendBusy(false);
+    }
+    if (isModuleActive('email-triage') && email) {
+      await sendApproval(email);
+    } else {
+      setPrefillEmail(email);
+      setShowSend(true);
+    }
+  }
 
   async function submitToCH() {
     setSubmitting(true); setError('');
@@ -293,9 +319,9 @@ export default function StagePublish({
 
           <div className="space-y-1.5">
             {/* Send / re-send */}
-            <button onClick={() => setShowSend(true)} disabled={!ready}
+            <button onClick={startSend} disabled={!ready || sendBusy || sendingApproval}
               className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Send size={15} /></div>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">{sendBusy || sendingApproval ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-[var(--text-primary)]">{status ? 'Re-send for approval' : 'Send for approval'}</p>
                 <p className="text-[11px] text-[var(--text-muted)]">Email the accounts to the client to sign</p>
@@ -318,6 +344,7 @@ export default function StagePublish({
         {showSend && (
           <SendApprovalModal
             engagement={engagement}
+            initialEmail={prefillEmail}
             onClose={() => setShowSend(false)}
             onSent={(e) => { patch(() => e); setShowSend(false); }}
           />
