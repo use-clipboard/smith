@@ -59,37 +59,45 @@ loaded with the FRC 2023 taxonomy), then correct the QNames in the one table in
 
 ---
 
-## Draft — CH test‑account request email
+## CH test‑account request email — SENT
+
+Sent to `xml@companieshouse.gov.uk` by Christos Marneros (Marneros Marcus & Co
+Limited). Written as the firm (the presenter) developing its own filing
+software. Awaiting reply with test presenter ID + authentication value.
 
 > **To:** xml@companieshouse.gov.uk
 > **Subject:** Request for XML Gateway test account — software accounts filing
 >
 > Dear Companies House XML team,
 >
-> We are developing software to file statutory accounts (iXBRL) electronically
-> and would like to request a **test account and test presenter credentials** for
-> the XML Gateway so we can develop and test accounts submissions against the
+> We are **Marneros Marcus & Co Limited**, a UK accountancy practice developing
+> our own software to file our clients' statutory accounts (iXBRL) electronically.
+> We would like to request a **test account and test presenter credentials** for
+> the XML Gateway, so we can develop and test accounts submissions against the
 > test environment.
 >
 > Our presenter/organisation details are:
 >
-> - **Organisation / presenter name:** [Firm name — e.g. Marneros Marcus & Co]
+> - **Organisation / presenter name:** Marneros Marcus & Co Limited
 > - **Contact name:** Christos Marneros
-> - **Address:** [Firm registered office address]
+> - **Address:** [Firm registered office / business address]
 > - **Email:** christos@marnerosmarcus.co.uk
 > - **Telephone:** [Firm telephone]
 >
 > We intend to file **small‑company and micro‑entity accounts** (FRS 102
-> Section 1A and FRS 105) tagged in iXBRL against the FRC 2023 taxonomy suite.
-> Could you please activate a test account and send the test presenter ID and
-> authentication value, along with any current schema/version notes for the
-> accounts submission service and access to the iXBRL accounts test validation
-> service.
+> Section 1A and FRS 105) tagged in iXBRL against the **FRC 2023 taxonomy suite**.
+> Please could you activate a test account and send the **test presenter ID and
+> authentication value**, along with any current **schema/version notes** for the
+> accounts submission service and access to the **iXBRL accounts test validation
+> service**.
 >
 > Many thanks,
 >
 > Christos Marneros
-> [Firm name]
+> Marneros Marcus & Co Limited
 
-_Fill the [bracketed] fields before sending. CH will activate the account and
-return test presenter credentials; test submissions use test flag = 1._
+_When CH reply with the test presenter ID + authentication value: download a
+sample iXBRL from Approve & Publish → iXBRL → Download (beta), run it through the
+CH iXBRL test validation service, then correct the CONCEPTS/entry‑point/dimension
+QNames in `lib/accounts-studio/ixbrl.ts` until it passes. Test submissions use
+test flag = 1._
