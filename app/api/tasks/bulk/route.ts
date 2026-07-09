@@ -27,10 +27,8 @@ const BulkSchema = z.object({
 
 // POST /api/tasks/bulk
 export async function POST(req: NextRequest) {
-  console.log('[bulk] handler called');
   try {
   const ctx = await getUserContext();
-  console.log('[bulk] ctx:', ctx ? `userId=${ctx.userId} role=${ctx.userRole} firmId=${ctx.firmId}` : 'null');
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
 
   // Admin only
@@ -50,7 +48,6 @@ export async function POST(req: NextRequest) {
   }
 
   const { rows, create_immediately } = parsed.data;
-  console.log(`[bulk] ${rows.length} rows, create_immediately=${create_immediately}`);
 
   // Use anon client (RLS) for reading — ensures firm scoping on templates
   // Use service client for writes — bypasses RLS for admin bulk operations
@@ -60,18 +57,15 @@ export async function POST(req: NextRequest) {
 
   // Pre-load all unique templates referenced in rows
   const uniqueTemplateIds = [...new Set(rows.map(r => r.template_id))];
-  console.log('[bulk] fetching templates:', uniqueTemplateIds);
   const { data: templates, error: tplError } = await supabaseRead
     .from('task_templates')
     .select('*, steps:task_template_steps(*), edges:task_template_edges(*)')
     .in('id', uniqueTemplateIds)
     .eq('firm_id', ctx.firmId);
 
-  console.log('[bulk] templates found:', templates?.length ?? 0, tplError ? `error: ${tplError.message}` : '');
-
   if (tplError || !templates) {
     console.error('POST /api/tasks/bulk — template load error', tplError);
-    return NextResponse.json({ error: `Failed to load templates: ${tplError?.message ?? 'no data'}` }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to load templates. Please try again.' }, { status: 500 });
   }
 
   if (templates.length === 0) {
@@ -153,7 +147,7 @@ export async function POST(req: NextRequest) {
 
       if (taskError || !task) {
         console.error(`POST /api/tasks/bulk row ${i + 1} task insert error`, taskError);
-        results.push({ label, success: false, error: taskError?.message ?? 'Insert failed' });
+        results.push({ label, success: false, error: 'Failed to create task' });
         continue;
       }
 
@@ -291,7 +285,8 @@ export async function POST(req: NextRequest) {
       results.push({ label, success: true, task_id: task.id });
 
     } catch (err) {
-      results.push({ label, success: false, error: String(err) });
+      console.error(`POST /api/tasks/bulk row ${i + 1} error`, err);
+      results.push({ label, success: false, error: 'Failed to create task' });
     }
   }
 
