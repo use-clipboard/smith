@@ -5,6 +5,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments } from '@/lib/notifications';
 import { logTaskCreated } from '@/lib/taskAudit';
 import { autoCreateChDeadlineLink } from '@/lib/createChDeadlineLink';
+import { syncManyStepReminders } from '@/lib/tasks/reminderProducer';
 import type { TaskStatus, RecurrenceType } from '@/types';
 
 const CreateTaskSchema = z.object({
@@ -227,8 +228,8 @@ export async function GET(req: NextRequest) {
 
   // Filter by assignee after the fact (any step assigned to this user)
   // Using `any` here because tasks is built as Record<string,unknown>[] for typing flexibility above
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filtered = assigneeId
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ? (tasks as any[]).filter((t: { steps?: { assignee_id: string | null }[] }) => t.steps?.some(s => s.assignee_id === assigneeId))
     : tasks;
 
@@ -352,6 +353,13 @@ export async function POST(req: NextRequest) {
           }))
         );
         if (tokenError) console.error('POST /api/tasks client tokens', tokenError);
+      }
+
+      // Queue email reminders for any step that has them enabled.
+      const reminderEnabledKeys = new Set(steps.filter(s => s.email_reminder_enabled).map(s => s.step_key));
+      const reminderStepIds = insertedSteps.filter(s => reminderEnabledKeys.has(s.step_key)).map(s => s.id);
+      if (reminderStepIds.length > 0) {
+        void syncManyStepReminders(supabase, reminderStepIds).catch(err => console.error('syncManyStepReminders', err));
       }
     }
   }

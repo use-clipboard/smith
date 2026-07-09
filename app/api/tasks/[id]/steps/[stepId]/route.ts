@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { notifyTaskStepAssignments, createNotification } from '@/lib/notifications';
 import { spawnNextRecurrence } from '@/lib/tasks/recurrence';
+import { syncStepReminders } from '@/lib/tasks/reminderProducer';
 
 function formatStatusLabel(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -107,6 +108,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string; 
 
   // Auto-update task status based on step statuses
   await syncTaskStatus(supabase, params.id, ctx.firmId, ctx.userId);
+
+  // Regenerate this step's email reminders — assignee, due date, config or
+  // status may have changed. Non-blocking: a reminder hiccup must never fail
+  // the step update.
+  void syncStepReminders(supabase, params.stepId).catch(err => console.error('syncStepReminders', err));
 
   return NextResponse.json({ step });
 }

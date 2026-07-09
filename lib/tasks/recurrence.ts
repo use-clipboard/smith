@@ -12,6 +12,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { syncManyStepReminders } from '@/lib/tasks/reminderProducer';
+
 export function computeNextDueDate(
   currentDue: string | null,
   recType: string,
@@ -83,7 +85,7 @@ export async function spawnNextRecurrence(
   if (error || !newTask) { console.error('spawnNextRecurrence', error); return; }
 
   if (completed.steps?.length > 0) {
-    const { error: stepErr } = await supabase.from('task_steps').insert(
+    const { data: newSteps, error: stepErr } = await supabase.from('task_steps').insert(
       completed.steps.map((s: any) => ({
         task_id: newTask.id,
         // Carry template lineage forward so the "Custom" badge stays accurate
@@ -109,8 +111,14 @@ export async function spawnNextRecurrence(
         position_y: s.position_y,
         status: 'not_started',
       })),
-    );
+    ).select('id, email_reminder_enabled');
     if (stepErr) console.error('spawnNextRecurrence steps', stepErr);
+
+    // Queue email reminders for the new occurrence's reminder-enabled steps.
+    const reminderStepIds = (newSteps ?? []).filter((s: any) => s.email_reminder_enabled).map((s: any) => s.id);
+    if (reminderStepIds.length > 0) {
+      await syncManyStepReminders(supabase, reminderStepIds);
+    }
   }
 
   if (completed.edges?.length > 0) {

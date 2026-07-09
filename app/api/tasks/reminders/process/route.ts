@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createServiceClient } from '@/lib/supabase-server';
 import { renderTaskReminderEmail } from '@/lib/email';
 import { resolveTaskEmailSender } from '@/lib/tasks/taskEmailSender';
 import { buildRawMessage } from '@/lib/gmail';
@@ -16,7 +16,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   }
 
-  const supabase = createClient();
+  // Service-role client: the cron has no user session, and RLS on
+  // task_email_reminders would otherwise hide every row.
+  const supabase = createServiceClient();
   const now = new Date().toISOString();
 
   // Fetch pending reminders due by now, joining through to the firm for custom email settings
