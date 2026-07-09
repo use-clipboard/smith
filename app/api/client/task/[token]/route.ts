@@ -18,7 +18,7 @@ export async function GET(
       expires_at,
       completed_at,
       task:tasks(
-        id, title, description,
+        id, title, description, deleted_at,
         client:clients(name, client_ref)
       ),
       step:task_steps(
@@ -32,6 +32,13 @@ export async function GET(
     .single();
 
   if (error || !data) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  // A soft-deleted task revokes its client links — the portal routes bypass RLS
+  // (service client), so this is the only thing stopping a live link to a
+  // deleted task. Treat as an invalid link.
+  if ((data.task as { deleted_at?: string | null } | null)?.deleted_at) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 

@@ -13,11 +13,15 @@ export async function POST(
   // Validate token
   const { data: tokenRow, error: tokenErr } = await supabase
     .from('task_client_tokens')
-    .select('id, expires_at, completed_at, task_id, step_id, firm_id, step:task_steps(client_can_upload)')
+    .select('id, expires_at, completed_at, task_id, step_id, firm_id, task:tasks(deleted_at), step:task_steps(client_can_upload)')
     .eq('token', token)
     .single();
 
   if (tokenErr || !tokenRow) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+  // Task soft-deleted → its client links are revoked.
+  if ((tokenRow.task as { deleted_at?: string | null } | null)?.deleted_at) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
   if (new Date(tokenRow.expires_at) < new Date()) {

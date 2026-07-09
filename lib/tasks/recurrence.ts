@@ -19,18 +19,40 @@ export function computeNextDueDate(
   recType: string,
   intervalDays: number | null,
 ): string | null {
-  const base = currentDue ? new Date(currentDue) : new Date();
+  // Anchor at UTC midnight so the arithmetic and the YYYY-MM-DD output never
+  // drift by a day across server timezones.
+  const base = currentDue ? new Date(`${currentDue}T00:00:00Z`) : new Date();
+  const y = base.getUTCFullYear();
+  const m = base.getUTCMonth();
+  const d = base.getUTCDate();
+
+  const addDays = (n: number): Date => {
+    const x = new Date(base.getTime());
+    x.setUTCDate(x.getUTCDate() + n);
+    return x;
+  };
+  // Add whole months, clamping the day to the target month's last day so
+  // e.g. 31 Jan + 1 month → 28 Feb (not 3 Mar) and 29 Feb + 12 months → 28 Feb.
+  const addMonths = (n: number): Date => {
+    const idx = m + n;
+    const ty = y + Math.floor(idx / 12);
+    const tm = ((idx % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(ty, tm, Math.min(d, lastDay)));
+  };
+
+  let next: Date;
   switch (recType) {
-    case 'weekly':       base.setDate(base.getDate() + 7); break;
-    case 'bi-weekly':    base.setDate(base.getDate() + 14); break;
-    case 'four-weekly':  base.setDate(base.getDate() + 28); break;
-    case 'monthly':      base.setMonth(base.getMonth() + 1); break;
-    case 'quarterly':    base.setMonth(base.getMonth() + 3); break;
-    case 'annually':     base.setFullYear(base.getFullYear() + 1); break;
-    case 'custom':       base.setDate(base.getDate() + (intervalDays ?? 30)); break;
+    case 'weekly':       next = addDays(7); break;
+    case 'bi-weekly':    next = addDays(14); break;
+    case 'four-weekly':  next = addDays(28); break;
+    case 'monthly':      next = addMonths(1); break;
+    case 'quarterly':    next = addMonths(3); break;
+    case 'annually':     next = addMonths(12); break; // +12 months clamps 29 Feb → 28 Feb
+    case 'custom':       next = addDays(intervalDays ?? 30); break;
     default:             return null;
   }
-  return base.toISOString().split('T')[0];
+  return next.toISOString().split('T')[0];
 }
 
 /**

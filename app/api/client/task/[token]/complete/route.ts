@@ -20,7 +20,7 @@ export async function POST(
     .select(`
       id, expires_at, completed_at,
       task_id, step_id, firm_id,
-      task:tasks(id, title, firm_id, created_by, email_sender_mode, email_sender_mailbox_id,
+      task:tasks(id, title, firm_id, created_by, email_sender_mode, email_sender_mailbox_id, deleted_at,
         client:clients(name)
       ),
       step:task_steps(id, title, assignee_id,
@@ -31,6 +31,11 @@ export async function POST(
     .single();
 
   if (tokenErr || !tokenRow) {
+    return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  }
+
+  // Task soft-deleted → its client links are revoked.
+  if ((tokenRow.task as { deleted_at?: string | null } | null)?.deleted_at) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 });
   }
 
