@@ -109,6 +109,7 @@ export default function HistoryView({
         buildAccountsPackHtml(e, {
           firmName: branding.firmName, firmLogoUrl: branding.logoUrl,
           accountantDetails: branding.accountantDetails, accountantsReport: branding.accountantsReport,
+          comparatives: e.showComparatives ?? true, amended: e.amended ?? false,
         }),
         undefined,
         { hardPageBreaks: true, pageNumbers: true },

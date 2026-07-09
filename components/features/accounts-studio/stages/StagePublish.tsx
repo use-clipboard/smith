@@ -66,6 +66,7 @@ export default function StagePublish({
         buildAccountsPackHtml(engagement, {
           filleted, firmName: branding.firmName, firmLogoUrl: branding.logoUrl,
           accountantDetails: branding.accountantDetails, accountantsReport: branding.accountantsReport,
+          comparatives: engagement.showComparatives ?? true, amended: engagement.amended ?? false,
         }),
         undefined,
         { hardPageBreaks: true, pageNumbers: true },

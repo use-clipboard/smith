@@ -22,6 +22,10 @@ export interface AccountsPackOptions {
   accountantDetails?: string | null;
   /** Firm house-style Accountants' Report wording (HTML). */
   accountantsReport?: string | null;
+  /** Show prior-year comparative columns. Defaults to true. */
+  comparatives?: boolean;
+  /** Mark as amended accounts — prefixes the cover title with "Amended". */
+  amended?: boolean;
 }
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
@@ -516,7 +520,7 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   // partner data has been entered (partnership / LLP only).
   const partnerComp: PartnerComputation | null = (prof.isPartnershipFamily && s && hasPartnerData(e.partners))
     ? computePartners(e.partners!, s.profitLoss.netProfit) : null;
-  const hasPrior = !!s?.hasPrior;
+  const hasPrior = !!s?.hasPrior && (opts.comparatives ?? e.showComparatives ?? true);
   const curYear = yearOf(e.periodEnd);
   const priorYear = e.comparativePeriod ? yearOf(e.comparativePeriod) : '';
   const periodLine = `For the year ended ${longDate(e.periodEnd)}`;
@@ -597,12 +601,13 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
   }
 
   // ── Cover ──
-  const kicker = filleted ? 'Filleted Accounts for Filing'
+  const amended = opts.amended ?? e.amended ?? false;
+  const kicker = (amended ? 'Amended ' : '') + (filleted ? 'Filleted Accounts for Filing'
     : prof.isCharity ? "Trustees' Annual Report and Unaudited Financial Statements"
     : prof.isSoleTrader || prof.isTrust ? 'Unaudited Financial Statements'
     : prof.isPartnership ? 'Report of the Partners and Unaudited Financial Statements'
     : prof.isLlp ? 'Report of the Members and Unaudited Financial Statements'
-    : 'Report of the Director and Unaudited Financial Statements';
+    : 'Report of the Director and Unaudited Financial Statements');
   const cover = `
     <div class="paper" style="min-height:1000px;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 48px">
       ${logo ? `<img src="${logo}" alt="" crossorigin="anonymous" style="max-height:64px;max-width:240px;object-fit:contain;margin:0 auto 30px" />` : ''}
@@ -612,8 +617,6 @@ export function buildAccountsPackHtml(e: Engagement, opts: AccountsPackOptions =
       <p style="font-size:13px;font-weight:700;color:#475569;margin:0 0 4px">Period of accounts</p>
       <p style="font-size:12.5px;color:#334155;margin:0">Start date: ${longDate(e.periodStart)}</p>
       <p style="font-size:12.5px;color:#334155;margin:2px 0 0">End date: ${longDate(e.periodEnd)}</p>
-      <p style="font-size:11px;color:#94a3b8;margin:24px 0 0">${escapeHtml(e.framework)}</p>
-      ${firmName ? `<div style="margin-top:40px;color:#475569;font-size:13px;font-weight:600">${escapeHtml(firmName)}</div>` : ''}
     </div>`;
 
   // ── Contents ──

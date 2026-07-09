@@ -170,6 +170,11 @@ export interface Engagement {
   comparativePeriod: string; // dd-mm-yyyy — end of prior year
   dormant: boolean;
   microEligible: boolean;
+  /** Show prior-year comparative columns. Defaults to true (undefined) when a
+   *  prior year exists. Set false to prepare the accounts without comparatives. */
+  showComparatives?: boolean;
+  /** Mark these as amended accounts (adds "Amended" to the cover/titles). */
+  amended?: boolean;
   preparedBy: string;
   reviewedBy: string;
   source: ImportSourceId | null;

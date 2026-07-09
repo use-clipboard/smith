@@ -69,13 +69,16 @@ function StatementTable({
 }
 
 export default function StatementsView({
-  statements, periodLabel, priorLabel = 'Prior yr',
+  statements, periodLabel, priorLabel = 'Prior yr', showComparatives = true,
 }: {
   statements: FinancialStatements;
   periodLabel: string;
   priorLabel?: string;
+  /** When false, hides the prior-year comparative column even if data exists. */
+  showComparatives?: boolean;
 }) {
-  const { profitLoss: pl, balanceSheet: bs, hasPrior } = statements;
+  const { profitLoss: pl, balanceSheet: bs } = statements;
+  const hasPrior = statements.hasPrior && showComparatives;
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
