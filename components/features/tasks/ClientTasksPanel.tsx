@@ -211,7 +211,7 @@ function ClientTaskRow({
   function toggleStep(stepId: string) {
     setSelectedStepIds(prev => {
       const next = new Set(prev);
-      next.has(stepId) ? next.delete(stepId) : next.add(stepId);
+      if (next.has(stepId)) next.delete(stepId); else next.add(stepId);
       return next;
     });
   }
@@ -234,7 +234,7 @@ function ClientTaskRow({
         <button
           onClick={() => setExpanded(v => {
             const next = !v;
-            next ? expandedTaskIds.add(task.id) : expandedTaskIds.delete(task.id);
+            if (next) expandedTaskIds.add(task.id); else expandedTaskIds.delete(task.id);
             if (!next) exitReassignMode();
             return next;
           })}
