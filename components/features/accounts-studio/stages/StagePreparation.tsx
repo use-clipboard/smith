@@ -57,11 +57,12 @@ function rebuildDisclosures(e: Engagement, framework: string, size: CompanySize)
 }
 
 export default function StagePreparation({
-  engagement, patch, advance,
+  engagement, patch, advance, readOnly = false,
 }: {
   engagement: Engagement;
   patch: (u: (e: Engagement) => Engagement) => void;
   advance: () => void;
+  readOnly?: boolean;
 }) {
   const stmts = engagement.statements;
 
@@ -138,7 +139,8 @@ export default function StagePreparation({
             <select
               value={engagement.framework}
               onChange={e => changeFramework(e.target.value)}
-              className="w-full cursor-pointer rounded-xl border border-black/10 bg-white px-3 py-2 text-[13px] font-semibold text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)]"
+              disabled={readOnly}
+              className="w-full cursor-pointer rounded-xl border border-black/10 bg-white px-3 py-2 text-[13px] font-semibold text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {frameworkOptions(engagement.entityType, engagement.framework).map(f => <option key={f} value={f}>{f}</option>)}
             </select>
@@ -177,13 +179,14 @@ export default function StagePreparation({
             label="Comparative figures"
             sub={stmts.hasPrior ? 'Show the prior-year column in the statements' : 'No prior year found in the import'}
             checked={showComparatives && stmts.hasPrior}
-            disabled={!stmts.hasPrior}
+            disabled={!stmts.hasPrior || readOnly}
             onChange={toggleComparatives}
           />
           <OptionToggle
             label="Amended accounts"
             sub={'Mark as amended — adds “Amended” to the cover'}
             checked={amended}
+            disabled={readOnly}
             onChange={toggleAmended}
           />
         </div>

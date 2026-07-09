@@ -46,14 +46,19 @@ export function SectionStatusDot({ status }: { status: SectionStatus }) {
   return <Circle size={13} className={map.missing} />;
 }
 
-const STATUS_BADGE: Record<'draft' | 'progress' | 'ready' | 'filed', string> = {
-  draft:    'bg-slate-100 text-slate-600',
-  progress: 'bg-[var(--accent)]/10 text-[var(--accent)]',
-  ready:    'bg-sky-100 text-sky-700',
-  filed:    'bg-emerald-100 text-emerald-700',
+type BadgeTone = 'draft' | 'progress' | 'ready' | 'filed' | 'sent' | 'approved' | 'rejected' | 'submitted';
+const STATUS_BADGE: Record<BadgeTone, string> = {
+  draft:     'bg-slate-100 text-slate-600',
+  progress:  'bg-[var(--accent)]/10 text-[var(--accent)]',
+  ready:     'bg-sky-100 text-sky-700',
+  filed:     'bg-emerald-100 text-emerald-700',
+  sent:      'bg-sky-100 text-sky-700',
+  approved:  'bg-violet-100 text-violet-700',
+  rejected:  'bg-amber-100 text-amber-700',
+  submitted: 'bg-emerald-100 text-emerald-700',
 };
 
-export function EngagementStatusBadge({ tone, label }: { tone: 'draft' | 'progress' | 'ready' | 'filed'; label: string }) {
+export function EngagementStatusBadge({ tone, label }: { tone: BadgeTone; label: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold ${STATUS_BADGE[tone]}`}>{label}</span>;
 }
 

@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
   Landmark, Plus, Search, X, FolderOpen, Download, Trash2, Loader2, Sparkles,
-  User as UserIcon, Filter, SlidersHorizontal, AlertCircle,
+  User as UserIcon, Filter, SlidersHorizontal, AlertCircle, Copy,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -14,7 +14,7 @@ import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { getFirmBranding } from './branding';
 import { EngagementStatusBadge } from './primitives';
 import { ENTITY_LABELS, engagementStatus, stageProgress, STAGES, type AccountsHistoryItem } from './data';
-import { listEngagements, deleteEngagement } from './persistence';
+import { listEngagements, deleteEngagement, copyEngagement } from './persistence';
 import type { Engagement } from './types';
 
 interface ColumnConfig {
@@ -117,6 +117,18 @@ export default function HistoryView({
       downloadBlob(blob, `Statutory_Accounts_${e.companyName.replace(/\s+/g, '_')}_${e.periodEnd}.pdf`);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Download failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function copy(e: Engagement) {
+    setBusyId(e.id);
+    try {
+      const fresh = await copyEngagement(e);
+      onOpen(fresh); // open the new draft so the user can amend + resubmit
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not copy these accounts.');
     } finally {
       setBusyId(null);
     }
@@ -359,6 +371,11 @@ export default function HistoryView({
                             <button onClick={() => canDownload && downloadPack(e)} disabled={!canDownload || isBusy} aria-label="Download pack"
                               className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-40">
                               {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Copy to a new draft (for amended accounts)">
+                            <button onClick={() => copy(e)} disabled={isBusy} aria-label="Copy" className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--accent-light)] hover:text-[var(--accent)] disabled:opacity-40">
+                              {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}
                             </button>
                           </Tooltip>
                           <Tooltip label="Delete">

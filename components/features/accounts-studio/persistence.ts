@@ -76,6 +76,73 @@ export async function deleteEngagement(id: string): Promise<void> {
   await readJson(r, 'Delete failed.');
 }
 
+// ── Client approval + submission ─────────────────────────────────────────────
+
+export interface SendApprovalInput {
+  recipientEmail: string;
+  coverNote?: string | null;
+  pdfBase64?: string | null;
+  summaryLines?: { label: string; value: string }[] | null;
+  /** Email Triage on → skip Gmail; return the rendered email for the compose window. */
+  prepareOnly?: boolean;
+}
+export interface SendApprovalResult {
+  ok: boolean;
+  approvalUrl: string;
+  senderEmail?: string;
+  subject?: string;
+  htmlBody?: string;
+  attachmentFilename?: string;
+}
+
+/** Send the accounts to the client for approval (email via the preparer's Gmail). */
+export async function sendForApproval(engagementId: string, input: SendApprovalInput): Promise<SendApprovalResult> {
+  const r = await fetch(`${BASE}/${engagementId}/send-approval`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient_email: input.recipientEmail,
+      cover_note: input.coverNote ?? null,
+      pdf_base64: input.pdfBase64 ?? null,
+      summary_lines: input.summaryLines ?? null,
+      prepare_only: input.prepareOnly ?? false,
+    }),
+  });
+  return readJson<SendApprovalResult>(r, 'Could not send for approval.');
+}
+
+/** Mark the accounts as submitted to Companies House (server-authoritative). */
+export async function markSubmitted(engagementId: string): Promise<Engagement> {
+  const r = await fetch(`${BASE}/${engagementId}/mark-submitted`, { method: 'POST' });
+  const d = await readJson<{ engagement: EngagementDto }>(r, 'Could not mark as submitted.');
+  return { ...d.engagement.data, id: d.engagement.id };
+}
+
+/**
+ * Copy the accounts into a fresh draft — for preparing amended accounts. Clones
+ * everything up to the point of sending to the client, resetting the approval /
+ * submission / publish state and stage progress. Returns the new engagement.
+ */
+export async function copyEngagement(e: Engagement): Promise<Engagement> {
+  const clone: Engagement = {
+    ...structuredClone(e),
+    id: '',
+    published: false,
+    publishedOutputId: null,
+    approvalStatus: undefined,
+    sentAt: undefined,
+    approvedAt: undefined,
+    approvedByName: undefined,
+    rejectedAt: undefined,
+    changesNote: undefined,
+    submittedAt: undefined,
+    stageStatus: {
+      import: 'complete', preparation: 'complete', disclosures: 'active',
+      'final-review': 'upcoming', publish: 'upcoming',
+    },
+  };
+  return createEngagement(clone);
+}
+
 /** Record the published statutory accounts against the client record. Returns the outputs.id. */
 export async function publishEngagement(e: Engagement): Promise<string> {
   const s = e.statements;

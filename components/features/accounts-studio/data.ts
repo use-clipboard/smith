@@ -140,7 +140,7 @@ export function buildEngagement(input: NewEngagementInput): Engagement {
 }
 
 // ─── History list ──────────────────────────────────────────────────────────
-export type EngagementStatusTone = 'draft' | 'progress' | 'ready' | 'filed';
+export type EngagementStatusTone = 'draft' | 'progress' | 'ready' | 'filed' | 'sent' | 'approved' | 'rejected' | 'submitted';
 
 export interface AccountsHistoryItem {
   id: string;
@@ -151,8 +151,14 @@ export interface AccountsHistoryItem {
   mine: boolean;
 }
 
-/** Derive a headline status for the history list from stage progress. */
+/** Derive the headline status for the history list. The client-approval /
+ *  submission lifecycle (furthest point in the chain) takes precedence over the
+ *  stage-based status once the accounts have been sent to the client. */
 export function engagementStatus(e: Engagement): { label: string; tone: EngagementStatusTone } {
+  if (e.approvalStatus === 'submitted') return { label: 'Submitted', tone: 'submitted' };
+  if (e.approvalStatus === 'approved')  return { label: 'Approved',   tone: 'approved' };
+  if (e.approvalStatus === 'rejected')  return { label: 'Changes requested', tone: 'rejected' };
+  if (e.approvalStatus === 'sent')      return { label: 'Sent to client', tone: 'sent' };
   if (e.published) return { label: 'Filed', tone: 'filed' };
   const stages: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
   const allButPublishDone = stages.slice(0, stages.length - 1).every(s => e.stageStatus[s] === 'complete');

@@ -21,11 +21,12 @@ const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; 
 };
 
 export default function StageDisclosures({
-  engagement, patch, advance,
+  engagement, patch, advance, readOnly = false,
 }: {
   engagement: Engagement;
   patch: (u: (e: Engagement) => Engagement) => void;
   advance: () => void;
+  readOnly?: boolean;
 }) {
   const sections = engagement.disclosures;
   const [selectedId, setSelectedId] = useState(sections[0]?.id ?? '');
@@ -97,8 +98,9 @@ export default function StageDisclosures({
   };
 
   const updateSection = useCallback((id: string, updater: (s: DisclosureSection) => DisclosureSection) => {
+    if (readOnly) return;
     patch(e => ({ ...e, disclosures: e.disclosures.map(s => s.id === id ? updater(s) : s) }));
-  }, [patch]);
+  }, [patch, readOnly]);
 
   // ── Undo / redo over the whole disclosures array ────────────────────────────
   // A snapshot stack. Discrete actions (AI rewrite, add/remove note, include/
@@ -122,12 +124,13 @@ export default function StageDisclosures({
 
   // Record the current disclosures, then apply a discrete change.
   const commitDisclosures = useCallback((updater: (ds: DisclosureSection[]) => DisclosureSection[]) => {
+    if (readOnly) return;
     flushTyping();
     undoPast.current.push(engagement.disclosures);
     undoFuture.current = [];
     patch(e => ({ ...e, disclosures: updater(e.disclosures) }));
     bump();
-  }, [engagement.disclosures, patch, flushTyping, bump]);
+  }, [engagement.disclosures, patch, flushTyping, bump, readOnly]);
 
   const canUndo = undoPast.current.length > 0 || preEditRef.current !== null;
   const canRedo = undoFuture.current.length > 0;
@@ -229,6 +232,7 @@ export default function StageDisclosures({
   }
 
   async function aiAction(mode: 'rewrite' | 'explain') {
+    if (readOnly && mode === 'rewrite') return;
     setAiBusy(mode);
     if (mode === 'explain') setExplanation(null);
     try {
@@ -282,7 +286,7 @@ export default function StageDisclosures({
   // Draft every included note that isn't complete yet, one at a time.
   const draftTargets = includedSections.filter(s => s.status !== 'complete');
   async function draftAll() {
-    if (!draftTargets.length || draftingAll) return;
+    if (readOnly || !draftTargets.length || draftingAll) return;
     // One undo step for the whole batch.
     flushTyping();
     undoPast.current.push(engagement.disclosures);
@@ -447,7 +451,7 @@ export default function StageDisclosures({
         <div className="relative border-t border-black/5 p-2">
           <button
             onClick={() => setShowAddNote(v => !v)}
-            disabled={!addable.length}
+            disabled={!addable.length || readOnly}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] px-2 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/40 hover:text-[var(--accent)] disabled:opacity-40"
           >
             <Plus size={13} /> Add note
@@ -497,7 +501,7 @@ export default function StageDisclosures({
           </div>
           <button
             onClick={draftAll}
-            disabled={aiBusy !== null || draftingAll !== null || draftTargets.length === 0}
+            disabled={aiBusy !== null || draftingAll !== null || draftTargets.length === 0 || readOnly}
             title="Draft every note that isn't complete with SMITH"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/15 disabled:opacity-50"
           >
@@ -579,7 +583,7 @@ export default function StageDisclosures({
           {section.content || section.status !== 'missing' ? (
             <div
               ref={editorRef}
-              contentEditable
+              contentEditable={!readOnly}
               suppressContentEditableWarning
               onInput={onEditorInput}
               className="studio-prose min-h-[200px] text-[13.5px] leading-relaxed text-[var(--text-primary)] outline-none"
@@ -596,7 +600,7 @@ export default function StageDisclosures({
           )}
         </div>
 
-        {section.status !== 'complete' && section.content && (
+        {section.status !== 'complete' && section.content && !readOnly && (
           <div className="border-t border-black/5 px-4 py-3">
             <button onClick={markReviewed} className="btn-secondary w-full justify-center">
               <Check size={14} /> Mark as complete

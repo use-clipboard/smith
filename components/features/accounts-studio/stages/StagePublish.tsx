@@ -3,16 +3,24 @@
 import { useEffect, useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
-  Loader2, Send, Signature, Landmark, Archive, PartyPopper, Download, AlertCircle, Scissors, Info,
+  Loader2, Send, Signature, Landmark, PartyPopper, Download, AlertCircle, Scissors, Info,
+  CheckCircle2, RotateCcw,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { filletEligibility } from '@/lib/accounts-studio/statements';
 import { buildIxbrl, ddmmyyyyToIso, type IxbrlFramework } from '@/lib/accounts-studio/ixbrl';
-import { publishEngagement } from '../persistence';
+import { publishEngagement, markSubmitted } from '../persistence';
 import { getFirmBranding, type FirmBranding } from '../branding';
+import SendApprovalModal from '../SendApprovalModal';
 import type { Engagement } from '../types';
+
+function ukDate(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+}
 
 // Documents we genuinely produce now (all render the real statutory pack PDF).
 const REAL_DOCS = [
@@ -28,14 +36,6 @@ const COMING_SOON = [
   { id: 'ct',         title: 'Corporation Tax Accounts', description: 'Accounts for the CT600',        icon: Calculator, format: 'iXBRL' },
 ] as const;
 
-const ACTIONS = [
-  { id: 'send',    label: 'Send to Client',           icon: Send,      sub: 'Email the approval pack' },
-  { id: 'approve', label: 'Digital Approval',         icon: Signature, sub: 'E-signature via Client Portal' },
-  { id: 'ch',      label: 'Submit to Companies House', icon: Landmark,  sub: 'File iXBRL accounts' },
-  { id: 'ct',      label: 'Send to Corporation Tax',   icon: Calculator,sub: 'Feed the CT600 module' },
-  { id: 'archive', label: 'Archive in Document Vault', icon: Archive,   sub: 'Store every generated file' },
-];
-
 function fileName(e: Engagement, suffix: string): string {
   return `${suffix}_${e.companyName.replace(/\s+/g, '_')}_${e.periodEnd}.pdf`;
 }
@@ -49,6 +49,21 @@ export default function StagePublish({
   const [busyDoc, setBusyDoc] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState('');
+  const [showSend, setShowSend] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const status = engagement.approvalStatus;
+
+  async function submitToCH() {
+    setSubmitting(true); setError('');
+    try {
+      const updated = await markSubmitted(engagement.id);
+      patch(() => updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not mark as submitted.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const ready = !!engagement.statements;
   const fillet = filletEligibility(engagement.entityType, engagement.size);
@@ -254,21 +269,59 @@ export default function StagePublish({
           </StudioCard>
         )}
 
+        {/* Client approval & submission */}
         <StudioCard className="p-4">
-          <h4 className="mb-2 px-1 text-[13px] font-bold text-[var(--text-primary)]">Publish &amp; distribute</h4>
+          <h4 className="mb-2 flex items-center gap-1.5 px-1 text-[13px] font-bold text-[var(--text-primary)]"><ClipboardSignature size={14} /> Client approval &amp; submission</h4>
+
+          {/* Status line */}
+          {status === 'sent' && (
+            <div className="mb-2 flex items-center gap-2 rounded-xl border border-sky-200/70 bg-sky-50/60 px-3 py-2 text-[12px] text-sky-800">
+              <Send size={13} className="shrink-0" /> Sent to the client on {ukDate(engagement.sentAt)} — awaiting approval.
+            </div>
+          )}
+          {status === 'approved' && (
+            <div className="mb-2 flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-3 py-2 text-[12px] text-emerald-800">
+              <CheckCircle2 size={13} className="shrink-0" /> Approved by {engagement.approvedByName || 'the client'} on {ukDate(engagement.approvedAt)}.
+            </div>
+          )}
+          {status === 'rejected' && (
+            <div className="mb-2 rounded-xl border border-amber-200/70 bg-amber-50/60 px-3 py-2 text-[12px] text-amber-800">
+              <p className="flex items-center gap-2 font-semibold"><RotateCcw size={13} className="shrink-0" /> Client requested changes on {ukDate(engagement.rejectedAt)}.</p>
+              {engagement.changesNote && <p className="mt-1 pl-5">{engagement.changesNote}</p>}
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            {ACTIONS.map(a => (
-              <div key={a.id} className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 opacity-60">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><a.icon size={15} /></div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-[var(--text-primary)]">{a.label}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{a.sub}</p>
-                </div>
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Soon</span>
+            {/* Send / re-send */}
+            <button onClick={() => setShowSend(true)} disabled={!ready}
+              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Send size={15} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">{status ? 'Re-send for approval' : 'Send for approval'}</p>
+                <p className="text-[11px] text-[var(--text-muted)]">Email the accounts to the client to sign</p>
               </div>
-            ))}
+            </button>
+
+            {/* Mark as submitted — enabled once approved */}
+            <button onClick={submitToCH} disabled={status !== 'approved' || submitting}
+              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 disabled:cursor-not-allowed disabled:opacity-45">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">{submitting ? <Loader2 size={15} className="animate-spin" /> : <Landmark size={15} />}</div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">Mark as submitted to Companies House</p>
+                <p className="text-[11px] text-[var(--text-muted)]">{status === 'approved' ? 'Records the accounts as filed' : 'Available once the client has approved'}</p>
+              </div>
+            </button>
           </div>
+          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Direct Companies House / iXBRL filing is coming soon — for now this records the submission.</p>
         </StudioCard>
+
+        {showSend && (
+          <SendApprovalModal
+            engagement={engagement}
+            onClose={() => setShowSend(false)}
+            onSent={(e) => { patch(() => e); setShowSend(false); }}
+          />
+        )}
 
         <button onClick={publish} disabled={publishing} className="btn-primary w-full justify-center py-3 text-[14px] disabled:opacity-45">
           {publishing ? <><Loader2 size={16} className="animate-spin" /> Publishing…</> : <><PartyPopper size={16} /> Publish accounts</>}

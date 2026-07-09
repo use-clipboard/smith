@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Landmark, Sparkles, MessagesSquare, ChevronLeft, ArrowLeft, Plus, ArrowRight, Clock3,
   Building2, ScrollText, ShieldCheck, PanelRightClose, PanelRightOpen,
-  Loader2, Check, CloudOff, Search as SearchIcon, Mail,
+  Loader2, Check, CloudOff, Search as SearchIcon, Mail, Lock,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import ClientSelector, { type SelectedClient } from '@/components/ui/ClientSelector';
@@ -159,6 +159,14 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
         <ArrowLeft size={13} /> Back to history
       </button>
 
+      {/* Submitted — read-only lock */}
+      {engagement.approvalStatus === 'submitted' && (
+        <div className="mb-3 flex items-center gap-2 rounded-[14px] border border-emerald-200/70 bg-emerald-50/70 px-4 py-2.5 text-[12.5px] text-emerald-800">
+          <Lock size={14} className="shrink-0" />
+          <span className="flex-1">Submitted to Companies House — these accounts are view-only. To prepare amended accounts, use <span className="font-semibold">Copy</span> on the history list.</span>
+        </div>
+      )}
+
       {/* Company header */}
       <CompanyHeader engagement={engagement} patch={patch} />
 
@@ -177,8 +185,8 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
       <div className="flex gap-4">
         <div className="min-w-0 flex-1">
           {stage === 'import' && <StageImport engagement={engagement} patch={patch} advance={() => advanceFrom('import')} />}
-          {stage === 'preparation' && <StagePreparation engagement={engagement} patch={patch} advance={() => advanceFrom('preparation')} />}
-          {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} />}
+          {stage === 'preparation' && <StagePreparation engagement={engagement} patch={patch} advance={() => advanceFrom('preparation')} readOnly={engagement.approvalStatus === 'submitted'} />}
+          {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} readOnly={engagement.approvalStatus === 'submitted'} />}
           {stage === 'final-review' && <StageFinalReview engagement={engagement} advance={() => advanceFrom('final-review')} />}
           {stage === 'publish' && <StagePublish engagement={engagement} patch={patch} />}
         </div>

@@ -194,6 +194,15 @@ export interface Engagement {
   disclosuresSeeded?: boolean;
   /** outputs.id of the audit row written when the accounts were published. */
   publishedOutputId?: string | null;
+  // ── Client approval + submission lifecycle (accounts_studio_approvals) ──────
+  /** Furthest point reached in the chain. Undefined = not yet sent (use stages). */
+  approvalStatus?: 'sent' | 'approved' | 'rejected' | 'submitted';
+  sentAt?: string;          // ISO — when last sent to the client
+  approvedAt?: string;      // ISO — when the client approved
+  approvedByName?: string;  // the client's typed-name signature
+  rejectedAt?: string;      // ISO — when the client requested changes
+  changesNote?: string;     // the client's requested-changes note
+  submittedAt?: string;     // ISO — when marked submitted to Companies House
 }
 
 export interface AssistantMessage {
