@@ -10,8 +10,34 @@ interface Settings {
   accountantName: string;
   accountantAddress: string;
   governingBody: string;
+  approvalEmailSubject: string;
+  approvalEmailBody: string;
+  brandPrimaryColor: string;
 }
-const EMPTY: Settings = { accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '' };
+const DEFAULT_SUBJECT = 'Please approve the accounts for {{company_name}} — year ended {{period_end}}';
+const DEFAULT_BODY = `Hi {{client_name}},
+
+{{preparer_name}} has prepared the statutory accounts for {{company_name}} for the year ended {{period_end}}. The accounts are attached as a PDF.
+
+When you're happy with them, please click the button below to approve them for submission. If anything needs changing, click "Request changes" and let us know what to amend.
+
+Many thanks,
+{{preparer_name}}
+{{firm_name}}`;
+const EMPTY: Settings = {
+  accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '',
+  approvalEmailSubject: DEFAULT_SUBJECT, approvalEmailBody: DEFAULT_BODY, brandPrimaryColor: '#4F46E5',
+};
+
+const EMAIL_VARS: { key: string; desc: string }[] = [
+  { key: 'client_name',   desc: 'The client / company name' },
+  { key: 'company_name',  desc: 'The company name' },
+  { key: 'client_code',   desc: 'The client reference' },
+  { key: 'period_end',    desc: 'Year-end date (dd-mm-yyyy)' },
+  { key: 'framework',     desc: 'Accounting framework' },
+  { key: 'firm_name',     desc: 'Your firm name' },
+  { key: 'preparer_name', desc: 'The preparer (you)' },
+];
 
 // Rich-text (HTML) fields — the AI-drafted note wording.
 type RichKey = 'accountantsReport' | 'governingBody';
@@ -150,6 +176,47 @@ export default function AccountsStudioDefaultsTab() {
           <RichTextEditor key={`${f.key}-${editorKeys[f.key]}`} content={settings[f.key]} onChange={v => patch(f.key, v)} placeholder={f.placeholder} />
         </div>
       ))}
+
+      {/* ── Client approval email ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+        <h3 className="text-sm font-semibold text-gray-800">Client approval email</h3>
+        <p className="mb-3 text-xs text-gray-500">The email sent to clients when you send accounts for approval. The firm logo is taken from your firm branding, and your Gmail signature is added automatically.</p>
+
+        {/* Brand colour + preview */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-gray-700">Brand colour</label>
+          <div className="flex items-center gap-2">
+            <input type="color" value={settings.brandPrimaryColor || '#4F46E5'} onChange={e => patch('brandPrimaryColor', e.target.value)} className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-1" aria-label="Brand colour" />
+            <input type="text" value={settings.brandPrimaryColor} onChange={e => patch('brandPrimaryColor', e.target.value)} placeholder="#4F46E5" className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500" />
+          </div>
+          <div className="mt-2 flex items-center justify-center rounded-lg px-4 py-3 text-sm font-semibold text-white" style={{ background: settings.brandPrimaryColor || '#4F46E5' }}>Header &amp; button preview</div>
+        </div>
+
+        {/* Subject + body templates */}
+        <div className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Subject line</label>
+            <input type="text" value={settings.approvalEmailSubject} onChange={e => patch('approvalEmailSubject', e.target.value)} placeholder={DEFAULT_SUBJECT} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-700">Email body</label>
+            <textarea rows={8} value={settings.approvalEmailBody} onChange={e => patch('approvalEmailBody', e.target.value)} placeholder={DEFAULT_BODY} className="w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-[12px] leading-relaxed text-gray-900 outline-none focus:border-indigo-500" />
+          </div>
+        </div>
+
+        {/* Variables */}
+        <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-blue-700">Available variables — drop these into the subject or body</p>
+          <div className="flex flex-wrap gap-1.5">
+            {EMAIL_VARS.map(v => (
+              <span key={v.key} title={v.desc} className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-1.5 py-0.5">
+                <code className="text-[11px] font-semibold text-blue-700">{`{{${v.key}}}`}</code>
+                <span className="text-[10.5px] text-gray-500">{v.desc}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 

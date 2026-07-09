@@ -13,6 +13,9 @@ const Body = z.object({
   accountantName: z.string().max(500).default(''),
   accountantAddress: z.string().max(2000).default(''),
   governingBody: z.string().max(20000).default(''),
+  approvalEmailSubject: z.string().max(500).default(''),
+  approvalEmailBody: z.string().max(20000).default(''),
+  brandPrimaryColor: z.string().max(9).default('#4F46E5'),
 }).strict();
 
 // ── GET /api/accounts-studio/firm-settings ───────────────────────────────────
@@ -45,13 +48,19 @@ export async function PUT(req: NextRequest) {
     accountant_name: body.accountantName,
     accountant_address: body.accountantAddress,
     governing_body: body.governingBody,
+    approval_email_subject: body.approvalEmailSubject,
+    approval_email_body: body.approvalEmailBody,
+    brand_primary_color: body.brandPrimaryColor,
     updated_at: new Date().toISOString(),
   };
   let { error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' });
-  // Retry without the structured columns if they aren't migrated yet.
+  // Retry without the later-migration columns if they aren't applied yet.
   if (error?.code === '42703') {
     delete row.accountant_name;
     delete row.accountant_address;
+    delete row.approval_email_subject;
+    delete row.approval_email_body;
+    delete row.brand_primary_color;
     ({ error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' }));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

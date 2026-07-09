@@ -125,10 +125,11 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       const { data: firm } = await service.from('firms').select('name').eq('id', row.firm_id).maybeSingle();
       if (prep?.email && conn?.refresh_token && conn?.google_email) {
         const subject = action === 'approve' ? `${e.companyName} accounts approved` : `${e.companyName} — changes requested`;
+        const bodyText = action === 'approve'
+          ? `${e.companyName} — the client (${name!.trim()}) has approved the statutory accounts for the year ended ${e.periodEnd}. You can now mark them as submitted.`
+          : `${e.companyName} — the client has requested changes to the statutory accounts for the year ended ${e.periodEnd}.\n\nTheir note: ${note ?? 'No note provided.'}`;
         const html = buildApprovalEmailHtml({
-          firmName: firm?.name ?? '', companyName: e.companyName, periodEndUk: e.periodEnd,
-          preparerName: prep.full_name?.trim() || prep.email.split('@')[0],
-          coverNote: action === 'approve' ? `Approved by ${name!.trim()} on ${now.slice(0, 10)}.` : `Changes requested: ${note ?? 'no note'}`,
+          firmName: firm?.name ?? '', bodyText,
           approvalUrl: `${(process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')}/accounts-studio`,
         });
         const { gmail } = await getRefreshedGmailClient(conn.refresh_token);

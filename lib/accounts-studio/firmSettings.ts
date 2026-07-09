@@ -12,34 +12,50 @@ export interface AccountsStudioFirmSettings {
   accountantName: string;
   accountantAddress: string;
   governingBody: string;
+  // ── Client approval email ──────────────────────────────────────────────────
+  approvalEmailSubject: string;   // handlebars template ({{company_name}} etc.)
+  approvalEmailBody: string;      // handlebars template (plain text)
+  brandPrimaryColor: string;      // hex, e.g. #4F46E5 — email header + PDF cover
 }
+
+/** Default approval-email templates (used when a firm hasn't customised them). */
+export const DEFAULT_APPROVAL_SUBJECT = 'Please approve the accounts for {{company_name}} — year ended {{period_end}}';
+export const DEFAULT_APPROVAL_BODY = `Hi {{client_name}},
+
+{{preparer_name}} has prepared the statutory accounts for {{company_name}} for the year ended {{period_end}}. The accounts are attached as a PDF.
+
+When you're happy with them, please click the button below to approve them for submission. If anything needs changing, click "Request changes" and let us know what to amend.
+
+Many thanks,
+{{preparer_name}}
+{{firm_name}}`;
+export const DEFAULT_BRAND_COLOR = '#4F46E5';
 
 export const EMPTY_FIRM_SETTINGS: AccountsStudioFirmSettings = {
   accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '',
+  approvalEmailSubject: DEFAULT_APPROVAL_SUBJECT, approvalEmailBody: DEFAULT_APPROVAL_BODY, brandPrimaryColor: DEFAULT_BRAND_COLOR,
 };
 
 export async function getAccountsStudioFirmSettings(supabase: DB, firmId: string): Promise<AccountsStudioFirmSettings> {
-  // Prefer the structured columns; fall back gracefully if they aren't migrated yet.
-  let res = await supabase
+  // select('*') so a missing (un-migrated) column never errors — absent fields
+  // just fall back to the defaults below.
+  const { data } = await supabase
     .from('accounts_studio_firm_settings')
-    .select('accountants_report, accountant_details, accountant_name, accountant_address, governing_body')
+    .select('*')
     .eq('firm_id', firmId)
     .maybeSingle();
-  if (res.error?.code === '42703') {
-    res = await supabase
-      .from('accounts_studio_firm_settings')
-      .select('accountants_report, accountant_details, governing_body')
-      .eq('firm_id', firmId)
-      .maybeSingle();
-  }
-  const data = res.data as Record<string, unknown> | null;
-  if (!data) return EMPTY_FIRM_SETTINGS;
+  const d = data as Record<string, unknown> | null;
+  if (!d) return EMPTY_FIRM_SETTINGS;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
   return {
-    accountantsReport: (data.accountants_report as string | null) ?? '',
-    accountantDetails: (data.accountant_details as string | null) ?? '',
-    accountantName: (data.accountant_name as string | null) ?? '',
-    accountantAddress: (data.accountant_address as string | null) ?? '',
-    governingBody: (data.governing_body as string | null) ?? '',
+    accountantsReport: str(d.accountants_report),
+    accountantDetails: str(d.accountant_details),
+    accountantName: str(d.accountant_name),
+    accountantAddress: str(d.accountant_address),
+    governingBody: str(d.governing_body),
+    approvalEmailSubject: str(d.approval_email_subject) || DEFAULT_APPROVAL_SUBJECT,
+    approvalEmailBody: str(d.approval_email_body) || DEFAULT_APPROVAL_BODY,
+    brandPrimaryColor: str(d.brand_primary_color) || DEFAULT_BRAND_COLOR,
   };
 }
 

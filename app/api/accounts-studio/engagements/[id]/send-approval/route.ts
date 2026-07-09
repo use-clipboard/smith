@@ -6,6 +6,8 @@ import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
 import { buildApprovalEmailHtml } from '@/lib/accounts-studio/approvalEmail';
+import { renderTemplate } from '@/lib/mtdIt/emailTemplates';
+import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // POST /api/accounts-studio/engagements/[id]/send-approval
@@ -55,11 +57,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Gmail not connected. Connect your Gmail in the Email Triage tool, then try again.' }, { status: 400 });
   }
 
-  // ── Firm + preparer names ──────────────────────────────────────────────────
-  const { data: firm } = await supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle();
+  // ── Firm + preparer names + branding/templates ─────────────────────────────
+  const { data: firm } = await supabase.from('firms').select('name, logo_url').eq('id', ctx.firmId).maybeSingle();
   const { data: me }   = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).maybeSingle();
   const firmName = firm?.name ?? 'Your accountant';
   const preparerName = me?.full_name?.trim() || me?.email?.split('@')[0] || 'Your accountant';
+  const settings = await getAccountsStudioFirmSettings(supabase, ctx.firmId);
 
   // ── Void any pending prior approval for this engagement ─────────────────────
   await service.from('accounts_studio_approvals')
@@ -71,11 +74,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const siteBase = (process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '');
   const approvalUrl = `${siteBase}/accounts-studio/approve/${token}`;
 
-  const subject = `Please approve the accounts for ${e.companyName} — year ended ${e.periodEnd}`;
-  const html = buildApprovalEmailHtml({
-    firmName, companyName: e.companyName, periodEndUk: e.periodEnd, preparerName,
-    coverNote: cover_note, approvalUrl, summary: summary_lines ?? [],
-  });
+  const vars = {
+    client_name: e.companyName, company_name: e.companyName, client_code: e.clientRef ?? '',
+    period_end: e.periodEnd, period_start: e.periodStart, framework: e.framework,
+    firm_name: firmName, preparer_name: preparerName, approval_link: approvalUrl,
+  };
+  const subject = renderTemplate(settings.approvalEmailSubject, vars);
+  let bodyText = renderTemplate(settings.approvalEmailBody, vars);
+  if (cover_note && cover_note.trim()) bodyText = `${cover_note.trim()}\n\n${bodyText}`;
+  const baseEmailArgs = {
+    firmName, bodyText, approvalUrl, summary: summary_lines ?? [],
+    brandHex: settings.brandPrimaryColor, logoUrl: firm?.logo_url ?? null,
+  };
+  // For prepare_only (compose window) we return this signature-less body — the
+  // compose window appends the user's Gmail signature itself.
+  const html = buildApprovalEmailHtml(baseEmailArgs);
 
   // ── Insert the approval row ────────────────────────────────────────────────
   const { data: approval, error: insErr } = await service
@@ -94,8 +107,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!prepare_only && connection) {
     try {
       const { gmail } = await getRefreshedGmailClient(connection.refresh_token);
+      // Append the sender's Gmail signature (direct send only; the compose flow
+      // adds it itself).
+      let signatureHtml: string | null = null;
+      try {
+        const sendAs = await gmail.users.settings.sendAs.list({ userId: 'me' });
+        const list = sendAs.data.sendAs ?? [];
+        const chosen = list.find(a => a.isDefault) ?? list.find(a => a.sendAsEmail === connection.google_email) ?? list[0];
+        signatureHtml = chosen?.signature || null;
+      } catch { /* signature is best-effort */ }
+      const sendHtml = signatureHtml ? buildApprovalEmailHtml({ ...baseEmailArgs, signatureHtml }) : html;
       const attachments = pdf_base64 ? [{ filename: attachmentFilename, mimeType: 'application/pdf', data: Buffer.from(pdf_base64, 'base64') }] : [];
-      const raw = buildRawMessage({ from: connection.google_email, to: [recipient_email], subject, htmlBody: html, attachments });
+      const raw = buildRawMessage({ from: connection.google_email, to: [recipient_email], subject, htmlBody: sendHtml, attachments });
       await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
     } catch (err) {
       console.error('[accounts-studio send-approval] gmail', err);
