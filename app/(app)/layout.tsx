@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import AppShell from '@/components/ui/AppShell';
 import { OPTIONAL_MODULE_IDS } from '@/config/modules.config';
+import { resolveActiveModules } from '@/lib/modules';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -66,12 +67,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     try {
       const { data: firm } = await supabase
         .from('firms')
-        .select('active_modules, anthropic_api_key')
+        .select('active_modules, subscription_tier, anthropic_api_key')
         .eq('id', profile.firm_id)
         .single();
 
       const stored = (firm?.active_modules as string[] | null) ?? [];
-      if (stored.length > 0) activeModules = stored;
+      const tier = (firm?.subscription_tier as string | null) ?? null;
+      // Union stored snapshot with the tier's modules (see resolveActiveModules)
+      // so tier tools like Accounts Studio show without re-saving the plan.
+      activeModules = resolveActiveModules(stored, tier);
 
       // Derive boolean only — the key itself never leaves the server
       hasApiKey = Boolean((firm as { anthropic_api_key?: string } | null)?.anthropic_api_key);

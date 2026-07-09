@@ -3,7 +3,34 @@
 // For client-side checks, use the useModules() hook from ModulesProvider.
 
 import { NextResponse } from 'next/server';
-import { MODULES } from '@/config/modules.config';
+import { MODULES, OPTIONAL_MODULE_IDS, modulesForPlan } from '@/config/modules.config';
+
+const KNOWN_TIERS = new Set(['internal', 'compliance', 'practice']);
+
+/**
+ * Resolve a firm's effective active modules.
+ *
+ * A firm ALWAYS gets the modules its plan tier includes, unioned with whatever
+ * is stored in `firms.active_modules`. The stored array is only a snapshot,
+ * written when the plan was last set — so when a new tool is added to a tier
+ * (e.g. Accounts Studio → Compliance), existing firms would otherwise never
+ * receive it until their plan was re-saved. Folding the tier's module list in
+ * here makes that automatic and back-fill-free.
+ *
+ * Note: because tier modules are always granted, an admin cannot "turn off" a
+ * module their tier includes via the Modules override — the override only ADDS
+ * extras on top of the tier. That's intentional: you get what your tier grants.
+ */
+export function resolveActiveModules(
+  stored: string[] | null | undefined,
+  tier: string | null | undefined,
+): string[] {
+  const base = (stored && stored.length > 0) ? stored : OPTIONAL_MODULE_IDS;
+  if (tier && KNOWN_TIERS.has(tier)) {
+    return Array.from(new Set([...base, ...modulesForPlan(tier)]));
+  }
+  return base;
+}
 
 /**
  * Pure function — check if a module is active for a firm.

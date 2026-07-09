@@ -175,6 +175,9 @@ export default function BillingSettingsTab() {
       {/* Reminder ladder */}
       <StageLadderEditor canEdit={canEdit} />
 
+      {/* Stripe / card payments */}
+      <StripeStatusCard />
+
       {/* Direct debit (forward config) */}
       <GlassCard>
         <SectionHeader title="Direct debit" subtitle="How the first invoice is collected once Stripe Bacs DD is live (Phase D)" />
@@ -191,6 +194,38 @@ export default function BillingSettingsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Stripe status card ───────────────────────────────────────────────────────
+
+function StripeStatusCard() {
+  const [status, setStatus] = useState<{ configured: boolean; webhookConfigured: boolean } | null>(null);
+  useEffect(() => {
+    fetch('/api/billing/stripe/status').then(r => (r.ok ? r.json() : null)).then(setStatus).catch(() => {});
+  }, []);
+
+  const configured = status?.configured ?? false;
+  return (
+    <GlassCard>
+      <SectionHeader title="Card payments & Direct Debit (Stripe)" subtitle="Take card payments and Bacs Direct Debit through Stripe" />
+      <div className="flex items-center gap-3">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold ${configured ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+          <span className={`h-2 w-2 rounded-full ${configured ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+          {configured ? 'Connected' : 'Not connected'}
+        </span>
+        {configured && !status?.webhookConfigured && (
+          <span className="text-[12px] text-amber-600">Webhook secret missing — payments won&apos;t auto-record until set.</span>
+        )}
+      </div>
+      {!configured && (
+        <p className="mt-3 text-[12.5px] leading-relaxed text-[var(--text-muted)]">
+          Set <code className="rounded bg-black/5 px-1">STRIPE_SECRET_KEY</code>, <code className="rounded bg-black/5 px-1">STRIPE_WEBHOOK_SECRET</code> and
+          <code className="ml-1 rounded bg-black/5 px-1">NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> in your environment, and point a Stripe webhook at
+          <code className="ml-1 rounded bg-black/5 px-1">/api/billing/stripe/webhook</code> (events: <em>checkout.session.completed</em>). Then &ldquo;Pay by card&rdquo; links and Direct Debit mandates go live.
+        </p>
+      )}
+    </GlassCard>
   );
 }
 

@@ -4,6 +4,55 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 
+// GET /api/billing/payments → recent payments with their allocated invoice numbers.
+export async function GET() {
+  const ctx = await getUserContext();
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { isModuleActive } = buildModuleChecker(ctx.activeModules);
+  if (!isModuleActive('billing')) return moduleNotActive('billing');
+
+  const supabase = createClient();
+  const { data: payData } = await supabase
+    .from('payments')
+    .select('id, method, amount_pence, received_date, reference, provider_ref, matched, created_at')
+    .eq('firm_id', ctx.firmId).order('received_date', { ascending: false }).limit(500);
+  const payments = (payData ?? []) as {
+    id: string; method: string; amount_pence: number; received_date: string;
+    reference: string | null; provider_ref: string | null; matched: boolean; created_at: string;
+  }[];
+
+  // Map each payment to the invoice number(s) it was allocated to.
+  const ids = payments.map(p => p.id);
+  const allocByPayment = new Map<string, string[]>();
+  if (ids.length) {
+    const { data: allocs } = await supabase
+      .from('payment_allocations')
+      .select('payment_id, invoice:invoices(number)')
+      .in('payment_id', ids);
+    for (const a of (allocs ?? []) as { payment_id: string; invoice: { number: string | null }[] | { number: string | null } | null }[]) {
+      const inv = Array.isArray(a.invoice) ? a.invoice[0] : a.invoice;
+      const num = inv?.number;
+      if (!num) continue;
+      const list = allocByPayment.get(a.payment_id) ?? [];
+      list.push(num);
+      allocByPayment.set(a.payment_id, list);
+    }
+  }
+
+  return NextResponse.json({
+    payments: payments.map(p => ({
+      id: p.id,
+      method: p.method,
+      amountPence: p.amount_pence,
+      receivedDate: p.received_date,
+      reference: p.reference,
+      providerRef: p.provider_ref,
+      matched: p.matched,
+      invoiceNumbers: allocByPayment.get(p.id) ?? [],
+    })),
+  });
+}
+
 const RecordSchema = z.object({
   invoiceId: z.string().uuid(),
   amountPence: z.number().int().positive().max(1_000_000_000),

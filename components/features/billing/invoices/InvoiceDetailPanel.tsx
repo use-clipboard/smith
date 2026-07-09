@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download } from 'lucide-react';
+import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download, CreditCard } from 'lucide-react';
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice } from '@/lib/billing/types';
 import { exportInvoicePdf, type InvoiceLetterhead } from '@/lib/billing/invoicePdf';
@@ -23,6 +23,8 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
   const [payOpen, setPayOpen] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [letterhead, setLetterhead] = useState<InvoiceLetterhead>(EMPTY_LETTERHEAD);
+  const [stripeOk, setStripeOk] = useState(false);
+  const [payMsg, setPayMsg] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -49,6 +51,25 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
       })
       .catch(() => {});
   }, []);
+
+  // Is Stripe connected? Controls the "Pay by card" affordance.
+  useEffect(() => {
+    fetch('/api/billing/stripe/status').then(r => (r.ok ? r.json() : null)).then(d => setStripeOk(!!d?.configured)).catch(() => {});
+  }, []);
+
+  async function payByCard() {
+    setPayMsg('Creating link…');
+    const r = await fetch('/api/billing/stripe/checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }),
+    });
+    const d = await r.json().catch(() => null);
+    if (r.ok && d?.url) {
+      try { await navigator.clipboard.writeText(d.url); } catch { /* clipboard may be blocked */ }
+      window.open(d.url, '_blank');
+      setPayMsg('Payment link opened & copied');
+    } else setPayMsg(d?.error ?? 'Could not create link');
+    setTimeout(() => setPayMsg(null), 3000);
+  }
 
   async function patchStatus(status: string) {
     setBusy(true);
@@ -173,8 +194,12 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
 
         {/* Actions */}
         {inv && (
-          <div className="flex flex-wrap gap-2 border-t border-black/5 px-5 py-3">
+          <div className="flex flex-wrap items-center gap-2 border-t border-black/5 px-5 py-3">
+            {payMsg && <span className="w-full text-[12px] font-medium text-[var(--accent)]">{payMsg}</span>}
             <button onClick={() => exportInvoicePdf(inv, letterhead)} className="btn-secondary"><Download size={14} /> PDF</button>
+            {stripeOk && inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
+              <button onClick={payByCard} className="btn-secondary"><CreditCard size={14} /> Pay by card</button>
+            )}
             {inv.status === 'draft' && (
               <button onClick={() => patchStatus('sent')} disabled={busy} className="btn-primary disabled:opacity-50"><Send size={14} /> Mark as sent</button>
             )}

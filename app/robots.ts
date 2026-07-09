@@ -10,7 +10,21 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/dashboard', '/settings', '/login', '/signup', '/forgot-password', '/reset-password'],
+      // Note: we deliberately do NOT block all of /_next/ — Google needs the JS
+      // and CSS under /_next/static/{chunks,css} to render pages for indexing.
+      // Only /_next/static/media (bundled fonts + imported assets) is blocked:
+      // those get crawled and reported as "crawled - currently not indexed"
+      // noise, and a font/asset can never be a search result anyway.
+      disallow: [
+        '/api/',
+        '/dashboard',
+        '/settings',
+        '/login',
+        '/signup',
+        '/forgot-password',
+        '/reset-password',
+        '/_next/static/media/',
+      ],
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
     host: SITE_URL,

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase-server';
 import { OPTIONAL_MODULE_IDS } from '@/config/modules.config';
+import { resolveActiveModules } from '@/lib/modules';
 
 export interface UserContext {
   userId: string;
@@ -39,13 +40,15 @@ export async function getUserContext(): Promise<UserContext | null> {
     try {
       const { data: firm } = await supabase
         .from('firms')
-        .select('active_modules')
+        .select('active_modules, subscription_tier')
         .eq('id', profile.firm_id)
         .single();
 
       const stored = (firm?.active_modules as string[] | null) ?? [];
-      // Empty array means migration not run yet OR firm has no modules set — default to all active
-      activeModules = stored.length > 0 ? stored : OPTIONAL_MODULE_IDS;
+      const tier = (firm?.subscription_tier as string | null) ?? null;
+      // Union the stored snapshot with the tier's module list so tools added to
+      // a tier reach every firm without re-saving the plan. See resolveActiveModules.
+      activeModules = resolveActiveModules(stored, tier);
     } catch {
       // Column doesn't exist yet — treat all modules as active (Phase 1 behaviour)
       activeModules = OPTIONAL_MODULE_IDS;

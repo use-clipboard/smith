@@ -13,6 +13,8 @@ import NewInvoiceDrawer from './invoices/NewInvoiceDrawer';
 import BillingSettingsTab from './settings/BillingSettingsTab';
 import RecurringTab from './recurring/RecurringTab';
 import CreditControlTab from './credit/CreditControlTab';
+import PaymentsTab from './payments/PaymentsTab';
+import DirectDebitsTab from './directdebits/DirectDebitsTab';
 
 type BillingTab =
   | 'overview' | 'invoices' | 'recurring' | 'credit_control'
@@ -32,9 +34,7 @@ const TABS: { id: BillingTab; label: string; icon: typeof ReceiptText }[] = [
 
 /** Which phase each not-yet-built tab is scheduled for (see docs/billing-module.md). */
 const PHASE_NOTES: Partial<Record<BillingTab, { phase: string; blurb: string }>> = {
-  payments:       { phase: 'Phase D', blurb: 'Stripe card + Bacs Direct Debit collection, plus CSV bank import with AI reconciliation.' },
-  direct_debits:  { phase: 'Phase D', blurb: 'Stripe Bacs Direct Debit mandates — sent on proposal acceptance, then collected automatically.' },
-  clients:        { phase: 'Phase B', blurb: 'Per-client billing view — statements, balances, payment history and recurring lines in one place.' },
+  clients:        { phase: 'Phase E', blurb: 'Per-client billing view — statements, balances, payment history and recurring lines in one place.' },
   reports:        { phase: 'Phase E', blurb: 'MRR / ARR, aged debtors, debtor days, revenue by client / manager / service, and real recovery from Timesheets.' },
 };
 
@@ -90,8 +90,10 @@ export default function BillingModule() {
       )}
       {tab === 'recurring' && <RecurringTab />}
       {tab === 'credit_control' && <CreditControlTab onGoToSettings={() => setTab('settings')} />}
+      {tab === 'payments' && <PaymentsTab />}
+      {tab === 'direct_debits' && <DirectDebitsTab />}
       {tab === 'settings' && <BillingSettingsTab />}
-      {tab !== 'overview' && tab !== 'invoices' && tab !== 'settings' && tab !== 'recurring' && tab !== 'credit_control' && (
+      {tab !== 'overview' && tab !== 'invoices' && tab !== 'settings' && tab !== 'recurring' && tab !== 'credit_control' && tab !== 'payments' && tab !== 'direct_debits' && (
         <PhasePlaceholder tab={tab} />
       )}
 
