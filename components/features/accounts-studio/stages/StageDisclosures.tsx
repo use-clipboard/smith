@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
   ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
@@ -54,14 +54,6 @@ export default function StageDisclosures({
   }, [engagement.clientId, engagement.periodEnd, engagement.id]);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
-
-  // HTML fed to the editor's dangerouslySetInnerHTML. Captured at MOUNT only
-  // (keyed by section + mountKey) and NOT updated as the user types — otherwise
-  // React re-applies innerHTML on every keystroke and the caret jumps to the
-  // start. Live edits flow out via onEditorInput; deliberate resets (section
-  // switch, AI rewrite, restore, draft-all) bump mountKey to remount with fresh HTML.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const editorHtml = useMemo(() => section?.content || '<p></p>', [section?.id, mountKey]);
 
   // Rule-engine context for this engagement (drives the ＋ Add note library + badges).
   const dctx: DisclosureContext = {
@@ -160,6 +152,16 @@ export default function StageDisclosures({
   }, [engagement.disclosures, patch, bump]);
 
   useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
+
+  // Load a note's content into the editor IMPERATIVELY — only when the note
+  // changes or on a deliberate content replace (mountKey bump), never on typing.
+  // The editor is otherwise fully uncontrolled (no dangerouslySetInnerHTML /
+  // children), so React never rewrites its DOM mid-edit and the caret stays put.
+  // Live edits flow out via onEditorInput.
+  useEffect(() => {
+    if (editorRef.current) editorRef.current.innerHTML = section?.content || '<p></p>';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section?.id, mountKey]);
 
   function toggleIncluded(id: string) {
     commitDisclosures(ds => ds.map(s => s.id === id ? { ...s, included: s.included === false ? true : false } : s));
@@ -576,12 +578,10 @@ export default function StageDisclosures({
         <div className="flex-1 overflow-y-auto p-4">
           {section.content || section.status !== 'missing' ? (
             <div
-              key={`${section.id}-${mountKey}`}
               ref={editorRef}
               contentEditable
               suppressContentEditableWarning
               onInput={onEditorInput}
-              dangerouslySetInnerHTML={{ __html: editorHtml }}
               className="studio-prose min-h-[200px] text-[13.5px] leading-relaxed text-[var(--text-primary)] outline-none"
             />
           ) : (
