@@ -25,8 +25,9 @@ export default function BillingTab({ initialSeatCount, subscriptionTier }: Props
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
         <Info size={13} className="shrink-0 mt-0.5" />
         <span>
-          Billing isn&apos;t active yet — you won&apos;t be charged. Card payments and invoicing go live in Phase 2 (Stripe).
-          To change your plan or seats, use <strong>Settings → Plan &amp; Tiers</strong>.
+          Your SMITH subscription isn&apos;t active yet — you won&apos;t be charged. Card payments go live in Phase 2 (Stripe).
+          To change your plan or seats, use <strong>Settings → Plan &amp; Tiers</strong>. (This is what SMITH charges your
+          firm — to invoice <em>your own</em> clients, use the Billing tool.)
         </span>
       </div>
 

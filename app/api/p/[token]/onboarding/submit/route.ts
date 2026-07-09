@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabase-server';
 import { createNotification } from '@/lib/notifications';
 import { instantiateTaskFromTemplate } from '@/lib/instantiateTaskFromTemplate';
+import { createBillingFromProposal } from '@/lib/billing/fromProposal';
 
 const Body = z.object({
   form_id: z.string().uuid(),
@@ -68,9 +69,12 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   }
 
   // Firm settings — which side-effects to run
+  // select('*') (not an explicit column list) so a not-yet-migrated column
+  // (e.g. auto_create_billing pre-migration) can't fail the whole query and
+  // silently disable the other auto side-effects.
   const { data: settings } = await service
     .from('firm_proposal_settings')
-    .select('auto_graduate_client, auto_save_form_answers, auto_create_aml, auto_create_tasks, auto_tasks_template_id, auto_generate_loe')
+    .select('*')
     .eq('firm_id', proposal.firm_id)
     .maybeSingle();
 
@@ -170,6 +174,21 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   // ── Side-effect 5 (placeholder): generate Letter of Engagement PDF ───
   if (settings?.auto_generate_loe) {
     sideEffectLog.loe = { deferred: 'PDF generation lands in Phase C' };
+  }
+
+  // ── Side-effect 6: create billing from the proposal's line items ─────
+  // Recurring fees → recurring_invoices schedules (+ a first draft invoice);
+  // one-off fees → a single draft invoice. Drafts, so the firm reviews first.
+  if (settings?.auto_create_billing && graduatedClientId) {
+    const billing = await createBillingFromProposal(service, {
+      firmId: proposal.firm_id,
+      proposalId: proposal.id,
+      clientId: graduatedClientId,
+      clientName: prospect.company_name ?? prospect.contact_name,
+      createdBy: proposal.created_by,
+    });
+    if (billing.error) sideEffectLog.billing_error = billing.error;
+    else sideEffectLog.billing = { recurring: billing.recurringCreated, invoices: billing.invoiceCreated };
   }
 
   // Persist the response

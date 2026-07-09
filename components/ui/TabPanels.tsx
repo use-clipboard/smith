@@ -27,6 +27,7 @@ import ProposalsClient from '@/components/features/proposals/ProposalsClient';
 import SettingsHosted from '@/app/(app)/settings/SettingsHosted';
 import HelpPage from '@/app/(app)/help/page';
 import BookkeepingTool from '@/components/features/bookkeeping/BookkeepingTool';
+import BillingModule from '@/components/features/billing/BillingModule';
 import TeamProfile from '@/components/features/team/TeamProfile';
 
 const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
@@ -54,6 +55,7 @@ const ROUTE_TO_COMPONENT: Record<string, React.ComponentType> = {
   // Bookkeeping is hosted via a client wrapper that keeps the BookView (and
   // any open book / drill-down tab state) mounted across tab switches.
   '/bookkeeping':     BookkeepingTool,
+  '/billing':         BillingModule,
 };
 
 /** Routes managed by TabPanels (not Next.js routing). Import this wherever you need to distinguish tool tabs from regular pages. */

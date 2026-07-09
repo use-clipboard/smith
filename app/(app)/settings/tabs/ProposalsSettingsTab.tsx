@@ -6,6 +6,7 @@ import {
   Palette, Image as ImageIcon, Upload, FileSignature, ClipboardList, GripVertical, ChevronDown, ChevronRight,
   Mail,
 } from 'lucide-react';
+import { useModules } from '@/components/ui/ModulesProvider';
 
 interface Props {
   isAdmin: boolean;
@@ -49,6 +50,7 @@ interface ProposalSettings {
   auto_create_tasks: boolean;
   auto_tasks_template_id: string | null;
   auto_generate_loe: boolean;
+  auto_create_billing: boolean;
   default_post_acceptance_action: 'none' | 'send_onboarding' | 'auto_create_client';
   collect_payment_on_accept: boolean;
   stripe_account_id: string | null;
@@ -1294,6 +1296,8 @@ function PackageForm({ initial, services, isAdmin, onCancel, onSaved }: {
 
 // ── General defaults + onboarding ────────────────────────────────────────
 function GeneralSection({ isAdmin, tasksModuleActive }: { isAdmin: boolean; tasksModuleActive: boolean }) {
+  const { isModuleActive } = useModules();
+  const billingModuleActive = isModuleActive('billing');
   const [settings, setSettings] = useState<ProposalSettings | null>(null);
   const [activeFormCount, setActiveFormCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1393,6 +1397,13 @@ function GeneralSection({ isAdmin, tasksModuleActive }: { isAdmin: boolean; task
         )}
         <Toggle label="Generate a Letter of Engagement (PDF)" value={settings.auto_generate_loe} onChange={v => update('auto_generate_loe', v)} />
         <p className="text-[11px] text-[var(--text-muted)] mt-2 italic">Letter of Engagement PDF generation lands in Phase C.</p>
+        <Toggle
+          label={billingModuleActive ? 'Set up billing from the proposal fees' : 'Set up billing from the proposal fees (requires Billing module)'}
+          value={settings.auto_create_billing}
+          onChange={v => update('auto_create_billing', v)}
+          disabled={!billingModuleActive}
+        />
+        <p className="text-[11px] text-[var(--text-muted)] mt-2 italic">Recurring fees become recurring invoice schedules (with a first draft invoice); one-off fees become a draft invoice — all in the Billing tool for review.</p>
       </Card>
 
       <Card title="Payment on acceptance (Stripe)">

@@ -115,7 +115,7 @@ export default function SettingsClient({
     // Tools are dictated by the tier — this screen is now a read-only reflection,
     // hidden from the nav, reachable via ?tab=modules for reference only.
     { id: 'modules' as Tab,     label: 'Tools in your plan', icon: Puzzle,     adminOnly: true,  hidden: true,  group: 'general' as TabGroup },
-    { id: 'billing' as Tab,     label: 'Billing',     icon: CreditCard,        adminOnly: true,  hidden: false, group: 'general' as TabGroup },
+    { id: 'billing' as Tab,     label: 'Subscription', icon: CreditCard,       adminOnly: true,  hidden: false, group: 'general' as TabGroup },
     { id: 'calendar' as Tab,    label: 'Calendar',    icon: CalendarDays,      adminOnly: false, hidden: !calendarModuleActive,    group: 'tools' as TabGroup },
     { id: 'staff-hire' as Tab,  label: 'Staff Hire',  icon: UserPlus,          adminOnly: true,  hidden: !staffHireModuleActive,   group: 'tools' as TabGroup },
     { id: 'tasks' as Tab,        label: 'Tasks',        icon: CheckSquare,    adminOnly: true,  hidden: !tasksModuleActive,        group: 'tools' as TabGroup },

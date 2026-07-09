@@ -109,6 +109,47 @@ export async function sendTaskReminderEmail(opts: TaskReminderEmailOptions) {
   if (error) throw new Error(`Failed to send email: ${error.message}`);
 }
 
+// ── Credit-control chaser — sends an overdue-invoice reminder to a client ─────
+
+export interface ChaserEmailOptions {
+  to: string;
+  subject: string;
+  /** Plain-text body (paragraphs separated by blank lines); rendered to HTML. */
+  body: string;
+  /** Firm/business display name for the From line. */
+  fromName: string;
+  /** Where client replies should go (the firm's mailbox). */
+  replyTo?: string;
+}
+
+function escapeChaserHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+/** Wrap a plain-text chaser body in a clean, neutral HTML shell. */
+export function renderChaserEmailHtml(body: string): string {
+  const paras = body.split(/\n{2,}/).map(p =>
+    `<p style="margin:0 0 14px;line-height:1.6;color:#1F2937;font-size:14px">${escapeChaserHtml(p).replace(/\n/g, '<br/>')}</p>`,
+  ).join('');
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:8px 4px">${paras}</div>`;
+}
+
+export async function sendChaserEmail(opts: ChaserEmailOptions) {
+  const resend = getResend();
+  const base = process.env.RESEND_FROM_ADDRESS ?? 'SMITH <hello@smithforaccountants.co.uk>';
+  const addr = base.includes('<') ? base.slice(base.indexOf('<') + 1, base.indexOf('>')) : base;
+  const fromName = opts.fromName.replace(/[<>]/g, '').trim() || 'Accounts';
+
+  const { error } = await resend.emails.send({
+    from: `${fromName} <${addr}>`,
+    to: opts.to,
+    subject: opts.subject,
+    html: renderChaserEmailHtml(opts.body),
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+  });
+  if (error) throw new Error(`Failed to send chaser: ${error.message}`);
+}
+
 // ── Client step complete — notifies the assigned team member ─────────────────
 
 export interface ClientStepCompleteEmailOptions {

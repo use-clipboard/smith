@@ -228,7 +228,7 @@ export default function TiersTab({ subscriptionTier, initialSeatCount }: Props) 
         {!isInternal && (
           <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5 pt-1 border-t border-[var(--border)]">
             <Info size={12} className="text-[var(--accent)] shrink-0" />
-            At {pounds(perUser)}/user, that&apos;s <strong className="text-[var(--text-primary)] mx-1">{pounds(perUser * seatCount)}/mo</strong> + VAT. Billing is managed in the Billing tab.
+            At {pounds(perUser)}/user, that&apos;s <strong className="text-[var(--text-primary)] mx-1">{pounds(perUser * seatCount)}/mo</strong> + VAT. Managed in the Subscription tab.
           </p>
         )}
         {inUse !== null && seatCount < inUse && (

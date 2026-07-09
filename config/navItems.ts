@@ -32,7 +32,7 @@ export const TOOL_NAV_ITEMS: NavItem[] = [
   { moduleId: 'landlord',        href: '/landlord',       label: 'Landlord',        icon: House },
   { moduleId: 'mtd-it',          href: '/mtd-it',         label: 'MTD IT',          icon: CalendarCheck },
   { moduleId: 'final-accounts',  href: '/final-accounts', label: 'Accounts Review', icon: ClipboardCheck },
-  { moduleId: 'accounts-studio', href: '/accounts-studio', label: 'Accounts Studio', icon: Landmark, comingSoon: true },
+  { moduleId: 'accounts-studio', href: '/accounts-studio', label: 'Accounts Studio', icon: Landmark },
   { moduleId: 'performance',     href: '/performance',    label: 'Performance',     icon: Gauge },
   { moduleId: 'p32',             href: '/p32',            label: 'P32 Summary',     icon: Receipt },
   { moduleId: 'risk-assessment', href: '/risk-assessment',label: 'Risk Assessment', icon: ShieldAlert },

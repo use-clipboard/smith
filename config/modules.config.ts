@@ -309,6 +309,19 @@ export const MODULES: ModuleConfig[] = [
   },
 
   {
+    id: 'billing',
+    name: 'Billing',
+    description: 'The firm\'s commercial engine — raise and send invoices, track outstanding debt and credit control, record payments, and automate recurring billing straight from accepted proposals. Real-time revenue dashboards, aged-debtor analysis and profitability by client.',
+    iconName: 'ReceiptText',
+    route: '/billing',
+    alwaysOn: false,
+    enhancedBy: ['proposals', 'timesheets', 'bank-to-csv'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'practice_ops',
+  },
+
+  {
     id: 'proposals',
     name: 'Proposals',
     description: 'Prepare and send proposals to prospective clients with a firm-wide service catalogue, package bundles (Bronze/Silver/Gold) and per-service tiers. Prospects accept via a public web link, after which auto-onboarding can graduate them to a client, create an AML record, spin up tasks, and generate a Letter of Engagement.',
@@ -376,7 +389,7 @@ const COMPLIANCE_MODULE_IDS = [
 /** Tools that Practice adds on top of Compliance. */
 const PRACTICE_ONLY_MODULE_IDS = [
   'tasks', 'timesheets', 'document-vault', 'policies', 'meeting-notes', 'staff-hire',
-  'hr', 'proposals', 'email-triage', 'google-calendar',
+  'hr', 'proposals', 'billing', 'email-triage', 'google-calendar',
 ];
 
 /** Module IDs included in each customer tier. */
