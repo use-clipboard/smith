@@ -46,6 +46,14 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   const e = (eng?.data ?? null) as Engagement | null;
   if (!e) return NextResponse.json({ error: 'Accounts not found' }, { status: 404 });
 
+  // The client has opened the link → the email was definitely sent. Flip to
+  // 'sent' if it hasn't been already (fallback for a missed compose-sent event).
+  if (!e.approvalStatus) {
+    const withSent: Engagement = { ...e, approvalStatus: 'sent', sentAt: e.sentAt ?? new Date().toISOString() };
+    await service.from('accounts_studio_engagements').update({ data: withSent, updated_at: new Date().toISOString() }).eq('id', row.engagement_id);
+    e.approvalStatus = 'sent';
+  }
+
   const { data: firm } = await service.from('firms').select('name').eq('id', row.firm_id).maybeSingle();
   const settings = await getAccountsStudioFirmSettings(service, row.firm_id);
   const packHtml = buildAccountsPackHtml(e, {

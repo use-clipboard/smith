@@ -414,7 +414,7 @@ function runAutoCorrect(root: HTMLElement): void {
   const delim  = text[caret - 1];
   if (!/[\s.,!?;:)\]"]/.test(delim)) return;
   // Walk back from the delimiter to find the start of the preceding word.
-  let wordEnd   = caret - 1;
+  const wordEnd = caret - 1;
   let wordStart = wordEnd;
   while (wordStart > 0 && /[A-Za-z]/.test(text[wordStart - 1])) wordStart--;
   if (wordStart === wordEnd) return;
@@ -794,6 +794,14 @@ export default function ComposeModal({
       const shouldCreateTask = snap.createTaskEnabled;
 
       onSent?.(sentThreadId);
+      // Broadcast a generic "message sent" event so features that handed a draft
+      // to the compose window (e.g. Accounts Studio approval) can react only to a
+      // REAL send — not to the draft merely being created/opened.
+      try {
+        window.dispatchEvent(new CustomEvent('smith:compose-sent', {
+          detail: { threadId: sentThreadId, clientIds: snap.selectedClients.map(c => c.id) },
+        }));
+      } catch { /* noop */ }
       // If this was a forward, notify the parent so it can mark the original thread
       if (forwardOf?.threadId) {
         onForwardSent?.(forwardOf.threadId);

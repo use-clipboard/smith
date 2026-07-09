@@ -110,6 +110,14 @@ export async function sendForApproval(engagementId: string, input: SendApprovalI
   return readJson<SendApprovalResult>(r, 'Could not send for approval.');
 }
 
+/** Flip the engagement status to 'sent' — after the approval email is really
+ *  sent from the compose window (server-authoritative). */
+export async function markApprovalSent(engagementId: string): Promise<Engagement> {
+  const r = await fetch(`${BASE}/${engagementId}/mark-approval-sent`, { method: 'POST' });
+  const d = await readJson<{ engagement: EngagementDto }>(r, 'Could not update status.');
+  return { ...d.engagement.data, id: d.engagement.id };
+}
+
 /** Mark the accounts as submitted to Companies House (server-authoritative). */
 export async function markSubmitted(engagementId: string): Promise<Engagement> {
   const r = await fetch(`${BASE}/${engagementId}/mark-submitted`, { method: 'POST' });

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Loader2, Check, Landmark, Sparkles } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Loader2, Check, Landmark, Sparkles, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import RichTextEditor from '@/components/ui/RichTextEditor';
 
 interface Settings {
@@ -63,13 +63,41 @@ export default function AccountsStudioDefaultsTab() {
   const [suggesting, setSuggesting] = useState<RichKey | null>(null);
   const [editorKeys, setEditorKeys] = useState<Record<RichKey, number>>({ accountantsReport: 0, governingBody: 0 });
 
+  // Brand logo (separate upload flow, like MTD IT).
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoInput = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     fetch('/api/accounts-studio/firm-settings')
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(d => setSettings({ ...EMPTY, ...(d.settings ?? {}) }))
       .catch(() => setError('Could not load defaults.'))
       .finally(() => setLoading(false));
+    fetch('/api/accounts-studio/firm-settings/logo')
+      .then(r => r.ok ? r.json() : null).then(d => setLogoDataUrl(d?.logo ?? null)).catch(() => {});
   }, []);
+
+  async function uploadLogo(file: File) {
+    setLogoBusy(true); setError('');
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      const r = await fetch('/api/accounts-studio/firm-settings/logo', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? 'Logo upload failed.');
+      setLogoDataUrl(d.logo ?? null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Logo upload failed.'); }
+    finally { setLogoBusy(false); if (logoInput.current) logoInput.current.value = ''; }
+  }
+  async function removeLogo() {
+    setLogoBusy(true); setError('');
+    try {
+      const r = await fetch('/api/accounts-studio/firm-settings/logo', { method: 'DELETE' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? 'Could not remove the logo.');
+      setLogoDataUrl(null);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not remove the logo.'); }
+    finally { setLogoBusy(false); }
+  }
 
   function patch<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings(s => ({ ...s, [key]: value }));
@@ -189,7 +217,31 @@ export default function AccountsStudioDefaultsTab() {
             <input type="color" value={settings.brandPrimaryColor || '#4F46E5'} onChange={e => patch('brandPrimaryColor', e.target.value)} className="h-9 w-12 cursor-pointer rounded-lg border border-gray-300 bg-white p-1" aria-label="Brand colour" />
             <input type="text" value={settings.brandPrimaryColor} onChange={e => patch('brandPrimaryColor', e.target.value)} placeholder="#4F46E5" className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500" />
           </div>
-          <div className="mt-2 flex items-center justify-center rounded-lg px-4 py-3 text-sm font-semibold text-white" style={{ background: settings.brandPrimaryColor || '#4F46E5' }}>Header &amp; button preview</div>
+          <div className="mt-2 flex items-center justify-center rounded-lg px-4 py-3 text-sm font-semibold text-white" style={{ background: settings.brandPrimaryColor || '#4F46E5' }}>
+            {logoDataUrl ? <img src={logoDataUrl} alt="Logo" className="max-h-8 max-w-[160px] object-contain" /> : 'Header & button preview'}
+          </div>
+        </div>
+
+        {/* Logo upload */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs font-medium text-gray-700">Logo <span className="font-normal text-gray-400">(PNG, JPEG or WebP — 2 MB max)</span></label>
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white">
+              {logoDataUrl ? <img src={logoDataUrl} alt="Logo" className="max-h-12 max-w-[104px] object-contain" /> : <ImageIcon size={20} className="text-gray-300" />}
+            </div>
+            <div className="flex items-center gap-2">
+              <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadLogo(f); }} />
+              <button type="button" onClick={() => logoInput.current?.click()} disabled={logoBusy} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                {logoBusy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {logoDataUrl ? 'Replace' : 'Upload'}
+              </button>
+              {logoDataUrl && (
+                <button type="button" onClick={removeLogo} disabled={logoBusy} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
+                  <Trash2 size={13} /> Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="mt-1 text-[11px] text-gray-400">Used on the approval email header and the accounts PDF cover. Saved immediately.</p>
         </div>
 
         {/* Subject + body templates */}

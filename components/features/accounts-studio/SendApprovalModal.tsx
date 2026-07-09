@@ -2,23 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { X, Send, Loader2, Mail } from 'lucide-react';
-import { useSendApproval } from './useSendApproval';
 import type { Engagement } from './types';
 
+/**
+ * Collects the recipient + cover note, then delegates the actual send to the
+ * parent's useSendApproval hook (which lives in a component that stays mounted,
+ * so it can catch the 'compose-sent' event that flips the status).
+ */
 export default function SendApprovalModal({
-  engagement, initialEmail = '', onClose, onSent,
+  engagement, initialEmail = '', sending, error, triageActive, onSubmit, onClose,
 }: {
   engagement: Engagement;
   initialEmail?: string;
+  sending: boolean;
+  error: string;
+  triageActive: boolean;
+  onSubmit: (email: string, coverNote: string | null) => Promise<boolean>;
   onClose: () => void;
-  onSent: (e: Engagement) => void;
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [coverNote, setCoverNote] = useState('');
   const [loadingEmail, setLoadingEmail] = useState(!initialEmail);
-  const { send, sending, error, triageActive } = useSendApproval(engagement, (e) => { onSent(e); onClose(); });
 
-  // Prefill the recipient from the client record (unless one was passed in).
   useEffect(() => {
     let cancelled = false;
     if (initialEmail || !engagement.clientId) { setLoadingEmail(false); return; }
@@ -29,6 +34,11 @@ export default function SendApprovalModal({
       .finally(() => { if (!cancelled) setLoadingEmail(false); });
     return () => { cancelled = true; };
   }, [engagement.clientId, initialEmail]);
+
+  async function submit() {
+    const ok = await onSubmit(email.trim(), coverNote.trim() || null);
+    if (ok) onClose();
+  }
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -56,7 +66,7 @@ export default function SendApprovalModal({
         </div>
         <div className="flex justify-end gap-2 border-t border-black/5 px-5 py-3.5">
           <button onClick={onClose} disabled={sending} className="btn-secondary">Cancel</button>
-          <button onClick={() => send(email, coverNote.trim() || null)} disabled={sending || !email.trim()} className="btn-primary disabled:opacity-50">
+          <button onClick={submit} disabled={sending || !email.trim()} className="btn-primary disabled:opacity-50">
             {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {triageActive ? 'Open draft' : 'Send for approval'}
           </button>
         </div>

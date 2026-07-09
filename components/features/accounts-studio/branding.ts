@@ -33,12 +33,14 @@ export function getFirmBranding(): Promise<FirmBranding> {
     inflight = Promise.all([
       fetch('/api/firm/branding').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
       fetch('/api/accounts-studio/firm-settings').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
+      fetch('/api/accounts-studio/firm-settings/logo').then(r => (r.ok ? r.json() : {})).catch(() => ({})),
     ])
-      .then(([brand, settings]: [{ firmName?: string | null; logoUrl?: string | null }, { settings?: { accountantDetails?: string; accountantsReport?: string; accountantName?: string; accountantAddress?: string } }]) => {
+      .then(([brand, settings, logo]: [{ firmName?: string | null; logoUrl?: string | null }, { settings?: { accountantDetails?: string; accountantsReport?: string; accountantName?: string; accountantAddress?: string } }, { logo?: string | null }]) => {
         const s = settings?.settings ?? {};
         cache = {
           firmName: brand.firmName ?? null,
-          logoUrl: brand.logoUrl ?? null,
+          // Prefer the dedicated Accounts Studio logo, else the firm-wide logo.
+          logoUrl: logo?.logo ?? brand.logoUrl ?? null,
           accountantDetails: composeAccountantDetails(s.accountantName ?? '', s.accountantAddress ?? '', s.accountantDetails ?? ''),
           accountantsReport: s.accountantsReport ?? null,
         };

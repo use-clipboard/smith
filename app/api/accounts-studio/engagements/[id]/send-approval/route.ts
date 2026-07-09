@@ -82,9 +82,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const subject = renderTemplate(settings.approvalEmailSubject, vars);
   let bodyText = renderTemplate(settings.approvalEmailBody, vars);
   if (cover_note && cover_note.trim()) bodyText = `${cover_note.trim()}\n\n${bodyText}`;
+  // Prefer the Accounts Studio brand logo (bucket → data URL), else the firm logo.
+  let logoUrl: string | null = firm?.logo_url ?? null;
+  if (settings.brandLogoPath) {
+    try {
+      const { data: blob } = await service.storage.from('accounts-studio-branding').download(settings.brandLogoPath);
+      if (blob) { const buf = Buffer.from(await blob.arrayBuffer()); logoUrl = `data:${blob.type || 'image/png'};base64,${buf.toString('base64')}`; }
+    } catch { /* fall back to the firm logo */ }
+  }
   const baseEmailArgs = {
     firmName, bodyText, approvalUrl, summary: summary_lines ?? [],
-    brandHex: settings.brandPrimaryColor, logoUrl: firm?.logo_url ?? null,
+    brandHex: settings.brandPrimaryColor, logoUrl,
   };
   // For prepare_only (compose window) we return this signature-less body — the
   // compose window appends the user's Gmail signature itself.
@@ -127,8 +135,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
   }
 
-  // ── Advance engagement status → 'sent' (never regress approved/submitted) ───
-  if (e.approvalStatus !== 'approved' && e.approvalStatus !== 'submitted') {
+  // ── Advance status → 'sent' — DIRECT send only. For the compose (prepare_only)
+  //    flow the status is flipped by mark-approval-sent once the email is really
+  //    sent from the compose window, so cancelling the draft never marks 'sent'.
+  if (!prepare_only && e.approvalStatus !== 'approved' && e.approvalStatus !== 'submitted') {
     const nextData = { ...e, approvalStatus: 'sent', sentAt: new Date().toISOString() };
     await supabase.from('accounts_studio_engagements')
       .update({ data: nextData, updated_at: new Date().toISOString() })

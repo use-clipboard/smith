@@ -58,7 +58,7 @@ export default function StagePublish({
   const status = engagement.approvalStatus;
 
   const { isModuleActive } = useModules();
-  const { send: sendApproval, sending: sendingApproval } = useSendApproval(engagement, (e) => patch(() => e));
+  const { send: sendApproval, sending: sendingApproval, error: sendError } = useSendApproval(engagement, (e) => patch(() => e));
 
   // Prefer opening the in-app compose window directly (like MTD IT): fetch the
   // client's email; if Email Triage is on and we have it, hand straight to the
@@ -345,8 +345,11 @@ export default function StagePublish({
           <SendApprovalModal
             engagement={engagement}
             initialEmail={prefillEmail}
+            sending={sendingApproval}
+            error={sendError}
+            triageActive={isModuleActive('email-triage')}
+            onSubmit={(email, note) => sendApproval(email, note)}
             onClose={() => setShowSend(false)}
-            onSent={(e) => { patch(() => e); setShowSend(false); }}
           />
         )}
 
