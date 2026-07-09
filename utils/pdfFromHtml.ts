@@ -269,7 +269,13 @@ export async function generatePdfBlob(
       );
     }
 
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    // Page images are embedded as compressed JPEG rather than lossless PNG:
+    // for rasterised text/tables on a white background this is visually
+    // identical but ~10-20x smaller, keeping the PDF emailable (the previous
+    // PNG output could reach tens of MB and breach the attachment limit).
+    // `compress` additionally deflates the PDF object streams.
+    const IMG_QUALITY = 0.85;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
     let firstPage = true;
     let pageCount = 0;
     const newPage = () => { if (!firstPage) pdf.addPage(); firstPage = false; pageCount++; };
@@ -285,7 +291,7 @@ export async function generatePdfBlob(
     // Cover page (perfMode) — full bleed.
     if (coverCanvas) {
       newPage();
-      pdf.addImage(coverCanvas.toDataURL('image/png'), 'PNG', 0, 0, A4_W_MM, A4_H_MM);
+      pdf.addImage(coverCanvas.toDataURL('image/jpeg', IMG_QUALITY), 'JPEG', 0, 0, A4_W_MM, A4_H_MM);
       stampPageNumber();
     }
 
@@ -307,7 +313,7 @@ export async function generatePdfBlob(
       );
 
       newPage();
-      pdf.addImage(sliceCanvas.toDataURL('image/png'), 'PNG', imgX, imgY, imgW, imgH);
+      pdf.addImage(sliceCanvas.toDataURL('image/jpeg', IMG_QUALITY), 'JPEG', imgX, imgY, imgW, imgH);
       stampPageNumber();
     }
 
