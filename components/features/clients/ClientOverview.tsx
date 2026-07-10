@@ -46,7 +46,10 @@ export interface ClientForOverview {
   ch_idv_code: string | null;
   vat_number: string | null;
   vat_scheme: string | null;
+  vat_scheme_period_end_month: number | null;
+  vat_submit_type: string | null;
   paye_reference: string | null;
+  paye_accounts_office_reference: string | null;
   year_end: string | null;
   date_of_birth: string | null;
   mtd_it: boolean;
@@ -91,7 +94,17 @@ function fmtDue(iso: string): string {
 
 // ── Key Information — entity-type aware (mirrors the Edit modal's showFor) ──────
 const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'llp', 'trust', 'charity', 'rental_landlord'];
-type KIField = { key: keyof ClientForOverview; label: string; types: string[]; kind?: 'date' | 'bool' };
+// Quarterly VAT schemes follow HMRC's three stagger groups; we store the
+// representative month (1, 2 or 3) and display the full quarter pattern.
+const QUARTERLY_STAGGERS: Record<number, string> = {
+  3: 'Mar / Jun / Sep / Dec',
+  1: 'Apr / Jul / Oct / Jan',
+  2: 'May / Aug / Nov / Feb',
+};
+// A field can supply a `format` that receives the whole client (needed when a
+// row's value depends on more than one column, e.g. the stagger reads both
+// vat_scheme and vat_scheme_period_end_month).
+type KIField = { key: keyof ClientForOverview; label: string; types: string[]; kind?: 'date' | 'bool'; format?: (c: ClientForOverview) => string };
 const KEY_INFO_FIELDS: KIField[] = [
   { key: 'registration_number',       label: 'Company Number',           types: ['limited_company', 'llp'] },
   { key: 'utr_number',                label: 'UTR Number',               types: ['sole_trader', 'partnership', 'limited_company', 'llp', 'individual'] },
@@ -100,13 +113,20 @@ const KEY_INFO_FIELDS: KIField[] = [
   { key: 'companies_house_auth_code', label: 'Companies House Auth Code', types: ['limited_company', 'llp'] },
   { key: 'vat_number',                label: 'VAT Number',               types: ['sole_trader', 'limited_company', 'llp', 'partnership'] },
   { key: 'vat_scheme',                label: 'VAT Scheme',               types: NON_INDIVIDUAL },
+  { key: 'vat_submit_type',           label: 'VAT Submit Type',          types: NON_INDIVIDUAL },
+  { key: 'vat_scheme_period_end_month', label: 'VAT Quarter Stagger',    types: NON_INDIVIDUAL,
+    format: c => (c.vat_scheme === 'Quarterly' && c.vat_scheme_period_end_month != null)
+      ? (QUARTERLY_STAGGERS[c.vat_scheme_period_end_month] ?? '—') : '—' },
   { key: 'paye_reference',            label: 'PAYE Reference',           types: NON_INDIVIDUAL },
+  { key: 'paye_accounts_office_reference', label: 'PAYE Accounts Office Reference', types: NON_INDIVIDUAL },
   { key: 'year_end',                  label: 'Year End',                 types: NON_INDIVIDUAL },
   { key: 'date_of_birth',             label: 'Date of Birth',            types: ['individual', 'sole_trader'], kind: 'date' },
   { key: 'mtd_it',                    label: 'MTD IT',                   types: ['individual'], kind: 'bool' },
 ];
 
-function formatKeyInfo(field: KIField, raw: unknown): string {
+function formatKeyInfo(field: KIField, client: ClientForOverview): string {
+  if (field.format) return field.format(client);
+  const raw = client[field.key];
   if (field.kind === 'bool') return raw ? 'Registered' : '—';
   if (raw == null || raw === '') return '—';
   if (field.kind === 'date') {
@@ -219,7 +239,7 @@ export default function ClientOverview({ clientId, client }: { clientId: string;
           ) : (
             <dl className="space-y-3">
               {keyInfoRows.map(f => (
-                <KeyRow key={f.key} label={f.label} value={formatKeyInfo(f, client[f.key])} />
+                <KeyRow key={f.key} label={f.label} value={formatKeyInfo(f, client)} />
               ))}
             </dl>
           )}
