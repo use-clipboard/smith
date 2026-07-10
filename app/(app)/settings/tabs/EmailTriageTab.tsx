@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Mail, Wifi, WifiOff, Check, Loader2, ExternalLink, AlertTriangle, Bold, Italic, Underline, Link } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import TriageCategoryManager from '@/components/features/settings/TriageCategoryManager';
 
 interface GmailStatus {
   connected: boolean;
@@ -299,6 +300,13 @@ export default function EmailTriageTab() {
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Triage categories */}
+      {status?.connected && (
+        <div className="glass-solid rounded-xl p-5">
+          <TriageCategoryManager />
         </div>
       )}
 

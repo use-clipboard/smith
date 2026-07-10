@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserContext } from '@/lib/getUserContext';
 import { getAnthropicForFirm } from '@/lib/getAnthropicForFirm';
+import { createClient } from '@/lib/supabase-server';
+import { getUserCategoryList } from '@/lib/emailTriageCategories';
 
 // POST /api/email/ai-summary
 // Summarises an email thread for a busy accountant and suggests next actions.
@@ -16,11 +18,6 @@ const Schema = z.object({
 
 const ALLOWED = ['reply', 'reply_all', 'forward', 'task', 'allocate'] as const;
 type ActionType = typeof ALLOWED[number];
-
-// Values 'fyi' and 'completed' display as 'Ad-hoc / Misc' and 'No Action
-// Needed' in the UI — stored values kept for back-compat with existing rows.
-const CATEGORIES = ['untriaged', 'needs_reply', 'to_do', 'waiting_client', 'documents', 'internal', 'fyi', 'completed'] as const;
-type Category = typeof CATEGORIES[number];
 
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
@@ -37,12 +34,22 @@ export async function POST(req: NextRequest) {
 
   const anthropic = await getAnthropicForFirm(ctx.firmId);
 
+  // Build the classification vocabulary from THIS user's (customisable) triage
+  // categories, so Auto Triage files into whatever buckets they've defined.
+  const supabase = createClient();
+  const categories = await getUserCategoryList(supabase, ctx.userId);
+  const categoryKeys = categories.map(c => c.key);
+  const enumStr = categoryKeys.map(k => JSON.stringify(k)).join('|');
+  const descLines = categories
+    .map(c => `${JSON.stringify(c.key)}${c.label.toLowerCase() !== c.key ? ` (shown as "${c.label}")` : ''} = ${c.aiDescription || c.label}`)
+    .join('. ');
+
   const system = `You are an assistant for a UK accountancy firm triaging client emails. Summarise an email thread for a busy accountant, classify it, and suggest the most useful next actions.
 Return ONLY valid JSON (no markdown, no code fences) of exactly this shape:
-{"summary": string, "category": "untriaged"|"needs_reply"|"to_do"|"waiting_client"|"documents"|"internal"|"fyi"|"completed", "actions": [{"label": string, "type": "reply"|"reply_all"|"forward"|"task"|"allocate"}]}
+{"summary": string, "category": ${enumStr}, "actions": [{"label": string, "type": "reply"|"reply_all"|"forward"|"task"|"allocate"}]}
 Rules:
 - summary: 1–3 short sentences in plain text. Focus on what the sender wants and what needs doing. No greeting, no "This email...".
-- category: the single best triage bucket. "needs_reply" = the latest message is from someone else and clearly wants a response. "to_do" = requires an action from us beyond a reply (do some work, file something, chase, prepare documents). "waiting_client" = we replied / are waiting on the other party. "documents" = the email is primarily about sending/receiving attachments or files. "internal" = internal correspondence between colleagues at the firm, not client-facing. "fyi" (shown as "Ad-hoc / Misc") = informational or doesn't fit any other bucket. "completed" (shown as "No Action Needed") = the thread is concluded and needs no follow-up at all. "untriaged" = unclear / can't tell.
+- category: choose the single best triage bucket from these definitions — ${descLines}. Always pick exactly one; use "untriaged" only if none of the others genuinely fit.
 - actions: 0–3 genuinely useful next steps, most important first. "label" is a short imperative (e.g. "Reply to Michael", "Create a task", "File to client"). "type" MUST be one of the five allowed values. Only suggest "allocate" if the email clearly relates to a client; only "task" if there's a concrete to-do.`;
 
   const user = `Subject: ${subject}
@@ -73,7 +80,7 @@ ${threadText.slice(0, 12000)}
       .slice(0, 3)
       .map(a => ({ label: a.label as string, type: a.type as ActionType }));
 
-    const category: Category | null = CATEGORIES.includes(data.category as Category) ? (data.category as Category) : null;
+    const category: string | null = data.category && categoryKeys.includes(data.category) ? data.category : null;
 
     return NextResponse.json({ summary: (data.summary ?? '').trim(), category, actions });
   } catch (err) {

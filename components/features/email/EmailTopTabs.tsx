@@ -102,7 +102,7 @@ export default function EmailTopTabs({
   const tabIdle = 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]';
 
   return (
-    <div className="shrink-0 flex items-center gap-1 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md overflow-x-auto scrollbar-thin">
+    <div className="shrink-0 flex flex-wrap items-center gap-x-1 gap-y-2 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md">
       {SYSTEM_TABS.map(t => {
         const Icon = t.icon;
         const active = activeLabel === t.id;

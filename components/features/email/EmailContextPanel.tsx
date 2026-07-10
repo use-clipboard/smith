@@ -19,7 +19,7 @@ import {
   Sparkles, RefreshCw, ArrowRight, Loader2, Users,
 } from 'lucide-react';
 import { useTabContext, type Tab } from '@/components/ui/TabContext';
-import { EMAIL_CATEGORIES, CATEGORY_META, type EmailCategory } from './emailCategories';
+import { iconFor, buildMetaMap, metaFor, type CategoryDef, type EmailCategory } from './emailCategories';
 
 export type SummaryActionType = 'reply' | 'reply_all' | 'forward' | 'task' | 'allocate';
 export interface SummaryAction { label: string; type: SummaryActionType; }
@@ -50,6 +50,8 @@ interface Props {
   threadLabelIds: string[];
   userLabels: { id: string; name: string }[];
   aiSummary?: AiSummary;
+  /** The user's ordered category list (incl. the fixed anchors). */
+  categories: CategoryDef[];
   category?: EmailCategory;
   onCategoryChange?: (c: EmailCategory) => void;
   onAllocate: () => void;
@@ -91,7 +93,7 @@ function SectionHeader({ icon, title, action }: { icon: React.ReactNode; title: 
 }
 
 export default function EmailContextPanel({
-  allocations, taskLinks, threadLabelIds, userLabels, aiSummary, category,
+  allocations, taskLinks, threadLabelIds, userLabels, aiSummary, categories, category,
   onCategoryChange, onAllocate, onRemoveAllocation, onRemoveTaskLink, onAddLabel, onRemoveLabel,
   onRegenerateSummary, onSummaryAction, onClose,
 }: Props) {
@@ -221,11 +223,13 @@ export default function EmailContextPanel({
 
       {/* ── Category (heuristic / AI, with manual override) ────────────── */}
       {category && onCategoryChange && (() => {
-        const CatIcon = CATEGORY_META[category].icon;
+        const metaMap = buildMetaMap(categories);
+        const current = metaFor(metaMap, category);
+        const CatIcon = iconFor(current.iconName);
         return (
           <div className="glass rounded-xl p-4">
             <SectionHeader
-              icon={<CatIcon size={13} style={{ color: CATEGORY_META[category].color }} />}
+              icon={<CatIcon size={13} style={{ color: current.color }} />}
               title="Category"
             />
             <select
@@ -233,7 +237,7 @@ export default function EmailContextPanel({
               onChange={e => onCategoryChange(e.target.value as EmailCategory)}
               className="w-full text-sm rounded-lg border border-[var(--border-input)] bg-white/60 px-3 py-2 text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
             >
-              {EMAIL_CATEGORIES.map(c => <option key={c} value={c}>{CATEGORY_META[c].label}</option>)}
+              {categories.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
             </select>
           </div>
         );

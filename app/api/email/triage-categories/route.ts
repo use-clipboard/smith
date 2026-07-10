@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { getUserCategoryKeys } from '@/lib/emailTriageCategories';
 
 // Triage category persistence — PER USER, PER EMAIL (gmail message).
 // Each user triages every individual email independently: no row = untriaged
@@ -11,14 +12,12 @@ import { getUserContext } from '@/lib/getUserContext';
 //   POST → upsert one email's category for the caller. `setBy: 'user'` always
 //          wins; `'ai'` will NOT overwrite an existing manual ('user') choice.
 
-// Values 'fyi' and 'completed' display as 'Ad-hoc / Misc' and 'No Action
-// Needed' — stored values kept for back-compat.
-const CATEGORIES = ['untriaged', 'needs_reply', 'to_do', 'waiting_client', 'documents', 'internal', 'fyi', 'completed'] as const;
-
+// Categories are now per-user customisable, so the value is validated at
+// runtime against the caller's own category keys (below) rather than a fixed enum.
 const UpsertSchema = z.object({
   messageId: z.string().min(1),
   threadId: z.string().optional(),
-  category: z.enum(CATEGORIES),
+  category: z.string().min(1),
   setBy: z.enum(['ai', 'user']).default('user'),
 });
 
@@ -76,6 +75,12 @@ export async function POST(req: NextRequest) {
   const { messageId, threadId, category, setBy } = parsed.data;
 
   const supabase = createServiceClient();
+
+  // Validate the category against the caller's own (customisable) set.
+  const validKeys = await getUserCategoryKeys(supabase, ctx.userId);
+  if (!validKeys.includes(category)) {
+    return NextResponse.json({ error: 'Unknown category' }, { status: 400 });
+  }
 
   // AI must not clobber a manual choice — skip if a 'user' row already exists.
   if (setBy === 'ai') {

@@ -6,7 +6,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import EmailTopTabs from './EmailTopTabs';
 import EmailFilterBar, { type TimeFilter } from './EmailFilterBar';
 import EmailCategoryCards from './EmailCategoryCards';
-import { EMAIL_CATEGORIES, CATEGORY_META, type EmailCategory } from './emailCategories';
+import { buildCategoryList, buildMetaMap, metaFor, type CategoryDef, type EmailCategory } from './emailCategories';
 import EmailList from './EmailList';
 import EmailThread from './EmailThread';
 import EmailContextPanel, { type AiSummary, type SummaryAction } from './EmailContextPanel';
@@ -115,6 +115,26 @@ export default function EmailTriagePage() {
   const [senderFilter, setSenderFilter] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<EmailCategory | null>(null);
+
+  // Per-user customisable triage categories (name / colour / icon / order).
+  // The middle set comes from config; the two anchors (Untriaged first, No
+  // Action Needed last) are always added. Falls back to defaults until loaded.
+  const [categoryMiddle, setCategoryMiddle] = useState<CategoryDef[] | null>(null);
+  const categoryList  = useMemo(() => buildCategoryList(categoryMiddle), [categoryMiddle]);
+  const categoryMeta  = useMemo(() => buildMetaMap(categoryList), [categoryList]);
+  const categoryOrder = useMemo(() => categoryList.map(c => c.key), [categoryList]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => fetch('/api/email/triage-category-config')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d?.middle) setCategoryMiddle(d.middle as CategoryDef[]); })
+      .catch(() => {});
+    load();
+    // Re-fetch when the user edits their categories in Settings.
+    const onUpdate = () => load();
+    window.addEventListener('smith:triage-categories-updated', onUpdate);
+    return () => { cancelled = true; window.removeEventListener('smith:triage-categories-updated', onUpdate); };
+  }, []);
   // Senders seen this session (email → name) — only grows, so the sender filter
   // dropdown keeps its options even after a server-side sender filter narrows
   // the loaded list to a single sender.
@@ -222,7 +242,7 @@ export default function EmailTriagePage() {
   // The server returns the exact message ids changed, so undo restores
   // precisely that set.
   async function handleMarkAllNoAction(category: EmailCategory) {
-    const label = CATEGORY_META[category].label;
+    const label = metaFor(categoryMeta, category).label;
     try {
       const res = await fetch('/api/email/triage-categories/bulk', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2165,8 +2185,8 @@ export default function EmailTriagePage() {
   // it covers the whole mailbox, not just the loaded page, and drops in real
   // time as Auto Triage / manual triage saves categories.
   const categoryCounts = useMemo(() => {
-    const counts = Object.fromEntries(EMAIL_CATEGORIES.map(c => [c, 0])) as Record<EmailCategory, number>;
-    for (const v of Object.values(categoryOverrides)) counts[v.category]++;
+    const counts = Object.fromEntries(categoryOrder.map(c => [c, 0])) as Record<EmailCategory, number>;
+    for (const v of Object.values(categoryOverrides)) counts[v.category] = (counts[v.category] ?? 0) + 1;
     const categorised = Object.values(categoryOverrides).filter(v => v.category !== 'untriaged').length;
     if (untriagedServer) {
       // Exact server baseline, adjusted by how far the local overrides map has
@@ -2181,7 +2201,7 @@ export default function EmailTriagePage() {
       counts.untriaged = Math.max(0, inboxTotal - categorised);
     }
     return counts;
-  }, [categoryOverrides, labels, untriagedServer]);
+  }, [categoryOverrides, labels, untriagedServer, categoryOrder]);
   // Broadcast the Untriaged count so the sidebar badge tracks it in real time.
   // Only once the inbox label has loaded — otherwise the initial render would
   // push a misleading 0 over whatever the sidebar fetched itself.
@@ -2298,11 +2318,14 @@ export default function EmailTriagePage() {
           row. relative z-30 lifts the row's stacking context above the body
           panels below (which create their own contexts via backdrop-blur), so
           the Auto Triage / settings popovers aren't clipped underneath them. */}
-      <div className="shrink-0 relative z-30 flex items-center gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md">
-        <div className="flex-1 min-w-0 overflow-x-auto scrollbar-thin">
-          {/* Category cards are inbox triage — hide them on Sent/Drafts/etc. */}
+      <div className="shrink-0 relative z-30 flex items-start gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card)] backdrop-blur-md">
+        <div className="flex-1 min-w-0">
+          {/* Category cards are inbox triage — hide them on Sent/Drafts/etc.
+              They wrap onto multiple rows on narrow screens so every drop
+              target stays visible (no horizontal scroll hiding them). */}
           {activeLabel === 'INBOX' && (
             <EmailCategoryCards
+              categories={categoryList}
               counts={categoryCounts}
               active={categoryFilter}
               onSelect={setCategoryFilter}
@@ -2552,6 +2575,7 @@ export default function EmailTriagePage() {
               threadLabelIds={activeThread.labelIds}
               userLabels={labels.filter(l => l.type === 'user').map(l => ({ id: l.id, name: l.name }))}
               aiSummary={summaries[activeThread.gmailThreadId ?? activeThread.id]}
+              categories={categoryList}
               category={categoryOf(activeThread)}
               onCategoryChange={c => setThreadCategory(activeThread.id, c, activeThread.gmailThreadId)}
               onAllocate={openAllocate}
