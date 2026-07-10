@@ -24,6 +24,7 @@ const CreateClientSchema = z.object({
   companies_house_id: z.string().optional(),
   vat_number: z.string().optional(),
   companies_house_auth_code: z.string().optional(),
+  ch_idv_code: z.string().optional(),
   date_of_birth: z.string().optional(),
 });
 
@@ -92,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   const { name, client_ref, business_type, contact_email, status,
     address, utr_number, registration_number, national_insurance_number,
-    companies_house_id, vat_number, companies_house_auth_code, date_of_birth } = parsed.data;
+    companies_house_id, vat_number, companies_house_auth_code, ch_idv_code, date_of_birth } = parsed.data;
 
   const supabase = createClient();
 
@@ -120,6 +121,7 @@ export async function POST(req: NextRequest) {
         : (companies_house_id || null),
       vat_number: vat_number || null,
       companies_house_auth_code: companies_house_auth_code || null,
+      ch_idv_code: ch_idv_code || null,
       date_of_birth: date_of_birth || null,
     })
     .select().single();

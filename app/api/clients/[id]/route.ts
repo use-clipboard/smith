@@ -24,6 +24,7 @@ const UpdateClientSchema = z.object({
   companies_house_id: z.string().optional(),
   vat_number: z.string().optional(),
   companies_house_auth_code: z.string().optional(),
+  ch_idv_code: z.string().optional(),
   date_of_birth: z.string().optional(),
   // new extended fields
   contact_number: z.string().optional(),
@@ -120,6 +121,7 @@ export async function PATCH(
   if (d.companies_house_id !== undefined) updates.companies_house_id = d.companies_house_id || null;
   if (d.vat_number !== undefined) updates.vat_number = d.vat_number || null;
   if (d.companies_house_auth_code !== undefined) updates.companies_house_auth_code = d.companies_house_auth_code || null;
+  if (d.ch_idv_code !== undefined) updates.ch_idv_code = d.ch_idv_code || null;
   if (d.date_of_birth !== undefined) updates.date_of_birth = d.date_of_birth || null;
   if (d.contact_number !== undefined) updates.contact_number = d.contact_number || null;
   if (d.paye_reference !== undefined) updates.paye_reference = d.paye_reference || null;

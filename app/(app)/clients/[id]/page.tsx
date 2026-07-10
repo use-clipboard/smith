@@ -68,7 +68,7 @@ interface Client {
   contact_email: string | null; risk_rating: string | null; status: ClientStatus; created_at: string;
   address: string | null; utr_number: string | null; registration_number: string | null;
   national_insurance_number: string | null; companies_house_id: string | null;
-  vat_number: string | null; companies_house_auth_code: string | null; date_of_birth: string | null;
+  vat_number: string | null; companies_house_auth_code: string | null; ch_idv_code: string | null; date_of_birth: string | null;
   contact_number: string | null;
   paye_reference: string | null;
   paye_accounts_office_reference: string | null;
@@ -199,6 +199,8 @@ function showFor(field: string, type: string | null): boolean {
     companies_house_id: [],
     vat_number: ['sole_trader', 'limited_company', 'llp', 'partnership'],
     companies_house_auth_code: ['limited_company', 'llp'],
+    // Companies House Identity Verification code — individuals only (ECCTA 2023).
+    ch_idv_code: ['individual'],
     date_of_birth: ['individual', 'sole_trader'],
     paye_reference: NON_INDIVIDUAL,
     paye_accounts_office_reference: NON_INDIVIDUAL,
@@ -1117,6 +1119,7 @@ export default function ClientDetailPage() {
   const [editUtr, setEditUtr] = useState('');
   const [editRegNo, setEditRegNo] = useState('');
   const [editNI, setEditNI] = useState('');
+  const [editChIdv, setEditChIdv] = useState('');
   const [editVat, setEditVat] = useState('');
   const [editCHAuth, setEditCHAuth] = useState('');
   const [editDob, setEditDob] = useState('');
@@ -1387,7 +1390,7 @@ export default function ClientDetailPage() {
     setEditName(client.name); setEditRef(client.client_ref ?? ''); setEditType(client.business_type ?? '');
     setEditEmail(client.contact_email ?? ''); setEditRisk(client.risk_rating ?? ''); setEditStatus(client.status ?? 'active');
     setEditAddress(client.address ?? ''); setEditUtr(client.utr_number ?? ''); setEditRegNo(client.registration_number ?? '');
-    setEditNI(client.national_insurance_number ?? '');
+    setEditNI(client.national_insurance_number ?? ''); setEditChIdv(client.ch_idv_code ?? '');
     setEditVat(client.vat_number ?? ''); setEditCHAuth(client.companies_house_auth_code ?? '');
     setEditDob(client.date_of_birth ?? '');
     setEditContactNumber(client.contact_number ?? '');
@@ -1442,6 +1445,7 @@ export default function ClientDetailPage() {
           national_insurance_number: editNI,
           // companies_house_id is not edited here — it's mirrored from
           // registration_number server-side for Ltd/LLP (background field only).
+          ch_idv_code: editChIdv,
           vat_number: editVat,
           companies_house_auth_code: editCHAuth,
           date_of_birth: editDob,
@@ -2097,6 +2101,7 @@ export default function ClientDetailPage() {
               {showFor('utr_number', type) && <InfoRow label="UTR Number" value={client.utr_number} mono />}
               {showFor('registration_number', type) && <InfoRow label="Company Registration Number" value={client.registration_number} mono />}
               {showFor('national_insurance_number', type) && <InfoRow label="National Insurance Number" value={client.national_insurance_number} mono />}
+              {showFor('ch_idv_code', type) && <InfoRow label="CH IDV Code" value={client.ch_idv_code} mono />}
               {showFor('companies_house_id', type) && <InfoRow label="Companies House ID" value={client.companies_house_id} mono />}
               {showFor('vat_number', type) && <InfoRow label="VAT Number" value={client.vat_number} mono />}
               {showFor('companies_house_auth_code', type) && <InfoRow label="Companies House Auth Code" value={client.companies_house_auth_code} mono />}
@@ -2352,6 +2357,7 @@ export default function ClientDetailPage() {
                 {showFor('utr_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">UTR Number</label><input value={editUtr} onChange={e => setEditUtr(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('registration_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Company Registration Number</label><input value={editRegNo} onChange={e => setEditRegNo(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('national_insurance_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">National Insurance Number</label><input value={editNI} onChange={e => setEditNI(e.target.value.toUpperCase())} className="input-base w-full font-mono" /></div>}
+                {showFor('ch_idv_code', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">CH IDV Code</label><input value={editChIdv} onChange={e => setEditChIdv(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('vat_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Number</label><input value={editVat} onChange={e => setEditVat(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('companies_house_auth_code', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Companies House Authentication Code</label><input value={editCHAuth} onChange={e => setEditCHAuth(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('date_of_birth', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Date of Birth</label><input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="input-base w-full" /></div>}
