@@ -28,6 +28,17 @@ export async function GET(req: NextRequest) {
     .or(`full_name.ilike.%${q}%,email.ilike.%${q}%`)
     .limit(5);
 
+  // Search the user's recent recipients (suppliers / one-off contacts they've
+  // emailed before), ranked by how often + how recently.
+  const { data: recents } = await supabase
+    .from('email_recent_recipients')
+    .select('email, name, send_count')
+    .eq('user_id', ctx.userId)
+    .or(`email.ilike.%${q}%,name.ilike.%${q}%`)
+    .order('send_count', { ascending: false })
+    .order('last_sent_at', { ascending: false })
+    .limit(8);
+
   const clientResults = (clients ?? [])
     .filter(c => c.contact_email)
     .map(c => ({
@@ -50,5 +61,19 @@ export async function GET(req: NextRequest) {
       status: null,
     }));
 
-  return NextResponse.json({ results: [...clientResults, ...teamResults] });
+  // Don't show a recent recipient that's already surfaced as a client or team
+  // member — they belong under their proper group (with the client ref etc.).
+  const known = new Set([...clientResults, ...teamResults].map(r => r.email.toLowerCase()));
+  const recentResults = (recents ?? [])
+    .filter(r => r.email && !known.has(r.email.toLowerCase()))
+    .map(r => ({
+      type: 'recent' as const,
+      id: `recent:${r.email}`,
+      name: r.name ?? '',
+      email: r.email,
+      clientRef: null,
+      status: null,
+    }));
+
+  return NextResponse.json({ results: [...clientResults, ...teamResults, ...recentResults] });
 }

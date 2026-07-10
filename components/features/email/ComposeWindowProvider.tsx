@@ -10,6 +10,11 @@ import { useModules } from '@/components/ui/ModulesProvider';
 interface SelectedRecipient { name: string; email: string }
 interface ReplyAllRecipients { to: SelectedRecipient[]; cc: SelectedRecipient[] }
 
+/** A file too large to attach inline (>25 MB, or that would take the message
+ *  over Gmail's 25 MB limit) that was uploaded to the firm's Google Drive
+ *  instead — sent as a shareable link in the email body. */
+export interface DriveAttachment { name: string; link: string; size: number; fileId: string }
+
 /**
  * Snapshot of every field a user might have filled in. Captured on minimise,
  * restored when the compose window is reopened. Lives in memory only — a hard
@@ -24,6 +29,7 @@ export interface ComposeSnapshot {
   subject:            string;
   bodyHtml:           string;
   attachedFiles:      File[];
+  driveAttachments:   DriveAttachment[];
   selectedClients:    Client[];
   createTaskEnabled:  boolean;
 }
@@ -206,6 +212,7 @@ function hasContent(snap: ComposeSnapshot): boolean {
   if (snap.to.length > 0 || snap.cc.length > 0 || snap.bcc.length > 0) return true;
   if (snap.subject.trim().length > 0) return true;
   if (snap.attachedFiles.length > 0) return true;
+  if (snap.driveAttachments.length > 0) return true;
   // Body has user content if it contains anything other than the signature shell
   const stripped = snap.bodyHtml.replace(/<[^>]+>/g, '').trim();
   return stripped.length > 0;

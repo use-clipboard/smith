@@ -5,22 +5,71 @@ import { createPortal } from 'react-dom';
 import {
   X, Send, Loader2, Sparkles, Check, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
-  Smile, Minus, AlertCircle, PenLine, Flag, Trash2,
+  Smile, Minus, AlertCircle, PenLine, Flag, Trash2, HardDrive, FolderInput,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
 import Tooltip from '@/components/ui/Tooltip';
 import { useSmartCompose, stripGhostHtml } from './useSmartCompose';
-import type { ComposeSnapshot } from './ComposeWindowProvider';
+import type { ComposeSnapshot, DriveAttachment } from './ComposeWindowProvider';
+import DriveFolderPicker from './DriveFolderPicker';
+import { createClient as createBrowserSupabase } from '@/lib/supabase';
+
+// Attachment size thresholds. Below INLINE_LIMIT the whole batch rides in the
+// send request as today (fast, no bucket round-trip). Between that and Gmail's
+// 25 MB message ceiling, files are staged in Supabase Storage and pulled back
+// server-side. Anything larger goes to Google Drive as a shareable link.
+const INLINE_LIMIT = 3 * 1024 * 1024;         // ~3 MB — safely under the ~4.5 MB serverless body cap
+const GMAIL_ATTACH_LIMIT = 25 * 1024 * 1024;  // 25 MB — Gmail's per-message attachment limit
+
+const STAGING_BUCKET = 'email-attachments-staging';
+
+/** Upload one File to the transient staging bucket; returns its object path. */
+async function stageFileToBucket(file: File): Promise<string> {
+  const supabase = createBrowserSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120);
+  const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(STAGING_BUCKET)
+    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
+/** Renders the Drive-link footer appended to the email body on send. */
+function buildDriveLinksBlock(items: DriveAttachment[]): string {
+  if (!items.length) return '';
+  const rows = items.map(d => {
+    const mb = (d.size / 1048576).toFixed(1);
+    return `<div style="margin:6px 0"><a href="${d.link}" style="color:#1a73e8;text-decoration:none">📄 ${escapeHtml(d.name)}</a> <span style="color:#80868b">(${mb} MB)</span></div>`;
+  }).join('');
+  return `<br/><div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px">
+    <div style="font-size:13px;color:#5f6368;margin-bottom:4px">Large file${items.length > 1 ? 's' : ''} shared via Google Drive:</div>
+    ${rows}
+  </div>`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+}
 
 interface RecipientResult {
-  type: 'client' | 'team';
+  type: 'client' | 'team' | 'recent';
   id: string;
   name: string;
   email: string;
   clientRef: string | null;
   status: string | null;
 }
+
+// Recipient suggestions are shown grouped under these headers, in this order.
+const RECIPIENT_GROUPS: { key: RecipientResult['type']; label: string }[] = [
+  { key: 'client', label: 'Clients' },
+  { key: 'team',   label: 'Team' },
+  { key: 'recent', label: 'Recent' },
+];
 
 interface SelectedRecipient {
   name: string;
@@ -300,34 +349,45 @@ function RecipientInput({
         {searching && <Loader2 size={12} className="animate-spin text-[var(--text-muted)]" />}
       </div>
       {open && results.length > 0 && (
-        <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden">
-          {results.map(r => (
-            <button
-              key={r.id}
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => handleSelect(r)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-nav-hover)] text-left transition-colors"
-            >
-              <div className="w-7 h-7 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-xs font-bold text-[var(--accent)] shrink-0">
-                {(r.name || r.email)[0].toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.name}</p>
-                <p className="text-xs text-[var(--text-muted)] truncate">{r.email}</p>
-              </div>
-              {r.type === 'client' && r.clientRef && (
-                <div className="shrink-0 flex items-center gap-1.5">
-                  <span className="text-[11px] text-[var(--text-muted)]">{r.clientRef}</span>
-                  {r.status && (
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize ${RECIPIENT_STATUS_COLOURS[r.status.toLowerCase()] ?? RECIPIENT_STATUS_COLOURS.inactive}`}>
-                      {r.status}
-                    </span>
-                  )}
+        <div className="absolute left-0 right-0 z-50 mt-1 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden max-h-72 overflow-y-auto scrollbar-thin">
+          {RECIPIENT_GROUPS.map(group => {
+            const items = results.filter(r => r.type === group.key);
+            if (items.length === 0) return null;
+            return (
+              <div key={group.key}>
+                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] bg-[var(--bg-nav)]/40">
+                  {group.label}
                 </div>
-              )}
-              {r.type === 'team' && <span className="text-[11px] text-[var(--text-muted)] shrink-0">Team</span>}
-            </button>
-          ))}
+                {items.map(r => (
+                  <button
+                    key={r.id}
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => handleSelect(r)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-nav-hover)] text-left transition-colors"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-xs font-bold text-[var(--accent)] shrink-0">
+                      {(r.name || r.email)[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.name || r.email}</p>
+                      {r.name && <p className="text-xs text-[var(--text-muted)] truncate">{r.email}</p>}
+                    </div>
+                    {r.type === 'client' && r.clientRef && (
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        <span className="text-[11px] text-[var(--text-muted)]">{r.clientRef}</span>
+                        {r.status && (
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize ${RECIPIENT_STATUS_COLOURS[r.status.toLowerCase()] ?? RECIPIENT_STATUS_COLOURS.inactive}`}>
+                            {r.status}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {r.type === 'team' && <span className="text-[11px] text-[var(--text-muted)] shrink-0">Team</span>}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -506,6 +566,19 @@ export default function ComposeModal({
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [fetchingAttachments, setFetchingAttachments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Large attachments (>25 MB) → uploaded to the firm's Google Drive and sent as
+  // a shareable link, mirroring Gmail.
+  const [driveAttachments, setDriveAttachments] = useState<DriveAttachment[]>([]);
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
+  const [firmDriveFolder, setFirmDriveFolder] = useState<{ id: string; name: string } | null>(null);
+  const [chosenFolder, setChosenFolder] = useState<{ id: string; name: string } | null>(null);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [pendingLargeFiles, setPendingLargeFiles] = useState<File[]>([]);
+  const [driveUploading, setDriveUploading] = useState(false);
+  // When set, the folder picker is choosing a NEW folder for this existing Drive
+  // attachment (a "move"), rather than a destination for a fresh upload.
+  const [movingDriveIndex, setMovingDriveIndex] = useState<number | null>(null);
   // Drag-over UI state. Tracked as a counter rather than a boolean because
   // dragenter/dragleave fire for every child element the cursor crosses, so
   // a naive boolean would flicker as the user moves over the editor / inputs.
@@ -549,6 +622,36 @@ export default function ComposeModal({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [emojiPickerOpen]);
+
+  // Whether the firm has Google Drive connected — decides if >25 MB files can be
+  // sent as Drive links or should show a "connect Drive" warning. Fetched once
+  // when the window opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch('/api/google-drive/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { connected?: boolean; folderId?: string | null; folderName?: string | null } | null) => {
+        if (cancelled || !d) return;
+        setDriveConnected(!!d.connected);
+        setFirmDriveFolder(d.folderId ? { id: d.folderId, name: d.folderName || 'Firm folder' } : null);
+      })
+      .catch(() => { if (!cancelled) setDriveConnected(false); });
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // Re-check the connection lazily if a file needs it and we don't know yet.
+  async function ensureDriveStatus(): Promise<boolean> {
+    if (driveConnected !== null) return driveConnected;
+    try {
+      const r = await fetch('/api/google-drive/status');
+      if (!r.ok) { setDriveConnected(false); return false; }
+      const d = await r.json() as { connected?: boolean; folderId?: string | null; folderName?: string | null };
+      setDriveConnected(!!d.connected);
+      setFirmDriveFolder(d.folderId ? { id: d.folderId, name: d.folderName || 'Firm folder' } : null);
+      return !!d.connected;
+    } catch { setDriveConnected(false); return false; }
+  }
 
   function fmt(command: string, value?: string) {
     // execCommand operates on the active selection — so the editor must have
@@ -604,6 +707,7 @@ export default function ComposeModal({
       setShowBcc(initialSnapshot.showBcc);
       setSubject(initialSnapshot.subject);
       setAttachedFiles(initialSnapshot.attachedFiles);
+      setDriveAttachments(initialSnapshot.driveAttachments);
       setSelectedClients(initialSnapshot.selectedClients);
       setCreateTaskEnabled(initialSnapshot.createTaskEnabled);
       requestAnimationFrame(() => {
@@ -611,6 +715,9 @@ export default function ComposeModal({
       });
       return;
     }
+    // Fresh compose / reply / forward — never carry Drive links across contexts.
+    setDriveAttachments([]);
+    setPendingLargeFiles([]);
     if (forwardOf) {
       setTo([]); setCc([]); setShowCc(false);
       setSubject(forwardOf.subject.startsWith('Fwd:') ? forwardOf.subject : `Fwd: ${forwardOf.subject}`);
@@ -698,14 +805,10 @@ export default function ComposeModal({
 
   function handleSend() {
     if (to.length === 0 || sending || sendCountdown) return;
-    // Attachments are uploaded through the serverless function, whose request
-    // body is capped at ~4.5 MB by the platform — a bigger upload dies with a
-    // 413 before it ever reaches Gmail. Catch it here with a clear message and a
-    // workaround instead of a cryptic failure (also covers forwarded attachments,
-    // which get auto-downloaded into attachedFiles).
-    const attachBytes = attachedFiles.reduce((s, f) => s + f.size, 0);
-    if (attachBytes > 4 * 1024 * 1024) {
-      setError(`Attachments total ${(attachBytes / 1048576).toFixed(1)} MB — SMITH can send up to about 4 MB at a time. For larger files, forward the email directly in Gmail, or share a Document Vault / Drive link instead.`);
+    // Don't send while a large file is still uploading to Drive, or is queued
+    // waiting for a folder choice — its link wouldn't make it into the email.
+    if (driveUploading || pendingLargeFiles.length > 0) {
+      setError('A large file is still uploading to Google Drive — please wait for it to finish.');
       return;
     }
     // Cancel any pending auto-save — the draft is deleted on a successful send.
@@ -715,7 +818,7 @@ export default function ComposeModal({
     const snap: ComposeSnapshot = {
       to, cc, bcc, showCc, showBcc, subject,
       bodyHtml: readBody(),
-      attachedFiles, selectedClients, createTaskEnabled,
+      attachedFiles, driveAttachments, selectedClients, createTaskEnabled,
     };
     onMinimise?.(snap);
     onPendingSendChange?.(true);
@@ -737,16 +840,36 @@ export default function ComposeModal({
   async function performSend(snap: ComposeSnapshot) {
     setSending(true);
     try {
+      // Large-but-inline attachments (total over ~3 MB) can't fit in the send
+      // request body, so stage them in the bucket and send just their paths.
+      // Small batches keep riding inline for speed.
+      const totalBytes = snap.attachedFiles.reduce((s, f) => s + f.size, 0);
+      const useStaging = totalBytes > INLINE_LIMIT && snap.attachedFiles.length > 0;
+      let stagedAttachments: { path: string; filename: string; mimeType: string }[] = [];
+      if (useStaging) {
+        stagedAttachments = await Promise.all(
+          snap.attachedFiles.map(async f => ({
+            path: await stageFileToBucket(f),
+            filename: f.name,
+            mimeType: f.type || 'application/octet-stream',
+          })),
+        );
+      }
+
+      // Append the Google Drive links (if any) to the body just before sending.
+      const bodyHtml = snap.bodyHtml + buildDriveLinksBlock(snap.driveAttachments);
+
       const formData = new FormData();
       formData.append('to', JSON.stringify(snap.to.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
       formData.append('cc', JSON.stringify(snap.cc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
       formData.append('bcc', JSON.stringify(snap.bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
       formData.append('subject', snap.subject || '(no subject)');
-      formData.append('htmlBody', snap.bodyHtml);
+      formData.append('htmlBody', bodyHtml);
       if (important) formData.append('importance', 'high');
       if (replyTo?.id) formData.append('replyToMessageId', replyTo.id);
       if (replyTo?.threadId) formData.append('threadId', replyTo.threadId);
-      snap.attachedFiles.forEach(f => formData.append('attachments', f));
+      if (useStaging) formData.append('stagedAttachments', JSON.stringify(stagedAttachments));
+      else snap.attachedFiles.forEach(f => formData.append('attachments', f));
 
       const res = await fetch('/api/email/send', { method: 'POST', body: formData });
       if (!res.ok) {
@@ -1026,16 +1149,128 @@ export default function ComposeModal({
     }
   }
 
-  function handleFiles(files: FileList | null) {
+  async function handleFiles(files: FileList | null) {
     if (!files) return;
-    const MAX_TOTAL = 4 * 1024 * 1024; // ~4 MB — the platform request-body cap
+    setError(null);
     const incoming = Array.from(files);
-    const total = [...attachedFiles, ...incoming].reduce((s, f) => s + f.size, 0);
-    if (total > MAX_TOTAL) {
-      setError('Total attachment size must be under ~4 MB. For larger files, forward the email directly in Gmail, or share a Document Vault / Drive link.');
+    // Match Gmail: fill the 25 MB message budget greedily as normal attachments;
+    // any file that's individually over 25 MB, or that would tip the running
+    // total over it, is sent as a Google Drive link instead.
+    let inlineTotal = attachedFiles.reduce((s, f) => s + f.size, 0);
+    const toAttach: File[] = [];
+    const toDrive: File[] = [];
+    for (const f of incoming) {
+      if (f.size > GMAIL_ATTACH_LIMIT || inlineTotal + f.size > GMAIL_ATTACH_LIMIT) {
+        toDrive.push(f);
+      } else {
+        toAttach.push(f);
+        inlineTotal += f.size;
+      }
+    }
+
+    if (toAttach.length) setAttachedFiles(prev => [...prev, ...toAttach]);
+
+    if (toDrive.length) {
+      const connected = await ensureDriveStatus();
+      if (!connected) {
+        setError('Some files are too large to attach (over the 25 MB email limit). Connect Google Drive to SMITH (Settings → Document Vault) to send them as links — if you’re not a firm admin, ask an admin to connect it.');
+        return;
+      }
+      setPendingLargeFiles(prev => [...prev, ...toDrive]);
+      // If a destination was already chosen this session, upload straight away;
+      // otherwise ask where to put them.
+      if (chosenFolder) void uploadLargeToDrive(toDrive, chosenFolder);
+      else setFolderPickerOpen(true);
+    }
+  }
+
+  // Upload each oversize file to the firm's Google Drive (via the staging
+  // bucket) and record its shareable link + file id.
+  async function uploadLargeToDrive(files: File[], folder: { id: string; name: string }) {
+    setDriveUploading(true);
+    setError(null);
+    try {
+      for (const file of files) {
+        const stagePath = await stageFileToBucket(file);
+        const res = await fetch('/api/email/drive-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stagePath, filename: file.name, mimeType: file.type || 'application/octet-stream', folderId: folder.id }),
+        });
+        if (!res.ok) {
+          const e = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(e.error ?? 'Drive upload failed');
+        }
+        const d = await res.json() as { name?: string; link?: string; fileId?: string };
+        setDriveAttachments(prev => [...prev, { name: d.name || file.name, link: d.link || '', size: file.size, fileId: d.fileId || '' }]);
+        setPendingLargeFiles(prev => prev.filter(f => f !== file));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload to Google Drive.');
+      setPendingLargeFiles([]);
+    } finally {
+      setDriveUploading(false);
+    }
+  }
+
+  // Remove a Drive attachment — also deletes the file from Google Drive so it
+  // doesn't linger there when the user changes their mind before sending.
+  async function removeDriveAttachment(i: number) {
+    const d = driveAttachments[i];
+    setDriveAttachments(prev => prev.filter((_, j) => j !== i));
+    if (d?.fileId) {
+      try {
+        await fetch('/api/email/drive-upload', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileId: d.fileId }),
+        });
+      } catch { /* non-fatal — the file just lingers in Drive */ }
+    }
+  }
+
+  // Move an already-uploaded Drive file to a different folder. The shareable
+  // link is unchanged, so the email stays valid.
+  async function moveDriveAttachment(i: number, folder: { id: string; name: string }) {
+    const d = driveAttachments[i];
+    if (!d?.fileId) return;
+    setDriveUploading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/email/drive-upload', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId: d.fileId, folderId: folder.id }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(e.error ?? 'Failed to move the file');
+      }
+      setChosenFolder(folder); // remember for any subsequent uploads
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to move the file in Drive.');
+    } finally {
+      setDriveUploading(false);
+    }
+  }
+
+  function handleFolderChosen(folder: { id: string; name: string }) {
+    setFolderPickerOpen(false);
+    // Move mode: reposition an existing Drive file rather than upload new ones.
+    if (movingDriveIndex !== null) {
+      const idx = movingDriveIndex;
+      setMovingDriveIndex(null);
+      void moveDriveAttachment(idx, folder);
       return;
     }
-    setAttachedFiles(prev => [...prev, ...incoming]);
+    setChosenFolder(folder);
+    if (pendingLargeFiles.length) void uploadLargeToDrive(pendingLargeFiles, folder);
+  }
+
+  function cancelFolderPick() {
+    setFolderPickerOpen(false);
+    setPendingLargeFiles([]);
+    setMovingDriveIndex(null);
   }
 
   // Read the editor HTML with any Smart Compose ghost text stripped — never let
@@ -1159,7 +1394,7 @@ export default function ComposeModal({
                       onMinimise({
                         to, cc, bcc, showCc, showBcc, subject,
                         bodyHtml: readBody(),
-                        attachedFiles, selectedClients, createTaskEnabled,
+                        attachedFiles, driveAttachments, selectedClients, createTaskEnabled,
                       });
                     }}
                     aria-label="Minimise"
@@ -1402,7 +1637,7 @@ export default function ComposeModal({
           </div>
 
           {/* Attached files */}
-          {(attachedFiles.length > 0 || fetchingAttachments) && (
+          {(attachedFiles.length > 0 || fetchingAttachments || driveAttachments.length > 0 || driveUploading || pendingLargeFiles.length > 0) && (
             <div className="flex flex-wrap gap-1.5 px-4 py-2 border-t border-[var(--border)] shrink-0 bg-transparent">
               {fetchingAttachments && (
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs text-[var(--text-muted)] bg-[var(--bg-nav-hover)] border border-[var(--border)]">
@@ -1427,6 +1662,29 @@ export default function ComposeModal({
                   </button>
                 </span>
               ))}
+              {/* Google Drive links (files that exceed the 25 MB email limit) */}
+              {driveAttachments.map((d, i) => (
+                <span key={`drive-${i}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  <HardDrive size={10} />
+                  <Tooltip label="Open the Drive file in a new tab">
+                    <a href={d.link} target="_blank" rel="noreferrer" className="max-w-[140px] truncate hover:underline">{d.name}</a>
+                  </Tooltip>
+                  <span className="text-blue-500/80 dark:text-blue-400/80 shrink-0">({(d.size / 1048576).toFixed(1)}MB · Drive)</span>
+                  <Tooltip label="Move to another Drive folder">
+                    <button onClick={() => { setMovingDriveIndex(i); setFolderPickerOpen(true); }} className="hover:text-[var(--accent)] ml-0.5" aria-label="Move to another Drive folder">
+                      <FolderInput size={10} />
+                    </button>
+                  </Tooltip>
+                  <button onClick={() => void removeDriveAttachment(i)} className="hover:text-red-500" aria-label="Remove Drive link (deletes it from Drive)">
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+              {driveUploading && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                  <Loader2 size={10} className="animate-spin" /> Uploading to Google Drive…
+                </span>
+              )}
             </div>
           )}
 
@@ -1613,6 +1871,17 @@ export default function ComposeModal({
         suggestEmails={toEmails}
         preSelectedIds={selectedClients.map(c => c.id)}
         onSelect={clients => setSelectedClients(clients)}
+      />
+
+      <DriveFolderPicker
+        open={folderPickerOpen}
+        mode={movingDriveIndex !== null ? 'move' : 'upload'}
+        firmFolder={firmDriveFolder}
+        files={movingDriveIndex !== null
+          ? (driveAttachments[movingDriveIndex] ? [{ name: driveAttachments[movingDriveIndex].name, size: driveAttachments[movingDriveIndex].size }] : [])
+          : pendingLargeFiles.map(f => ({ name: f.name, size: f.size }))}
+        onCancel={cancelFolderPick}
+        onSelect={handleFolderChosen}
       />
     </>
   );

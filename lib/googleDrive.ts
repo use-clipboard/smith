@@ -57,12 +57,17 @@ export async function uploadFileWithDrive(
     fileName,
     mimeType,
     buffer,
-  }: { folderId: string; fileName: string; mimeType: string; buffer: Buffer }
+    appProperties,
+  }: { folderId: string; fileName: string; mimeType: string; buffer: Buffer; appProperties?: Record<string, string> }
 ) {
   const response = await drive.files.create({
     requestBody: {
       name: fileName,
       parents: folderId ? [folderId] : undefined,
+      // Optional private key/value tags on the file (only this app can read
+      // them) — used to mark + attribute email attachments so they can later
+      // be safely deleted/moved by their uploader.
+      ...(appProperties ? { appProperties } : {}),
     },
     media: {
       mimeType,
