@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, ChevronDown, ChevronUp, Loader2, Zap, RefreshCw } from 'lucide-react';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import type { RecurrenceType } from '@/types';
 import type { CreateTaskData } from './CreateTaskModal';
+import { useModules } from '@/components/ui/ModulesProvider';
+import { CH_DEADLINE_LABELS, CH_DEADLINE_TYPES, fetchClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
 
 // Local helper type so the state declaration below stays readable rather
 // than carrying a five-arm union inline.
-type ChDeadlineSelection = '' | 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due';
-type ChDeadlineFilled    = Exclude<ChDeadlineSelection, ''>;
+type ChDeadlineSelection = '' | ChDeadlineType;
+type ChDeadlineFilled    = ChDeadlineType;
 
 interface TeamMember { id: string; full_name: string | null; email: string }
 
@@ -59,6 +61,26 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
   const isChLinked = chDeadlineType !== '';
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // CH-deadline linking is only offered when the firm has the CH Secretarial
+  // module AND the chosen client is an eligible Ltd/LLP with a CH number.
+  const { isModuleActive } = useModules();
+  const chModuleActive = isModuleActive('ch-secretarial');
+  const [chInfo, setChInfo] = useState<ClientChDeadlines | null>(null);
+  const chEligible = chModuleActive && !isInternal && !!clientId && !!chInfo?.eligible;
+
+  useEffect(() => {
+    if (!chModuleActive || isInternal || !clientId) { setChInfo(null); return; }
+    let cancelled = false;
+    fetchClientChDeadlines(clientId).then(info => { if (!cancelled) setChInfo(info); });
+    return () => { cancelled = true; };
+  }, [clientId, isInternal, chModuleActive]);
+
+  // Drop back to manual cadence if the client stops being CH-eligible while a
+  // CH deadline was selected.
+  useEffect(() => {
+    if (isChLinked && !chEligible) setChDeadlineType('');
+  }, [isChLinked, chEligible]);
 
   function addStep() {
     setSteps(prev => [...prev, '']);
@@ -277,7 +299,7 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                 {/* Renewal source toggle — Manual vs CH deadline. Hidden when
                     the user picked "Internal" task since CH links need a
                     client to follow. */}
-                {!isInternal && clientId && (
+                {chEligible && (
                   <select
                     value={isChLinked ? 'ch' : 'manual'}
                     onChange={e => {
@@ -297,10 +319,11 @@ export default function QuickTaskModal({ onClose, onCreate, teamMembers, default
                       onChange={e => setChDeadlineType(e.target.value as ChDeadlineFilled)}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="accounts_due">Accounts Due</option>
-                      <option value="cs_due">Confirmation Statement Due</option>
-                      <option value="officer_idv_due">Officer IDV Due</option>
-                      <option value="psc_idv_due">PSC IDV Due</option>
+                      {CH_DEADLINE_TYPES.map(dt => (
+                        <option key={dt} value={dt}>
+                          {CH_DEADLINE_LABELS[dt]} — {formatDeadlineDate(chInfo?.deadlines[dt])}
+                        </option>
+                      ))}
                     </select>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-gray-500">Offset</span>

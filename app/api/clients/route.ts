@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 
 const CLIENT_TYPES = [
-  'sole_trader', 'partnership', 'limited_company',
+  'sole_trader', 'partnership', 'limited_company', 'llp',
   'individual', 'trust', 'charity', 'rental_landlord',
 ] as const;
 
@@ -111,7 +111,13 @@ export async function POST(req: NextRequest) {
       utr_number: utr_number || null,
       registration_number: registration_number || null,
       national_insurance_number: national_insurance_number || null,
-      companies_house_id: companies_house_id || null,
+      // Companies House ID is a background mirror of the company number
+      // (registration_number) for limited companies and LLPs. Users only ever
+      // see/enter "Company Number"; the CH Secretarial tool reads
+      // companies_house_id, so we keep them identical. Never surfaced in the UI.
+      companies_house_id: (business_type === 'limited_company' || business_type === 'llp')
+        ? (registration_number || null)
+        : (companies_house_id || null),
       vat_number: vat_number || null,
       companies_house_auth_code: companies_house_auth_code || null,
       date_of_birth: date_of_birth || null,

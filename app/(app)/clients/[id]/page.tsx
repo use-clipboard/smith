@@ -123,7 +123,7 @@ interface SearchableClient { id: string; name: string; client_ref: string | null
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
-  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
+  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company', llp: 'LLP',
   individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
 };
 // Header tile icon per entity type (matches the client-list type icons).
@@ -184,17 +184,21 @@ const SUGGESTED_TITLES = [
   'AML Check', 'Bank Details Change', 'Compliance Update',
 ];
 
-const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'trust', 'charity', 'rental_landlord'];
+const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'llp', 'trust', 'charity', 'rental_landlord'];
 
 function showFor(field: string, type: string | null): boolean {
   if (!type) return true;
   const map: Record<string, string[]> = {
-    utr_number: ['sole_trader', 'partnership', 'limited_company', 'individual'],
-    registration_number: ['limited_company'],
+    utr_number: ['sole_trader', 'partnership', 'limited_company', 'llp', 'individual'],
+    registration_number: ['limited_company', 'llp'],
     national_insurance_number: ['individual', 'sole_trader'],
-    companies_house_id: ['sole_trader', 'individual'],
-    vat_number: ['sole_trader', 'limited_company', 'partnership'],
-    companies_house_auth_code: ['limited_company'],
+    // Companies House ID is never user-facing. It's a background mirror of the
+    // company number (registration_number) for Ltd/LLP that the CH Secretarial
+    // tool reads. Empty types array = hidden on both the info panel and the
+    // edit modal. See the mirroring logic in the clients API routes.
+    companies_house_id: [],
+    vat_number: ['sole_trader', 'limited_company', 'llp', 'partnership'],
+    companies_house_auth_code: ['limited_company', 'llp'],
     date_of_birth: ['individual', 'sole_trader'],
     paye_reference: NON_INDIVIDUAL,
     paye_accounts_office_reference: NON_INDIVIDUAL,
@@ -1113,7 +1117,6 @@ export default function ClientDetailPage() {
   const [editUtr, setEditUtr] = useState('');
   const [editRegNo, setEditRegNo] = useState('');
   const [editNI, setEditNI] = useState('');
-  const [editCHId, setEditCHId] = useState('');
   const [editVat, setEditVat] = useState('');
   const [editCHAuth, setEditCHAuth] = useState('');
   const [editDob, setEditDob] = useState('');
@@ -1384,7 +1387,7 @@ export default function ClientDetailPage() {
     setEditName(client.name); setEditRef(client.client_ref ?? ''); setEditType(client.business_type ?? '');
     setEditEmail(client.contact_email ?? ''); setEditRisk(client.risk_rating ?? ''); setEditStatus(client.status ?? 'active');
     setEditAddress(client.address ?? ''); setEditUtr(client.utr_number ?? ''); setEditRegNo(client.registration_number ?? '');
-    setEditNI(client.national_insurance_number ?? ''); setEditCHId(client.companies_house_id ?? '');
+    setEditNI(client.national_insurance_number ?? '');
     setEditVat(client.vat_number ?? ''); setEditCHAuth(client.companies_house_auth_code ?? '');
     setEditDob(client.date_of_birth ?? '');
     setEditContactNumber(client.contact_number ?? '');
@@ -1437,7 +1440,8 @@ export default function ClientDetailPage() {
           utr_number: editUtr,
           registration_number: editRegNo,
           national_insurance_number: editNI,
-          companies_house_id: editCHId,
+          // companies_house_id is not edited here — it's mirrored from
+          // registration_number server-side for Ltd/LLP (background field only).
           vat_number: editVat,
           companies_house_auth_code: editCHAuth,
           date_of_birth: editDob,
@@ -2298,7 +2302,7 @@ export default function ClientDetailPage() {
                   <select value={editType} onChange={e => setEditType(e.target.value)} className="input-base w-full">
                     <option value="">— Select —</option>
                     <option value="sole_trader">Sole Trader</option><option value="partnership">Partnership</option>
-                    <option value="limited_company">Limited Company</option><option value="individual">Individual</option>
+                    <option value="limited_company">Limited Company</option><option value="llp">LLP</option><option value="individual">Individual</option>
                     <option value="trust">Trust</option><option value="charity">Charity</option><option value="rental_landlord">Rental Landlord</option>
                   </select>
                 </div>
@@ -2348,7 +2352,6 @@ export default function ClientDetailPage() {
                 {showFor('utr_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">UTR Number</label><input value={editUtr} onChange={e => setEditUtr(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('registration_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Company Registration Number</label><input value={editRegNo} onChange={e => setEditRegNo(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('national_insurance_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">National Insurance Number</label><input value={editNI} onChange={e => setEditNI(e.target.value.toUpperCase())} className="input-base w-full font-mono" /></div>}
-                {showFor('companies_house_id', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Companies House ID</label><input value={editCHId} onChange={e => setEditCHId(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('vat_number', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">VAT Number</label><input value={editVat} onChange={e => setEditVat(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('companies_house_auth_code', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Companies House Authentication Code</label><input value={editCHAuth} onChange={e => setEditCHAuth(e.target.value)} className="input-base w-full font-mono" /></div>}
                 {showFor('date_of_birth', editType || null) && <div><label className="block text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">Date of Birth</label><input type="date" value={editDob} onChange={e => setEditDob(e.target.value)} className="input-base w-full" /></div>}

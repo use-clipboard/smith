@@ -5,7 +5,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { applyClientStatusPolicy } from '@/lib/applyClientStatusPolicy';
 
 const CLIENT_TYPES = [
-  'sole_trader', 'partnership', 'limited_company',
+  'sole_trader', 'partnership', 'limited_company', 'llp',
   'individual', 'trust', 'charity', 'rental_landlord',
 ] as const;
 
@@ -98,9 +98,10 @@ export async function PATCH(
   // Pull current status too — we need it to detect a status transition so
   // we can fire the firm's task_client_status_policy side-effects below.
   const { data: existing } = await supabase
-    .from('clients').select('id, status').eq('id', params.id).eq('firm_id', ctx.firmId).single();
+    .from('clients').select('id, status, business_type, registration_number').eq('id', params.id).eq('firm_id', ctx.firmId).single();
   if (!existing) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-  const previousStatus = (existing as { status: 'active' | 'hold' | 'inactive' | null }).status ?? null;
+  const existingRow = existing as { status: 'active' | 'hold' | 'inactive' | null; business_type: string | null; registration_number: string | null };
+  const previousStatus = existingRow.status ?? null;
 
   const d = parsed.data;
   const updates: Record<string, unknown> = {};
@@ -157,6 +158,23 @@ export async function PATCH(
   }
   if (d.year_end !== undefined) updates.year_end = d.year_end || null;
   if (d.mtd_it !== undefined) updates.mtd_it = d.mtd_it;
+
+  // Companies House ID is a background mirror of the company number
+  // (registration_number) for limited companies and LLPs — the CH Secretarial
+  // tool reads companies_house_id, but users only ever see/enter "Company
+  // Number". Keep them identical so CH features work without a duplicate field.
+  // Never surfaced in the UI.
+  const effectiveType = d.business_type !== undefined ? d.business_type : existingRow.business_type;
+  if (effectiveType === 'limited_company' || effectiveType === 'llp') {
+    if (d.registration_number !== undefined) {
+      // Company number is being set/changed → mirror it across.
+      updates.companies_house_id = d.registration_number || null;
+    } else if (d.business_type !== undefined) {
+      // Type just switched to company/LLP without a number in the same
+      // payload → mirror whatever registration number is already on record.
+      updates.companies_house_id = existingRow.registration_number || null;
+    }
+  }
 
   const { data: client, error } = await supabase
     .from('clients').update(updates).eq('id', params.id).select().single();

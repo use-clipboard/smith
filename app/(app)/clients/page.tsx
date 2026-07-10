@@ -57,7 +57,7 @@ const STATUS_CONFIG: Record<ClientStatus, { dot: string; label: string }> = {
 };
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
-  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company',
+  sole_trader: 'Sole Trader', partnership: 'Partnership', limited_company: 'Limited Company', llp: 'LLP',
   individual: 'Individual', trust: 'Trust', charity: 'Charity', rental_landlord: 'Rental Landlord',
 };
 
@@ -732,6 +732,7 @@ export default function ClientsPage() {
                   <option value="sole_trader">Sole Trader</option>
                   <option value="partnership">Partnership</option>
                   <option value="limited_company">Limited Company</option>
+                  <option value="llp">LLP</option>
                   <option value="individual">Individual</option>
                   <option value="trust">Trust</option>
                   <option value="charity">Charity</option>

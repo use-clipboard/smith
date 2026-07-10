@@ -1,13 +1,15 @@
 ﻿'use client';
 
-import { useState, useMemo } from 'react';
-import { X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Pencil, ExternalLink, Clock } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { X, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Pencil, ExternalLink, Clock, Building2 } from 'lucide-react';
 import { TaskViewFlowChart } from './TaskFlowChart';
 import { DEFAULT_TASK_TEMPLATES, TEMPLATE_CATEGORY_LABELS } from '@/config/defaultTaskTemplates';
 import type { TaskTemplate, TaskStep, TaskStepEdge, Task, RecurrenceType, DefaultTemplate, EdgeConditionType, StartTriggerConfig } from '@/types';
 import type { TemplateData } from './TemplateBuilder';
 import { triggerLabel } from './StartEndNodes';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
+import { useModules } from '@/components/ui/ModulesProvider';
+import { CH_DEADLINE_LABELS, fetchClientChDeadlines, formatDeadlineDate, type ChDeadlineType, type ClientChDeadlines } from './chDeadlines';
 
 interface Props {
   onClose: () => void;
@@ -370,8 +372,35 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
   const [clientId, setClientId] = useState(defaultClientId ?? '');
   const [isInternal, setIsInternal] = useState(false);
   const [dueDate, setDueDate] = useState('');
-  const [recurrence, setRecurrence] = useState<RecurrenceType | ''>('');
+  // 'ch' is a UI-only sentinel — a CH-deadline-linked task, not a fixed cadence.
+  const [recurrence, setRecurrence] = useState<RecurrenceType | '' | 'ch'>('');
   const [customInterval, setCustomInterval] = useState('');
+
+  // CH-deadline linking — the selected client's eligibility + cached deadline
+  // dates, loaded when a client is chosen. `chDeadlineType` is the picked
+  // deadline; `chOffsetDays` shifts the task date relative to it.
+  const { isModuleActive } = useModules();
+  const chModuleActive = isModuleActive('ch-secretarial');
+  const [chInfo, setChInfo] = useState<ClientChDeadlines | null>(null);
+  const [chDeadlineType, setChDeadlineType] = useState<ChDeadlineType>('accounts_due');
+  const [chOffsetDays, setChOffsetDays] = useState(0);
+  const chEligible = chModuleActive && !isInternal && !!clientId && !!chInfo?.eligible;
+
+  // Load CH eligibility whenever the chosen client changes. Skipped entirely
+  // when the firm doesn't have the CH Secretarial module.
+  useEffect(() => {
+    if (!chModuleActive || isInternal || !clientId) { setChInfo(null); return; }
+    let cancelled = false;
+    fetchClientChDeadlines(clientId).then(info => { if (!cancelled) setChInfo(info); });
+    return () => { cancelled = true; };
+  }, [clientId, isInternal, chModuleActive]);
+
+  // If the client becomes ineligible (switched to internal, or a non-Ltd
+  // client) while "Companies House deadline" was selected, fall back to
+  // one-off so we never submit a CH link that can't be honoured.
+  useEffect(() => {
+    if (recurrence === 'ch' && !chEligible) setRecurrence('');
+  }, [recurrence, chEligible]);
 
   // Step assignees (map step_key → assignee_id)
   const [assigneeMap, setAssigneeMap] = useState<Record<string, string>>({});
@@ -475,15 +504,20 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
     setSaving(true);
     setError('');
     try {
+      const chLinked = recurrence === 'ch' && chEligible;
       await onCreate({
         title: title.trim(),
         description: description || undefined,
         client_id: isInternal ? null : (clientId || null),
         template_id: selectedFirmTemplate?.id ?? null,
-        due_date: dueDate || null,
+        // CH-linked tasks take their due date + cadence from the Companies
+        // House deadline (applied server-side), so we send neither here.
+        due_date: chLinked ? null : (dueDate || null),
         is_internal: isInternal || !clientId,
-        recurrence_type: recurrence as RecurrenceType || null,
-        recurrence_interval_days: recurrence === 'custom' && customInterval ? parseInt(customInterval) : null,
+        recurrence_type: chLinked ? null : (recurrence as RecurrenceType || null),
+        recurrence_interval_days: chLinked ? null : (recurrence === 'custom' && customInterval ? parseInt(customInterval) : null),
+        ch_deadline_type: chLinked ? chDeadlineType : null,
+        ch_offset_days: chLinked ? chOffsetDays : 0,
         steps,
         edges,
       });
@@ -611,14 +645,47 @@ export default function CreateTaskModal({ onClose, onCreate, clients, teamMember
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Recurrence</label>
-                  <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '')} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white">
+                  <select value={recurrence} onChange={e => setRecurrence(e.target.value as RecurrenceType | '' | 'ch')} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white">
                     {RECURRENCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {chEligible && <option value="ch">Companies House deadline (auto-renew)</option>}
                   </select>
                   {recurrence === 'custom' && (
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-sm text-gray-500">Every</span>
                       <input type="number" min="1" value={customInterval} onChange={e => setCustomInterval(e.target.value)} className="w-20 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                       <span className="text-sm text-gray-500">days</span>
+                    </div>
+                  )}
+                  {recurrence === 'ch' && chEligible && (
+                    <div className="mt-2 space-y-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                      <div className="flex items-start gap-2 text-xs text-blue-700">
+                        <Building2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <span>The due date follows this Companies House deadline and auto-renews each cycle. No fixed date needed.</span>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Deadline</label>
+                        <select
+                          value={chDeadlineType}
+                          onChange={e => setChDeadlineType(e.target.value as ChDeadlineType)}
+                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                        >
+                          {(chInfo?.deadlines ? Object.keys(CH_DEADLINE_LABELS) as ChDeadlineType[] : []).map(dt => (
+                            <option key={dt} value={dt}>
+                              {CH_DEADLINE_LABELS[dt]} — {formatDeadlineDate(chInfo?.deadlines[dt])}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">Offset</span>
+                        <input
+                          type="number"
+                          value={chOffsetDays}
+                          onChange={e => setChOffsetDays(Number.isFinite(parseInt(e.target.value, 10)) ? parseInt(e.target.value, 10) : 0)}
+                          className="w-20 text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-500">days (negative = before the deadline)</span>
+                      </div>
                     </div>
                   )}
                 </div>

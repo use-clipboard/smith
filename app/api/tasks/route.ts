@@ -17,6 +17,13 @@ const CreateTaskSchema = z.object({
   is_internal: z.boolean().optional(),
   recurrence_type: z.enum(['once', 'weekly', 'bi-weekly', 'four-weekly', 'monthly', 'quarterly', 'annually', 'custom']).optional().nullable(),
   recurrence_interval_days: z.number().int().positive().optional().nullable(),
+  /** CH-deadline linking — when set, the task follows a Companies House
+   *  deadline instead of a fixed cadence. The link is created server-side by
+   *  autoCreateChDeadlineLink, which also stamps the initial due_date from the
+   *  cached deadline + offset. Manual recurrence/due_date are ignored in this
+   *  mode (callers send them null). */
+  ch_deadline_type: z.enum(['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due']).optional().nullable(),
+  ch_offset_days: z.number().int().min(-365).max(365).optional().nullable(),
   /** Optional: link this task back to the outputs row it was spawned from
    *  (Meeting Notes history "Create task", future "create task from
    *  Full Analysis output", etc.). Drives the "task already exists" marker
@@ -283,15 +290,22 @@ export async function POST(req: NextRequest) {
     taskTitle: (task.title as string) ?? '',
   }).catch(err => console.error('logTaskCreated failed', err));
 
-  // Auto-link to a Companies House deadline when the task came from a
-  // CH-linked template (and has a client). Non-fatal — a task without a
-  // link is fine; the user can always create one manually later.
-  if (taskData.template_id && taskData.client_id) {
+  // Auto-link to a Companies House deadline. Two triggers, both non-fatal
+  // (a task without a link is fine; the user can always link one later):
+  //   1. An explicit ch_deadline_type in the request body — the user picked
+  //      "Companies House deadline" as the recurrence in the create modal.
+  //   2. The task came from a CH-linked template — the deadline type/offset
+  //      are read from the template row.
+  // An explicit body value takes precedence over the template's.
+  if (taskData.client_id && (taskData.ch_deadline_type || taskData.template_id)) {
     void autoCreateChDeadlineLink(supabase, {
       firmId:     ctx.firmId,
       taskId:     task.id as string,
       clientId:   taskData.client_id,
-      templateId: taskData.template_id,
+      template:   taskData.ch_deadline_type
+        ? { ch_deadline_type: taskData.ch_deadline_type, ch_offset_days: taskData.ch_offset_days ?? 0 }
+        : undefined,
+      templateId: taskData.template_id ?? undefined,
     });
   }
 

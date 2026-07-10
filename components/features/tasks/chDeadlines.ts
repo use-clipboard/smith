@@ -1,0 +1,45 @@
+// Shared helpers for the "Companies House deadline" recurrence option in the
+// task creation modals (CreateTaskModal, QuickTaskModal). Keeps the deadline
+// labels, the eligibility/date fetch, and the UK date formatter in one place.
+
+export type ChDeadlineType = 'accounts_due' | 'cs_due' | 'officer_idv_due' | 'psc_idv_due';
+
+export const CH_DEADLINE_TYPES: ChDeadlineType[] = ['accounts_due', 'cs_due', 'officer_idv_due', 'psc_idv_due'];
+
+export const CH_DEADLINE_LABELS: Record<ChDeadlineType, string> = {
+  accounts_due:    'Accounts Due',
+  cs_due:          'Confirmation Statement Due',
+  officer_idv_due: 'Officer IDV Due',
+  psc_idv_due:     'PSC IDV Due',
+};
+
+export interface ClientChDeadlines {
+  eligible: boolean;
+  chModuleActive: boolean;
+  businessType: string | null;
+  companiesHouseId: string | null;
+  deadlines: Record<ChDeadlineType, string | null>;
+}
+
+/**
+ * Fetches whether a client is eligible for CH-deadline task linking and, when
+ * eligible, the four cached deadline dates. Returns null on any failure so the
+ * caller can fall back to hiding the CH option (fail safe).
+ */
+export async function fetchClientChDeadlines(clientId: string): Promise<ClientChDeadlines | null> {
+  try {
+    const r = await fetch(`/api/ch-secretarial/client-deadlines?clientId=${encodeURIComponent(clientId)}`);
+    if (!r.ok) return null;
+    return (await r.json()) as ClientChDeadlines;
+  } catch {
+    return null;
+  }
+}
+
+/** dd-mm-yyyy, or a placeholder when the date isn't cached yet. */
+export function formatDeadlineDate(iso: string | null | undefined): string {
+  if (!iso) return 'not yet available';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return iso;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}

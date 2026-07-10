@@ -42,6 +42,7 @@ export interface ClientForOverview {
   utr_number: string | null;
   national_insurance_number: string | null;
   companies_house_id: string | null;
+  companies_house_auth_code: string | null;
   vat_number: string | null;
   vat_scheme: string | null;
   paye_reference: string | null;
@@ -88,14 +89,14 @@ function fmtDue(iso: string): string {
 }
 
 // ── Key Information — entity-type aware (mirrors the Edit modal's showFor) ──────
-const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'trust', 'charity', 'rental_landlord'];
+const NON_INDIVIDUAL = ['sole_trader', 'partnership', 'limited_company', 'llp', 'trust', 'charity', 'rental_landlord'];
 type KIField = { key: keyof ClientForOverview; label: string; types: string[]; kind?: 'date' | 'bool' };
 const KEY_INFO_FIELDS: KIField[] = [
-  { key: 'registration_number',       label: 'Company Number',           types: ['limited_company'] },
-  { key: 'utr_number',                label: 'UTR Number',               types: ['sole_trader', 'partnership', 'limited_company', 'individual'] },
+  { key: 'registration_number',       label: 'Company Number',           types: ['limited_company', 'llp'] },
+  { key: 'utr_number',                label: 'UTR Number',               types: ['sole_trader', 'partnership', 'limited_company', 'llp', 'individual'] },
   { key: 'national_insurance_number', label: 'National Insurance Number',types: ['individual', 'sole_trader'] },
-  { key: 'companies_house_id',        label: 'Companies House ID',       types: ['sole_trader', 'individual'] },
-  { key: 'vat_number',                label: 'VAT Number',               types: ['sole_trader', 'limited_company', 'partnership'] },
+  { key: 'companies_house_auth_code', label: 'Companies House Auth Code', types: ['limited_company', 'llp'] },
+  { key: 'vat_number',                label: 'VAT Number',               types: ['sole_trader', 'limited_company', 'llp', 'partnership'] },
   { key: 'vat_scheme',                label: 'VAT Scheme',               types: NON_INDIVIDUAL },
   { key: 'paye_reference',            label: 'PAYE Reference',           types: NON_INDIVIDUAL },
   { key: 'year_end',                  label: 'Year End',                 types: NON_INDIVIDUAL },

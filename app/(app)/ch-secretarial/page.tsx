@@ -320,9 +320,14 @@ export default function CHSecretarialPage() {
           .limit(100000)
           .then(({ data: clients }) => {
             if (!clients) return;
+            // Companies House covers limited companies AND LLPs. Include
+            // either by business_type, plus a fallback for any client that has
+            // a Companies House number recorded regardless of type.
             const limited = clients.filter(c => {
               const bt = (c.business_type ?? '').toLowerCase();
-              return bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company';
+              const isChType = bt.includes('limited') || bt.includes('ltd') || bt === 'limited_company'
+                || bt.includes('llp') || bt === 'llp';
+              return isChType || !!c.companies_house_id;
             });
             const nums = limited.map(c => c.companies_house_id).filter(Boolean) as string[];
             // CH normalises company numbers by upper-casing and zero-padding
