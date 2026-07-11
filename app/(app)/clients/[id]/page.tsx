@@ -3,14 +3,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft, Pencil, Trash2, ExternalLink, FileText, Clock,
-  Link2, Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
+  Plus, X, Search, Pin, PinOff, Phone, Users2, CheckSquare,
   MessageCircle, Mail, StickyNote, ChevronDown, ChevronUp, Check, Paperclip, Image,
   FileSearch, ArrowLeftRight, House, ClipboardCheck, ShieldAlert, Receipt, Gauge, Zap,
-  Archive, CalendarDays, MicVocal, Network, Info, CalendarCheck,
+  Archive, CalendarDays, MicVocal, Info, CalendarCheck,
   Building2, MapPin, User, UserCircle, Shield, HandHeart, Home, Lock,
   type LucideIcon,
 } from 'lucide-react';
-import LinkGraphLightbox from '@/components/features/clients/LinkGraphLightbox';
 import ClientOverview from '@/components/features/clients/ClientOverview';
 import ClientHeaderCards from '@/components/features/clients/ClientHeaderCards';
 import KeyContactsEditor, { type KeyContact } from '@/components/features/clients/KeyContactsEditor';
@@ -30,7 +29,6 @@ import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import CreateTaskModal, { type CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import TemplateBuilder, { type TemplateData, type TaskCreationOutput } from '@/components/features/tasks/TemplateBuilder';
 import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
-import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import type { TaskTemplate } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -43,25 +41,11 @@ const STATUS_CONFIG: Record<ClientStatus, { dot: string; bg: string; text: strin
   inactive: { dot: 'bg-gray-400',   bg: 'bg-gray-100',   text: 'text-gray-500',   label: 'Inactive'  },
 };
 
-// ── VAT scheme period-end helpers ────────────────────────────────────────────
-// Yearly schemes can end in any month (Jan–Dec).
-// Quarterly schemes follow HMRC's three stagger groups; we store the
-// representative month (1, 2, or 3) and display the full quarter pattern.
+// Full month names for the VAT annual period-end month selector.
 const MONTHS_FULL = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
 ];
-const QUARTERLY_STAGGERS: Record<number, string> = {
-  3: 'Mar / Jun / Sep / Dec',
-  1: 'Apr / Jul / Oct / Jan',
-  2: 'May / Aug / Nov / Feb',
-};
-function describeVatPeriodEnd(scheme: string | null, month: number | null): string | null {
-  if (!scheme || month == null) return null;
-  if (scheme === 'Yearly')    return `ends ${MONTHS_FULL[month - 1]}`;
-  if (scheme === 'Quarterly') return `quarter-ends ${QUARTERLY_STAGGERS[month] ?? '—'}`;
-  return null;
-}
 
 interface Client {
   id: string; name: string; client_ref: string | null; business_type: string | null;
@@ -81,10 +65,6 @@ interface Client {
   key_contacts: KeyContact[] | null;
 }
 interface TeamMember { id: string; full_name: string | null; email: string; role: string; }
-interface ClientLink {
-  id: string; link_type: string; notes: string | null; direction: 'outgoing' | 'incoming';
-  other_client: { id: string; name: string; client_ref: string | null; business_type: string | null; status: ClientStatus; } | null;
-}
 interface Output { id: string; feature: string; target_software: string | null; created_at: string; }
 interface Document { id: string; file_name: string; document_type: string | null; created_at: string; drive_file_id: string | null; }
 interface VaultDoc {
@@ -136,18 +116,6 @@ const CLIENT_TYPE_ICON: Record<string, LucideIcon> = {
   trust:           Shield,
   charity:         HandHeart,
   rental_landlord: Home,
-};
-const LINK_TYPE_LABELS: Record<string, string> = {
-  director: 'Director of', shareholder: 'Shareholder of', spouse_partner: 'Spouse / Partner of',
-  trustee: 'Trustee of', beneficiary: 'Beneficiary of', associated_company: 'Associated Company',
-  parent_company: 'Parent Company of', subsidiary: 'Subsidiary of', guarantor: 'Guarantor of', other: 'Linked to',
-};
-const LINK_TYPE_COLOURS: Record<string, string> = {
-  director: 'bg-blue-100 text-blue-700', shareholder: 'bg-indigo-100 text-indigo-700',
-  spouse_partner: 'bg-pink-100 text-pink-700', trustee: 'bg-purple-100 text-purple-700',
-  beneficiary: 'bg-violet-100 text-violet-700', associated_company: 'bg-amber-100 text-amber-700',
-  parent_company: 'bg-orange-100 text-orange-700', subsidiary: 'bg-yellow-100 text-yellow-700',
-  guarantor: 'bg-red-100 text-red-700', other: 'bg-gray-100 text-gray-600',
 };
 const FEATURE_LABELS: Record<string, string> = {
   full_analysis: 'Full Analysis', bank_to_csv: 'Bank to CSV', landlord_analysis: 'Landlord Analysis',
@@ -401,17 +369,6 @@ function EmailThreadGroupCard({ group, onPin, isAdmin, onReallocateGroup }: {
     </div>
   );
 }
-function InfoRow({ label, value }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  // `mono` prop retained for call-site compatibility but no longer applied — all
-  // Client Information / Tax Details values render in the same font as Client Name.
-  return (
-    <div>
-      <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">{label}</dt>
-      <dd className="mt-1 text-[var(--text-primary)] font-medium">{value ?? '—'}</dd>
-    </div>
-  );
-}
-
 // ── Note Card ──────────────────────────────────────────────────────────────────
 
 function NoteCard({
@@ -1079,34 +1036,6 @@ export default function ClientDetailPage() {
     }
   }
 
-  // Links
-  const [links, setLinks] = useState<ClientLink[]>([]);
-  const [linksLoading, setLinksLoading] = useState(false);
-  const [linksFetched, setLinksFetched] = useState(false);
-  const [showAddLink, setShowAddLink] = useState(false);
-  const [selectedLinkClient, setSelectedLinkClient] = useState<SearchableClient | null>(null);
-  const [newLinkType, setNewLinkType] = useState('other');
-  const [newLinkNotes, setNewLinkNotes] = useState('');
-  const [addingLink, setAddingLink] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  const [removingLinkId, setRemovingLinkId] = useState<string | null>(null);
-  const [showLinkGraph, setShowLinkGraph] = useState(false);
-  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-  const [editLinkType, setEditLinkType] = useState('other');
-  const [editLinkNotes, setEditLinkNotes] = useState('');
-  const [editLinkSaving, setEditLinkSaving] = useState(false);
-  const [editLinkError, setEditLinkError] = useState<string | null>(null);
-  const [hideHoldLinks, setHideHoldLinks] = useState(false);
-  const [hideInactiveLinks, setHideInactiveLinks] = useState(false);
-  const holdLinkCount = links.filter(l => l.other_client?.status === 'hold').length;
-  const inactiveLinkCount = links.filter(l => l.other_client?.status === 'inactive').length;
-  const visibleLinks = links.filter(l => {
-    const s = l.other_client?.status;
-    if (s === 'hold' && hideHoldLinks) return false;
-    if (s === 'inactive' && hideInactiveLinks) return false;
-    return true;
-  });
-
   // Edit
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -1204,21 +1133,6 @@ export default function ClientDetailPage() {
       }
       setTimelineFetched(true);
     } finally { setTimelineLoading(false); }
-  }, [clientId]);
-
-  const fetchLinks = useCallback(async (force = false) => {
-    if (!force && linksFetched) return;
-    setLinksLoading(true);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/links`);
-      if (res.ok) { const d = await res.json(); setLinks(d.links ?? []); setLinksFetched(true); }
-    } finally { setLinksLoading(false); }
-  }, [clientId, linksFetched]);
-
-  // Details is the default tab so fetch links on mount — can't rely on tab-click alone
-  useEffect(() => {
-    void fetchLinks();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
 
   /** Open the global compose window pre-filled with this client's email
@@ -1334,55 +1248,6 @@ export default function ClientDetailPage() {
     await handleUpdateNote(id, { is_pinned: pinned } as Partial<TimelineNote>);
   }
 
-  // ── Link CRUD ────────────────────────────────────────────────────────────────
-
-  async function handleAddLink() {
-    if (!selectedLinkClient) return;
-    setAddingLink(true); setLinkError(null);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/links`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ linked_client_id: selectedLinkClient.id, link_type: newLinkType, notes: newLinkNotes || undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setLinkError(data.error || 'Failed to create link'); return; }
-      await fetchLinks(true);
-      setShowAddLink(false); setSelectedLinkClient(null); setNewLinkType('other'); setNewLinkNotes('');
-    } catch { setLinkError('An unexpected error occurred'); } finally { setAddingLink(false); }
-  }
-
-  function handleStartEditLink(link: ClientLink) {
-    setEditingLinkId(link.id);
-    setEditLinkType(link.link_type);
-    setEditLinkNotes(link.notes ?? '');
-    setEditLinkError(null);
-  }
-
-  async function handleSaveLinkEdit() {
-    if (!editingLinkId) return;
-    setEditLinkSaving(true); setEditLinkError(null);
-    try {
-      const res = await fetch(`/api/clients/${clientId}/links/${editingLinkId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ link_type: editLinkType, notes: editLinkNotes || null }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setEditLinkError(data.error || 'Failed to update link'); return; }
-      setLinks(prev => prev.map(l => l.id === editingLinkId ? { ...l, link_type: editLinkType, notes: editLinkNotes || null } : l));
-      setEditingLinkId(null);
-    } catch { setEditLinkError('An unexpected error occurred'); } finally { setEditLinkSaving(false); }
-  }
-
-  async function handleRemoveLink(linkId: string) {
-    const link = links.find(l => l.id === linkId);
-    const targetName = link?.other_client?.name ?? 'this client';
-    const typeLabel = link ? (LINK_TYPE_LABELS[link.link_type] ?? link.link_type) : 'link';
-    if (!window.confirm(`Remove the "${typeLabel} ${targetName}" link?\n\nThis only removes the relationship — neither client is deleted.`)) return;
-    setRemovingLinkId(linkId);
-    try { await fetch(`/api/clients/${clientId}/links/${linkId}`, { method: 'DELETE' }); setLinks(prev => prev.filter(l => l.id !== linkId)); }
-    finally { setRemovingLinkId(null); }
-  }
-
   // ── Edit / Delete ─────────────────────────────────────────────────────────────
 
   function startEdit() {
@@ -1477,8 +1342,6 @@ export default function ClientDetailPage() {
 
   if (loading) return <ToolLayout title="Client" icon={Users} iconColor="#4F46E5" wide><div className="py-16 text-center"><p className="text-[var(--text-muted)] text-sm">Loading…</p></div></ToolLayout>;
   if (!client) return null;
-
-  const type = client.business_type;
 
   const filteredNotes = notes.filter(n => {
     const matchesType = !timelineTypeFilter || n.note_type === timelineTypeFilter;
@@ -2052,238 +1915,6 @@ export default function ClientDetailPage() {
         </div>
       )}
 
-      {/* ── Details Tab ───────────────────────────────────────────────────────── */}
-      {activeTab === 'details' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="glass rounded-xl p-6">
-            <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Client Information</h3>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-              <InfoRow label="Client Name" value={client.name} />
-              <InfoRow label="Client Reference" value={client.client_ref} mono />
-              <InfoRow label="Client Type" value={client.business_type ? CLIENT_TYPE_LABELS[client.business_type] ?? client.business_type : null} />
-              <InfoRow label="Contact Email" value={client.contact_email
-                ? <ClientEmailLink email={client.contact_email} client={client} className="text-[var(--accent)] hover:underline text-left break-all" />
-                : null} />
-              <InfoRow label="Contact Number" value={client.contact_number} />
-              <div>
-                <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Status</dt>
-                <dd className="mt-1">
-                  {(() => { const s = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.inactive; return (
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                      {s.label}
-                    </span>
-                  ); })()}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Risk Rating</dt>
-                <dd className="mt-1">
-                  {client.risk_rating
-                    ? <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RISK_COLOURS[client.risk_rating] ?? ''}`}>{client.risk_rating}</span>
-                    : <span className="text-[var(--text-muted)]">—</span>}
-                </dd>
-              </div>
-              <InfoRow label="Created" value={formatDate(client.created_at)} />
-              <div className="sm:col-span-2">
-                <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Address</dt>
-                <dd className="mt-1 text-sm text-[var(--text-primary)] whitespace-pre-wrap">
-                  {client.address ?? <span className="text-[var(--text-muted)]">—</span>}
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          <div className="glass rounded-xl p-6">
-            <h3 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest mb-4">Regulatory &amp; Tax Details</h3>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-              {showFor('utr_number', type) && <InfoRow label="UTR Number" value={client.utr_number} mono />}
-              {showFor('registration_number', type) && <InfoRow label="Company Registration Number" value={client.registration_number} mono />}
-              {showFor('national_insurance_number', type) && <InfoRow label="National Insurance Number" value={client.national_insurance_number} mono />}
-              {showFor('ch_idv_code', type) && <InfoRow label="CH IDV Code" value={client.ch_idv_code} mono />}
-              {showFor('companies_house_id', type) && <InfoRow label="Companies House ID" value={client.companies_house_id} mono />}
-              {showFor('vat_number', type) && <InfoRow label="VAT Number" value={client.vat_number} mono />}
-              {showFor('companies_house_auth_code', type) && <InfoRow label="Companies House Auth Code" value={client.companies_house_auth_code} mono />}
-              {showFor('date_of_birth', type) && <InfoRow label="Date of Birth" value={client.date_of_birth ? new Date(client.date_of_birth).toLocaleDateString('en-GB') : null} />}
-              {showFor('mtd_it', type) && (
-                <div>
-                  <dt className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">MTD IT</dt>
-                  <dd className="mt-1">
-                    {client.mtd_it
-                      ? <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><span className="w-1.5 h-1.5 rounded-full bg-blue-500" />Enrolled</span>
-                      : <span className="text-[var(--text-muted)]">—</span>}
-                  </dd>
-                </div>
-              )}
-              {showFor('paye_reference', type) && <InfoRow label="PAYE Reference" value={client.paye_reference} mono />}
-              {showFor('paye_accounts_office_reference', type) && <InfoRow label="PAYE Accounts Office Reference" value={client.paye_accounts_office_reference} mono />}
-              {showFor('vat_submit_type', type) && <InfoRow label="VAT Submit Type" value={client.vat_submit_type} />}
-              {showFor('vat_scheme', type) && (
-                <InfoRow
-                  label="VAT Scheme"
-                  value={(() => {
-                    if (!client.vat_scheme) return null;
-                    const extra = describeVatPeriodEnd(client.vat_scheme, client.vat_scheme_period_end_month);
-                    return extra ? `${client.vat_scheme} · ${extra}` : client.vat_scheme;
-                  })()}
-                />
-              )}
-              {showFor('year_end', type) && <InfoRow label="Year End" value={client.year_end} />}
-            </dl>
-          </div>
-
-          </div>
-
-          {/* Linked Clients — full width */}
-          <div className="glass rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4 gap-4">
-              <div className="flex items-center gap-2 min-w-0">
-                <Link2 size={16} className="text-[var(--accent)]" />
-                <h3 className="font-semibold text-[var(--text-primary)] text-sm">Linked Clients</h3>
-                {links.length > 0 && <span className="px-1.5 py-0.5 bg-[var(--accent-light)] text-[var(--accent)] text-xs font-medium rounded">{visibleLinks.length}{visibleLinks.length !== links.length && <span className="text-[var(--text-muted)] font-normal"> / {links.length}</span>}</span>}
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                {(holdLinkCount > 0 || inactiveLinkCount > 0) && (
-                  <div className="flex items-center gap-3 pr-1">
-                    {holdLinkCount > 0 && (
-                      <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
-                        <input type="checkbox" checked={!hideHoldLinks} onChange={e => setHideHoldLinks(!e.target.checked)} className="accent-orange-500" />
-                        <span>Show on-hold <span className="text-[var(--text-muted)]">({holdLinkCount})</span></span>
-                      </label>
-                    )}
-                    {inactiveLinkCount > 0 && (
-                      <label className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer select-none">
-                        <input type="checkbox" checked={!hideInactiveLinks} onChange={e => setHideInactiveLinks(!e.target.checked)} className="accent-gray-500" />
-                        <span>Show inactive <span className="text-[var(--text-muted)]">({inactiveLinkCount})</span></span>
-                      </label>
-                    )}
-                  </div>
-                )}
-                <Tooltip label={links.length === 0 ? 'No links to map yet' : 'Open connections map — click to expand'}>
-                  <button
-                    onClick={() => setShowLinkGraph(true)}
-                    disabled={links.length === 0}
-                    aria-label="Open connections map"
-                    className="group p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)] hover:scale-110"
-                  >
-                    <Network size={16} className="transition-transform group-hover:rotate-3" />
-                  </button>
-                </Tooltip>
-                <button onClick={() => { setShowAddLink(v => !v); setLinkError(null); }} className="btn-secondary text-xs py-1.5"><Plus size={12} />Add Link</button>
-              </div>
-            </div>
-
-            {showAddLink && (
-              <div className="mb-4 p-4 bg-[var(--bg-page)] rounded-xl border border-[var(--border)] space-y-3">
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Add a Link</p>
-                <ClientSearchInput
-                  value={selectedLinkClient?.id ?? ''}
-                  valueName={selectedLinkClient?.name}
-                  onChange={(id, name, clientRef) => {
-                    if (!id) { setSelectedLinkClient(null); setLinkError(null); return; }
-                    if (id === clientId) { setLinkError("Can't link a client to itself"); return; }
-                    setLinkError(null);
-                    setSelectedLinkClient({ id, name, client_ref: clientRef, business_type: null });
-                  }}
-                  placeholder="Search for a client to link…"
-                />
-                <select value={newLinkType} onChange={e => setNewLinkType(e.target.value)} className="input-base w-full text-sm">
-                  <option value="director">Director of</option><option value="shareholder">Shareholder of</option>
-                  <option value="spouse_partner">Spouse / Partner of</option><option value="trustee">Trustee of</option>
-                  <option value="beneficiary">Beneficiary of</option><option value="associated_company">Associated Company</option>
-                  <option value="parent_company">Parent Company of</option><option value="subsidiary">Subsidiary of</option>
-                  <option value="guarantor">Guarantor of</option><option value="other">Other / Associated</option>
-                </select>
-                <input value={newLinkNotes} onChange={e => setNewLinkNotes(e.target.value)} placeholder="Notes (optional)" className="input-base w-full text-sm" />
-                {linkError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{linkError}</p>}
-                <div className="flex justify-end gap-2">
-                  <button onClick={() => { setShowAddLink(false); setSelectedLinkClient(null); }} className="btn-ghost text-xs">Cancel</button>
-                  <button onClick={() => void handleAddLink()} disabled={!selectedLinkClient || addingLink} className="btn-primary text-xs disabled:opacity-50">
-                    {addingLink ? 'Linking…' : 'Add Link'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {linksLoading ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">Loading links…</p>
-              : links.length === 0 ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">No linked clients yet.</p>
-              : visibleLinks.length === 0 ? <p className="text-sm text-[var(--text-muted)] py-4 text-center">All linked clients are hidden by the filters above.</p>
-              : (
-                <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {visibleLinks.map(link => {
-                    if (!link.other_client) return null;
-                    const tc = LINK_TYPE_COLOURS[link.link_type] ?? LINK_TYPE_COLOURS.other;
-                    const isEditing = editingLinkId === link.id;
-                    if (isEditing) {
-                      return (
-                        <li key={link.id} className="px-3 py-3 rounded-lg bg-[var(--bg-page)] border border-[var(--accent)]/30 space-y-2">
-                          <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Edit link to {link.other_client.name}</div>
-                          <select value={editLinkType} onChange={e => setEditLinkType(e.target.value)} className="input-base w-full text-sm">
-                            <option value="director">Director of</option><option value="shareholder">Shareholder of</option>
-                            <option value="spouse_partner">Spouse / Partner of</option><option value="trustee">Trustee of</option>
-                            <option value="beneficiary">Beneficiary of</option><option value="associated_company">Associated Company</option>
-                            <option value="parent_company">Parent Company of</option><option value="subsidiary">Subsidiary of</option>
-                            <option value="guarantor">Guarantor of</option><option value="other">Other / Associated</option>
-                          </select>
-                          <input value={editLinkNotes} onChange={e => setEditLinkNotes(e.target.value)} placeholder="Notes (optional)" className="input-base w-full text-sm" />
-                          {editLinkError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{editLinkError}</p>}
-                          <div className="flex justify-end gap-2">
-                            <button onClick={() => setEditingLinkId(null)} className="btn-ghost text-xs">Cancel</button>
-                            <button onClick={() => void handleSaveLinkEdit()} disabled={editLinkSaving} className="btn-primary text-xs disabled:opacity-50">
-                              {editLinkSaving ? 'Saving…' : 'Save'}
-                            </button>
-                          </div>
-                        </li>
-                      );
-                    }
-                    return (
-                      <li key={link.id} className="group flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-[var(--bg-page)] border border-[var(--border)]">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${tc}`}>{LINK_TYPE_LABELS[link.link_type] ?? link.link_type}</span>
-                          <div className="min-w-0">
-                            <button onClick={() => router.push(`/clients/${link.other_client!.id}`)} className="text-sm font-medium text-[var(--accent)] hover:underline truncate">
-                              {link.other_client.name}
-                            </button>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {link.other_client.client_ref && <span className="text-xs text-[var(--text-muted)] font-mono">{link.other_client.client_ref}</span>}
-                              {link.other_client.business_type && <span className="text-xs text-[var(--text-muted)]">· {CLIENT_TYPE_LABELS[link.other_client.business_type] ?? link.other_client.business_type}</span>}
-                              {link.other_client.status !== 'active' && (() => {
-                                const s = STATUS_CONFIG[link.other_client.status] ?? STATUS_CONFIG.inactive;
-                                return (
-                                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${s.bg} ${s.text}`}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                                    {s.label}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                            {link.notes && <p className="text-xs text-[var(--text-muted)] mt-0.5">{link.notes}</p>}
-                          </div>
-                        </div>
-                        <div className="shrink-0 flex flex-col items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Tooltip label="Remove link" side="left">
-                            <button onClick={() => void handleRemoveLink(link.id)} disabled={removingLinkId === link.id} aria-label="Remove link"
-                              className="p-1 text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50 rounded transition-colors disabled:opacity-40">
-                              <X size={13} />
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="Edit link" side="left">
-                            <button onClick={() => handleStartEditLink(link)} aria-label="Edit link"
-                              className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] rounded transition-colors">
-                              <Pencil size={13} />
-                            </button>
-                          </Tooltip>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-          </div>
-        </div>
-      )}
-
       {/* ── Tasks Tab ─────────────────────────────────────────────────────────── */}
       {activeTab === 'tasks' && isModuleActive('tasks') && (
         <ClientTasksPanel clientId={clientId} />
@@ -2488,11 +2119,6 @@ export default function ClientDetailPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Connections map lightbox */}
-      {showLinkGraph && client && (
-        <LinkGraphLightbox clientId={client.id} onClose={() => setShowLinkGraph(false)} />
       )}
 
       {/* Schedule Meeting modal */}
