@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Users, Search, Loader2, AlertTriangle, Plus, Check, Trash2 } from 'lucide-react';
 import type { MtdItProperty } from '@/types';
 
@@ -99,7 +100,7 @@ export default function MtdItPropertyCoOwnersModal({ property, onClose, onChange
   const totalShare = property.ownership_pct + ((property.co_owners ?? []).reduce((a, c) => a + c.co_owner_share_pct, 0));
   const overShare  = totalShare > 100.01; // a touch of float wiggle room
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={!busy ? onClose : undefined}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
         {/* Header */}
@@ -216,6 +217,7 @@ export default function MtdItPropertyCoOwnersModal({ property, onClose, onChange
           <button onClick={onClose} className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">Done</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

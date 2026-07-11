@@ -252,7 +252,12 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
       {/* Tab body */}
       <div className="flex-1 min-h-[80px]">
         {tab === 'income' && (
-          consolidated ? (
+          // Empty state shows the add-entry hint in BOTH consolidated and
+          // itemised modes — only branch on `consolidated` once there are rows
+          // to lay out (flat list vs per-category groups).
+          incomes.length === 0 ? (
+            <EmptyTabHint type="income" onAdd={() => addEntry('income')} readOnly={readOnly} />
+          ) : consolidated ? (
             <CategoryBody
               entries={incomes}
               stream={stream}
@@ -268,8 +273,6 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               onDelete={deleteEntry}
               onViewSource={onViewSource}
             />
-          ) : incomes.length === 0 ? (
-            <EmptyTabHint type="income" onAdd={() => addEntry('income')} readOnly={readOnly} />
           ) : (
             <div className="divide-y divide-gray-100">
               {incomeByCategory.map(([category, rows]) => (
@@ -305,7 +308,9 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
         )}
 
         {tab === 'expense' && (
-          consolidated ? (
+          expenses.length === 0 ? (
+            <EmptyTabHint type="expense" onAdd={() => addEntry('expense')} readOnly={readOnly} />
+          ) : consolidated ? (
             <CategoryBody
               entries={expenses}
               stream={stream}
@@ -321,8 +326,6 @@ export default function MtdItStreamColumn({ stream, entries, properties, trades,
               onDelete={deleteEntry}
               onViewSource={onViewSource}
             />
-          ) : expenses.length === 0 ? (
-            <EmptyTabHint type="expense" onAdd={() => addEntry('expense')} readOnly={readOnly} />
           ) : (
             <div className="divide-y divide-gray-100">
               {expenseByCategory.map(([category, rows]) => (
