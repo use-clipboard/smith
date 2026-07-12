@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Plus, FileText } from 'lucide-react';
+import { Search, Plus, FileText, Upload } from 'lucide-react';
 import { GlassCard } from '@/components/features/timesheets/shared/ui';
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, InvoiceStatus } from '@/lib/billing/types';
 import { STATUS_META, STATUS_FILTERS } from '../shared/status';
 import InvoiceDetailPanel from './InvoiceDetailPanel';
+import ImportInvoicesModal from '../import/ImportInvoicesModal';
 
 /** dd-mm-yyyy for display (UK). */
 export function fmtDate(iso: string | null): string {
@@ -25,6 +26,7 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
   const [filter, setFilter] = useState<InvoiceStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -52,14 +54,17 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
             <FilterPill key={s} active={filter === s} onClick={() => setFilter(s)} label={STATUS_META[s].label} dot={STATUS_META[s].dot} />
           ))}
         </div>
-        <div className="relative">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search invoice or client…"
-            className="h-9 w-64 rounded-lg border border-black/10 bg-white/70 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent)]"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search invoice or client…"
+              className="h-9 w-64 rounded-lg border border-black/10 bg-white/70 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent)]"
+            />
+          </div>
+          <button onClick={() => setImportOpen(true)} className="btn-secondary"><Upload size={14} /> Import</button>
         </div>
       </div>
 
@@ -123,6 +128,10 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
           onClose={() => setSelectedId(null)}
           onChanged={() => { load(); }}
         />
+      )}
+
+      {importOpen && (
+        <ImportInvoicesModal onClose={() => setImportOpen(false)} onImported={() => load()} />
       )}
     </div>
   );
