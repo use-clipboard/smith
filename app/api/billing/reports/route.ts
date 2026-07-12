@@ -37,14 +37,14 @@ export async function GET() {
   const yearAgo = new Date(Date.UTC(ty, tm - 12, 1)).toISOString().slice(0, 10);
 
   const [{ data: invData }, { data: payData }, { data: recData }, { data: timeData }, { data: propData }] = await Promise.all([
-    supabase.from('invoices').select('id, client_id, client_name, status, issue_date, due_date, total_pence, amount_paid_pence, paid_at, created_at').eq('firm_id', ctx.firmId).limit(5000),
+    supabase.from('invoices').select('id, client_id, client_name, status, issue_date, due_date, total_pence, amount_paid_pence, credit_pence, paid_at, created_at').eq('firm_id', ctx.firmId).limit(5000),
     supabase.from('payments').select('amount_pence, received_date').eq('firm_id', ctx.firmId).limit(5000),
     supabase.from('recurring_invoices').select('frequency, interval_days, total_pence').eq('firm_id', ctx.firmId).eq('status', 'active').limit(2000),
     supabase.from('time_entries').select('client_id, minutes, rate_pence, entry_date').eq('firm_id', ctx.firmId).eq('entry_type', 'billable').gte('entry_date', yearAgo).limit(20000),
     supabase.from('proposals').select('status').eq('firm_id', ctx.firmId).limit(5000),
   ]);
 
-  const invoices = (invData ?? []) as { id: string; client_id: string | null; client_name: string | null; status: string; issue_date: string | null; due_date: string | null; total_pence: number; amount_paid_pence: number; paid_at: string | null; created_at: string }[];
+  const invoices = (invData ?? []) as { id: string; client_id: string | null; client_name: string | null; status: string; issue_date: string | null; due_date: string | null; total_pence: number; amount_paid_pence: number; credit_pence: number | null; paid_at: string | null; created_at: string }[];
   const payments = (payData ?? []) as { amount_pence: number; received_date: string }[];
   const recurring = (recData ?? []) as RecurringLite[];
   const time = (timeData ?? []) as { client_id: string | null; minutes: number; rate_pence: number; entry_date: string }[];
@@ -74,7 +74,7 @@ export async function GET() {
     }
     if (inv.status === 'bad_debt') badDebtPence += inv.total_pence;
 
-    const bal = balancePence(inv.total_pence, inv.amount_paid_pence);
+    const bal = balancePence(inv.total_pence, inv.amount_paid_pence, inv.credit_pence ?? 0);
     if (OUTSTANDING.includes(inv.status) && bal > 0) {
       outstandingPence += bal;
       const ref = inv.due_date ?? inv.issue_date ?? inv.created_at.slice(0, 10);

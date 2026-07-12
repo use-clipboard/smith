@@ -25,7 +25,7 @@ export async function GET() {
 
   const [{ data: invData }, { data: evData }, { data: settings }] = await Promise.all([
     supabase.from('invoices')
-      .select('id, number, client_name, status, due_date, total_pence, amount_paid_pence, auto_chase')
+      .select('id, number, client_name, status, due_date, total_pence, amount_paid_pence, credit_pence, auto_chase')
       .eq('firm_id', ctx.firmId).in('status', OUTSTANDING).limit(3000),
     supabase.from('credit_control_events')
       .select('invoice_id, type, stage_name, promised_date, created_at')
@@ -62,7 +62,7 @@ export async function GET() {
   const needsAttention: unknown[] = [];
 
   for (const inv of invoices) {
-    const bal = balancePence(inv.total_pence, inv.amount_paid_pence);
+    const bal = balancePence(inv.total_pence, inv.amount_paid_pence, (inv as { credit_pence?: number }).credit_pence ?? 0);
     if (bal <= 0) continue;
     outstandingPence += bal;
 

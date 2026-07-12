@@ -22,8 +22,17 @@ const Schema = z.object({
   source: z.string().max(30).optional(),
   filename: z.string().max(260).optional(),
   createRecurring: z.boolean().default(false),
+  vatInclusive: z.boolean().default(false),   // imported totals already include VAT
+  vatRate: z.number().min(0).max(100).default(20),
   rows: z.array(RowSchema).min(1).max(5000),
 });
+
+/** Split a gross total into { net, vat } when the import says totals include VAT. */
+function vatSplit(totalPence: number, inclusive: boolean, rate: number): { net: number; vat: number } {
+  if (!inclusive || rate <= 0) return { net: totalPence, vat: 0 };
+  const net = Math.round(totalPence / (1 + rate / 100));
+  return { net, vat: totalPence - net };
+}
 
 function slugRef(name: string): string {
   const base = name.replace(/[^A-Za-z0-9]/g, '').slice(0, 6).toUpperCase() || 'CLIENT';
@@ -80,6 +89,7 @@ export async function POST(req: NextRequest) {
       const outstandingOverdue = r.status === 'outstanding' && r.dueDate != null && r.dueDate < today;
       const status = r.status === 'paid' ? 'paid' : r.status === 'part_paid' ? 'part_paid' : outstandingOverdue ? 'overdue' : 'sent';
       const paid = r.status === 'paid' ? r.totalPence : Math.min(r.amountPaidPence, r.totalPence);
+      const { net, vat } = vatSplit(r.totalPence, body.vatInclusive, body.vatRate);
       return {
         firm_id: ctx.firmId,
         client_id: resolveClient(r),
@@ -88,7 +98,7 @@ export async function POST(req: NextRequest) {
         status,
         issue_date: issue,
         due_date: r.dueDate,
-        subtotal_pence: r.totalPence, vat_pence: 0, total_pence: r.totalPence,
+        subtotal_pence: net, vat_pence: vat, total_pence: r.totalPence,
         amount_paid_pence: paid,
         source: 'import', import_batch: batchId,
         sent_at: issue, paid_at: r.status === 'paid' ? issue : null,
@@ -112,7 +122,8 @@ export async function POST(req: NextRequest) {
   const lineRows = created.map((inv, i) => ({
     invoice_id: inv.id, firm_id: ctx.firmId,
     description: toInsert[i].notes || 'Imported invoice', quantity: 1,
-    unit_price_pence: inv.total_pence, vat_rate: 0, net_pence: inv.total_pence, vat_pence: 0, gross_pence: inv.total_pence, position: 0,
+    unit_price_pence: toInsert[i].subtotal_pence, vat_rate: body.vatInclusive ? body.vatRate : 0,
+    net_pence: toInsert[i].subtotal_pence, vat_pence: toInsert[i].vat_pence, gross_pence: inv.total_pence, position: 0,
   }));
   await supabase.from('invoice_lines').insert(lineRows);
 

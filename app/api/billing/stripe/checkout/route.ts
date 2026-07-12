@@ -22,11 +22,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = createClient();
   const { data: inv } = await supabase
-    .from('invoices').select('id, number, client_id, total_pence, amount_paid_pence, status')
+    .from('invoices').select('id, number, client_id, total_pence, amount_paid_pence, credit_pence, status')
     .eq('id', parsed.data.invoiceId).eq('firm_id', ctx.firmId).maybeSingle();
   if (!inv) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
-  const bal = balancePence(inv.total_pence, inv.amount_paid_pence);
+  const bal = balancePence(inv.total_pence, inv.amount_paid_pence, inv.credit_pence ?? 0);
   if (bal <= 0) return NextResponse.json({ error: 'This invoice has nothing to pay.' }, { status: 400 });
 
   let clientEmail: string | null = null;

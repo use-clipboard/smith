@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download, CreditCard } from 'lucide-react';
+import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download, CreditCard, Undo2, Mail } from 'lucide-react';
 import { fmtPence } from '@/lib/billing/totals';
-import type { Invoice } from '@/lib/billing/types';
+import type { Invoice, CreditNote } from '@/lib/billing/types';
 import { exportInvoicePdf, type InvoiceLetterhead } from '@/lib/billing/invoicePdf';
 import { STATUS_META } from '../shared/status';
 import { fmtDate } from './InvoicesTab';
+import SendInvoiceModal from './SendInvoiceModal';
 
 const EMPTY_LETTERHEAD: InvoiceLetterhead = { businessName: '', businessAddress: '', vatNumber: '', bankDetails: '', invoiceFooter: '' };
 
@@ -25,6 +26,11 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
   const [letterhead, setLetterhead] = useState<InvoiceLetterhead>(EMPTY_LETTERHEAD);
   const [stripeOk, setStripeOk] = useState(false);
   const [payMsg, setPayMsg] = useState<string | null>(null);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [cnOpen, setCnOpen] = useState(false);
+  const [cnAmount, setCnAmount] = useState('');
+  const [cnReason, setCnReason] = useState('');
+  const [sendOpen, setSendOpen] = useState(false);
 
   function load() {
     setLoading(true);
@@ -32,8 +38,26 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
       .then(r => (r.ok ? r.json() : null))
       .then(d => { setInv(d?.invoice ?? null); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch(`/api/billing/credit-notes?invoiceId=${invoiceId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setCreditNotes(d?.creditNotes ?? []))
+      .catch(() => {});
   }
   useEffect(load, [invoiceId]);
+
+  async function raiseCreditNote() {
+    if (!inv) return;
+    const pounds = parseFloat(cnAmount);
+    if (!Number.isFinite(pounds) || pounds <= 0) return;
+    setBusy(true);
+    const r = await fetch('/api/billing/credit-notes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invoiceId, amountPence: Math.round(pounds * 100), reason: cnReason || null }),
+    });
+    setBusy(false);
+    if (r.ok) { setCnOpen(false); setCnAmount(''); setCnReason(''); load(); onChanged(); }
+    else { const d = await r.json().catch(() => null); setPayMsg(d?.error ?? 'Could not raise credit note'); setTimeout(() => setPayMsg(null), 3000); }
+  }
 
   // Firm letterhead / bank details for the PDF (fetched once).
   useEffect(() => {
@@ -174,6 +198,33 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
               </div>
             </div>
 
+            {/* Credit notes */}
+            {creditNotes.length > 0 && (
+              <div className="mb-4">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Credit notes</p>
+                <div className="rounded-xl border border-black/5">
+                  {creditNotes.map(cn => (
+                    <div key={cn.id} className="flex items-center justify-between border-b border-black/[0.04] px-3 py-2 text-[13px] last:border-0">
+                      <span className="min-w-0 truncate text-[var(--text-secondary)]">{cn.number ?? 'CN'}{cn.reason ? <span className="text-[var(--text-muted)]"> · {cn.reason}</span> : null}</span>
+                      <span className="shrink-0 tabular-nums text-rose-600">−{fmtPence(cn.amountPence)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Raise credit note */}
+            {cnOpen && (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
+                <label className="text-[12px] font-medium text-[var(--text-secondary)]">Credit amount (£) + reason</label>
+                <div className="mt-1.5 flex gap-2">
+                  <input type="number" step="0.01" autoFocus value={cnAmount} onChange={e => setCnAmount(e.target.value)} placeholder={(inv.balancePence / 100).toFixed(2)} className="h-9 w-28 rounded-lg border border-black/10 px-3 text-sm outline-none focus:border-rose-400" />
+                  <input value={cnReason} onChange={e => setCnReason(e.target.value)} placeholder="Reason (optional)" className="h-9 flex-1 rounded-lg border border-black/10 px-3 text-sm outline-none focus:border-rose-400" />
+                  <button onClick={raiseCreditNote} disabled={busy} className="btn-secondary text-rose-600 disabled:opacity-50">Raise</button>
+                </div>
+              </div>
+            )}
+
             {/* Record payment */}
             {payOpen && (
               <div className="mb-4 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-3">
@@ -200,8 +251,11 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
             {stripeOk && inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
               <button onClick={payByCard} className="btn-secondary"><CreditCard size={14} /> Pay by card</button>
             )}
+            {inv.status !== 'cancelled' && (
+              <button onClick={() => setSendOpen(true)} disabled={busy} className="btn-primary disabled:opacity-50"><Mail size={14} /> {inv.status === 'draft' ? 'Send' : 'Resend'}</button>
+            )}
             {inv.status === 'draft' && (
-              <button onClick={() => patchStatus('sent')} disabled={busy} className="btn-primary disabled:opacity-50"><Send size={14} /> Mark as sent</button>
+              <button onClick={() => patchStatus('sent')} disabled={busy} className="btn-secondary disabled:opacity-50"><Send size={14} /> Mark sent</button>
             )}
             {inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
               <button onClick={() => setPayOpen(o => !o)} disabled={busy} className="btn-secondary"><Banknote size={14} /> Record payment</button>
@@ -209,12 +263,24 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
             {inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={() => patchStatus('paid')} disabled={busy} className="btn-secondary"><CheckCircle2 size={14} /> Mark paid</button>
             )}
+            {inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
+              <button onClick={() => setCnOpen(o => !o)} disabled={busy} className="btn-secondary text-rose-600"><Undo2 size={14} /> Credit note</button>
+            )}
             {(inv.status === 'draft' || inv.status === 'cancelled') && inv.amountPaidPence === 0 && (
               <button onClick={remove} disabled={busy} className="btn-secondary ml-auto text-[var(--danger)]"><Trash2 size={14} /> Delete</button>
             )}
           </div>
         )}
       </aside>
+
+      {sendOpen && inv && (
+        <SendInvoiceModal
+          invoiceId={invoiceId}
+          invoiceNumber={inv.number}
+          onClose={() => setSendOpen(false)}
+          onSent={() => { setSendOpen(false); load(); onChanged(); setPayMsg('Invoice sent'); setTimeout(() => setPayMsg(null), 3000); }}
+        />
+      )}
     </>
   );
 }

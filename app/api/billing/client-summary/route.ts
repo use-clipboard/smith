@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
   const invoices = (invData ?? []) as InvoiceRow[];
-  const outstandingPence = invoices.reduce((s, r) => s + (['sent', 'viewed', 'part_paid', 'overdue'].includes(r.status) ? balancePence(r.total_pence, r.amount_paid_pence) : 0), 0);
+  const outstandingPence = invoices.reduce((s, r) => s + (['sent', 'viewed', 'part_paid', 'overdue'].includes(r.status) ? balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0) : 0), 0);
   const billedPence = invoices.reduce((s, r) => s + (NON_SALES.includes(r.status) ? 0 : r.total_pence), 0);
   const paidPence = invoices.reduce((s, r) => s + r.amount_paid_pence, 0);
 

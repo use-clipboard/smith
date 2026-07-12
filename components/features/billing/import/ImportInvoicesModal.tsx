@@ -28,6 +28,8 @@ export default function ImportInvoicesModal({ onClose, onImported }: { onClose: 
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [autoCreate, setAutoCreate] = useState(true);
   const [createRecurring, setCreateRecurring] = useState(false);
+  const [vatInclusive, setVatInclusive] = useState(false);
+  const [vatRate, setVatRate] = useState('20');
   const [result, setResult] = useState<{ batchId: string; invoiceCount: number; clientCreatedCount: number; recurringCount: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -59,7 +61,7 @@ export default function ImportInvoicesModal({ onClose, onImported }: { onClose: 
         issueDate: r.issueDate, dueDate: r.dueDate, totalPence: r.totalPence, amountPaidPence: r.amountPaidPence,
         status: r.status as 'paid' | 'part_paid' | 'outstanding', description: '',
       }));
-    const r = await fetch('/api/billing/import/commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: analysis.source, filename, createRecurring, rows }) });
+    const r = await fetch('/api/billing/import/commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source: analysis.source, filename, createRecurring, vatInclusive, vatRate: parseFloat(vatRate) || 20, rows }) });
     const d = await r.json().catch(() => null);
     if (r.ok && d) { setResult(d); setStage('done'); onImported(); }
     else { setError(d?.error ?? 'Import failed.'); setStage('review'); }
@@ -111,9 +113,14 @@ export default function ImportInvoicesModal({ onClose, onImported }: { onClose: 
                 <span className="text-[12px] text-[var(--text-muted)]">{analysis.summary.matched} matched, {analysis.summary.unmatched} new</span>
               </div>
 
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <Toggle label="Auto-create clients that don't match" checked={autoCreate} onChange={setAutoCreate} />
                 <Toggle label="Detect recurring schedules from repeats" checked={createRecurring} onChange={setCreateRecurring} />
+                <div className="flex items-center gap-2">
+                  <Toggle label="Totals include VAT at" checked={vatInclusive} onChange={setVatInclusive} />
+                  <input type="number" step="0.5" value={vatRate} onChange={e => setVatRate(e.target.value)} disabled={!vatInclusive} className="w-14 rounded-lg border border-black/10 px-2 py-1 text-[13px] outline-none focus:border-[var(--accent)] disabled:opacity-50" />
+                  <span className="text-[13px] text-[var(--text-muted)]">%</span>
+                </div>
               </div>
 
               <div className="overflow-hidden rounded-xl border border-black/5">

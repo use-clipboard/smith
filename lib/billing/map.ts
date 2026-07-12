@@ -19,6 +19,7 @@ export interface InvoiceRow {
   vat_pence: number;
   total_pence: number;
   amount_paid_pence: number;
+  credit_pence?: number | null;
   notes: string | null;
   terms: string | null;
   source: string;
@@ -114,7 +115,8 @@ export function mapInvoiceRow(r: InvoiceRow, lines?: InvoiceLineRow[]): Invoice 
     vatPence: r.vat_pence,
     totalPence: r.total_pence,
     amountPaidPence: r.amount_paid_pence,
-    balancePence: balancePence(r.total_pence, r.amount_paid_pence),
+    creditPence: r.credit_pence ?? 0,
+    balancePence: balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0),
     notes: r.notes,
     terms: r.terms,
     source: r.source as InvoiceSource,

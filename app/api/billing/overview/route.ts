@@ -62,7 +62,7 @@ export async function GET() {
 
   for (const r of invoices) {
     const status = r.status as InvoiceStatus;
-    const bal = balancePence(r.total_pence, r.amount_paid_pence);
+    const bal = balancePence(r.total_pence, r.amount_paid_pence, (r as InvoiceRow & { credit_pence?: number }).credit_pence ?? 0);
     const m = invMonth(r);
 
     // Status summary (all invoices).

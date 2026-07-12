@@ -45,18 +45,27 @@ export async function createBillingFromProposal(
   if (!lines.length) return { recurringCreated: 0, invoiceCreated: 0 };
 
   const { data: settings } = await service
-    .from('billing_settings').select('default_vat_rate, default_payment_terms_days').eq('firm_id', firmId).maybeSingle();
-  const defaultVat = Number(settings?.default_vat_rate ?? 20);
+    .from('billing_settings').select('default_vat_rate, default_payment_terms_days, vat_registered').eq('firm_id', firmId).maybeSingle();
+  const vatRegistered = settings?.vat_registered ?? true;
+  const defaultVat = vatRegistered ? Number(settings?.default_vat_rate ?? 20) : 0;
   const termsDays = settings?.default_payment_terms_days ?? 14;
 
-  // exempt / inclusive → no VAT added; exclusive → the firm's default rate.
-  const vatFor = (t: ProposalLineRow['vat_treatment']) => (t === 'exclusive' ? defaultVat : 0);
-  const toTemplate = (l: ProposalLineRow): TemplateLine => ({
-    description: l.description?.trim() ? `${l.service_name} — ${l.description.trim()}` : l.service_name,
-    quantity: Number(l.quantity) || 1,
-    unitPricePence: Math.round((Number(l.unit_price) || 0) * 100),
-    vatRate: vatFor(l.vat_treatment),
-  });
+  // Map each proposal line to a template line with correct VAT:
+  //   exclusive → price is net, add VAT · inclusive → price is gross, back out
+  //   the net so net+VAT = the quoted price · exempt (or firm not VAT reg) → 0%.
+  const toTemplate = (l: ProposalLineRow): TemplateLine => {
+    const pricePence = Math.round((Number(l.unit_price) || 0) * 100);
+    const rate = l.vat_treatment === 'exempt' ? 0 : defaultVat;
+    const unitPricePence = l.vat_treatment === 'inclusive' && rate > 0
+      ? Math.round(pricePence / (1 + rate / 100))
+      : pricePence;
+    return {
+      description: l.description?.trim() ? `${l.service_name} — ${l.description.trim()}` : l.service_name,
+      quantity: Number(l.quantity) || 1,
+      unitPricePence,
+      vatRate: rate,
+    };
+  };
 
   const today = new Date().toISOString().slice(0, 10);
   const byFreq: Record<string, ProposalLineRow[]> = {};

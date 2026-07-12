@@ -1,22 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning } from 'lucide-react';
+import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus } from 'lucide-react';
 import { GlassCard, SectionHeader } from '@/components/features/timesheets/shared/ui';
 import type { BillingSettings } from '@/lib/billing/types';
+import { INVOICE_MERGE_TAGS } from '@/lib/billing/invoiceMergeTags';
 import StageLadderEditor from './StageLadderEditor';
 
 type Editable = Pick<BillingSettings,
   | 'invoicePrefix' | 'creditNotePrefix' | 'defaultPaymentTermsDays' | 'defaultVatRate'
   | 'postToBookkeeping' | 'bookkeepingSalesAccount' | 'firstInvoiceMode'
   | 'businessName' | 'businessAddress' | 'vatNumber' | 'bankDetails' | 'invoiceFooter'
-  | 'autoChaseEnabled' | 'chaseWeekdaysOnly' | 'chaseMinBalancePence' | 'chaseReplyTo'>;
+  | 'autoChaseEnabled' | 'chaseWeekdaysOnly' | 'chaseMinBalancePence' | 'chaseReplyTo'
+  | 'vatRegistered' | 'emailSenderMailboxId' | 'invoiceEmailSubject' | 'invoiceEmailBody'>;
 
 const EDITABLE_KEYS: (keyof Editable)[] = [
   'invoicePrefix', 'creditNotePrefix', 'defaultPaymentTermsDays', 'defaultVatRate',
   'postToBookkeeping', 'bookkeepingSalesAccount', 'firstInvoiceMode',
   'businessName', 'businessAddress', 'vatNumber', 'bankDetails', 'invoiceFooter',
   'autoChaseEnabled', 'chaseWeekdaysOnly', 'chaseMinBalancePence', 'chaseReplyTo',
+  'vatRegistered', 'emailSenderMailboxId', 'invoiceEmailSubject', 'invoiceEmailBody',
 ];
 
 export default function BillingSettingsTab() {
@@ -52,6 +55,10 @@ export default function BillingSettingsTab() {
           chaseWeekdaysOnly: s.chaseWeekdaysOnly,
           chaseMinBalancePence: s.chaseMinBalancePence,
           chaseReplyTo: s.chaseReplyTo,
+          vatRegistered: s.vatRegistered,
+          emailSenderMailboxId: s.emailSenderMailboxId,
+          invoiceEmailSubject: s.invoiceEmailSubject,
+          invoiceEmailBody: s.invoiceEmailBody,
         });
       })
       .catch(() => {});
@@ -100,8 +107,18 @@ export default function BillingSettingsTab() {
       {/* Defaults */}
       <GlassCard>
         <SectionHeader title="Invoice defaults" subtitle="Applied to every new invoice (editable per invoice)" />
+        <div className="mb-4">
+          <Toggle
+            label="VAT registered"
+            desc="When on, new invoices default to your VAT rate. Turn off if your firm isn't VAT registered — new lines default to 0%."
+            checked={form.vatRegistered}
+            onChange={v => set('vatRegistered', v)}
+            disabled={disabled}
+            icon={Percent}
+          />
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <NumberField icon={Percent} label="Default VAT rate (%)" value={form.defaultVatRate} onChange={v => set('defaultVatRate', v)} disabled={disabled} min={0} max={100} step={0.5} />
+          <NumberField icon={Percent} label="Default VAT rate (%)" value={form.defaultVatRate} onChange={v => set('defaultVatRate', v)} disabled={disabled || !form.vatRegistered} min={0} max={100} step={0.5} />
           <NumberField icon={CreditCard} label="Payment terms (days)" value={form.defaultPaymentTermsDays} onChange={v => set('defaultPaymentTermsDays', Math.round(v))} disabled={disabled} min={0} max={365} step={1} />
         </div>
       </GlassCard>
@@ -124,6 +141,17 @@ export default function BillingSettingsTab() {
           <TextAreaField label="Invoice footer note" value={form.invoiceFooter} onChange={v => set('invoiceFooter', v)} disabled={disabled} rows={2} placeholder="Thank you for your business. Please pay within the terms above." />
         </div>
       </GlassCard>
+
+      {/* Invoice emails */}
+      <InvoiceEmailCard
+        mailboxId={form.emailSenderMailboxId}
+        subject={form.invoiceEmailSubject}
+        body={form.invoiceEmailBody}
+        disabled={disabled}
+        onMailbox={v => set('emailSenderMailboxId', v)}
+        onSubject={v => set('invoiceEmailSubject', v)}
+        onBody={v => set('invoiceEmailBody', v)}
+      />
 
       {/* Bookkeeping posting */}
       <GlassCard>
@@ -194,6 +222,64 @@ export default function BillingSettingsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Invoice-email card ───────────────────────────────────────────────────────
+
+function InvoiceEmailCard({ mailboxId, subject, body, disabled, onMailbox, onSubject, onBody }: {
+  mailboxId: string | null; subject: string; body: string; disabled: boolean;
+  onMailbox: (v: string | null) => void; onSubject: (v: string) => void; onBody: (v: string) => void;
+}) {
+  const [mailboxes, setMailboxes] = useState<{ id: string; google_email: string; label: string | null }[]>([]);
+  useEffect(() => {
+    fetch('/api/tasks/sending-mailboxes').then(r => (r.ok ? r.json() : null)).then(d => setMailboxes(d?.mailboxes ?? [])).catch(() => {});
+  }, []);
+
+  return (
+    <GlassCard>
+      <SectionHeader title="Invoice emails" subtitle="Send invoices from a firm Gmail, with a customisable template" />
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-secondary)]"><Mail size={13} className="text-[var(--text-muted)]" />Send invoices from</label>
+          {mailboxes.length === 0 ? (
+            <div className="flex items-center justify-between rounded-lg border border-dashed border-black/15 bg-black/[0.02] px-3 py-2.5 text-[13px]">
+              <span className="text-[var(--text-muted)]">No firm email connected.</span>
+              <a href="/api/tasks/sending-mailboxes/connect" className="inline-flex items-center gap-1 font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Connect a firm email</a>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <select value={mailboxId ?? ''} onChange={e => onMailbox(e.target.value || null)} disabled={disabled}
+                className="h-9 flex-1 rounded-lg border border-black/10 bg-white/70 px-3 text-[13px] outline-none focus:border-[var(--accent)] disabled:opacity-60">
+                <option value="">— choose a mailbox —</option>
+                {mailboxes.map(m => <option key={m.id} value={m.id}>{m.label ? `${m.label} · ` : ''}{m.google_email}</option>)}
+              </select>
+              <a href="/api/tasks/sending-mailboxes/connect" className="shrink-0 text-[12px] font-semibold text-[var(--accent)] hover:underline">Connect another</a>
+            </div>
+          )}
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">Firm mailboxes are shared with Tasks. Connecting one here makes it available to both.</p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[12px] font-semibold text-[var(--text-secondary)]">Subject template</label>
+          <input value={subject} onChange={e => onSubject(e.target.value)} disabled={disabled} className="w-full rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-[13px] outline-none focus:border-[var(--accent)] disabled:opacity-60" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[12px] font-semibold text-[var(--text-secondary)]">Message template</label>
+          <textarea value={body} onChange={e => onBody(e.target.value)} disabled={disabled} rows={6} className="w-full resize-none rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-[13px] outline-none focus:border-[var(--accent)] disabled:opacity-60" />
+          {!disabled && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="text-[11px] text-[var(--text-muted)]">Insert:</span>
+              {INVOICE_MERGE_TAGS.map(t => (
+                <button key={t.tag} onClick={() => onBody(`${body}${t.tag}`)} title={`${t.label} — e.g. ${t.example}`}
+                  className="rounded-md bg-[var(--accent)]/10 px-2 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/20">{t.label}</button>
+              ))}
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">A &ldquo;View &amp; pay invoice&rdquo; button linking to the client&rsquo;s secure statement is added to every email automatically.</p>
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 

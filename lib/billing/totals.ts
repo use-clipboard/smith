@@ -45,9 +45,9 @@ export function computeInvoiceTotals(rawLines: LineInput[]): InvoiceTotals {
   return { subtotalPence, vatPence, totalPence: subtotalPence + vatPence, lines };
 }
 
-/** Outstanding balance on an invoice. */
-export function balancePence(totalPence: number, amountPaidPence: number): number {
-  return Math.max(0, (totalPence || 0) - (amountPaidPence || 0));
+/** Outstanding balance on an invoice = total − paid − credited. */
+export function balancePence(totalPence: number, amountPaidPence: number, creditPence = 0): number {
+  return Math.max(0, (totalPence || 0) - (amountPaidPence || 0) - (creditPence || 0));
 }
 
 /** Format integer pence as a GBP string, e.g. 2875000 → "£28,750.00". */

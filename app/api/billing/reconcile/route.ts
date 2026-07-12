@@ -29,10 +29,10 @@ const Body = z.discriminatedUnion('action', [MatchSchema, ConfirmSchema]);
 async function loadOutstanding(supabase: ReturnType<typeof createClient>, firmId: string): Promise<OutstandingInvoice[]> {
   const { data } = await supabase
     .from('invoices')
-    .select('id, number, client_name, status, total_pence, amount_paid_pence')
+    .select('id, number, client_name, status, total_pence, amount_paid_pence, credit_pence')
     .eq('firm_id', firmId).in('status', ['sent', 'viewed', 'part_paid', 'overdue']).limit(3000);
   return (data ?? [])
-    .map(r => ({ id: r.id, number: r.number, clientName: r.client_name, balancePence: balancePence(r.total_pence, r.amount_paid_pence) }))
+    .map(r => ({ id: r.id, number: r.number, clientName: r.client_name, balancePence: balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0) }))
     .filter(r => r.balancePence > 0);
 }
 

@@ -23,11 +23,11 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
 
   // The invoice must belong to this token's firm + client.
   const { data: inv } = await supabase
-    .from('invoices').select('id, number, total_pence, amount_paid_pence')
+    .from('invoices').select('id, number, total_pence, amount_paid_pence, credit_pence')
     .eq('id', parsed.data.invoiceId).eq('firm_id', tok.firm_id).eq('client_id', tok.client_id).maybeSingle();
   if (!inv) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
-  const bal = balancePence(inv.total_pence, inv.amount_paid_pence);
+  const bal = balancePence(inv.total_pence, inv.amount_paid_pence, inv.credit_pence ?? 0);
   if (bal <= 0) return NextResponse.json({ error: 'This invoice is already paid.' }, { status: 400 });
 
   const base = getBaseUrl();

@@ -4,6 +4,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import type { BillingSettings } from '@/lib/billing/types';
+import { DEFAULT_INVOICE_EMAIL_SUBJECT, DEFAULT_INVOICE_EMAIL_BODY } from '@/lib/billing/types';
 
 const DEFAULTS: BillingSettings = {
   invoicePrefix: 'INV-',
@@ -25,6 +26,10 @@ const DEFAULTS: BillingSettings = {
   chaseWeekdaysOnly: true,
   chaseMinBalancePence: 0,
   chaseReplyTo: '',
+  vatRegistered: true,
+  emailSenderMailboxId: null,
+  invoiceEmailSubject: DEFAULT_INVOICE_EMAIL_SUBJECT,
+  invoiceEmailBody: DEFAULT_INVOICE_EMAIL_BODY,
 };
 
 // GET /api/billing/settings → firm billing config (defaults if not yet created).
@@ -65,6 +70,10 @@ export async function GET() {
     chaseWeekdaysOnly: data.chase_weekdays_only ?? true,
     chaseMinBalancePence: data.chase_min_balance_pence ?? 0,
     chaseReplyTo: data.chase_reply_to ?? '',
+    vatRegistered: data.vat_registered ?? true,
+    emailSenderMailboxId: data.email_sender_mailbox_id ?? null,
+    invoiceEmailSubject: data.invoice_email_subject || DEFAULT_INVOICE_EMAIL_SUBJECT,
+    invoiceEmailBody: data.invoice_email_body || DEFAULT_INVOICE_EMAIL_BODY,
   };
 
   return NextResponse.json({ ...settings, canEdit, firmName });
@@ -87,6 +96,10 @@ const UpdateSchema = z.object({
   chaseWeekdaysOnly: z.boolean().optional(),
   chaseMinBalancePence: z.number().int().min(0).max(100_000_000).optional(),
   chaseReplyTo: z.string().max(200).optional(),
+  vatRegistered: z.boolean().optional(),
+  emailSenderMailboxId: z.string().uuid().nullable().optional(),
+  invoiceEmailSubject: z.string().max(300).optional(),
+  invoiceEmailBody: z.string().max(4000).optional(),
 });
 
 // PUT /api/billing/settings — save firm billing config (admin only).
@@ -118,6 +131,10 @@ export async function PUT(req: NextRequest) {
   if (p.chaseWeekdaysOnly !== undefined) patch.chase_weekdays_only = p.chaseWeekdaysOnly;
   if (p.chaseMinBalancePence !== undefined) patch.chase_min_balance_pence = p.chaseMinBalancePence;
   if (p.chaseReplyTo !== undefined) patch.chase_reply_to = p.chaseReplyTo;
+  if (p.vatRegistered !== undefined) patch.vat_registered = p.vatRegistered;
+  if (p.emailSenderMailboxId !== undefined) patch.email_sender_mailbox_id = p.emailSenderMailboxId;
+  if (p.invoiceEmailSubject !== undefined) patch.invoice_email_subject = p.invoiceEmailSubject;
+  if (p.invoiceEmailBody !== undefined) patch.invoice_email_body = p.invoiceEmailBody;
 
   const supabase = createClient();
   const { error } = await supabase

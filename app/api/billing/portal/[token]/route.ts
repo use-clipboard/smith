@@ -33,7 +33,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     }
   }
 
-  const outstandingPence = invoices.reduce((s, r) => s + (['sent', 'viewed', 'part_paid', 'overdue'].includes(r.status) ? balancePence(r.total_pence, r.amount_paid_pence) : 0), 0);
+  const outstandingPence = invoices.reduce((s, r) => s + (['sent', 'viewed', 'part_paid', 'overdue'].includes(r.status) ? balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0) : 0), 0);
   const businessName = (settings?.business_name as string) || firm?.name || 'Our practice';
 
   return NextResponse.json({

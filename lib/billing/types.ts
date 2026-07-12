@@ -32,7 +32,8 @@ export interface Invoice {
   vatPence: number;
   totalPence: number;
   amountPaidPence: number;
-  balancePence: number;       // derived: total - paid
+  creditPence: number;
+  balancePence: number;       // derived: total - paid - credit
   notes: string | null;
   terms: string | null;
   source: InvoiceSource;
@@ -107,6 +108,16 @@ export interface CreditControlEvent {
   createdAt: string;
 }
 
+export interface CreditNote {
+  id: string;
+  number: string | null;
+  invoiceId: string | null;
+  amountPence: number;
+  reason: string | null;
+  status: string;
+  createdAt: string;
+}
+
 export interface BillingSettings {
   invoicePrefix: string;
   nextInvoiceNumber: number;
@@ -129,7 +140,20 @@ export interface BillingSettings {
   chaseWeekdaysOnly: boolean;
   chaseMinBalancePence: number;
   chaseReplyTo: string;
+  // VAT + invoice email (Tier 1).
+  vatRegistered: boolean;
+  emailSenderMailboxId: string | null;
+  invoiceEmailSubject: string;
+  invoiceEmailBody: string;
 }
+
+/** Sensible default invoice-email template (used when the firm hasn't set one). */
+export const DEFAULT_INVOICE_EMAIL_SUBJECT = 'Invoice {{invoice_number}} from {{firm_name}}';
+export const DEFAULT_INVOICE_EMAIL_BODY =
+  'Dear {{client_name}},\n\n' +
+  'Please find your invoice {{invoice_number}} for {{invoice_total}}, due {{due_date}}.\n\n' +
+  'You can view and pay it securely online using the button below.\n\n' +
+  'Kind regards,\n{{firm_name}}';
 
 /** Aged-debtor bucket totals (pence) for the Overview donut. */
 export interface AgedDebtors {

@@ -41,9 +41,11 @@ export default function NewInvoiceDrawer({ onClose, onSaved }: Props) {
       .then(r => (r.ok ? r.json() : null))
       .then(s => {
         if (!s) return;
-        setDefaultVat(s.defaultVatRate ?? 20);
+        // If the firm isn't VAT registered, default every line to 0% VAT.
+        const rate = s.vatRegistered === false ? 0 : (s.defaultVatRate ?? 20);
+        setDefaultVat(rate);
         setDueDate(addDaysIso(todayIso(), s.defaultPaymentTermsDays ?? 14));
-        setLines(ls => ls.map(l => ({ ...l, vatRate: String(s.defaultVatRate ?? 20) })));
+        setLines(ls => ls.map(l => ({ ...l, vatRate: String(rate) })));
       })
       .catch(() => {});
   }, []);
