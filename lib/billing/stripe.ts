@@ -95,6 +95,37 @@ export async function createMandateCheckout(args: {
   });
 }
 
+interface SetupIntent { id: string; payment_method: string | null; customer: string | null }
+interface PaymentMethodObj { id: string; bacs_debit?: { last4?: string } | null }
+interface PaymentIntent { id: string; status: string }
+
+/** Retrieve a SetupIntent (to get the mandate's payment method + customer). */
+export async function retrieveSetupIntent(id: string): Promise<SetupIntent> {
+  return stripeRequest<SetupIntent>('GET', `setup_intents/${id}`);
+}
+/** Retrieve a PaymentMethod (for the Bacs last-4). */
+export async function retrievePaymentMethod(id: string): Promise<PaymentMethodObj> {
+  return stripeRequest<PaymentMethodObj>('GET', `payment_methods/${id}`);
+}
+
+/** Collect a payment off-session against a stored Bacs Direct Debit mandate.
+ *  Bacs settles asynchronously — the PaymentIntent goes 'processing' then later
+ *  'succeeded'; the webhook records the payment on succeeded. */
+export async function collectViaBacs(args: {
+  amountPence: number; customer: string; paymentMethod: string; invoiceId: string; firmId: string;
+}): Promise<PaymentIntent> {
+  return stripeRequest<PaymentIntent>('POST', 'payment_intents', {
+    amount: args.amountPence,
+    currency: 'gbp',
+    customer: args.customer,
+    payment_method: args.paymentMethod,
+    payment_method_types: ['bacs_debit'],
+    confirm: true,
+    off_session: true,
+    metadata: { invoice_id: args.invoiceId, firm_id: args.firmId, kind: 'bacs_collection' },
+  });
+}
+
 /** Verify a Stripe webhook signature (t=…,v1=… scheme). */
 export function verifyStripeWebhook(payload: string, sigHeader: string | null): boolean {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;

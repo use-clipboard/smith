@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download, CreditCard, Undo2, Mail } from 'lucide-react';
+import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download, CreditCard, Undo2, Mail, Landmark } from 'lucide-react';
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, CreditNote } from '@/lib/billing/types';
 import { exportInvoicePdf, type InvoiceLetterhead } from '@/lib/billing/invoicePdf';
@@ -122,6 +122,14 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
       setPayMsg('Payment link opened & copied');
     } else setPayMsg(d?.error ?? 'Could not create link');
     setTimeout(() => setPayMsg(null), 3000);
+  }
+
+  async function collectByDd() {
+    setPayMsg('Starting Direct Debit…');
+    const r = await fetch('/api/billing/stripe/collect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+    const d = await r.json().catch(() => null);
+    setPayMsg(r.ok ? 'Direct Debit collection started — settles in ~3 working days' : (d?.error ?? 'Could not collect'));
+    setTimeout(() => setPayMsg(null), 4500);
   }
 
   async function patchStatus(status: string) {
@@ -297,6 +305,9 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
             <button onClick={() => exportInvoicePdf(inv, letterhead)} className="btn-secondary"><Download size={14} /> PDF</button>
             {stripeOk && inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
               <button onClick={payByCard} className="btn-secondary"><CreditCard size={14} /> Pay by card</button>
+            )}
+            {stripeOk && inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
+              <button onClick={collectByDd} className="btn-secondary"><Landmark size={14} /> Collect by DD</button>
             )}
             {inv.status !== 'cancelled' && (
               <button onClick={() => setSendOpen(true)} disabled={busy} className="btn-primary disabled:opacity-50"><Mail size={14} /> {inv.status === 'draft' ? 'Send' : 'Resend'}</button>
