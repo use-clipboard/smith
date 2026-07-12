@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus, Palette, Upload, Trash2 } from 'lucide-react';
+import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus, Palette, Upload, Trash2, Wand2 } from 'lucide-react';
 import { GlassCard, SectionHeader } from '@/components/features/timesheets/shared/ui';
 import type { BillingSettings } from '@/lib/billing/types';
 import { INVOICE_MERGE_TAGS } from '@/lib/billing/invoiceMergeTags';
@@ -13,7 +13,7 @@ type Editable = Pick<BillingSettings,
   | 'businessName' | 'businessAddress' | 'vatNumber' | 'bankDetails' | 'invoiceFooter'
   | 'autoChaseEnabled' | 'chaseWeekdaysOnly' | 'chaseMinBalancePence' | 'chaseReplyTo'
   | 'vatRegistered' | 'emailSenderMailboxId' | 'invoiceEmailSubject' | 'invoiceEmailBody'
-  | 'invoiceAccent' | 'invoiceTemplate' | 'defaultTerms' | 'bookkeepingBookId'>;
+  | 'invoiceAccent' | 'invoiceTemplate' | 'defaultTerms' | 'bookkeepingBookId' | 'allocationPreference'>;
 
 const EDITABLE_KEYS: (keyof Editable)[] = [
   'invoicePrefix', 'creditNotePrefix', 'defaultPaymentTermsDays', 'defaultVatRate',
@@ -21,7 +21,7 @@ const EDITABLE_KEYS: (keyof Editable)[] = [
   'businessName', 'businessAddress', 'vatNumber', 'bankDetails', 'invoiceFooter',
   'autoChaseEnabled', 'chaseWeekdaysOnly', 'chaseMinBalancePence', 'chaseReplyTo',
   'vatRegistered', 'emailSenderMailboxId', 'invoiceEmailSubject', 'invoiceEmailBody',
-  'invoiceAccent', 'invoiceTemplate', 'defaultTerms', 'bookkeepingBookId',
+  'invoiceAccent', 'invoiceTemplate', 'defaultTerms', 'bookkeepingBookId', 'allocationPreference',
 ];
 
 export default function BillingSettingsTab() {
@@ -30,6 +30,7 @@ export default function BillingSettingsTab() {
   const [canEdit, setCanEdit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [subTab, setSubTab] = useState<'general' | 'branding' | 'emails' | 'credit' | 'payments'>('general');
 
   useEffect(() => {
     fetch('/api/billing/settings')
@@ -63,6 +64,7 @@ export default function BillingSettingsTab() {
           invoiceTemplate: s.invoiceTemplate,
           defaultTerms: s.defaultTerms,
           bookkeepingBookId: s.bookkeepingBookId,
+          allocationPreference: s.allocationPreference,
         });
       })
       .catch(() => {});
@@ -99,6 +101,16 @@ export default function BillingSettingsTab() {
         </div>
       )}
 
+      {/* Sub-tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-black/5">
+        {([['general', 'General'], ['branding', 'Branding'], ['emails', 'Emails'], ['credit', 'Credit control'], ['payments', 'Payments']] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setSubTab(id)} className={`relative px-4 py-2.5 text-[13px] font-semibold transition-colors ${subTab === id ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+            {label}{subTab === id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[var(--accent)]" />}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'general' && (<>
       {/* Invoice numbering */}
       <GlassCard>
         <SectionHeader title="Invoice numbering" subtitle="Prefixes and the next number in each sequence" />
@@ -127,6 +139,10 @@ export default function BillingSettingsTab() {
         </div>
       </GlassCard>
 
+      <AllocationCard preference={form.allocationPreference} onChange={v => set('allocationPreference', v)} disabled={disabled} />
+      </>)}
+
+      {subTab === 'branding' && (<>
       {/* Letterhead */}
       <GlassCard>
         <SectionHeader title="Invoice letterhead" subtitle="Your firm's details, shown at the top of every invoice PDF" />
@@ -155,8 +171,9 @@ export default function BillingSettingsTab() {
           <TextAreaField label="Terms & conditions (printed at the bottom of every invoice)" value={form.defaultTerms} onChange={v => set('defaultTerms', v)} disabled={disabled} rows={3} placeholder="Payment is due within the stated terms. Late payment may incur statutory interest." />
         </div>
       </GlassCard>
+      </>)}
 
-      {/* Invoice emails */}
+      {subTab === 'emails' && (
       <InvoiceEmailCard
         mailboxId={form.emailSenderMailboxId}
         subject={form.invoiceEmailSubject}
@@ -166,27 +183,9 @@ export default function BillingSettingsTab() {
         onSubject={v => set('invoiceEmailSubject', v)}
         onBody={v => set('invoiceEmailBody', v)}
       />
+      )}
 
-      {/* Bookkeeping posting */}
-      <GlassCard>
-        <SectionHeader title="Bookkeeping" subtitle="Post issued invoices into your own sales ledger" />
-        <Toggle
-          label="Post invoices to Bookkeeping"
-          desc="When on, issuing (sending) an invoice posts a matching sale into the chosen Bookkeeping book — Dr Trade debtors, Cr Sales, Cr VAT."
-          checked={form.postToBookkeeping}
-          onChange={v => set('postToBookkeeping', v)}
-          disabled={disabled}
-          icon={BookCopy}
-        />
-        {form.postToBookkeeping && (
-          <div className="mt-3 space-y-3">
-            <BookPicker value={form.bookkeepingBookId} onChange={v => set('bookkeepingBookId', v)} disabled={disabled} />
-            <TextField label="Sales nominal account (optional)" value={form.bookkeepingSalesAccount ?? ''} onChange={v => set('bookkeepingSalesAccount', v)} disabled={disabled} placeholder="Leave blank to use the book's Sales account" />
-            {!form.bookkeepingBookId && <p className="text-[11px] text-amber-600">Choose a book — posting is skipped until one is selected.</p>}
-          </div>
-        )}
-      </GlassCard>
-
+      {subTab === 'credit' && (<>
       {/* Auto-chaser */}
       <GlassCard>
         <SectionHeader title="Auto-chaser" subtitle="Automatically email clients when invoices go overdue" />
@@ -218,6 +217,28 @@ export default function BillingSettingsTab() {
 
       {/* Reminder ladder */}
       <StageLadderEditor canEdit={canEdit} />
+      </>)}
+
+      {subTab === 'payments' && (<>
+      {/* Bookkeeping posting */}
+      <GlassCard>
+        <SectionHeader title="Bookkeeping" subtitle="Post issued invoices into your own sales ledger" />
+        <Toggle
+          label="Post invoices to Bookkeeping"
+          desc="When on, issuing (sending) an invoice posts a matching sale into the chosen Bookkeeping book — Dr Trade debtors, Cr Sales, Cr VAT."
+          checked={form.postToBookkeeping}
+          onChange={v => set('postToBookkeeping', v)}
+          disabled={disabled}
+          icon={BookCopy}
+        />
+        {form.postToBookkeeping && (
+          <div className="mt-3 space-y-3">
+            <BookPicker value={form.bookkeepingBookId} onChange={v => set('bookkeepingBookId', v)} disabled={disabled} />
+            <TextField label="Sales nominal account (optional)" value={form.bookkeepingSalesAccount ?? ''} onChange={v => set('bookkeepingSalesAccount', v)} disabled={disabled} placeholder="Leave blank to use the book's Sales account" />
+            {!form.bookkeepingBookId && <p className="text-[11px] text-amber-600">Choose a book — posting is skipped until one is selected.</p>}
+          </div>
+        )}
+      </GlassCard>
 
       {/* Stripe / card payments */}
       <StripeStatusCard />
@@ -230,6 +251,7 @@ export default function BillingSettingsTab() {
           <RadioRow label="Wait for the Direct Debit mandate to confirm (~3 working days) before collecting" value="wait_for_dd" current={form.firstInvoiceMode} onChange={v => set('firstInvoiceMode', v)} disabled={disabled} />
         </div>
       </GlassCard>
+      </>)}
 
       {canEdit && (
         <div className="sticky bottom-0 flex items-center justify-end gap-3 pb-1">
@@ -238,6 +260,46 @@ export default function BillingSettingsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Payment allocation card ───────────────────────────────────────────────────
+
+function AllocationCard({ preference, onChange, disabled }: { preference: 'oldest' | 'newest'; onChange: (v: 'oldest' | 'newest') => void; disabled: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function sweep() {
+    if (!confirm('Allocate all payments on account to outstanding invoices?')) return;
+    setBusy(true); setResult(null);
+    const r = await fetch('/api/billing/payments/sweep-on-account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    setBusy(false);
+    if (r.ok) { const d = await r.json(); setResult(d.allocatedPence > 0 ? `Allocated £${(d.allocatedPence / 100).toFixed(2)} across ${d.invoicesUpdated} invoice(s).` : (d.message ?? 'Nothing to allocate.')); }
+    else setResult('Could not allocate.');
+  }
+
+  return (
+    <GlassCard>
+      <SectionHeader title="Payment allocation" subtitle="How payments on account apply to a client's outstanding invoices" />
+      <div className="space-y-2">
+        <RadioRowGeneric label="Oldest invoice first" active={preference === 'oldest'} onClick={() => !disabled && onChange('oldest')} disabled={disabled} />
+        <RadioRowGeneric label="Newest invoice first" active={preference === 'newest'} onClick={() => !disabled && onChange('newest')} disabled={disabled} />
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-black/5 pt-3">
+        <button onClick={sweep} disabled={busy} className="btn-secondary disabled:opacity-50"><Wand2 size={14} /> {busy ? 'Allocating…' : 'Allocate payments on account now'}</button>
+        {result && <span className="text-[12px] font-medium text-emerald-600">{result}</span>}
+      </div>
+      <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">Applies unmatched payments to each client&apos;s outstanding invoices using the order above. Great for clearing a build-up (e.g. after importing from Sage).</p>
+    </GlassCard>
+  );
+}
+
+function RadioRowGeneric({ label, active, onClick, disabled }: { label: string; active: boolean; onClick: () => void; disabled: boolean }) {
+  return (
+    <button onClick={onClick} disabled={disabled} className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-[13px] transition ${active ? 'border-[var(--accent)] bg-[var(--accent)]/[0.05]' : 'border-black/10 hover:bg-black/[0.02]'} ${disabled ? 'opacity-60' : ''}`}>
+      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${active ? 'border-[var(--accent)]' : 'border-black/25'}`}>{active && <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />}</span>
+      <span className="text-[var(--text-secondary)]">{label}</span>
+    </button>
   );
 }
 

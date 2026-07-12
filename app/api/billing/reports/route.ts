@@ -37,14 +37,14 @@ export async function GET() {
   const yearAgo = new Date(Date.UTC(ty, tm - 12, 1)).toISOString().slice(0, 10);
 
   const [{ data: invData }, { data: payData }, { data: recData }, { data: timeData }, { data: propData }] = await Promise.all([
-    supabase.from('invoices').select('id, client_id, client_name, status, issue_date, due_date, total_pence, amount_paid_pence, credit_pence, paid_at, created_at').eq('firm_id', ctx.firmId).limit(5000),
+    supabase.from('invoices').select('id, client_id, client_name, status, issue_date, due_date, total_pence, amount_paid_pence, credit_pence, paid_at, created_at, created_by').eq('firm_id', ctx.firmId).limit(5000),
     supabase.from('payments').select('amount_pence, received_date').eq('firm_id', ctx.firmId).limit(5000),
     supabase.from('recurring_invoices').select('frequency, interval_days, total_pence').eq('firm_id', ctx.firmId).eq('status', 'active').limit(2000),
     supabase.from('time_entries').select('client_id, minutes, rate_pence, entry_date').eq('firm_id', ctx.firmId).eq('entry_type', 'billable').gte('entry_date', yearAgo).limit(20000),
     supabase.from('proposals').select('status').eq('firm_id', ctx.firmId).limit(5000),
   ]);
 
-  const invoices = (invData ?? []) as { id: string; client_id: string | null; client_name: string | null; status: string; issue_date: string | null; due_date: string | null; total_pence: number; amount_paid_pence: number; credit_pence: number | null; paid_at: string | null; created_at: string }[];
+  const invoices = (invData ?? []) as { id: string; client_id: string | null; client_name: string | null; status: string; issue_date: string | null; due_date: string | null; total_pence: number; amount_paid_pence: number; credit_pence: number | null; paid_at: string | null; created_at: string; created_by: string | null }[];
   const payments = (payData ?? []) as { amount_pence: number; received_date: string }[];
   const recurring = (recData ?? []) as RecurringLite[];
   const time = (timeData ?? []) as { client_id: string | null; minutes: number; rate_pence: number; entry_date: string }[];
@@ -59,18 +59,25 @@ export async function GET() {
   const isSale = (s: string) => !NON_SALES.includes(s);
 
   const billedByClient = new Map<string, { name: string; pence: number }>();
+  const byManager = new Map<string, number>();     // created_by → total (12mo)
+  const saleIds12mo: string[] = [];                 // for revenue-by-service (lines)
   const aged = { current: 0, d31_60: 0, d61_90: 0, d90plus: 0 };
   const settleSpans: number[] = [];
   let outstandingPence = 0; let badDebtPence = 0;
 
   for (const inv of invoices) {
     const m = monthKey(inv.issue_date ?? inv.created_at);
+    const in12mo = (inv.issue_date ?? inv.created_at) >= yearAgo;
     if (isSale(inv.status)) {
       if (invByMonth[m] != null) invByMonth[m] += inv.total_pence;
       const key = inv.client_id ?? `name:${inv.client_name ?? 'unknown'}`;
       const rec = billedByClient.get(key) ?? { name: inv.client_name ?? 'Unknown', pence: 0 };
       // Bill within the last 12 months (recovery comparability).
-      if ((inv.issue_date ?? inv.created_at) >= yearAgo) { rec.pence += inv.total_pence; billedByClient.set(key, rec); }
+      if (in12mo) {
+        rec.pence += inv.total_pence; billedByClient.set(key, rec);
+        if (inv.created_by) byManager.set(inv.created_by, (byManager.get(inv.created_by) ?? 0) + inv.total_pence);
+        saleIds12mo.push(inv.id);
+      }
     }
     if (inv.status === 'bad_debt') badDebtPence += inv.total_pence;
 
@@ -110,6 +117,30 @@ export async function GET() {
 
   const topClients = Array.from(billedByClient.values()).sort((a, b) => b.pence - a.pence).slice(0, 8);
 
+  // Revenue by team member (invoice creator) — 12 months.
+  const managerIds = [...byManager.keys()];
+  const nameById = new Map<string, string>();
+  if (managerIds.length) {
+    const { data: users } = await supabase.from('users').select('id, full_name, email').in('id', managerIds);
+    for (const u of (users ?? []) as { id: string; full_name: string | null; email: string | null }[]) nameById.set(u.id, u.full_name || u.email || 'Team member');
+  }
+  const byManagerArr = Array.from(byManager.entries())
+    .map(([id, pence]) => ({ name: nameById.get(id) ?? 'Team member', pence }))
+    .sort((a, b) => b.pence - a.pence).slice(0, 8);
+
+  // Revenue by service — grouped by invoice-line description across 12mo sales.
+  const byService = new Map<string, number>();
+  if (saleIds12mo.length) {
+    const { data: lines } = await supabase.from('invoice_lines').select('description, net_pence, invoice_id').in('invoice_id', saleIds12mo.slice(0, 3000));
+    for (const l of (lines ?? []) as { description: string | null; net_pence: number }[]) {
+      const key = (l.description || 'Other').trim() || 'Other';
+      byService.set(key, (byService.get(key) ?? 0) + l.net_pence);
+    }
+  }
+  const byServiceArr = Array.from(byService.entries())
+    .map(([name, pence]) => ({ name, pence }))
+    .sort((a, b) => b.pence - a.pence).slice(0, 8);
+
   // Proposal conversion.
   const propTotal = proposals.length;
   const propAccepted = proposals.filter(p => p.status === 'accepted').length;
@@ -122,6 +153,8 @@ export async function GET() {
     byMonth: months.map(m => ({ label: new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short' }), invoicedPence: invByMonth[m], collectedPence: cashByMonth[m] })),
     aged,
     topClients,
+    byManager: byManagerArr,
+    byService: byServiceArr,
     recovery,
     firmRecoveryRatio,
     firmChargeablePence: firmChargeable,

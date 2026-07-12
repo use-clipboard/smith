@@ -35,6 +35,7 @@ const DEFAULTS: BillingSettings = {
   defaultTerms: '',
   bookkeepingBookId: null,
   hasLogo: false,
+  allocationPreference: 'oldest',
 };
 
 // GET /api/billing/settings → firm billing config (defaults if not yet created).
@@ -84,6 +85,7 @@ export async function GET() {
     defaultTerms: data.default_terms ?? '',
     bookkeepingBookId: data.bookkeeping_book_id ?? null,
     hasLogo: !!data.logo_path,
+    allocationPreference: (data.allocation_preference as 'oldest' | 'newest') ?? 'oldest',
   };
 
   return NextResponse.json({ ...settings, canEdit, firmName });
@@ -114,6 +116,7 @@ const UpdateSchema = z.object({
   invoiceTemplate: z.enum(['modern', 'classic', 'minimal']).optional(),
   defaultTerms: z.string().max(2000).optional(),
   bookkeepingBookId: z.string().uuid().nullable().optional(),
+  allocationPreference: z.enum(['oldest', 'newest']).optional(),
 });
 
 // PUT /api/billing/settings — save firm billing config (admin only).
@@ -153,6 +156,7 @@ export async function PUT(req: NextRequest) {
   if (p.invoiceTemplate !== undefined) patch.invoice_template = p.invoiceTemplate;
   if (p.defaultTerms !== undefined) patch.default_terms = p.defaultTerms;
   if (p.bookkeepingBookId !== undefined) patch.bookkeeping_book_id = p.bookkeepingBookId;
+  if (p.allocationPreference !== undefined) patch.allocation_preference = p.allocationPreference;
 
   const supabase = createClient();
   const { error } = await supabase

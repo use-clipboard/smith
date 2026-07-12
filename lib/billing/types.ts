@@ -151,6 +151,7 @@ export interface BillingSettings {
   defaultTerms: string;                  // printed on every invoice
   bookkeepingBookId: string | null;      // target book for posting sales
   hasLogo: boolean;                      // whether a logo is uploaded
+  allocationPreference: 'oldest' | 'newest';
 }
 
 /** Sensible default invoice-email template (used when the firm hasn't set one). */

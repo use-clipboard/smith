@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Banknote, Loader2, Wand2 } from 'lucide-react';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import { fmtPence } from '@/lib/billing/totals';
@@ -21,6 +21,11 @@ export default function ReceivePaymentModal({ onClose, onDone }: { onClose: () =
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preference, setPreference] = useState<'oldest' | 'newest'>('oldest');
+
+  useEffect(() => {
+    fetch('/api/billing/settings').then(r => (r.ok ? r.json() : null)).then(s => { if (s?.allocationPreference) setPreference(s.allocationPreference); }).catch(() => {});
+  }, []);
 
   function pick(id: string, name: string) {
     setClientId(id); setClientName(name); setInvoices(null); setAlloc({}); setError(null);
@@ -31,7 +36,7 @@ export default function ReceivePaymentModal({ onClose, onDone }: { onClose: () =
       .then(d => {
         const outstanding = ((d?.invoices ?? []) as Invoice[])
           .filter(i => OUTSTANDING.includes(i.status) && i.balancePence > 0)
-          .sort((a, b) => (a.issueDate ?? '').localeCompare(b.issueDate ?? ''));
+          .sort((a, b) => preference === 'oldest' ? (a.issueDate ?? '').localeCompare(b.issueDate ?? '') : (b.issueDate ?? '').localeCompare(a.issueDate ?? ''));
         setInvoices(outstanding); setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -114,7 +119,7 @@ export default function ReceivePaymentModal({ onClose, onDone }: { onClose: () =
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Allocate to invoices</span>
-                  <button onClick={autoAllocate} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Wand2 size={13} /> Auto-allocate (oldest first)</button>
+                  <button onClick={autoAllocate} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Wand2 size={13} /> Auto-allocate ({preference} first)</button>
                 </div>
                 <div className="overflow-hidden rounded-xl border border-black/5">
                   <table className="w-full text-[13px]">

@@ -12,6 +12,8 @@ interface ReportData {
   byMonth: { label: string; invoicedPence: number; collectedPence: number }[];
   aged: { current: number; d31_60: number; d61_90: number; d90plus: number };
   topClients: { name: string; pence: number }[];
+  byManager: { name: string; pence: number }[];
+  byService: { name: string; pence: number }[];
   recovery: { clientId: string; clientName: string; chargeablePence: number; billedPence: number; recoveryRatio: number }[];
   firmRecoveryRatio: number; firmChargeablePence: number; hasTimeData: boolean;
   proposalConversion: { accepted: number; total: number; rate: number };
@@ -20,6 +22,24 @@ interface ReportData {
 const AGE_COLORS = { current: '#10B981', d31_60: '#6366F1', d61_90: '#F59E0B', d90plus: '#F43F5E' };
 
 function recoveryColor(r: number): string { return r >= 0.9 ? '#10B981' : r >= 0.7 ? '#F59E0B' : '#F43F5E'; }
+
+function BarList({ rows, empty }: { rows: { name: string; pence: number }[]; empty: string }) {
+  if (!rows.length) return <p className="py-4 text-center text-sm text-[var(--text-muted)]">{empty}</p>;
+  const max = Math.max(1, ...rows.map(r => r.pence));
+  return (
+    <div className="space-y-2.5">
+      {rows.map((r, i) => (
+        <div key={i} className="space-y-1">
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="truncate text-[var(--text-secondary)]">{r.name}</span>
+            <span className="shrink-0 font-semibold tabular-nums text-[var(--text-primary)]">{fmtPence(r.pence)}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.06]"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(r.pence / max) * 100}%` }} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ReportsTab() {
   const [d, setD] = useState<ReportData | null>(null);
@@ -112,6 +132,18 @@ export default function ReportsTab() {
           <KpiCard label="Bad debt" value={fmtPence(d.badDebtPence)} icon={AlertTriangle} tint="#F43F5E" sub="written off" />
           <KpiCard label="Proposal conversion" value={d.proposalConversion.total ? `${Math.round(d.proposalConversion.rate * 100)}%` : '—'} icon={FileSignature} tint="#7C3AED" sub={`${d.proposalConversion.accepted}/${d.proposalConversion.total} accepted`} />
         </div>
+      </div>
+
+      {/* Revenue by service + team member */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <GlassCard>
+          <SectionHeader title="Revenue by service" subtitle="Invoiced (net), last 12 months" />
+          <BarList rows={d.byService} empty="No invoice lines yet." />
+        </GlassCard>
+        <GlassCard>
+          <SectionHeader title="Revenue by team member" subtitle="Who raised the invoices, last 12 months" />
+          <BarList rows={d.byManager} empty="No invoices raised yet." />
+        </GlassCard>
       </div>
 
       {/* Recovery by client (from Timesheets) */}
