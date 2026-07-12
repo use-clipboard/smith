@@ -9,6 +9,7 @@
 // idempotent via invoices.bookkeeping_txn_id — it never breaks invoicing.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { logBillingAudit } from './audit';
 
 export interface PostResult { posted: boolean; reason?: string; txnId?: string }
 
@@ -93,5 +94,6 @@ export async function postInvoiceToBookkeeping(
   }).then(() => {}, () => {});
 
   await supabase.from('invoices').update({ bookkeeping_txn_id: txn.id }).eq('id', inv.id).eq('firm_id', firmId);
+  await logBillingAudit(supabase, { firmId, invoiceId: inv.id, userId, action: 'posted_to_bookkeeping', detail: refNo });
   return { posted: true, txnId: txn.id as string };
 }

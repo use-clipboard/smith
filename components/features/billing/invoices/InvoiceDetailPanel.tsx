@@ -11,6 +11,17 @@ import SendInvoiceModal from './SendInvoiceModal';
 
 const EMPTY_LETTERHEAD: InvoiceLetterhead = { businessName: '', businessAddress: '', vatNumber: '', bankDetails: '', invoiceFooter: '' };
 
+const AUDIT_LABEL: Record<string, string> = {
+  created: 'Created', sent: 'Issued (sent)', viewed: 'Viewed', paid: 'Marked paid', part_paid: 'Part paid',
+  overdue: 'Overdue', cancelled: 'Cancelled', bad_debt: 'Written off', payment: 'Payment recorded',
+  credit_note: 'Credit note raised', emailed: 'Emailed to client', deleted: 'Deleted',
+  posted_to_bookkeeping: 'Posted to Bookkeeping', imported: 'Imported', bulk: 'Bulk action', allocated: 'Payment allocated',
+};
+function fmtWhen(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 interface Props {
   invoiceId: string;
   onClose: () => void;
@@ -31,6 +42,8 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
   const [cnAmount, setCnAmount] = useState('');
   const [cnReason, setCnReason] = useState('');
   const [sendOpen, setSendOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [audit, setAudit] = useState<{ id: string; action: string; detail: string | null; createdAt: string; by: string }[]>([]);
 
   function load() {
     setLoading(true);
@@ -42,8 +55,16 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
       .then(r => (r.ok ? r.json() : null))
       .then(d => setCreditNotes(d?.creditNotes ?? []))
       .catch(() => {});
+    fetch(`/api/billing/audit?invoiceId=${invoiceId}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setAudit(d?.events ?? []))
+      .catch(() => {});
   }
   useEffect(load, [invoiceId]);
+
+  useEffect(() => {
+    fetch('/api/billing/me').then(r => (r.ok ? r.json() : null)).then(d => setIsAdmin(!!d?.isAdmin)).catch(() => {});
+  }, []);
 
   async function raiseCreditNote() {
     if (!inv) return;
@@ -221,6 +242,24 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
               </div>
             )}
 
+            {/* Activity (audit trail) */}
+            {audit.length > 0 && (
+              <div className="mb-4">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Activity</p>
+                <div className="space-y-1.5">
+                  {audit.slice(0, 15).map(e => (
+                    <div key={e.id} className="flex items-start gap-2 text-[12px]">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]/60" />
+                      <div className="min-w-0">
+                        <span className="text-[var(--text-secondary)]">{AUDIT_LABEL[e.action] ?? e.action}</span>{e.detail ? <span className="text-[var(--text-muted)]"> · {e.detail}</span> : null}
+                        <span className="text-[var(--text-muted)]"> — {e.by}, {fmtWhen(e.createdAt)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Raise credit note */}
             {cnOpen && (
               <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
@@ -271,10 +310,10 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
             {inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'paid' && inv.status !== 'cancelled' && (
               <button onClick={() => patchStatus('paid')} disabled={busy} className="btn-secondary"><CheckCircle2 size={14} /> Mark paid</button>
             )}
-            {inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
+            {isAdmin && inv.balancePence > 0 && inv.status !== 'draft' && inv.status !== 'cancelled' && (
               <button onClick={() => setCnOpen(o => !o)} disabled={busy} className="btn-secondary text-rose-600"><Undo2 size={14} /> Credit note</button>
             )}
-            {(inv.status === 'draft' || inv.status === 'cancelled') && inv.amountPaidPence === 0 && (
+            {isAdmin && (inv.status === 'draft' || inv.status === 'cancelled') && inv.amountPaidPence === 0 && (
               <button onClick={remove} disabled={busy} className="btn-secondary ml-auto text-[var(--danger)]"><Trash2 size={14} /> Delete</button>
             )}
           </div>

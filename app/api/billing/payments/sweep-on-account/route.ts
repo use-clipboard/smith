@@ -4,6 +4,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import { balancePence } from '@/lib/billing/totals';
+import { requireAdmin } from '@/lib/billing/audit';
 
 const Schema = z.object({
   preference: z.enum(['oldest', 'newest']).optional(),
@@ -21,6 +22,8 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('billing')) return moduleNotActive('billing');
+  const gate = requireAdmin(ctx.userRole, 'sweep payments on account');
+  if (gate) return gate;
 
   const parsed = Schema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

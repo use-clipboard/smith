@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-server';
 import { allocateInvoiceNumber } from '@/lib/billing/numbering';
 import { mapInvoiceRow, type InvoiceRow, type InvoiceLineRow } from '@/lib/billing/map';
 import { postInvoiceToBookkeeping } from '@/lib/billing/postInvoiceToBookkeeping';
+import { logBillingAudit, requireAdmin, type BillingAuditAction } from '@/lib/billing/audit';
 
 // GET /api/billing/invoices/[id] → full invoice with lines.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -45,6 +46,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   const p = parsed.data;
 
+  // Writing off (cancel / bad debt) is an admin-only action.
+  if ((p.status === 'cancelled' || p.status === 'bad_debt')) {
+    const gate = requireAdmin(ctx.userRole, p.status === 'bad_debt' ? 'write off invoices' : 'cancel invoices');
+    if (gate) return gate;
+  }
+
   const supabase = createClient();
   const { data: existing } = await supabase
     .from('invoices').select('*').eq('id', params.id).eq('firm_id', ctx.firmId).maybeSingle();
@@ -80,6 +87,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       .catch(err => console.error('postInvoiceToBookkeeping', err));
   }
 
+  if (p.status !== undefined && p.status !== existing.status) {
+    await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: params.id, userId: ctx.userId, action: p.status as BillingAuditAction, detail: updated.number ?? undefined });
+  }
+
   return NextResponse.json({ invoice: mapInvoiceRow(updated as InvoiceRow) });
 }
 
@@ -89,10 +100,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('billing')) return moduleNotActive('billing');
+  const gate = requireAdmin(ctx.userRole, 'delete invoices');
+  if (gate) return gate;
 
   const supabase = createClient();
   const { data: existing } = await supabase
-    .from('invoices').select('status, amount_paid_pence').eq('id', params.id).eq('firm_id', ctx.firmId).maybeSingle();
+    .from('invoices').select('number, status, amount_paid_pence').eq('id', params.id).eq('firm_id', ctx.firmId).maybeSingle();
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if ((existing.amount_paid_pence ?? 0) > 0) {
     return NextResponse.json({ error: 'Cannot delete an invoice with payments — cancel it instead.' }, { status: 400 });
@@ -100,5 +113,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const { error } = await supabase.from('invoices').delete().eq('id', params.id).eq('firm_id', ctx.firmId);
   if (error) return NextResponse.json({ error: 'Could not delete invoice' }, { status: 500 });
+  await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: params.id, userId: ctx.userId, action: 'deleted', detail: existing.number ?? undefined });
   return NextResponse.json({ ok: true });
 }

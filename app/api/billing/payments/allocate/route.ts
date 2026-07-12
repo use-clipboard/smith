@@ -78,5 +78,8 @@ export async function POST(req: NextRequest) {
     applied++;
   }
 
+  const { logBillingAudit } = await import('@/lib/billing/audit');
+  await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: body.allocations[0]?.invoiceId ?? null, userId: ctx.userId, action: 'allocated', detail: `£${(allocTotal / 100).toFixed(2)} across ${applied} invoice(s)` });
+
   return NextResponse.json({ ok: true, paymentId: payment.id, applied, allocatedPence: allocTotal, unallocatedPence: body.amountPence - allocTotal });
 }

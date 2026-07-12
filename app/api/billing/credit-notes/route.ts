@@ -5,6 +5,8 @@ import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import { balancePence } from '@/lib/billing/totals';
 import { allocateCreditNoteNumber } from '@/lib/billing/numbering';
+import { logBillingAudit, requireAdmin } from '@/lib/billing/audit';
+import { fmtPence } from '@/lib/billing/totals';
 import type { CreditNote } from '@/lib/billing/types';
 
 interface CreditNoteRow {
@@ -47,6 +49,8 @@ export async function POST(req: NextRequest) {
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('billing')) return moduleNotActive('billing');
+  const gate = requireAdmin(ctx.userRole, 'raise credit notes');
+  if (gate) return gate;
 
   const parsed = CreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid credit note' }, { status: 400 });
@@ -82,6 +86,8 @@ export async function POST(req: NextRequest) {
     status: settled ? 'paid' : inv.status,
     updated_at: new Date().toISOString(),
   }).eq('id', inv.id).eq('firm_id', ctx.firmId);
+
+  await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: inv.id, userId: ctx.userId, action: 'credit_note', detail: `${number} · ${fmtPence(body.amountPence)}${body.reason ? ` · ${body.reason}` : ''}` });
 
   return NextResponse.json({ creditNote: mapRow(cn as CreditNoteRow) }, { status: 201 });
 }

@@ -4,6 +4,7 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import { allocateInvoiceNumber } from '@/lib/billing/numbering';
+import { logBillingAudit, requireAdmin } from '@/lib/billing/audit';
 
 const Schema = z.object({
   action: z.enum(['mark_sent', 'mark_paid', 'delete', 'cancel']),
@@ -22,6 +23,12 @@ export async function POST(req: NextRequest) {
   const parsed = Schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   const { action, invoiceIds } = parsed.data;
+
+  // Destructive bulk actions are admin-only.
+  if (action === 'delete' || action === 'cancel') {
+    const gate = requireAdmin(ctx.userRole, `bulk-${action} invoices`);
+    if (gate) return gate;
+  }
 
   const supabase = createClient();
   const { data } = await supabase
@@ -54,6 +61,8 @@ export async function POST(req: NextRequest) {
       affected++;
     }
   }
+
+  if (affected > 0) await logBillingAudit(supabase, { firmId: ctx.firmId, userId: ctx.userId, action: 'bulk', detail: `${action} × ${affected}` });
 
   return NextResponse.json({ affected, skipped });
 }

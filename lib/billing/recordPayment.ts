@@ -6,6 +6,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PaymentMethod } from './types';
+import { logBillingAudit } from './audit';
+import { fmtPence } from './totals';
 
 export interface RecordPaymentArgs {
   firmId: string;
@@ -66,6 +68,8 @@ export async function recordPayment(supabase: SupabaseClient, args: RecordPaymen
   const updates: Record<string, unknown> = { amount_paid_pence: newPaid, status, updated_at: nowIso };
   if (status === 'paid') updates.paid_at = nowIso;
   await supabase.from('invoices').update(updates).eq('id', inv.id).eq('firm_id', args.firmId);
+
+  await logBillingAudit(supabase, { firmId: args.firmId, invoiceId: inv.id, userId: args.createdBy ?? null, action: 'payment', detail: `${fmtPence(args.amountPence)} (${args.method})` });
 
   return { ok: true, amountPaidPence: newPaid, status, paymentId: payment.id };
 }

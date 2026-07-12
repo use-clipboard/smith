@@ -31,6 +31,11 @@ export default function InvoicesTab({ onNewInvoice, onImport }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/billing/me').then(r => (r.ok ? r.json() : null)).then(d => setIsAdmin(!!d?.isAdmin)).catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -121,7 +126,7 @@ export default function InvoicesTab({ onNewInvoice, onImport }: Props) {
           <BulkBtn icon={CheckCircle2} label="Mark paid" onClick={() => bulkStatus('mark_paid')} busy={bulkBusy} />
           <BulkBtn icon={Bell} label="Remind" onClick={bulkRemind} busy={bulkBusy} />
           <BulkBtn icon={Download} label="Export CSV" onClick={exportCsv} busy={false} />
-          <BulkBtn icon={Trash2} label="Delete" onClick={() => bulkStatus('delete')} busy={bulkBusy} danger />
+          {isAdmin && <BulkBtn icon={Trash2} label="Delete" onClick={() => bulkStatus('delete')} busy={bulkBusy} danger />}
           <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]">Clear</button>
         </div>
       )}

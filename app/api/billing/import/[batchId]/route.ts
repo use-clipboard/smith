@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
+import { requireAdmin } from '@/lib/billing/audit';
 
 // DELETE /api/billing/import/[batchId] — undo an import (removes its invoices +
 // recurring schedules). Refuses if a payment was recorded against any imported
@@ -11,6 +12,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: { batchId:
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { isModuleActive } = buildModuleChecker(ctx.activeModules);
   if (!isModuleActive('billing')) return moduleNotActive('billing');
+  const gate = requireAdmin(ctx.userRole, 'undo an import');
+  if (gate) return gate;
 
   const supabase = createClient();
   const { data: batch } = await supabase

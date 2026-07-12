@@ -174,5 +174,8 @@ export async function POST(req: NextRequest) {
 
   await supabase.from('invoice_import_batches').update({ invoice_count: created.length, client_created_count: clientCreatedCount, recurring_count: recurringCount }).eq('id', batchId);
 
+  const { logBillingAudit } = await import('@/lib/billing/audit');
+  await logBillingAudit(supabase, { firmId: ctx.firmId, userId: ctx.userId, action: 'imported', detail: `${created.length} invoices from ${body.source ?? 'import'}` });
+
   return NextResponse.json({ batchId, invoiceCount: created.length, clientCreatedCount, recurringCount, skipped: body.rows.length - toInsert.length });
 }

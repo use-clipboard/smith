@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-server';
 import { computeInvoiceTotals } from '@/lib/billing/totals';
 import { allocateInvoiceNumber } from '@/lib/billing/numbering';
 import { mapInvoiceRow, type InvoiceRow } from '@/lib/billing/map';
+import { logBillingAudit } from '@/lib/billing/audit';
 
 const LIST_STATUSES = ['draft','sent','viewed','part_paid','paid','overdue','cancelled','bad_debt'] as const;
 
@@ -121,6 +122,8 @@ export async function POST(req: NextRequest) {
     await supabase.from('invoices').delete().eq('id', inv.id);
     return NextResponse.json({ error: 'Could not create invoice lines' }, { status: 500 });
   }
+
+  await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: inv.id, userId: ctx.userId, action: body.status === 'sent' ? 'sent' : 'created', detail: inv.number ?? undefined });
 
   return NextResponse.json({ invoice: mapInvoiceRow(inv as InvoiceRow) }, { status: 201 });
 }

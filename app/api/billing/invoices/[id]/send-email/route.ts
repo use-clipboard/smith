@@ -157,5 +157,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .catch(err => console.error('postInvoiceToBookkeeping', err));
   }
 
+  const { logBillingAudit } = await import('@/lib/billing/audit');
+  await logBillingAudit(supabase, { firmId: ctx.firmId, invoiceId: b.inv.id, userId: ctx.userId, action: 'emailed', detail: b.clientEmail });
+
   return NextResponse.json({ ok: true, sentTo: b.clientEmail });
 }
