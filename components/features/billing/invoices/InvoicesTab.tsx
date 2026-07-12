@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Search, Plus, FileText, Upload } from 'lucide-react';
+import { Search, Plus, FileText, Upload, Clock } from 'lucide-react';
 import { GlassCard } from '@/components/features/timesheets/shared/ui';
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, InvoiceStatus } from '@/lib/billing/types';
 import { STATUS_META, STATUS_FILTERS } from '../shared/status';
 import InvoiceDetailPanel from './InvoiceDetailPanel';
 import ImportInvoicesModal from '../import/ImportInvoicesModal';
+import BillFromTimeModal from './BillFromTimeModal';
 
 /** dd-mm-yyyy for display (UK). */
 export function fmtDate(iso: string | null): string {
@@ -27,6 +28,8 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [billTimeOpen, setBillTimeOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,9 +67,12 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
               className="h-9 w-64 rounded-lg border border-black/10 bg-white/70 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--accent)]"
             />
           </div>
+          <button onClick={() => setBillTimeOpen(true)} className="btn-secondary"><Clock size={14} /> Bill time</button>
           <button onClick={() => setImportOpen(true)} className="btn-secondary"><Upload size={14} /> Import</button>
         </div>
       </div>
+
+      {toast && <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] font-medium text-emerald-700">{toast}</div>}
 
       <GlassCard padded={false} className="overflow-hidden">
         <div className="max-h-[calc(100vh-320px)] overflow-y-auto scrollbar-thin">
@@ -132,6 +138,13 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
 
       {importOpen && (
         <ImportInvoicesModal onClose={() => setImportOpen(false)} onImported={() => load()} />
+      )}
+
+      {billTimeOpen && (
+        <BillFromTimeModal
+          onClose={() => setBillTimeOpen(false)}
+          onCreated={msg => { setBillTimeOpen(false); load(); setToast(msg); setTimeout(() => setToast(null), 3500); }}
+        />
       )}
     </div>
   );
