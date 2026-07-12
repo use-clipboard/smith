@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Upload, Banknote, CreditCard, Landmark, FileSpreadsheet, Check, X, ArrowLeft } from 'lucide-react';
+import { Upload, Banknote, CreditCard, Landmark, FileSpreadsheet, Check, X, ArrowLeft, Plus } from 'lucide-react';
+import ReceivePaymentModal from './ReceivePaymentModal';
 import { GlassCard } from '@/components/features/timesheets/shared/ui';
 import { fmtPence } from '@/lib/billing/totals';
 import type { ReconMatch } from '@/lib/billing/reconcile';
@@ -76,6 +77,7 @@ export default function PaymentsTab() {
   const [picks, setPicks] = useState<Record<number, string>>({}); // index → invoiceId ('' = skip)
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [receiveOpen, setReceiveOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -178,6 +180,7 @@ export default function PaymentsTab() {
         <p className="text-[13px] text-[var(--text-muted)]">Every payment received — manual, card, Direct Debit or imported from your bank.</p>
         <div className="flex gap-2">
           <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+          <button onClick={() => setReceiveOpen(true)} className="btn-secondary"><Plus size={15} /> Receive payment</button>
           <button onClick={() => fileRef.current?.click()} disabled={busy} className="btn-primary disabled:opacity-50"><Upload size={15} /> Import bank CSV</button>
         </div>
       </div>
@@ -224,6 +227,13 @@ export default function PaymentsTab() {
           </table>
         </div>
       </GlassCard>
+
+      {receiveOpen && (
+        <ReceivePaymentModal
+          onClose={() => setReceiveOpen(false)}
+          onDone={msg => { setReceiveOpen(false); load(); flash(msg); }}
+        />
+      )}
     </div>
   );
 }
