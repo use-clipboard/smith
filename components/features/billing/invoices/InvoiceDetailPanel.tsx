@@ -65,15 +65,23 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
       .then(r => (r.ok ? r.json() : null))
       .then(s => {
         if (!s) return;
-        setLetterhead({
+        setLetterhead(prev => ({
+          ...prev,
           businessName: s.businessName ?? '',
           businessAddress: s.businessAddress ?? '',
           vatNumber: s.vatNumber ?? '',
           bankDetails: s.bankDetails ?? '',
           invoiceFooter: s.invoiceFooter ?? '',
-        });
+          accent: s.invoiceAccent ?? '#7C3AED',
+          template: s.invoiceTemplate ?? 'modern',
+          defaultTerms: s.defaultTerms ?? '',
+        }));
       })
       .catch(() => {});
+    // Logo (data URL) for the PDF.
+    fetch('/api/billing/logo').then(r => (r.ok ? r.json() : null)).then(d => {
+      if (d?.dataUrl) setLetterhead(prev => ({ ...prev, logoDataUrl: d.dataUrl }));
+    }).catch(() => {});
   }, []);
 
   // Is Stripe connected? Controls the "Pay by card" affordance.

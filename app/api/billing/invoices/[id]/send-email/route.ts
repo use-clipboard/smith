@@ -150,5 +150,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
   await supabase.from('invoices').update(updates).eq('id', b.inv.id).eq('firm_id', ctx.firmId);
 
+  // Issuing a draft by email → optionally post the sale to Bookkeeping.
+  if (b.inv.status === 'draft') {
+    const { postInvoiceToBookkeeping } = await import('@/lib/billing/postInvoiceToBookkeeping');
+    postInvoiceToBookkeeping(supabase, { firmId: ctx.firmId, userId: ctx.userId, invoiceId: b.inv.id })
+      .catch(err => console.error('postInvoiceToBookkeeping', err));
+  }
+
   return NextResponse.json({ ok: true, sentTo: b.clientEmail });
 }

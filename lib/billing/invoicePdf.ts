@@ -14,6 +14,11 @@ export interface InvoiceLetterhead {
   vatNumber: string;
   bankDetails: string;
   invoiceFooter: string;
+  // Tier 2 theming (optional).
+  accent?: string;                                 // hex, default #7C3AED
+  template?: 'modern' | 'classic' | 'minimal';
+  logoDataUrl?: string | null;
+  defaultTerms?: string;
 }
 
 function escapeHtml(s: string): string {
@@ -32,6 +37,14 @@ function ukDate(iso: string | null): string {
 export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead): void {
   const from = letterhead.businessName.trim() || 'Your firm';
   const partlyPaid = invoice.amountPaidPence > 0 && invoice.balancePence > 0;
+
+  // Theme tokens.
+  const accent = /^#[0-9a-fA-F]{6}$/.test(letterhead.accent ?? '') ? letterhead.accent! : '#7C3AED';
+  const template = letterhead.template ?? 'modern';
+  const titleColor = template === 'minimal' ? '#0F0F1A' : accent;
+  const headBorder = template === 'minimal' ? '1px solid #D1D5DB' : `2px solid ${accent}`;
+  const topBar = template === 'classic' ? `<div style="height:6px;background:${accent};margin:-18mm -16mm 18px"></div>` : '';
+  const logo = letterhead.logoDataUrl ? `<img src="${letterhead.logoDataUrl}" alt="" style="max-height:52px;max-width:220px;margin-bottom:8px;display:block" />` : '';
 
   const linesHtml = (invoice.lines ?? []).map(l => `
     <tr>
@@ -63,16 +76,16 @@ export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead
   .from-name { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
   .from-meta { font-size: 11px; color: #6B7280; margin-top: 4px; }
   .doc { text-align: right; }
-  .doc-title { font-size: 26px; font-weight: 800; letter-spacing: 0.02em; color: #7C3AED; }
+  .doc-title { font-size: 26px; font-weight: 800; letter-spacing: 0.02em; color: ${titleColor}; }
   .doc-num { font-size: 13px; font-weight: 700; margin-top: 2px; }
   .doc-meta { font-size: 11px; color: #6B7280; margin-top: 6px; }
   .doc-meta b { color: #0F0F1A; font-weight: 600; }
-  .status { display: inline-block; margin-top: 6px; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; background: #F3E8FF; color: #7C3AED; }
+  .status { display: inline-block; margin-top: 6px; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; background: ${accent}1a; color: ${accent}; }
   .billto { margin-bottom: 18px; padding: 12px 14px; background: #FAFAFE; border: 1px solid #ECECF3; border-radius: 12px; }
   .billto-lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; color: #6B7280; font-weight: 700; }
   .billto-name { font-size: 14px; font-weight: 700; margin-top: 2px; }
   table.lines { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-  table.lines thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: #6B7280; padding: 0 10px 7px; border-bottom: 2px solid #7C3AED; }
+  table.lines thead th { text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: #6B7280; padding: 0 10px 7px; border-bottom: ${headBorder}; }
   table.lines tbody td { padding: 9px 10px; border-bottom: 1px solid #F1F1F7; vertical-align: top; }
   table.lines tr { page-break-inside: avoid; }
   td.desc { font-weight: 600; }
@@ -94,8 +107,10 @@ export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead
 </style>
 </head>
 <body>
+  ${topBar}
   <div class="head">
     <div>
+      ${logo}
       <div class="from-name">${escapeHtml(from)}</div>
       <div class="from-meta">
         ${letterhead.businessAddress.trim() ? multiline(letterhead.businessAddress) + '<br/>' : ''}
@@ -138,6 +153,8 @@ export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead
     ${letterhead.bankDetails.trim() ? `<div class="pay-box"><div class="pay-lbl">Payment details</div><div class="pay-body">${multiline(letterhead.bankDetails)}</div></div>` : ''}
     ${(invoice.notes || invoice.terms) ? `<div class="pay-box"><div class="pay-lbl">Notes</div><div class="pay-body">${multiline(invoice.notes ?? invoice.terms ?? '')}</div></div>` : ''}
   </div>` : ''}
+
+  ${letterhead.defaultTerms?.trim() ? `<div style="margin-top:16px;padding-top:8px;border-top:1px solid #ECECF3;font-size:10px;color:#6B7280"><b style="color:#374151">Terms &amp; conditions:</b> ${multiline(letterhead.defaultTerms)}</div>` : ''}
 
   <div class="foot">
     <span>${letterhead.invoiceFooter.trim() ? escapeHtml(letterhead.invoiceFooter) : escapeHtml(from)}</span>

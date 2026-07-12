@@ -5,6 +5,7 @@ import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import { allocateInvoiceNumber } from '@/lib/billing/numbering';
 import { mapInvoiceRow, type InvoiceRow, type InvoiceLineRow } from '@/lib/billing/map';
+import { postInvoiceToBookkeeping } from '@/lib/billing/postInvoiceToBookkeeping';
 
 // GET /api/billing/invoices/[id] → full invoice with lines.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -71,6 +72,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data: updated, error } = await supabase
     .from('invoices').update(updates).eq('id', params.id).eq('firm_id', ctx.firmId).select('*').single();
   if (error || !updated) return NextResponse.json({ error: 'Could not update invoice' }, { status: 500 });
+
+  // Issuing the invoice → optionally post a sale into Bookkeeping (best-effort,
+  // idempotent, no-op unless configured — never blocks the response).
+  if (p.status === 'sent') {
+    postInvoiceToBookkeeping(supabase, { firmId: ctx.firmId, userId: ctx.userId, invoiceId: params.id })
+      .catch(err => console.error('postInvoiceToBookkeeping', err));
+  }
 
   return NextResponse.json({ invoice: mapInvoiceRow(updated as InvoiceRow) });
 }

@@ -30,6 +30,11 @@ const DEFAULTS: BillingSettings = {
   emailSenderMailboxId: null,
   invoiceEmailSubject: DEFAULT_INVOICE_EMAIL_SUBJECT,
   invoiceEmailBody: DEFAULT_INVOICE_EMAIL_BODY,
+  invoiceAccent: '#7C3AED',
+  invoiceTemplate: 'modern',
+  defaultTerms: '',
+  bookkeepingBookId: null,
+  hasLogo: false,
 };
 
 // GET /api/billing/settings → firm billing config (defaults if not yet created).
@@ -74,6 +79,11 @@ export async function GET() {
     emailSenderMailboxId: data.email_sender_mailbox_id ?? null,
     invoiceEmailSubject: data.invoice_email_subject || DEFAULT_INVOICE_EMAIL_SUBJECT,
     invoiceEmailBody: data.invoice_email_body || DEFAULT_INVOICE_EMAIL_BODY,
+    invoiceAccent: data.invoice_accent || '#7C3AED',
+    invoiceTemplate: (data.invoice_template as BillingSettings['invoiceTemplate']) || 'modern',
+    defaultTerms: data.default_terms ?? '',
+    bookkeepingBookId: data.bookkeeping_book_id ?? null,
+    hasLogo: !!data.logo_path,
   };
 
   return NextResponse.json({ ...settings, canEdit, firmName });
@@ -100,6 +110,10 @@ const UpdateSchema = z.object({
   emailSenderMailboxId: z.string().uuid().nullable().optional(),
   invoiceEmailSubject: z.string().max(300).optional(),
   invoiceEmailBody: z.string().max(4000).optional(),
+  invoiceAccent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  invoiceTemplate: z.enum(['modern', 'classic', 'minimal']).optional(),
+  defaultTerms: z.string().max(2000).optional(),
+  bookkeepingBookId: z.string().uuid().nullable().optional(),
 });
 
 // PUT /api/billing/settings — save firm billing config (admin only).
@@ -135,6 +149,10 @@ export async function PUT(req: NextRequest) {
   if (p.emailSenderMailboxId !== undefined) patch.email_sender_mailbox_id = p.emailSenderMailboxId;
   if (p.invoiceEmailSubject !== undefined) patch.invoice_email_subject = p.invoiceEmailSubject;
   if (p.invoiceEmailBody !== undefined) patch.invoice_email_body = p.invoiceEmailBody;
+  if (p.invoiceAccent !== undefined) patch.invoice_accent = p.invoiceAccent;
+  if (p.invoiceTemplate !== undefined) patch.invoice_template = p.invoiceTemplate;
+  if (p.defaultTerms !== undefined) patch.default_terms = p.defaultTerms;
+  if (p.bookkeepingBookId !== undefined) patch.bookkeeping_book_id = p.bookkeepingBookId;
 
   const supabase = createClient();
   const { error } = await supabase

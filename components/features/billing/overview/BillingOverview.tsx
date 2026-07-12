@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   TrendingUp, FileClock, AlertTriangle, Banknote, CalendarClock, FileEdit,
-  Sparkles, RefreshCw, FileSignature, ArrowRight, Plus,
+  Sparkles, RefreshCw, FileSignature, ArrowRight, Plus, Upload,
 } from 'lucide-react';
 import AnimatedDonut, { type DonutSlice } from '@/components/ui/AnimatedDonut';
 import { GlassCard, SectionHeader, KpiCard } from '@/components/features/timesheets/shared/ui';
@@ -15,10 +15,11 @@ const AGE_COLORS = { current: '#10B981', d31_60: '#6366F1', d61_90: '#F59E0B', d
 
 interface Props {
   onNewInvoice: () => void;
+  onImport: () => void;
   onGoToTab: (tab: string) => void;
 }
 
-export default function BillingOverview({ onNewInvoice, onGoToTab }: Props) {
+export default function BillingOverview({ onNewInvoice, onImport, onGoToTab }: Props) {
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,7 +40,7 @@ export default function BillingOverview({ onNewInvoice, onGoToTab }: Props) {
     );
   }
 
-  if (!data || !data.hasData) return <EmptyState onNewInvoice={onNewInvoice} />;
+  if (!data || !data.hasData) return <EmptyState onNewInvoice={onNewInvoice} onImport={onImport} />;
 
   const draftCount = data.statusCounts.find(s => s.status === 'draft')?.count ?? 0;
   const agedSlices: DonutSlice[] = [
@@ -241,14 +242,17 @@ function CashFlowChart({ data }: { data: OverviewData['cashFlow'] }) {
   );
 }
 
-function EmptyState({ onNewInvoice }: { onNewInvoice: () => void }) {
+function EmptyState({ onNewInvoice, onImport }: { onNewInvoice: () => void; onImport: () => void }) {
   return (
     <GlassCard className="mx-auto max-w-lg text-center">
       <div className="flex flex-col items-center gap-3 py-10">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)]"><Banknote size={26} /></div>
         <h3 className="text-lg font-bold text-[var(--text-primary)]">No invoices yet</h3>
-        <p className="max-w-sm text-sm text-[var(--text-muted)]">Raise your first invoice and the command centre — revenue, outstanding debt, aged debtors and cash flow — fills in automatically.</p>
-        <button onClick={onNewInvoice} className="btn-primary mt-1"><Plus size={15} /> New invoice</button>
+        <p className="max-w-sm text-sm text-[var(--text-muted)]">Raise your first invoice, or import your existing ones from Xero, QuickBooks, Sage, VT or a CSV — then the command centre fills in automatically.</p>
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+          <button onClick={onNewInvoice} className="btn-primary"><Plus size={15} /> New invoice</button>
+          <button onClick={onImport} className="btn-secondary"><Upload size={15} /> Import invoices</button>
+        </div>
       </div>
     </GlassCard>
   );

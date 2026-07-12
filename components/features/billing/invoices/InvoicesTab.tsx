@@ -7,7 +7,6 @@ import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, InvoiceStatus } from '@/lib/billing/types';
 import { STATUS_META, STATUS_FILTERS } from '../shared/status';
 import InvoiceDetailPanel from './InvoiceDetailPanel';
-import ImportInvoicesModal from '../import/ImportInvoicesModal';
 import BillFromTimeModal from './BillFromTimeModal';
 
 /** dd-mm-yyyy for display (UK). */
@@ -19,15 +18,15 @@ export function fmtDate(iso: string | null): string {
 
 interface Props {
   onNewInvoice: () => void;
+  onImport: () => void;
 }
 
-export default function InvoicesTab({ onNewInvoice }: Props) {
+export default function InvoicesTab({ onNewInvoice, onImport }: Props) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<InvoiceStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
   const [billTimeOpen, setBillTimeOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -108,7 +107,7 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
             />
           </div>
           <button onClick={() => setBillTimeOpen(true)} className="btn-secondary"><Clock size={14} /> Bill time</button>
-          <button onClick={() => setImportOpen(true)} className="btn-secondary"><Upload size={14} /> Import</button>
+          <button onClick={onImport} className="btn-secondary"><Upload size={14} /> Import</button>
         </div>
       </div>
 
@@ -189,10 +188,6 @@ export default function InvoicesTab({ onNewInvoice }: Props) {
           onClose={() => setSelectedId(null)}
           onChanged={() => { load(); }}
         />
-      )}
-
-      {importOpen && (
-        <ImportInvoicesModal onClose={() => setImportOpen(false)} onImported={() => load()} />
       )}
 
       {billTimeOpen && (

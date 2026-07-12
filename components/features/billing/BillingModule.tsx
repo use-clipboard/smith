@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import {
   ReceiptText, LayoutDashboard, FileText, RefreshCw, CreditCard,
-  Landmark, Users, BarChart3, SlidersHorizontal, Plus, Sparkles,
+  Landmark, Users, BarChart3, SlidersHorizontal, Plus, Sparkles, Upload,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BillingOverview from './overview/BillingOverview';
 import InvoicesTab from './invoices/InvoicesTab';
 import NewInvoiceDrawer from './invoices/NewInvoiceDrawer';
 import BillingSettingsTab from './settings/BillingSettingsTab';
+import ImportInvoicesModal from './import/ImportInvoicesModal';
 import RecurringTab from './recurring/RecurringTab';
 import CreditControlTab from './credit/CreditControlTab';
 import PaymentsTab from './payments/PaymentsTab';
@@ -36,6 +37,7 @@ const TABS: { id: BillingTab; label: string; icon: typeof ReceiptText }[] = [
 export default function BillingModule() {
   const [tab, setTab] = useState<BillingTab>('overview');
   const [newInvoiceOpen, setNewInvoiceOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   function handleSaved() {
@@ -43,11 +45,17 @@ export default function BillingModule() {
     setRefreshKey(k => k + 1);
     setTab('invoices');
   }
+  function handleImported() {
+    setImportOpen(false);
+    setRefreshKey(k => k + 1);
+    setTab('invoices');
+  }
 
   const headerRight = (
-    <button onClick={() => setNewInvoiceOpen(true)} className="btn-primary">
-      <Plus size={15} /> New invoice
-    </button>
+    <div className="flex items-center gap-2">
+      <button onClick={() => setImportOpen(true)} className="btn-secondary"><Upload size={15} /> Import</button>
+      <button onClick={() => setNewInvoiceOpen(true)} className="btn-primary"><Plus size={15} /> New invoice</button>
+    </div>
   );
 
   return (
@@ -78,10 +86,10 @@ export default function BillingModule() {
       </div>
 
       {tab === 'overview' && (
-        <BillingOverview key={refreshKey} onNewInvoice={() => setNewInvoiceOpen(true)} onGoToTab={id => setTab(id as BillingTab)} />
+        <BillingOverview key={refreshKey} onNewInvoice={() => setNewInvoiceOpen(true)} onImport={() => setImportOpen(true)} onGoToTab={id => setTab(id as BillingTab)} />
       )}
       {tab === 'invoices' && (
-        <InvoicesTab key={refreshKey} onNewInvoice={() => setNewInvoiceOpen(true)} />
+        <InvoicesTab key={refreshKey} onNewInvoice={() => setNewInvoiceOpen(true)} onImport={() => setImportOpen(true)} />
       )}
       {tab === 'recurring' && <RecurringTab />}
       {tab === 'credit_control' && <CreditControlTab onGoToSettings={() => setTab('settings')} />}
@@ -93,6 +101,9 @@ export default function BillingModule() {
 
       {newInvoiceOpen && (
         <NewInvoiceDrawer onClose={() => setNewInvoiceOpen(false)} onSaved={handleSaved} />
+      )}
+      {importOpen && (
+        <ImportInvoicesModal onClose={() => setImportOpen(false)} onImported={handleImported} />
       )}
     </ToolLayout>
   );

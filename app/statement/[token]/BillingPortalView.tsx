@@ -7,6 +7,7 @@ import type { Invoice } from '@/lib/billing/types';
 
 interface PortalData {
   firmName: string; businessAddress: string; vatNumber: string; bankDetails: string; invoiceFooter: string;
+  accent?: string; template?: 'modern' | 'classic' | 'minimal'; defaultTerms?: string; logoDataUrl?: string | null;
   clientName: string; outstandingPence: number; stripeConfigured: boolean; invoices: Invoice[];
 }
 
@@ -26,7 +27,11 @@ export default function BillingPortalView({ token }: { token: string }) {
   }, [token]);
 
   function letterhead(d: PortalData): InvoiceLetterhead {
-    return { businessName: d.firmName, businessAddress: d.businessAddress, vatNumber: d.vatNumber, bankDetails: d.bankDetails, invoiceFooter: d.invoiceFooter };
+    return {
+      businessName: d.firmName, businessAddress: d.businessAddress, vatNumber: d.vatNumber,
+      bankDetails: d.bankDetails, invoiceFooter: d.invoiceFooter,
+      accent: d.accent, template: d.template, defaultTerms: d.defaultTerms, logoDataUrl: d.logoDataUrl,
+    };
   }
 
   async function pay(invoiceId: string) {

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus, Palette, Upload, Trash2 } from 'lucide-react';
 import { GlassCard, SectionHeader } from '@/components/features/timesheets/shared/ui';
 import type { BillingSettings } from '@/lib/billing/types';
 import { INVOICE_MERGE_TAGS } from '@/lib/billing/invoiceMergeTags';
@@ -12,7 +12,8 @@ type Editable = Pick<BillingSettings,
   | 'postToBookkeeping' | 'bookkeepingSalesAccount' | 'firstInvoiceMode'
   | 'businessName' | 'businessAddress' | 'vatNumber' | 'bankDetails' | 'invoiceFooter'
   | 'autoChaseEnabled' | 'chaseWeekdaysOnly' | 'chaseMinBalancePence' | 'chaseReplyTo'
-  | 'vatRegistered' | 'emailSenderMailboxId' | 'invoiceEmailSubject' | 'invoiceEmailBody'>;
+  | 'vatRegistered' | 'emailSenderMailboxId' | 'invoiceEmailSubject' | 'invoiceEmailBody'
+  | 'invoiceAccent' | 'invoiceTemplate' | 'defaultTerms' | 'bookkeepingBookId'>;
 
 const EDITABLE_KEYS: (keyof Editable)[] = [
   'invoicePrefix', 'creditNotePrefix', 'defaultPaymentTermsDays', 'defaultVatRate',
@@ -20,13 +21,13 @@ const EDITABLE_KEYS: (keyof Editable)[] = [
   'businessName', 'businessAddress', 'vatNumber', 'bankDetails', 'invoiceFooter',
   'autoChaseEnabled', 'chaseWeekdaysOnly', 'chaseMinBalancePence', 'chaseReplyTo',
   'vatRegistered', 'emailSenderMailboxId', 'invoiceEmailSubject', 'invoiceEmailBody',
+  'invoiceAccent', 'invoiceTemplate', 'defaultTerms', 'bookkeepingBookId',
 ];
 
 export default function BillingSettingsTab() {
   const [form, setForm] = useState<Editable | null>(null);
   const [nextNumbers, setNextNumbers] = useState({ invoice: 1, creditNote: 1 });
   const [canEdit, setCanEdit] = useState(false);
-  const [firmName, setFirmName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -36,7 +37,6 @@ export default function BillingSettingsTab() {
       .then((s: (BillingSettings & { canEdit: boolean; firmName: string }) | null) => {
         if (!s) return;
         setCanEdit(s.canEdit);
-        setFirmName(s.firmName);
         setNextNumbers({ invoice: s.nextInvoiceNumber, creditNote: s.nextCreditNoteNumber });
         setForm({
           invoicePrefix: s.invoicePrefix,
@@ -59,6 +59,10 @@ export default function BillingSettingsTab() {
           emailSenderMailboxId: s.emailSenderMailboxId,
           invoiceEmailSubject: s.invoiceEmailSubject,
           invoiceEmailBody: s.invoiceEmailBody,
+          invoiceAccent: s.invoiceAccent,
+          invoiceTemplate: s.invoiceTemplate,
+          defaultTerms: s.defaultTerms,
+          bookkeepingBookId: s.bookkeepingBookId,
         });
       })
       .catch(() => {});
@@ -119,7 +123,7 @@ export default function BillingSettingsTab() {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <NumberField icon={Percent} label="Default VAT rate (%)" value={form.defaultVatRate} onChange={v => set('defaultVatRate', v)} disabled={disabled || !form.vatRegistered} min={0} max={100} step={0.5} />
-          <NumberField icon={CreditCard} label="Payment terms (days)" value={form.defaultPaymentTermsDays} onChange={v => set('defaultPaymentTermsDays', Math.round(v))} disabled={disabled} min={0} max={365} step={1} />
+          <NumberField icon={CreditCard} label="Default due date (days from issue)" value={form.defaultPaymentTermsDays} onChange={v => set('defaultPaymentTermsDays', Math.round(v))} disabled={disabled} min={0} max={365} step={1} />
         </div>
       </GlassCard>
 
@@ -127,11 +131,20 @@ export default function BillingSettingsTab() {
       <GlassCard>
         <SectionHeader title="Invoice letterhead" subtitle="Your firm's details, shown at the top of every invoice PDF" />
         <div className="space-y-4">
-          <TextField icon={Building2} label="Business name" value={form.businessName} onChange={v => set('businessName', v)} disabled={disabled} placeholder={firmName || 'Your firm name'} />
+          <TextField icon={Building2} label="Business name" value={form.businessName} onChange={v => set('businessName', v)} disabled={disabled} placeholder="Your firm's name on invoices" />
           <TextAreaField label="Business address" value={form.businessAddress} onChange={v => set('businessAddress', v)} disabled={disabled} rows={3} placeholder={'123 High Street\nTown\nAB1 2CD'} />
           <TextField label="VAT registration number" value={form.vatNumber} onChange={v => set('vatNumber', v)} disabled={disabled} placeholder="GB123456789" />
         </div>
       </GlassCard>
+
+      {/* Invoice design */}
+      <InvoiceDesignCard
+        accent={form.invoiceAccent}
+        template={form.invoiceTemplate}
+        disabled={disabled}
+        onAccent={v => set('invoiceAccent', v)}
+        onTemplate={v => set('invoiceTemplate', v)}
+      />
 
       {/* Remittance */}
       <GlassCard>
@@ -139,6 +152,7 @@ export default function BillingSettingsTab() {
         <div className="space-y-4">
           <TextAreaField icon={Landmark} label="Bank / remittance details" value={form.bankDetails} onChange={v => set('bankDetails', v)} disabled={disabled} rows={3} placeholder={'Bank: Example Bank\nSort code: 00-00-00\nAccount: 12345678'} />
           <TextAreaField label="Invoice footer note" value={form.invoiceFooter} onChange={v => set('invoiceFooter', v)} disabled={disabled} rows={2} placeholder="Thank you for your business. Please pay within the terms above." />
+          <TextAreaField label="Terms & conditions (printed at the bottom of every invoice)" value={form.defaultTerms} onChange={v => set('defaultTerms', v)} disabled={disabled} rows={3} placeholder="Payment is due within the stated terms. Late payment may incur statutory interest." />
         </div>
       </GlassCard>
 
@@ -158,15 +172,17 @@ export default function BillingSettingsTab() {
         <SectionHeader title="Bookkeeping" subtitle="Post issued invoices into your own sales ledger" />
         <Toggle
           label="Post invoices to Bookkeeping"
-          desc="When on, issuing an invoice posts a matching sale into your firm's Bookkeeping module. (Posting goes live in a later phase — the setting is saved now.)"
+          desc="When on, issuing (sending) an invoice posts a matching sale into the chosen Bookkeeping book — Dr Trade debtors, Cr Sales, Cr VAT."
           checked={form.postToBookkeeping}
           onChange={v => set('postToBookkeeping', v)}
           disabled={disabled}
           icon={BookCopy}
         />
         {form.postToBookkeeping && (
-          <div className="mt-3">
-            <TextField label="Sales nominal account" value={form.bookkeepingSalesAccount ?? ''} onChange={v => set('bookkeepingSalesAccount', v)} disabled={disabled} placeholder="e.g. Sales / 4000" />
+          <div className="mt-3 space-y-3">
+            <BookPicker value={form.bookkeepingBookId} onChange={v => set('bookkeepingBookId', v)} disabled={disabled} />
+            <TextField label="Sales nominal account (optional)" value={form.bookkeepingSalesAccount ?? ''} onChange={v => set('bookkeepingSalesAccount', v)} disabled={disabled} placeholder="Leave blank to use the book's Sales account" />
+            {!form.bookkeepingBookId && <p className="text-[11px] text-amber-600">Choose a book — posting is skipped until one is selected.</p>}
           </div>
         )}
       </GlassCard>
@@ -222,6 +238,104 @@ export default function BillingSettingsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Bookkeeping book picker ───────────────────────────────────────────────────
+
+function BookPicker({ value, onChange, disabled }: { value: string | null; onChange: (v: string | null) => void; disabled: boolean }) {
+  const [books, setBooks] = useState<{ id: string; name: string; client?: { name?: string } | { name?: string }[] | null }[]>([]);
+  useEffect(() => { fetch('/api/bookkeeping/books').then(r => (r.ok ? r.json() : null)).then(d => setBooks(d?.books ?? [])).catch(() => {}); }, []);
+  const clientName = (c: { name?: string } | { name?: string }[] | null | undefined) => (Array.isArray(c) ? c[0]?.name : c?.name) ?? '';
+  return (
+    <div>
+      <label className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-secondary)]"><BookCopy size={13} className="text-[var(--text-muted)]" />Bookkeeping book</label>
+      <select value={value ?? ''} onChange={e => onChange(e.target.value || null)} disabled={disabled} className="w-full rounded-lg border border-black/10 bg-white/70 px-3 py-2 text-[13px] outline-none focus:border-[var(--accent)] disabled:opacity-60">
+        <option value="">— choose a book —</option>
+        {books.map(b => <option key={b.id} value={b.id}>{b.name}{clientName(b.client) ? ` · ${clientName(b.client)}` : ''}</option>)}
+      </select>
+      {books.length === 0 && <p className="mt-1 text-[11px] text-[var(--text-muted)]">No bookkeeping books yet — create one in the Bookkeeping tool first.</p>}
+    </div>
+  );
+}
+
+// ── Invoice design card (template + accent + logo) ────────────────────────────
+
+const ACCENT_PRESETS = ['#7C3AED', '#2563EB', '#0EA5E9', '#059669', '#DC2626', '#EA580C', '#DB2777', '#0F172A'];
+const TEMPLATES: { id: 'modern' | 'classic' | 'minimal'; label: string; desc: string }[] = [
+  { id: 'modern', label: 'Modern', desc: 'Coloured title + accent rule' },
+  { id: 'classic', label: 'Classic', desc: 'Accent top bar' },
+  { id: 'minimal', label: 'Minimal', desc: 'Monochrome, thin lines' },
+];
+
+function InvoiceDesignCard({ accent, template, disabled, onAccent, onTemplate }: {
+  accent: string; template: 'modern' | 'classic' | 'minimal'; disabled: boolean;
+  onAccent: (v: string) => void; onTemplate: (v: 'modern' | 'classic' | 'minimal') => void;
+}) {
+  const [logo, setLogo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { fetch('/api/billing/logo').then(r => (r.ok ? r.json() : null)).then(d => setLogo(d?.dataUrl ?? null)).catch(() => {}); }, []);
+
+  async function upload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (file) e.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    const fd = new FormData(); fd.append('file', file);
+    const r = await fetch('/api/billing/logo', { method: 'POST', body: fd });
+    setBusy(false);
+    if (r.ok) { const d = await r.json(); setLogo(d.dataUrl); } else alert('Could not upload logo.');
+  }
+  async function removeLogo() { setBusy(true); await fetch('/api/billing/logo', { method: 'DELETE' }); setLogo(null); setBusy(false); }
+
+  return (
+    <GlassCard>
+      <SectionHeader title="Invoice design" subtitle="Template, brand colour and logo for the invoice PDF & client portal" />
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-secondary)]"><Palette size={13} className="text-[var(--text-muted)]" />Template</label>
+          <div className="grid grid-cols-3 gap-2">
+            {TEMPLATES.map(t => (
+              <button key={t.id} onClick={() => !disabled && onTemplate(t.id)} disabled={disabled}
+                className={`rounded-xl border p-3 text-left transition ${template === t.id ? 'border-[var(--accent)] bg-[var(--accent)]/[0.06]' : 'border-black/10 hover:bg-black/[0.02]'} ${disabled ? 'opacity-60' : ''}`}>
+                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{t.label}</div>
+                <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-secondary)]">Brand colour</label>
+          <div className="flex flex-wrap items-center gap-2">
+            {ACCENT_PRESETS.map(c => (
+              <button key={c} onClick={() => !disabled && onAccent(c)} disabled={disabled} aria-label={c}
+                className={`h-7 w-7 rounded-full transition ${accent.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-offset-2 ring-black/30' : ''}`} style={{ background: c }} />
+            ))}
+            <input type="color" value={accent} onChange={e => onAccent(e.target.value)} disabled={disabled} className="h-7 w-9 cursor-pointer rounded border border-black/10 bg-transparent" />
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[12px] font-semibold text-[var(--text-secondary)]">Logo</label>
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} className="hidden" />
+          <div className="flex items-center gap-3">
+            <div className="flex h-16 w-32 items-center justify-center overflow-hidden rounded-lg border border-black/10 bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {logo ? <img src={logo} alt="Logo" className="max-h-14 max-w-[112px] object-contain" /> : <span className="text-[11px] text-[var(--text-muted)]">No logo</span>}
+            </div>
+            {!disabled && (
+              <div className="flex flex-col gap-1.5">
+                <button onClick={() => fileRef.current?.click()} disabled={busy} className="btn-secondary text-[12px] disabled:opacity-50"><Upload size={13} /> {logo ? 'Replace' : 'Upload'}</button>
+                {logo && <button onClick={removeLogo} disabled={busy} className="inline-flex items-center gap-1 text-[12px] text-[var(--danger)] hover:underline"><Trash2 size={12} /> Remove</button>}
+              </div>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">PNG, JPEG or WebP, under 2 MB. Appears top-left on the invoice.</p>
+        </div>
+      </div>
+    </GlassCard>
   );
 }
 

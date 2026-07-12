@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   }
 
   const [{ data: settings }, { data: firm }, { data: client }, { data: invData }] = await Promise.all([
-    supabase.from('billing_settings').select('business_name, business_address, vat_number, bank_details, invoice_footer').eq('firm_id', tok.firm_id).maybeSingle(),
+    supabase.from('billing_settings').select('business_name, business_address, vat_number, bank_details, invoice_footer, invoice_accent, invoice_template, default_terms, logo_path').eq('firm_id', tok.firm_id).maybeSingle(),
     supabase.from('firms').select('name').eq('id', tok.firm_id).maybeSingle(),
     supabase.from('clients').select('name').eq('id', tok.client_id).maybeSingle(),
     supabase.from('invoices').select('*').eq('firm_id', tok.firm_id).eq('client_id', tok.client_id).not('status', 'in', '("draft","cancelled")').order('issue_date', { ascending: false }).limit(200),
@@ -36,12 +36,24 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   const outstandingPence = invoices.reduce((s, r) => s + (['sent', 'viewed', 'part_paid', 'overdue'].includes(r.status) ? balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0) : 0), 0);
   const businessName = (settings?.business_name as string) || firm?.name || 'Our practice';
 
+  // Logo as a data URL for the client-side PDF.
+  let logoDataUrl: string | null = null;
+  const logoPath = settings?.logo_path as string | null;
+  if (logoPath) {
+    const { data: file } = await supabase.storage.from('billing-branding').download(logoPath);
+    if (file) logoDataUrl = `data:${file.type || 'image/png'};base64,${Buffer.from(await file.arrayBuffer()).toString('base64')}`;
+  }
+
   return NextResponse.json({
     firmName: businessName,
     businessAddress: settings?.business_address ?? '',
     vatNumber: settings?.vat_number ?? '',
     bankDetails: settings?.bank_details ?? '',
     invoiceFooter: settings?.invoice_footer ?? '',
+    accent: settings?.invoice_accent ?? '#7C3AED',
+    template: settings?.invoice_template ?? 'modern',
+    defaultTerms: settings?.default_terms ?? '',
+    logoDataUrl,
     clientName: client?.name ?? 'Customer',
     outstandingPence,
     stripeConfigured: isStripeConfigured(),

@@ -145,6 +145,12 @@ export interface BillingSettings {
   emailSenderMailboxId: string | null;
   invoiceEmailSubject: string;
   invoiceEmailBody: string;
+  // Invoice design + terms + bookkeeping (Tier 2).
+  invoiceAccent: string;                 // hex
+  invoiceTemplate: 'modern' | 'classic' | 'minimal';
+  defaultTerms: string;                  // printed on every invoice
+  bookkeepingBookId: string | null;      // target book for posting sales
+  hasLogo: boolean;                      // whether a logo is uploaded
 }
 
 /** Sensible default invoice-email template (used when the firm hasn't set one). */
