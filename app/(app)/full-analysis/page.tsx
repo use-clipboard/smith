@@ -22,6 +22,48 @@ type SortState = { key: string; dir: 'asc' | 'desc' };
 
 const TOLERANCE = 0.01;
 
+// Vercel serverless functions reject request bodies larger than ~4.5 MB. Files
+// are sent as base64 (≈1.37× their raw bytes) inside a JSON envelope, so we cap
+// the encoded payload at ~4.4 MB and auto-split any PDF that would exceed it
+// (see splitPdfIfNeeded). Keep in step with the Vercel body limit if it changes.
+const UPLOAD_LIMIT = 4_400_000; // max base64 length per request
+
+// Split an oversized PDF into page-chunks that each fit under the upload limit.
+// Non-PDFs, small files and single-page PDFs pass straight through. Page ranges
+// are halved recursively until each saved chunk is small enough — this copes
+// with pdf-lib duplicating shared resources (fonts/images) into each chunk.
+// Mirrors the proven helper in the Bank-to-CSV tool.
+async function splitPdfIfNeeded(file: File): Promise<File[]> {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (!isPdf || (file.size * 4) / 3 <= UPLOAD_LIMIT) return [file];
+  try {
+    const { PDFDocument } = await import('pdf-lib');
+    const srcBytes = new Uint8Array(await file.arrayBuffer());
+    const src = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
+    const pageCount = src.getPageCount();
+    if (pageCount <= 1) return [file];
+    const base = file.name.replace(/\.pdf$/i, '');
+    const out: File[] = [];
+    const emit = async (indices: number[]): Promise<void> => {
+      const doc = await PDFDocument.create();
+      const pages = await doc.copyPages(src, indices);
+      pages.forEach(p => doc.addPage(p));
+      const bytes = await doc.save();
+      if ((bytes.length * 4) / 3 <= UPLOAD_LIMIT || indices.length === 1) {
+        out.push(new File([bytes], `${base} — part ${out.length + 1}.pdf`, { type: 'application/pdf' }));
+        return;
+      }
+      const mid = Math.ceil(indices.length / 2);
+      await emit(indices.slice(0, mid));
+      await emit(indices.slice(mid));
+    };
+    await emit(Array.from({ length: pageCount }, (_, i) => i));
+    return out.length > 0 ? out : [file];
+  } catch {
+    return [file];
+  }
+}
+
 function buildMinimalTx(entry: FlaggedEntry, software: TargetSoftware): Transaction {
   if (entry.transactionData) return entry.transactionData;
   const base = { fileName: entry.fileName, pageNumber: entry.pageNumber ?? 1 };
@@ -540,18 +582,20 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
   ): Promise<DocumentScanResult[]> => {
     const results: DocumentScanResult[] = [];
 
-    for (let i = 0; i < filesToScan.length; i++) {
-      const file = filesToScan[i];
-      setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
-
+    // Scan a single (already size-safe) document through the AI and normalise the
+    // result. `chunk` is either the whole file or one page-range slice of it.
+    const scanChunk = async (chunk: File): Promise<{
+      ok: boolean; validTransactions: Transaction[]; flaggedEntries: FlaggedEntry[];
+      errorMessage?: string; errorCode?: string;
+    }> => {
       try {
-        const base64 = await fileToBase64(file);
+        const base64 = await fileToBase64(chunk);
         const res = await fetch('/api/analyse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode,
-            files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
+            files: [{ name: chunk.name, mimeType: chunk.type || 'application/pdf', base64 }],
             pastTransactionsContent, ledgersContent,
             clientId: selectedClient?.id ?? null,
             clientCode: selectedClient?.client_ref ?? null,
@@ -559,24 +603,84 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
         });
 
         if (!res.ok) {
-          const err = await res.json();
-          results.push({ fileName: file.name, status: 'failed', validTransactions: [], flaggedEntries: [], errorMessage: err.error || 'Analysis failed', errorCode: err.code });
-        } else {
-          const reader = res.body!.getReader();
-          const decoder = new TextDecoder();
-          let accumulated = '';
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            accumulated += decoder.decode(value, { stream: true });
+          // The body isn't guaranteed to be JSON: a platform-level 413 (body over
+          // the Vercel limit) or a proxy error returns plain text, and blindly
+          // JSON-parsing it throws the confusing "not valid JSON". Read as text
+          // first, then parse defensively.
+          const raw = await res.text();
+          let errorMessage = 'Analysis failed';
+          let errorCode: string | undefined;
+          try {
+            const err = JSON.parse(raw) as { error?: string; code?: string };
+            errorMessage = err.error || errorMessage;
+            errorCode = err.code;
+          } catch {
+            if (res.status === 413) {
+              errorMessage = 'This document is too large to send in one request, even after splitting. Try compressing the scan or lowering its resolution before uploading.';
+              errorCode = 'FILES_TOO_LARGE';
+            } else {
+              errorMessage = `The server returned an unexpected response (status ${res.status}). Please try again, or try a smaller file.`;
+            }
           }
-          accumulated += decoder.decode();
-          const data = JSON.parse(accumulated);
-          results.push({ fileName: file.name, status: 'success', validTransactions: data.validTransactions || [], flaggedEntries: data.flaggedEntries || [] });
+          return { ok: false, validTransactions: [], flaggedEntries: [], errorMessage, errorCode };
         }
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          accumulated += decoder.decode(value, { stream: true });
+        }
+        accumulated += decoder.decode();
+        const data = JSON.parse(accumulated);
+        return { ok: true, validTransactions: data.validTransactions || [], flaggedEntries: data.flaggedEntries || [] };
       } catch (err) {
-        results.push({ fileName: file.name, status: 'failed', validTransactions: [], flaggedEntries: [], errorMessage: err instanceof Error ? err.message : 'Unexpected error during scanning' });
+        return { ok: false, validTransactions: [], flaggedEntries: [], errorMessage: err instanceof Error ? err.message : 'Unexpected error during scanning' };
       }
+    };
+
+    for (let i = 0; i < filesToScan.length; i++) {
+      const file = filesToScan[i];
+      setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
+
+      // Oversized PDFs (typically high-resolution scans) are auto-split into
+      // page-chunks that each fit under the upload limit, then merged back under
+      // the original filename so the user still sees one document.
+      const chunks = await splitPdfIfNeeded(file);
+      const validTransactions: Transaction[] = [];
+      const flaggedEntries: FlaggedEntry[] = [];
+      const partErrors: string[] = [];
+      let firstErrorCode: string | undefined;
+
+      for (let c = 0; c < chunks.length; c++) {
+        if (chunks.length > 1) {
+          setScanProgress({ current: i + 1, total: filesToScan.length, fileName: `${file.name} — part ${c + 1} of ${chunks.length}` });
+        }
+        const r = await scanChunk(chunks[c]);
+        if (r.ok) {
+          validTransactions.push(...r.validTransactions);
+          flaggedEntries.push(...r.flaggedEntries);
+        } else {
+          partErrors.push(r.errorMessage || 'Processing failed');
+          firstErrorCode = firstErrorCode ?? r.errorCode;
+        }
+      }
+
+      const allFailed = partErrors.length === chunks.length;
+      results.push({
+        fileName: file.name,
+        status: allFailed ? 'failed' : 'success',
+        validTransactions,
+        flaggedEntries,
+        errorMessage: allFailed
+          ? partErrors[0]
+          : partErrors.length
+            ? `${partErrors.length} of ${chunks.length} parts couldn't be read — the rest were processed.`
+            : undefined,
+        errorCode: allFailed ? firstErrorCode : undefined,
+      });
 
       // Update state after each file so the UI reflects real-time progress
       setScanResults(prev => {
