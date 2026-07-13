@@ -28,29 +28,42 @@ const TOLERANCE = 0.01;
 // (see splitPdfIfNeeded). Keep in step with the Vercel body limit if it changes.
 const UPLOAD_LIMIT = 4_400_000; // max base64 length per request
 
+// A document to scan: either the whole original file, or one page-range slice of
+// it. `originalName` and `pageOffset` let us map the AI's chunk-relative results
+// (fileName + pageNumber) back to the real source document, so the document
+// preview, Drive/Gmail links and uploads all keep resolving to the original file
+// and the correct page. For an unsplit file pageOffset is 0 (identity mapping).
+interface DocChunk { file: File; originalName: string; pageOffset: number }
+
 // Split an oversized PDF into page-chunks that each fit under the upload limit.
 // Non-PDFs, small files and single-page PDFs pass straight through. Page ranges
 // are halved recursively until each saved chunk is small enough — this copes
 // with pdf-lib duplicating shared resources (fonts/images) into each chunk.
-// Mirrors the proven helper in the Bank-to-CSV tool.
-async function splitPdfIfNeeded(file: File): Promise<File[]> {
+// Mirrors the proven helper in the Bank-to-CSV tool. Emitted ranges are always
+// contiguous and in order, so indices[0] is the chunk's original page offset.
+async function splitPdfIfNeeded(file: File): Promise<DocChunk[]> {
+  const whole: DocChunk[] = [{ file, originalName: file.name, pageOffset: 0 }];
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-  if (!isPdf || (file.size * 4) / 3 <= UPLOAD_LIMIT) return [file];
+  if (!isPdf || (file.size * 4) / 3 <= UPLOAD_LIMIT) return whole;
   try {
     const { PDFDocument } = await import('pdf-lib');
     const srcBytes = new Uint8Array(await file.arrayBuffer());
     const src = await PDFDocument.load(srcBytes, { ignoreEncryption: true });
     const pageCount = src.getPageCount();
-    if (pageCount <= 1) return [file];
+    if (pageCount <= 1) return whole;
     const base = file.name.replace(/\.pdf$/i, '');
-    const out: File[] = [];
+    const out: DocChunk[] = [];
     const emit = async (indices: number[]): Promise<void> => {
       const doc = await PDFDocument.create();
       const pages = await doc.copyPages(src, indices);
       pages.forEach(p => doc.addPage(p));
       const bytes = await doc.save();
       if ((bytes.length * 4) / 3 <= UPLOAD_LIMIT || indices.length === 1) {
-        out.push(new File([bytes], `${base} — part ${out.length + 1}.pdf`, { type: 'application/pdf' }));
+        out.push({
+          file: new File([bytes], `${base} — part ${out.length + 1}.pdf`, { type: 'application/pdf' }),
+          originalName: file.name,
+          pageOffset: indices[0],
+        });
         return;
       }
       const mid = Math.ceil(indices.length / 2);
@@ -58,9 +71,9 @@ async function splitPdfIfNeeded(file: File): Promise<File[]> {
       await emit(indices.slice(mid));
     };
     await emit(Array.from({ length: pageCount }, (_, i) => i));
-    return out.length > 0 ? out : [file];
+    return out.length > 0 ? out : whole;
   } catch {
-    return [file];
+    return whole;
   }
 }
 
@@ -655,11 +668,24 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
       let firstErrorCode: string | undefined;
 
       for (let c = 0; c < chunks.length; c++) {
+        const { file: chunkFile, originalName, pageOffset } = chunks[c];
         if (chunks.length > 1) {
           setScanProgress({ current: i + 1, total: filesToScan.length, fileName: `${file.name} — part ${c + 1} of ${chunks.length}` });
         }
-        const r = await scanChunk(chunks[c]);
+        const r = await scanChunk(chunkFile);
         if (r.ok) {
+          // Remap chunk-local results back onto the original document: restore the
+          // real filename and shift the chunk-relative page number to its absolute
+          // page. This keeps the document preview, Drive/Gmail links and uploads
+          // (all keyed off fileName) resolving to the source file and right page.
+          for (const t of r.validTransactions) {
+            t.fileName = originalName;
+            if (typeof t.pageNumber === 'number') t.pageNumber = pageOffset + t.pageNumber;
+          }
+          for (const f of r.flaggedEntries) {
+            f.fileName = originalName;
+            if (typeof f.pageNumber === 'number') f.pageNumber = pageOffset + f.pageNumber;
+          }
           validTransactions.push(...r.validTransactions);
           flaggedEntries.push(...r.flaggedEntries);
         } else {
