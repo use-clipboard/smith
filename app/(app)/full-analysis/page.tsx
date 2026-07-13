@@ -28,6 +28,25 @@ const TOLERANCE = 0.01;
 // (see splitPdfIfNeeded). Keep in step with the Vercel body limit if it changes.
 const UPLOAD_LIMIT = 4_400_000; // max base64 length per request
 
+// How many document/chunk scans to run against the AI at once. Scanning was
+// sequential, so a PDF split into N chunks took N calls back-to-back. Running a
+// few in parallel cuts wall-clock roughly N-fold, capped low enough to stay well
+// under Anthropic rate limits (failed parts degrade gracefully to a rescan).
+const SCAN_CONCURRENCY = 4;
+
+// Run async tasks with a bounded number in flight at once. Preserves each task's
+// own error handling (tasks are expected not to throw — they resolve to results).
+async function runWithConcurrency(tasks: Array<() => Promise<void>>, limit: number): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const idx = next++;
+      await tasks[idx]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+}
+
 // A document to scan: either the whole original file, or one page-range slice of
 // it. `originalName` and `pageOffset` let us map the AI's chunk-relative results
 // (fileName + pageNumber) back to the real source document, so the document
@@ -593,8 +612,6 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     pastTransactionsContent: string | null,
     ledgersContent: string | null,
   ): Promise<DocumentScanResult[]> => {
-    const results: DocumentScanResult[] = [];
-
     // Scan a single (already size-safe) document through the AI and normalise the
     // result. `chunk` is either the whole file or one page-range slice of it.
     const scanChunk = async (chunk: File): Promise<{
@@ -654,69 +671,89 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
       }
     };
 
-    for (let i = 0; i < filesToScan.length; i++) {
-      const file = filesToScan[i];
-      setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
+    // Split every file into chunks up front. Oversized PDFs (typically high-res
+    // scans) become several page-chunks; this also gives an accurate total for
+    // the progress bar and lets us scan all chunks across all files through one
+    // bounded-concurrency pool instead of strictly one-at-a-time.
+    const perFile = await Promise.all(
+      filesToScan.map(async (file) => ({ file, chunks: await splitPdfIfNeeded(file) })),
+    );
+    const totalChunks = perFile.reduce((n, f) => n + f.chunks.length, 0);
 
-      // Oversized PDFs (typically high-resolution scans) are auto-split into
-      // page-chunks that each fit under the upload limit, then merged back under
-      // the original filename so the user still sees one document.
-      const chunks = await splitPdfIfNeeded(file);
-      const validTransactions: Transaction[] = [];
-      const flaggedEntries: FlaggedEntry[] = [];
-      const partErrors: string[] = [];
-      let firstErrorCode: string | undefined;
+    // Per-file accumulator — parallel chunk tasks merge their results in here.
+    type FileAcc = {
+      file: File; chunkCount: number;
+      validTransactions: Transaction[]; flaggedEntries: FlaggedEntry[];
+      partErrors: string[]; firstErrorCode: string | undefined; done: number;
+    };
+    const acc: FileAcc[] = perFile.map(({ file, chunks }) => ({
+      file, chunkCount: chunks.length,
+      validTransactions: [], flaggedEntries: [], partErrors: [], firstErrorCode: undefined, done: 0,
+    }));
 
-      for (let c = 0; c < chunks.length; c++) {
-        const { file: chunkFile, originalName, pageOffset } = chunks[c];
-        if (chunks.length > 1) {
-          setScanProgress({ current: i + 1, total: filesToScan.length, fileName: `${file.name} — part ${c + 1} of ${chunks.length}` });
-        }
-        const r = await scanChunk(chunkFile);
+    const buildResult = (a: FileAcc): DocumentScanResult => {
+      const allFailed = a.partErrors.length === a.chunkCount;
+      return {
+        fileName: a.file.name,
+        status: allFailed ? 'failed' : 'success',
+        // Parallel chunks can finish out of order — sort by page so the merged
+        // document still reads top-to-bottom.
+        validTransactions: [...a.validTransactions].sort((x, y) => (x.pageNumber ?? 0) - (y.pageNumber ?? 0)),
+        flaggedEntries: [...a.flaggedEntries].sort((x, y) => (x.pageNumber ?? 0) - (y.pageNumber ?? 0)),
+        errorMessage: allFailed
+          ? a.partErrors[0]
+          : a.partErrors.length
+            ? `${a.partErrors.length} of ${a.chunkCount} parts couldn't be read — the rest were processed.`
+            : undefined,
+        errorCode: allFailed ? a.firstErrorCode : undefined,
+      };
+    };
+
+    // One task per chunk, across every file. They run through the concurrency
+    // pool below rather than sequentially.
+    let completed = 0;
+    const tasks = perFile.flatMap(({ file, chunks }, fileIdx) =>
+      chunks.map((chunk) => async () => {
+        const a = acc[fileIdx];
+        const r = await scanChunk(chunk.file);
         if (r.ok) {
           // Remap chunk-local results back onto the original document: restore the
           // real filename and shift the chunk-relative page number to its absolute
-          // page. This keeps the document preview, Drive/Gmail links and uploads
-          // (all keyed off fileName) resolving to the source file and right page.
+          // page. Keeps preview, Drive/Gmail links and uploads (all keyed off
+          // fileName) resolving to the source file and correct page.
           for (const t of r.validTransactions) {
-            t.fileName = originalName;
-            if (typeof t.pageNumber === 'number') t.pageNumber = pageOffset + t.pageNumber;
+            t.fileName = chunk.originalName;
+            if (typeof t.pageNumber === 'number') t.pageNumber = chunk.pageOffset + t.pageNumber;
           }
           for (const f of r.flaggedEntries) {
-            f.fileName = originalName;
-            if (typeof f.pageNumber === 'number') f.pageNumber = pageOffset + f.pageNumber;
+            f.fileName = chunk.originalName;
+            if (typeof f.pageNumber === 'number') f.pageNumber = chunk.pageOffset + f.pageNumber;
           }
-          validTransactions.push(...r.validTransactions);
-          flaggedEntries.push(...r.flaggedEntries);
+          a.validTransactions.push(...r.validTransactions);
+          a.flaggedEntries.push(...r.flaggedEntries);
         } else {
-          partErrors.push(r.errorMessage || 'Processing failed');
-          firstErrorCode = firstErrorCode ?? r.errorCode;
+          a.partErrors.push(r.errorMessage || 'Processing failed');
+          a.firstErrorCode = a.firstErrorCode ?? r.errorCode;
         }
-      }
+        a.done += 1;
+        completed += 1;
+        setScanProgress({ current: completed, total: totalChunks, fileName: file.name });
+        // Publish this file's result only once all its chunks are in, so the
+        // per-file status flips to complete/error when the whole doc is done.
+        if (a.done === a.chunkCount) {
+          const finished = buildResult(a);
+          setScanResults(prev => {
+            const map = new Map(prev.map(r => [r.fileName, r]));
+            map.set(finished.fileName, finished);
+            return Array.from(map.values());
+          });
+        }
+      }),
+    );
 
-      const allFailed = partErrors.length === chunks.length;
-      results.push({
-        fileName: file.name,
-        status: allFailed ? 'failed' : 'success',
-        validTransactions,
-        flaggedEntries,
-        errorMessage: allFailed
-          ? partErrors[0]
-          : partErrors.length
-            ? `${partErrors.length} of ${chunks.length} parts couldn't be read — the rest were processed.`
-            : undefined,
-        errorCode: allFailed ? firstErrorCode : undefined,
-      });
+    await runWithConcurrency(tasks, SCAN_CONCURRENCY);
 
-      // Update state after each file so the UI reflects real-time progress
-      setScanResults(prev => {
-        const map = new Map(prev.map(r => [r.fileName, r]));
-        map.set(results[results.length - 1].fileName, results[results.length - 1]);
-        return Array.from(map.values());
-      });
-    }
-
-    return results;
+    return acc.map(buildResult);
   }, [clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode, selectedClient?.id, selectedClient?.client_ref]);
 
   // ─── Analysis ────────────────────────────────────────────────────────────────

@@ -3,10 +3,31 @@ import { useState, useEffect } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, Link2, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { fileToBase64, exportToCsv } from '@/utils/fileUtils';
+import { createClient as createBrowserSupabase } from '@/lib/supabase';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { Transaction, TargetSoftware, FlaggedEntry } from '@/types';
 
 type Status = 'idle' | 'uploading' | 'exporting' | 'done' | 'error';
+
+// Files at/under this size are sent inline as base64. Anything larger is staged
+// directly in Supabase Storage (bypassing the ~4.5 MB serverless body cap) and
+// only its object path is sent — the upload route pulls it back server-side.
+const INLINE_LIMIT = 3 * 1024 * 1024; // ~3 MB raw → ~4 MB encoded, safely under the cap
+const STAGING_BUCKET = 'document-uploads-staging';
+
+/** Upload one File to the transient staging bucket; returns its object path. */
+async function stageFileToBucket(file: File): Promise<string> {
+  const supabase = createBrowserSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  const safeName = file.name.replace(/[^\w.\-]+/g, '_').slice(-120);
+  const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(STAGING_BUCKET)
+    .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+  if (error) throw new Error(error.message);
+  return path;
+}
 
 interface SaveAnalysisModalProps {
   isOpen: boolean;
@@ -78,12 +99,17 @@ export default function SaveAnalysisModal({
 
     if (useDrive) {
       try {
+        // Large files (typically high-res scans) are staged directly in Supabase
+        // Storage so the request body stays small; small files go inline as
+        // base64. Either way the route ends up with the full original file.
         const encodedFiles = await Promise.all(
-          documentFiles.map(async f => ({
-            name: f.name,
-            mimeType: f.type || 'application/pdf',
-            base64: await fileToBase64(f),
-          }))
+          documentFiles.map(async f => {
+            const base = { name: f.name, mimeType: f.type || 'application/pdf' };
+            if (f.size > INLINE_LIMIT) {
+              return { ...base, stagePath: await stageFileToBucket(f) };
+            }
+            return { ...base, base64: await fileToBase64(f) };
+          })
         );
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
@@ -96,8 +122,18 @@ export default function SaveAnalysisModal({
           }),
         });
         if (!res.ok) {
-          const e = await res.json();
-          throw new Error(e.error || 'Drive upload failed');
+          // The body may not be JSON: a platform-level 413 (body over the limit)
+          // or a proxy error returns plain text, and blindly JSON-parsing it
+          // throws the confusing "not valid JSON". Read as text, then parse.
+          const raw = await res.text();
+          let msg = 'Drive upload failed';
+          try { msg = (JSON.parse(raw) as { error?: string }).error || msg; }
+          catch {
+            msg = res.status === 413
+              ? 'One of the files is too large to save to Drive. Please try again — large scans are now uploaded directly, so a retry usually succeeds.'
+              : `The server returned an unexpected response (status ${res.status}). Please try again.`;
+          }
+          throw new Error(msg);
         }
         const result = await res.json();
         const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = result.uploadedFiles ?? [];
