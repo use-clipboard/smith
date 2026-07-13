@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
-import { fileToBase64 } from '@/utils/fileUtils';
+import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
 import { exportLandlordWorkbook } from '@/utils/landlordExport';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
@@ -81,13 +81,7 @@ export default function SaveLandlordModal({
 
     if (useDrive) {
       try {
-        const encodedFiles = await Promise.all(
-          documentFiles.map(async f => ({
-            name: f.name,
-            mimeType: f.type || 'application/pdf',
-            base64: await fileToBase64(f),
-          }))
-        );
+        const encodedFiles = await encodeFilesForDriveUpload(documentFiles);
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -98,10 +92,7 @@ export default function SaveLandlordModal({
             feature: 'landlord_analysis',
           }),
         });
-        if (!res.ok) {
-          const e = await res.json();
-          throw new Error(e.error || 'Drive upload failed');
-        }
+        if (!res.ok) throw new Error(await readUploadError(res));
         const result = await res.json();
         const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = result.uploadedFiles ?? [];
         setDriveCount(uploadedFiles.length);

@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
-import { fileToBase64, exportToCsv } from '@/utils/fileUtils';
+import { exportToCsv } from '@/utils/fileUtils';
+import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { BankCsvTransaction } from '@/types';
 
@@ -66,13 +67,7 @@ export default function SaveBankCsvModal({
 
     if (useDrive) {
       try {
-        const encodedFiles = await Promise.all(
-          documentFiles.map(async f => ({
-            name: f.name,
-            mimeType: f.type || 'application/pdf',
-            base64: await fileToBase64(f),
-          }))
-        );
+        const encodedFiles = await encodeFilesForDriveUpload(documentFiles);
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -83,10 +78,7 @@ export default function SaveBankCsvModal({
             feature: 'bank_to_csv',
           }),
         });
-        if (!res.ok) {
-          const e = await res.json();
-          throw new Error(e.error || 'Drive upload failed');
-        }
+        if (!res.ok) throw new Error(await readUploadError(res));
         const result = await res.json();
         const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = result.uploadedFiles ?? [];
         setDriveCount(uploadedFiles.length);

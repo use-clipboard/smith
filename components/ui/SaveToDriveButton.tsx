@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { FolderOpen, Check, Loader2 } from 'lucide-react';
 import DriveUploadModal from './DriveUploadModal';
-import { fileToBase64 } from '@/utils/fileUtils';
+import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
 
 interface SaveToDriveButtonProps {
   files: File[];
@@ -25,9 +25,9 @@ export default function SaveToDriveButton({ files, feature, clientId, initialCli
     if (!saveToDrive) return;
     setStatus('loading');
     try {
-      const encodedFiles = await Promise.all(files.map(async f => ({ name: f.name, mimeType: f.type || 'application/pdf', base64: await fileToBase64(f) })));
+      const encodedFiles = await encodeFilesForDriveUpload(files);
       const res = await fetch('/api/documents/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: encodedFiles, clientId: clientId ?? null, clientCode, feature }) });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Upload failed'); }
+      if (!res.ok) throw new Error(await readUploadError(res));
       setStatus('saved');
       try { onAfterSave?.(); } catch {/* swallow */}
     } catch (err) {

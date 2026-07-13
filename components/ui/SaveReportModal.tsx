@@ -3,7 +3,8 @@ import { useState, useEffect, type RefObject } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { useModules } from '@/components/ui/ModulesProvider';
-import { generatePdfBlob, downloadBlob, blobToBase64, type PdfPaginationOptions } from '@/utils/pdfFromHtml';
+import { generatePdfBlob, downloadBlob, type PdfPaginationOptions } from '@/utils/pdfFromHtml';
+import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
 
 type Status = 'idle' | 'generating' | 'uploading' | 'done' | 'error';
 
@@ -99,21 +100,21 @@ export default function SaveReportModal({
       setStatus('uploading');
       setStatusLabel('Uploading to Google Drive…');
       try {
-        const base64 = await blobToBase64(pdfBlob);
+        // A large report PDF (many charts/pages) can exceed the serverless body
+        // cap, so route it through the same stage-if-large helper as source docs.
+        const reportFile = new File([pdfBlob], `${fullFileName}.pdf`, { type: 'application/pdf' });
+        const files = await encodeFilesForDriveUpload([reportFile]);
         const res = await fetch('/api/documents/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            files: [{ name: `${fullFileName}.pdf`, mimeType: 'application/pdf', base64 }],
+            files,
             clientId: client?.id ?? null,
             clientCode: clientCode.trim(),
             feature,
           }),
         });
-        if (!res.ok) {
-          const e = await res.json();
-          throw new Error(e.error || 'Drive upload failed');
-        }
+        if (!res.ok) throw new Error(await readUploadError(res));
         const result = await res.json();
         const uploadedFiles: { name: string; driveUrl: string; driveFileId: string }[] = result.uploadedFiles ?? [];
         setDriveCount(uploadedFiles.length);
