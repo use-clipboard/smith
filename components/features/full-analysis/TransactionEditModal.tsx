@@ -151,6 +151,27 @@ function buildMinimalTx(entry: FlaggedEntry, values: Record<string, string>, sof
   }
 }
 
+// Resolve the source document to preview for a transaction/flagged entry.
+// Normally the entry's fileName matches an uploaded document exactly. But be
+// tolerant: oversized PDFs are analysed in page-chunks named
+// "<name> — part N.pdf", so if an exact match fails (e.g. an older result where
+// the chunk name wasn't remapped), strip that suffix and match the original.
+// As a last resort, when only one document was uploaded, use it — the preview is
+// unambiguous. Returns undefined only when nothing sensible can be shown.
+function resolveSourceFile(fileName: string | undefined, files: File[]): File | undefined {
+  if (files.length === 0) return undefined;
+  if (fileName) {
+    const exact = files.find(f => f.name === fileName);
+    if (exact) return exact;
+    const stripped = fileName.replace(/\s*—\s*part\s*\d+\.pdf$/i, '.pdf');
+    if (stripped !== fileName) {
+      const byStripped = files.find(f => f.name === stripped);
+      if (byStripped) return byStripped;
+    }
+  }
+  return files.length === 1 ? files[0] : undefined;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export interface TransactionEditModalProps {
@@ -200,9 +221,8 @@ export default function TransactionEditModal({
 
   // Build an objectURL for the source document
   useEffect(() => {
-    const fileName = item.fileName;
-    const file = documentFiles.find(f => f.name === fileName);
-    if (!file) return;
+    const file = resolveSourceFile(item.fileName, documentFiles);
+    if (!file) { setDocUrl(null); return; }
     const url = URL.createObjectURL(file);
     setDocUrl(url);
     setDocMime(file.type || 'application/pdf');
@@ -337,8 +357,15 @@ export default function TransactionEditModal({
                 <img src={docUrl!} alt="Source document" className="w-full h-full object-contain p-2" />
               )}
               {hasDoc && !docMime.startsWith('image/') && (
-                // embed works more reliably than iframe for PDFs in Chromium-based browsers
-                <embed src={docUrl!} type="application/pdf" className="w-full h-full" />
+                // embed works more reliably than iframe for PDFs in Chromium-based browsers.
+                // Anchor to the entry's page so multi-page docs (incl. auto-split scans,
+                // whose page numbers are remapped to absolute) open on the right page.
+                <embed
+                  key={`${docUrl}#${item.pageNumber ?? 1}`}
+                  src={`${docUrl!}#page=${item.pageNumber ?? 1}`}
+                  type="application/pdf"
+                  className="w-full h-full"
+                />
               )}
               {!hasDoc && (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--text-muted)]">
