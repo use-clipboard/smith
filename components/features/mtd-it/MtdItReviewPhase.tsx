@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
   Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward, Landmark,
-  Lock, PenLine,
+  Lock, PenLine, FileSpreadsheet,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
@@ -17,6 +17,7 @@ import { applyAutoFlags } from '@/lib/mtdIt/flags';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import { CONSOLIDATED_REPORTING_LIMIT } from '@/lib/mtdIt/categories';
 import { buildPnL, fmtMoneyGbp } from '@/lib/mtdIt/pnl';
+import { exportEntriesXlsx } from '@/lib/mtdIt/pnlExport';
 import { renderApprovalPdf, blobToBase64 } from '@/lib/mtdIt/approvalPdf';
 import { fetchBrandPdfBundle } from '@/lib/mtdIt/fetchBrandPdfBundle';
 import { useModules } from '@/components/ui/ModulesProvider';
@@ -74,6 +75,7 @@ interface ServerEntry {
   entry_date: string | null;
   description: string | null;
   supplier: string | null;
+  invoice_number: string | null;
   category: string;
   entry_type: 'income' | 'expense';
   gross_amount: number;
@@ -108,6 +110,7 @@ function serverToEditor(e: ServerEntry): EditorEntry {
     entry_date: e.entry_date,
     description: e.description,
     supplier: e.supplier,
+    invoice_number: e.invoice_number,
     category: e.category,
     entry_type: e.entry_type,
     gross_amount: Number(e.gross_amount ?? 0),
@@ -706,6 +709,24 @@ export default function MtdItReviewPhase({
             </button>
           </Tooltip>
         )}
+
+        {/* Export to Excel — every entry across all streams, one row each,
+            including the property / trade it's allocated to. Independent of the
+            P&L export (which is category totals only). */}
+        <Tooltip label="Export every entry in this quarter to an Excel spreadsheet (one row per entry, with the allocated property / trade)">
+          <button
+            onClick={() => exportEntriesXlsx(
+              entries.filter(e => !e._deleted),
+              properties,
+              trades,
+              fxRates,
+              { clientName, clientRef, taxYearLabel, quarterLabel, rangeFrom, rangeTo, consolidated },
+            )}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+          >
+            <FileSpreadsheet size={12} /> Export to Excel
+          </button>
+        </Tooltip>
 
         {/* Submit to HMRC — available once the quarter has entries (any status
             beyond not_started). Status only advances to 'submitted' on a fully

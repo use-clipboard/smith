@@ -218,7 +218,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Pull clean entries from the source.
     const { data: sourceEntries } = await service
       .from('mtd_it_entries')
-      .select('stream, source_file_name, page_number, entry_date, description, supplier, category, entry_type, gross_amount, net_amount, vat_amount, currency, fx_rate, gbp_amount, drive_link')
+      .select('stream, source_file_name, page_number, entry_date, description, supplier, invoice_number, category, entry_type, gross_amount, net_amount, vat_amount, currency, fx_rate, gbp_amount, drive_link')
       .eq('quarter_id', it.source_quarter_id)
       .eq('property_id', it.source_property_id)
       .or('flagged_reason.is.null,flag_dismissed.eq.true');
@@ -236,6 +236,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       entry_date:       e.entry_date,
       description:      e.description,
       supplier:         e.supplier,
+      invoice_number:   e.invoice_number,
       category:         e.category,
       entry_type:       e.entry_type,
       gross_amount:     e.gross_amount,

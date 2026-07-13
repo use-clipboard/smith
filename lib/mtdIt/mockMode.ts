@@ -16,6 +16,7 @@ interface MockedEntry {
   entry_date: string;
   description: string;
   supplier: string | null;
+  invoice_number?: string | null;
   category: string;
   entry_type: 'income' | 'expense';
   gross_amount: number;
@@ -42,7 +43,7 @@ export function buildMockEntries(stream: MtdItStream, fileName: string, fromIso:
   if (stream === 'sole') {
     return [
       { entry_date: dateAt(0.1), description: `Sale of services — from ${fileName}`, supplier: null,             category: 'Turnover',           entry_type: 'income',  gross_amount: 1200, net_amount: 1000, vat_amount: 200, currency: 'GBP', page_number: 1, flagged_reason: null },
-      { entry_date: dateAt(0.4), description: `Materials purchase`,                  supplier: 'Screwfix',       category: 'Cost of Goods Bought', entry_type: 'expense', gross_amount: 180,  net_amount: 150,  vat_amount: 30,  currency: 'GBP', page_number: 1, flagged_reason: null },
+      { entry_date: dateAt(0.4), description: `Materials purchase`,                  supplier: 'Screwfix',       invoice_number: 'INV-20431', category: 'Cost of Goods Bought', entry_type: 'expense', gross_amount: 180,  net_amount: 150,  vat_amount: 30,  currency: 'GBP', page_number: 1, flagged_reason: null },
       { entry_date: dateAt(0.7), description: `Mileage`,                              supplier: 'Self',           category: 'Travelling Cost',     entry_type: 'expense', gross_amount: 60,   net_amount: null, vat_amount: null, currency: 'GBP', page_number: 1, flagged_reason: null },
     ];
   }

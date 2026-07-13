@@ -41,6 +41,7 @@ interface RawEntry {
   entry_date?:     string | null;
   description?:    string | null;
   supplier?:       string | null;
+  invoice_number?: string | null;
   category?:       string | null;
   entry_type?:     'income' | 'expense' | null;
   gross_amount?:   number | null;
@@ -225,6 +226,7 @@ export async function POST(req: NextRequest) {
       entry_date:     typeof e.entry_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.entry_date) ? e.entry_date : null,
       description:    e.description ?? null,
       supplier:       e.supplier    ?? null,
+      invoice_number: e.invoice_number ?? null,
       category,
       entry_type:     type,
       gross_amount:   grossAmount,

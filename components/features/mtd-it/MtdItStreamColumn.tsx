@@ -34,6 +34,7 @@ export interface EditorEntry {
   entry_date: string | null;
   description: string | null;
   supplier: string | null;
+  invoice_number: string | null;
   category: string;
   entry_type: 'income' | 'expense';
   gross_amount: number;
@@ -90,6 +91,7 @@ function emptyEntry(stream: MtdItStream, type: 'income' | 'expense' = 'expense',
     entry_date: null,
     description: null,
     supplier: null,
+    invoice_number: null,
     category: category ?? categoriesForStream(stream, type)[0],
     entry_type: type,
     gross_amount: 0,
@@ -597,6 +599,26 @@ function EntryRow(props: {
           className="text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white w-[112px] shrink-0 disabled:bg-gray-50 disabled:text-gray-600"
         />
 
+        {/* Allocated property (rental) / trade (sole) — shows what this entry is
+            tagged to at a glance; the allocation is editable in the expanded
+            details. Untagged rows read amber so they stand out. */}
+        {(() => {
+          const AllocIcon = STREAM_META[stream].Icon;
+          const allocName = stream === 'sole'
+            ? (trades.find(t => t.id === e.trade_id)?.name ?? null)
+            : (properties.find(p => p.id === e.property_id)?.address ?? null);
+          return (
+            <Tooltip label={allocName
+              ? `Allocated to: ${allocName}`
+              : `Not allocated to a specific ${stream === 'sole' ? 'trade' : 'property'} — set it in the row details`}>
+              <span className={`hidden md:inline-flex items-center gap-1 shrink-0 max-w-[132px] px-1.5 py-0.5 rounded text-[10px] ${allocName ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-700'}`}>
+                <AllocIcon size={10} className="shrink-0" />
+                <span className="truncate">{allocName ?? 'Untagged'}</span>
+              </span>
+            </Tooltip>
+          );
+        })()}
+
         {/* Description (full-width) */}
         <input
           type="text"
@@ -606,6 +628,28 @@ function EntryRow(props: {
           disabled={readOnly}
           placeholder="Description"
           className="flex-1 min-w-0 text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white disabled:bg-gray-50 disabled:text-gray-600"
+        />
+
+        {/* Supplier */}
+        <input
+          type="text"
+          value={e.supplier ?? ''}
+          onChange={ev => onPatch({ supplier: ev.target.value || null })}
+          disabled={readOnly}
+          placeholder="Supplier"
+          aria-label="Supplier name"
+          className="w-[120px] text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white shrink-0 disabled:bg-gray-50 disabled:text-gray-600"
+        />
+
+        {/* Invoice number */}
+        <input
+          type="text"
+          value={e.invoice_number ?? ''}
+          onChange={ev => onPatch({ invoice_number: ev.target.value || null })}
+          disabled={readOnly}
+          placeholder="Invoice no."
+          aria-label="Invoice number"
+          className="w-[104px] text-xs px-1.5 py-0.5 border border-gray-200 rounded bg-white shrink-0 disabled:bg-gray-50 disabled:text-gray-600"
         />
 
         {/* Amount */}
@@ -735,16 +779,6 @@ function EntryRow(props: {
                 </select>
               </FieldRow>
             )}
-
-            <FieldRow label="Supplier">
-              <input
-                type="text"
-                value={e.supplier ?? ''}
-                onChange={ev => onPatch({ supplier: ev.target.value || null })}
-                placeholder="—"
-                className="w-full text-xs px-1.5 py-1 border border-gray-200 rounded bg-white"
-              />
-            </FieldRow>
 
             {(stream === 'uk_rental' || stream === 'foreign_rental') && (
               <FieldRow label="Property">

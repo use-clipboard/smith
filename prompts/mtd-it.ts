@@ -80,6 +80,7 @@ ${COMMON_RULES}
       "entry_date": "YYYY-MM-DD",
       "description": string,
       "supplier": string | null,
+      "invoice_number": string | null,  // invoice / receipt reference if visible on the document, else null
       "category": string,            // one of the allowed categories above
       "entry_type": "income" | "expense",
       "gross_amount": number,

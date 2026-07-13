@@ -27,6 +27,7 @@ const EntryBase = {
   entry_date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   description:     z.string().nullable().optional(),
   supplier:        z.string().nullable().optional(),
+  invoice_number:  z.string().nullable().optional(),
   category:        z.string().min(1),
   entry_type:      TYPE,
   gross_amount:    z.number(),

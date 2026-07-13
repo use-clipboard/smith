@@ -15,6 +15,7 @@ import * as XLSX from 'xlsx';
 import { fmtMoneyGbp, type PnLForStream, type PnLSection, type PnLBucket } from '@/lib/mtdIt/pnl';
 import { paletteFromHex } from '@/lib/mtdIt/brandColors';
 import type { EditorEntry } from '@/components/features/mtd-it/MtdItStreamColumn';
+import type { MtdItProperty, MtdItTrade } from '@/types';
 
 export interface ExportContext {
   clientName: string;
@@ -616,5 +617,101 @@ export function exportPnLXlsx(streams: PnLForStream[], ctx: ExportContext): void
 
   const stamp = new Date().toISOString().slice(0, 10);
   const filename = `mtd_it_pnl_${safeFilename(ctx.clientName)}_${ctx.taxYearLabel.replace('/', '-')}_${ctx.quarterLabel}_${stamp}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Excel — line-by-line entries export (every income / expense / flagged row)
+// ─────────────────────────────────────────────────────────────────────────
+
+const ENTRY_STREAM_LABEL: Record<string, string> = {
+  sole: 'Sole Trader', uk_rental: 'UK Rental', foreign_rental: 'Foreign Rental',
+};
+const ENTRY_STREAM_ORDER: Record<string, number> = { sole: 0, uk_rental: 1, foreign_rental: 2 };
+
+/**
+ * Export every entry in the quarter (across all streams) to a single-sheet
+ * Excel workbook — one row per entry with all fields, including the property /
+ * trade it's allocated to. Independent of the P&L export (which is totals-only).
+ */
+export function exportEntriesXlsx(
+  entries: EditorEntry[],
+  properties: MtdItProperty[],
+  trades: MtdItTrade[],
+  fxRates: Record<string, number>,
+  ctx: Pick<ExportContext, 'clientName' | 'clientRef' | 'taxYearLabel' | 'quarterLabel' | 'rangeFrom' | 'rangeTo' | 'consolidated'>,
+): void {
+  const propById  = new Map(properties.map(p => [p.id, p.address]));
+  const tradeById = new Map(trades.map(t => [t.id, t.name]));
+
+  const toGbp = (e: EditorEntry): number => {
+    const gross = e.gross_amount || 0;
+    if (e.currency === 'GBP') return gross;
+    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
+    const rate = e.fx_rate ?? fxRates[e.currency];
+    return rate ? gross * rate : 0;
+  };
+
+  const allocatedTo = (e: EditorEntry): string => {
+    if (e.stream === 'sole') return e.trade_id ? (tradeById.get(e.trade_id) ?? '') : '';
+    return e.property_id ? (propById.get(e.property_id) ?? '') : '';
+  };
+
+  const rows = entries
+    .filter(e => !e._deleted)
+    .slice()
+    .sort((a, b) =>
+      (ENTRY_STREAM_ORDER[a.stream] ?? 9) - (ENTRY_STREAM_ORDER[b.stream] ?? 9)
+      || (a.entry_date ?? '').localeCompare(b.entry_date ?? ''),
+    );
+
+  const aoa: AOA = [];
+  aoa.push(['MTD IT - Entries export']);
+  aoa.push([`${ctx.clientName}${ctx.clientRef ? `  (${ctx.clientRef})` : ''}`]);
+  aoa.push([`${ctx.quarterLabel} ${ctx.taxYearLabel}  -  ${fmtDateUk(ctx.rangeFrom)} to ${fmtDateUk(ctx.rangeTo)}`]);
+  if (ctx.consolidated) aoa.push(['Consolidated reporting: ON']);
+  aoa.push([null]);
+  aoa.push([
+    'Stream', 'Allocated to', 'Date', 'Description', 'Supplier', 'Invoice No',
+    'Category', 'Type', 'Gross', 'Net', 'VAT', 'Currency', 'FX rate', 'GBP',
+    'Share %', 'Flagged', 'Flag reason', 'Source file', 'Page',
+  ]);
+
+  for (const e of rows) {
+    const flagged = !!e.flagged_reason && !e.flag_dismissed;
+    aoa.push([
+      ENTRY_STREAM_LABEL[e.stream] ?? e.stream,
+      allocatedTo(e),
+      fmtDateUk(e.entry_date),
+      e.description ?? '',
+      e.supplier ?? '',
+      e.invoice_number ?? '',
+      e.category ?? '',
+      e.entry_type === 'income' ? 'Income' : 'Expense',
+      e.gross_amount ?? 0,
+      e.net_amount ?? null,
+      e.vat_amount ?? null,
+      e.currency ?? '',
+      e.fx_rate ?? (e.currency !== 'GBP' ? (fxRates[e.currency] ?? null) : null),
+      Math.round(toGbp(e) * 100) / 100,
+      e.share_pct ?? 100,
+      flagged ? 'Yes' : '',
+      flagged ? (e.flagged_reason ?? '') : '',
+      e.source_file_name ?? '',
+      e.page_number ?? null,
+    ]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [
+    { wch: 14 }, { wch: 28 }, { wch: 12 }, { wch: 40 }, { wch: 20 }, { wch: 14 },
+    { wch: 24 }, { wch: 9 }, { wch: 11 }, { wch: 11 }, { wch: 10 }, { wch: 9 },
+    { wch: 9 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 32 }, { wch: 28 }, { wch: 6 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Entries');
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filename = `mtd_it_entries_${safeFilename(ctx.clientName)}_${ctx.taxYearLabel.replace('/', '-')}_${ctx.quarterLabel}_${stamp}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
