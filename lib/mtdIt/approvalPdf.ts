@@ -236,14 +236,18 @@ export async function renderApprovalPdf(opts: {
   function drawTransactionTable(yIn: number, tone: 'income' | 'expense', category: string, rows: EditorEntry[]): number {
     const accent = tone === 'income' ? COLOR.income : COLOR.expense;
     const soft   = tone === 'income' ? COLOR.incomeSoft : COLOR.expenseSoft;
-    const headerH = 22, rowH = 18, totalH = 22;
-    const tableH = headerH + rows.length * rowH + totalH;
+    const headerH = 22, colHeaderH = 13, rowH = 18, totalH = 22;
+    const tableH = headerH + colHeaderH + rows.length * rowH + totalH;
     yIn = ensureSpace(yIn, tableH + 14);
 
-    const dateW = 70, amtW = 80;
-    const descX = margin + 14 + dateW;
-    const descW = contentW - 14 - dateW - amtW - 14;
-    const amtX  = pageW - margin - 14;
+    // Columns: Date | Description | Supplier | Invoice | Amount
+    const dateW = 58, supplierW = 88, invoiceW = 62, amtW = 74;
+    const dateX     = margin + 14;
+    const descX     = dateX + dateW;
+    const descW     = contentW - 14 - dateW - supplierW - invoiceW - amtW - 14;
+    const supplierX = descX + descW;
+    const invoiceX  = supplierX + supplierW;
+    const amtX      = pageW - margin - 14;
 
     fillRect(margin, yIn, contentW, headerH, accent, 4);
     text(`${tone === 'income' ? 'INCOME' : 'EXPENSE'} - ${clip(category, contentW - 200, 9).toUpperCase()}`, margin + 14, yIn + 15, {
@@ -252,15 +256,25 @@ export async function renderApprovalPdf(opts: {
     text(`${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}`, pageW - margin - 14, yIn + 15, {
       size: 8, color: [255, 255, 255], align: 'right',
     });
+
+    // Column-label sub-row so the extra columns read clearly.
     let cy = yIn + headerH;
+    fillRect(margin, cy, contentW, colHeaderH, COLOR.zebra);
+    text('DATE',        dateX,     cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+    text('DESCRIPTION', descX,     cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+    text('SUPPLIER',    supplierX, cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+    text('INVOICE',     invoiceX,  cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted });
+    text('AMOUNT',      amtX,      cy + 9, { bold: true, size: 6.5, color: COLOR.textMuted, align: 'right' });
+    cy += colHeaderH;
+
     let total = 0;
     rows.forEach((r, i) => {
       if (i % 2 === 1) fillRect(margin, cy, contentW, rowH, COLOR.zebra);
-      const desc = r.description || r.supplier || '(no description)';
+      const desc = r.description || '(no description)';
       const amt  = gbpAmount(r);
       total += amt;
-      text(fmtDateUkLocal(r.entry_date), margin + 14, cy + 12, { size: 8, color: COLOR.textMuted });
-      const descText = clip(desc, descW, 9);
+      text(fmtDateUkLocal(r.entry_date), dateX, cy + 12, { size: 8, color: COLOR.textMuted });
+      const descText = clip(desc, descW - 4, 9);
       if (r.drive_link) {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
@@ -269,6 +283,8 @@ export async function renderApprovalPdf(opts: {
       } else {
         text(descText, descX, cy + 12, { size: 9 });
       }
+      if (r.supplier)       text(clip(r.supplier, supplierW - 4, 8),      supplierX, cy + 12, { size: 8, color: COLOR.textMuted });
+      if (r.invoice_number) text(clip(r.invoice_number, invoiceW - 4, 8), invoiceX,  cy + 12, { size: 8, color: COLOR.textMuted });
       text(fmtMoneyGbp(amt), amtX, cy + 12, { size: 9, align: 'right' });
       cy += rowH;
     });
