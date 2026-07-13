@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, BarChart3, X } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
@@ -262,7 +263,11 @@ function ClientListModal({ quarter, bucket, monthsLabel, clients, taxYear, onClo
     onClose();
     router.push(`/mtd-it/${clientId}/${taxYear}/${quarter}`);
   }
-  return (
+  if (typeof document === 'undefined') return null;
+  // Portal to <body> so the overlay escapes any ancestor with a transform/filter
+  // (which would otherwise make `position: fixed` clip to that container rather
+  // than the viewport — the bug that kept this trapped inside the MTD panel).
+  return createPortal(
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
       onClick={onClose}
@@ -328,6 +333,7 @@ function ClientListModal({ quarter, bucket, monthsLabel, clients, taxYear, onClo
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
