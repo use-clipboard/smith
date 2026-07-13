@@ -818,7 +818,7 @@ export default function EmailTriagePage() {
   useEffect(() => {
     function onSent(e: Event) {
       const detail = (e as CustomEvent<{ threadId: string; originalThreadId: string | null; kind: 'fresh' | 'reply' | 'forward' }>).detail;
-      fetchThreads(activeLabel);
+      fetchThreads(activeLabel, undefined, true);
       // A send may have allocated the thread to a client — refresh the firm-wide
       // alloc/task sets so the green line/icon appears on the list row too.
       refreshThreadMeta();
@@ -839,13 +839,13 @@ export default function EmailTriagePage() {
     function onDiscarded() {
       // Drop the Drafts tab count by one right away, then refresh the list.
       adjustLabelCount('DRAFT', 'messagesTotal', -1);
-      fetchThreads(activeLabel);
+      fetchThreads(activeLabel, undefined, true);
     }
     // A brand-new draft just entered the Drafts folder — bump the tab count and
     // refresh the list if the user is sitting in Drafts.
     function onCreated() {
       adjustLabelCount('DRAFT', 'messagesTotal', 1);
-      if (activeLabel === 'DRAFT') fetchThreads(activeLabel);
+      if (activeLabel === 'DRAFT') fetchThreads(activeLabel, undefined, true);
     }
     window.addEventListener(EMAIL_DRAFT_DISCARDED_EVENT, onDiscarded);
     window.addEventListener(EMAIL_DRAFT_CREATED_EVENT, onCreated);
@@ -936,7 +936,12 @@ export default function EmailTriagePage() {
     }
   }
 
-  const fetchThreads = useCallback(async (label: string, pageToken?: string) => {
+  // `isBackgroundRefresh` = a poll / visibility / post-send refresh rather than a
+  // fresh load triggered by a label/filter/search change. On a background refresh
+  // we MERGE the fresh page-1 results into the existing list instead of replacing
+  // it, so any extra pages the user pulled in with "Load more" survive until a
+  // hard reload. Only a genuine fresh load (default) collapses back to page 1.
+  const fetchThreads = useCallback(async (label: string, pageToken?: string, isBackgroundRefresh = false) => {
     if (pageToken) setLoadingMore(true);
     else setLoadingThreads(true);
     try {
@@ -1026,10 +1031,18 @@ export default function EmailTriagePage() {
         });
       if (pageToken) {
         setThreads(prev => dedupeById([...prev, ...newThreads]));
+      } else if (isBackgroundRefresh) {
+        // Merge fresh page-1 threads over the existing list: newThreads win on
+        // dedupe (up-to-date read state, new mail floats to the top), and any
+        // already-loaded threads beyond page 1 are retained so "Load more"
+        // progress isn't wiped out by the poll.
+        setThreads(prev => dedupeById([...newThreads, ...prev]));
       } else {
         setThreads(dedupeById(newThreads));
       }
-      setNextPageToken(data.nextPageToken ?? null);
+      // Don't rewind the "Load more" cursor on a background refresh — keep the
+      // deepest token so the next Load more continues from where the user was.
+      if (!isBackgroundRefresh) setNextPageToken(data.nextPageToken ?? null);
 
       // Apply active rules to unread threads (fire-and-forget)
       if (label === 'INBOX' && !pageToken) {
@@ -1060,10 +1073,10 @@ export default function EmailTriagePage() {
     // burning the user's Gmail API quota (a key cause of rate-limit 5xx).
     pollTimerRef.current = setInterval(() => {
       if (document.hidden) return;
-      fetchThreads(activeLabel);
+      fetchThreads(activeLabel, undefined, true);
     }, POLL_INTERVAL_MS);
     // Refresh immediately when the user returns to the tab.
-    const onVisible = () => { if (!document.hidden) fetchThreads(activeLabel); };
+    const onVisible = () => { if (!document.hidden) fetchThreads(activeLabel, undefined, true); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
