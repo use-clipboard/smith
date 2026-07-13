@@ -275,7 +275,7 @@ function ClientListModal({ quarter, bucket, monthsLabel, clients, taxYear, onClo
       aria-modal="true"
     >
       <div
-        className="bg-white rounded-2xl shadow-xl w-full h-full max-w-none max-h-none overflow-hidden flex flex-col"
+        className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-4">
@@ -298,11 +298,11 @@ function ClientListModal({ quarter, bucket, monthsLabel, clients, taxYear, onClo
             <X size={18} className="text-gray-500" />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 p-4">
+        <div className="overflow-y-auto flex-1">
           {clients.length === 0 ? (
             <p className="text-sm text-gray-500 py-10 text-center">No clients in this bucket.</p>
           ) : (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+            <ul className="divide-y divide-gray-100">
               {clients
                 .slice()
                 .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
@@ -311,7 +311,7 @@ function ClientListModal({ quarter, bucket, monthsLabel, clients, taxYear, onClo
                     <button
                       type="button"
                       onClick={() => openClientQuarter(c.id)}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-colors text-left"
+                      className="w-full flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors text-left"
                     >
                       <span className="text-sm text-gray-900 truncate flex-1 min-w-0">{c.name}</span>
                       {(() => {
