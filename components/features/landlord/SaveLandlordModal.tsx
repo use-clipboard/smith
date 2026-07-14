@@ -5,20 +5,25 @@ import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
 import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { useModules } from '@/components/ui/ModulesProvider';
-import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
+import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
+import type { LandlordEntityType } from '@/utils/landlordComputation';
 
 type Status = 'idle' | 'uploading' | 'exporting' | 'done' | 'error';
 
 interface SaveLandlordModalProps {
   isOpen: boolean;
-  income: LandlordIncomeTransaction[];
-  expenses: LandlordExpenseTransaction[];
+  income: (LandlordIncomeTransaction & { _forceInclude?: boolean })[];
+  expenses: (LandlordExpenseTransaction & { _forceInclude?: boolean })[];
   adjustments: LandlordAdjustment[];
   flaggedIncome: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
   flaggedExpenses: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
   dateFrom: string;
   dateTo: string;
   documentFiles: File[];
+  properties?: LandlordProperty[];
+  entityType?: LandlordEntityType;
+  primaryClientId?: string | null;
+  primaryClientName?: string;
   initialClient?: SelectedClient | null;
   initialClientName?: string;
   initialClientCode?: string;
@@ -35,6 +40,10 @@ export default function SaveLandlordModal({
   dateFrom,
   dateTo,
   documentFiles,
+  properties,
+  entityType,
+  primaryClientId,
+  primaryClientName,
   initialClient,
   initialClientName,
   initialClientCode,
@@ -71,8 +80,8 @@ export default function SaveLandlordModal({
   if (!isOpen) return null;
 
   const outOfRangeCount =
-    income.filter(r => !isInRange(r.Date, dateFrom, dateTo)).length +
-    expenses.filter(r => !isInRange(r.DueDate, dateFrom, dateTo)).length;
+    income.filter(r => !r._forceInclude && !isInRange(r.Date, dateFrom, dateTo)).length +
+    expenses.filter(r => !r._forceInclude && !isInRange(r.DueDate, dateFrom, dateTo)).length;
 
   const needsCode = useDrive && !clientCode.trim();
   const canSave = !useDrive || clientCode.trim().length > 0;
@@ -144,6 +153,10 @@ export default function SaveLandlordModal({
       dateTo,
       filename: `landlord_analysis_${dateStr}.xlsx`,
       driveLinks,
+      properties,
+      entityType,
+      primaryClientId: primaryClientId ?? client?.id ?? null,
+      primaryClientName: primaryClientName ?? client?.name ?? initialClientName ?? '',
     });
 
     // Persist to outputs history (fire-and-forget — never block download on this)
@@ -162,6 +175,7 @@ export default function SaveLandlordModal({
         flaggedExpenses,
         dateFrom,
         dateTo,
+        entityType,
         sourceFilenames,
       }),
     }).catch(err => console.error('[SaveLandlordModal] history save failed:', err));

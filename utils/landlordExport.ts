@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
-import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
+import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
+import { computePersonBreakdown } from './landlordAllocation';
+import { computeRentComputation, type LandlordEntityType } from './landlordComputation';
 
 type Row = (string | number)[];
 
@@ -238,66 +240,53 @@ interface CompData {
   adjustments: LandlordAdjustment[];
 }
 
-function buildCompRows(data: CompData): Row[] {
+function buildCompRows(data: CompData, entityType: LandlordEntityType): Row[] {
+  const c = computeRentComputation(data.income, data.expenses, data.adjustments, { entityType });
   const rows: Row[] = [];
 
   // Income
   rows.push(['INCOME', '', '']);
-  const incomeTotal = data.income.reduce((s, r) => s + r.Amount, 0);
-  rows.push(['Total rents and other income from property', '', incomeTotal]);
-
-  const incAdj = data.adjustments.filter(a => a.type === 'income');
-  if (incAdj.length > 0) {
-    incAdj.forEach(a => rows.push([a.description, '', a.amount]));
-  }
-
-  const incAdjTotal = incAdj.reduce((s, a) => s + a.amount, 0);
-  const totalIncome = incomeTotal + incAdjTotal;
-  rows.push(['TOTAL INCOME', '', totalIncome]);
+  rows.push(['Total rents and other income from property', '', c.incomeTotal]);
+  for (const a of c.incomeAdjustments) rows.push([a.description, '', a.amount]);
+  rows.push(['TOTAL INCOME', '', c.totalIncome]);
   rows.push([]);
 
-  // Expenses by category (merge regular expenses + expense adjustments into same buckets)
+  // Expenses (finance costs excluded here when the individual restriction applies)
   rows.push(['EXPENSES', '', '']);
-  const expAdj = data.adjustments.filter(a => a.type === 'expense');
-  const byCat = new Map<string, number>();
-  for (const r of data.expenses) {
-    byCat.set(r.Category, (byCat.get(r.Category) ?? 0) + r.Amount);
-  }
-  for (const a of expAdj) {
-    const cat = a.category || 'Other allowable property expenses';
-    byCat.set(cat, (byCat.get(cat) ?? 0) + a.amount);
-  }
-  for (const [cat, amt] of byCat.entries()) {
-    rows.push([cat, '', amt]);
-  }
-
-  const expensesTotal = data.expenses.reduce((s, r) => s + r.Amount, 0);
-  const expAdjTotal = expAdj.reduce((s, a) => s + a.amount, 0);
-  const totalExpenses = expensesTotal + expAdjTotal;
-  rows.push(['TOTAL EXPENSES', '', totalExpenses]);
+  for (const e of c.expenseCategories) rows.push([e.category, '', e.amount]);
+  rows.push(['TOTAL EXPENSES', '', c.totalExpenses]);
   rows.push([]);
 
   // Net
-  const net = totalIncome - totalExpenses;
-  rows.push([net >= 0 ? 'NET RENTAL PROFIT' : 'NET RENTAL LOSS', '', Math.abs(net)]);
-  if (net < 0) rows.push(['(carried forward as a loss)', '', '']);
+  rows.push([c.netProfit >= 0 ? 'NET RENTAL PROFIT' : 'NET RENTAL LOSS', '', Math.abs(c.netProfit)]);
+  if (c.netProfit < 0) rows.push(['(carried forward as a loss)', '', '']);
+
+  // Finance costs & basic-rate relief (individuals only)
+  if (c.restricted && c.financeCosts > 0) {
+    rows.push([]);
+    rows.push(['FINANCE COSTS (not deducted above)', '', '']);
+    rows.push(['Residential finance costs', '', c.financeCosts]);
+    rows.push(['Basic-rate tax reduction (20%, estimate)', '', c.financeReducer]);
+    if (c.unrelievedFinanceCosts > 0.001) rows.push(['Unrelieved finance costs carried forward', '', c.unrelievedFinanceCosts]);
+    rows.push(['Note: for individuals, residential finance costs are relieved as a 20% tax reducer (capped at 20% of property profits), not deducted from profit.', '', '']);
+  }
 
   return rows;
 }
 
 // ─── All Rent Computation ─────────────────────────────────────────────────────
 
-function buildRentCompSheet(data: CompData, meta: ReportMeta): XLSX.WorkSheet {
+function buildRentCompSheet(data: CompData, meta: ReportMeta, entityType: LandlordEntityType): XLSX.WorkSheet {
   const rows: Row[] = [
     ...reportHeader('Rent Computation', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
-    ...buildCompRows(data),
+    ...buildCompRows(data, entityType),
   ];
   return makeSheet(rows);
 }
 
 // ─── Rent Computation by Property ─────────────────────────────────────────────
 
-function buildRentCompByPropertySheet(data: CompData, meta: ReportMeta): XLSX.WorkSheet {
+function buildRentCompByPropertySheet(data: CompData, meta: ReportMeta, entityType: LandlordEntityType): XLSX.WorkSheet {
   const propSet = new Set([
     ...data.income.map(r => normalizeAddr(r.PropertyAddress)),
     ...data.expenses.map(r => normalizeAddr(r.PropertyAddress)),
@@ -316,7 +305,7 @@ function buildRentCompByPropertySheet(data: CompData, meta: ReportMeta): XLSX.Wo
     const propIncome = data.income.filter(r => normalizeAddr(r.PropertyAddress) === prop);
     const propExpenses = data.expenses.filter(r => normalizeAddr(r.PropertyAddress) === prop);
     const propAdj = data.adjustments.filter(a => (a.propertyAddress || 'Non Allocated') === prop);
-    rows.push(...buildCompRows({ income: propIncome, expenses: propExpenses, adjustments: propAdj }));
+    rows.push(...buildCompRows({ income: propIncome, expenses: propExpenses, adjustments: propAdj }, entityType));
     rows.push([]);
   }
 
@@ -334,6 +323,42 @@ function buildFlaggedSheet(
     ['Type', 'Date', 'Description', 'Amount (£)', 'Flag Reason', 'Source File'],
     ...flagged.map(r => [r.type === 'income' ? 'Income' : 'Expense', fmtDate(r.date), r.description, r.amount, r.reason, r.fileName]),
   ];
+  return makeSheet(rows);
+}
+
+// ─── By Person ─────────────────────────────────────────────────────────────────
+
+function buildPersonSheet(
+  income: IncomeExportRow[],
+  expenses: ExpenseExportRow[],
+  adjustments: LandlordAdjustment[],
+  properties: LandlordProperty[],
+  primary: { id: string | null; name: string },
+  meta: ReportMeta,
+): XLSX.WorkSheet {
+  const incAmounts = [
+    ...income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+    ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+  ];
+  const expAmounts = [
+    ...expenses.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+    ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+  ];
+  const bd = computePersonBreakdown(incAmounts, expAmounts, properties, primary);
+
+  const rows: Row[] = [
+    ...reportHeader('Income by Person', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
+    ['Person', 'Type', 'Income (£)', 'Expenses (£)', 'Net (£)'],
+  ];
+  for (const p of bd.people) {
+    rows.push([p.name, p.clientId ? 'Client' : 'Named', p.income, p.expenses, p.income - p.expenses]);
+  }
+  if (bd.unaccountedShare.income > 0.001 || bd.unaccountedShare.expenses > 0.001) {
+    rows.push(['Unaccounted share (owners < 100%)', '', bd.unaccountedShare.income, bd.unaccountedShare.expenses, bd.unaccountedShare.income - bd.unaccountedShare.expenses]);
+  }
+  if (bd.unallocated.income > 0.001 || bd.unallocated.expenses > 0.001) {
+    rows.push(['Unallocated (no matching property)', '', bd.unallocated.income, bd.unallocated.expenses, bd.unallocated.income - bd.unallocated.expenses]);
+  }
   return makeSheet(rows);
 }
 
@@ -377,9 +402,13 @@ interface ReportMeta {
   dateTo: string;
 }
 
+/** Transaction plus the optional "include despite out of range" override the UI sets. */
+type IncomeExportRow = LandlordIncomeTransaction & { _forceInclude?: boolean };
+type ExpenseExportRow = LandlordExpenseTransaction & { _forceInclude?: boolean };
+
 export interface LandlordExportData {
-  income: LandlordIncomeTransaction[];
-  expenses: LandlordExpenseTransaction[];
+  income: IncomeExportRow[];
+  expenses: ExpenseExportRow[];
   adjustments: LandlordAdjustment[];
   flaggedIncome: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
   flaggedExpenses: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
@@ -390,6 +419,12 @@ export interface LandlordExportData {
   filename?: string;
   /** fileName → Google Drive URL, used to add hyperlinks to source document columns */
   driveLinks?: Record<string, string>;
+  /** Client's property register + owners — enables the "By Person" tab. */
+  properties?: LandlordProperty[];
+  primaryClientId?: string | null;
+  primaryClientName?: string;
+  /** Drives the finance-cost restriction in the rent computation. Default 'individual'. */
+  entityType?: LandlordEntityType;
 }
 
 export function exportLandlordWorkbook(data: LandlordExportData): void {
@@ -402,11 +437,14 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
 
   // Split by date range — only in-range items belong in the data tabs and the
   // rent computation; out-of-range items are listed separately so they never
-  // inflate the totals.
-  const inRangeIncome   = data.income.filter(r => isInRange(r.Date, data.dateFrom, data.dateTo));
-  const outRangeIncome  = data.income.filter(r => !isInRange(r.Date, data.dateFrom, data.dateTo));
-  const inRangeExpenses = data.expenses.filter(r => isInRange(r.DueDate, data.dateFrom, data.dateTo));
-  const outRangeExpenses= data.expenses.filter(r => !isInRange(r.DueDate, data.dateFrom, data.dateTo));
+  // inflate the totals. A row the user explicitly included (_forceInclude)
+  // counts as in-range even if its date falls outside the window.
+  const incIn = (r: IncomeExportRow) => r._forceInclude === true || isInRange(r.Date, data.dateFrom, data.dateTo);
+  const expIn = (r: ExpenseExportRow) => r._forceInclude === true || isInRange(r.DueDate, data.dateFrom, data.dateTo);
+  const inRangeIncome   = data.income.filter(incIn);
+  const outRangeIncome  = data.income.filter(r => !incIn(r));
+  const inRangeExpenses = data.expenses.filter(expIn);
+  const outRangeExpenses= data.expenses.filter(r => !expIn(r));
 
   const compData: CompData = {
     income: inRangeIncome,
@@ -426,8 +464,13 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   XLSX.utils.book_append_sheet(wb, buildIncomeByPropertySheet(inRangeIncome, meta, driveLinks), 'Income by Property');
   XLSX.utils.book_append_sheet(wb, buildAllExpensesSheet(inRangeExpenses, meta, driveLinks), 'All Expenses');
   XLSX.utils.book_append_sheet(wb, buildExpensesByPropertySheet(inRangeExpenses, meta, driveLinks), 'Expenses by Property');
-  XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta), 'Rent Computation');
-  XLSX.utils.book_append_sheet(wb, buildRentCompByPropertySheet(compData, meta), 'Rent Comp by Property');
+  const entityType: LandlordEntityType = data.entityType ?? 'individual';
+  XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta, entityType), 'Rent Computation');
+  XLSX.utils.book_append_sheet(wb, buildRentCompByPropertySheet(compData, meta, entityType), 'Rent Comp by Property');
+  if (data.properties && data.properties.length > 0) {
+    const primary = { id: data.primaryClientId ?? null, name: data.primaryClientName ?? data.clientName ?? 'This client' };
+    XLSX.utils.book_append_sheet(wb, buildPersonSheet(inRangeIncome, inRangeExpenses, data.adjustments, data.properties, primary, meta), 'By Person');
+  }
   if (outRangeIncome.length > 0 || outRangeExpenses.length > 0) {
     XLSX.utils.book_append_sheet(wb, buildOutOfRangeSheet(outRangeIncome, outRangeExpenses, meta, driveLinks), 'Out of Date Range');
   }

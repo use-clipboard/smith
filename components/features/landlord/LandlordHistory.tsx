@@ -5,15 +5,39 @@ import { usePersistedColumns } from '@/lib/usePersistedColumns';
 import {
   House, Plus, Search, Download, FolderOpen, Trash2, Loader2,
   ChevronUp, ChevronDown, ChevronsUpDown, SlidersHorizontal, User as UserIcon,
-  X, AlertTriangle, Filter, CheckSquare, ChevronRight, MapPin,
+  X, AlertTriangle, Filter, CheckSquare, ChevronRight, MapPin, Users,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { exportLandlordWorkbook } from '@/utils/landlordExport';
+import { computePersonBreakdown } from '@/utils/landlordAllocation';
+import type { LandlordEntityType } from '@/utils/landlordComputation';
 import type {
   LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment,
+  LandlordProperty, PropertyOwner,
 } from '@/types';
+
+// Load a client's property register + owners (shared with MTD IT) so history
+// downloads can produce the By-Person tab and the expanded panel can show the
+// people involved.
+async function fetchRegister(clientId: string): Promise<LandlordProperty[]> {
+  try {
+    const [pRes, oRes] = await Promise.all([
+      fetch(`/api/mtd-it/properties?client_id=${clientId}`),
+      fetch(`/api/landlord/property-owners?client_id=${clientId}`),
+    ]);
+    const pData = pRes.ok ? await pRes.json() : { properties: [] };
+    const oData = oRes.ok ? await oRes.json() : { owners: [] };
+    const owners = (oData.owners ?? []) as PropertyOwner[];
+    type FetchedProp = { id: string; client_id: string; address: string; ownership_pct: number; property_type: 'uk' | 'foreign'; active: boolean };
+    return ((pData.properties ?? []) as FetchedProp[]).map(p => ({
+      id: p.id, client_id: p.client_id, address: p.address,
+      ownership_pct: Number(p.ownership_pct), property_type: p.property_type, active: p.active,
+      owners: owners.filter(o => o.property_id === p.id),
+    }));
+  } catch { return []; }
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export interface HistoryUser { id: string; full_name: string | null; email: string }
@@ -37,13 +61,14 @@ export interface LandlordHistoryRow {
 export interface LandlordSeed {
   id: string;
   client: HistoryClient | null;
-  income: LandlordIncomeTransaction[];
-  expenses: LandlordExpenseTransaction[];
+  income: (LandlordIncomeTransaction & { _forceInclude?: boolean })[];
+  expenses: (LandlordExpenseTransaction & { _forceInclude?: boolean })[];
   adjustments: LandlordAdjustment[];
   flaggedIncome: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
   flaggedExpenses: Array<{ date: string; description: string; amount: number; reason: string; fileName: string }>;
   dateFrom: string;
   dateTo: string;
+  entityType?: LandlordEntityType;
 }
 
 interface Props {
@@ -120,7 +145,12 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
 
   // Lazy-fetched detail (properties + counts) for the expanded panel
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [rowDetail, setRowDetail] = useState<Record<string, { loading: boolean; error?: string; properties?: Array<{ name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }> }>>({});
+  const [rowDetail, setRowDetail] = useState<Record<string, {
+    loading: boolean;
+    error?: string;
+    properties?: Array<{ name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }>;
+    people?: Array<{ name: string; clientId: string | null; income: number; expenses: number }>;
+  }>>({});
 
   const toggleExpand = async (id: string) => {
     const isOpen = expandedIds.has(id);
@@ -136,7 +166,11 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       const res = await fetch(`/api/outputs/${id}`);
       if (!res.ok) throw new Error('Failed to load properties');
       const { output } = await res.json();
-      const rd = output.result_data as { income?: LandlordIncomeTransaction[]; expenses?: LandlordExpenseTransaction[] };
+      const rd = output.result_data as {
+        income?: LandlordIncomeTransaction[];
+        expenses?: LandlordExpenseTransaction[];
+        adjustments?: LandlordAdjustment[];
+      };
       const map = new Map<string, { name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }>();
       const norm = (a: string | null | undefined) => (!a || a === 'No Address') ? 'Non Allocated' : a;
       for (const r of (rd.income ?? [])) {
@@ -154,7 +188,31 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         map.set(key, cur);
       }
       const properties = Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-      setRowDetail(prev => ({ ...prev, [id]: { loading: false, properties } }));
+
+      // Per-person split from the client's property register (if any owners set up).
+      let people: Array<{ name: string; clientId: string | null; income: number; expenses: number }> = [];
+      const clientId = (output.client_id as string | null) ?? output.client?.id ?? null;
+      if (clientId) {
+        const register = await fetchRegister(clientId);
+        if (register.length > 0) {
+          const adj = rd.adjustments ?? [];
+          const inc = [
+            ...(rd.income ?? []).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+            ...adj.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+          ];
+          const exp = [
+            ...(rd.expenses ?? []).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+            ...adj.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+          ];
+          const bd = computePersonBreakdown(inc, exp, register, {
+            id: clientId,
+            name: output.client?.name ?? output.client_name ?? 'This client',
+          });
+          people = bd.people.map(p => ({ name: p.name, clientId: p.clientId, income: p.income, expenses: p.expenses }));
+        }
+      }
+
+      setRowDetail(prev => ({ ...prev, [id]: { loading: false, properties, people } }));
     } catch (e) {
       setRowDetail(prev => ({ ...prev, [id]: { loading: false, error: e instanceof Error ? e.message : 'Failed to load' } }));
     }
@@ -229,7 +287,10 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
   );
 
   // ── Re-download workbook from saved data ────────────────────────────────
-  const downloadWorkbook = (output: { result_data: Record<string, unknown>; client?: { name?: string | null } | null; client_name?: string | null; created_at: string }) => {
+  const downloadWorkbook = (
+    output: { result_data: Record<string, unknown>; client?: { id?: string; name?: string | null } | null; client_id?: string | null; client_name?: string | null; created_at: string },
+    register: LandlordProperty[] = [],
+  ) => {
     const rd = output.result_data as {
       income?: LandlordIncomeTransaction[];
       expenses?: LandlordExpenseTransaction[];
@@ -239,6 +300,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       dateFrom?: string;
       dateTo?: string;
       clientCode?: string | null;
+      entityType?: LandlordEntityType;
     };
     const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
     exportLandlordWorkbook({
@@ -252,6 +314,10 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       dateFrom: rd.dateFrom ?? '',
       dateTo: rd.dateTo ?? '',
       filename: `landlord_analysis_${dateStr}.xlsx`,
+      properties: register,
+      primaryClientId: output.client?.id ?? output.client_id ?? null,
+      primaryClientName: output.client?.name ?? output.client_name ?? '',
+      entityType: rd.entityType ?? 'individual',
     });
   };
 
@@ -262,7 +328,9 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       const res = await fetch(`/api/outputs/${id}`);
       if (!res.ok) throw new Error('Failed to fetch analysis');
       const { output } = await res.json();
-      downloadWorkbook(output);
+      const clientId = (output.client_id as string | null) ?? output.client?.id ?? null;
+      const register = clientId ? await fetchRegister(clientId) : [];
+      downloadWorkbook(output, register);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
@@ -287,6 +355,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         flaggedExpenses: rd.flaggedExpenses ?? [],
         dateFrom: rd.dateFrom ?? '',
         dateTo: rd.dateTo ?? '',
+        entityType: rd.entityType,
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Open failed');
@@ -330,7 +399,9 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         const res = await fetch(`/api/outputs/${id}`);
         if (!res.ok) continue;
         const { output } = await res.json();
-        downloadWorkbook(output);
+        const clientId = (output.client_id as string | null) ?? output.client?.id ?? null;
+        const register = clientId ? await fetchRegister(clientId) : [];
+        downloadWorkbook(output, register);
         await new Promise(r => setTimeout(r, 300));
       }
     } finally { setBulkBusy(false); }
@@ -722,7 +793,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
                             </div>
                           )}
                           {detail && !detail.loading && !detail.error && (
-                            <ExpandedProperties properties={detail.properties ?? []} />
+                            <ExpandedProperties properties={detail.properties ?? []} people={detail.people ?? []} />
                           )}
                         </div>
                       </td>
@@ -743,7 +814,10 @@ function fmtAmt(n: number): string {
   return `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function ExpandedProperties({ properties }: { properties: Array<{ name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }> }) {
+function ExpandedProperties({ properties, people }: {
+  properties: Array<{ name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }>;
+  people: Array<{ name: string; clientId: string | null; income: number; expenses: number }>;
+}) {
   return (
     <div className="divide-y divide-gray-100">
       <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-gray-100">
@@ -782,6 +856,40 @@ function ExpandedProperties({ properties }: { properties: Array<{ name: string; 
           </div>
         )}
       </div>
+
+      {/* Individuals linked via the property register (ownership split) */}
+      {people.length > 0 && (
+        <>
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 border-b border-t border-gray-100">
+            <Users size={14} className="text-gray-500" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Individuals</span>
+            <span className="text-[10px] font-bold uppercase tracking-wide bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5">
+              {people.length} {people.length === 1 ? 'person' : 'people'}
+            </span>
+          </div>
+          <div className="px-4 py-3">
+            <div className="space-y-1.5">
+              {people.map(p => {
+                const net = p.income - p.expenses;
+                return (
+                  <div key={`${p.clientId ?? 'named'}:${p.name}`} className="grid grid-cols-12 items-center gap-3 px-3 py-2 rounded-lg bg-indigo-50/40 border border-indigo-200/50">
+                    <div className="col-span-12 sm:col-span-5 flex items-center gap-2 min-w-0">
+                      <Users size={12} className="text-indigo-700 shrink-0" />
+                      <span className="text-xs font-semibold text-gray-800 truncate">{p.name}</span>
+                      <span className={`text-[9px] font-bold uppercase tracking-wide rounded-full px-1.5 py-0.5 ${p.clientId ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'}`}>{p.clientId ? 'Client' : 'Named'}</span>
+                    </div>
+                    <div className="col-span-4 sm:col-span-2 text-[11px] text-emerald-700 tabular-nums">{fmtAmt(p.income)}</div>
+                    <div className="col-span-4 sm:col-span-2 text-[11px] text-red-600 tabular-nums">{fmtAmt(p.expenses)}</div>
+                    <div className={`col-span-4 sm:col-span-3 text-right text-xs font-semibold tabular-nums ${net >= 0 ? 'text-gray-800' : 'text-red-600'}`}>
+                      Net {net >= 0 ? '+' : '−'}{fmtAmt(Math.abs(net))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -969,3 +969,26 @@ export interface MtdItProperty {
     co_owner_ref:       string | null;
   }>;
 }
+
+// ── Property ownership (shared register: mtd_it_properties + property_owners) ──
+// An owner may be a linked client (owner_client_id set — the bridge to
+// self-assessment) OR a plain named individual not yet in the system.
+export interface PropertyOwner {
+  id: string;
+  property_id: string;
+  owner_client_id: string | null;
+  owner_name: string;
+  share_pct: number;
+}
+
+/** A property from the shared register with its ADDITIONAL co-owners resolved.
+ *  The primary landlord client's own share is `ownership_pct`. */
+export interface LandlordProperty {
+  id: string;
+  client_id: string;
+  address: string;
+  ownership_pct: number;
+  property_type: 'uk' | 'foreign';
+  active: boolean;
+  owners: PropertyOwner[];
+}

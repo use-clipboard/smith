@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Flag, CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction } from '@/types';
+import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES } from './categories';
 
 // ─── Internal row types (re-exported for page use) ────────────────────────────
 
@@ -11,6 +12,8 @@ export type IncomeRow = LandlordIncomeTransaction & {
   _flagged: boolean;
   _flagReason?: string;
   _inRange: boolean;
+  /** User chose to include this row in the computation even though it's out of range */
+  _forceInclude?: boolean;
 };
 
 export type ExpenseRow = LandlordExpenseTransaction & {
@@ -18,24 +21,14 @@ export type ExpenseRow = LandlordExpenseTransaction & {
   _flagged: boolean;
   _flagReason?: string;
   _inRange: boolean;
+  /** User chose to include this row in the computation even though it's out of range */
+  _forceInclude?: boolean;
 };
 
-// ─── Expense category options ─────────────────────────────────────────────────
-
-const EXPENSE_CATEGORIES = [
-  'Rent, rates, insurance',
-  'Property repairs and maintenance',
-  'Finance charges and bank charges',
-  'Legal, management and other professional fees',
-  'Advertising for tenants',
-  'Wages and salaries',
-  'Accountancy fees',
-  'Travel costs',
-  'Utilities',
-  'Cleaning and gardening',
-  'Other allowable expenses',
-  'Capital expenditure',
-];
+// Expense/income category options come from the shared canonical list so the
+// edit modal never drifts from the AI prompt, results tables or adjustments.
+const EXPENSE_CATEGORIES = LANDLORD_EXPENSE_CATEGORIES;
+const INCOME_CATEGORIES = LANDLORD_INCOME_CATEGORIES;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -43,13 +36,15 @@ interface Props {
   rowType: 'income' | 'expense';
   item: IncomeRow | ExpenseRow;
   documentFiles: File[];
+  /** Registered property addresses for this client, offered as allocation suggestions. */
+  propertyOptions?: string[];
   onSave: (updated: IncomeRow | ExpenseRow) => void;
   onFlag: (reason: string) => void;
   onUnflag: () => void;
   onClose: () => void;
 }
 
-export default function LandlordEditModal({ rowType, item, documentFiles, onSave, onFlag, onUnflag, onClose }: Props) {
+export default function LandlordEditModal({ rowType, item, documentFiles, propertyOptions = [], onSave, onFlag, onUnflag, onClose }: Props) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
     for (const [k, val] of Object.entries(item)) {
@@ -221,6 +216,11 @@ export default function LandlordEditModal({ rowType, item, documentFiles, onSave
           {/* Form — right panel */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
             <div className="flex-1 overflow-y-auto p-5">
+              {propertyOptions.length > 0 && (
+                <datalist id="ll-prop-options">
+                  {propertyOptions.map(a => <option key={a} value={a} />)}
+                </datalist>
+              )}
               <div className="space-y-4">
                 {rowType === 'income' ? (
                   <>
@@ -236,7 +236,7 @@ export default function LandlordEditModal({ rowType, item, documentFiles, onSave
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Property Address</label>
-                      <input type="text" value={values.PropertyAddress ?? ''} onChange={e => set('PropertyAddress', e.target.value)} className="input-base text-sm w-full" />
+                      <input type="text" list="ll-prop-options" value={values.PropertyAddress ?? ''} onChange={e => set('PropertyAddress', e.target.value)} className="input-base text-sm w-full" />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Description</label>
@@ -244,7 +244,13 @@ export default function LandlordEditModal({ rowType, item, documentFiles, onSave
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                      <input type="text" value={values.Category ?? ''} onChange={e => set('Category', e.target.value)} className="input-base text-sm w-full" />
+                      <select value={values.Category ?? ''} onChange={e => set('Category', e.target.value)} className="input-base text-sm w-full">
+                        <option value="">Select category…</option>
+                        {values.Category && !INCOME_CATEGORIES.includes(values.Category) && (
+                          <option value={values.Category}>{values.Category} (non-standard)</option>
+                        )}
+                        {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
                     </div>
                   </>
                 ) : (
@@ -271,12 +277,15 @@ export default function LandlordEditModal({ rowType, item, documentFiles, onSave
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Category</label>
                       <select value={values.Category ?? ''} onChange={e => set('Category', e.target.value)} className="input-base text-sm w-full">
                         <option value="">Select category…</option>
+                        {values.Category && !EXPENSE_CATEGORIES.includes(values.Category) && (
+                          <option value={values.Category}>{values.Category} (non-standard)</option>
+                        )}
                         {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Property Address</label>
-                      <input type="text" value={values.PropertyAddress ?? ''} onChange={e => set('PropertyAddress', e.target.value)} className="input-base text-sm w-full" />
+                      <input type="text" list="ll-prop-options" value={values.PropertyAddress ?? ''} onChange={e => set('PropertyAddress', e.target.value)} className="input-base text-sm w-full" />
                     </div>
                     <div className="flex items-center gap-6 pt-1">
                       <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">

@@ -8,7 +8,10 @@ import ScanResultsView from '@/components/ui/ScanResultsView';
 import SaveLandlordModal from '@/components/features/landlord/SaveLandlordModal';
 import LandlordEditModal from '@/components/features/landlord/LandlordEditModal';
 import LandlordHistory, { type LandlordSeed } from '@/components/features/landlord/LandlordHistory';
+import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
+import { matchProperty, computePersonBreakdown } from '@/utils/landlordAllocation';
+import { computeRentComputation, type LandlordEntityType } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -16,16 +19,18 @@ import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
   Plus, Trash2, TrendingUp, ArrowLeft, ArrowRight, Sparkles,
-  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator,
+  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin,
 } from 'lucide-react';
+import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
-import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment } from '@/types';
+import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment, LandlordProperty, PropertyOwner } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 type LandlordView = 'income' | 'expenses' | 'rent_comp' | 'flagged';
-type Breakdown = 'all' | 'property';
+type Breakdown = 'all' | 'property' | 'person';
+type PropertyMode = 'suggest' | 'preset';
 type TaggedIncome = LandlordIncomeTransaction & { _recordType: 'income' };
 type TaggedExpense = LandlordExpenseTransaction & { _recordType: 'expense' };
 
@@ -72,24 +77,47 @@ function detectDuplicates(income: IncomeRow[], expenses: ExpenseRow[]): void {
   }
 }
 
-function buildIncomeRows(txs: LandlordIncomeTransaction[], dateFrom: string, dateTo: string): IncomeRow[] {
+function buildIncomeRows(txs: (LandlordIncomeTransaction & { _forceInclude?: boolean })[], dateFrom: string, dateTo: string): IncomeRow[] {
   return txs.map(t => ({
     ...t,
     _id: nextId(),
     _flagged: false,
     _flagReason: undefined,
     _inRange: isInRange(t.Date, dateFrom, dateTo),
+    _forceInclude: t._forceInclude === true,
   }));
 }
 
-function buildExpenseRows(txs: LandlordExpenseTransaction[], dateFrom: string, dateTo: string): ExpenseRow[] {
+function buildExpenseRows(txs: (LandlordExpenseTransaction & { _forceInclude?: boolean })[], dateFrom: string, dateTo: string): ExpenseRow[] {
   return txs.map(t => ({
     ...t,
     _id: nextId(),
     _flagged: false,
     _flagReason: undefined,
     _inRange: isInRange(t.DueDate, dateFrom, dateTo),
+    _forceInclude: t._forceInclude === true,
   }));
+}
+
+/** Format an ISO date (YYYY-MM-DD) as UK dd-mm-yyyy for display. */
+function fmtUKDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return (y && m && d) ? `${d}-${m}-${y}` : iso;
+}
+
+/** Rewrite each row's PropertyAddress to the matched registered property's
+ *  canonical spelling, so scanned rows group under the client's chosen
+ *  properties. Unmatched rows are left untouched (they stay for manual
+ *  allocation). No-op when the client has no saved properties. */
+function canonicalizeToRegister<T extends { PropertyAddress: string }>(rows: T[], properties: LandlordProperty[]): T[] {
+  if (properties.length === 0) return rows;
+  return rows.map(r => {
+    const pid = matchProperty(r.PropertyAddress, properties);
+    if (!pid) return r;
+    const p = properties.find(x => x.id === pid);
+    return (p && r.PropertyAddress !== p.address) ? { ...r, PropertyAddress: p.address } : r;
+  });
 }
 
 // ─── Setup wizard ──────────────────────────────────────────────────────────
@@ -207,6 +235,39 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [autoCtxLoading, setAutoCtxLoading]  = useState(false);
   const [useAutoContext, setUseAutoContext]  = useState(true);
 
+  // ── Property register (shared with MTD IT) + ownership ─────────────────────
+  const [properties, setProperties]   = useState<LandlordProperty[]>([]);
+  const [propsLoading, setPropsLoading] = useState(false);
+  const [propertyMode, setPropertyMode] = useState<PropertyMode>('suggest');
+  // Entity type drives the finance-cost (mortgage interest) restriction in the
+  // rent computation — individuals get a 20% tax reducer, companies deduct it.
+  const [entityType, setEntityType] = useState<LandlordEntityType>('individual');
+
+  const refreshProperties = useCallback(async () => {
+    if (!selectedClient?.id) { setProperties([]); return; }
+    const clientId = selectedClient.id;
+    setPropsLoading(true);
+    try {
+      const [pRes, oRes] = await Promise.all([
+        fetch(`/api/mtd-it/properties?client_id=${clientId}`),
+        fetch(`/api/landlord/property-owners?client_id=${clientId}`),
+      ]);
+      const pData = pRes.ok ? await pRes.json() : { properties: [] };
+      const oData = oRes.ok ? await oRes.json() : { owners: [] };
+      const owners = (oData.owners ?? []) as PropertyOwner[];
+      type FetchedProp = { id: string; client_id: string; address: string; ownership_pct: number; property_type: 'uk' | 'foreign'; active: boolean };
+      const merged: LandlordProperty[] = ((pData.properties ?? []) as FetchedProp[]).map(p => ({
+        id: p.id, client_id: p.client_id, address: p.address,
+        ownership_pct: Number(p.ownership_pct), property_type: p.property_type, active: p.active,
+        owners: owners.filter(o => o.property_id === p.id),
+      }));
+      setProperties(merged);
+    } catch { /* register is optional — ignore fetch errors */ }
+    finally { setPropsLoading(false); }
+  }, [selectedClient?.id]);
+
+  useEffect(() => { void refreshProperties(); }, [refreshProperties]);
+
   useEffect(() => {
     if (!selectedClient?.id) {
       setAutoCtxIncome([]); setAutoCtxExpenses([]); setAutoCtxAnalyses(0);
@@ -245,6 +306,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     setDateFrom(seed.dateFrom ?? '');
     setDateTo(seed.dateTo ?? '');
     setAdjustments(seed.adjustments ?? []);
+    if (seed.entityType) setEntityType(seed.entityType);
 
     // Hydrate income/expense rows back into UI shape (re-tag with internal _id, _flagged etc.)
     const incomeRows = buildIncomeRows(seed.income, seed.dateFrom ?? '', seed.dateTo ?? '');
@@ -315,6 +377,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   // Edit modal
   const [editItem, setEditItem] = useState<{ type: 'income' | 'expense'; id: string } | null>(null);
 
+  // Include-out-of-range confirmation lightbox
+  const [includeConfirm, setIncludeConfirm] = useState<{ type: 'income' | 'expense'; ids: string[] } | null>(null);
+
   // ─── Push history ───────────────────────────────────────────────────────────
 
   const pushHistory = useCallback((income: IncomeRow[], expenses: ExpenseRow[]) => {
@@ -333,10 +398,10 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   const hasDateRange = !!(dateFrom || dateTo);
 
-  const inRangeIncome   = useMemo(() => current.income.filter(r => !r._flagged && r._inRange),   [current.income]);
-  const outRangeIncome  = useMemo(() => current.income.filter(r => !r._flagged && !r._inRange),  [current.income]);
-  const inRangeExpenses = useMemo(() => current.expenses.filter(r => !r._flagged && r._inRange), [current.expenses]);
-  const outRangeExpenses= useMemo(() => current.expenses.filter(r => !r._flagged && !r._inRange),[current.expenses]);
+  const inRangeIncome   = useMemo(() => current.income.filter(r => !r._flagged && (r._inRange || r._forceInclude)),   [current.income]);
+  const outRangeIncome  = useMemo(() => current.income.filter(r => !r._flagged && !r._inRange && !r._forceInclude),  [current.income]);
+  const inRangeExpenses = useMemo(() => current.expenses.filter(r => !r._flagged && (r._inRange || r._forceInclude)), [current.expenses]);
+  const outRangeExpenses= useMemo(() => current.expenses.filter(r => !r._flagged && !r._inRange && !r._forceInclude),[current.expenses]);
   const flaggedIncome   = useMemo(() => current.income.filter(r => r._flagged),   [current.income]);
   const flaggedExpenses = useMemo(() => current.expenses.filter(r => r._flagged), [current.expenses]);
   const allFlagged      = useMemo(() => [...flaggedIncome, ...flaggedExpenses],    [flaggedIncome, flaggedExpenses]);
@@ -365,6 +430,20 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     }
     return map;
   }, [inRangeExpenses]);
+
+  // Per-person split: each property's totals shared out by ownership %.
+  const personBreakdown = useMemo(() => {
+    const pc = { id: selectedClient?.id ?? null, name: selectedClient?.name ?? 'This client' };
+    const incAmounts = [
+      ...inRangeIncome.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+      ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+    ];
+    const expAmounts = [
+      ...inRangeExpenses.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+      ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+    ];
+    return computePersonBreakdown(incAmounts, expAmounts, properties, pc);
+  }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name]);
 
   // ─── Scan logic ─────────────────────────────────────────────────────────────
 
@@ -448,11 +527,16 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
     detectDuplicates(incomeRows, expenseRows);
 
+    // Allocate matched rows to the client's saved properties (canonical spelling).
+    // Unmatched rows keep their extracted address for manual allocation.
+    const finalIncome  = canonicalizeToRegister(incomeRows, properties);
+    const finalExpense = canonicalizeToRegister(expenseRows, properties);
+
     setScanProgress(null);
-    setHistory([{ income: incomeRows, expenses: expenseRows }]);
+    setHistory([{ income: finalIncome, expenses: finalExpense }]);
     setHistoryIndex(0);
     setAppState('success');
-  }, []);
+  }, [properties]);
 
   const handleProcess = useCallback(async () => {
     if (documentFiles.length === 0) return;
@@ -505,14 +589,53 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const handleSaveRow = useCallback((updated: IncomeRow | ExpenseRow) => {
     if (!editItem) return;
     if (editItem.type === 'income') {
-      const newIncome = current.income.map(r => r._id === editItem.id ? updated as IncomeRow : r);
+      // Re-evaluate in-range against the (possibly edited) date so a corrected
+      // date moves the row into or out of the computation automatically.
+      const row = { ...(updated as IncomeRow), _inRange: isInRange((updated as IncomeRow).Date, dateFrom, dateTo) };
+      const newIncome = current.income.map(r => r._id === editItem.id ? row : r);
       pushHistory(newIncome, current.expenses);
     } else {
-      const newExpenses = current.expenses.map(r => r._id === editItem.id ? updated as ExpenseRow : r);
+      const row = { ...(updated as ExpenseRow), _inRange: isInRange((updated as ExpenseRow).DueDate, dateFrom, dateTo) };
+      const newExpenses = current.expenses.map(r => r._id === editItem.id ? row : r);
       pushHistory(current.income, newExpenses);
     }
     setEditItem(null);
-  }, [editItem, current, pushHistory]);
+  }, [editItem, current, pushHistory, dateFrom, dateTo]);
+
+  // Force-include one or more out-of-range rows into the computation.
+  const handleIncludeRows = useCallback((ids: string[], type: 'income' | 'expense') => {
+    const idSet = new Set(ids);
+    if (type === 'income') {
+      const newIncome = current.income.map(r => idSet.has(r._id) ? { ...r, _forceInclude: true } : r);
+      pushHistory(newIncome, current.expenses);
+    } else {
+      const newExpenses = current.expenses.map(r => idSet.has(r._id) ? { ...r, _forceInclude: true } : r);
+      pushHistory(current.income, newExpenses);
+    }
+  }, [current, pushHistory]);
+
+  // Bulk-create the AI-detected addresses that aren't in the register yet.
+  const addDetectedProperties = useCallback(async (addrs: string[]) => {
+    if (!selectedClient?.id) return;
+    for (const address of addrs) {
+      await fetch('/api/mtd-it/properties', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: selectedClient.id, address, ownership_pct: 100, property_type: 'uk' }),
+      }).catch(() => {/* skip failures, keep going */});
+    }
+    await refreshProperties();
+  }, [selectedClient?.id, refreshProperties]);
+
+  // Undo a force-include — send the row back to the out-of-range section.
+  const handleExcludeRow = useCallback((id: string, type: 'income' | 'expense') => {
+    if (type === 'income') {
+      const newIncome = current.income.map(r => r._id === id ? { ...r, _forceInclude: false } : r);
+      pushHistory(newIncome, current.expenses);
+    } else {
+      const newExpenses = current.expenses.map(r => r._id === id ? { ...r, _forceInclude: false } : r);
+      pushHistory(current.income, newExpenses);
+    }
+  }, [current, pushHistory]);
 
   const handleFlagRow = useCallback((id: string, type: 'income' | 'expense', reason: string) => {
     if (type === 'income') {
@@ -644,16 +767,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   // ─── Category lists ─────────────────────────────────────────────────────────
 
-  const EXPENSE_CATEGORIES = [
-    'Allowable loan interest and other financial costs',
-    'Car, van and other travel expenses',
-    'Costs of services provided, including wages',
-    'Legal, management and other professional fees',
-    'Other allowable property expenses',
-    'Property repairs and maintenance',
-    'Rent, rates, insurance, ground rents',
-  ];
-  const INCOME_CATEGORIES = ['Total rents and other income from property'];
+  const EXPENSE_CATEGORIES = LANDLORD_EXPENSE_CATEGORIES;
+  const INCOME_CATEGORIES = LANDLORD_INCOME_CATEGORIES;
 
   // ─── allProperties — must be BEFORE early returns ──────────────────────────
 
@@ -710,7 +825,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               <span className="text-sm font-semibold text-[var(--text-primary)]">{property}</span>
               <span className="text-sm font-medium text-[var(--text-secondary)]">{fmt(rows.reduce((s, r) => s + r.Amount, 0))}</span>
             </div>
-            <IncomeTable rows={rows} showSelect={false} />
+            <IncomeTable rows={rows} showSelect={false} onExclude={id => handleExcludeRow(id, 'income')} />
           </div>
         ))}
       </div>
@@ -726,14 +841,14 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               <span className="text-sm font-semibold text-[var(--text-primary)]">{property}</span>
               <span className="text-sm font-medium text-[var(--text-secondary)]">{fmt(rows.reduce((s, r) => s + r.Amount, 0))}</span>
             </div>
-            <ExpenseTable rows={rows} showSelect={false} />
+            <ExpenseTable rows={rows} showSelect={false} onExclude={id => handleExcludeRow(id, 'expense')} />
           </div>
         ))}
       </div>
     );
   }
 
-  function IncomeTable({ rows, showSelect }: { rows: IncomeRow[]; showSelect: boolean }) {
+  function IncomeTable({ rows, showSelect, onInclude, onExclude }: { rows: IncomeRow[]; showSelect: boolean; onInclude?: (id: string) => void; onExclude?: (id: string) => void }) {
     if (rows.length === 0) return <p className="text-center text-[var(--text-muted)] py-10 text-sm">No income transactions.</p>;
     return (
       <table className="w-full text-sm">
@@ -757,21 +872,43 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   <input type="checkbox" checked={selectedIncome.has(r._id)} onChange={() => toggleIncomeRow(r._id)} className="rounded" />
                 </td>
               )}
-              <td className="px-4 py-2.5 text-[var(--text-secondary)] whitespace-nowrap">{r.Date}</td>
+              <td className="px-4 py-2.5 text-[var(--text-secondary)] whitespace-nowrap">{fmtUKDate(r.Date)}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[180px] truncate">{r.PropertyAddress}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[160px] truncate">{r.Description}</td>
               <td className="px-4 py-2.5 text-[var(--text-muted)] max-w-[140px] truncate">{r.Category}</td>
               <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)] whitespace-nowrap">{fmt(r.Amount)}</td>
-              <td className="px-4 py-2.5 w-8">
-                <Tooltip label="Edit">
-                  <button
-                    onClick={() => setEditItem({ type: 'income', id: r._id })}
-                    aria-label="Edit"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                </Tooltip>
+              <td className="px-4 py-2.5 whitespace-nowrap text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  {onInclude && (
+                    <Tooltip label="Include in computation">
+                      <button
+                        onClick={() => onInclude(r._id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+                      >
+                        <Plus size={11} /> Include
+                      </button>
+                    </Tooltip>
+                  )}
+                  {onExclude && r._forceInclude && !r._inRange && (
+                    <Tooltip label="Included from outside your date range — click to exclude">
+                      <button
+                        onClick={() => onExclude(r._id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-amber-700 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                      >
+                        Out of range <X size={11} />
+                      </button>
+                    </Tooltip>
+                  )}
+                  <Tooltip label="Edit">
+                    <button
+                      onClick={() => setEditItem({ type: 'income', id: r._id })}
+                      aria-label="Edit"
+                      className={`transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] ${onInclude ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </Tooltip>
+                </div>
               </td>
             </tr>
           ))}
@@ -780,7 +917,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     );
   }
 
-  function ExpenseTable({ rows, showSelect }: { rows: ExpenseRow[]; showSelect: boolean }) {
+  function ExpenseTable({ rows, showSelect, onInclude, onExclude }: { rows: ExpenseRow[]; showSelect: boolean; onInclude?: (id: string) => void; onExclude?: (id: string) => void }) {
     if (rows.length === 0) return <p className="text-center text-[var(--text-muted)] py-10 text-sm">No expense transactions.</p>;
     return (
       <table className="w-full text-sm">
@@ -804,22 +941,44 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   <input type="checkbox" checked={selectedExpenses.has(r._id)} onChange={() => toggleExpenseRow(r._id)} className="rounded" />
                 </td>
               )}
-              <td className="px-4 py-2.5 text-[var(--text-secondary)] whitespace-nowrap">{r.DueDate}</td>
+              <td className="px-4 py-2.5 text-[var(--text-secondary)] whitespace-nowrap">{fmtUKDate(r.DueDate)}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[140px] truncate">{r.Supplier}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[160px] truncate">{r.Description}</td>
               <td className="px-4 py-2.5 text-[var(--text-muted)] max-w-[140px] truncate">{r.Category}</td>
               <td className="px-4 py-2.5 text-right font-medium text-[var(--text-primary)] whitespace-nowrap">{fmt(r.Amount)}</td>
               <td className="px-4 py-2.5 text-[var(--text-secondary)] max-w-[140px] truncate">{r.PropertyAddress}</td>
-              <td className="px-4 py-2.5 w-8">
-                <Tooltip label="Edit">
-                  <button
-                    onClick={() => setEditItem({ type: 'expense', id: r._id })}
-                    aria-label="Edit"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)]"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                </Tooltip>
+              <td className="px-4 py-2.5 whitespace-nowrap text-right">
+                <div className="flex items-center justify-end gap-1.5">
+                  {onInclude && (
+                    <Tooltip label="Include in computation">
+                      <button
+                        onClick={() => onInclude(r._id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+                      >
+                        <Plus size={11} /> Include
+                      </button>
+                    </Tooltip>
+                  )}
+                  {onExclude && r._forceInclude && !r._inRange && (
+                    <Tooltip label="Included from outside your date range — click to exclude">
+                      <button
+                        onClick={() => onExclude(r._id)}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-amber-700 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                      >
+                        Out of range <X size={11} />
+                      </button>
+                    </Tooltip>
+                  )}
+                  <Tooltip label="Edit">
+                    <button
+                      onClick={() => setEditItem({ type: 'expense', id: r._id })}
+                      aria-label="Edit"
+                      className={`transition-opacity p-1 rounded hover:bg-[var(--border)] text-[var(--text-muted)] ${onInclude ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </Tooltip>
+                </div>
               </td>
             </tr>
           ))}
@@ -832,14 +991,16 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   function RentCompSection({ income, expenses, adjList }: { income: IncomeRow[]; expenses: ExpenseRow[]; adjList: LandlordAdjustment[] }) {
     const fmtL = (n: number) => `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const incomeTotal = income.reduce((s, r) => s + r.Amount, 0);
+    const c = computeRentComputation(income, expenses, adjList, { entityType });
+    const restricted = c.restricted;
     const incAdj = adjList.filter(a => a.type === 'income');
-    const expAdj = adjList.filter(a => a.type === 'expense');
-    const totalIncome = incomeTotal + incAdj.reduce((s, a) => s + a.amount, 0);
-    const byCat = new Map<string, number>();
-    for (const r of expenses) byCat.set(r.Category, (byCat.get(r.Category) ?? 0) + r.Amount);
-    const totalExpenses = expenses.reduce((s, r) => s + r.Amount, 0) + expAdj.reduce((s, a) => s + a.amount, 0);
-    const net = totalIncome - totalExpenses;
+    // Expense category lines from documents (finance excluded when restricted);
+    // adjustments are shown separately below to keep them visible.
+    const docByCat = new Map<string, number>();
+    for (const r of expenses) docByCat.set(r.Category, (docByCat.get(r.Category) ?? 0) + r.Amount);
+    const docCats = Array.from(docByCat.entries()).filter(([cat]) => !(restricted && cat === LANDLORD_FINANCE_COST_CATEGORY));
+    const expAdj = adjList.filter(a => a.type === 'expense' && !(restricted && (a.category || '') === LANDLORD_FINANCE_COST_CATEGORY));
+    const net = c.netProfit;
 
     return (
       <div className="space-y-0 text-sm">
@@ -850,7 +1011,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         <div className="divide-y divide-[var(--border)]">
           <div className="flex items-center justify-between px-5 py-2.5">
             <span className="text-[var(--text-secondary)]">Total rents and other income from property</span>
-            <span className="font-medium text-[var(--text-primary)]">{fmtL(incomeTotal)}</span>
+            <span className="font-medium text-[var(--text-primary)]">{fmtL(c.incomeTotal)}</span>
           </div>
           {incAdj.map(a => (
             <div key={a._id} className="flex items-center justify-between px-5 py-2 bg-[var(--bg-nav-hover)]">
@@ -860,7 +1021,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           ))}
           <div className="flex items-center justify-between px-5 py-2.5 font-semibold">
             <span className="text-[var(--text-primary)]">Total Income</span>
-            <span className="text-emerald-600">{fmtL(totalIncome)}</span>
+            <span className="text-emerald-600">{fmtL(c.totalIncome)}</span>
           </div>
         </div>
 
@@ -869,13 +1030,13 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Expenses</span>
         </div>
         <div className="divide-y divide-[var(--border)]">
-          {Array.from(byCat.entries()).map(([cat, amt]) => (
+          {docCats.map(([cat, amt]) => (
             <div key={cat} className="flex items-center justify-between px-5 py-2.5">
               <span className="text-[var(--text-secondary)]">{cat}</span>
               <span className="font-medium text-[var(--text-primary)]">{fmtL(amt)}</span>
             </div>
           ))}
-          {expenses.length === 0 && (
+          {docCats.length === 0 && expAdj.length === 0 && (
             <div className="px-5 py-2.5 text-[var(--text-muted)] italic">No expenses</div>
           )}
           {expAdj.map(a => (
@@ -886,7 +1047,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           ))}
           <div className="flex items-center justify-between px-5 py-2.5 font-semibold">
             <span className="text-[var(--text-primary)]">Total Expenses</span>
-            <span className="text-red-500">{fmtL(totalExpenses)}</span>
+            <span className="text-red-500">{fmtL(c.totalExpenses)}</span>
           </div>
         </div>
 
@@ -899,6 +1060,131 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             {net < 0 && '('}{fmtL(Math.abs(net))}{net < 0 && ')'}
           </span>
         </div>
+
+        {/* Finance costs & basic-rate relief (individuals only) */}
+        {restricted && c.financeCosts > 0 && (
+          <div className="mt-2 border-t border-[var(--border)]">
+            <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-900/10 border-b border-[var(--border)]">
+              <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Finance costs (not deducted above)</span>
+            </div>
+            <div className="divide-y divide-[var(--border)]">
+              <div className="flex items-center justify-between px-5 py-2.5">
+                <span className="text-[var(--text-secondary)]">Residential finance costs</span>
+                <span className="font-medium text-[var(--text-primary)]">{fmtL(c.financeCosts)}</span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-2.5">
+                <span className="text-[var(--text-secondary)]">Basic-rate tax reduction (20%)</span>
+                <span className="font-medium text-emerald-600">{fmtL(c.financeReducer)}</span>
+              </div>
+              {c.unrelievedFinanceCosts > 0.001 && (
+                <div className="flex items-center justify-between px-5 py-2.5">
+                  <span className="text-[var(--text-secondary)]">Unrelieved finance costs carried forward</span>
+                  <span className="font-medium text-[var(--text-muted)]">{fmtL(c.unrelievedFinanceCosts)}</span>
+                </div>
+              )}
+            </div>
+            <p className="px-5 py-2.5 text-[11px] text-[var(--text-muted)] leading-snug">For individuals, residential finance costs aren&apos;t deducted from profit — they give a 20% tax reducer (capped at 20% of property profits). The final figure also depends on the client&apos;s total income, so treat this as an estimate.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Rent Computation: by person ────────────────────────────────────────────
+
+  function PropertiesManageBlock() {
+    if (!selectedClient) {
+      return <div className="glass-solid rounded-xl p-4 text-sm text-[var(--text-muted)]">Select a client to set up properties and owners for a per-person split.</div>;
+    }
+    const detectedNew = allProperties.filter(a => a !== 'Non Allocated' && !matchProperty(a, properties));
+    return (
+      <div className="glass-solid rounded-xl p-5 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <MapPin size={15} className="text-[var(--accent)]" />
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Properties &amp; ownership</p>
+          </div>
+          {detectedNew.length > 0 && (
+            <button onClick={() => void addDetectedProperties(detectedNew)} className="btn-secondary text-xs py-1.5">
+              <Plus size={12} /> Add {detectedNew.length} detected {detectedNew.length === 1 ? 'property' : 'properties'}
+            </button>
+          )}
+        </div>
+        <LandlordPropertiesPanel
+          clientId={selectedClient.id}
+          primaryName={selectedClient.name}
+          properties={properties}
+          loading={propsLoading}
+          onRefetch={() => void refreshProperties()}
+        />
+      </div>
+    );
+  }
+
+  function PersonComputation() {
+    const { people, unallocated, unaccountedShare } = personBreakdown;
+    if (properties.length === 0) {
+      return (
+        <div className="glass-solid rounded-xl p-8 text-center">
+          <Users size={22} className="mx-auto mb-2 text-[var(--text-muted)]" />
+          <p className="text-sm text-[var(--text-muted)]">No properties with owners set up for this client yet.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Add properties and their owners (with %) on the setup screen to split income &amp; expenses per person.</p>
+        </div>
+      );
+    }
+    const hasUnalloc = unallocated.income > 0.001 || unallocated.expenses > 0.001;
+    const hasUnacc   = unaccountedShare.income > 0.001 || unaccountedShare.expenses > 0.001;
+    const th = 'px-5 py-2.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide';
+    return (
+      <div className="glass-solid rounded-xl overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-[var(--border)] bg-[var(--bg-nav-hover)]">
+            <tr>
+              <th className={`${th} text-left`}>Person</th>
+              <th className={`${th} text-right`}>Income</th>
+              <th className={`${th} text-right`}>Expenses</th>
+              <th className={`${th} text-right`}>Net</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border)]">
+            {people.length === 0 && (
+              <tr><td colSpan={4} className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No allocated income or expenses to split yet.</td></tr>
+            )}
+            {people.map(p => {
+              const net = p.income - p.expenses;
+              return (
+                <tr key={p.key}>
+                  <td className="px-5 py-2.5">
+                    <span className="flex items-center gap-2 text-[var(--text-primary)]">
+                      <Users size={13} className="text-[var(--text-muted)]" /> {p.name}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.clientId ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>{p.clientId ? 'Client' : 'Named'}</span>
+                    </span>
+                  </td>
+                  <td className="px-5 py-2.5 text-right text-emerald-600 font-medium whitespace-nowrap">{fmt(p.income)}</td>
+                  <td className="px-5 py-2.5 text-right text-red-500 font-medium whitespace-nowrap">{fmt(p.expenses)}</td>
+                  <td className={`px-5 py-2.5 text-right font-semibold whitespace-nowrap ${net >= 0 ? 'text-[var(--text-primary)]' : 'text-red-500'}`}>{net < 0 && '('}{fmt(Math.abs(net))}{net < 0 && ')'}</td>
+                </tr>
+              );
+            })}
+            {hasUnacc && (
+              <tr className="bg-[var(--bg-nav-hover)]/60">
+                <td className="px-5 py-2.5 text-[var(--text-muted)] italic">Unaccounted share (owners &lt; 100%)</td>
+                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.income)}</td>
+                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.expenses)}</td>
+                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.income - unaccountedShare.expenses)}</td>
+              </tr>
+            )}
+            {hasUnalloc && (
+              <tr className="bg-amber-50/60 dark:bg-amber-900/10">
+                <td className="px-5 py-2.5 text-amber-700 dark:text-amber-400 italic"><span className="flex items-center gap-1.5"><AlertTriangle size={12} /> Unallocated (no matching property)</span></td>
+                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.income)}</td>
+                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.expenses)}</td>
+                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.income - unallocated.expenses)}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <p className="px-5 py-3 text-[11px] text-[var(--text-muted)] border-t border-[var(--border)]">Each property&apos;s income and expenses are shared out by ownership %. Client-linked owners will feed the future self-assessment tool.</p>
       </div>
     );
   }
@@ -907,6 +1193,18 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   const allSupported = documentFiles.length > 0 && documentFiles.every(isSupportedDoc);
   const idleStep = selectedClient ? 2 : 1;
+
+  // Rows affected by the include-out-of-range confirmation + a friendly range label.
+  const includeRows: (IncomeRow | ExpenseRow)[] = includeConfirm
+    ? (includeConfirm.type === 'income'
+        ? current.income.filter(r => includeConfirm.ids.includes(r._id))
+        : current.expenses.filter(r => includeConfirm.ids.includes(r._id)))
+    : [];
+  const includeRangeLabel = dateFrom && dateTo
+    ? `${fmtUKDate(dateFrom)} to ${fmtUKDate(dateTo)}`
+    : dateFrom ? `on or after ${fmtUKDate(dateFrom)}`
+    : dateTo ? `on or before ${fmtUKDate(dateTo)}`
+    : 'the selected range';
 
   const PastContextPill = () => (
     selectedClient && (autoCtxLoading || (autoCtxIncome.length + autoCtxExpenses.length > 0)) ? (
@@ -1066,6 +1364,43 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             </div>
           </div>
 
+          {/* Properties & ownership */}
+          <div className="glass-solid rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <MapPin size={15} className="text-[var(--accent)]" />
+                <p className="text-sm font-semibold text-[var(--text-primary)]">Properties &amp; ownership</p>
+                <span className="text-xs text-[var(--text-muted)]">(optional)</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPropertyMode('suggest')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'suggest' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
+                >Suggest from documents</button>
+                <button
+                  onClick={() => setPropertyMode('preset')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'preset' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
+                >Use my property list</button>
+              </div>
+            </div>
+            {propertyMode === 'suggest' ? (
+              <p className="text-xs text-[var(--text-muted)] leading-snug">We&apos;ll detect properties from your documents. After the scan you can review them, set ownership %, and save them to this client so they&apos;re ready next time.</p>
+            ) : !selectedClient ? (
+              <p className="text-xs text-[var(--text-muted)] leading-snug">Select a client above to set up their property list.</p>
+            ) : (
+              <>
+                <p className="text-xs text-[var(--text-muted)] leading-snug">Define this client&apos;s properties and who owns what share. After scanning, income &amp; expenses are allocated to these properties; anything we can&apos;t match is left unallocated for you to assign.</p>
+                <LandlordPropertiesPanel
+                  clientId={selectedClient.id}
+                  primaryName={selectedClient.name}
+                  properties={properties}
+                  loading={propsLoading}
+                  onRefetch={() => void refreshProperties()}
+                />
+              </>
+            )}
+          </div>
+
           {/* Action bar */}
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <p className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><ShieldCheck size={13} /> Sent over an encrypted connection and never used to train AI models.</p>
@@ -1113,7 +1448,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               ] as const).map(({ id, label, icon, active }) => (
                 <button
                   key={id}
-                  onClick={() => { setView(id); setBulkMode(null); setSelectedIncome(new Set()); setSelectedExpenses(new Set()); }}
+                  onClick={() => { setView(id); setBulkMode(null); setSelectedIncome(new Set()); setSelectedExpenses(new Set()); if (id !== 'rent_comp') setBreakdown(b => b === 'person' ? 'all' : b); }}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5
                     ${view === id ? active : 'btn-secondary'}`}
                 >
@@ -1150,6 +1485,17 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                     <LayoutGrid size={14} />
                   </button>
                   </Tooltip>
+                  {view === 'rent_comp' && (
+                    <Tooltip label="By person">
+                    <button
+                      onClick={() => setBreakdown('person')}
+                      aria-label="By person"
+                      className={`btn-secondary px-2 ${breakdown === 'person' ? 'ring-2 ring-[var(--accent)]' : ''}`}
+                    >
+                      <Users size={14} />
+                    </button>
+                    </Tooltip>
+                  )}
                 </>
               )}
 
@@ -1183,9 +1529,16 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                     type="text"
                     value={bulkValue}
                     onChange={e => setBulkValue(e.target.value)}
+                    list={bulkMode === 'edit-property' ? 'll-bulk-prop-options' : bulkMode === 'edit-category' ? 'll-bulk-cat-options' : undefined}
                     placeholder={bulkMode === 'flag' ? 'Flag reason…' : bulkMode === 'edit-property' ? 'Property address…' : 'Category…'}
                     className="input-base text-sm flex-1 min-w-0"
                   />
+                  <datalist id="ll-bulk-prop-options">
+                    {properties.map(p => <option key={p.id} value={p.address} />)}
+                  </datalist>
+                  <datalist id="ll-bulk-cat-options">
+                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} />)}
+                  </datalist>
                   <button
                     onClick={() => bulkMode === 'flag' ? handleBulkFlag() : handleBulkEdit()}
                     disabled={!bulkValue.trim()}
@@ -1216,7 +1569,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             <div className="space-y-4">
               {breakdown === 'all' ? (
                 <div className="glass-solid rounded-xl overflow-x-auto">
-                  <IncomeTable rows={inRangeIncome} showSelect />
+                  <IncomeTable rows={inRangeIncome} showSelect onExclude={id => handleExcludeRow(id, 'income')} />
                   {inRangeIncome.length > 0 && (
                     <div className="flex justify-end px-4 py-2.5 border-t border-[var(--border)]">
                       <span className="text-sm font-semibold text-[var(--text-primary)]">Total: {fmt(incomeTotal)}</span>
@@ -1230,16 +1583,21 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               {/* Out-of-range */}
               {hasDateRange && outRangeIncome.length > 0 && (
                 <div className="glass-solid rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => setShowOutOfRange(v => !v)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors"
-                  >
-                    <span className="flex items-center gap-2"><AlertTriangle size={14} /> {outRangeIncome.length} out-of-range income transaction{outRangeIncome.length !== 1 ? 's' : ''}</span>
-                    {showOutOfRange ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                  </button>
+                  <div className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10">
+                    <button onClick={() => setShowOutOfRange(v => !v)} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                      <AlertTriangle size={14} /> {outRangeIncome.length} out-of-range income transaction{outRangeIncome.length !== 1 ? 's' : ''}
+                      {showOutOfRange ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </button>
+                    <button
+                      onClick={() => setIncludeConfirm({ type: 'income', ids: outRangeIncome.map(r => r._id) })}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-700 bg-emerald-100/70 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                    >
+                      <Plus size={12} /> Include all
+                    </button>
+                  </div>
                   {showOutOfRange && (
                     <div className="overflow-x-auto">
-                      <IncomeTable rows={outRangeIncome} showSelect={false} />
+                      <IncomeTable rows={outRangeIncome} showSelect={false} onInclude={id => setIncludeConfirm({ type: 'income', ids: [id] })} />
                     </div>
                   )}
                 </div>
@@ -1252,7 +1610,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             <div className="space-y-4">
               {breakdown === 'all' ? (
                 <div className="glass-solid rounded-xl overflow-x-auto">
-                  <ExpenseTable rows={inRangeExpenses} showSelect />
+                  <ExpenseTable rows={inRangeExpenses} showSelect onExclude={id => handleExcludeRow(id, 'expense')} />
                   {inRangeExpenses.length > 0 && (
                     <div className="flex justify-end px-4 py-2.5 border-t border-[var(--border)]">
                       <span className="text-sm font-semibold text-[var(--text-primary)]">Total: {fmt(expensesTotal)}</span>
@@ -1266,16 +1624,21 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               {/* Out-of-range */}
               {hasDateRange && outRangeExpenses.length > 0 && (
                 <div className="glass-solid rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => setShowOutOfRange(v => !v)}
-                    className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-colors"
-                  >
-                    <span className="flex items-center gap-2"><AlertTriangle size={14} /> {outRangeExpenses.length} out-of-range expense{outRangeExpenses.length !== 1 ? 's' : ''}</span>
-                    {showOutOfRange ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                  </button>
+                  <div className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10">
+                    <button onClick={() => setShowOutOfRange(v => !v)} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                      <AlertTriangle size={14} /> {outRangeExpenses.length} out-of-range expense{outRangeExpenses.length !== 1 ? 's' : ''}
+                      {showOutOfRange ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    </button>
+                    <button
+                      onClick={() => setIncludeConfirm({ type: 'expense', ids: outRangeExpenses.map(r => r._id) })}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold text-emerald-700 bg-emerald-100/70 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                    >
+                      <Plus size={12} /> Include all
+                    </button>
+                  </div>
                   {showOutOfRange && (
                     <div className="overflow-x-auto">
-                      <ExpenseTable rows={outRangeExpenses} showSelect={false} />
+                      <ExpenseTable rows={outRangeExpenses} showSelect={false} onInclude={id => setIncludeConfirm({ type: 'expense', ids: [id] })} />
                     </div>
                   )}
                 </div>
@@ -1286,6 +1649,19 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           {/* ── Rent Computation view ── */}
           {view === 'rent_comp' && (
             <div className="space-y-4">
+              {/* Entity type — drives the finance-cost (mortgage interest) treatment */}
+              <div className="glass-solid rounded-xl px-5 py-3 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2">
+                  <Calculator size={14} className="text-[var(--accent)]" />
+                  <span className="text-sm font-semibold text-[var(--text-primary)]">Treat as</span>
+                  <span className="text-xs text-[var(--text-muted)]">affects how mortgage / finance interest is relieved</span>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEntityType('individual')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'individual' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Individual landlord</button>
+                  <button onClick={() => setEntityType('company')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'company' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Limited company</button>
+                </div>
+              </div>
+
               {/* Adjustments panel */}
               <div className="glass-solid rounded-xl overflow-hidden">
                 <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-[var(--bg-nav-hover)]">
@@ -1401,7 +1777,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               </div>
 
               {/* Computation */}
-              {breakdown === 'all' ? (
+              {breakdown === 'person' ? (
+                <div className="space-y-4">
+                  <PropertiesManageBlock />
+                  <PersonComputation />
+                </div>
+              ) : breakdown === 'all' ? (
                 <div className="glass-solid rounded-xl overflow-hidden">
                   <RentCompSection income={inRangeIncome} expenses={inRangeExpenses} adjList={adjustments} />
                 </div>
@@ -1442,7 +1823,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded">Income</span>
                         <span className="text-xs text-[var(--text-muted)]">{r.fileName}</span>
-                        <span className="text-xs text-[var(--text-muted)]">{r.Date}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{fmtUKDate(r.Date)}</span>
                       </div>
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.Description || r.PropertyAddress}</p>
                       <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">{r._flagReason}</p>
@@ -1463,7 +1844,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium text-blue-600 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded">Expense</span>
                         <span className="text-xs text-[var(--text-muted)]">{r.fileName}</span>
-                        <span className="text-xs text-[var(--text-muted)]">{r.DueDate}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{fmtUKDate(r.DueDate)}</span>
                       </div>
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.Description || r.Supplier}</p>
                       <p className="text-sm text-amber-600 dark:text-amber-400 mt-0.5">{r._flagReason}</p>
@@ -1488,6 +1869,10 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             flaggedIncome={flaggedIncome.map(r => ({ date: r.Date, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName }))}
             flaggedExpenses={flaggedExpenses.map(r => ({ date: r.DueDate, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName }))}
             documentFiles={documentFiles}
+            properties={properties}
+            entityType={entityType}
+            primaryClientId={selectedClient?.id ?? null}
+            primaryClientName={selectedClient?.name ?? ''}
             initialClient={selectedClient}
             initialClientName={selectedClient?.name ?? ''}
             initialClientCode={selectedClient?.client_ref ?? ''}
@@ -1502,11 +1887,65 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               rowType={editItem.type}
               item={(editIncomeRow ?? editExpenseRow)!}
               documentFiles={documentFiles}
+              propertyOptions={properties.map(p => p.address)}
               onSave={handleSaveRow}
               onFlag={reason => handleFlagRow(editItem.id, editItem.type, reason)}
               onUnflag={() => handleUnflagRow(editItem.id, editItem.type)}
               onClose={() => setEditItem(null)}
             />
+          )}
+
+          {/* Include out-of-range confirmation lightbox */}
+          {includeConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/50" onClick={() => setIncludeConfirm(null)} />
+              <div className="relative glass-solid rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 border border-[var(--border)]">
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} className="text-amber-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                      {includeConfirm.ids.length === 1 ? 'Include this transaction?' : `Include ${includeConfirm.ids.length} transactions?`}
+                    </h2>
+                    <p className="text-sm text-[var(--text-muted)] mt-0.5">
+                      {includeConfirm.ids.length === 1 ? 'This item is' : 'These items are'} dated outside your desired date range
+                      {' '}(<span className="font-medium text-[var(--text-secondary)]">{includeRangeLabel}</span>).
+                      {' '}Including {includeConfirm.ids.length === 1 ? 'it' : 'them'} will add {includeConfirm.ids.length === 1 ? 'it' : 'them'} to the computation and totals.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-[var(--border)] divide-y divide-[var(--border)] mb-5">
+                  {includeRows.slice(0, 6).map(r => {
+                    const date = includeConfirm.type === 'income' ? (r as IncomeRow).Date : (r as ExpenseRow).DueDate;
+                    const label = includeConfirm.type === 'income'
+                      ? ((r as IncomeRow).Description || (r as IncomeRow).PropertyAddress)
+                      : ((r as ExpenseRow).Description || (r as ExpenseRow).Supplier);
+                    return (
+                      <div key={r._id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                        <span className="text-[var(--text-muted)] shrink-0 whitespace-nowrap">{fmtUKDate(date)}</span>
+                        <span className="text-[var(--text-secondary)] truncate flex-1">{label || '—'}</span>
+                        <span className="font-medium text-[var(--text-primary)] shrink-0">{fmt(r.Amount)}</span>
+                      </div>
+                    );
+                  })}
+                  {includeRows.length > 6 && (
+                    <div className="px-3 py-2 text-xs text-[var(--text-muted)] italic">+{includeRows.length - 6} more</div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                  <button onClick={() => setIncludeConfirm(null)} className="btn-secondary">Cancel</button>
+                  <button
+                    onClick={() => { handleIncludeRows(includeConfirm.ids, includeConfirm.type); setIncludeConfirm(null); }}
+                    className="btn-primary"
+                  >
+                    <Plus size={14} /> Include in Computation
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

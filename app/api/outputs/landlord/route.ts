@@ -14,6 +14,7 @@ const SaveSchema = z.object({
   flaggedExpenses: z.array(z.record(z.string(), z.unknown())).default([]),
   dateFrom: z.string().optional().default(''),
   dateTo: z.string().optional().default(''),
+  entityType: z.enum(['individual', 'company']).optional().default('individual'),
   sourceFilenames: z.array(z.string()).default([]),
 });
 
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
         flaggedExpenses: body.flaggedExpenses,
         dateFrom: body.dateFrom,
         dateTo: body.dateTo,
+        entityType: body.entityType,
         clientCode: body.clientCode ?? null,
       },
     })
