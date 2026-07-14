@@ -12,10 +12,13 @@ export const maxDuration = 120;
 
 const BATCH_SIZE = 3;
 
+// A file is sent EITHER as base64 (PDF/image) OR as extracted text (CSV/Excel,
+// converted client-side).
 const FileSchema = z.object({
   name: z.string(),
   mimeType: z.string(),
-  base64: z.string(),
+  base64: z.string().optional(),
+  text: z.string().optional(),
 });
 
 const RequestSchema = z.object({
@@ -57,10 +60,14 @@ async function runBatch(
   const dynamicContext = buildDynamicContext({ fileNames, ...context });
 
   const contentBlocks = batchFiles.map(f => {
+    // Spreadsheet/CSV — sent as extracted text.
+    if (f.text != null) {
+      return { type: 'text' as const, text: `Spreadsheet / CSV file "${f.name}":\n\n${f.text}` };
+    }
     if (f.mimeType === 'application/pdf') {
       return {
         type: 'document' as const,
-        source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 },
+        source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 ?? '' },
       };
     }
     return {
@@ -68,7 +75,7 @@ async function runBatch(
       source: {
         type: 'base64' as const,
         media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-        data: f.base64,
+        data: f.base64 ?? '',
       },
     };
   });
@@ -164,8 +171,13 @@ export async function POST(req: NextRequest) {
 
     if (userCtx) {
       if (saveToDrive && clientCode) {
-        void uploadDocumentsToDrive({ files, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'full_analysis' });
-        void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'full_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
+        // Only base64-backed files (PDF/image) go to Drive/Vault; CSV/Excel
+        // arrive as text and are stored via the separate save flow.
+        const binaryFiles = files
+          .filter((f): f is typeof f & { base64: string } => typeof f.base64 === 'string')
+          .map(f => ({ name: f.name, mimeType: f.mimeType, base64: f.base64 }));
+        void uploadDocumentsToDrive({ files: binaryFiles, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'full_analysis' });
+        void saveDocumentsToVault({ files: binaryFiles, clientId: clientId ?? null, ...userCtx, sourceTool: 'full_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'full_analysis', inputTokens: totalInputTokens, outputTokens: totalOutputTokens });
       void saveOutput({ clientId: clientId ?? null, userId: userCtx.userId, feature: 'full_analysis', targetSoftware });

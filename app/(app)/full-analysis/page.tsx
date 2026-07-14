@@ -14,6 +14,7 @@ import FullAnalysisHistory, { type SeedAnalysis } from '@/components/features/fu
 import { FileSearch, Download, Undo2, Redo2, AlertTriangle, Pencil, ChevronUp, ChevronDown, ChevronsUpDown, CheckCheck, ChevronRight, ArrowLeft, Sparkles, Check, ArrowRight, UploadCloud, Users, FileOutput, SlidersHorizontal, Zap, Trash2, BookCopy } from 'lucide-react';
 import type { Transaction, FlaggedEntry, TargetSoftware, LedgerAccount, VTTransaction, CapiumTransaction, XeroTransaction, QuickBooksTransaction, FreeAgentTransaction, SageTransaction, GeneralTransaction, SmithTransaction, DocumentScanResult } from '@/types';
 import { fileToBase64, readFileAsText, parseLedgerCsv, findBestMatch } from '@/utils/fileUtils';
+import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
 type View = 'valid' | 'flagged';
@@ -619,13 +620,17 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
       errorMessage?: string; errorCode?: string;
     }> => {
       try {
-        const base64 = await fileToBase64(chunk);
+        // Spreadsheets/CSV scanned as documents are converted to text; PDFs/
+        // images go as base64.
+        const filePayload = isSpreadsheetFile(chunk)
+          ? { name: chunk.name, mimeType: chunk.type || 'text/csv', text: await spreadsheetToText(chunk) }
+          : { name: chunk.name, mimeType: chunk.type || 'application/pdf', base64: await fileToBase64(chunk) };
         const res = await fetch('/api/analyse', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientName, clientAddress, isVatRegistered, targetSoftware, analysisMode,
-            files: [{ name: chunk.name, mimeType: chunk.type || 'application/pdf', base64 }],
+            files: [filePayload],
             pastTransactionsContent, ledgersContent,
             clientId: selectedClient?.id ?? null,
             clientCode: selectedClient?.client_ref ?? null,
@@ -768,12 +773,16 @@ function FullAnalysisTool({ seed, onBack }: { seed: SeedAnalysis | null; onBack:
     setFileRefs(fileMap);
 
     // Read shared inputs once — reused across all per-file calls and any re-scans
-    let pastTransactionsContent = pastTransactionsFile ? await readFileAsText(pastTransactionsFile) : null;
+    let pastTransactionsContent = pastTransactionsFile
+      ? await (isSpreadsheetFile(pastTransactionsFile) ? spreadsheetToText(pastTransactionsFile) : readFileAsText(pastTransactionsFile))
+      : null;
     // No manual upload? Fall back to the auto-built client context (if enabled).
     if (!pastTransactionsContent && useAutoContext && autoContextCsv) {
       pastTransactionsContent = autoContextCsv;
     }
-    let ledgersContent = ledgersFile ? await readFileAsText(ledgersFile) : null;
+    let ledgersContent = ledgersFile
+      ? await (isSpreadsheetFile(ledgersFile) ? spreadsheetToText(ledgersFile) : readFileAsText(ledgersFile))
+      : null;
     // SMITH format: if the user didn't upload a ledgers file, feed the client's
     // book chart of accounts so the AI allocates to the book's real accounts.
     if (targetSoftware === 'smith' && !ledgersContent && bookCoa?.csv) {
