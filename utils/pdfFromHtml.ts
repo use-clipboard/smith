@@ -27,6 +27,13 @@ export interface PdfPaginationOptions {
   // ── Accounts-pack layout (string path only; opt-in so other tools are unchanged) ──
   hardPageBreaks?: boolean;    // every `.force-page-start` element begins a fresh page
   pageNumbers?: boolean;       // draw "N of T" bottom-centre on every page except the first (cover)
+  /**
+   * Extra pages appended in LANDSCAPE at the end of the document. Each string is
+   * captured on its own page and scaled to fit, so nothing is ever cropped —
+   * the caller decides what fits a page (e.g. chunking a wide table by column
+   * group, repeating its headers on each chunk).
+   */
+  landscapePages?: string[];
 }
 
 export async function generatePdfBlob(
@@ -281,7 +288,8 @@ export async function generatePdfBlob(
 
     const pageHeightCanvasPx = PAGE_H_PX * SCALE;
     const numContentPages = Math.max(1, Math.ceil(canvas.height / pageHeightCanvasPx));
-    const totalPages = numContentPages + (coverCanvas ? 1 : 0);
+    const numLandscapePages = opts?.landscapePages?.length ?? 0;
+    const totalPages = numContentPages + (coverCanvas ? 1 : 0) + numLandscapePages;
 
     if (totalPages > SANITY_MAX_PAGES) {
       throw new Error(
@@ -337,6 +345,41 @@ export async function generatePdfBlob(
       newPage();
       pdf.addImage(sliceCanvas.toDataURL('image/jpeg', IMG_QUALITY), 'JPEG', imgX, imgY, imgW, imgH);
       stampPageNumber();
+    }
+
+    // ── Landscape appendix ──────────────────────────────────────────────────
+    // Each caller-supplied page is captured at landscape width and scaled to fit
+    // the page, so a wide table is never cropped. The caller chunks the content
+    // (e.g. by column group) so each page is self-contained with its headers.
+    if (opts?.landscapePages?.length) {
+      const LAND_W_PX = Math.round(A4_H_MM * PX_PER_MM); // 297mm at the same px↔mm scale
+      for (const pageHtml of opts.landscapePages) {
+        const lw = document.createElement('div');
+        lw.style.cssText = `position:absolute;left:-9999px;top:0;width:${LAND_W_PX}px;background:#fff;`;
+        lw.innerHTML = `<div style="padding:28px;background:#fff;font-family:Arial,Helvetica,sans-serif;">${pageHtml}</div>`;
+        document.body.appendChild(lw);
+        try {
+          const lc = await html2canvas(lw, {
+            scale: SCALE, useCORS: true, logging: false, backgroundColor: '#ffffff', windowWidth: LAND_W_PX,
+          });
+          pdf.addPage([A4_H_MM, A4_W_MM], 'landscape');
+          pageCount++;
+          // Contain within the page — never crop a column or a row.
+          const aspect = lc.width / lc.height;
+          let dw = A4_H_MM;
+          let dh = dw / aspect;
+          if (dh > A4_W_MM) { dh = A4_W_MM; dw = dh * aspect; }
+          pdf.addImage(lc.toDataURL('image/jpeg', IMG_QUALITY), 'JPEG', (A4_H_MM - dw) / 2, 0, dw, dh);
+          if (opts.pageNumbers) {
+            pdf.setFontSize(9);
+            pdf.setTextColor(130);
+            pdf.text(`${pageCount} of ${totalPages}`, A4_H_MM / 2, A4_W_MM - 7, { align: 'center' });
+            pdf.setTextColor(0);
+          }
+        } finally {
+          document.body.removeChild(lw);
+        }
+      }
     }
 
     return pdf.output('blob');

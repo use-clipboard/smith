@@ -8,7 +8,7 @@
 
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
 import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputation } from '@/utils/landlordComputation';
-import { computePersonBreakdown } from '@/utils/landlordAllocation';
+import { computePersonBreakdown, computePersonMatrix, matrixCell } from '@/utils/landlordAllocation';
 
 export interface LandlordPackData {
   clientName: string;
@@ -171,6 +171,123 @@ function expenseSchedule(expenses: LandlordExpenseTransaction[]): string {
   </table>`;
 }
 
+// ── Landscape matrix pages (property × individual × category) ────────────────
+// The full per-person working is too wide for portrait A4, so it's emitted as
+// landscape pages, chunked BY COLUMN GROUP so a property's owners are never
+// split and no column is ever cut. Every chunk repeats the row headers (the
+// category column) and the column headers, so each page stands alone.
+
+/** Data columns per landscape page — a whole property group is kept together. */
+const MAX_MATRIX_COLS_PER_PAGE = 8;
+
+interface MatrixGroup { id: string; label: string; cols: Array<{ key: string; name: string; pct: number | null }> }
+
+export function buildLandlordMatrixPages(data: LandlordPackData): string[] {
+  if (data.properties.length === 0) return [];
+
+  const periodLine = (data.dateFrom || data.dateTo)
+    ? `For the period ${data.dateFrom ? fmtDate(data.dateFrom) : 'the start'} to ${data.dateTo ? fmtDate(data.dateTo) : 'the end'}`
+    : 'All dates';
+
+  const inc = [
+    ...data.income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+    ...data.adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Total rents and other income from property' })),
+  ];
+  const exp = [
+    ...data.expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+    ...data.adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
+  ];
+  const m = computePersonMatrix(inc, exp, data.properties, { id: data.primaryClientId, name: data.primaryClientName });
+  if (m.properties.length === 0) return [];
+
+  const groups: MatrixGroup[] = m.properties.map(p => ({
+    id: p.id, label: p.address, cols: p.owners.map(o => ({ key: o.key, name: o.name, pct: o.pct })),
+  }));
+  if (m.people.length > 0) {
+    groups.push({ id: '__total__', label: 'Total', cols: m.people.map(p => ({ key: p.key, name: p.name, pct: null })) });
+  }
+
+  const chunks: MatrixGroup[][] = [];
+  let cur: MatrixGroup[] = [];
+  let n = 0;
+  for (const g of groups) {
+    if (n > 0 && n + g.cols.length > MAX_MATRIX_COLS_PER_PAGE) { chunks.push(cur); cur = []; n = 0; }
+    cur.push(g); n += g.cols.length;
+  }
+  if (cur.length) chunks.push(cur);
+
+  const value = (groupId: string, key: string, cat: string): number =>
+    groupId === '__total__'
+      ? m.properties.reduce((s, p) => s + matrixCell(m, p.id, key, cat), 0)
+      : matrixCell(m, groupId, key, cat);
+  const sumCats = (groupId: string, key: string, cats: string[]) => cats.reduce((s, c) => s + value(groupId, key, c), 0);
+
+  const TH  = 'font-size:10px;font-weight:700;color:#475569;padding:4px 8px;white-space:nowrap;';
+  const TD  = 'font-size:11px;color:#334155;padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;';
+  const LBL = 'font-size:11px;color:#334155;padding:3px 8px;text-align:left;';
+
+  return chunks.map((chunk, idx) => {
+    const flat = chunk.flatMap(g => g.cols.map(c => ({ g, c })));
+    const span = 1 + flat.length;
+
+    const head1 = chunk.map(g =>
+      `<th colspan="${g.cols.length}" style="${TH}text-align:center;border-left:1px solid #cbd5e1;border-bottom:1px solid #cbd5e1">${escapeHtml(g.label)}</th>`).join('');
+
+    const head2 = flat.map(({ g, c }, i) => {
+      const first = i === 0 || flat[i - 1].g.id !== g.id;
+      return `<th style="${TH}text-align:right;border-bottom:1px solid #cbd5e1;${first ? 'border-left:1px solid #cbd5e1;' : ''}">
+        <div style="font-weight:600;color:#334155">${escapeHtml(c.name)}</div>
+        ${c.pct !== null ? `<div style="font-weight:400;font-size:9px;color:#94a3b8">${c.pct}%</div>` : ''}
+      </th>`;
+    }).join('');
+
+    const catRows = (cats: string[]) => cats.map(cat => `<tr>
+      <td style="${LBL}">${escapeHtml(cat)}</td>
+      ${flat.map(({ g, c }) => `<td style="${TD}">${money(value(g.id, c.key, cat))}</td>`).join('')}
+    </tr>`).join('');
+
+    const totalRow = (label: string, cats: string[]) => `<tr style="border-top:1px solid #cbd5e1">
+      <td style="${LBL}font-weight:700;color:#0f172a">${escapeHtml(label)}</td>
+      ${flat.map(({ g, c }) => `<td style="${TD}font-weight:700;color:#0f172a">${money(sumCats(g.id, c.key, cats))}</td>`).join('')}
+    </tr>`;
+
+    const sectionRow = (label: string, colour: string) =>
+      `<tr><td colspan="${span}" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${colour};padding:9px 8px 2px">${label}</td></tr>`;
+
+    const netRow = `<tr style="border-top:2px solid #94a3b8">
+      <td style="${LBL}font-weight:700;color:#0f172a">Net profit / (loss)</td>
+      ${flat.map(({ g, c }) => {
+        const net = sumCats(g.id, c.key, m.incomeCats) - sumCats(g.id, c.key, m.expenseCats);
+        return `<td style="${TD}font-weight:700;color:${net < 0 ? '#dc2626' : '#0f172a'}">${money(net)}</td>`;
+      }).join('')}
+    </tr>`;
+
+    return `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a">
+        <p style="${H_COMPANY}">${escapeHtml(data.clientName)}</p>
+        <h2 style="${H_TITLE}">Income by Person &mdash; full working</h2>
+        <p style="${H_PERIOD}">${escapeHtml(periodLine)}${chunks.length > 1 ? ` &middot; Part ${idx + 1} of ${chunks.length}` : ''}</p>
+        <div style="border-bottom:1px solid #e2e8f0;margin:0 0 12px"></div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr><th rowspan="2" style="${TH}text-align:left;border-bottom:1px solid #cbd5e1;vertical-align:bottom">Category</th>${head1}</tr>
+            <tr>${head2}</tr>
+          </thead>
+          <tbody>
+            ${sectionRow('Income', '#047857')}
+            ${m.incomeCats.length ? catRows(m.incomeCats) : `<tr><td colspan="${span}" style="${LBL}color:#94a3b8">No income</td></tr>`}
+            ${totalRow('Total income', m.incomeCats)}
+            ${sectionRow('Expenses', '#dc2626')}
+            ${m.expenseCats.length ? catRows(m.expenseCats) : `<tr><td colspan="${span}" style="${LBL}color:#94a3b8">No expenses</td></tr>`}
+            ${totalRow('Total expenses', m.expenseCats)}
+            ${netRow}
+          </tbody>
+        </table>
+        <p style="font-size:9px;color:#94a3b8;margin:10px 0 0">Each property&rsquo;s income and expenses are shared out by ownership % (shown under each name). Capital items are excluded.</p>
+      </div>`;
+  });
+}
+
 // ── Public builder ───────────────────────────────────────────────────────────
 
 export function buildLandlordPackHtml(data: LandlordPackData): string {
@@ -261,7 +378,7 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
         <thead><tr><th style="${th}">Person</th><th style="${th};text-align:right">Income £</th><th style="${th};text-align:right">Expenses £</th><th style="${th};text-align:right">Net £</th></tr></thead>
         <tbody>${personRows || `<tr><td colspan="4" style="${td};color:#94a3b8">No allocated income or expenses.</td></tr>`}${extraRows}</tbody>
       </table>
-      <p style="font-size:10.5px;color:#94a3b8;margin:8px 0 0;line-height:1.5">Each property’s income and expenses are shared out by ownership %. Client-linked owners feed the self-assessment computation.</p>`));
+      <p style="font-size:10.5px;color:#94a3b8;margin:8px 0 0;line-height:1.5">Each property&rsquo;s income and expenses are shared out by ownership %. Client-linked owners feed the self-assessment computation. A full property-by-individual working, split by category, follows at the end of this report.</p>`));
   }
 
   // 4. Income schedule

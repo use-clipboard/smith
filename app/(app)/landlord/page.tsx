@@ -22,7 +22,7 @@ import {
   UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2,
 } from 'lucide-react';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
-import { buildLandlordPackHtml } from '@/lib/landlord/landlordPackHtml';
+import { buildLandlordPackHtml, buildLandlordMatrixPages } from '@/lib/landlord/landlordPackHtml';
 import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
@@ -785,7 +785,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       const comparison = (showComparison && priorComp && priorMeta)
         ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
         : null;
-      const html = buildLandlordPackHtml({
+      const packData = {
         clientName: selectedClient?.name ?? '',
         clientCode: selectedClient?.client_ref ?? '',
         dateFrom, dateTo, firmName, logoUrl,
@@ -795,10 +795,14 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         primaryClientName: selectedClient?.name ?? 'This client',
         entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
         comparison,
-      });
+      };
+      const html = buildLandlordPackHtml(packData);
+      // The full per-person working goes on landscape pages at the end, chunked
+      // by column group so no column is cut and every page repeats its headers.
+      const landscapePages = buildLandlordMatrixPages(packData);
       // avoidSplitSelector keeps table rows whole so no line is ever cut in half
       // by a page break.
-      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr' });
+      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages });
       const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
       downloadBlob(blob, `property_income_${stub}.pdf`);
     } catch (e) {
