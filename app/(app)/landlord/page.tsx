@@ -30,7 +30,10 @@ import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntr
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
+type AppState = 'idle' | 'loading' | 'scan_results' | 'property_review' | 'success' | 'error';
+
+/** Address used for the single combined property when "group all properties" is on. */
+const GROUP_LABEL = 'All properties';
 type LandlordView = 'income' | 'expenses' | 'rent_comp' | 'flagged';
 type Breakdown = 'all' | 'property' | 'person';
 type PropertyMode = 'suggest' | 'preset';
@@ -135,16 +138,27 @@ function canonicalizeToRegister<T extends { PropertyAddress: string }>(rows: T[]
 
 // ─── Setup wizard ──────────────────────────────────────────────────────────
 
-const WIZARD_STEPS = [
+interface WizardStep { n: number; label: string }
+
+const STEPS_BASE: WizardStep[] = [
   { n: 1, label: 'Select Client' },
   { n: 2, label: 'Upload Documents' },
   { n: 3, label: 'Analysis Results' },
-] as const;
+];
 
-function WizardStepper({ current, onStep }: { current: number; onStep?: (n: number) => void }) {
+/** With property review (suggest / grouped mode) an extra step sits between
+ *  Upload and Results so the user can edit properties + ownership first. */
+const STEPS_WITH_REVIEW: WizardStep[] = [
+  { n: 1, label: 'Select Client' },
+  { n: 2, label: 'Upload Documents' },
+  { n: 3, label: 'Review Properties' },
+  { n: 4, label: 'Analysis Results' },
+];
+
+function WizardStepper({ steps, current, onStep }: { steps: WizardStep[]; current: number; onStep?: (n: number) => void }) {
   return (
     <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
-      {WIZARD_STEPS.map((s, i) => {
+      {steps.map((s, i) => {
         const done = s.n < current;
         const active = s.n === current;
         const clickable = !!onStep && s.n < current;
@@ -158,7 +172,7 @@ function WizardStepper({ current, onStep }: { current: number; onStep?: (n: numb
               </span>
               <span className={`text-xs font-semibold whitespace-nowrap ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'}`}>{s.label}</span>
             </button>
-            {i < WIZARD_STEPS.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
+            {i < steps.length - 1 && <div className={`w-5 sm:w-10 h-px ${done ? 'bg-[var(--accent)]/40' : 'bg-[var(--border)]'}`} />}
           </div>
         );
       })}
@@ -254,6 +268,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [properties, setProperties]   = useState<LandlordProperty[]>([]);
   const [propsLoading, setPropsLoading] = useState(false);
   const [propertyMode, setPropertyMode] = useState<PropertyMode>('suggest');
+  // Combine every property into one "All properties" entity — income/expenses are
+  // pooled and ownership is allocated once, rather than per property.
+  const [groupAll, setGroupAll] = useState(false);
   // Entity type drives the finance-cost (mortgage interest) restriction in the
   // rent computation — individuals get a 20% tax reducer, companies deduct it.
   const [entityType, setEntityType] = useState<LandlordEntityType>('individual');
@@ -608,6 +625,13 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       });
     }
 
+    // Group mode — pool every row under one combined property so income and
+    // expenses are analysed together and ownership is allocated once.
+    if (groupAll) {
+      for (const r of incomeRows)  r.PropertyAddress = GROUP_LABEL;
+      for (const r of expenseRows) r.PropertyAddress = GROUP_LABEL;
+    }
+
     detectDuplicates(incomeRows, expenseRows);
 
     // Allocate matched rows to the client's saved properties (canonical spelling).
@@ -619,7 +643,22 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     setHistory([{ income: finalIncome, expenses: finalExpense }]);
     setHistoryIndex(0);
     setAppState('success');
-  }, [properties]);
+  }, [properties, groupAll]);
+
+  // Suggested / grouped properties get a review step (2b) before the results, so
+  // the user can edit the properties and allocate ownership first.
+  const needsPropertyReview = !!selectedClient && (propertyMode === 'suggest' || groupAll);
+  const wizardSteps = needsPropertyReview ? STEPS_WITH_REVIEW : STEPS_BASE;
+
+  const proceedAfterScan = useCallback((results: DocumentScanResult[]) => {
+    if (needsPropertyReview) {
+      setScanResults(results);
+      setScanProgress(null);
+      setAppState('property_review');
+    } else {
+      applyAndProceed(results, dateFrom, dateTo);
+    }
+  }, [needsPropertyReview, applyAndProceed, dateFrom, dateTo]);
 
   const handleProcess = useCallback(async () => {
     if (documentFiles.length === 0) return;
@@ -645,12 +684,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         setError(allResults[0].errorMessage || 'Processing failed. Please try again.');
         setAppState('error');
       } else {
-        applyAndProceed(allResults, dateFrom, dateTo);
+        proceedAfterScan(allResults);
       }
       return;
     }
     setAppState('scan_results');
-  }, [documentFiles, selectedClient, scanFiles, applyAndProceed, dateFrom, dateTo]);
+  }, [documentFiles, selectedClient, scanFiles, proceedAfterScan]);
 
   const handleRescan = useCallback(async () => {
     const failed = scanResults.filter(r => r.status === 'failed');
@@ -664,8 +703,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   }, [scanResults, selectedClient, scanFiles]);
 
   const handleDismissAndContinue = useCallback(() => {
-    applyAndProceed(scanResults, dateFrom, dateTo);
-  }, [scanResults, applyAndProceed, dateFrom, dateTo]);
+    proceedAfterScan(scanResults);
+  }, [scanResults, proceedAfterScan]);
 
   // ─── Row edit handlers ──────────────────────────────────────────────────────
 
@@ -708,6 +747,31 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     }
     await refreshProperties();
   }, [selectedClient?.id, refreshProperties]);
+
+  // Addresses detected by the scan (or the single combined property in group mode).
+  const detectedFromScan = useMemo(() => {
+    if (groupAll) return [GROUP_LABEL];
+    const set = new Set<string>();
+    for (const r of scanResults) {
+      if (r.status !== 'success') continue;
+      for (const t of (r.validTransactions as Array<{ PropertyAddress?: string }>)) {
+        const a = normalizeAddress(t?.PropertyAddress ?? '');
+        if (a && a !== 'Non Allocated') set.add(a);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [scanResults, groupAll]);
+
+  // On entering the review step, add any detected properties that aren't in the
+  // client's register yet so they can be edited and given owners.
+  const reviewImportedRef = useRef(false);
+  useEffect(() => {
+    if (appState !== 'property_review') { reviewImportedRef.current = false; return; }
+    if (reviewImportedRef.current || propsLoading) return;
+    reviewImportedRef.current = true;
+    const missing = detectedFromScan.filter(a => !matchProperty(a, properties));
+    if (missing.length > 0) void addDetectedProperties(missing);
+  }, [appState, detectedFromScan, properties, propsLoading, addDetectedProperties]);
 
   // Generate a client-ready Property Income Computation PDF (Accounts Studio house style).
   const handleDownloadPdf = useCallback(async () => {
@@ -927,6 +991,47 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706" wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView results={scanResults} fileRefs={fileRefs.current} isRescanning={isRescanning} onRescan={handleRescan} onDismissAndContinue={handleDismissAndContinue} />
+    </ToolLayout>
+  );
+
+  // ── Step 2b — review the suggested (or grouped) properties + ownership ──
+  if (appState === 'property_review') return (
+    <ToolLayout title="Landlord Analysis" description="Review the properties found in your documents before we build the computation." icon={House} iconColor="#D97706" wide>
+      <BackToHistory onBack={onBack} />
+      <div className="space-y-5">
+        <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+          <WizardStepper steps={wizardSteps} current={3} onStep={n => { if (n <= 2) setAppState('idle'); }} />
+        </div>
+
+        <div className="glass-solid rounded-xl p-5 space-y-3">
+          <div className="flex items-center gap-2">
+            <MapPin size={15} className="text-[var(--accent)]" />
+            <p className="text-sm font-semibold text-[var(--text-primary)]">Properties &amp; ownership</p>
+            {propsLoading && <Loader2 size={13} className="animate-spin text-[var(--text-muted)]" />}
+          </div>
+          <p className="text-xs text-[var(--text-muted)] leading-snug">
+            {groupAll
+              ? 'All income and expenses are combined into a single property. Set who owns it and their share — the per-person split uses these figures.'
+              : 'These properties were detected in your documents and saved to this client. Edit an address, set the ownership %, link owners, or remove any you don’t want — then continue.'}
+          </p>
+          {selectedClient && (
+            <LandlordPropertiesPanel
+              clientId={selectedClient.id}
+              primaryName={selectedClient.name}
+              properties={properties}
+              loading={propsLoading}
+              onRefetch={() => void refreshProperties()}
+            />
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-xs text-[var(--text-muted)]">Properties are saved to this client, so next year&apos;s analysis picks them up automatically.</p>
+          <button onClick={() => applyAndProceed(scanResults, dateFrom, dateTo)} className="btn-primary">
+            Continue to results <ArrowRight size={15} />
+          </button>
+        </div>
+      </div>
     </ToolLayout>
   );
 
@@ -1451,7 +1556,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         <div className="space-y-5">
           {/* Stepper */}
           <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
-            <WizardStepper current={idleStep} />
+            <WizardStepper steps={wizardSteps} current={idleStep} />
           </div>
 
           <PastContextPill />
@@ -1588,18 +1693,29 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Properties &amp; ownership</p>
                 <span className="text-xs text-[var(--text-muted)]">(optional)</span>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPropertyMode('suggest')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'suggest' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
-                >Suggest from documents</button>
-                <button
-                  onClick={() => setPropertyMode('preset')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'preset' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
-                >Use my property list</button>
-              </div>
+              {!groupAll && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPropertyMode('suggest')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'suggest' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
+                  >Suggest from documents</button>
+                  <button
+                    onClick={() => setPropertyMode('preset')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${propertyMode === 'preset' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}
+                  >Use my property list</button>
+                </div>
+              )}
             </div>
-            {propertyMode === 'suggest' ? (
+
+            <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer flex-wrap">
+              <input type="checkbox" checked={groupAll} onChange={e => setGroupAll(e.target.checked)} className="rounded" />
+              Group all properties into one
+              <span className="text-xs text-[var(--text-muted)]">— combine income &amp; expenses across the portfolio and allocate ownership once</span>
+            </label>
+
+            {groupAll ? (
+              <p className="text-xs text-[var(--text-muted)] leading-snug">Everything will be analysed as a single &ldquo;{GROUP_LABEL}&rdquo; property rather than split by address. After the scan you&apos;ll set who owns it and their shares.</p>
+            ) : propertyMode === 'suggest' ? (
               <p className="text-xs text-[var(--text-muted)] leading-snug">We&apos;ll detect properties from your documents. After the scan you can review them, set ownership %, and save them to this client so they&apos;re ready next time.</p>
             ) : !selectedClient ? (
               <p className="text-xs text-[var(--text-muted)] leading-snug">Select a client above to set up their property list.</p>
@@ -1633,7 +1749,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
           {/* Stepper */}
           <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
-            <WizardStepper current={3} onStep={() => setAppState('idle')} />
+            <WizardStepper steps={wizardSteps} current={wizardSteps.length} onStep={() => setAppState('idle')} />
           </div>
 
           {/* Summary strip */}
