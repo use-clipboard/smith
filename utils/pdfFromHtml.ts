@@ -121,6 +121,23 @@ export async function generatePdfBlob(
   try {
     void captureTarget.offsetHeight;
 
+    // A spacer that's valid wherever it's inserted: a <tr> inside a table body
+    // (a <div> there is invalid HTML and collapses), a <div> anywhere else.
+    const makeSpacer = (before: HTMLElement, height: number): HTMLElement => {
+      if (before.tagName === 'TR') {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = Math.max(1, before.children.length);
+        td.style.cssText = `height:${height}px;padding:0;border:0;`;
+        tr.style.cssText = 'line-height:0;font-size:0;';
+        tr.appendChild(td);
+        return tr;
+      }
+      const div = document.createElement('div');
+      div.style.cssText = `height:${height}px;line-height:0;font-size:0;`;
+      return div;
+    };
+
     // Push any element matching `selector` that straddles a page boundary (and
     // fits within one page) onto the next page, by inserting a spacer before it.
     // Guarded against runaway cascades: spacers can shift everything below and
@@ -146,9 +163,7 @@ export async function generatePdfBlob(
             const pushBy = PAGE_H_PX - (elTop % PAGE_H_PX);
             if (injected + pushBy > injectBudget) return; // runaway guard
             injected += pushBy;
-            const spacer = document.createElement('div');
-            spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
-            el.parentNode!.insertBefore(spacer, el);
+            el.parentNode!.insertBefore(makeSpacer(el, pushBy), el);
             inserted = true;
             break;
           }
@@ -174,9 +189,7 @@ export async function generatePdfBlob(
             const pushBy = PAGE_H_PX - rem;
             if (injected + pushBy > injectBudget) return; // runaway guard
             injected += pushBy;
-            const spacer = document.createElement('div');
-            spacer.style.cssText = `height:${pushBy}px;line-height:0;font-size:0;`;
-            el.parentNode!.insertBefore(spacer, el);
+            el.parentNode!.insertBefore(makeSpacer(el, pushBy), el);
             inserted = true;
             break;
           }
@@ -224,6 +237,15 @@ export async function generatePdfBlob(
       // Accounts pack: keep blocks together, then force each section to a fresh
       // page (authoritative), then compute the contents-page numbers.
       avoidSplit('.paper', 140);
+      // Optional: stop smaller blocks (e.g. table rows) being sliced in half by a
+      // page break. Each pass can shift later sections off their page top, so we
+      // re-run the hard breaks and settle over a few iterations.
+      if (opts.avoidSplitSelector) {
+        for (let pass = 0; pass < 3; pass++) {
+          hardBreak('.force-page-start', 200);
+          avoidSplit(opts.avoidSplitSelector, 300);
+        }
+      }
       hardBreak('.force-page-start', 200);
       fillTocPageNumbers();
     } else {

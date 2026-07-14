@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Users, Search, Loader2, AlertTriangle, Plus, Trash2, UserPlus, Link2, Copy } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import type { LandlordProperty } from '@/types';
 
 type ClientStatus = 'active' | 'hold' | 'inactive';
@@ -86,8 +87,10 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
   const overShare  = totalShare > 100.01;
   // Jointly-owned property between spouses is split 50/50 by default; a different
   // split needs a Form 17 election. Flag when there are co-owners not on equal shares.
-  const shares = [property.ownership_pct, ...property.owners.map(o => o.share_pct)];
-  const nonEqualSplit = property.owners.length > 0 && !shares.every(s => Math.abs(s - shares[0]) < 0.01);
+  const primaryRemoved = property.ownership_pct <= 0 && property.owners.length > 0;
+  // Only compare the people who actually own a share.
+  const shares = [property.ownership_pct, ...property.owners.map(o => o.share_pct)].filter(s => s > 0);
+  const nonEqualSplit = shares.length > 1 && !shares.every(s => Math.abs(s - shares[0]) < 0.01);
 
   async function patchPrimaryShare(pct: number) {
     setBusy(true); setError(null);
@@ -185,10 +188,14 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
         <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
           <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--text-muted)]">Ownership</div>
           <div className="border border-[var(--border)] rounded-lg divide-y divide-[var(--border)]">
-            {/* Primary */}
+            {/* Primary — can be dropped to 0% (removed) once other owners exist,
+                since the lead client may change or not be involved in every property. */}
             <div className="flex items-center px-3 py-2 text-sm gap-2">
-              <span className="flex-1 min-w-0 text-[var(--text-primary)] font-medium truncate">{primaryName || 'This client'} <span className="text-xs text-[var(--text-muted)] font-normal">(primary)</span></span>
+              <span className={`flex-1 min-w-0 font-medium truncate ${primaryRemoved ? 'text-[var(--text-muted)] line-through' : 'text-[var(--text-primary)]'}`}>
+                {primaryName || 'This client'} <span className="text-xs text-[var(--text-muted)] font-normal no-underline">{primaryRemoved ? '(not an owner)' : '(primary)'}</span>
+              </span>
               <input
+                key={`primary-${property.ownership_pct}`}
                 type="number" min={0} max={100} step={1}
                 defaultValue={property.ownership_pct}
                 onBlur={e => { const v = Number(e.target.value) || 0; if (v !== property.ownership_pct) void patchPrimaryShare(v); }}
@@ -197,7 +204,18 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
                 aria-label="Primary owner share %"
               />
               <span className="text-xs text-[var(--text-muted)]">%</span>
-              <span className="w-7" />
+              {property.owners.length > 0 ? (
+                <Tooltip label={primaryRemoved ? 'Already removed — set a % to add them back' : 'Remove from this property (sets their share to 0%)'}>
+                  <button
+                    onClick={() => void patchPrimaryShare(0)}
+                    disabled={busy || primaryRemoved}
+                    className="p-1 rounded text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-30"
+                    aria-label="Remove primary owner from this property"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </Tooltip>
+              ) : <span className="w-7" />}
             </div>
             {/* Additional owners */}
             {property.owners.map(o => (
@@ -209,6 +227,7 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
                   </span>
                 </span>
                 <input
+                  key={`${o.id}-${o.share_pct}`}
                   type="number" min={0} max={100} step={1}
                   defaultValue={o.share_pct}
                   onBlur={e => { const v = Number(e.target.value) || 0; if (v !== o.share_pct) void patchOwnerShare(o.id, v); }}

@@ -10,7 +10,7 @@ import LandlordEditModal from '@/components/features/landlord/LandlordEditModal'
 import LandlordHistory, { type LandlordSeed } from '@/components/features/landlord/LandlordHistory';
 import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
-import { matchProperty, computePersonBreakdown } from '@/utils/landlordAllocation';
+import { matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL } from '@/utils/landlordAllocation';
 import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
@@ -521,18 +521,18 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     return map;
   }, [inRangeExpenses]);
 
-  // Per-person split: each property's totals shared out by ownership %.
-  const personBreakdown = useMemo(() => {
+  // Full per-person working: property × individual × category.
+  const personMatrix = useMemo(() => {
     const pc = { id: selectedClient?.id ?? null, name: selectedClient?.name ?? 'This client' };
-    const incAmounts = [
-      ...inRangeIncome.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
-      ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+    const inc = [
+      ...inRangeIncome.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+      ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || LANDLORD_INCOME_CATEGORIES[0] })),
     ];
-    const expAmounts = [
-      ...inRangeExpenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
-      ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+    const exp = [
+      ...inRangeExpenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+      ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
     ];
-    return computePersonBreakdown(incAmounts, expAmounts, properties, pc);
+    return computePersonMatrix(inc, exp, properties, pc);
   }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name]);
 
   // Portfolio-level computation (for the allowance nudge in the options card).
@@ -796,7 +796,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
         comparison,
       });
-      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true });
+      // avoidSplitSelector keeps table rows whole so no line is ever cut in half
+      // by a page break.
+      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr' });
       const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
       downloadBlob(blob, `property_income_${stub}.pdf`);
     } catch (e) {
@@ -1428,70 +1430,142 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     );
   }
 
+  // Full working: every property split into its owners (with %), each income and
+  // expense category shared out, then totalled per person.
   function PersonComputation() {
-    const { people, unallocated, unaccountedShare } = personBreakdown;
+    const m = personMatrix;
     if (properties.length === 0) {
       return (
         <div className="glass-solid rounded-xl p-8 text-center">
           <Users size={22} className="mx-auto mb-2 text-[var(--text-muted)]" />
           <p className="text-sm text-[var(--text-muted)]">No properties with owners set up for this client yet.</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Add properties and their owners (with %) on the setup screen to split income &amp; expenses per person.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Add properties and their owners (with %) above to split income &amp; expenses per person.</p>
         </div>
       );
     }
-    const hasUnalloc = unallocated.income > 0.001 || unallocated.expenses > 0.001;
-    const hasUnacc   = unaccountedShare.income > 0.001 || unaccountedShare.expenses > 0.001;
-    const th = 'px-5 py-2.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide';
+
+    const cols = m.properties.flatMap(p => p.owners.map(o => ({ pid: p.id, owner: o })));
+    const cell = (pid: string, key: string, cat: string) => matrixCell(m, pid, key, cat);
+    const sumCats = (pid: string, key: string, cats: string[]) => cats.reduce((s, c) => s + cell(pid, key, c), 0);
+    const personCat = (key: string, cat: string) => m.properties.reduce((s, p) => s + cell(p.id, key, cat), 0);
+    const personCats = (key: string, cats: string[]) => cats.reduce((s, c) => s + personCat(key, c), 0);
+    const money = (n: number) => Math.abs(n) < 0.005 ? '—' : (n < 0 ? `(${fmt(Math.abs(n))})` : fmt(n));
+
+    const th = 'px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)] whitespace-nowrap';
+    const td = 'px-3 py-1.5 text-right tabular-nums whitespace-nowrap';
+    const stickyL = 'sticky left-0 z-10 bg-[var(--bg-card-solid)] px-3 py-1.5 text-left';
+    const totalSpan = 1 + cols.length + m.people.length;
+    const hasUnattributed = m.unattributed.income > 0.001 || m.unattributed.expenses > 0.001;
+    const canAddUnalloc = !!selectedClient && !findUnallocatedProperty(properties);
+
+    if (cols.length === 0) {
+      return (
+        <div className="glass-solid rounded-xl p-8 text-center text-sm text-[var(--text-muted)]">
+          No allocated income or expenses to split yet — set an ownership % on the properties above.
+        </div>
+      );
+    }
+
+    const sectionRow = (label: string, tone: string) => (
+      <tr className={tone}>
+        <td colSpan={totalSpan} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider">{label}</td>
+      </tr>
+    );
+
+    const catRows = (cats: string[], prefix: string) => cats.map(cat => (
+      <tr key={`${prefix}|${cat}`}>
+        <td className={`${stickyL} text-[var(--text-secondary)]`}>{cat}</td>
+        {cols.map(c => <td key={`${prefix}|${cat}|${c.pid}|${c.owner.key}`} className={`${td} text-[var(--text-primary)]`}>{money(cell(c.pid, c.owner.key, cat))}</td>)}
+        {m.people.map((pp, i) => (
+          <td key={`${prefix}|${cat}|t|${pp.key}`} className={`${td} font-medium text-[var(--text-primary)] ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(personCat(pp.key, cat))}</td>
+        ))}
+      </tr>
+    ));
+
+    const totalRow = (label: string, cats: string[], cls: string) => (
+      <tr className={cls}>
+        <td className={`${stickyL} font-semibold text-[var(--text-primary)]`}>{label}</td>
+        {cols.map(c => <td key={`tot|${label}|${c.pid}|${c.owner.key}`} className={`${td} font-semibold`}>{money(sumCats(c.pid, c.owner.key, cats))}</td>)}
+        {m.people.map((pp, i) => (
+          <td key={`tot|${label}|t|${pp.key}`} className={`${td} font-semibold ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(personCats(pp.key, cats))}</td>
+        ))}
+      </tr>
+    );
+
     return (
       <div className="glass-solid rounded-xl overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="border-b border-[var(--border)] bg-[var(--bg-nav-hover)]">
-            <tr>
-              <th className={`${th} text-left`}>Person</th>
-              <th className={`${th} text-right`}>Income</th>
-              <th className={`${th} text-right`}>Expenses</th>
-              <th className={`${th} text-right`}>Net</th>
+        <table className="text-sm min-w-full">
+          <thead>
+            <tr className="bg-[var(--bg-nav-hover)] border-b border-[var(--border)]">
+              <th rowSpan={2} className={`${th} text-left sticky left-0 z-20 bg-[var(--bg-nav-hover)]`}>Category</th>
+              {m.properties.map(p => (
+                <th key={p.id} colSpan={p.owners.length} className={`${th} text-center border-l border-[var(--border)] max-w-[220px] truncate`}>{p.address}</th>
+              ))}
+              {m.people.length > 0 && (
+                <th colSpan={m.people.length} className={`${th} text-center border-l-2 border-[var(--accent)]/40`}>Total</th>
+              )}
+            </tr>
+            <tr className="bg-[var(--bg-nav-hover)] border-b border-[var(--border)]">
+              {cols.map((c, i) => {
+                const firstOfProp = i === 0 || cols[i - 1].pid !== c.pid;
+                return (
+                  <th key={`h|${c.pid}|${c.owner.key}`} className={`${th} text-right ${firstOfProp ? 'border-l border-[var(--border)]' : ''}`}>
+                    <div className="normal-case text-[var(--text-secondary)]">{c.owner.name}</div>
+                    <div className="text-[10px] font-normal text-[var(--text-muted)]">{c.owner.pct}%</div>
+                  </th>
+                );
+              })}
+              {m.people.map((pp, i) => (
+                <th key={`h|t|${pp.key}`} className={`${th} text-right ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>
+                  <div className="normal-case text-[var(--text-secondary)]">{pp.name}</div>
+                  <div className="text-[10px] font-normal text-[var(--text-muted)]">{pp.clientId ? 'Client' : 'Named'}</div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {people.length === 0 && (
-              <tr><td colSpan={4} className="px-5 py-8 text-center text-sm text-[var(--text-muted)]">No allocated income or expenses to split yet.</td></tr>
+            {sectionRow('Income', 'bg-emerald-50/60 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400')}
+            {m.incomeCats.length === 0 && (
+              <tr><td colSpan={totalSpan} className="px-3 py-2 text-xs text-[var(--text-muted)] italic">No income</td></tr>
             )}
-            {people.map(p => {
-              const net = p.income - p.expenses;
-              return (
-                <tr key={p.key}>
-                  <td className="px-5 py-2.5">
-                    <span className="flex items-center gap-2 text-[var(--text-primary)]">
-                      <Users size={13} className="text-[var(--text-muted)]" /> {p.name}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${p.clientId ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'bg-[var(--bg-nav-hover)] text-[var(--text-muted)]'}`}>{p.clientId ? 'Client' : 'Named'}</span>
-                    </span>
-                  </td>
-                  <td className="px-5 py-2.5 text-right text-emerald-600 font-medium whitespace-nowrap">{fmt(p.income)}</td>
-                  <td className="px-5 py-2.5 text-right text-red-500 font-medium whitespace-nowrap">{fmt(p.expenses)}</td>
-                  <td className={`px-5 py-2.5 text-right font-semibold whitespace-nowrap ${net >= 0 ? 'text-[var(--text-primary)]' : 'text-red-500'}`}>{net < 0 && '('}{fmt(Math.abs(net))}{net < 0 && ')'}</td>
-                </tr>
-              );
-            })}
-            {hasUnacc && (
-              <tr className="bg-[var(--bg-nav-hover)]/60">
-                <td className="px-5 py-2.5 text-[var(--text-muted)] italic">Unaccounted share (owners &lt; 100%)</td>
-                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.income)}</td>
-                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.expenses)}</td>
-                <td className="px-5 py-2.5 text-right text-[var(--text-muted)] whitespace-nowrap">{fmt(unaccountedShare.income - unaccountedShare.expenses)}</td>
-              </tr>
+            {catRows(m.incomeCats, 'inc')}
+            {totalRow('Total income', m.incomeCats, 'bg-[var(--bg-nav-hover)]/40')}
+
+            {sectionRow('Expenses', 'bg-red-50/60 dark:bg-red-900/10 text-red-600 dark:text-red-400')}
+            {m.expenseCats.length === 0 && (
+              <tr><td colSpan={totalSpan} className="px-3 py-2 text-xs text-[var(--text-muted)] italic">No expenses</td></tr>
             )}
-            {hasUnalloc && (
-              <tr className="bg-amber-50/60 dark:bg-amber-900/10">
-                <td className="px-5 py-2.5 text-amber-700 dark:text-amber-400 italic"><span className="flex items-center gap-1.5"><AlertTriangle size={12} /> Unallocated (no matching property)</span></td>
-                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.income)}</td>
-                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.expenses)}</td>
-                <td className="px-5 py-2.5 text-right text-amber-700 dark:text-amber-400 whitespace-nowrap">{fmt(unallocated.income - unallocated.expenses)}</td>
-              </tr>
-            )}
+            {catRows(m.expenseCats, 'exp')}
+            {totalRow('Total expenses', m.expenseCats, 'bg-[var(--bg-nav-hover)]/40')}
+
+            <tr className="border-t-2 border-[var(--border)] bg-[var(--bg-nav-hover)]/70">
+              <td className={`${stickyL} font-bold text-[var(--text-primary)]`}>Net profit / (loss)</td>
+              {cols.map(c => {
+                const n = sumCats(c.pid, c.owner.key, m.incomeCats) - sumCats(c.pid, c.owner.key, m.expenseCats);
+                return <td key={`net|${c.pid}|${c.owner.key}`} className={`${td} font-bold ${n < 0 ? 'text-red-500' : 'text-emerald-600'}`}>{money(n)}</td>;
+              })}
+              {m.people.map((pp, i) => {
+                const n = personCats(pp.key, m.incomeCats) - personCats(pp.key, m.expenseCats);
+                return <td key={`net|t|${pp.key}`} className={`${td} font-bold ${n < 0 ? 'text-red-500' : 'text-emerald-600'} ${i === 0 ? 'border-l-2 border-[var(--accent)]/40' : ''}`}>{money(n)}</td>;
+              })}
+            </tr>
           </tbody>
         </table>
-        <p className="px-5 py-3 text-[11px] text-[var(--text-muted)] border-t border-[var(--border)]">Each property&apos;s income and expenses are shared out by ownership %. Client-linked owners will feed the future self-assessment tool.</p>
+
+        {hasUnattributed && (
+          <div className="flex items-center justify-between gap-3 flex-wrap px-3 py-2 bg-amber-50/70 dark:bg-amber-900/10 border-t border-[var(--border)]">
+            <span className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle size={12} className="shrink-0" />
+              {fmt(m.unattributed.income)} income and {fmt(m.unattributed.expenses)} expenses aren&apos;t matched to a property, so they&apos;re not split.
+            </span>
+            {canAddUnalloc && (
+              <button onClick={() => void addDetectedProperties([UNALLOCATED_LABEL])} className="btn-secondary text-xs py-1">
+                <Plus size={11} /> Add &ldquo;{UNALLOCATED_LABEL}&rdquo; as a property
+              </button>
+            )}
+          </div>
+        )}
+        <p className="px-3 py-3 text-[11px] text-[var(--text-muted)] border-t border-[var(--border)]">Each property&apos;s income and expenses are shared out by ownership %. Client-linked owners will feed the future self-assessment tool.</p>
       </div>
     );
   }

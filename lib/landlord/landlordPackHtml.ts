@@ -229,6 +229,10 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
       sectionHead(data.clientName, 'Computation by Property', periodLine) + blocks));
   }
 
+  // The individuals who own the portfolio — drives the By-Person section and the
+  // signatory page.
+  let signatories: Array<{ name: string; clientId: string | null }> = [];
+
   // 3. By person (needs the register)
   if (data.properties.length > 0) {
     const inc = data.income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
@@ -236,6 +240,7 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
     const exp = data.expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
       .concat(data.adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })));
     const bd = computePersonBreakdown(inc, exp, data.properties, { id: data.primaryClientId, name: data.primaryClientName });
+    signatories = bd.people.map(p => ({ name: p.name, clientId: p.clientId }));
     const th = 'text-align:left;font-size:11px;font-weight:700;color:#475569;padding:0 8px 4px 0;border-bottom:1px solid #cbd5e1';
     const td = 'font-size:12px;color:#334155;padding:4px 8px 4px 0';
     const personRows = bd.people.map(p => `<tr>
@@ -272,6 +277,29 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
     parts.push(section('notes', 'Notes',
       sectionHead(data.clientName, 'Notes', periodLine) +
       `<div style="font-size:12px;color:#334155;line-height:1.6;white-space:pre-wrap">${escapeHtml(data.notes)}</div>`));
+  }
+
+  // 7. Approval — each individual signs off the computation. Falls back to the
+  //    client themselves when no owners have been set up.
+  if (signatories.length === 0 && (data.primaryClientName || data.clientName)) {
+    signatories = [{ name: data.primaryClientName || data.clientName, clientId: data.primaryClientId ?? null }];
+  }
+  if (signatories.length > 0) {
+    const sigRows = signatories.map(s => `
+      <tr>
+        <td style="padding:22px 14px 4px 0;font-size:12px;color:#0f172a;vertical-align:bottom;white-space:nowrap">${escapeHtml(s.name)}</td>
+        <td style="padding:22px 14px 4px 0;border-bottom:1px solid #94a3b8;width:44%"></td>
+        <td style="padding:22px 0 4px 0;border-bottom:1px solid #94a3b8;width:24%"></td>
+      </tr>
+      <tr>
+        <td></td>
+        <td style="font-size:10px;color:#94a3b8;padding:2px 14px 8px 0">Signature</td>
+        <td style="font-size:10px;color:#94a3b8;padding:2px 0 8px 0">Date</td>
+      </tr>`).join('');
+    parts.push(section('approval', 'Approval',
+      sectionHead(data.clientName, 'Approval', periodLine) +
+      `<p style="font-size:12px;color:#334155;line-height:1.6;margin:0 0 6px">I/we approve the property income computation set out in this report for the period stated, and confirm that the income and expenses are complete and correct to the best of my/our knowledge and belief.</p>
+       <table style="width:100%;border-collapse:collapse">${sigRows}</table>`));
   }
 
   // ── Cover ──
