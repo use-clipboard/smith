@@ -26,6 +26,8 @@ interface SaveLandlordModalProps {
   broughtForwardLoss?: number;
   notes?: string;
   comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
+  /** Generates + downloads the PDF report. Run as part of Save & Export. */
+  onExportPdf?: () => Promise<void>;
   primaryClientId?: string | null;
   primaryClientName?: string;
   initialClient?: SelectedClient | null;
@@ -50,6 +52,7 @@ export default function SaveLandlordModal({
   broughtForwardLoss,
   notes,
   comparison,
+  onExportPdf,
   primaryClientId,
   primaryClientName,
   initialClient,
@@ -171,6 +174,13 @@ export default function SaveLandlordModal({
       primaryClientName: primaryClientName ?? client?.name ?? initialClientName ?? '',
     });
 
+    // PDF report alongside the workbook. Non-fatal: a PDF failure shouldn't lose
+    // the workbook the user already has, or block the history save.
+    if (onExportPdf) {
+      try { await onExportPdf(); }
+      catch (err) { console.error('[SaveLandlordModal] PDF export failed:', err); }
+    }
+
     // Persist to outputs history (fire-and-forget — never block download on this)
     const sourceFilenames = Array.from(new Set(documentFiles.map(f => f.name)));
     fetch('/api/outputs/landlord', {
@@ -232,7 +242,7 @@ export default function SaveLandlordModal({
             </div>
             <p className="font-semibold text-[var(--text-primary)] mb-1">Analysis saved</p>
             <p className="text-sm text-[var(--text-muted)]">
-              Excel workbook downloaded
+              Excel workbook{onExportPdf ? ' and PDF report' : ''} downloaded
               {driveCount > 0 && <> · {driveCount} file{driveCount !== 1 ? 's' : ''} saved to Google Drive</>}
             </p>
             <button onClick={onClose} className="btn-primary mt-4 w-full">Done</button>
@@ -258,7 +268,7 @@ export default function SaveLandlordModal({
           <div className="text-center py-6">
             <Loader2 size={28} className="animate-spin text-[var(--accent)] mx-auto mb-3" />
             <p className="font-medium text-[var(--text-primary)]">
-              {status === 'uploading' ? 'Uploading files to Google Drive…' : 'Generating Excel workbook…'}
+              {status === 'uploading' ? 'Uploading files to Google Drive…' : onExportPdf ? 'Generating workbook & PDF report…' : 'Generating Excel workbook…'}
             </p>
             <p className="text-sm text-[var(--text-muted)] mt-1">
               {status === 'uploading' ? 'This may take a moment' : 'Almost done'}
@@ -362,9 +372,10 @@ export default function SaveLandlordModal({
             <div className="p-3 bg-[var(--bg-nav-hover)] rounded-xl border border-[var(--border)] space-y-1.5">
               <div className="flex items-center gap-2 mb-1">
                 <Download size={13} className="text-[var(--text-secondary)]" />
-                <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Excel Workbook</span>
+                <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">Downloads</span>
               </div>
               <p className="text-sm text-[var(--text-primary)] font-medium">landlord_analysis_{dateStr}.xlsx</p>
+              {onExportPdf && <p className="text-sm text-[var(--text-primary)] font-medium">Property income computation (PDF)</p>}
               <div className="text-xs text-[var(--text-muted)] space-y-0.5">
                 <p>· All Income &amp; Income by Property</p>
                 <p>· All Expenses &amp; Expenses by Property</p>
@@ -375,6 +386,7 @@ export default function SaveLandlordModal({
                 {(flaggedIncome.length > 0 || flaggedExpenses.length > 0) && (
                   <p>· Flagged Entries ({flaggedIncome.length + flaggedExpenses.length})</p>
                 )}
+                {(properties?.length ?? 0) > 0 && <p>· By Person (property × individual working)</p>}
               </div>
             </div>
 

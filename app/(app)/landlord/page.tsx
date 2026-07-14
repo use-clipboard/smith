@@ -19,9 +19,10 @@ import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
   Plus, Trash2, TrendingUp, ArrowLeft, ArrowRight, Sparkles,
-  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2,
+  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2, FileSpreadsheet,
 } from 'lucide-react';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
+import { exportLandlordWorkbook } from '@/utils/landlordExport';
 import { buildLandlordPackHtml, buildLandlordMatrixPages } from '@/lib/landlord/landlordPackHtml';
 import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
@@ -110,6 +111,25 @@ function fmtUKDate(iso: string): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return (y && m && d) ? `${d}-${m}-${y}` : iso;
+}
+
+// Strip the internal row bookkeeping (_id/_flagged/…) for save + export, keeping
+// _forceInclude — the export uses it to treat an included row as in-range.
+function toExportIncome(rows: IncomeRow[]): (LandlordIncomeTransaction & { _forceInclude?: boolean })[] {
+  return rows.map(r => ({
+    fileName: r.fileName, Date: r.Date, PropertyAddress: r.PropertyAddress,
+    Description: r.Description, Category: r.Category, Amount: r.Amount,
+    ...(r._forceInclude ? { _forceInclude: true as const } : {}),
+  }));
+}
+
+function toExportExpense(rows: ExpenseRow[]): (LandlordExpenseTransaction & { _forceInclude?: boolean })[] {
+  return rows.map(r => ({
+    fileName: r.fileName, DueDate: r.DueDate, Description: r.Description, Category: r.Category,
+    Amount: r.Amount, Supplier: r.Supplier, TenantPayable: r.TenantPayable,
+    CapitalExpense: r.CapitalExpense, PropertyAddress: r.PropertyAddress,
+    ...(r._forceInclude ? { _forceInclude: true as const } : {}),
+  }));
 }
 
 /** UK tax-year quick-pick presets (6 Apr → 5 Apr), current year first. */
@@ -772,6 +792,30 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     const missing = detectedFromScan.filter(a => !matchProperty(a, properties));
     if (missing.length > 0) void addDetectedProperties(missing);
   }, [appState, detectedFromScan, properties, propsLoading, addDetectedProperties]);
+
+  // Download just the workbook — no Drive upload, no history save.
+  const handleDownloadExcel = useCallback(() => {
+    const comparison = (showComparison && priorComp && priorMeta)
+      ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
+      : null;
+    exportLandlordWorkbook({
+      income: toExportIncome(current.income.filter(r => !r._flagged)),
+      expenses: toExportExpense(current.expenses.filter(r => !r._flagged)),
+      adjustments,
+      flaggedIncome: flaggedIncome.map(r => ({ date: r.Date, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName })),
+      flaggedExpenses: flaggedExpenses.map(r => ({ date: r.DueDate, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName })),
+      clientName: selectedClient?.name ?? '',
+      clientCode: selectedClient?.client_ref ?? '',
+      dateFrom, dateTo,
+      filename: `landlord_analysis_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      properties,
+      primaryClientId: selectedClient?.id ?? null,
+      primaryClientName: selectedClient?.name ?? '',
+      entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
+      comparison,
+    });
+  }, [current.income, current.expenses, adjustments, flaggedIncome, flaggedExpenses, selectedClient, dateFrom, dateTo,
+      properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
 
   // Generate a client-ready Property Income Computation PDF (Accounts Studio house style).
   const handleDownloadPdf = useCallback(async () => {
@@ -1909,16 +1953,24 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 </>
               )}
 
-              <Tooltip label="Download a client-ready PDF computation">
+              <Tooltip label="Download the PDF report only — nothing is saved">
                 <button onClick={() => void handleDownloadPdf()} disabled={pdfBusy} className="btn-secondary disabled:opacity-50">
                   {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
                   PDF
                 </button>
               </Tooltip>
-              <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
-                <Download size={14} />
-                Save & Export
-              </button>
+              <Tooltip label="Download the Excel workbook only — nothing is saved">
+                <button onClick={handleDownloadExcel} className="btn-secondary">
+                  <FileSpreadsheet size={14} />
+                  Excel
+                </button>
+              </Tooltip>
+              <Tooltip label="Save to history (and Drive) and download the workbook + PDF report">
+                <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
+                  <Download size={14} />
+                  Save & Export
+                </button>
+              </Tooltip>
               <button onClick={() => {
                 setDocumentFiles([]); setScanResults([]); setHistory([]); setHistoryIndex(-1);
                 setAdjustments([]); setSelectedIncome(new Set()); setSelectedExpenses(new Set());
@@ -2334,8 +2386,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           {/* Save modal */}
           <SaveLandlordModal
             isOpen={saveModalOpen}
-            income={current.income.filter(r => !r._flagged).map(({ _id: _, _flagged: _f, _flagReason: _fr, _inRange: _ir, ...rest }) => rest)}
-            expenses={current.expenses.filter(r => !r._flagged).map(({ _id: _, _flagged: _f, _flagReason: _fr, _inRange: _ir, ...rest }) => rest)}
+            income={toExportIncome(current.income.filter(r => !r._flagged))}
+            expenses={toExportExpense(current.expenses.filter(r => !r._flagged))}
             adjustments={adjustments}
             flaggedIncome={flaggedIncome.map(r => ({ date: r.Date, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName }))}
             flaggedExpenses={flaggedExpenses.map(r => ({ date: r.DueDate, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName }))}
@@ -2346,6 +2398,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             broughtForwardLoss={parseFloat(broughtForwardLoss) || 0}
             notes={notes}
             comparison={(showComparison && priorComp && priorMeta) ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel } : null}
+            onExportPdf={handleDownloadPdf}
             primaryClientId={selectedClient?.id ?? null}
             primaryClientName={selectedClient?.name ?? ''}
             initialClient={selectedClient}

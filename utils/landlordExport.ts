@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
-import { computePersonBreakdown } from './landlordAllocation';
+import { computePersonBreakdown, computePersonMatrix, matrixCell } from './landlordAllocation';
 import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputationOpts, type RentComputation } from './landlordComputation';
 
 type Row = (string | number)[];
@@ -351,30 +351,99 @@ function buildPersonSheet(
   primary: { id: string | null; name: string },
   meta: ReportMeta,
 ): XLSX.WorkSheet {
-  const incAmounts = [
-    ...income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
-    ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+  // Same full working as the screen + PDF: properties across the top, each split
+  // by individual (with %), income/expense categories down the left, then a Total
+  // group giving each person's share across the whole portfolio.
+  const inc = [
+    ...income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+    ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Total rents and other income from property' })),
   ];
-  const expAmounts = [
-    ...expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
-    ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
+  const exp = [
+    ...expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount, Category: r.Category })),
+    ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, Category: a.category || 'Other allowable property expenses' })),
   ];
-  const bd = computePersonBreakdown(incAmounts, expAmounts, properties, primary);
+  const m = computePersonMatrix(inc, exp, properties, primary);
 
-  const rows: Row[] = [
-    ...reportHeader('Income by Person', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
-    ['Person', 'Type', 'Income (£)', 'Expenses (£)', 'Net (£)'],
-  ];
-  for (const p of bd.people) {
-    rows.push([p.name, p.clientId ? 'Client' : 'Named', p.income, p.expenses, p.income - p.expenses]);
+  const header = reportHeader('Income by Person', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo);
+
+  // No owners set up → fall back to the plain per-person summary.
+  if (m.properties.length === 0) {
+    const bd = computePersonBreakdown(
+      inc.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+      exp.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+      properties, primary,
+    );
+    const rows: Row[] = [...header, ['Person', 'Type', 'Income (£)', 'Expenses (£)', 'Net (£)']];
+    for (const p of bd.people) rows.push([p.name, p.clientId ? 'Client' : 'Named', p.income, p.expenses, p.income - p.expenses]);
+    if (bd.unallocated.income > 0.001 || bd.unallocated.expenses > 0.001) {
+      rows.push(['Unallocated (no matching property)', '', bd.unallocated.income, bd.unallocated.expenses, bd.unallocated.income - bd.unallocated.expenses]);
+    }
+    return makeSheet(rows);
   }
-  if (bd.unaccountedShare.income > 0.001 || bd.unaccountedShare.expenses > 0.001) {
-    rows.push(['Unaccounted share (owners < 100%)', '', bd.unaccountedShare.income, bd.unaccountedShare.expenses, bd.unaccountedShare.income - bd.unaccountedShare.expenses]);
+
+  // Column groups: one per property, plus a Total group of the distinct people.
+  interface Grp { id: string; label: string; cols: Array<{ key: string; name: string; pct: number | null }> }
+  const groups: Grp[] = m.properties.map(p => ({
+    id: p.id, label: p.address, cols: p.owners.map(o => ({ key: o.key, name: o.name, pct: o.pct })),
+  }));
+  if (m.people.length > 0) {
+    groups.push({ id: '__total__', label: 'Total', cols: m.people.map(p => ({ key: p.key, name: p.name, pct: null })) });
   }
-  if (bd.unallocated.income > 0.001 || bd.unallocated.expenses > 0.001) {
-    rows.push(['Unallocated (no matching property)', '', bd.unallocated.income, bd.unallocated.expenses, bd.unallocated.income - bd.unallocated.expenses]);
+  const flat = groups.flatMap(g => g.cols.map(c => ({ g, c })));
+
+  const value = (groupId: string, key: string, cat: string): number =>
+    groupId === '__total__'
+      ? m.properties.reduce((s, p) => s + matrixCell(m, p.id, key, cat), 0)
+      : matrixCell(m, groupId, key, cat);
+  const sumCats = (groupId: string, key: string, cats: string[]) => cats.reduce((s, c) => s + value(groupId, key, c), 0);
+
+  const rows: Row[] = [...header];
+
+  // Two header rows: group labels (merged), then each owner + their %.
+  const groupRowIdx = rows.length;
+  const groupRow: Row = [''];
+  for (const g of groups) {
+    groupRow.push(g.label);
+    for (let i = 1; i < g.cols.length; i++) groupRow.push('');
   }
-  return makeSheet(rows);
+  rows.push(groupRow);
+  rows.push(['Category', ...flat.map(({ c }) => c.pct !== null ? `${c.name} (${c.pct}%)` : c.name)]);
+
+  const catRow = (cat: string): Row => [cat, ...flat.map(({ g, c }) => value(g.id, c.key, cat))];
+  const totalRow = (label: string, cats: string[]): Row => [label, ...flat.map(({ g, c }) => sumCats(g.id, c.key, cats))];
+
+  rows.push(['INCOME']);
+  if (m.incomeCats.length === 0) rows.push(['No income']);
+  for (const cat of m.incomeCats) rows.push(catRow(cat));
+  rows.push(totalRow('TOTAL INCOME', m.incomeCats));
+  rows.push([]);
+
+  rows.push(['EXPENSES']);
+  if (m.expenseCats.length === 0) rows.push(['No expenses']);
+  for (const cat of m.expenseCats) rows.push(catRow(cat));
+  rows.push(totalRow('TOTAL EXPENSES', m.expenseCats));
+  rows.push([]);
+
+  rows.push(['NET PROFIT / (LOSS)', ...flat.map(({ g, c }) =>
+    sumCats(g.id, c.key, m.incomeCats) - sumCats(g.id, c.key, m.expenseCats))]);
+
+  if (m.unattributed.income > 0.001 || m.unattributed.expenses > 0.001) {
+    rows.push([]);
+    rows.push([`Not matched to a property (not split): income ${fmtAmt(m.unattributed.income)}, expenses ${fmtAmt(m.unattributed.expenses)}`]);
+  }
+  rows.push([]);
+  rows.push(["Each property's income and expenses are shared out by ownership % (shown beside each name). Capital items are excluded."]);
+
+  const ws = makeSheet(rows);
+  // Merge each property's label across its owner columns.
+  const merges: XLSX.Range[] = [];
+  let col = 1;
+  for (const g of groups) {
+    if (g.cols.length > 1) merges.push({ s: { r: groupRowIdx, c: col }, e: { r: groupRowIdx, c: col + g.cols.length - 1 } });
+    col += g.cols.length;
+  }
+  if (merges.length > 0) ws['!merges'] = merges;
+  return ws;
 }
 
 // ─── Prior-year comparison ───────────────────────────────────────────────────
