@@ -43,6 +43,11 @@ create index if not exists property_owners_client_idx   on public.property_owner
 alter table public.property_owners enable row level security;
 
 -- Firm members that own the property (via client -> firm) can read + write.
+-- Drop-then-create so the script is safely re-runnable (Postgres has no
+-- CREATE POLICY IF NOT EXISTS).
+drop policy if exists "property_owners firm read"  on public.property_owners;
+drop policy if exists "property_owners firm write" on public.property_owners;
+
 create policy "property_owners firm read"
   on public.property_owners for select
   using (
