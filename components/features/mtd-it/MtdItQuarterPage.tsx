@@ -22,6 +22,7 @@ import MtdItDeleteQuarterModal from './MtdItDeleteQuarterModal';
 import ClientEmailLink from '@/components/features/email/ClientEmailLink';
 import MtdItCoOwnerImportModal, { type ImportableSource } from './MtdItCoOwnerImportModal';
 import MtdItBookkeepingImportModal from './MtdItBookkeepingImportModal';
+import MtdItLandlordImportModal from './MtdItLandlordImportModal';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import type { MtdItClientRow as Row, MtdItStream, MtdItStreams, MtdItProperty } from '@/types';
@@ -1009,6 +1010,7 @@ function StreamPanel(props: {
 }) {
   const { stream, qrow, clientId, files, summary, detectedCurrencies, onFxChange, onAddFiles, onRemoveFile, onForeignPropertiesChange, onImported } = props;
   const [showImport, setShowImport] = useState(false);
+  const [showLandlordImport, setShowLandlordImport] = useState(false);
   const M = STREAM_META[stream];
   const net = summary.income - summary.expense;
   const hasEntries = summary.count > 0;
@@ -1140,6 +1142,30 @@ function StreamPanel(props: {
               open={showImport}
               onClose={() => setShowImport(false)}
               onImported={() => { setShowImport(false); onImported(); }}
+            />
+          </SubSection>
+        )}
+
+        {/* Import from Landlord — UK property. Pulls a saved Landlord Analysis's
+            transactions that fall in this quarter into the property entries. */}
+        {stream === 'uk_rental' && (
+          <SubSection title="Import" hint="Pull figures straight from another SMITH tool instead of uploading documents.">
+            <button
+              type="button"
+              onClick={() => setShowLandlordImport(true)}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50/50 text-amber-800 hover:bg-amber-50 transition-colors text-left"
+            >
+              <House size={15} className="shrink-0" />
+              <div className="min-w-0">
+                <div className="text-xs font-semibold">Import from Landlord</div>
+                <div className="text-[11px] text-amber-700/80">Pull this client&apos;s rental income &amp; expenses for the quarter from a saved Landlord Analysis.</div>
+              </div>
+            </button>
+            <MtdItLandlordImportModal
+              quarterId={qrow.id}
+              open={showLandlordImport}
+              onClose={() => setShowLandlordImport(false)}
+              onImported={() => { setShowLandlordImport(false); onImported(); }}
             />
           </SubSection>
         )}
