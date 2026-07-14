@@ -2,10 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Users, Search, Loader2, AlertTriangle, Plus, Trash2, UserPlus, Link2 } from 'lucide-react';
+import { X, Users, Search, Loader2, AlertTriangle, Plus, Trash2, UserPlus, Link2, Copy } from 'lucide-react';
 import type { LandlordProperty } from '@/types';
 
-interface ClientHit { id: string; name: string; client_ref: string | null }
+type ClientStatus = 'active' | 'hold' | 'inactive';
+interface ClientHit { id: string; name: string; client_ref: string | null; status: ClientStatus }
+
+// Matches the client status pill used elsewhere (Vault / Clients list).
+const CLIENT_STATUS_STYLES: Record<ClientStatus, { dot: string; label: string; pill: string }> = {
+  active:   { dot: 'bg-green-500', label: 'Active',   pill: 'bg-green-100 text-green-700' },
+  hold:     { dot: 'bg-amber-500', label: 'On Hold',  pill: 'bg-amber-100 text-amber-700' },
+  inactive: { dot: 'bg-gray-400',  label: 'Inactive', pill: 'bg-gray-100 text-gray-500'   },
+};
+
+function ClientStatusPill({ status }: { status: ClientStatus }) {
+  const s = CLIENT_STATUS_STYLES[status] ?? CLIENT_STATUS_STYLES.active;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${s.pill}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
+}
 
 interface Props {
   property: LandlordProperty;
@@ -31,6 +49,10 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
   const [namedName, setNamedName] = useState('');
   const [draftShare, setDraftShare] = useState(50);
 
+  // Apply-this-split-to-every-property
+  const [applyConfirm, setApplyConfirm] = useState(false);
+  const [appliedMsg, setAppliedMsg]     = useState('');
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape' && !busy) onClose(); }
     window.addEventListener('keydown', onKey);
@@ -49,8 +71,10 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
         .then(r => r.ok ? r.json() : null)
         .then(d => {
           if (cancelled || !d) return;
-          const list = (Array.isArray(d) ? d : d.clients ?? []) as Array<{ id: string; name: string; client_ref: string | null }>;
-          setHits(list.filter(c => c.id !== property.client_id).slice(0, 25).map(c => ({ id: c.id, name: c.name, client_ref: c.client_ref ?? null })));
+          const list = (Array.isArray(d) ? d : d.clients ?? []) as Array<{ id: string; name: string; client_ref: string | null; status?: ClientStatus }>;
+          setHits(list.filter(c => c.id !== property.client_id).slice(0, 25).map(c => ({
+            id: c.id, name: c.name, client_ref: c.client_ref ?? null, status: c.status ?? 'active',
+          })));
         })
         .catch(() => {/* ignore */})
         .finally(() => { if (!cancelled) setSearching(false); });
@@ -107,6 +131,26 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
       if (!res.ok) throw new Error('Failed to update share');
       onChanged();
     } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update'); }
+    finally { setBusy(false); }
+  }
+
+  // Copy this property's split (primary share + every owner) onto all the
+  // client's other properties — replaces their owners.
+  async function applyToAll() {
+    setBusy(true); setError(null); setAppliedMsg('');
+    try {
+      const res = await fetch('/api/landlord/property-owners/apply-to-all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: property.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? 'Failed to apply');
+      setApplyConfirm(false);
+      setAppliedMsg(d.applied > 0
+        ? `Applied to ${d.applied} other propert${d.applied === 1 ? 'y' : 'ies'}`
+        : 'No other properties to apply to');
+      onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to apply'); }
     finally { setBusy(false); }
   }
 
@@ -194,6 +238,24 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
             </div>
           )}
 
+          {/* Apply this split to the rest of the portfolio */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {applyConfirm ? (
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-[var(--text-secondary)]">Overwrite the owners on every other property?</span>
+                <button onClick={() => void applyToAll()} disabled={busy} className="btn-primary text-xs py-1 px-2.5 disabled:opacity-50">
+                  {busy ? <Loader2 size={11} className="animate-spin" /> : null} Yes, apply
+                </button>
+                <button onClick={() => setApplyConfirm(false)} disabled={busy} className="btn-secondary text-xs py-1 px-2.5">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => { setAppliedMsg(''); setApplyConfirm(true); }} disabled={busy} className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent)] hover:underline disabled:opacity-50">
+                <Copy size={12} /> Apply this split to all properties
+              </button>
+            )}
+            {appliedMsg && <span className="text-xs text-emerald-600">{appliedMsg}</span>}
+          </div>
+
           {/* Add owner */}
           <div className="pt-1">
             <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--text-muted)] mb-2">Add owner</div>
@@ -227,6 +289,7 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
                 ) : hits.map(c => (
                   <button key={c.id} type="button" onClick={() => { setPicked(c); setSearch(c.name); }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[var(--bg-nav-hover)]">
                     <span className="flex-1 truncate text-[var(--text-primary)]">{c.name}</span>
+                    <ClientStatusPill status={c.status} />
                     {c.client_ref && <span className="text-[11px] text-[var(--text-muted)] font-mono">{c.client_ref}</span>}
                   </button>
                 ))}
