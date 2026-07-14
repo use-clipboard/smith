@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
 import { computePersonBreakdown } from './landlordAllocation';
-import { computeRentComputation, type LandlordEntityType } from './landlordComputation';
+import { computeRentComputation, type LandlordEntityType, type RentComputationOpts } from './landlordComputation';
 
 type Row = (string | number)[];
 
@@ -240,8 +240,8 @@ interface CompData {
   adjustments: LandlordAdjustment[];
 }
 
-function buildCompRows(data: CompData, entityType: LandlordEntityType): Row[] {
-  const c = computeRentComputation(data.income, data.expenses, data.adjustments, { entityType });
+function buildCompRows(data: CompData, opts: RentComputationOpts): Row[] {
+  const c = computeRentComputation(data.income, data.expenses, data.adjustments, opts);
   const rows: Row[] = [];
 
   // Income
@@ -251,18 +251,25 @@ function buildCompRows(data: CompData, entityType: LandlordEntityType): Row[] {
   rows.push(['TOTAL INCOME', '', c.totalIncome]);
   rows.push([]);
 
-  // Expenses (finance costs excluded here when the individual restriction applies)
-  rows.push(['EXPENSES', '', '']);
+  // Expenses / allowance (finance costs excluded here when the individual restriction applies)
+  rows.push([c.allowanceUsed ? 'DEDUCTION' : 'EXPENSES', '', '']);
   for (const e of c.expenseCategories) rows.push([e.category, '', e.amount]);
-  rows.push(['TOTAL EXPENSES', '', c.totalExpenses]);
+  rows.push([c.allowanceUsed ? 'TOTAL DEDUCTION' : 'TOTAL EXPENSES', '', c.totalExpenses]);
   rows.push([]);
 
   // Net
   rows.push([c.netProfit >= 0 ? 'NET RENTAL PROFIT' : 'NET RENTAL LOSS', '', Math.abs(c.netProfit)]);
-  if (c.netProfit < 0) rows.push(['(carried forward as a loss)', '', '']);
+
+  // Losses brought/carried forward
+  if (c.broughtForwardLoss > 0 || c.netProfit < 0) {
+    if (c.broughtForwardLoss > 0) rows.push(['Losses brought forward', '', c.broughtForwardLoss]);
+    if (c.lossOffset > 0) rows.push(['Loss set against this year’s profit', '', -c.lossOffset]);
+    if (c.netProfit >= 0) rows.push(['Taxable profit after losses', '', c.taxableProfit]);
+    if (c.lossCarriedForward > 0) rows.push(['Losses carried forward', '', c.lossCarriedForward]);
+  }
 
   // Finance costs & basic-rate relief (individuals only)
-  if (c.restricted && c.financeCosts > 0) {
+  if (c.restricted && !c.allowanceUsed && c.financeCosts > 0) {
     rows.push([]);
     rows.push(['FINANCE COSTS (not deducted above)', '', '']);
     rows.push(['Residential finance costs', '', c.financeCosts]);
@@ -276,10 +283,10 @@ function buildCompRows(data: CompData, entityType: LandlordEntityType): Row[] {
 
 // ─── All Rent Computation ─────────────────────────────────────────────────────
 
-function buildRentCompSheet(data: CompData, meta: ReportMeta, entityType: LandlordEntityType): XLSX.WorkSheet {
+function buildRentCompSheet(data: CompData, meta: ReportMeta, opts: RentComputationOpts): XLSX.WorkSheet {
   const rows: Row[] = [
     ...reportHeader('Rent Computation', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
-    ...buildCompRows(data, entityType),
+    ...buildCompRows(data, opts),
   ];
   return makeSheet(rows);
 }
@@ -305,7 +312,7 @@ function buildRentCompByPropertySheet(data: CompData, meta: ReportMeta, entityTy
     const propIncome = data.income.filter(r => normalizeAddr(r.PropertyAddress) === prop);
     const propExpenses = data.expenses.filter(r => normalizeAddr(r.PropertyAddress) === prop);
     const propAdj = data.adjustments.filter(a => (a.propertyAddress || 'Non Allocated') === prop);
-    rows.push(...buildCompRows({ income: propIncome, expenses: propExpenses, adjustments: propAdj }, entityType));
+    rows.push(...buildCompRows({ income: propIncome, expenses: propExpenses, adjustments: propAdj }, { entityType }));
     rows.push([]);
   }
 
@@ -425,6 +432,12 @@ export interface LandlordExportData {
   primaryClientName?: string;
   /** Drives the finance-cost restriction in the rent computation. Default 'individual'. */
   entityType?: LandlordEntityType;
+  /** Use the £1,000 property income allowance instead of actual expenses. */
+  useAllowance?: boolean;
+  /** Property losses brought forward. */
+  broughtForwardLoss?: number;
+  /** Free-text working-paper notes — written to a Notes tab when present. */
+  notes?: string;
 }
 
 export function exportLandlordWorkbook(data: LandlordExportData): void {
@@ -465,7 +478,8 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   XLSX.utils.book_append_sheet(wb, buildAllExpensesSheet(inRangeExpenses, meta, driveLinks), 'All Expenses');
   XLSX.utils.book_append_sheet(wb, buildExpensesByPropertySheet(inRangeExpenses, meta, driveLinks), 'Expenses by Property');
   const entityType: LandlordEntityType = data.entityType ?? 'individual';
-  XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta, entityType), 'Rent Computation');
+  const compOpts: RentComputationOpts = { entityType, useAllowance: data.useAllowance, broughtForwardLoss: data.broughtForwardLoss };
+  XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta, compOpts), 'Rent Computation');
   XLSX.utils.book_append_sheet(wb, buildRentCompByPropertySheet(compData, meta, entityType), 'Rent Comp by Property');
   if (data.properties && data.properties.length > 0) {
     const primary = { id: data.primaryClientId ?? null, name: data.primaryClientName ?? data.clientName ?? 'This client' };
@@ -476,6 +490,13 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   }
   if (flagged.length > 0) {
     XLSX.utils.book_append_sheet(wb, buildFlaggedSheet(flagged, meta), 'Flagged');
+  }
+  if (data.notes && data.notes.trim()) {
+    const noteRows: Row[] = [
+      ...reportHeader('Notes', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
+      ...data.notes.split('\n').map(line => [line] as Row),
+    ];
+    XLSX.utils.book_append_sheet(wb, makeSheet(noteRows), 'Notes');
   }
 
   const dateStr = new Date().toISOString().slice(0, 10);

@@ -22,6 +22,9 @@ interface SaveLandlordModalProps {
   documentFiles: File[];
   properties?: LandlordProperty[];
   entityType?: LandlordEntityType;
+  useAllowance?: boolean;
+  broughtForwardLoss?: number;
+  notes?: string;
   primaryClientId?: string | null;
   primaryClientName?: string;
   initialClient?: SelectedClient | null;
@@ -42,6 +45,9 @@ export default function SaveLandlordModal({
   documentFiles,
   properties,
   entityType,
+  useAllowance,
+  broughtForwardLoss,
+  notes,
   primaryClientId,
   primaryClientName,
   initialClient,
@@ -155,6 +161,9 @@ export default function SaveLandlordModal({
       driveLinks,
       properties,
       entityType,
+      useAllowance,
+      broughtForwardLoss,
+      notes,
       primaryClientId: primaryClientId ?? client?.id ?? null,
       primaryClientName: primaryClientName ?? client?.name ?? initialClientName ?? '',
     });
@@ -176,6 +185,9 @@ export default function SaveLandlordModal({
         dateFrom,
         dateTo,
         entityType,
+        useAllowance,
+        broughtForwardLoss,
+        notes,
         sourceFilenames,
       }),
     }).catch(err => console.error('[SaveLandlordModal] history save failed:', err));

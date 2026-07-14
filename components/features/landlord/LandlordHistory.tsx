@@ -69,6 +69,9 @@ export interface LandlordSeed {
   dateFrom: string;
   dateTo: string;
   entityType?: LandlordEntityType;
+  useAllowance?: boolean;
+  broughtForwardLoss?: number;
+  notes?: string;
 }
 
 interface Props {
@@ -301,6 +304,9 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       dateTo?: string;
       clientCode?: string | null;
       entityType?: LandlordEntityType;
+      useAllowance?: boolean;
+      broughtForwardLoss?: number;
+      notes?: string;
     };
     const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
     exportLandlordWorkbook({
@@ -318,6 +324,9 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       primaryClientId: output.client?.id ?? output.client_id ?? null,
       primaryClientName: output.client?.name ?? output.client_name ?? '',
       entityType: rd.entityType ?? 'individual',
+      useAllowance: rd.useAllowance,
+      broughtForwardLoss: rd.broughtForwardLoss,
+      notes: rd.notes,
     });
   };
 
@@ -356,6 +365,9 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         dateFrom: rd.dateFrom ?? '',
         dateTo: rd.dateTo ?? '',
         entityType: rd.entityType,
+        useAllowance: rd.useAllowance,
+        broughtForwardLoss: rd.broughtForwardLoss,
+        notes: rd.notes,
       });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Open failed');

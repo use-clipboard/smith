@@ -11,7 +11,7 @@ import LandlordHistory, { type LandlordSeed } from '@/components/features/landlo
 import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import { matchProperty, computePersonBreakdown } from '@/utils/landlordAllocation';
-import { computeRentComputation, type LandlordEntityType } from '@/utils/landlordComputation';
+import { computeRentComputation, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -104,6 +104,16 @@ function fmtUKDate(iso: string): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
   return (y && m && d) ? `${d}-${m}-${y}` : iso;
+}
+
+/** UK tax-year quick-pick presets (6 Apr → 5 Apr), current year first. */
+function ukTaxYearPresets(): Array<{ label: string; from: string; to: string }> {
+  const now = new Date();
+  const y = now.getFullYear();
+  const afterApr6 = now.getMonth() > 3 || (now.getMonth() === 3 && now.getDate() >= 6);
+  const startYear = afterApr6 ? y : y - 1;
+  const mk = (sy: number) => ({ label: `${sy}/${String(sy + 1).slice(2)}`, from: `${sy}-04-06`, to: `${sy + 1}-04-05` });
+  return [mk(startYear), mk(startYear - 1), mk(startYear - 2)];
 }
 
 /** Rewrite each row's PropertyAddress to the matched registered property's
@@ -242,6 +252,10 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   // Entity type drives the finance-cost (mortgage interest) restriction in the
   // rent computation — individuals get a 20% tax reducer, companies deduct it.
   const [entityType, setEntityType] = useState<LandlordEntityType>('individual');
+  // Property income allowance (£1,000 instead of actual expenses) + losses b/f + notes.
+  const [useAllowance, setUseAllowance] = useState(false);
+  const [broughtForwardLoss, setBroughtForwardLoss] = useState('');
+  const [notes, setNotes] = useState('');
 
   const refreshProperties = useCallback(async () => {
     if (!selectedClient?.id) { setProperties([]); return; }
@@ -307,6 +321,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     setDateTo(seed.dateTo ?? '');
     setAdjustments(seed.adjustments ?? []);
     if (seed.entityType) setEntityType(seed.entityType);
+    setUseAllowance(seed.useAllowance ?? false);
+    setBroughtForwardLoss(seed.broughtForwardLoss != null ? String(seed.broughtForwardLoss) : '');
+    setNotes(seed.notes ?? '');
 
     // Hydrate income/expense rows back into UI shape (re-tag with internal _id, _flagged etc.)
     const incomeRows = buildIncomeRows(seed.income, seed.dateFrom ?? '', seed.dateTo ?? '');
@@ -444,6 +461,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     ];
     return computePersonBreakdown(incAmounts, expAmounts, properties, pc);
   }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name]);
+
+  // Portfolio-level computation (for the allowance nudge in the options card).
+  const rentCompAll = useMemo(
+    () => computeRentComputation(inRangeIncome, inRangeExpenses, adjustments, { entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }),
+    [inRangeIncome, inRangeExpenses, adjustments, entityType, useAllowance, broughtForwardLoss],
+  );
 
   // ─── Scan logic ─────────────────────────────────────────────────────────────
 
@@ -989,9 +1012,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   // ─── Rent Computation helpers ───────────────────────────────────────────────
 
-  function RentCompSection({ income, expenses, adjList }: { income: IncomeRow[]; expenses: ExpenseRow[]; adjList: LandlordAdjustment[] }) {
+  function RentCompSection({ income, expenses, adjList, opts, showLosses = false }: { income: IncomeRow[]; expenses: ExpenseRow[]; adjList: LandlordAdjustment[]; opts: RentComputationOpts; showLosses?: boolean }) {
     const fmtL = (n: number) => `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const c = computeRentComputation(income, expenses, adjList, { entityType });
+    const c = computeRentComputation(income, expenses, adjList, opts);
     const restricted = c.restricted;
     const incAdj = adjList.filter(a => a.type === 'income');
     // Expense category lines from documents (finance excluded when restricted);
@@ -1001,6 +1024,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     const docCats = Array.from(docByCat.entries()).filter(([cat]) => !(restricted && cat === LANDLORD_FINANCE_COST_CATEGORY));
     const expAdj = adjList.filter(a => a.type === 'expense' && !(restricted && (a.category || '') === LANDLORD_FINANCE_COST_CATEGORY));
     const net = c.netProfit;
+    const showLossSection = showLosses && (c.broughtForwardLoss > 0 || net < 0);
 
     return (
       <div className="space-y-0 text-sm">
@@ -1027,26 +1051,35 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
         {/* Expenses */}
         <div className="px-5 py-2.5 bg-red-50 dark:bg-red-900/10 border-b border-[var(--border)] border-t border-t-[var(--border)] mt-2">
-          <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">Expenses</span>
+          <span className="text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider">{c.allowanceUsed ? 'Deduction' : 'Expenses'}</span>
         </div>
         <div className="divide-y divide-[var(--border)]">
-          {docCats.map(([cat, amt]) => (
-            <div key={cat} className="flex items-center justify-between px-5 py-2.5">
-              <span className="text-[var(--text-secondary)]">{cat}</span>
-              <span className="font-medium text-[var(--text-primary)]">{fmtL(amt)}</span>
+          {c.allowanceUsed ? (
+            <div className="flex items-center justify-between px-5 py-2.5">
+              <span className="text-[var(--text-secondary)]">Property income allowance (in place of expenses)</span>
+              <span className="font-medium text-[var(--text-primary)]">{fmtL(c.allowanceDeduction)}</span>
             </div>
-          ))}
-          {docCats.length === 0 && expAdj.length === 0 && (
-            <div className="px-5 py-2.5 text-[var(--text-muted)] italic">No expenses</div>
+          ) : (
+            <>
+              {docCats.map(([cat, amt]) => (
+                <div key={cat} className="flex items-center justify-between px-5 py-2.5">
+                  <span className="text-[var(--text-secondary)]">{cat}</span>
+                  <span className="font-medium text-[var(--text-primary)]">{fmtL(amt)}</span>
+                </div>
+              ))}
+              {docCats.length === 0 && expAdj.length === 0 && (
+                <div className="px-5 py-2.5 text-[var(--text-muted)] italic">No expenses</div>
+              )}
+              {expAdj.map(a => (
+                <div key={a._id} className="flex items-center justify-between px-5 py-2 bg-[var(--bg-nav-hover)]">
+                  <span className="text-[var(--text-secondary)] italic pl-4">{a.description} <span className="text-xs text-red-500">(adjustment)</span></span>
+                  <span className="font-medium text-red-500">+{fmtL(a.amount)}</span>
+                </div>
+              ))}
+            </>
           )}
-          {expAdj.map(a => (
-            <div key={a._id} className="flex items-center justify-between px-5 py-2 bg-[var(--bg-nav-hover)]">
-              <span className="text-[var(--text-secondary)] italic pl-4">{a.description} <span className="text-xs text-red-500">(adjustment)</span></span>
-              <span className="font-medium text-red-500">+{fmtL(a.amount)}</span>
-            </div>
-          ))}
           <div className="flex items-center justify-between px-5 py-2.5 font-semibold">
-            <span className="text-[var(--text-primary)]">Total Expenses</span>
+            <span className="text-[var(--text-primary)]">Total {c.allowanceUsed ? 'Deduction' : 'Expenses'}</span>
             <span className="text-red-500">{fmtL(c.totalExpenses)}</span>
           </div>
         </div>
@@ -1061,8 +1094,40 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           </span>
         </div>
 
+        {/* Losses brought/carried forward (portfolio level) */}
+        {showLossSection && (
+          <div className="mt-2 border-t border-[var(--border)]">
+            <div className="divide-y divide-[var(--border)]">
+              {c.broughtForwardLoss > 0 && (
+                <div className="flex items-center justify-between px-5 py-2.5">
+                  <span className="text-[var(--text-secondary)]">Losses brought forward</span>
+                  <span className="font-medium text-[var(--text-primary)]">{fmtL(c.broughtForwardLoss)}</span>
+                </div>
+              )}
+              {c.lossOffset > 0 && (
+                <div className="flex items-center justify-between px-5 py-2.5">
+                  <span className="text-[var(--text-secondary)]">Loss set against this year&apos;s profit</span>
+                  <span className="font-medium text-red-500">−{fmtL(c.lossOffset)}</span>
+                </div>
+              )}
+              {net >= 0 && (
+                <div className="flex items-center justify-between px-5 py-2.5 font-semibold">
+                  <span className="text-[var(--text-primary)]">Taxable profit after losses</span>
+                  <span className="text-emerald-600">{fmtL(c.taxableProfit)}</span>
+                </div>
+              )}
+              {c.lossCarriedForward > 0 && (
+                <div className="flex items-center justify-between px-5 py-2.5">
+                  <span className="text-[var(--text-secondary)]">Losses carried forward</span>
+                  <span className="font-medium text-[var(--text-muted)]">{fmtL(c.lossCarriedForward)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Finance costs & basic-rate relief (individuals only) */}
-        {restricted && c.financeCosts > 0 && (
+        {restricted && !c.allowanceUsed && c.financeCosts > 0 && (
           <div className="mt-2 border-t border-[var(--border)]">
             <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-900/10 border-b border-[var(--border)]">
               <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Finance costs (not deducted above)</span>
@@ -1294,6 +1359,20 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                     <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="input-base w-full text-sm" />
                   </div>
                 </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {ukTaxYearPresets().map(p => {
+                    const active = dateFrom === p.from && dateTo === p.to;
+                    return (
+                      <button key={p.label} type="button" onClick={() => { setDateFrom(p.from); setDateTo(p.to); }}
+                        className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${active ? 'bg-[var(--accent)] text-white border-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)]'}`}>
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                  {(dateFrom || dateTo) && (
+                    <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-[11px] px-2 py-1 rounded-md text-[var(--text-muted)] hover:underline">Clear</button>
+                  )}
+                </div>
                 <p className="text-[11px] text-[var(--text-muted)] leading-snug">Transactions outside this range are shown separately in the results.</p>
               </div>
             </div>
@@ -1506,6 +1585,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               <button onClick={() => {
                 setDocumentFiles([]); setScanResults([]); setHistory([]); setHistoryIndex(-1);
                 setAdjustments([]); setSelectedIncome(new Set()); setSelectedExpenses(new Set());
+                setEntityType('individual'); setUseAllowance(false); setBroughtForwardLoss(''); setNotes('');
                 setView('income'); setAppState('idle');
               }} className="btn-secondary">New Analysis</button>
             </div>
@@ -1649,16 +1729,39 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           {/* ── Rent Computation view ── */}
           {view === 'rent_comp' && (
             <div className="space-y-4">
-              {/* Entity type — drives the finance-cost (mortgage interest) treatment */}
-              <div className="glass-solid rounded-xl px-5 py-3 flex items-center justify-between flex-wrap gap-3">
-                <div className="flex items-center gap-2">
-                  <Calculator size={14} className="text-[var(--accent)]" />
-                  <span className="text-sm font-semibold text-[var(--text-primary)]">Treat as</span>
-                  <span className="text-xs text-[var(--text-muted)]">affects how mortgage / finance interest is relieved</span>
+              {/* Computation options — entity type, £1,000 allowance, losses b/f */}
+              <div className="glass-solid rounded-xl px-5 py-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-2">
+                    <Calculator size={14} className="text-[var(--accent)]" />
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">Treat as</span>
+                    <span className="text-xs text-[var(--text-muted)]">affects how mortgage / finance interest is relieved</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEntityType('individual')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'individual' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Individual landlord</button>
+                    <button onClick={() => setEntityType('company')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'company' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Limited company</button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setEntityType('individual')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'individual' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Individual landlord</button>
-                  <button onClick={() => setEntityType('company')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${entityType === 'company' ? 'bg-[var(--accent)] text-white' : 'btn-secondary'}`}>Limited company</button>
+
+                {entityType === 'individual' && (
+                  <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-[var(--border)]">
+                    <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+                      <input type="checkbox" checked={useAllowance} onChange={e => setUseAllowance(e.target.checked)} className="rounded" />
+                      Use £{PROPERTY_INCOME_ALLOWANCE.toLocaleString('en-GB')} property income allowance <span className="text-[var(--text-muted)]">(instead of actual expenses)</span>
+                    </label>
+                    {!useAllowance && rentCompAll.allowanceWouldHelp && (
+                      <span className="text-xs text-emerald-600 flex items-center gap-1"><Sparkles size={11} /> The allowance may beat your {fmt(rentCompAll.totalExpenses)} of expenses</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-[var(--border)]">
+                  <label className="text-sm text-[var(--text-secondary)] flex items-center gap-2">
+                    Losses brought forward
+                    <span className="text-[var(--text-muted)]">£</span>
+                    <input type="number" min="0" step="0.01" value={broughtForwardLoss} onChange={e => setBroughtForwardLoss(e.target.value)} placeholder="0.00" className="input-base text-sm w-32" />
+                  </label>
+                  <span className="text-xs text-[var(--text-muted)]">set against this year&apos;s property profit; any excess carries forward</span>
                 </div>
               </div>
 
@@ -1784,7 +1887,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 </div>
               ) : breakdown === 'all' ? (
                 <div className="glass-solid rounded-xl overflow-hidden">
-                  <RentCompSection income={inRangeIncome} expenses={inRangeExpenses} adjList={adjustments} />
+                  <RentCompSection income={inRangeIncome} expenses={inRangeExpenses} adjList={adjustments} opts={{ entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }} showLosses />
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1797,7 +1900,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                         <div className="px-5 py-2.5 border-b border-[var(--border)] bg-[var(--bg-nav-hover)] flex items-center justify-between">
                           <span className="text-sm font-semibold text-[var(--text-primary)]">{prop}</span>
                         </div>
-                        <RentCompSection income={propIncome} expenses={propExpenses} adjList={propAdj} />
+                        <RentCompSection income={propIncome} expenses={propExpenses} adjList={propAdj} opts={{ entityType }} />
                       </div>
                     );
                   })}
@@ -1806,6 +1909,21 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   )}
                 </div>
               )}
+
+              {/* Working-paper notes */}
+              <div className="glass-solid rounded-xl p-5">
+                <label className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] mb-2">
+                  <Pencil size={13} className="text-[var(--text-muted)]" /> Notes
+                  <span className="text-xs font-normal text-[var(--text-muted)]">saved with the analysis and added to the export</span>
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. why a cost was treated as capital, basis of an apportionment, items to review next year…"
+                  className="input-base w-full text-sm resize-y"
+                />
+              </div>
             </div>
           )}
 
@@ -1871,6 +1989,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             documentFiles={documentFiles}
             properties={properties}
             entityType={entityType}
+            useAllowance={useAllowance}
+            broughtForwardLoss={parseFloat(broughtForwardLoss) || 0}
+            notes={notes}
             primaryClientId={selectedClient?.id ?? null}
             primaryClientName={selectedClient?.name ?? ''}
             initialClient={selectedClient}

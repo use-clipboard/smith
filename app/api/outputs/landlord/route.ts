@@ -15,6 +15,9 @@ const SaveSchema = z.object({
   dateFrom: z.string().optional().default(''),
   dateTo: z.string().optional().default(''),
   entityType: z.enum(['individual', 'company']).optional().default('individual'),
+  useAllowance: z.boolean().optional().default(false),
+  broughtForwardLoss: z.number().optional().default(0),
+  notes: z.string().optional().default(''),
   sourceFilenames: z.array(z.string()).default([]),
 });
 
@@ -52,6 +55,9 @@ export async function POST(req: NextRequest) {
         dateFrom: body.dateFrom,
         dateTo: body.dateTo,
         entityType: body.entityType,
+        useAllowance: body.useAllowance,
+        broughtForwardLoss: body.broughtForwardLoss,
+        notes: body.notes,
         clientCode: body.clientCode ?? null,
       },
     })

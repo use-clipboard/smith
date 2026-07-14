@@ -60,6 +60,10 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
 
   const totalShare = property.ownership_pct + property.owners.reduce((a, o) => a + o.share_pct, 0);
   const overShare  = totalShare > 100.01;
+  // Jointly-owned property between spouses is split 50/50 by default; a different
+  // split needs a Form 17 election. Flag when there are co-owners not on equal shares.
+  const shares = [property.ownership_pct, ...property.owners.map(o => o.share_pct)];
+  const nonEqualSplit = property.owners.length > 0 && !shares.every(s => Math.abs(s - shares[0]) < 0.01);
 
   async function patchPrimaryShare(pct: number) {
     setBusy(true); setError(null);
@@ -182,6 +186,11 @@ export default function LandlordOwnersModal({ property, primaryName, onClose, on
           {overShare && (
             <div className="flex items-start gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-300">
               <AlertTriangle size={13} className="shrink-0 mt-0.5" /> Total exceeds 100% — check the shares.
+            </div>
+          )}
+          {nonEqualSplit && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs text-indigo-800 dark:text-indigo-300">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" /> Jointly-owned property between spouses or civil partners is split 50/50 by default. A different split requires a <strong className="font-semibold">&nbsp;Form 17&nbsp;</strong> election to HMRC.
             </div>
           )}
 
