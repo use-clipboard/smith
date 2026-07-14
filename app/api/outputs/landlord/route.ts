@@ -3,7 +3,16 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 
+const PersonSettingsSchema = z.object({
+  entityType: z.enum(['individual', 'company']).default('individual'),
+  useAllowance: z.boolean().default(false),
+  broughtForwardLoss: z.number().default(0),
+});
+
 const SaveSchema = z.object({
+  /** Set to overwrite an existing run (re-saving before an approval send) rather
+   *  than creating a duplicate history row. */
+  id: z.string().uuid().optional(),
   clientId: z.string().uuid().nullable().optional(),
   clientName: z.string().nullable().optional(),
   clientCode: z.string().nullable().optional(),
@@ -19,6 +28,9 @@ const SaveSchema = z.object({
   broughtForwardLoss: z.number().optional().default(0),
   notes: z.string().optional().default(''),
   sourceFilenames: z.array(z.string()).default([]),
+  /** Per-owner reliefs, keyed by person key. The allowance, losses and the
+   *  finance-cost restriction are personal, so each owner can differ. */
+  personSettings: z.record(z.string(), PersonSettingsSchema).optional().default({}),
 });
 
 // POST /api/outputs/landlord — save a Landlord Analysis run to the history dashboard
@@ -35,31 +47,55 @@ export async function POST(req: NextRequest) {
 
   const supabase = createClient();
 
+  const row = {
+    client_id: body.clientId ?? null,
+    client_name: body.clientName ?? null,
+    transaction_count: body.income.length + body.expenses.length,
+    source_filenames: body.sourceFilenames,
+    result_data: {
+      income: body.income,
+      expenses: body.expenses,
+      adjustments: body.adjustments,
+      flaggedIncome: body.flaggedIncome,
+      flaggedExpenses: body.flaggedExpenses,
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+      entityType: body.entityType,
+      useAllowance: body.useAllowance,
+      broughtForwardLoss: body.broughtForwardLoss,
+      personSettings: body.personSettings,
+      notes: body.notes,
+      clientCode: body.clientCode ?? null,
+    },
+  };
+
+  // Re-saving an existing run — keep the id so approvals stay attached to it.
+  if (body.id) {
+    const { data: existing } = await supabase
+      .from('outputs')
+      .select('id, firm_id')
+      .eq('id', body.id)
+      .eq('feature', 'landlord_analysis')
+      .maybeSingle();
+    if (!existing || existing.firm_id !== ctx.firmId) {
+      return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
+    }
+    const { error } = await supabase.from('outputs').update(row).eq('id', body.id);
+    if (error) {
+      console.error('[POST /api/outputs/landlord] update', error);
+      return NextResponse.json({ error: 'Failed to save analysis' }, { status: 500 });
+    }
+    return NextResponse.json({ id: body.id });
+  }
+
   const { data, error } = await supabase
     .from('outputs')
     .insert({
       firm_id: ctx.firmId,
       user_id: ctx.userId,
-      client_id: body.clientId ?? null,
-      client_name: body.clientName ?? null,
       feature: 'landlord_analysis',
       target_software: null,
-      transaction_count: body.income.length + body.expenses.length,
-      source_filenames: body.sourceFilenames,
-      result_data: {
-        income: body.income,
-        expenses: body.expenses,
-        adjustments: body.adjustments,
-        flaggedIncome: body.flaggedIncome,
-        flaggedExpenses: body.flaggedExpenses,
-        dateFrom: body.dateFrom,
-        dateTo: body.dateTo,
-        entityType: body.entityType,
-        useAllowance: body.useAllowance,
-        broughtForwardLoss: body.broughtForwardLoss,
-        notes: body.notes,
-        clientCode: body.clientCode ?? null,
-      },
+      ...row,
     })
     .select('id')
     .single();

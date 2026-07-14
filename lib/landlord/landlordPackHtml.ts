@@ -8,7 +8,10 @@
 
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
 import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputation } from '@/utils/landlordComputation';
-import { computePersonBreakdown, computePersonMatrix, matrixCell } from '@/utils/landlordAllocation';
+import {
+  computePersonBreakdown, computePersonMatrix, matrixCell,
+  personShareRows, personShareAdjustments, personOwnedProperties,
+} from '@/utils/landlordAllocation';
 
 export interface LandlordPackData {
   clientName: string;
@@ -28,6 +31,51 @@ export interface LandlordPackData {
   broughtForwardLoss: number;
   notes: string;
   comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
+  /** Set for a per-individual pack — income/expenses are already their share. */
+  person?: {
+    key: string;
+    name: string;
+    /** The properties they own, with their %, for the ownership section. */
+    ownedProperties: Array<{ address: string; pct: number }>;
+  } | null;
+}
+
+/** Per-person tax settings — the reliefs are personal, so each owner can differ. */
+export interface LandlordPersonSettings {
+  entityType: LandlordEntityType;
+  useAllowance: boolean;
+  broughtForwardLoss: number;
+}
+
+export const DEFAULT_PERSON_SETTINGS: LandlordPersonSettings = {
+  entityType: 'individual', useAllowance: false, broughtForwardLoss: 0,
+};
+
+/**
+ * Recast a portfolio pack as one individual's pack: every row scaled to their
+ * share, their own reliefs applied, and only the properties they own.
+ * The prior-year comparison is dropped — it's computed on portfolio figures and
+ * would be misleading next to a personal column.
+ */
+export function buildLandlordPersonPackData(
+  data: LandlordPackData,
+  person: { key: string; name: string },
+  settings: LandlordPersonSettings,
+): LandlordPackData {
+  const primary = { id: data.primaryClientId, name: data.primaryClientName };
+  const owned = personOwnedProperties(data.properties, primary, person.key);
+  return {
+    ...data,
+    income:      personShareRows(data.income, data.properties, primary, person.key),
+    expenses:    personShareRows(data.expenses, data.properties, primary, person.key),
+    adjustments: personShareAdjustments(data.adjustments, data.properties, primary, person.key),
+    properties:  data.properties.filter(p => owned.some(o => o.address === p.address)),
+    entityType:  settings.entityType,
+    useAllowance: settings.useAllowance,
+    broughtForwardLoss: settings.broughtForwardLoss,
+    comparison: null,
+    person: { key: person.key, name: person.name, ownedProperties: owned.map(o => ({ address: o.address, pct: o.pct })) },
+  };
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -183,6 +231,9 @@ const MAX_MATRIX_COLS_PER_PAGE = 8;
 interface MatrixGroup { id: string; label: string; cols: Array<{ key: string; name: string; pct: number | null }> }
 
 export function buildLandlordMatrixPages(data: LandlordPackData): string[] {
+  // A personal pack is one column by definition — the by-property section already
+  // shows their split, so the multi-person matrix would just repeat it.
+  if (data.person) return [];
   if (data.properties.length === 0) return [];
 
   const periodLine = (data.dateFrom || data.dateTo)
@@ -305,12 +356,34 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
   if (addrSet.has('Non Allocated')) propList.push('Non Allocated');
 
   const parts: Part[] = [];
+  const entityLabel = data.entityType === 'company' ? 'Limited company' : 'Individual landlord';
 
-  // 1. Rent computation (whole portfolio)
+  // 1. Rent computation — the whole portfolio, or one person's share of it.
   const cAll = computeRentComputation(data.income, data.expenses, data.adjustments, opts);
   parts.push(section('rent-comp', 'Property income computation',
-    sectionHead(data.clientName, 'Property Income Computation', periodLine, data.entityType === 'company' ? 'Limited company' : 'Individual landlord') +
+    sectionHead(data.clientName, 'Property Income Computation', periodLine,
+      data.person ? `${data.person.name} — ${entityLabel}` : entityLabel) +
+    (data.person
+      ? `<p style="font-size:11px;color:#64748b;margin:0 0 12px;text-align:center">Your share of the property income and expenses for the period.</p>`
+      : '') +
     computationTable(cAll, true)));
+
+  // 1a. Ownership — what this person's share is based on.
+  if (data.person && data.person.ownedProperties.length > 0) {
+    const th = 'text-align:left;font-size:11px;font-weight:700;color:#475569;padding:0 8px 4px 0;border-bottom:1px solid #cbd5e1';
+    const td = 'font-size:12px;color:#334155;padding:4px 8px 4px 0';
+    const rows = data.person.ownedProperties.map(p => `<tr>
+      <td style="${td}">${escapeHtml(p.address)}</td>
+      <td style="${td};text-align:right;font-variant-numeric:tabular-nums">${p.pct}%</td>
+    </tr>`).join('');
+    parts.push(section('ownership', 'Your ownership',
+      sectionHead(data.clientName, 'Your Ownership', periodLine, data.person.name) +
+      `<p style="font-size:12px;color:#334155;line-height:1.6;margin:0 0 10px">The figures in this report are your share of each property, based on the ownership below.</p>
+       <table style="width:100%;border-collapse:collapse">
+         <thead><tr><th style="${th}">Property</th><th style="${th};text-align:right">Your share</th></tr></thead>
+         <tbody>${rows}</tbody>
+       </table>`));
+  }
 
   // 1b. Prior-year comparison
   if (data.comparison) {
@@ -350,10 +423,13 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
   // signatory page.
   let signatories: Array<{ name: string; clientId: string | null }> = [];
 
-  // The full per-person working is emitted as LANDSCAPE pages at the end of the
-  // report (buildLandlordMatrixPages) — too wide for portrait A4. Here we only
-  // resolve who the owners are, for the signatory page.
-  if (data.properties.length > 0) {
+  // A personal pack is signed by that person alone.
+  if (data.person) {
+    signatories = [{ name: data.person.name, clientId: null }];
+  } else if (data.properties.length > 0) {
+    // The full per-person working is emitted as LANDSCAPE pages at the end of the
+    // report (buildLandlordMatrixPages) — too wide for portrait A4. Here we only
+    // resolve who the owners are, for the signatory page.
     const inc = data.income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
       .concat(data.adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })));
     const exp = data.expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
@@ -362,13 +438,13 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
     signatories = bd.people.map(p => ({ name: p.name, clientId: p.clientId }));
   }
 
-  // 4. Income schedule
+  // 4 & 5. Schedules. On a personal pack every amount has already been scaled to
+  // this person's share, so say so — the figures won't tie to the invoices.
+  const schedSub = data.person ? `${data.person.name} — your share of each item` : undefined;
   parts.push(section('income-schedule', 'Income schedule',
-    sectionHead(data.clientName, 'Income Schedule', periodLine) + incomeSchedule(data.income)));
-
-  // 5. Expenses schedule
+    sectionHead(data.clientName, 'Income Schedule', periodLine, schedSub) + incomeSchedule(data.income)));
   parts.push(section('expense-schedule', 'Expenses schedule',
-    sectionHead(data.clientName, 'Expenses Schedule', periodLine) + expenseSchedule(data.expenses)));
+    sectionHead(data.clientName, 'Expenses Schedule', periodLine, schedSub) + expenseSchedule(data.expenses)));
 
   // 6. Notes
   if (data.notes.trim()) {
@@ -405,8 +481,10 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
     <div class="paper" style="min-height:1000px;display:flex;flex-direction:column;justify-content:center;text-align:center;padding:0 48px">
       ${data.logoUrl ? `<img src="${data.logoUrl}" alt="" crossorigin="anonymous" style="max-height:64px;max-width:240px;object-fit:contain;margin:0 auto 30px" />` : ''}
       ${data.clientCode ? `<p style="font-size:12px;color:#64748b;margin:0 0 14px">Client Code: ${escapeHtml(data.clientCode)}</p>` : ''}
-      <h1 style="font-size:30px;margin:0 0 16px;color:#0f172a">${escapeHtml(data.clientName || 'Property Income')}</h1>
+      <h1 style="font-size:30px;margin:0 0 16px;color:#0f172a">${escapeHtml(data.person ? data.person.name : (data.clientName || 'Property Income'))}</h1>
       <p style="font-size:14px;color:#334155;margin:0 0 30px">Property Income Computation</p>
+      ${data.person && data.clientName && data.clientName !== data.person.name
+        ? `<p style="font-size:12px;color:#64748b;margin:-22px 0 30px">Your share of the ${escapeHtml(data.clientName)} portfolio</p>` : ''}
       <p style="font-size:12.5px;color:#334155;margin:0">${escapeHtml(periodLine)}</p>
       ${data.firmName ? `<p style="font-size:12px;color:#64748b;margin:30px 0 0">Prepared by ${escapeHtml(data.firmName)}</p>` : ''}
     </div>`;

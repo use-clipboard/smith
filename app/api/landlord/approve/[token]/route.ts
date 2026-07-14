@@ -6,7 +6,7 @@ import { renderTemplate, buildEmailHtml, formatDateUkForTemplate, formatDateTime
 import { ensureLandlordFirmSettings } from '@/lib/landlord/firmSettings';
 import { createNotification } from '@/lib/notifications';
 import { computeRentComputation, type LandlordEntityType } from '@/utils/landlordComputation';
-import { computePersonBreakdown } from '@/utils/landlordAllocation';
+import { personShareRows, personShareAdjustments } from '@/utils/landlordAllocation';
 import type { LandlordProperty, PropertyOwner, LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
 
 // PUBLIC endpoints (no auth — the token is the access).
@@ -31,6 +31,7 @@ interface ResultData {
   entityType?: LandlordEntityType;
   useAllowance?: boolean;
   broughtForwardLoss?: number;
+  personSettings?: Record<string, { entityType?: LandlordEntityType; useAllowance?: boolean; broughtForwardLoss?: number }>;
 }
 
 async function loadApproval(token: string) {
@@ -90,28 +91,35 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   const income = (rd.income ?? []).filter(r => inRange(r.Date, from, to) || r._forceInclude === true);
   const expenses = (rd.expenses ?? []).filter(r => inRange(r.DueDate, from, to) || r._forceInclude === true);
 
-  let totals = { income: 0, expenses: 0, net: 0 };
+  // Per-individual: scale every row to their share FIRST, then run the ordinary
+  // computation on their own reliefs — the allowance, losses and finance-cost
+  // restriction are personal, so a share of the portfolio's answer would be wrong.
+  // These must match the figures in the PDF they were sent.
+  let scopedIncome = income;
+  let scopedExpenses = expenses;
+  let scopedAdjustments = rd.adjustments ?? [];
+  let scopedOpts = {
+    entityType: rd.entityType ?? 'individual',
+    useAllowance: rd.useAllowance ?? false,
+    broughtForwardLoss: rd.broughtForwardLoss ?? 0,
+  };
+
   if (row.person_key) {
-    // Per-individual: this person's share of the portfolio.
     const register = out.clients?.id ? await loadRegister(service, out.clients.id) : [];
-    const bd = computePersonBreakdown(
-      income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
-        .concat((rd.adjustments ?? []).filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount }))),
-      expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
-        .concat((rd.adjustments ?? []).filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount }))),
-      register,
-      { id: out.clients?.id ?? null, name: out.clients?.name ?? out.client_name ?? 'This client' },
-    );
-    const p = bd.people.find(x => x.key === row.person_key);
-    totals = { income: p?.income ?? 0, expenses: p?.expenses ?? 0, net: (p?.income ?? 0) - (p?.expenses ?? 0) };
-  } else {
-    const c = computeRentComputation(income, expenses, rd.adjustments ?? [], {
-      entityType: rd.entityType ?? 'individual',
-      useAllowance: rd.useAllowance ?? false,
-      broughtForwardLoss: rd.broughtForwardLoss ?? 0,
-    });
-    totals = { income: c.totalIncome, expenses: c.totalExpenses, net: c.netProfit };
+    const primary = { id: out.clients?.id ?? null, name: out.clients?.name ?? out.client_name ?? 'This client' };
+    scopedIncome     = personShareRows(income, register, primary, row.person_key);
+    scopedExpenses   = personShareRows(expenses, register, primary, row.person_key);
+    scopedAdjustments = personShareAdjustments(scopedAdjustments, register, primary, row.person_key);
+    const ps = rd.personSettings?.[row.person_key];
+    scopedOpts = {
+      entityType: ps?.entityType ?? 'individual',
+      useAllowance: ps?.useAllowance ?? false,
+      broughtForwardLoss: ps?.broughtForwardLoss ?? 0,
+    };
   }
+
+  const c = computeRentComputation(scopedIncome, scopedExpenses, scopedAdjustments, scopedOpts);
+  const totals = { income: c.totalIncome, expenses: c.totalExpenses, net: c.netProfit };
 
   return NextResponse.json({
     expired: row.expires_at ? new Date(row.expires_at).getTime() < Date.now() : false,

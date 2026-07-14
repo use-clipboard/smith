@@ -144,6 +144,84 @@ export function computePersonBreakdown(
   };
 }
 
+// ─── One person's slice of the portfolio ─────────────────────────────────────
+// Scales every row down to a single owner's share so their own report can be
+// run through the ordinary computation — meaning the finance-cost restriction,
+// the £1,000 allowance, losses and capital treatment all apply to THEIR numbers,
+// not to a share of the portfolio's result. Those reliefs are per-person, so
+// splitting the portfolio's answer would give the wrong figure.
+
+const clampPct = (n: number) => Math.max(0, Math.min(100, n));
+
+export function ownerKeyOf(o: { owner_client_id: string | null; owner_name: string }): string {
+  return o.owner_client_id ?? `name:${o.owner_name.toLowerCase()}`;
+}
+
+export function primaryKeyOf(primaryClient: { id: string | null; name: string }): string {
+  return primaryClient.id ?? `name:${primaryClient.name.toLowerCase()}`;
+}
+
+/** This person's total share of a property, in %. 0 → they don't own any of it. */
+export function personPctForProperty(p: LandlordProperty, personKey: string, primaryKey: string): number {
+  let pct = 0;
+  if (primaryKey === personKey) pct += clampPct(p.ownership_pct);
+  for (const o of p.owners) {
+    if (ownerKeyOf(o) === personKey) pct += clampPct(o.share_pct);
+  }
+  return pct;
+}
+
+/** The properties this person has a share of, with their %. */
+export function personOwnedProperties(
+  properties: LandlordProperty[],
+  primaryClient: { id: string | null; name: string },
+  personKey: string,
+): Array<{ id: string; address: string; pct: number }> {
+  const primaryKey = primaryKeyOf(primaryClient);
+  return properties
+    .map(p => ({ id: p.id, address: p.address, pct: personPctForProperty(p, personKey, primaryKey) }))
+    .filter(p => p.pct > 0);
+}
+
+/**
+ * Scale rows to one person's share, preserving every other field (Category,
+ * CapitalExpense, dates…) so the result feeds computeRentComputation directly.
+ * Rows that match no property, or a property this person doesn't own, are dropped.
+ */
+export function personShareRows<T extends { PropertyAddress: string; Amount: number }>(
+  rows: T[],
+  properties: LandlordProperty[],
+  primaryClient: { id: string | null; name: string },
+  personKey: string,
+): T[] {
+  const unallocProp = findUnallocatedProperty(properties);
+  const primaryKey = primaryKeyOf(primaryClient);
+  const out: T[] = [];
+  for (const r of rows) {
+    const pid = matchProperty(r.PropertyAddress, properties) ?? unallocProp?.id ?? null;
+    const prop = pid ? properties.find(p => p.id === pid) : null;
+    if (!prop) continue;
+    const pct = personPctForProperty(prop, personKey, primaryKey);
+    if (pct <= 0) continue;
+    out.push({ ...r, Amount: (r.Amount || 0) * pct / 100 });
+  }
+  return out;
+}
+
+/** As personShareRows, for adjustments (which key the address differently). */
+export function personShareAdjustments<T extends { propertyAddress: string; amount: number }>(
+  adjustments: T[],
+  properties: LandlordProperty[],
+  primaryClient: { id: string | null; name: string },
+  personKey: string,
+): T[] {
+  const scaled = personShareRows(
+    adjustments.map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount, _src: a })),
+    properties, primaryClient, personKey,
+  );
+  return scaled.map(s => ({ ...s._src, amount: s.Amount }));
+}
+
 // ─── Per-person matrix (property × individual × category) ────────────────────
 // The full working: every property is split into its owners (with their %), and
 // each income/expense category is shared out to them. Drives the By-Person table

@@ -11,8 +11,12 @@ import LandlordHistory, { type LandlordSeed } from '@/components/features/landlo
 import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
 import LandlordApprovalPanel from '@/components/features/landlord/LandlordApprovalPanel';
 import LandlordSendApprovalModal from '@/components/features/landlord/LandlordSendApprovalModal';
+import PersonSettingsPanel from '@/components/features/landlord/PersonSettingsPanel';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
-import { matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL } from '@/utils/landlordAllocation';
+import {
+  matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL,
+  personShareRows, personShareAdjustments,
+} from '@/utils/landlordAllocation';
 import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
@@ -25,7 +29,10 @@ import {
 } from 'lucide-react';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { exportLandlordWorkbook } from '@/utils/landlordExport';
-import { buildLandlordPackHtml, buildLandlordMatrixPages } from '@/lib/landlord/landlordPackHtml';
+import {
+  buildLandlordPackHtml, buildLandlordMatrixPages, buildLandlordPersonPackData,
+  DEFAULT_PERSON_SETTINGS, type LandlordPackData, type LandlordPersonSettings,
+} from '@/lib/landlord/landlordPackHtml';
 import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
 import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
@@ -323,6 +330,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   // Property income allowance (£1,000 instead of actual expenses) + losses b/f + notes.
   const [useAllowance, setUseAllowance] = useState(false);
   const [broughtForwardLoss, setBroughtForwardLoss] = useState('');
+  // The allowance, losses and the finance-cost restriction are personal reliefs,
+  // so each owner gets their own settings for their own report. Keyed by person key.
+  const [personSettings, setPersonSettings] = useState<Record<string, LandlordPersonSettings>>({});
   const [notes, setNotes] = useState('');
   // Prior-year comparison.
   const [showComparison, setShowComparison] = useState(false);
@@ -441,6 +451,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     if (seed.entityType) setEntityType(seed.entityType);
     setUseAllowance(seed.useAllowance ?? false);
     setBroughtForwardLoss(seed.broughtForwardLoss != null ? String(seed.broughtForwardLoss) : '');
+    setPersonSettings(seed.personSettings ?? {});
     setNotes(seed.notes ?? '');
 
     // Hydrate income/expense rows back into UI shape (re-tag with internal _id, _flagged etc.)
@@ -522,6 +533,27 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       .catch(() => {/* optional */});
     return () => { cancelled = true; };
   }, [selectedClient?.id]);
+
+  // Contact emails for owners who are linked clients, to pre-fill the
+  // per-individual send. Owners recorded only by name have no email on file.
+  const [ownerEmails, setOwnerEmails] = useState<Record<string, string | null>>({});
+  const ownerClientIds = useMemo(
+    () => Array.from(new Set(properties.flatMap(p => p.owners.map(o => o.owner_client_id).filter((x): x is string => !!x)))),
+    [properties],
+  );
+  useEffect(() => {
+    if (ownerClientIds.length === 0) { setOwnerEmails({}); return; }
+    let cancelled = false;
+    void Promise.all(ownerClientIds.map(async id => {
+      try {
+        const r = await fetch(`/api/clients/${id}`);
+        if (!r.ok) return [id, null] as const;
+        const d = await r.json();
+        return [id, (d?.client?.contact_email ?? null) as string | null] as const;
+      } catch { return [id, null] as const; }
+    })).then(pairs => { if (!cancelled) setOwnerEmails(Object.fromEntries(pairs)); });
+    return () => { cancelled = true; };
+  }, [ownerClientIds]);
 
   // Selection state (by _id)
   const [selectedIncome, setSelectedIncome] = useState<Set<string>>(new Set());
@@ -605,6 +637,41 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     () => computeRentComputation(inRangeIncome, inRangeExpenses, adjustments, { entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }),
     [inRangeIncome, inRangeExpenses, adjustments, entityType, useAllowance, broughtForwardLoss],
   );
+
+  // One owner's own computation: scale their share of every row FIRST, then apply
+  // their reliefs — the allowance, losses and finance-cost restriction are
+  // personal, so a share of the portfolio's answer would be the wrong number.
+  // Mirrors buildLandlordPersonPackData and the public approve route.
+  const personComp = useCallback((personKey: string): RentComputation => {
+    const pc = { id: selectedClient?.id ?? null, name: selectedClient?.name ?? 'This client' };
+    const s = personSettings[personKey] ?? DEFAULT_PERSON_SETTINGS;
+    return computeRentComputation(
+      personShareRows(inRangeIncome, properties, pc, personKey),
+      personShareRows(inRangeExpenses, properties, pc, personKey),
+      personShareAdjustments(adjustments, properties, pc, personKey),
+      { entityType: s.entityType, useAllowance: s.useAllowance, broughtForwardLoss: s.broughtForwardLoss },
+    );
+  }, [inRangeIncome, inRangeExpenses, adjustments, properties, selectedClient?.id, selectedClient?.name, personSettings]);
+
+  // The owners we can send a personal report to, with a pre-filled email.
+  const approvalPeople = useMemo(() => personMatrix.people.map(p => ({
+    key: p.key,
+    name: p.name,
+    clientId: p.clientId,
+    email: p.clientId
+      ? (p.clientId === selectedClient?.id ? clientEmail : (ownerEmails[p.clientId] ?? null))
+      : null,
+  })), [personMatrix.people, ownerEmails, clientEmail, selectedClient?.id]);
+
+  // Summary lines shown in the approval email — the recipient's own figures.
+  const summaryFor = useCallback((person?: { key: string; name: string }) => {
+    const c = person ? personComp(person.key) : rentCompAll;
+    return [
+      { label: 'Total income', value: fmt(c.totalIncome) },
+      { label: c.allowanceUsed ? 'Total deduction' : 'Total expenses', value: fmt(c.totalExpenses) },
+      { label: c.netProfit >= 0 ? 'Net profit' : 'Net loss', value: fmt(Math.abs(c.netProfit)) },
+    ];
+  }, [personComp, rentCompAll]);
 
   // ─── Scan logic ─────────────────────────────────────────────────────────────
 
@@ -863,11 +930,14 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   // Approvals need a persisted analysis to hang off. Save once and reuse the id,
   // so re-sending or re-approving never creates a duplicate history row.
   const ensureSavedOutput = useCallback(async (): Promise<string> => {
-    if (outputId) return outputId;
+    // Re-save rather than skip when we already have an id: the client approves
+    // against what's stored, so a settings change made after the first save has
+    // to reach the row or the approve page would show stale figures.
     const res = await fetch('/api/outputs/landlord', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        id: outputId ?? undefined,
         clientId: selectedClient?.id ?? null,
         clientName: selectedClient?.name ?? null,
         clientCode: selectedClient?.client_ref ?? null,
@@ -879,6 +949,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         dateFrom, dateTo, entityType,
         useAllowance,
         broughtForwardLoss: parseFloat(broughtForwardLoss) || 0,
+        personSettings,
         notes,
         sourceFilenames: Array.from(new Set(documentFiles.map(f => f.name))),
       }),
@@ -888,7 +959,24 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     setOutputId(j.id as string);
     return j.id as string;
   }, [outputId, selectedClient, current.income, current.expenses, adjustments, flaggedIncome, flaggedExpenses,
-      dateFrom, dateTo, entityType, useAllowance, broughtForwardLoss, notes, documentFiles]);
+      dateFrom, dateTo, entityType, useAllowance, broughtForwardLoss, personSettings, notes, documentFiles]);
+
+  // Re-save before opening the send modal: the client approves against the stored
+  // figures, so any per-person setting changed since the last save has to land
+  // first or the approve page would contradict the PDF they were sent.
+  const openSendApproval = useCallback(async () => {
+    setSavingForApproval(true);
+    setError(null);
+    try {
+      await ensureSavedOutput();
+      setSendApprovalOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the analysis');
+      setAppState('error');
+    } finally {
+      setSavingForApproval(false);
+    }
+  }, [ensureSavedOutput]);
 
   // Step 5 — saves the analysis first if it isn't saved yet.
   const goToApproval = useCallback(async () => {
@@ -931,7 +1019,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   // Build the client-ready Property Income Computation PDF (Accounts Studio house
   // style). Returns the blob so it can be downloaded or attached to an email.
-  const buildPdfBlob = useCallback(async (): Promise<Blob> => {
+  // `person` set → a personal pack: every row scaled to their share, their own
+  // reliefs applied. Otherwise the whole-portfolio pack.
+  const buildPdfBlob = useCallback(async (person?: { key: string; name: string }): Promise<Blob> => {
     let firmName: string | null = null, logoUrl: string | null = null;
     try {
       const r = await fetch('/api/firm/branding');
@@ -940,7 +1030,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     const comparison = (showComparison && priorComp && priorMeta)
       ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
       : null;
-    const packData = {
+    let packData: LandlordPackData = {
       clientName: selectedClient?.name ?? '',
       clientCode: selectedClient?.client_ref ?? '',
       dateFrom, dateTo, firmName, logoUrl,
@@ -951,14 +1041,18 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
       comparison,
     };
+    if (person) {
+      packData = buildLandlordPersonPackData(packData, person, personSettings[person.key] ?? DEFAULT_PERSON_SETTINGS);
+    }
     const html = buildLandlordPackHtml(packData);
     // The full per-person working goes on landscape pages at the end, chunked
     // by column group so no column is cut and every page repeats its headers.
+    // (Skipped on a personal pack — it's a single column.)
     const landscapePages = buildLandlordMatrixPages(packData);
     // avoidSplitSelector keeps table rows whole so no line is ever cut in half
     // by a page break.
     return generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages });
-  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
+  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll, personSettings]);
 
   const handleDownloadPdf = useCallback(async () => {
     setPdfBusy(true);
@@ -1196,8 +1290,17 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           clientName={selectedClient?.name ?? ''}
           clientRef={selectedClient?.client_ref ?? null}
           refreshKey={approvalsRefresh}
-          onSend={() => setSendApprovalOpen(true)}
+          onSend={openSendApproval}
         />
+
+        {approvalPeople.length > 0 && (
+          <PersonSettingsPanel
+            people={approvalPeople}
+            settings={personSettings}
+            onChange={(key, patch) => setPersonSettings(s => ({ ...s, [key]: { ...(s[key] ?? DEFAULT_PERSON_SETTINGS), ...patch } }))}
+            compFor={personComp}
+          />
+        )}
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <button onClick={() => setAppState('success')} className="btn-secondary"><ArrowLeft size={14} /> Back to results</button>
@@ -1212,11 +1315,8 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           clientName={selectedClient?.name ?? ''}
           clientRef={selectedClient?.client_ref ?? null}
           clientEmail={clientEmail}
-          summaryLines={[
-            { label: 'Total income', value: fmt(rentCompAll.totalIncome) },
-            { label: 'Total expenses', value: fmt(rentCompAll.totalExpenses) },
-            { label: rentCompAll.netProfit >= 0 ? 'Net profit' : 'Net loss', value: fmt(Math.abs(rentCompAll.netProfit)) },
-          ]}
+          people={approvalPeople}
+          summaryFor={summaryFor}
           buildPdf={buildPdfBlob}
           onClose={() => setSendApprovalOpen(false)}
           onSent={() => { setSendApprovalOpen(false); setApprovalsRefresh(n => n + 1); }}

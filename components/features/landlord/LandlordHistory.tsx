@@ -13,6 +13,7 @@ import { initials, avatarColour } from '@/components/features/tasks/StepComments
 import { exportLandlordWorkbook } from '@/utils/landlordExport';
 import { computePersonBreakdown } from '@/utils/landlordAllocation';
 import type { LandlordEntityType } from '@/utils/landlordComputation';
+import type { LandlordPersonSettings } from '@/lib/landlord/landlordPackHtml';
 import type {
   LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment,
   LandlordProperty, PropertyOwner,
@@ -71,6 +72,7 @@ export interface LandlordSeed {
   entityType?: LandlordEntityType;
   useAllowance?: boolean;
   broughtForwardLoss?: number;
+  personSettings?: Record<string, LandlordPersonSettings>;
   notes?: string;
 }
 
@@ -306,6 +308,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       entityType?: LandlordEntityType;
       useAllowance?: boolean;
       broughtForwardLoss?: number;
+      personSettings?: Record<string, LandlordPersonSettings>;
       notes?: string;
     };
     const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
@@ -367,6 +370,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         entityType: rd.entityType,
         useAllowance: rd.useAllowance,
         broughtForwardLoss: rd.broughtForwardLoss,
+        personSettings: rd.personSettings,
         notes: rd.notes,
       });
     } catch (e) {
