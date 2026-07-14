@@ -63,6 +63,65 @@ export interface RentComputation {
   capitalExpenses: number;
 }
 
+// ─── Prior-year comparison rows ──────────────────────────────────────────────
+// One ordered list of computation lines with current + prior amounts, shared by
+// the on-screen comparison view, the Excel Comparison sheet and the PDF so all
+// three agree. Expense categories are the union of both years (current order
+// first). `prior` null → prior column stays blank.
+
+export interface RentComparisonRow {
+  label: string;
+  current: number | null;
+  prior: number | null;
+  bold?: boolean;
+  rule?: boolean;
+  muted?: boolean;
+  heading?: boolean;
+}
+
+export function buildComparisonRows(cur: RentComputation, prior: RentComputation | null): RentComparisonRow[] {
+  const p = prior;
+  const rows: RentComparisonRow[] = [];
+  const pv = (n: number) => p ? n : null;
+
+  rows.push({ label: 'Total rents and other income from property', current: cur.incomeTotal, prior: pv(p ? p.incomeTotal : 0) });
+  rows.push({ label: 'Total income', current: cur.totalIncome, prior: pv(p ? p.totalIncome : 0), bold: true, rule: true });
+
+  const curMap = new Map(cur.expenseCategories.map(e => [e.category, e.amount]));
+  const priMap = new Map((p?.expenseCategories ?? []).map(e => [e.category, e.amount]));
+  const order: string[] = [];
+  for (const e of cur.expenseCategories) if (!order.includes(e.category)) order.push(e.category);
+  for (const e of (p?.expenseCategories ?? [])) if (!order.includes(e.category)) order.push(e.category);
+  for (const cat of order) rows.push({ label: cat, current: curMap.get(cat) ?? null, prior: p ? (priMap.get(cat) ?? null) : null });
+
+  const totalLabel = cur.allowanceUsed ? 'Total deduction' : 'Total expenses';
+  rows.push({ label: totalLabel, current: cur.totalExpenses, prior: pv(p ? p.totalExpenses : 0), bold: true, rule: true });
+  rows.push({ label: cur.netProfit >= 0 ? 'Net rental profit' : 'Net rental loss', current: cur.netProfit, prior: pv(p ? p.netProfit : 0), bold: true, rule: true });
+
+  const anyLoss = cur.broughtForwardLoss > 0 || cur.netProfit < 0 || !!(p && (p.broughtForwardLoss > 0 || p.netProfit < 0));
+  if (anyLoss) {
+    if (cur.broughtForwardLoss > 0 || !!(p && p.broughtForwardLoss > 0)) rows.push({ label: 'Losses brought forward', current: cur.broughtForwardLoss || null, prior: p ? (p.broughtForwardLoss || null) : null, muted: true });
+    if (cur.lossOffset > 0 || !!(p && p.lossOffset > 0)) rows.push({ label: 'Loss set against profit', current: cur.lossOffset ? -cur.lossOffset : null, prior: p ? (p.lossOffset ? -p.lossOffset : null) : null, muted: true });
+    if (cur.netProfit >= 0 || !!(p && p.netProfit >= 0)) rows.push({ label: 'Taxable profit after losses', current: cur.netProfit >= 0 ? cur.taxableProfit : null, prior: p ? (p.netProfit >= 0 ? p.taxableProfit : null) : null, bold: true });
+    if (cur.lossCarriedForward > 0 || !!(p && p.lossCarriedForward > 0)) rows.push({ label: 'Losses carried forward', current: cur.lossCarriedForward || null, prior: p ? (p.lossCarriedForward || null) : null, muted: true });
+  }
+
+  const finVisible = (r: RentComputation) => r.restricted && !r.allowanceUsed && r.financeCosts > 0;
+  if (finVisible(cur) || !!(p && finVisible(p))) {
+    rows.push({ label: 'Finance costs (not deducted above)', current: null, prior: null, heading: true });
+    rows.push({ label: 'Residential finance costs', current: cur.financeCosts || null, prior: p ? (p.financeCosts || null) : null });
+    rows.push({ label: 'Basic-rate tax reduction (20%, estimate)', current: cur.financeReducer || null, prior: p ? (p.financeReducer || null) : null });
+    if (cur.unrelievedFinanceCosts > 0.001 || !!(p && p.unrelievedFinanceCosts > 0.001)) rows.push({ label: 'Unrelieved finance costs carried forward', current: cur.unrelievedFinanceCosts || null, prior: p ? (p.unrelievedFinanceCosts || null) : null, muted: true });
+  }
+
+  if (cur.capitalExpenses > 0 || !!(p && p.capitalExpenses > 0)) {
+    rows.push({ label: 'Capital items (not deducted)', current: null, prior: null, heading: true });
+    rows.push({ label: 'Capital expenditure / improvements', current: cur.capitalExpenses || null, prior: p ? (p.capitalExpenses || null) : null });
+  }
+
+  return rows;
+}
+
 export function computeRentComputation(
   income: IncomeAmount[],
   expenses: ExpenseAmount[],

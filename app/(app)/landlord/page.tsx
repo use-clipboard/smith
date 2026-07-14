@@ -11,7 +11,7 @@ import LandlordHistory, { type LandlordSeed } from '@/components/features/landlo
 import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import { matchProperty, computePersonBreakdown } from '@/utils/landlordAllocation';
-import { computeRentComputation, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts } from '@/utils/landlordComputation';
+import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
@@ -258,6 +258,11 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [useAllowance, setUseAllowance] = useState(false);
   const [broughtForwardLoss, setBroughtForwardLoss] = useState('');
   const [notes, setNotes] = useState('');
+  // Prior-year comparison.
+  const [showComparison, setShowComparison] = useState(false);
+  const [priorComp, setPriorComp] = useState<RentComputation | null>(null);
+  const [priorMeta, setPriorMeta] = useState<{ curLabel: string; priorLabel: string; periodLabel: string } | null>(null);
+  const [priorState, setPriorState] = useState<'idle' | 'loading' | 'found' | 'none'>('idle');
 
   const refreshProperties = useCallback(async () => {
     if (!selectedClient?.id) { setProperties([]); return; }
@@ -283,6 +288,51 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   }, [selectedClient?.id]);
 
   useEffect(() => { void refreshProperties(); }, [refreshProperties]);
+
+  // ── Prior-year comparison: find the client's saved analysis whose period ends
+  //    one year before the current one, and compute its figures for a side column.
+  const loadPrior = useCallback(async () => {
+    const cid = selectedClient?.id;
+    const curEndYear = dateTo ? parseInt(dateTo.slice(0, 4), 10) : (dateFrom ? parseInt(dateFrom.slice(0, 4), 10) + 1 : NaN);
+    if (!cid || Number.isNaN(curEndYear)) { setPriorState('none'); setPriorComp(null); setPriorMeta(null); return; }
+    setPriorState('loading');
+    try {
+      const list = await fetch(`/api/outputs?feature=landlord_analysis&client_id=${cid}`).then(r => r.ok ? r.json() : { outputs: [] });
+      const outputs = (list.outputs ?? []) as Array<{ id: string; period_to: string | null; created_at: string }>;
+      const candidates = outputs
+        .filter(o => o.id !== seed?.id && o.period_to && parseInt(o.period_to.slice(0, 4), 10) === curEndYear - 1)
+        .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+      const chosen = candidates[0];
+      if (!chosen) { setPriorState('none'); setPriorComp(null); setPriorMeta(null); return; }
+      const detail = await fetch(`/api/outputs/${chosen.id}`).then(r => r.ok ? r.json() : null);
+      const rd = detail?.output?.result_data as {
+        income?: (LandlordIncomeTransaction & { _forceInclude?: boolean })[];
+        expenses?: (LandlordExpenseTransaction & { _forceInclude?: boolean })[];
+        adjustments?: LandlordAdjustment[];
+        dateFrom?: string; dateTo?: string;
+        entityType?: LandlordEntityType; useAllowance?: boolean; broughtForwardLoss?: number;
+      } | undefined;
+      if (!rd) { setPriorState('none'); setPriorComp(null); setPriorMeta(null); return; }
+      const pFrom = rd.dateFrom ?? '', pTo = rd.dateTo ?? '';
+      const pIncome = (rd.income ?? []).filter(r => isInRange(r.Date, pFrom, pTo) || r._forceInclude === true);
+      const pExpenses = (rd.expenses ?? []).filter(r => isInRange(r.DueDate, pFrom, pTo) || r._forceInclude === true);
+      const pComp = computeRentComputation(pIncome, pExpenses, rd.adjustments ?? [], {
+        entityType: rd.entityType ?? 'individual', useAllowance: rd.useAllowance ?? false, broughtForwardLoss: rd.broughtForwardLoss ?? 0,
+      });
+      setPriorComp(pComp);
+      setPriorMeta({
+        curLabel: dateTo ? dateTo.slice(0, 4) : 'This year',
+        priorLabel: pTo ? pTo.slice(0, 4) : 'Last year',
+        periodLabel: (pFrom || pTo) ? `${fmtUKDate(pFrom)} – ${fmtUKDate(pTo)}` : '',
+      });
+      setPriorState('found');
+    } catch { setPriorState('none'); setPriorComp(null); setPriorMeta(null); }
+  }, [selectedClient?.id, dateFrom, dateTo, seed?.id]);
+
+  useEffect(() => {
+    if (appState === 'success' && selectedClient?.id && (dateFrom || dateTo)) { void loadPrior(); }
+    else { setPriorState('idle'); setPriorComp(null); setPriorMeta(null); }
+  }, [appState, selectedClient?.id, dateFrom, dateTo, loadPrior]);
 
   useEffect(() => {
     if (!selectedClient?.id) {
@@ -661,6 +711,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         const r = await fetch('/api/firm/branding');
         if (r.ok) { const b = await r.json(); firmName = b.firmName ?? null; logoUrl = b.logoUrl ?? null; }
       } catch { /* branding is optional */ }
+      const comparison = (showComparison && priorComp && priorMeta)
+        ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
+        : null;
       const html = buildLandlordPackHtml({
         clientName: selectedClient?.name ?? '',
         clientCode: selectedClient?.client_ref ?? '',
@@ -670,6 +723,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
         primaryClientId: selectedClient?.id ?? null,
         primaryClientName: selectedClient?.name ?? 'This client',
         entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
+        comparison,
       });
       const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true });
       const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
@@ -679,7 +733,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     } finally {
       setPdfBusy(false);
     }
-  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes]);
+  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
 
   // Undo a force-include — send the row back to the out-of-range section.
   const handleExcludeRow = useCallback((id: string, type: 'income' | 'expense') => {
@@ -1203,6 +1257,34 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     );
   }
 
+  function ComparisonComputation({ cur, prior, curLabel, priorLabel }: { cur: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string }) {
+    const rows = buildComparisonRows(cur, prior);
+    const fmtC = (n: number | null) => n === null ? '' : (n < 0 ? `(${fmt(Math.abs(n))})` : fmt(n));
+    const th = 'px-5 py-2.5 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide';
+    return (
+      <table className="w-full text-sm">
+        <thead className="border-b border-[var(--border)] bg-[var(--bg-nav-hover)]">
+          <tr>
+            <th className={`${th} text-left`}></th>
+            <th className={`${th} text-right`}>{curLabel || 'This year'}</th>
+            <th className={`${th} text-right`}>{priorLabel || 'Last year'}</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--border)]">
+          {rows.map((r, i) => r.heading ? (
+            <tr key={i}><td colSpan={3} className="px-5 pt-4 pb-1 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">{r.label}</td></tr>
+          ) : (
+            <tr key={i} className={r.rule ? 'border-t border-[var(--border)]' : ''}>
+              <td className={`px-5 py-2 ${r.bold ? 'font-semibold text-[var(--text-primary)]' : r.muted ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)]'}`}>{r.label}</td>
+              <td className={`px-5 py-2 text-right whitespace-nowrap ${r.bold ? 'font-semibold text-[var(--text-primary)]' : r.muted ? 'text-[var(--text-muted)]' : 'text-[var(--text-primary)]'}`}>{fmtC(r.current)}</td>
+              <td className="px-5 py-2 text-right whitespace-nowrap text-[var(--text-muted)]">{fmtC(r.prior)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
   // ─── Rent Computation: by person ────────────────────────────────────────────
 
   function PropertiesManageBlock() {
@@ -1640,6 +1722,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 setDocumentFiles([]); setScanResults([]); setHistory([]); setHistoryIndex(-1);
                 setAdjustments([]); setSelectedIncome(new Set()); setSelectedExpenses(new Set());
                 setEntityType('individual'); setUseAllowance(false); setBroughtForwardLoss(''); setNotes('');
+                setShowComparison(false); setPriorComp(null); setPriorMeta(null); setPriorState('idle');
                 setView('income'); setAppState('idle');
               }} className="btn-secondary">New Analysis</button>
             </div>
@@ -1817,6 +1900,19 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   </label>
                   <span className="text-xs text-[var(--text-muted)]">set against this year&apos;s property profit; any excess carries forward</span>
                 </div>
+
+                <div className="flex items-center justify-between flex-wrap gap-3 pt-3 border-t border-[var(--border)]">
+                  <label className={`flex items-center gap-2 text-sm ${priorState === 'found' ? 'text-[var(--text-secondary)] cursor-pointer' : 'text-[var(--text-muted)] cursor-default'}`}>
+                    <input type="checkbox" checked={showComparison && priorState === 'found'} disabled={priorState !== 'found'} onChange={e => setShowComparison(e.target.checked)} className="rounded" />
+                    Compare to last year
+                  </label>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {priorState === 'loading' ? 'Looking for last year’s analysis…'
+                      : priorState === 'found' ? `Using ${priorMeta?.periodLabel}`
+                      : priorState === 'none' ? 'No prior-year analysis saved for this client'
+                      : ''}
+                  </span>
+                </div>
               </div>
 
               {/* Adjustments panel */}
@@ -1941,7 +2037,9 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 </div>
               ) : breakdown === 'all' ? (
                 <div className="glass-solid rounded-xl overflow-hidden">
-                  <RentCompSection income={inRangeIncome} expenses={inRangeExpenses} adjList={adjustments} opts={{ entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }} showLosses />
+                  {showComparison && priorComp
+                    ? <ComparisonComputation cur={rentCompAll} prior={priorComp} curLabel={priorMeta?.curLabel ?? ''} priorLabel={priorMeta?.priorLabel ?? ''} />
+                    : <RentCompSection income={inRangeIncome} expenses={inRangeExpenses} adjList={adjustments} opts={{ entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0 }} showLosses />}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -2046,6 +2144,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             useAllowance={useAllowance}
             broughtForwardLoss={parseFloat(broughtForwardLoss) || 0}
             notes={notes}
+            comparison={(showComparison && priorComp && priorMeta) ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel } : null}
             primaryClientId={selectedClient?.id ?? null}
             primaryClientName={selectedClient?.name ?? ''}
             initialClient={selectedClient}

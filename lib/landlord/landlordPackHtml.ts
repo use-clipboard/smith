@@ -7,7 +7,7 @@
 // page references via `data-toc-fill`.
 
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
-import { computeRentComputation, type LandlordEntityType, type RentComputation } from '@/utils/landlordComputation';
+import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputation } from '@/utils/landlordComputation';
 import { computePersonBreakdown } from '@/utils/landlordAllocation';
 
 export interface LandlordPackData {
@@ -27,6 +27,7 @@ export interface LandlordPackData {
   useAllowance: boolean;
   broughtForwardLoss: number;
   notes: string;
+  comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -193,6 +194,24 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
   parts.push(section('rent-comp', 'Property income computation',
     sectionHead(data.clientName, 'Property Income Computation', periodLine, data.entityType === 'company' ? 'Limited company' : 'Individual landlord') +
     computationTable(cAll, true)));
+
+  // 1b. Prior-year comparison
+  if (data.comparison) {
+    const cmp = data.comparison;
+    const body = buildComparisonRows(cmp.current, cmp.prior).map(r => r.heading
+      ? `<tr><td colspan="3" style="padding:12px 0 2px;font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(r.label)}</td></tr>`
+      : `<tr style="${r.rule ? 'border-top:1px solid #cbd5e1;' : ''}">
+          <td style="${LBL}${r.bold ? 'font-weight:700;color:#0f172a;' : r.muted ? 'color:#64748b;' : 'color:#334155;'}">${escapeHtml(r.label)}</td>
+          <td style="${AMT}${r.bold ? 'font-weight:700;color:#0f172a;' : r.muted ? 'color:#64748b;' : 'color:#334155;'}">${money(r.current)}</td>
+          <td style="${AMT}color:#64748b;">${money(r.prior)}</td>
+        </tr>`).join('');
+    parts.push(section('comparison', 'Prior-year comparison',
+      sectionHead(data.clientName, 'Comparison to Prior Year', periodLine) +
+      `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr style="font-size:11px;font-weight:700;color:#475569"><th style="text-align:left"></th><th style="${AMT}">${escapeHtml(cmp.curLabel || 'This year')}</th><th style="${AMT}">${escapeHtml(cmp.priorLabel || 'Last year')}</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>`));
+  }
 
   // 2. By property
   if (propList.length > 1) {

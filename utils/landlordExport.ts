@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
 import { computePersonBreakdown } from './landlordAllocation';
-import { computeRentComputation, type LandlordEntityType, type RentComputationOpts } from './landlordComputation';
+import { computeRentComputation, buildComparisonRows, type LandlordEntityType, type RentComputationOpts, type RentComputation } from './landlordComputation';
 
 type Row = (string | number)[];
 
@@ -377,6 +377,23 @@ function buildPersonSheet(
   return makeSheet(rows);
 }
 
+// ─── Prior-year comparison ───────────────────────────────────────────────────
+
+function buildComparisonSheet(
+  cmp: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string },
+  meta: ReportMeta,
+): XLSX.WorkSheet {
+  const rows: Row[] = [
+    ...reportHeader('Comparison to Prior Year', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
+    ['', cmp.curLabel || 'This year', cmp.priorLabel || 'Last year'],
+  ];
+  for (const r of buildComparisonRows(cmp.current, cmp.prior)) {
+    if (r.heading) { rows.push([r.label]); continue; }
+    rows.push([r.label, r.current ?? '', r.prior ?? '']);
+  }
+  return makeSheet(rows);
+}
+
 // ─── Out of Date Range ─────────────────────────────────────────────────────────
 
 function buildOutOfRangeSheet(
@@ -446,6 +463,8 @@ export interface LandlordExportData {
   broughtForwardLoss?: number;
   /** Free-text working-paper notes — written to a Notes tab when present. */
   notes?: string;
+  /** Prior-year comparison — adds a Comparison tab when present. */
+  comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
 }
 
 export function exportLandlordWorkbook(data: LandlordExportData): void {
@@ -489,6 +508,9 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   const compOpts: RentComputationOpts = { entityType, useAllowance: data.useAllowance, broughtForwardLoss: data.broughtForwardLoss };
   XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta, compOpts), 'Rent Computation');
   XLSX.utils.book_append_sheet(wb, buildRentCompByPropertySheet(compData, meta, entityType), 'Rent Comp by Property');
+  if (data.comparison) {
+    XLSX.utils.book_append_sheet(wb, buildComparisonSheet(data.comparison, meta), 'Comparison');
+  }
   if (data.properties && data.properties.length > 0) {
     const primary = { id: data.primaryClientId ?? null, name: data.primaryClientName ?? data.clientName ?? 'This client' };
     XLSX.utils.book_append_sheet(wb, buildPersonSheet(inRangeIncome, inRangeExpenses, data.adjustments, data.properties, primary, meta), 'By Person');

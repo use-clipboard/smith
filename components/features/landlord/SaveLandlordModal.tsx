@@ -6,7 +6,7 @@ import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadCli
 import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment, LandlordProperty } from '@/types';
-import type { LandlordEntityType } from '@/utils/landlordComputation';
+import type { LandlordEntityType, RentComputation } from '@/utils/landlordComputation';
 
 type Status = 'idle' | 'uploading' | 'exporting' | 'done' | 'error';
 
@@ -25,6 +25,7 @@ interface SaveLandlordModalProps {
   useAllowance?: boolean;
   broughtForwardLoss?: number;
   notes?: string;
+  comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
   primaryClientId?: string | null;
   primaryClientName?: string;
   initialClient?: SelectedClient | null;
@@ -48,6 +49,7 @@ export default function SaveLandlordModal({
   useAllowance,
   broughtForwardLoss,
   notes,
+  comparison,
   primaryClientId,
   primaryClientName,
   initialClient,
@@ -164,6 +166,7 @@ export default function SaveLandlordModal({
       useAllowance,
       broughtForwardLoss,
       notes,
+      comparison,
       primaryClientId: primaryClientId ?? client?.id ?? null,
       primaryClientName: primaryClientName ?? client?.name ?? initialClientName ?? '',
     });
