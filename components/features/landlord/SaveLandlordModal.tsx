@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Download, FolderOpen, Check, Loader2, X, AlertTriangle, Lock, Settings } from 'lucide-react';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
 import { encodeFilesForDriveUpload, readUploadError } from '@/lib/driveUploadClient';
-import { exportLandlordWorkbook } from '@/utils/landlordExport';
+import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
 
@@ -69,6 +69,10 @@ export default function SaveLandlordModal({
   }, [client]);
 
   if (!isOpen) return null;
+
+  const outOfRangeCount =
+    income.filter(r => !isInRange(r.Date, dateFrom, dateTo)).length +
+    expenses.filter(r => !isInRange(r.DueDate, dateFrom, dateTo)).length;
 
   const needsCode = useDrive && !clientCode.trim();
   const canSave = !useDrive || clientCode.trim().length > 0;
@@ -336,6 +340,9 @@ export default function SaveLandlordModal({
                 <p>· All Income &amp; Income by Property</p>
                 <p>· All Expenses &amp; Expenses by Property</p>
                 <p>· Rent Computation &amp; Rent Comp by Property</p>
+                {outOfRangeCount > 0 && (
+                  <p>· Out of Date Range ({outOfRangeCount})</p>
+                )}
                 {(flaggedIncome.length > 0 || flaggedExpenses.length > 0) && (
                   <p>· Flagged Entries ({flaggedIncome.length + flaggedExpenses.length})</p>
                 )}

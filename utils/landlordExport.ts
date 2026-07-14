@@ -9,6 +9,19 @@ function normalizeAddr(addr: string): string {
   return (!addr || addr === 'No Address') ? 'Non Allocated' : addr;
 }
 
+/**
+ * Whether an ISO (YYYY-MM-DD) date falls within the desired range.
+ * Mirrors the isInRange logic used on the Landlord page so the export
+ * and the on-screen results agree on what is in vs out of range.
+ */
+export function isInRange(date: string, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  if (!date) return true;
+  if (from && date < from) return false;
+  if (to   && date > to)   return false;
+  return true;
+}
+
 function fmtDate(iso: string): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -324,6 +337,37 @@ function buildFlaggedSheet(
   return makeSheet(rows);
 }
 
+// ─── Out of Date Range ─────────────────────────────────────────────────────────
+
+function buildOutOfRangeSheet(
+  income: LandlordIncomeTransaction[],
+  expenses: LandlordExpenseTransaction[],
+  meta: ReportMeta,
+  driveLinks: Record<string, string>,
+): XLSX.WorkSheet {
+  const hasLinks = Object.keys(driveLinks).length > 0;
+  const header: Row = ['Type', 'Date', 'Supplier', 'Description', 'Category', 'Amount (£)', 'Property'];
+  const rows: Row[] = [
+    ...reportHeader('Out of Date Range', meta.clientName, meta.clientCode, meta.dateFrom, meta.dateTo),
+    [`These ${income.length + expenses.length} item(s) fall outside the date range above and are excluded from the totals in the other tabs.`],
+    [],
+    hasLinks ? [...header, 'Source'] : header,
+  ];
+
+  for (const r of income) {
+    const base: Row = ['Income', fmtDate(r.Date), '', r.Description, r.Category, r.Amount, r.PropertyAddress];
+    rows.push(hasLinks ? [...base, r.fileName] : base);
+  }
+  for (const r of expenses) {
+    const base: Row = ['Expense', fmtDate(r.DueDate), r.Supplier, r.Description, r.Category, r.Amount, r.PropertyAddress];
+    rows.push(hasLinks ? [...base, r.fileName] : base);
+  }
+
+  const ws = makeSheet(rows);
+  if (hasLinks) applyDriveLinks(ws, rows, 7, driveLinks);
+  return ws;
+}
+
 // ─── Public export ────────────────────────────────────────────────────────────
 
 interface ReportMeta {
@@ -356,9 +400,17 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
     dateTo: data.dateTo,
   };
 
+  // Split by date range — only in-range items belong in the data tabs and the
+  // rent computation; out-of-range items are listed separately so they never
+  // inflate the totals.
+  const inRangeIncome   = data.income.filter(r => isInRange(r.Date, data.dateFrom, data.dateTo));
+  const outRangeIncome  = data.income.filter(r => !isInRange(r.Date, data.dateFrom, data.dateTo));
+  const inRangeExpenses = data.expenses.filter(r => isInRange(r.DueDate, data.dateFrom, data.dateTo));
+  const outRangeExpenses= data.expenses.filter(r => !isInRange(r.DueDate, data.dateFrom, data.dateTo));
+
   const compData: CompData = {
-    income: data.income,
-    expenses: data.expenses,
+    income: inRangeIncome,
+    expenses: inRangeExpenses,
     adjustments: data.adjustments,
   };
 
@@ -370,12 +422,15 @@ export function exportLandlordWorkbook(data: LandlordExportData): void {
   const driveLinks = data.driveLinks ?? {};
   const wb = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(wb, buildAllIncomeSheet(data.income, meta, driveLinks), 'All Income');
-  XLSX.utils.book_append_sheet(wb, buildIncomeByPropertySheet(data.income, meta, driveLinks), 'Income by Property');
-  XLSX.utils.book_append_sheet(wb, buildAllExpensesSheet(data.expenses, meta, driveLinks), 'All Expenses');
-  XLSX.utils.book_append_sheet(wb, buildExpensesByPropertySheet(data.expenses, meta, driveLinks), 'Expenses by Property');
+  XLSX.utils.book_append_sheet(wb, buildAllIncomeSheet(inRangeIncome, meta, driveLinks), 'All Income');
+  XLSX.utils.book_append_sheet(wb, buildIncomeByPropertySheet(inRangeIncome, meta, driveLinks), 'Income by Property');
+  XLSX.utils.book_append_sheet(wb, buildAllExpensesSheet(inRangeExpenses, meta, driveLinks), 'All Expenses');
+  XLSX.utils.book_append_sheet(wb, buildExpensesByPropertySheet(inRangeExpenses, meta, driveLinks), 'Expenses by Property');
   XLSX.utils.book_append_sheet(wb, buildRentCompSheet(compData, meta), 'Rent Computation');
   XLSX.utils.book_append_sheet(wb, buildRentCompByPropertySheet(compData, meta), 'Rent Comp by Property');
+  if (outRangeIncome.length > 0 || outRangeExpenses.length > 0) {
+    XLSX.utils.book_append_sheet(wb, buildOutOfRangeSheet(outRangeIncome, outRangeExpenses, meta, driveLinks), 'Out of Date Range');
+  }
   if (flagged.length > 0) {
     XLSX.utils.book_append_sheet(wb, buildFlaggedSheet(flagged, meta), 'Flagged');
   }
