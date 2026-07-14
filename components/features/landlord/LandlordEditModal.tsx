@@ -198,9 +198,18 @@ export default function LandlordEditModal({ rowType, item, documentFiles, proper
             {hasDoc ? (
               docMime === 'application/pdf' ? (
                 <iframe src={docUrl!} className="flex-1 w-full min-h-0" title="Source document" />
-              ) : (
+              ) : docMime.startsWith('image/') ? (
                 <div className="flex-1 flex items-center justify-center overflow-auto p-4">
                   <img src={docUrl!} alt="Source document" className="max-w-full max-h-full object-contain" />
+                </div>
+              ) : (
+                // Spreadsheet/CSV — can't render inline; offer to open/download it.
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
+                  <p className="text-sm text-[var(--text-secondary)]">Spreadsheet source</p>
+                  <span className="text-xs text-[var(--text-muted)]">{item.fileName}</span>
+                  <a href={docUrl!} download={item.fileName} className="inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline mt-1">
+                    <ExternalLink size={11} /> Open / download
+                  </a>
                 </div>
               )
             ) : (

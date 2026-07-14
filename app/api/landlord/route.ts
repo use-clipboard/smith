@@ -7,7 +7,14 @@ import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 import type { LandlordPastContext } from '@/prompts/landlord';
 
-const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
+// A file is sent EITHER as base64 (PDF/image) OR as extracted text (CSV/Excel,
+// converted client-side) — spreadsheets can't go to Claude as an image/binary.
+const FileSchema = z.object({
+  name: z.string(),
+  mimeType: z.string(),
+  base64: z.string().optional(),
+  text: z.string().optional(),
+});
 
 const PastIncomeSchema = z.object({
   Date: z.string(), PropertyAddress: z.string(), Description: z.string(), Amount: z.number(),
@@ -91,10 +98,14 @@ export async function POST(req: NextRequest) {
     const prompt = buildLandlordPrompt(pastContext as LandlordPastContext | null | undefined);
 
     const fileContent = files.map(f => {
-      if (f.mimeType === 'application/pdf') {
-        return { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 } };
+      // Spreadsheet/CSV — sent as extracted text.
+      if (f.text != null) {
+        return { type: 'text' as const, text: `Spreadsheet / CSV file "${f.name}":\n\n${f.text}` };
       }
-      return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 } };
+      if (f.mimeType === 'application/pdf') {
+        return { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 ?? '' } };
+      }
+      return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 ?? '' } };
     });
 
     const response = await anthropic.messages.create({
@@ -150,8 +161,13 @@ export async function POST(req: NextRequest) {
 
     if (userCtx) {
       if (saveToDrive && clientCode) {
-        void uploadDocumentsToDrive({ files, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'landlord_analysis' });
-        void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'landlord_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
+        // Only base64-backed files (PDF/image) go to Drive/Vault here; CSV/Excel
+        // arrive as text and are stored via the separate SaveLandlordModal flow.
+        const binaryFiles = files
+          .filter((f): f is typeof f & { base64: string } => typeof f.base64 === 'string')
+          .map(f => ({ name: f.name, mimeType: f.mimeType, base64: f.base64 }));
+        void uploadDocumentsToDrive({ files: binaryFiles, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'landlord_analysis' });
+        void saveDocumentsToVault({ files: binaryFiles, clientId: clientId ?? null, ...userCtx, sourceTool: 'landlord_analysis', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'landlord_analysis', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
       // No auto-save to outputs — saving now happens via /api/outputs/landlord

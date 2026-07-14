@@ -25,6 +25,7 @@ import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildLandlordPackHtml } from '@/lib/landlord/landlordPackHtml';
 import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
+import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment, LandlordProperty, PropertyOwner } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -174,7 +175,9 @@ const LANDLORD_OUTPUTS = [
 ];
 
 function isSupportedDoc(f: File): boolean {
-  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name) || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+    || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name)
+    || isSpreadsheetFile(f);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -536,11 +539,15 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       const file = filesToScan[i];
       setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
       try {
-        const base64 = await fileToBase64(file);
+        // Spreadsheets/CSV are converted to text client-side; everything else
+        // goes as base64 (PDF document or image).
+        const filePayload = isSpreadsheetFile(file)
+          ? { name: file.name, mimeType: file.type || 'text/csv', text: await spreadsheetToText(file) }
+          : { name: file.name, mimeType: file.type || 'application/pdf', base64: await fileToBase64(file) };
         const res = await fetch('/api/landlord', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }], clientId, clientCode, pastContext }),
+          body: JSON.stringify({ files: [filePayload], clientId, clientCode, pastContext }),
         });
         if (!res.ok) {
           const err = await res.json();
@@ -1521,10 +1528,10 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   <UploadCloud size={22} className="text-[var(--accent)]" />
                 </div>
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Drag and drop your documents here</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">Upload letting agent statements, invoices &amp; receipts (PDF, PNG, JPG)</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Upload letting agent statements, invoices &amp; receipts (PDF, PNG, JPG, CSV, Excel)</p>
                 <span className="btn-primary mt-4 inline-flex pointer-events-none">Browse files</span>
               </div>
-              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*,.csv,.tsv,.xls,.xlsx" className="hidden"
                 onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
 
               {documentFiles.length > 0 && (
