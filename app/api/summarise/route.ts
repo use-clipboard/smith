@@ -6,7 +6,14 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { uploadDocumentsToDrive, logAiUsage, saveDocumentsToVault } from '@/lib/driveUpload';
 
-const FileSchema = z.object({ name: z.string(), mimeType: z.string(), base64: z.string() });
+// A file is sent EITHER as base64 (PDF/image) OR as extracted text (CSV/Excel,
+// converted client-side).
+const FileSchema = z.object({
+  name: z.string(),
+  mimeType: z.string(),
+  base64: z.string().optional(),
+  text: z.string().optional(),
+});
 
 const PastDocSchema = z.object({
   detectedDate: z.string(),
@@ -40,10 +47,14 @@ export async function POST(req: NextRequest) {
     const prompt = buildSummarisePrompt((pastDocuments ?? null) as SummarisePastDoc[] | null);
 
     const fileContent = files.map(f => {
-      if (f.mimeType === 'application/pdf') {
-        return { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 } };
+      // Spreadsheet/CSV — sent as extracted text.
+      if (f.text != null) {
+        return { type: 'text' as const, text: `Spreadsheet / CSV file "${f.name}":\n\n${f.text}` };
       }
-      return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 } };
+      if (f.mimeType === 'application/pdf') {
+        return { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.base64 ?? '' } };
+      }
+      return { type: 'image' as const, source: { type: 'base64' as const, media_type: f.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: f.base64 ?? '' } };
     });
 
     const response = await anthropic.messages.create({
@@ -62,8 +73,13 @@ export async function POST(req: NextRequest) {
 
     if (userCtx) {
       if (saveToDrive && clientCode) {
-        void uploadDocumentsToDrive({ files, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'summarise' });
-        void saveDocumentsToVault({ files, clientId: clientId ?? null, ...userCtx, sourceTool: 'summarise', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
+        // Only base64-backed files (PDF/image) go to Drive/Vault; CSV/Excel
+        // arrive as text and are stored via the separate save flow.
+        const binaryFiles = files
+          .filter((f): f is typeof f & { base64: string } => typeof f.base64 === 'string')
+          .map(f => ({ name: f.name, mimeType: f.mimeType, base64: f.base64 }));
+        void uploadDocumentsToDrive({ files: binaryFiles, clientId: clientId ?? null, clientCode, ...userCtx, feature: 'summarise' });
+        void saveDocumentsToVault({ files: binaryFiles, clientId: clientId ?? null, ...userCtx, sourceTool: 'summarise', siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? '', cookieHeader: req.headers.get('cookie') ?? '' });
       }
       void logAiUsage({ ...userCtx, clientId: clientId ?? null, feature: 'summarise', inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
       // No auto-save to outputs — saving happens via /api/outputs/summarise

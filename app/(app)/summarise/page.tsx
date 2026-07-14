@@ -17,6 +17,7 @@ import {
   Files, FileStack, ArrowUpRight,
 } from 'lucide-react';
 import { fileToBase64 } from '@/utils/fileUtils';
+import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
 import type { OutOfRangeDocument, DocumentScanResult } from '@/types';
 
 type AppState = 'idle' | 'loading' | 'scan_results' | 'success' | 'error';
@@ -62,7 +63,9 @@ const SUMMARISE_OUTPUTS = [
 ];
 
 function isSupportedDoc(f: File): boolean {
-  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name) || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name);
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+    || f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(f.name)
+    || isSpreadsheetFile(f);
 }
 
 // ── Grouping helpers ──────────────────────────────────────────────────────────
@@ -267,12 +270,15 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
       setScanProgress({ current: i + 1, total: filesToScan.length, fileName: file.name });
 
       try {
-        const base64 = await fileToBase64(file);
+        // Spreadsheets/CSV are converted to text client-side; everything else base64.
+        const filePayload = isSpreadsheetFile(file)
+          ? { name: file.name, mimeType: file.type || 'text/csv', text: await spreadsheetToText(file) }
+          : { name: file.name, mimeType: file.type || 'application/pdf', base64: await fileToBase64(file) };
         const res = await fetch('/api/summarise', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            files: [{ name: file.name, mimeType: file.type || 'application/pdf', base64 }],
+            files: [filePayload],
             clientId,
             pastDocuments: effectivePastDocs,
           }),
@@ -547,10 +553,10 @@ function SummariseTool({ seed, onBack }: { seed: SummariseSeed | null; onBack: (
                   <UploadCloud size={22} className="text-[var(--accent)]" />
                 </div>
                 <p className="text-sm font-semibold text-[var(--text-primary)]">Drag and drop your documents here</p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">Upload invoices, receipts or any financial documents (PDF, PNG, JPG)</p>
+                <p className="text-xs text-[var(--text-muted)] mt-1">Upload invoices, receipts or any financial documents (PDF, PNG, JPG, CSV, Excel)</p>
                 <span className="btn-primary mt-4 inline-flex pointer-events-none">Browse files</span>
               </div>
-              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+              <input ref={fileInputRef} type="file" multiple accept="application/pdf,image/*,.csv,.tsv,.xls,.xlsx" className="hidden"
                 onChange={e => { addFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
 
               {documentFiles.length > 0 && (
