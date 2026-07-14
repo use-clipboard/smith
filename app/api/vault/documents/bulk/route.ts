@@ -95,15 +95,39 @@ export async function DELETE(req: NextRequest) {
     const verifiedIds = docs.map(d => d.id);
 
     // Delete from Drive if requested (skip pseudo IDs)
+    let driveFailures = 0;
     if (delete_from_drive) {
       const creds = await getRefreshedDriveCredentials(userCtx.firmId);
       if (creds) {
-        await Promise.allSettled(
-          docs
-            .filter(d => d.google_drive_file_id && !d.google_drive_file_id.startsWith('tool:'))
-            .map(d => creds.drive.files.delete({ fileId: d.google_drive_file_id }))
+        const driveDocs = docs.filter(
+          d => d.google_drive_file_id && !d.google_drive_file_id.startsWith('tool:')
         );
+        // supportsAllDrives is required for files that live in a Shared Drive —
+        // without it the API scopes to My Drive and returns 404 for shared-drive files.
+        const results = await Promise.allSettled(
+          driveDocs.map(d =>
+            creds.drive.files.delete({ fileId: d.google_drive_file_id, supportsAllDrives: true })
+          )
+        );
+        results.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            driveFailures++;
+            console.error(
+              `[vault/documents/bulk DELETE] Drive delete failed for ${driveDocs[i].google_drive_file_id}:`,
+              r.reason
+            );
+          }
+        });
       }
+    }
+
+    // If any Drive delete failed, do NOT remove the vault rows — otherwise the
+    // next Drive sync silently re-imports the surviving files and they reappear.
+    if (driveFailures > 0) {
+      return NextResponse.json(
+        { error: `Failed to delete ${driveFailures} file(s) from Google Drive. Nothing was removed — please try again.` },
+        { status: 502 }
+      );
     }
 
     const { error } = await db

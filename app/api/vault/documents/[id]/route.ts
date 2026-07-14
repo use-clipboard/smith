@@ -118,7 +118,9 @@ export async function DELETE(
       const creds = await getRefreshedDriveCredentials(userCtx.firmId);
       if (creds) {
         try {
-          await creds.drive.files.delete({ fileId: doc.google_drive_file_id });
+          // supportsAllDrives is required for files that live in a Shared Drive —
+          // without it the API scopes to My Drive and returns 404 for shared-drive files.
+          await creds.drive.files.delete({ fileId: doc.google_drive_file_id, supportsAllDrives: true });
         } catch (err) {
           console.error('[vault/delete] Drive delete failed:', err);
           return NextResponse.json({ error: 'Failed to delete from Google Drive.' }, { status: 500 });
