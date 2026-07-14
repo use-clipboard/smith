@@ -28,6 +28,9 @@ interface SaveLandlordModalProps {
   comparison?: { current: RentComputation; prior: RentComputation; curLabel: string; priorLabel: string } | null;
   /** Generates + downloads the PDF report. Run as part of Save & Export. */
   onExportPdf?: () => Promise<void>;
+  /** Fires with the saved analysis id, so client approval can hang off it
+   *  instead of saving a second history row. */
+  onSaved?: (outputId: string) => void;
   primaryClientId?: string | null;
   primaryClientName?: string;
   initialClient?: SelectedClient | null;
@@ -53,6 +56,7 @@ export default function SaveLandlordModal({
   notes,
   comparison,
   onExportPdf,
+  onSaved,
   primaryClientId,
   primaryClientName,
   initialClient,
@@ -203,7 +207,14 @@ export default function SaveLandlordModal({
         notes,
         sourceFilenames,
       }),
-    }).catch(err => console.error('[SaveLandlordModal] history save failed:', err));
+    })
+      .then(async r => {
+        if (!r.ok) return;
+        const j = await r.json().catch(() => ({}));
+        // Hand the id back so client approval attaches to THIS saved analysis.
+        if (j?.id) onSaved?.(j.id as string);
+      })
+      .catch(err => console.error('[SaveLandlordModal] history save failed:', err));
 
     setStatus('done');
   };

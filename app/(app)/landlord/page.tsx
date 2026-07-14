@@ -9,6 +9,8 @@ import SaveLandlordModal from '@/components/features/landlord/SaveLandlordModal'
 import LandlordEditModal from '@/components/features/landlord/LandlordEditModal';
 import LandlordHistory, { type LandlordSeed } from '@/components/features/landlord/LandlordHistory';
 import LandlordPropertiesPanel from '@/components/features/landlord/LandlordPropertiesPanel';
+import LandlordApprovalPanel from '@/components/features/landlord/LandlordApprovalPanel';
+import LandlordSendApprovalModal from '@/components/features/landlord/LandlordSendApprovalModal';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import { matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL } from '@/utils/landlordAllocation';
 import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
@@ -31,7 +33,7 @@ import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntr
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AppState = 'idle' | 'loading' | 'scan_results' | 'property_review' | 'success' | 'error';
+type AppState = 'idle' | 'loading' | 'scan_results' | 'property_review' | 'success' | 'approval' | 'error';
 
 /** Address used for the single combined property when "group all properties" is on. */
 const GROUP_LABEL = 'All properties';
@@ -186,6 +188,7 @@ const STEPS_BASE: WizardStep[] = [
   { n: 1, label: 'Select Client' },
   { n: 2, label: 'Upload Documents' },
   { n: 3, label: 'Analysis Results' },
+  { n: 4, label: 'Client Approval' },
 ];
 
 /** With property review (suggest / grouped mode) an extra step sits between
@@ -195,6 +198,7 @@ const STEPS_WITH_REVIEW: WizardStep[] = [
   { n: 2, label: 'Upload Documents' },
   { n: 3, label: 'Review Properties' },
   { n: 4, label: 'Analysis Results' },
+  { n: 5, label: 'Client Approval' },
 ];
 
 function WizardStepper({ steps, current, onStep }: { steps: WizardStep[]; current: number; onStep?: (n: number) => void }) {
@@ -499,6 +503,25 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [showOutOfRange, setShowOutOfRange] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  // Client approval (step 5). Approvals hang off the saved analysis, so the
+  // output id is the anchor — reused so re-sending never duplicates history.
+  const [outputId, setOutputId] = useState<string | null>(seed?.id ?? null);
+  const [savingForApproval, setSavingForApproval] = useState(false);
+  const [sendApprovalOpen, setSendApprovalOpen] = useState(false);
+  const [approvalsRefresh, setApprovalsRefresh] = useState(0);
+  // The client's contact email — SelectedClient doesn't carry it, so fetch it
+  // to pre-fill the approval recipient.
+  const [clientEmail, setClientEmail] = useState<string | null>(null);
+  useEffect(() => {
+    const id = selectedClient?.id;
+    if (!id) { setClientEmail(null); return; }
+    let cancelled = false;
+    fetch(`/api/clients/${id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.client) setClientEmail(d.client.contact_email ?? null); })
+      .catch(() => {/* optional */});
+    return () => { cancelled = true; };
+  }, [selectedClient?.id]);
 
   // Selection state (by _id)
   const [selectedIncome, setSelectedIncome] = useState<Set<string>>(new Set());
@@ -837,6 +860,51 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     if (missing.length > 0) void addDetectedProperties(missing);
   }, [appState, detectedFromScan, properties, propsLoading, addDetectedProperties]);
 
+  // Approvals need a persisted analysis to hang off. Save once and reuse the id,
+  // so re-sending or re-approving never creates a duplicate history row.
+  const ensureSavedOutput = useCallback(async (): Promise<string> => {
+    if (outputId) return outputId;
+    const res = await fetch('/api/outputs/landlord', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: selectedClient?.id ?? null,
+        clientName: selectedClient?.name ?? null,
+        clientCode: selectedClient?.client_ref ?? null,
+        income: toExportIncome(current.income.filter(r => !r._flagged)),
+        expenses: toExportExpense(current.expenses.filter(r => !r._flagged)),
+        adjustments,
+        flaggedIncome: flaggedIncome.map(r => ({ date: r.Date, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName })),
+        flaggedExpenses: flaggedExpenses.map(r => ({ date: r.DueDate, description: r.Description, amount: r.Amount, reason: r._flagReason ?? '', fileName: r.fileName })),
+        dateFrom, dateTo, entityType,
+        useAllowance,
+        broughtForwardLoss: parseFloat(broughtForwardLoss) || 0,
+        notes,
+        sourceFilenames: Array.from(new Set(documentFiles.map(f => f.name))),
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.id) throw new Error(j.error ?? 'Failed to save the analysis');
+    setOutputId(j.id as string);
+    return j.id as string;
+  }, [outputId, selectedClient, current.income, current.expenses, adjustments, flaggedIncome, flaggedExpenses,
+      dateFrom, dateTo, entityType, useAllowance, broughtForwardLoss, notes, documentFiles]);
+
+  // Step 5 — saves the analysis first if it isn't saved yet.
+  const goToApproval = useCallback(async () => {
+    setSavingForApproval(true);
+    setError(null);
+    try {
+      await ensureSavedOutput();
+      setAppState('approval');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the analysis');
+      setAppState('error');
+    } finally {
+      setSavingForApproval(false);
+    }
+  }, [ensureSavedOutput]);
+
   // Download just the workbook — no Drive upload, no history save.
   const handleDownloadExcel = useCallback(() => {
     const comparison = (showComparison && priorComp && priorMeta)
@@ -861,36 +929,41 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   }, [current.income, current.expenses, adjustments, flaggedIncome, flaggedExpenses, selectedClient, dateFrom, dateTo,
       properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
 
-  // Generate a client-ready Property Income Computation PDF (Accounts Studio house style).
+  // Build the client-ready Property Income Computation PDF (Accounts Studio house
+  // style). Returns the blob so it can be downloaded or attached to an email.
+  const buildPdfBlob = useCallback(async (): Promise<Blob> => {
+    let firmName: string | null = null, logoUrl: string | null = null;
+    try {
+      const r = await fetch('/api/firm/branding');
+      if (r.ok) { const b = await r.json(); firmName = b.firmName ?? null; logoUrl = b.logoUrl ?? null; }
+    } catch { /* branding is optional */ }
+    const comparison = (showComparison && priorComp && priorMeta)
+      ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
+      : null;
+    const packData = {
+      clientName: selectedClient?.name ?? '',
+      clientCode: selectedClient?.client_ref ?? '',
+      dateFrom, dateTo, firmName, logoUrl,
+      income: inRangeIncome, expenses: inRangeExpenses, adjustments,
+      properties,
+      primaryClientId: selectedClient?.id ?? null,
+      primaryClientName: selectedClient?.name ?? 'This client',
+      entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
+      comparison,
+    };
+    const html = buildLandlordPackHtml(packData);
+    // The full per-person working goes on landscape pages at the end, chunked
+    // by column group so no column is cut and every page repeats its headers.
+    const landscapePages = buildLandlordMatrixPages(packData);
+    // avoidSplitSelector keeps table rows whole so no line is ever cut in half
+    // by a page break.
+    return generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages });
+  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
+
   const handleDownloadPdf = useCallback(async () => {
     setPdfBusy(true);
     try {
-      let firmName: string | null = null, logoUrl: string | null = null;
-      try {
-        const r = await fetch('/api/firm/branding');
-        if (r.ok) { const b = await r.json(); firmName = b.firmName ?? null; logoUrl = b.logoUrl ?? null; }
-      } catch { /* branding is optional */ }
-      const comparison = (showComparison && priorComp && priorMeta)
-        ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel }
-        : null;
-      const packData = {
-        clientName: selectedClient?.name ?? '',
-        clientCode: selectedClient?.client_ref ?? '',
-        dateFrom, dateTo, firmName, logoUrl,
-        income: inRangeIncome, expenses: inRangeExpenses, adjustments,
-        properties,
-        primaryClientId: selectedClient?.id ?? null,
-        primaryClientName: selectedClient?.name ?? 'This client',
-        entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
-        comparison,
-      };
-      const html = buildLandlordPackHtml(packData);
-      // The full per-person working goes on landscape pages at the end, chunked
-      // by column group so no column is cut and every page repeats its headers.
-      const landscapePages = buildLandlordMatrixPages(packData);
-      // avoidSplitSelector keeps table rows whole so no line is ever cut in half
-      // by a page break.
-      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages });
+      const blob = await buildPdfBlob();
       const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
       downloadBlob(blob, `property_income_${stub}.pdf`);
     } catch (e) {
@@ -898,7 +971,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     } finally {
       setPdfBusy(false);
     }
-  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll]);
+  }, [buildPdfBlob, selectedClient]);
 
   // Undo a force-include — send the row back to the out-of-range section.
   const handleExcludeRow = useCallback((id: string, type: 'income' | 'expense') => {
@@ -1105,6 +1178,50 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706" wide>
       <BackToHistory onBack={onBack} />
       <ScanResultsView results={scanResults} fileRefs={fileRefs.current} isRescanning={isRescanning} onRescan={handleRescan} onDismissAndContinue={handleDismissAndContinue} />
+    </ToolLayout>
+  );
+
+  // ── Step 5 — client approval ──
+  if (appState === 'approval') return (
+    <ToolLayout title="Landlord Analysis" description="Send the computation to your client to approve." icon={House} iconColor="#D97706" wide>
+      <BackToHistory onBack={onBack} />
+      <div className="space-y-5">
+        <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
+          <WizardStepper steps={wizardSteps} current={wizardSteps.length} onStep={n => { if (n < wizardSteps.length) setAppState('success'); }} />
+        </div>
+
+        <LandlordApprovalPanel
+          outputId={outputId}
+          clientId={selectedClient?.id ?? null}
+          clientName={selectedClient?.name ?? ''}
+          clientRef={selectedClient?.client_ref ?? null}
+          refreshKey={approvalsRefresh}
+          onSend={() => setSendApprovalOpen(true)}
+        />
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <button onClick={() => setAppState('success')} className="btn-secondary"><ArrowLeft size={14} /> Back to results</button>
+        </div>
+      </div>
+
+      {outputId && (
+        <LandlordSendApprovalModal
+          open={sendApprovalOpen}
+          outputId={outputId}
+          clientId={selectedClient?.id ?? null}
+          clientName={selectedClient?.name ?? ''}
+          clientRef={selectedClient?.client_ref ?? null}
+          clientEmail={clientEmail}
+          summaryLines={[
+            { label: 'Total income', value: fmt(rentCompAll.totalIncome) },
+            { label: 'Total expenses', value: fmt(rentCompAll.totalExpenses) },
+            { label: rentCompAll.netProfit >= 0 ? 'Net profit' : 'Net loss', value: fmt(Math.abs(rentCompAll.netProfit)) },
+          ]}
+          buildPdf={buildPdfBlob}
+          onClose={() => setSendApprovalOpen(false)}
+          onSent={() => { setSendApprovalOpen(false); setApprovalsRefresh(n => n + 1); }}
+        />
+      )}
     </ToolLayout>
   );
 
@@ -1935,7 +2052,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
           {/* Stepper */}
           <div className="glass-solid rounded-xl px-5 py-3.5 overflow-x-auto scrollbar-thin">
-            <WizardStepper steps={wizardSteps} current={wizardSteps.length} onStep={() => setAppState('idle')} />
+            <WizardStepper steps={wizardSteps} current={wizardSteps.length - 1} onStep={() => setAppState('idle')} />
           </div>
 
           {/* Summary strip */}
@@ -2033,6 +2150,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
                   <Download size={14} />
                   Save & Export
+                </button>
+              </Tooltip>
+              <Tooltip label={selectedClient ? 'Send the computation to the client to approve' : 'Select a client to send for approval'}>
+                <button onClick={() => void goToApproval()} disabled={!selectedClient || savingForApproval} className="btn-secondary disabled:opacity-50">
+                  {savingForApproval ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                  Client Approval
                 </button>
               </Tooltip>
               <button onClick={() => {
@@ -2466,6 +2589,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             notes={notes}
             comparison={(showComparison && priorComp && priorMeta) ? { current: rentCompAll, prior: priorComp, curLabel: priorMeta.curLabel, priorLabel: priorMeta.priorLabel } : null}
             onExportPdf={handleDownloadPdf}
+            onSaved={id => setOutputId(id)}
             primaryClientId={selectedClient?.id ?? null}
             primaryClientName={selectedClient?.name ?? ''}
             initialClient={selectedClient}

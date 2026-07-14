@@ -18,6 +18,7 @@ import CalendarSettingsTab from './tabs/CalendarSettingsTab';
 import StaffHireSettingsTab from './tabs/StaffHireSettingsTab';
 import TasksSettingsTab from './tabs/TasksSettingsTab';
 import MtdItSettingsTab from './tabs/MtdItSettingsTab';
+import LandlordSettingsTab from './tabs/LandlordSettingsTab';
 import TimesheetsSettingsTab from './tabs/TimesheetsSettingsTab';
 import EmailTriageTab from './tabs/EmailTriageTab';
 import HrSettingsTab from './tabs/HrSettingsTab';
@@ -30,7 +31,7 @@ import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
 
 interface Props {
   userId: string;
@@ -51,6 +52,7 @@ interface Props {
   hrModuleActive?: boolean;
   proposalsModuleActive?: boolean;
   mtdItModuleActive?: boolean;
+  landlordModuleActive?: boolean;
   bookkeepingActive?: boolean;
   documentVaultActive?: boolean;
   emailSenderName?: string | null;
@@ -67,7 +69,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, bookkeepingActive, documentVaultActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, landlordModuleActive, bookkeepingActive, documentVaultActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -125,6 +127,7 @@ export default function SettingsClient({
     { id: 'hr' as Tab,           label: 'HR',           icon: HeartHandshake, adminOnly: true,  hidden: !hrModuleActive,           group: 'tools' as TabGroup },
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
     { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
+    { id: 'landlord' as Tab,     label: 'Landlord',     icon: Building2,       adminOnly: true,  hidden: !landlordModuleActive,     group: 'tools' as TabGroup },
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
@@ -633,6 +636,10 @@ export default function SettingsClient({
       {/* MTD IT tab — admin only, shown when MTD IT module is active */}
       {activeTab === 'mtd-it' && isAdmin && mtdItModuleActive && (
         <MtdItSettingsTab />
+      )}
+
+      {activeTab === 'landlord' && isAdmin && landlordModuleActive && (
+        <LandlordSettingsTab />
       )}
 
       {/* Bookkeeping tab — gated by canAccessBookkeeping (server-side) */}

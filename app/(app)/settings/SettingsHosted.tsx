@@ -58,6 +58,7 @@ export default function SettingsHosted() {
       hrModuleActive={data.activeModules.includes('hr')}
       proposalsModuleActive={data.activeModules.includes('proposals')}
       mtdItModuleActive={data.activeModules.includes('mtd-it')}
+      landlordModuleActive={data.activeModules.includes('landlord')}
       emailSenderName={data.emailSenderName}
       emailSenderAddress={data.emailSenderAddress}
     />
