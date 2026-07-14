@@ -20,7 +20,7 @@ export const FINANCE_RELIEF_RATE = 0.20;
 export const PROPERTY_INCOME_ALLOWANCE = 1000;
 
 interface IncomeAmount { Amount: number }
-interface ExpenseAmount { Category: string; Amount: number }
+interface ExpenseAmount { Category: string; Amount: number; CapitalExpense?: boolean }
 interface CompAdjustment { type: 'income' | 'expense'; amount: number; category: string; description: string }
 
 export interface RentComputationOpts {
@@ -58,6 +58,9 @@ export interface RentComputation {
   financeCosts: number;
   financeReducer: number;
   unrelievedFinanceCosts: number;
+
+  /** Capital items excluded from the deduction (kept for CGT base cost). */
+  capitalExpenses: number;
 }
 
 export function computeRentComputation(
@@ -74,9 +77,17 @@ export function computeRentComputation(
   const incomeAdjustments = incAdj.map(a => ({ description: a.description, amount: a.amount }));
   const totalIncome = incomeTotal + incAdj.reduce((s, a) => s + a.amount, 0);
 
-  // Merge expenses + expense adjustments into category buckets.
+  // Merge expenses + expense adjustments into category buckets. Capital items
+  // (improvements) are not allowable against rental income — they're excluded
+  // from the deduction and reported separately. Replacements of domestic items
+  // are repairs, not capital, so they are (correctly) left as CapitalExpense=false
+  // and remain deductible.
+  let capitalExpenses = 0;
   const byCat = new Map<string, number>();
-  for (const r of expenses) byCat.set(r.Category, (byCat.get(r.Category) ?? 0) + (r.Amount || 0));
+  for (const r of expenses) {
+    if (r.CapitalExpense) { capitalExpenses += (r.Amount || 0); continue; }
+    byCat.set(r.Category, (byCat.get(r.Category) ?? 0) + (r.Amount || 0));
+  }
   for (const a of adjustments.filter(a => a.type === 'expense')) {
     const cat = a.category || 'Other allowable property expenses';
     byCat.set(cat, (byCat.get(cat) ?? 0) + a.amount);
@@ -132,5 +143,6 @@ export function computeRentComputation(
     allowanceUsed, allowanceDeduction, allowanceWouldHelp,
     broughtForwardLoss, lossOffset, taxableProfit, lossCarriedForward,
     restricted, financeCosts, financeReducer, unrelievedFinanceCosts,
+    capitalExpenses,
   };
 }

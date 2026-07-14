@@ -19,8 +19,10 @@ import {
   House, Download, Undo2, Redo2, AlertTriangle, Pencil, Flag,
   CheckCircle, ChevronDown, ChevronUp, LayoutList, LayoutGrid,
   Plus, Trash2, TrendingUp, ArrowLeft, ArrowRight, Sparkles,
-  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin,
+  UploadCloud, Check, Building2, CalendarDays, ShieldCheck, Coins, Receipt, Calculator, X, Users, MapPin, FileText, Loader2,
 } from 'lucide-react';
+import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
+import { buildLandlordPackHtml } from '@/lib/landlord/landlordPackHtml';
 import { LANDLORD_EXPENSE_CATEGORIES, LANDLORD_INCOME_CATEGORIES, LANDLORD_FINANCE_COST_CATEGORY } from '@/components/features/landlord/categories';
 import { fileToBase64 } from '@/utils/fileUtils';
 import type { LandlordIncomeTransaction, LandlordExpenseTransaction, FlaggedEntry, DocumentScanResult, LandlordAdjustment, LandlordProperty, PropertyOwner } from '@/types';
@@ -384,6 +386,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [breakdown, setBreakdown] = useState<Breakdown>('all');
   const [showOutOfRange, setShowOutOfRange] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   // Selection state (by _id)
   const [selectedIncome, setSelectedIncome] = useState<Set<string>>(new Set());
@@ -456,7 +459,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
     ];
     const expAmounts = [
-      ...inRangeExpenses.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+      ...inRangeExpenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
       ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
     ];
     return computePersonBreakdown(incAmounts, expAmounts, properties, pc);
@@ -648,6 +651,35 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     }
     await refreshProperties();
   }, [selectedClient?.id, refreshProperties]);
+
+  // Generate a client-ready Property Income Computation PDF (Accounts Studio house style).
+  const handleDownloadPdf = useCallback(async () => {
+    setPdfBusy(true);
+    try {
+      let firmName: string | null = null, logoUrl: string | null = null;
+      try {
+        const r = await fetch('/api/firm/branding');
+        if (r.ok) { const b = await r.json(); firmName = b.firmName ?? null; logoUrl = b.logoUrl ?? null; }
+      } catch { /* branding is optional */ }
+      const html = buildLandlordPackHtml({
+        clientName: selectedClient?.name ?? '',
+        clientCode: selectedClient?.client_ref ?? '',
+        dateFrom, dateTo, firmName, logoUrl,
+        income: inRangeIncome, expenses: inRangeExpenses, adjustments,
+        properties,
+        primaryClientId: selectedClient?.id ?? null,
+        primaryClientName: selectedClient?.name ?? 'This client',
+        entityType, useAllowance, broughtForwardLoss: parseFloat(broughtForwardLoss) || 0, notes,
+      });
+      const blob = await generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true });
+      const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
+      downloadBlob(blob, `property_income_${stub}.pdf`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not generate the PDF');
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes]);
 
   // Undo a force-include — send the row back to the out-of-range section.
   const handleExcludeRow = useCallback((id: string, type: 'income' | 'expense') => {
@@ -1020,7 +1052,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     // Expense category lines from documents (finance excluded when restricted);
     // adjustments are shown separately below to keep them visible.
     const docByCat = new Map<string, number>();
-    for (const r of expenses) docByCat.set(r.Category, (docByCat.get(r.Category) ?? 0) + r.Amount);
+    for (const r of expenses) { if (r.CapitalExpense) continue; docByCat.set(r.Category, (docByCat.get(r.Category) ?? 0) + r.Amount); }
     const docCats = Array.from(docByCat.entries()).filter(([cat]) => !(restricted && cat === LANDLORD_FINANCE_COST_CATEGORY));
     const expAdj = adjList.filter(a => a.type === 'expense' && !(restricted && (a.category || '') === LANDLORD_FINANCE_COST_CATEGORY));
     const net = c.netProfit;
@@ -1149,6 +1181,22 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               )}
             </div>
             <p className="px-5 py-2.5 text-[11px] text-[var(--text-muted)] leading-snug">For individuals, residential finance costs aren&apos;t deducted from profit — they give a 20% tax reducer (capped at 20% of property profits). The final figure also depends on the client&apos;s total income, so treat this as an estimate.</p>
+          </div>
+        )}
+
+        {/* Capital items — excluded from the deduction, kept for CGT */}
+        {c.capitalExpenses > 0 && (
+          <div className="mt-2 border-t border-[var(--border)]">
+            <div className="px-5 py-2.5 bg-slate-50 dark:bg-slate-900/20 border-b border-[var(--border)]">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Capital items (not deducted)</span>
+            </div>
+            <div className="divide-y divide-[var(--border)]">
+              <div className="flex items-center justify-between px-5 py-2.5">
+                <span className="text-[var(--text-secondary)]">Capital expenditure / improvements</span>
+                <span className="font-medium text-[var(--text-primary)]">{fmtL(c.capitalExpenses)}</span>
+              </div>
+            </div>
+            <p className="px-5 py-2.5 text-[11px] text-[var(--text-muted)] leading-snug">Capital improvements aren&apos;t deducted from rental profit — they add to the property&apos;s base cost for CGT. Replacing domestic items (furniture, appliances) in a let is an allowable expense, so mark those as <em>not</em> capital to keep them in the deduction.</p>
           </div>
         )}
       </div>
@@ -1578,6 +1626,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                 </>
               )}
 
+              <Tooltip label="Download a client-ready PDF computation">
+                <button onClick={() => void handleDownloadPdf()} disabled={pdfBusy} className="btn-secondary disabled:opacity-50">
+                  {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                  PDF
+                </button>
+              </Tooltip>
               <button onClick={() => setSaveModalOpen(true)} className="btn-primary">
                 <Download size={14} />
                 Save & Export

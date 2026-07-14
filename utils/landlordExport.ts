@@ -278,6 +278,14 @@ function buildCompRows(data: CompData, opts: RentComputationOpts): Row[] {
     rows.push(['Note: for individuals, residential finance costs are relieved as a 20% tax reducer (capped at 20% of property profits), not deducted from profit.', '', '']);
   }
 
+  // Capital items — excluded from the deduction, kept for CGT.
+  if (c.capitalExpenses > 0) {
+    rows.push([]);
+    rows.push(['CAPITAL ITEMS (not deducted)', '', '']);
+    rows.push(['Capital expenditure / improvements', '', c.capitalExpenses]);
+    rows.push(['Note: capital improvements aren’t deducted from rental profit (they add to the CGT base cost). Replacement of domestic items is an allowable expense.', '', '']);
+  }
+
   return rows;
 }
 
@@ -348,7 +356,7 @@ function buildPersonSheet(
     ...adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
   ];
   const expAmounts = [
-    ...expenses.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+    ...expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
     ...adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
   ];
   const bd = computePersonBreakdown(incAmounts, expAmounts, properties, primary);
