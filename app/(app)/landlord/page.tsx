@@ -12,6 +12,8 @@ import LandlordPropertiesPanel from '@/components/features/landlord/LandlordProp
 import LandlordApprovalPanel from '@/components/features/landlord/LandlordApprovalPanel';
 import LandlordSendApprovalModal from '@/components/features/landlord/LandlordSendApprovalModal';
 import PersonSettingsPanel from '@/components/features/landlord/PersonSettingsPanel';
+import { useLandlordApprovalSend } from '@/components/features/landlord/useLandlordApprovalSend';
+import { useModules } from '@/components/ui/ModulesProvider';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import {
   matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL,
@@ -287,6 +289,7 @@ function BackToHistory({ onBack }: { onBack: () => void }) {
 }
 
 function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () => void }) {
+  const { isModuleActive } = useModules();
   const [appState, setAppState] = useState<AppState>('idle');
   useTabActivitySync('/landlord', appState);
   const [error, setError] = useState<string | null>(null);
@@ -514,6 +517,10 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   const [showOutOfRange, setShowOutOfRange] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState('');
+  // With Email Triage on, approval emails go to the in-app compose window for
+  // the user to send, rather than being sent server-side.
+  const triageActive = isModuleActive('email-triage');
   // Client approval (step 5). Approvals hang off the saved analysis, so the
   // output id is the anchor — reused so re-sending never duplicates history.
   const [outputId, setOutputId] = useState<string | null>(seed?.id ?? null);
@@ -1021,7 +1028,12 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
   // style). Returns the blob so it can be downloaded or attached to an email.
   // `person` set → a personal pack: every row scaled to their share, their own
   // reliefs applied. Otherwise the whole-portfolio pack.
-  const buildPdfBlob = useCallback(async (person?: { key: string; name: string }): Promise<Blob> => {
+  // `onProgress` surfaces the render stages — PDF generation runs on the main
+  // thread, so a long pack needs to show it's alive.
+  const buildPdfBlob = useCallback(async (
+    person?: { key: string; name: string },
+    onProgress?: (label: string) => void,
+  ): Promise<Blob> => {
     let firmName: string | null = null, logoUrl: string | null = null;
     try {
       const r = await fetch('/api/firm/branding');
@@ -1051,19 +1063,38 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     const landscapePages = buildLandlordMatrixPages(packData);
     // avoidSplitSelector keeps table rows whole so no line is ever cut in half
     // by a page break.
-    return generatePdfBlob(html, undefined, { hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages });
+    return generatePdfBlob(html, undefined, {
+      hardPageBreaks: true, pageNumbers: true, avoidSplitSelector: 'tbody tr', landscapePages,
+      onProgress: (stage, done, total) => onProgress?.(total > 1 ? `${stage} ${done + 1}/${total}` : `${stage}…`),
+    });
   }, [selectedClient, dateFrom, dateTo, inRangeIncome, inRangeExpenses, adjustments, properties, entityType, useAllowance, broughtForwardLoss, notes, showComparison, priorComp, priorMeta, rentCompAll, personSettings]);
+
+  // Approval sending lives in a hook, not the modal: with Email Triage on the
+  // work outlives the modal (emails are handed to the compose window one at a
+  // time and only count as sent once the user actually sends them).
+  const approvalSend = useLandlordApprovalSend({
+    outputId,
+    clientId: selectedClient?.id ?? null,
+    clientName: selectedClient?.name ?? '',
+    clientRef: selectedClient?.client_ref ?? null,
+    clientEmail,
+    triageActive,
+    buildPdf: buildPdfBlob,
+    summaryFor,
+    onChanged: () => setApprovalsRefresh(n => n + 1),
+  });
 
   const handleDownloadPdf = useCallback(async () => {
     setPdfBusy(true);
     try {
-      const blob = await buildPdfBlob();
+      const blob = await buildPdfBlob(undefined, label => setPdfProgress(label));
       const stub = (selectedClient?.client_ref || selectedClient?.name || 'computation').replace(/\s+/g, '_');
       downloadBlob(blob, `property_income_${stub}.pdf`);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Could not generate the PDF');
     } finally {
       setPdfBusy(false);
+      setPdfProgress('');
     }
   }, [buildPdfBlob, selectedClient]);
 
@@ -1284,6 +1315,26 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
           <WizardStepper steps={wizardSteps} current={wizardSteps.length} onStep={n => { if (n < wizardSteps.length) setAppState('success'); }} />
         </div>
 
+        {approvalSend.busy && (
+          <div className="glass-solid rounded-xl px-5 py-3.5 flex items-center gap-2.5">
+            <Loader2 size={15} className="animate-spin text-[var(--accent)] shrink-0" />
+            <p className="text-sm text-[var(--text-secondary)]">{approvalSend.progress || 'Working…'}</p>
+          </div>
+        )}
+        {approvalSend.error && (
+          <div className="glass-solid rounded-xl px-5 py-3.5 flex items-start gap-2.5 border border-red-200">
+            <p className="text-sm text-red-700 flex-1">{approvalSend.error}</p>
+            <button onClick={() => approvalSend.setError('')} aria-label="Dismiss" className="text-red-400 hover:text-red-600"><X size={15} /></button>
+          </div>
+        )}
+        {!approvalSend.busy && approvalSend.result && approvalSend.result.skipped > 0 && (
+          <div className="glass-solid rounded-xl px-5 py-3.5">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Stopped after {approvalSend.result.sent} sent — {approvalSend.result.skipped} {approvalSend.result.skipped === 1 ? 'person was' : 'people were'} not emailed because the compose window was closed. Send again when you&rsquo;re ready.
+            </p>
+          </div>
+        )}
+
         <LandlordApprovalPanel
           outputId={outputId}
           clientId={selectedClient?.id ?? null}
@@ -1310,16 +1361,13 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       {outputId && (
         <LandlordSendApprovalModal
           open={sendApprovalOpen}
-          outputId={outputId}
-          clientId={selectedClient?.id ?? null}
           clientName={selectedClient?.name ?? ''}
           clientRef={selectedClient?.client_ref ?? null}
           clientEmail={clientEmail}
           people={approvalPeople}
-          summaryFor={summaryFor}
-          buildPdf={buildPdfBlob}
+          triageActive={triageActive}
           onClose={() => setSendApprovalOpen(false)}
-          onSent={() => { setSendApprovalOpen(false); setApprovalsRefresh(n => n + 1); }}
+          onStart={(targets, note) => { setSendApprovalOpen(false); approvalSend.start(targets, note); }}
         />
       )}
     </ToolLayout>
@@ -2237,7 +2285,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
               <Tooltip label="Download the PDF report only — nothing is saved">
                 <button onClick={() => void handleDownloadPdf()} disabled={pdfBusy} className="btn-secondary disabled:opacity-50">
                   {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                  PDF
+                  {pdfBusy ? (pdfProgress || 'Building…') : 'PDF'}
                 </button>
               </Tooltip>
               <Tooltip label="Download the Excel workbook only — nothing is saved">

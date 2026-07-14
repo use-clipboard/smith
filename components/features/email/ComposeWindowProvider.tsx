@@ -159,7 +159,14 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
         restored = true;
         return { ...s, mode: 'open' };
       }
-      if (s.mode === 'open') return s;
+      // A window is already open with someone else's draft — leave it alone.
+      // `restored` marks that the caller's args were NOT applied, so a caller
+      // handing over an email it must not lose (an approval pack, say) can tell
+      // the difference instead of assuming it loaded.
+      if (s.mode === 'open') {
+        restored = true;
+        return s;
+      }
       return { ...s, mode: 'open', ctx: args ?? null, snapshot: null };
     });
     return !restored;

@@ -127,6 +127,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     logoDataUrl: firm?.logo_url ?? null,
   });
 
+  // prepare_only → we're only building a draft for the compose window. Leave
+  // sent_at null so the row reads "Preparing", not "Sent"; the compose window
+  // marks it sent once the email really goes (mark-sent). Closing the draft
+  // without sending leaves it unsent, which is the truth.
   const { data: approval, error: insErr } = await service
     .from('landlord_approvals')
     .insert({
@@ -135,6 +139,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       person_key:      person_key ?? null,
       person_name:     person_name ?? null,
       sent_by:         ctx.userId,
+      sent_at:         prepare_only ? null : new Date().toISOString(),
       recipient_email,
       cover_note:      cover_note ?? null,
     })
@@ -176,6 +181,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({
     ok: true,
     approval_id: approval.id,
+    /** prepare_only → the caller must POST mark-sent once the email really goes. */
+    awaiting_send: !!prepare_only,
     approval_url: approvalLink,
     expires_at: approval.expires_at,
     sender_email: connection.google_email,

@@ -10,10 +10,11 @@ import {
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
-import { exportLandlordWorkbook } from '@/utils/landlordExport';
+import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { computePersonBreakdown } from '@/utils/landlordAllocation';
 import type { LandlordEntityType } from '@/utils/landlordComputation';
 import type { LandlordPersonSettings } from '@/lib/landlord/landlordPackHtml';
+import type { LandlordApprovalStatus } from '@/app/api/landlord/approval-status/route';
 import type {
   LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment,
   LandlordProperty, PropertyOwner,
@@ -86,7 +87,7 @@ interface Props {
 type SortKey = 'created_at' | 'client_name' | 'transaction_count';
 
 interface ColumnConfig {
-  key: 'date' | 'user' | 'client' | 'tx_count' | 'income_count' | 'expense_count' | 'file_count' | 'files' | 'date_range';
+  key: 'date' | 'user' | 'client' | 'status' | 'tx_count' | 'income_count' | 'expense_count' | 'file_count' | 'files' | 'date_range';
   label: string;
   defaultVisible: boolean;
 }
@@ -95,6 +96,7 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'date',          label: 'Date',           defaultVisible: true },
   { key: 'user',          label: 'User',           defaultVisible: true },
   { key: 'client',        label: 'Client',         defaultVisible: true },
+  { key: 'status',        label: 'Status',         defaultVisible: true },
   { key: 'tx_count',      label: '# Tx',           defaultVisible: true },
   { key: 'income_count',  label: '# Income',       defaultVisible: false },
   { key: 'expense_count', label: '# Expenses',     defaultVisible: false },
@@ -103,7 +105,10 @@ const COLUMNS: ColumnConfig[] = [
   { key: 'files',         label: 'Source files',   defaultVisible: false },
 ];
 
-const COLUMN_PREF_KEY = 'smith.landlord.history.columns';
+// v2: the stored preference is the *visible* set, so a column added later would
+// stay hidden for anyone with a saved layout. Bumping the key restores the
+// defaults once so the Status column actually shows up.
+const COLUMN_PREF_KEY = 'smith.landlord.history.columns.v2';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -114,6 +119,38 @@ function formatPeriod(from: string | null | undefined, to: string | null | undef
   const f = from ? new Date(from).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }) : '…';
   const t = to   ? new Date(to).toLocaleDateString('en-GB',   { day: '2-digit', month: 'short', year: '2-digit' }) : '…';
   return `${f} – ${t}`;
+}
+
+/** Client-approval state of a saved analysis. Mirrors /api/landlord/approval-status. */
+const STATUS_META: Record<LandlordApprovalStatus, { label: string; hint: string; className: string }> = {
+  preparing: {
+    label: 'Preparing', hint: 'Not sent to the client for approval yet.',
+    className: 'bg-[var(--surface-hover)] text-[var(--text-muted)] border-[var(--border)]',
+  },
+  sent: {
+    label: 'Sent', hint: 'Sent to the client — awaiting their response.',
+    className: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/15 dark:text-blue-300 dark:border-blue-900/40',
+  },
+  approved: {
+    label: 'Approved', hint: 'Approved by the client.',
+    className: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/15 dark:text-emerald-300 dark:border-emerald-900/40',
+  },
+  changes_requested: {
+    label: 'Changes requested', hint: 'The client asked for changes — open the analysis to see their note.',
+    className: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/15 dark:text-amber-300 dark:border-amber-900/40',
+  },
+};
+
+function StatusBadge({ status }: { status: LandlordApprovalStatus | undefined }) {
+  if (!status) return <span className="text-xs text-gray-400">—</span>;
+  const m = STATUS_META[status];
+  return (
+    <Tooltip label={m.hint}>
+      <span className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${m.className}`}>
+        {m.label}
+      </span>
+    </Tooltip>
+  );
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -140,6 +177,10 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
   const [showColMenu, setShowColMenu] = useState(false);
 
 
+
+  // Client-approval state per analysis, fetched separately so /api/outputs stays
+  // feature-agnostic. Absent (undefined) while loading → the cell shows a dash.
+  const [statuses, setStatuses] = useState<Record<string, LandlordApprovalStatus>>({});
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -172,20 +213,32 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       if (!res.ok) throw new Error('Failed to load properties');
       const { output } = await res.json();
       const rd = output.result_data as {
-        income?: LandlordIncomeTransaction[];
-        expenses?: LandlordExpenseTransaction[];
+        income?: (LandlordIncomeTransaction & { _forceInclude?: boolean })[];
+        expenses?: (LandlordExpenseTransaction & { _forceInclude?: boolean })[];
         adjustments?: LandlordAdjustment[];
+        dateFrom?: string;
+        dateTo?: string;
       };
+
+      // result_data keeps every scanned row, including ones outside the period —
+      // the tool, the computation and the export all drop those. Apply the same
+      // filter here or the panel reports the raw scan instead of the analysis
+      // (and lists properties that have nothing in the period at all).
+      const from = rd.dateFrom ?? '';
+      const to = rd.dateTo ?? '';
+      const income   = (rd.income ?? []).filter(r => isInRange(r.Date, from, to) || r._forceInclude === true);
+      const expenses = (rd.expenses ?? []).filter(r => isInRange(r.DueDate, from, to) || r._forceInclude === true);
+
       const map = new Map<string, { name: string; income: number; expenses: number; incomeTotal: number; expensesTotal: number }>();
       const norm = (a: string | null | undefined) => (!a || a === 'No Address') ? 'Non Allocated' : a;
-      for (const r of (rd.income ?? [])) {
+      for (const r of income) {
         const key = norm(r.PropertyAddress);
         const cur = map.get(key) ?? { name: key, income: 0, expenses: 0, incomeTotal: 0, expensesTotal: 0 };
         cur.income += 1;
         cur.incomeTotal += r.Amount || 0;
         map.set(key, cur);
       }
-      for (const r of (rd.expenses ?? [])) {
+      for (const r of expenses) {
         const key = norm(r.PropertyAddress);
         const cur = map.get(key) ?? { name: key, income: 0, expenses: 0, incomeTotal: 0, expensesTotal: 0 };
         cur.expenses += 1;
@@ -202,11 +255,13 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
         if (register.length > 0) {
           const adj = rd.adjustments ?? [];
           const inc = [
-            ...(rd.income ?? []).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+            ...income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
             ...adj.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
           ];
+          // Capital items aren't deductible, so the tool leaves them out of the
+          // per-person split — match it.
           const exp = [
-            ...(rd.expenses ?? []).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
+            ...expenses.filter(r => !r.CapitalExpense).map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount })),
             ...adj.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })),
           ];
           const bd = computePersonBreakdown(inc, exp, register, {
@@ -253,6 +308,18 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
   }, [search, mineOnly, dateFrom, dateTo, sortKey, sortDir]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Approval status for the loaded page of analyses.
+  useEffect(() => {
+    const ids = rows.map(r => r.id);
+    if (ids.length === 0) { setStatuses({}); return; }
+    let cancelled = false;
+    fetch(`/api/landlord/approval-status?ids=${ids.join(',')}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.statuses) setStatuses(d.statuses as Record<string, LandlordApprovalStatus>); })
+      .catch(() => { /* the column degrades to a dash */ });
+    return () => { cancelled = true; };
+  }, [rows]);
 
   const filteredRows = useMemo(() => {
     if (!search.trim()) return rows;
@@ -630,6 +697,7 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
                 {colVisible('date')          && <SortHeader label="Date" k="created_at" />}
                 {colVisible('user')          && <StaticHeader label="User" />}
                 {colVisible('client')        && <SortHeader label="Client" k="client_name" />}
+                {colVisible('status')        && <StaticHeader label="Status" />}
                 {colVisible('tx_count')      && <SortHeader label="# Tx" k="transaction_count" right />}
                 {colVisible('income_count')  && <StaticHeader label="# Income" right />}
                 {colVisible('expense_count') && <StaticHeader label="# Expenses" right />}
@@ -728,6 +796,11 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
                         ) : row.client_name ? (
                           <span className="text-sm text-[var(--text-secondary)]">{row.client_name}</span>
                         ) : <span className="text-xs text-gray-400 italic">No client</span>}
+                      </td>
+                    )}
+                    {colVisible('status') && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <StatusBadge status={statuses[row.id]} />
                       </td>
                     )}
                     {colVisible('tx_count') && (

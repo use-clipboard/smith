@@ -24,20 +24,27 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const { data, error } = await supabase
     .from('landlord_approvals')
-    .select('id, person_key, person_name, recipient_email, sent_at, expires_at, approved_at, changes_requested_at, changes_note')
+    .select('id, person_key, person_name, recipient_email, prepared_at, sent_at, expires_at, approved_at, changes_requested_at, changes_note')
     .eq('output_id', params.id)
     .is('voided_at', null)
-    .order('sent_at', { ascending: false });
+    .order('prepared_at', { ascending: false });
   if (error) {
     console.error('GET /api/landlord/outputs/[id]/approvals', error);
     return NextResponse.json({ error: 'Failed to load approvals' }, { status: 500 });
   }
 
+  // sent_at null → the draft was prepared but the user hasn't actually sent it
+  // from their compose window yet, so it must not read as sent.
   const approvals = (data ?? []).map(a => ({
     ...a,
-    status: a.approved_at ? 'approved' : a.changes_requested_at ? 'changes_requested' : 'pending',
+    status: a.approved_at ? 'approved'
+      : a.changes_requested_at ? 'changes_requested'
+      : a.sent_at ? 'pending'
+      : 'preparing',
   }));
   const approvedCount = approvals.filter(a => a.status === 'approved').length;
+  // Drafts aren't part of the "n of m" denominator — they haven't been asked for yet.
+  const requested = approvals.filter(a => a.status !== 'preparing').length;
 
-  return NextResponse.json({ approvals, approved_count: approvedCount, total: approvals.length });
+  return NextResponse.json({ approvals, approved_count: approvedCount, total: requested });
 }

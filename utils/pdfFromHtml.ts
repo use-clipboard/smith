@@ -34,6 +34,20 @@ export interface PdfPaginationOptions {
    * group, repeating its headers on each chunk).
    */
   landscapePages?: string[];
+  /**
+   * Called as the PDF is built, so a caller can show progress. Rendering runs on
+   * the main thread (html2canvas needs a live DOM), and we yield to the event
+   * loop around each step — without that, a long pack freezes the tab hard
+   * enough for Chrome to offer to kill it.
+   */
+  onProgress?: (stage: string, done: number, total: number) => void;
+}
+
+/** Hand the main thread back so the browser can paint and stay responsive.
+ *  requestAnimationFrame alone isn't enough — it doesn't fire in a background
+ *  tab — so fall back to a macrotask. */
+function yieldToBrowser(): Promise<void> {
+  return new Promise(resolve => { setTimeout(resolve, 0); });
 }
 
 export async function generatePdfBlob(
@@ -41,6 +55,10 @@ export async function generatePdfBlob(
   paperRef?: RefObject<HTMLElement | null>,
   opts?: PdfPaginationOptions,
 ): Promise<Blob> {
+  const report = (stage: string, done: number, total: number) => {
+    try { opts?.onProgress?.(stage, done, total); } catch { /* progress is cosmetic */ }
+  };
+  report('Loading', 0, 1);
   const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
     import('jspdf'),
     import('html2canvas'),
@@ -312,6 +330,8 @@ export async function generatePdfBlob(
       avoidSplit('.wp-para, pre, .wp-notes, .journal-section', 100);
     }
 
+    report('Capturing report', 0, 1);
+    await yieldToBrowser();
     const canvas = await html2canvas(captureTarget, {
       scale: SCALE,
       useCORS: true,
@@ -319,6 +339,7 @@ export async function generatePdfBlob(
       backgroundColor: '#ffffff',
       windowWidth: 794,
     });
+    await yieldToBrowser();
 
     const pageHeightCanvasPx = PAGE_H_PX * SCALE;
     const numContentPages = Math.max(1, Math.ceil(canvas.height / pageHeightCanvasPx));
@@ -360,7 +381,11 @@ export async function generatePdfBlob(
     }
 
     // Body pages — one canvas slice per page, placed within the page margins.
+    // Each iteration JPEG-encodes a full-page canvas, which is slow and blocks;
+    // yield between pages so the tab stays responsive on a long pack.
     for (let i = 0; i < numContentPages; i++) {
+      report('Rendering pages', i, numContentPages);
+      if (i > 0) await yieldToBrowser();
       const sliceCanvas = document.createElement('canvas');
       sliceCanvas.width  = canvas.width;
       sliceCanvas.height = pageHeightCanvasPx;
@@ -387,7 +412,11 @@ export async function generatePdfBlob(
     // (e.g. by column group) so each page is self-contained with its headers.
     if (opts?.landscapePages?.length) {
       const LAND_W_PX = Math.round(A4_H_MM * PX_PER_MM); // 297mm at the same px↔mm scale
+      let landDone = 0;
       for (const pageHtml of opts.landscapePages) {
+        report('Rendering wide pages', landDone, opts.landscapePages.length);
+        landDone++;
+        await yieldToBrowser();
         const lw = document.createElement('div');
         lw.style.cssText = `position:absolute;left:-9999px;top:0;width:${LAND_W_PX}px;background:#fff;`;
         lw.innerHTML = `<div style="padding:28px;background:#fff;font-family:Arial,Helvetica,sans-serif;">${pageHtml}</div>`;
