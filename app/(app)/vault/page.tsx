@@ -2,6 +2,7 @@
 // vault page
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { consumePendingClient } from '@/lib/pendingClient';
+import { dispatchVaultChanged } from '@/lib/vaultBus';
 import {
   Archive,
   Search,
@@ -1066,6 +1067,8 @@ export default function VaultPage() {
   const fetchSyncStatus = useCallback(async () => {
     const res = await fetch('/api/vault/sync/status');
     if (res.ok) setSyncStatus(await res.json());
+    // Tell the sidebar badge to refresh its untagged count.
+    dispatchVaultChanged();
   }, []);
 
   const fetchClients = useCallback(async () => {
@@ -1167,6 +1170,7 @@ export default function VaultPage() {
       body: JSON.stringify({ vault_document_id: id }),
     });
     await fetchDocs(page);
+    await fetchSyncStatus();
   }
 
   async function handleBulkManualTag(updates: Record<string, unknown>) {
@@ -1179,6 +1183,7 @@ export default function VaultPage() {
     setSelectedIds(new Set());
     setShowBulkTagModal(false);
     await fetchDocs(page);
+    await fetchSyncStatus();
   }
 
   async function handleBulkDelete(deleteFromDrive: boolean) {
@@ -1539,10 +1544,12 @@ export default function VaultPage() {
           onUpdate={updated => {
             setDocs(prev => prev.map(d => d.id === updated.id ? updated : d));
             setPreviewDoc(updated);
+            void fetchSyncStatus();
           }}
           onDelete={id => {
             setDocs(prev => prev.filter(d => d.id !== id));
             setTotal(t => t - 1);
+            void fetchSyncStatus();
           }}
         />
       )}

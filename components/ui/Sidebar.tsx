@@ -23,6 +23,7 @@ import {
   NAV_ITEM_BY_ID, WORKSPACE_MODULE_IDS, type NavItem,
 } from '@/config/navItems';
 import { CALENDAR_CHANGED } from '@/lib/calendarBus';
+import { VAULT_CHANGED } from '@/lib/vaultBus';
 
 interface SidebarProps {
   userName?: string;
@@ -67,10 +68,23 @@ export default function Sidebar({ userName, userEmail, userRole, avatarUrl }: Si
 
   useEffect(() => {
     if (!vaultActive) return;
-    fetch('/api/vault/sync/status')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.untaggedCount > 0) setUntaggedCount(data.untaggedCount); })
-      .catch(() => {});
+    function fetchUntagged() {
+      fetch('/api/vault/sync/status')
+        .then(r => r.ok ? r.json() : null)
+        // Always set the real count — including 0 — so the badge clears once
+        // everything is tagged. (Previously guarded on > 0, so it never dropped.)
+        .then(data => { if (data) setUntaggedCount(data.untaggedCount ?? 0); })
+        .catch(() => {});
+    }
+    fetchUntagged();
+    // Refetch instantly when the vault page reports a change (tag/delete/sync),
+    // plus on tab focus to catch changes made elsewhere — no background polling.
+    window.addEventListener(VAULT_CHANGED, fetchUntagged);
+    window.addEventListener('focus', fetchUntagged);
+    return () => {
+      window.removeEventListener(VAULT_CHANGED, fetchUntagged);
+      window.removeEventListener('focus', fetchUntagged);
+    };
   }, [vaultActive]);
 
   // Fetch MTD IT unread approval count for the sidebar badge
