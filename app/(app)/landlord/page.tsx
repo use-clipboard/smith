@@ -132,6 +132,28 @@ function toExportExpense(rows: ExpenseRow[]): (LandlordExpenseTransaction & { _f
   }));
 }
 
+// Picking a category from the other group converts the entry: income and
+// expenses are separate lists, so the row moves between them (carrying its id,
+// flag and include state; the date field swaps name).
+function expenseToIncomeRow(e: ExpenseRow, category: string, from: string, to: string): IncomeRow {
+  return {
+    _id: e._id, _flagged: e._flagged, _flagReason: e._flagReason,
+    _inRange: isInRange(e.DueDate, from, to), _forceInclude: e._forceInclude,
+    fileName: e.fileName, Date: e.DueDate, PropertyAddress: e.PropertyAddress,
+    Description: e.Description, Category: category, Amount: e.Amount,
+  };
+}
+
+function incomeToExpenseRow(i: IncomeRow, category: string, from: string, to: string): ExpenseRow {
+  return {
+    _id: i._id, _flagged: i._flagged, _flagReason: i._flagReason,
+    _inRange: isInRange(i.Date, from, to), _forceInclude: i._forceInclude,
+    fileName: i.fileName, DueDate: i.Date, Description: i.Description, Category: category,
+    Amount: i.Amount, Supplier: '', TenantPayable: false, CapitalExpense: false,
+    PropertyAddress: i.PropertyAddress,
+  };
+}
+
 /** UK tax-year quick-pick presets (6 Apr → 5 Apr), current year first. */
 function ukTaxYearPresets(): Array<{ label: string; from: string; to: string }> {
   const now = new Date();
@@ -730,6 +752,28 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   const handleSaveRow = useCallback((updated: IncomeRow | ExpenseRow) => {
     if (!editItem) return;
+
+    // Category picked from the other group → move the entry between income and expenses.
+    const cat = (updated as { Category?: string }).Category ?? '';
+    if (editItem.type === 'expense' && LANDLORD_INCOME_CATEGORIES.includes(cat)) {
+      const e = updated as ExpenseRow;
+      pushHistory(
+        [...current.income, expenseToIncomeRow(e, cat, dateFrom, dateTo)],
+        current.expenses.filter(r => r._id !== e._id),
+      );
+      setEditItem(null);
+      return;
+    }
+    if (editItem.type === 'income' && LANDLORD_EXPENSE_CATEGORIES.includes(cat)) {
+      const i = updated as IncomeRow;
+      pushHistory(
+        current.income.filter(r => r._id !== i._id),
+        [...current.expenses, incomeToExpenseRow(i, cat, dateFrom, dateTo)],
+      );
+      setEditItem(null);
+      return;
+    }
+
     if (editItem.type === 'income') {
       // Re-evaluate in-range against the (possibly edited) date so a corrected
       // date moves the row into or out of the computation automatically.
@@ -909,6 +953,26 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
 
   const handleBulkEdit = useCallback(() => {
     if (!bulkValue.trim()) return;
+    const cat = bulkValue.trim();
+
+    // Bulk category from the other group → move the selected entries across.
+    if (bulkMode === 'edit-category' && view === 'expenses' && LANDLORD_INCOME_CATEGORIES.includes(cat)) {
+      const moving = current.expenses.filter(r => selectedExpenses.has(r._id));
+      pushHistory(
+        [...current.income, ...moving.map(e => expenseToIncomeRow(e, cat, dateFrom, dateTo))],
+        current.expenses.filter(r => !selectedExpenses.has(r._id)),
+      );
+      return;
+    }
+    if (bulkMode === 'edit-category' && view === 'income' && LANDLORD_EXPENSE_CATEGORIES.includes(cat)) {
+      const moving = current.income.filter(r => selectedIncome.has(r._id));
+      pushHistory(
+        current.income.filter(r => !selectedIncome.has(r._id)),
+        [...current.expenses, ...moving.map(i => incomeToExpenseRow(i, cat, dateFrom, dateTo))],
+      );
+      return;
+    }
+
     if (view === 'income') {
       const newIncome = current.income.map(r => {
         if (!selectedIncome.has(r._id)) return r;
@@ -926,7 +990,7 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       });
       pushHistory(current.income, newExpenses);
     }
-  }, [bulkValue, bulkMode, view, current, selectedIncome, selectedExpenses, pushHistory]);
+  }, [bulkValue, bulkMode, view, current, selectedIncome, selectedExpenses, pushHistory, dateFrom, dateTo]);
 
   const handleBulkUnflag = useCallback(() => {
     const unflagIds = new Set([...selectedIncome, ...selectedExpenses]);
@@ -2006,8 +2070,11 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
                   <datalist id="ll-bulk-prop-options">
                     {properties.map(p => <option key={p.id} value={p.address} />)}
                   </datalist>
+                  {/* Both groups — picking one from the other group moves the
+                      selected entries between income and expenses. */}
                   <datalist id="ll-bulk-cat-options">
-                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} />)}
+                    {INCOME_CATEGORIES.map(c => <option key={c} value={c}>Income</option>)}
+                    {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>Expense</option>)}
                   </datalist>
                   <button
                     onClick={() => bulkMode === 'flag' ? handleBulkFlag() : handleBulkEdit()}

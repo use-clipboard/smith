@@ -350,7 +350,9 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
   // signatory page.
   let signatories: Array<{ name: string; clientId: string | null }> = [];
 
-  // 3. By person (needs the register)
+  // The full per-person working is emitted as LANDSCAPE pages at the end of the
+  // report (buildLandlordMatrixPages) — too wide for portrait A4. Here we only
+  // resolve who the owners are, for the signatory page.
   if (data.properties.length > 0) {
     const inc = data.income.map(r => ({ PropertyAddress: r.PropertyAddress, Amount: r.Amount }))
       .concat(data.adjustments.filter(a => a.type === 'income').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })));
@@ -358,27 +360,6 @@ export function buildLandlordPackHtml(data: LandlordPackData): string {
       .concat(data.adjustments.filter(a => a.type === 'expense').map(a => ({ PropertyAddress: a.propertyAddress, Amount: a.amount })));
     const bd = computePersonBreakdown(inc, exp, data.properties, { id: data.primaryClientId, name: data.primaryClientName });
     signatories = bd.people.map(p => ({ name: p.name, clientId: p.clientId }));
-    const th = 'text-align:left;font-size:11px;font-weight:700;color:#475569;padding:0 8px 4px 0;border-bottom:1px solid #cbd5e1';
-    const td = 'font-size:12px;color:#334155;padding:4px 8px 4px 0';
-    const personRows = bd.people.map(p => `<tr>
-      <td style="${td}">${escapeHtml(p.name)} <span style="font-size:10px;color:#94a3b8">${p.clientId ? '(client)' : '(named)'}</span></td>
-      <td style="${td}${AMT}">${money(p.income)}</td>
-      <td style="${td}${AMT}">${money(p.expenses)}</td>
-      <td style="${td}${AMT};font-weight:700">${money(p.income - p.expenses)}</td>
-    </tr>`).join('');
-    const extraRows = [
-      (bd.unaccountedShare.income > 0.001 || bd.unaccountedShare.expenses > 0.001)
-        ? `<tr><td style="${td};color:#64748b;font-style:italic">Unaccounted share (owners &lt; 100%)</td><td style="${td}${AMT};color:#64748b">${money(bd.unaccountedShare.income)}</td><td style="${td}${AMT};color:#64748b">${money(bd.unaccountedShare.expenses)}</td><td style="${td}${AMT};color:#64748b">${money(bd.unaccountedShare.income - bd.unaccountedShare.expenses)}</td></tr>` : '',
-      (bd.unallocated.income > 0.001 || bd.unallocated.expenses > 0.001)
-        ? `<tr><td style="${td};color:#b45309;font-style:italic">Unallocated (no matching property)</td><td style="${td}${AMT};color:#b45309">${money(bd.unallocated.income)}</td><td style="${td}${AMT};color:#b45309">${money(bd.unallocated.expenses)}</td><td style="${td}${AMT};color:#b45309">${money(bd.unallocated.income - bd.unallocated.expenses)}</td></tr>` : '',
-    ].join('');
-    parts.push(section('by-person', 'Income by person',
-      sectionHead(data.clientName, 'Income by Person', periodLine) +
-      `<table style="width:100%;border-collapse:collapse">
-        <thead><tr><th style="${th}">Person</th><th style="${th};text-align:right">Income £</th><th style="${th};text-align:right">Expenses £</th><th style="${th};text-align:right">Net £</th></tr></thead>
-        <tbody>${personRows || `<tr><td colspan="4" style="${td};color:#94a3b8">No allocated income or expenses.</td></tr>`}${extraRows}</tbody>
-      </table>
-      <p style="font-size:10.5px;color:#94a3b8;margin:8px 0 0;line-height:1.5">Each property&rsquo;s income and expenses are shared out by ownership %. Client-linked owners feed the self-assessment computation. A full property-by-individual working, split by category, follows at the end of this report.</p>`));
   }
 
   // 4. Income schedule

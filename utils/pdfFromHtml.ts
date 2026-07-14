@@ -205,6 +205,43 @@ export async function generatePdfBlob(
       }
     };
 
+    // Settle section breaks AND keep-whole blocks in ONE top-down pass.
+    // Running hardBreak and avoidSplit as separate full passes accumulates
+    // spacers (avoidSplit shifts a section off its page top, hardBreak pushes it
+    // again on top of the spacer already there) until they add up to a blank
+    // page. Fixing only the TOPMOST offender and restarting means everything
+    // above stays settled, so it converges and never over-inserts.
+    const settle = (hardSelector: string, avoidSelector: string, maxPasses: number) => {
+      const injectBudget = captureTarget.scrollHeight + PAGE_H_PX * 16;
+      let injected = 0;
+      const sel = `${hardSelector}, ${avoidSelector}`;
+      for (let pass = 0; pass < maxPasses; pass++) {
+        void captureTarget.offsetHeight;
+        const originY = captureTarget.getBoundingClientRect().top;
+        let inserted = false;
+        for (const el of Array.from(captureTarget.querySelectorAll(sel)) as HTMLElement[]) {
+          const rect = el.getBoundingClientRect();
+          const top = Math.round(rect.top - originY);
+          const bottom = Math.round(rect.bottom - originY);
+          let pushBy = 0;
+          if (el.matches(hardSelector)) {
+            const rem = top % PAGE_H_PX;
+            if (top > 2 && rem > 2) pushBy = PAGE_H_PX - rem;
+          } else if (bottom - top <= PAGE_H_PX && Math.floor(top / PAGE_H_PX) < Math.floor((bottom - 1) / PAGE_H_PX)) {
+            pushBy = PAGE_H_PX - (top % PAGE_H_PX);
+          }
+          if (pushBy > 0) {
+            if (injected + pushBy > injectBudget) return; // runaway guard
+            injected += pushBy;
+            el.parentNode!.insertBefore(makeSpacer(el, pushBy), el);
+            inserted = true;
+            break; // restart from the top
+          }
+        }
+        if (!inserted) break;
+      }
+    };
+
     // Contents page: write each section's real page number into its matching
     // cell. `[data-toc="key"]` marks a section; `[data-toc-fill="key"]` is the
     // number cell on the contents page. Measured after all breaks are inserted,
@@ -244,16 +281,13 @@ export async function generatePdfBlob(
       // Accounts pack: keep blocks together, then force each section to a fresh
       // page (authoritative), then compute the contents-page numbers.
       avoidSplit('.paper', 140);
-      // Optional: stop smaller blocks (e.g. table rows) being sliced in half by a
-      // page break. Each pass can shift later sections off their page top, so we
-      // re-run the hard breaks and settle over a few iterations.
       if (opts.avoidSplitSelector) {
-        for (let pass = 0; pass < 3; pass++) {
-          hardBreak('.force-page-start', 200);
-          avoidSplit(opts.avoidSplitSelector, 300);
-        }
+        // Section breaks + keep-whole blocks (e.g. table rows) settled together,
+        // top-down, so no row is sliced and no spacer accumulates into a blank page.
+        settle('.force-page-start', opts.avoidSplitSelector, 400);
+      } else {
+        hardBreak('.force-page-start', 200);
       }
-      hardBreak('.force-page-start', 200);
       fillTocPageNumbers();
     } else {
       // Working-papers / Accounts Review behaviour (unchanged).

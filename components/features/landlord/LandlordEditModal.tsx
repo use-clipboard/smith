@@ -29,6 +29,38 @@ export type ExpenseRow = LandlordExpenseTransaction & {
 // edit modal never drifts from the AI prompt, results tables or adjustments.
 const EXPENSE_CATEGORIES = LANDLORD_EXPENSE_CATEGORIES;
 const INCOME_CATEGORIES = LANDLORD_INCOME_CATEGORIES;
+const ALL_CATEGORIES = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+
+// One category picker for both row types, grouped under Income / Expense.
+// Choosing from the other group converts the entry on save (income and expenses
+// are separate lists, so the row moves across).
+function CategoryField({ value, rowType, onChange }: { value: string; rowType: 'income' | 'expense'; onChange: (v: string) => void }) {
+  const converts = !!value && (rowType === 'income' ? EXPENSE_CATEGORIES.includes(value) : INCOME_CATEGORIES.includes(value));
+  return (
+    <div>
+      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Category</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className="input-base text-sm w-full">
+        <option value="">Select category…</option>
+        {value && !ALL_CATEGORIES.includes(value) && <option value={value}>{value} (non-standard)</option>}
+        <optgroup label="Income">
+          {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </optgroup>
+        <optgroup label="Expense">
+          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </optgroup>
+      </select>
+      {converts ? (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+          Saving will move this entry to {rowType === 'income' ? 'expenses' : 'income'}.
+        </p>
+      ) : (
+        <p className="text-[11px] text-[var(--text-muted)] mt-1">
+          Pick from the other group to move this entry between income and expenses.
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -251,16 +283,7 @@ export default function LandlordEditModal({ rowType, item, documentFiles, proper
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Description</label>
                       <input type="text" value={values.Description ?? ''} onChange={e => set('Description', e.target.value)} className="input-base text-sm w-full" />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                      <select value={values.Category ?? ''} onChange={e => set('Category', e.target.value)} className="input-base text-sm w-full">
-                        <option value="">Select category…</option>
-                        {values.Category && !INCOME_CATEGORIES.includes(values.Category) && (
-                          <option value={values.Category}>{values.Category} (non-standard)</option>
-                        )}
-                        {INCOME_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
+                    <CategoryField value={values.Category ?? ''} rowType="income" onChange={v => set('Category', v)} />
                   </>
                 ) : (
                   <>
@@ -282,16 +305,7 @@ export default function LandlordEditModal({ rowType, item, documentFiles, proper
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Description</label>
                       <input type="text" value={values.Description ?? ''} onChange={e => set('Description', e.target.value)} className="input-base text-sm w-full" />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                      <select value={values.Category ?? ''} onChange={e => set('Category', e.target.value)} className="input-base text-sm w-full">
-                        <option value="">Select category…</option>
-                        {values.Category && !EXPENSE_CATEGORIES.includes(values.Category) && (
-                          <option value={values.Category}>{values.Category} (non-standard)</option>
-                        )}
-                        {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
+                    <CategoryField value={values.Category ?? ''} rowType="expense" onChange={v => set('Category', v)} />
                     <div>
                       <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Property Address</label>
                       <input type="text" list="ll-prop-options" value={values.PropertyAddress ?? ''} onChange={e => set('PropertyAddress', e.target.value)} className="input-base text-sm w-full" />
