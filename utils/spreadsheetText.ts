@@ -7,11 +7,12 @@
 
 /** True for files we convert to text rather than send as a PDF/image. */
 export function isSpreadsheetFile(file: File): boolean {
-  return /\.(csv|tsv|xls|xlsx)$/i.test(file.name)
+  return /\.(csv|tsv|xls|xlsx|txt)$/i.test(file.name)
     || file.type.includes('csv')
     || file.type.includes('sheet')
     || file.type.includes('excel')
-    || file.type === 'text/tab-separated-values';
+    || file.type === 'text/tab-separated-values'
+    || file.type === 'text/plain';
 }
 
 /** Read a spreadsheet/CSV file as CSV text (all sheets, labelled when >1). */

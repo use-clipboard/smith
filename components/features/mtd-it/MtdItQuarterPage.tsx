@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, ArrowLeft, Briefcase, House, Globe2, Pencil, Sparkles,
-  AlertTriangle, Loader2, CheckCircle2, X, Upload, FileText, RefreshCw,
+  AlertTriangle, Loader2, CheckCircle2, X, FileText, RefreshCw,
   User, Hash, FileBadge, IdCard, Cake, AtSign, MapPin, Check, FastForward,
   FilePlus2, MoreVertical, Trash2, Users, BookCopy,
   type LucideIcon,
@@ -12,6 +12,7 @@ import {
 import Tooltip from '@/components/ui/Tooltip';
 import ToolLayout from '@/components/ui/ToolLayout';
 import { fileToBase64, compressImage } from '@/utils/fileUtils';
+import { spreadsheetToText, isSpreadsheetFile } from '@/utils/spreadsheetText';
 import { useTabActivitySync } from '@/components/ui/TabActivityContext';
 import EditMtdClientModal from './EditMtdClientModal';
 import MtdItPropertiesEditor from './MtdItPropertiesEditor';
@@ -393,7 +394,11 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
     try {
       const isImage = pf.file.type.startsWith('image/');
       const file = isImage ? await compressImage(pf.file) : pf.file;
-      const base64 = await fileToBase64(file);
+      // Spreadsheets/CSV: send the original base64 (preserves the source doc for
+      // the viewer) plus the converted text (what Claude actually reads).
+      const filePayload = isSpreadsheetFile(pf.file)
+        ? { name: pf.file.name, mimeType: pf.file.type || 'text/csv', base64: await fileToBase64(file), text: await spreadsheetToText(pf.file) }
+        : { name: pf.file.name, mimeType: pf.file.type || 'application/octet-stream', base64: await fileToBase64(file) };
       const res = await fetch('/api/mtd-it/analyse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -401,7 +406,7 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         body: JSON.stringify({
           quarter_id: qrow.id,
           stream: pf.stream,
-          file: { name: pf.file.name, mimeType: pf.file.type || 'application/octet-stream', base64 },
+          file: filePayload,
         }),
       });
       const j = await res.json().catch(() => ({}));

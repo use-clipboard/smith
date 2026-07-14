@@ -24,10 +24,16 @@ import type { MtdItStream } from '@/types';
 //   the Stage B kick-off): transient blips shouldn't surface as user-facing
 //   failures, but a second hard failure does so the user can decide.
 
+// A file arrives as base64 (PDF/image) and/or extracted text (CSV/Excel,
+// converted client-side). Spreadsheets send both: base64 preserves the source
+// document for the review viewer, text is what Claude actually reads.
 const FileSchema = z.object({
   name:     z.string().min(1),
   mimeType: z.string().min(1),
-  base64:   z.string().min(1),
+  base64:   z.string().optional(),
+  text:     z.string().optional(),
+}).refine(f => (f.base64 && f.base64.length > 0) || (f.text && f.text.length > 0), {
+  message: 'File must include base64 or text',
 });
 
 const BodySchema = z.object({
@@ -81,9 +87,11 @@ async function callAnthropic(opts: {
 }): Promise<RawEntry[]> {
   const anthropic = await getAnthropicForFirm(opts.firmId);
 
-  const fileBlock = opts.file.mimeType === 'application/pdf'
-    ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: opts.file.base64 } }
-    : { type: 'image'    as const, source: { type: 'base64' as const, media_type: opts.file.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: opts.file.base64 } };
+  const fileBlock = opts.file.text != null
+    ? { type: 'text' as const, text: `Spreadsheet / CSV file "${opts.file.name}":\n\n${opts.file.text}` }
+    : opts.file.mimeType === 'application/pdf'
+      ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: opts.file.base64 ?? '' } }
+      : { type: 'image'    as const, source: { type: 'base64' as const, media_type: opts.file.mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: opts.file.base64 ?? '' } };
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -164,7 +172,7 @@ export async function POST(req: NextRequest) {
     // that breaks the URL or collides across uploads.
     const safeName = file.name.replace(/[^\w\-.]+/g, '_').slice(0, 120);
     const path = `${quarter_id}/${doc.id}_${safeName}`;
-    const buffer = Buffer.from(file.base64, 'base64');
+    const buffer = file.base64 ? Buffer.from(file.base64, 'base64') : Buffer.from(file.text ?? '', 'utf-8');
     const { error: upErr } = await service.storage
       .from('mtd-it-source-docs')
       .upload(path, buffer, { contentType: file.mimeType, upsert: true });
