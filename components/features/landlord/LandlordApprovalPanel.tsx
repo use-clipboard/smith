@@ -8,7 +8,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Clock, MessageSquareWarning, Loader2, Send, PenLine } from 'lucide-react';
+import { CheckCircle2, Clock, MessageSquareWarning, Loader2, Send, PenLine, BellRing, BellOff } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 
 interface ApprovalRow {
   id: string;
@@ -22,6 +23,9 @@ interface ApprovalRow {
   approved_at: string | null;
   changes_requested_at: string | null;
   changes_note: string | null;
+  /** True = the daily chase cron leaves this one alone (e.g. signing on paper). */
+  reminders_paused: boolean;
+  reminder_count: number;
   /** 'preparing' = the draft is in the compose window but hasn't been sent. */
   status: 'approved' | 'changes_requested' | 'pending' | 'preparing';
 }
@@ -64,6 +68,29 @@ export default function LandlordApprovalPanel({
   }, [outputId]);
 
   useEffect(() => { void load(); }, [load, refreshKey]);
+
+  // Stop (or resume) auto-chasing this one approval — for when the client is
+  // signing a paper copy and an automated nag would be wrong. Optimistic: the
+  // toggle is trivially re-clickable if the write fails.
+  const [pausingId, setPausingId] = useState<string | null>(null);
+  async function toggleChasing(row: ApprovalRow) {
+    const paused = !row.reminders_paused;
+    setPausingId(row.id);
+    setRows(rs => rs.map(r => r.id === row.id ? { ...r, reminders_paused: paused } : r));
+    try {
+      const res = await fetch(`/api/landlord/approvals/${row.id}/reminders`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused }),
+      });
+      if (!res.ok) throw new Error('Could not update reminders');
+    } catch (e) {
+      setRows(rs => rs.map(r => r.id === row.id ? { ...r, reminders_paused: !paused } : r));
+      setError(e instanceof Error ? e.message : 'Could not update reminders');
+    } finally {
+      setPausingId(null);
+    }
+  }
 
   const approved = rows.filter(r => r.status === 'approved').length;
   // Drafts aren't "asked for" yet, so they don't count toward "n of m".
@@ -130,6 +157,34 @@ export default function LandlordApprovalPanel({
                     <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
                       The email is waiting in your compose window — it counts as sent only once you actually send it.
                     </p>
+                  )}
+                  {/* Chasing only means anything while we're still waiting on them. */}
+                  {r.status === 'pending' && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <Tooltip label={r.reminders_paused
+                        ? 'Reminders are off for this one — turn back on to let the daily chaser email them.'
+                        : 'Turn off if they’re signing a paper copy, so they don’t get chased by email.'}>
+                        <button
+                          onClick={() => void toggleChasing(r)}
+                          disabled={pausingId === r.id}
+                          aria-label={r.reminders_paused ? 'Turn chasing on' : 'Turn chasing off'}
+                          className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium border transition-colors disabled:opacity-50 ${
+                            r.reminders_paused
+                              ? 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                              : 'border-[var(--accent)]/30 bg-[var(--accent-light)] text-[var(--accent)]'}`}
+                        >
+                          {pausingId === r.id
+                            ? <Loader2 size={11} className="animate-spin" />
+                            : r.reminders_paused ? <BellOff size={11} /> : <BellRing size={11} />}
+                          {r.reminders_paused ? 'Chasing off' : 'Chasing on'}
+                        </button>
+                      </Tooltip>
+                      {r.reminder_count > 0 && (
+                        <span className="text-[11px] text-[var(--text-muted)]">
+                          {r.reminder_count} reminder{r.reminder_count === 1 ? '' : 's'} sent
+                        </span>
+                      )}
+                    </div>
                   )}
                   {r.status === 'changes_requested' && r.changes_note && (
                     <p className="text-xs text-amber-800 dark:text-amber-300 mt-2 whitespace-pre-wrap bg-white/60 dark:bg-black/10 border border-amber-200 dark:border-amber-900/40 rounded px-2.5 py-2">

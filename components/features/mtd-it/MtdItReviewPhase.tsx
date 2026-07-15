@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
   Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward, Landmark,
-  Lock, PenLine, FileSpreadsheet,
+  Lock, PenLine, FileSpreadsheet, BellRing, BellOff,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
@@ -158,9 +158,33 @@ export default function MtdItReviewPhase({
     changes_requested_at: string | null;
     expires_at: string | null;
     edited_since_approved_at: string | null;
+    reminders_paused: boolean;
+    reminder_count: number;
     sender: { full_name: string | null; email: string } | null;
   }
   const [approvalInfo, setApprovalInfo] = useState<LatestApproval | null>(null);
+
+  // Stop (or resume) auto-chasing this quarter's approval — for when the client
+  // is signing a paper copy and an automated nag would be wrong.
+  const [chasingBusy, setChasingBusy] = useState(false);
+  const toggleChasing = useCallback(async () => {
+    if (!approvalInfo) return;
+    const paused = !approvalInfo.reminders_paused;
+    setChasingBusy(true);
+    setApprovalInfo(a => a ? { ...a, reminders_paused: paused } : a);
+    try {
+      const res = await fetch(`/api/mtd-it/approvals/${approvalInfo.id}/reminders`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused }),
+      });
+      if (!res.ok) throw new Error('failed');
+    } catch {
+      setApprovalInfo(a => a ? { ...a, reminders_paused: !paused } : a);
+    } finally {
+      setChasingBusy(false);
+    }
+  }, [approvalInfo]);
 
   // Whether to attach the approval-pack PDF when handing off to compose. The
   // toggle lives on the Send-to-client stage but the state owns it here so
@@ -776,7 +800,12 @@ export default function MtdItReviewPhase({
           sense once we're in the Send-to-client / Save-quarter stages where
           the user has actually pushed (or is about to push) the approval. */}
       {(view === 'send' || view === 'save') && approvalInfo && (
-        <ApprovalStatusBanner info={approvalInfo} status={quarterStatus} />
+        <ApprovalStatusBanner
+          info={approvalInfo}
+          status={quarterStatus}
+          onToggleChasing={() => void toggleChasing()}
+          chasingBusy={chasingBusy}
+        />
       )}
 
       {/* Send view — read-only preview of the approval email + status panel.
@@ -1098,7 +1127,7 @@ export default function MtdItReviewPhase({
 // been sent. Surfaces who in the firm sent the email, when, the recipient,
 // and the client's response (approved / changes requested / outstanding).
 function ApprovalStatusBanner({
-  info, status,
+  info, status, onToggleChasing, chasingBusy,
 }: {
   info: {
     sent_at: string;
@@ -1106,9 +1135,13 @@ function ApprovalStatusBanner({
     approved_at: string | null;
     changes_requested_at: string | null;
     edited_since_approved_at: string | null;
+    reminders_paused: boolean;
+    reminder_count: number;
     sender: { full_name: string | null; email: string } | null;
   };
   status: 'not_started' | 'draft' | 'complete' | 'sent' | 'approved' | 'submitted';
+  onToggleChasing: () => void;
+  chasingBusy: boolean;
 }) {
   const sentBy   = info.sender?.full_name?.trim() || info.sender?.email || 'a team member';
   const sentDate = formatDateTimeUk(info.sent_at);
@@ -1158,8 +1191,29 @@ function ApprovalStatusBanner({
           {info.edited_since_approved_at && status === 'approved' && (
             <> · <strong>edited since approval</strong> — consider re-sending</>
           )}
+          {info.reminder_count > 0 && !info.approved_at && !info.changes_requested_at && (
+            <> · {info.reminder_count} reminder{info.reminder_count === 1 ? '' : 's'} sent</>
+          )}
         </div>
       </div>
+      {/* Chasing only means anything while we're still waiting on the client. */}
+      {!info.approved_at && !info.changes_requested_at && (
+        <Tooltip label={info.reminders_paused
+          ? 'Reminders are off for this quarter — turn back on to let the daily chaser email them.'
+          : 'Turn off if they’re signing a paper copy, so they don’t get chased by email.'}>
+          <button
+            onClick={onToggleChasing}
+            disabled={chasingBusy}
+            aria-label={info.reminders_paused ? 'Turn chasing on' : 'Turn chasing off'}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-current/20 bg-white/50 text-[11px] font-medium shrink-0 hover:bg-white disabled:opacity-50"
+          >
+            {chasingBusy
+              ? <Loader2 size={11} className="animate-spin" />
+              : info.reminders_paused ? <BellOff size={11} /> : <BellRing size={11} />}
+            {info.reminders_paused ? 'Chasing off' : 'Chasing on'}
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }

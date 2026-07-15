@@ -13,6 +13,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/landlord-reminders",
+      "schedule": "15 9 * * *"
+    },
+    {
       "path": "/api/cron/timeout-conditions",
       "schedule": "0 9 * * *"
     },

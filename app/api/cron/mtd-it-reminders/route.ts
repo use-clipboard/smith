@@ -94,6 +94,9 @@ export async function GET(request: Request) {
       .is('voided_at', null)
       .is('approved_at', null)
       .is('changes_requested_at', null)
+      // Chasing switched off for this one — e.g. the client is signing a paper
+      // copy, so an automated nag would be wrong.
+      .eq('reminders_paused', false)
       .eq('mtd_it_quarters.clients.firm_id', firm.firm_id);
     if (aErr) {
       console.error('[MTD IT Reminders] approvals select', firm.firm_id, aErr);

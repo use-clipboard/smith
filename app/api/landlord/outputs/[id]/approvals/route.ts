@@ -24,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const { data, error } = await supabase
     .from('landlord_approvals')
-    .select('id, person_key, person_name, recipient_email, prepared_at, sent_at, expires_at, approved_at, changes_requested_at, changes_note')
+    .select('id, person_key, person_name, recipient_email, prepared_at, sent_at, expires_at, approved_at, changes_requested_at, changes_note, reminders_paused, reminder_count')
     .eq('output_id', params.id)
     .is('voided_at', null)
     .order('prepared_at', { ascending: false });

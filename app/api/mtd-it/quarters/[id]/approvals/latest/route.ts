@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const { data: approval, error } = await supabase
     .from('mtd_it_quarter_approvals')
-    .select('id, sent_at, sent_by, recipient_email, approved_at, changes_requested_at, expires_at, edited_since_approved_at, sender:users!sent_by(full_name, email)')
+    .select('id, sent_at, sent_by, recipient_email, approved_at, changes_requested_at, expires_at, edited_since_approved_at, reminders_paused, reminder_count, sender:users!sent_by(full_name, email)')
     .eq('quarter_id', params.id)
     .is('voided_at', null)
     .order('sent_at', { ascending: false })

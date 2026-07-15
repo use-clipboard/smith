@@ -19,6 +19,9 @@ export async function GET() {
   }
 }
 
+// .strict() — brand_logo_path is deliberately absent: it's owned by the
+// /logo endpoint, so a stray key from the client is a 400 rather than a
+// silent overwrite of the uploaded logo.
 const PatchSchema = z.object({
   approval_email_subject:    z.string().min(1).optional(),
   approval_email_body:       z.string().min(1).optional(),
@@ -26,6 +29,11 @@ const PatchSchema = z.object({
   preparer_approved_body:    z.string().min(1).optional(),
   preparer_changes_subject:  z.string().min(1).optional(),
   preparer_changes_body:     z.string().min(1).optional(),
+  reminder_enabled:          z.boolean().optional(),
+  reminder_days:             z.number().int().min(1).max(60).optional(),
+  reminder_max:              z.number().int().min(1).max(5).optional(),
+  reminder_subject:          z.string().min(1).optional(),
+  reminder_body:             z.string().min(1).optional(),
   brand_primary_color:       z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 }).strict();
 

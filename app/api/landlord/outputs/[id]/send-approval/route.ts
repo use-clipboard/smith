@@ -5,7 +5,7 @@ import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
 import { renderTemplate, buildEmailHtml, formatDateUkForTemplate } from '@/lib/mtdIt/emailTemplates';
-import { ensureLandlordFirmSettings } from '@/lib/landlord/firmSettings';
+import { ensureLandlordFirmSettings, getLandlordLogoDataUrl } from '@/lib/landlord/firmSettings';
 
 // POST /api/landlord/outputs/[id]/send-approval
 //   Body: { recipient_email, cover_note, pdf_base64, person_key?, person_name?, summary_lines?, prepare_only? }
@@ -78,8 +78,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: me } = await supabase.from('users').select('full_name, email').eq('id', ctx.userId).maybeSingle();
   const preparerName = (me?.full_name?.trim() || me?.email?.split('@')[0] || 'Your accountant');
 
-  const { data: firm } = await supabase.from('firms').select('name, logo_url').eq('id', ctx.firmId).maybeSingle();
+  const { data: firm } = await supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle();
   const settings = await ensureLandlordFirmSettings(ctx.firmId);
+  const logoDataUrl = await getLandlordLogoDataUrl(ctx.firmId, settings);
 
   // ── Void any pending approval for the same scope ────────────────────
   // Scoped by person so a per-individual send doesn't void a co-owner's.
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     cta: { label: 'Review and approve', url: approvalLink },
     footer: `If you didn't expect this email, please contact ${preparerName} at ${firm?.name ?? 'your accountant'}.`,
     brandHex: settings.brand_primary_color,
-    logoDataUrl: firm?.logo_url ?? null,
+    logoDataUrl,
   });
 
   // prepare_only → we're only building a draft for the compose window. Leave
