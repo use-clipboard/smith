@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2,
+  Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
   Maximize2, Clock,
 } from 'lucide-react';
@@ -76,7 +76,7 @@ function getPageTitle(pathname: string): string {
 const TOOLS = [
   { label: 'Full Analysis',        href: '/full-analysis',   icon: FileSearch },
   { label: 'Bank to CSV',          href: '/bank-to-csv',     icon: ArrowLeftRight },
-  { label: 'Landlord Analysis',    href: '/landlord',        icon: Building2 },
+  { label: 'Landlord Analysis',    href: '/landlord',        icon: House },
   { label: 'Accounts Review',      href: '/final-accounts',  icon: ClipboardCheck },
   { label: 'Performance Analysis', href: '/performance',     icon: Gauge },
   { label: 'P32 Summary',          href: '/p32',             icon: Receipt },
