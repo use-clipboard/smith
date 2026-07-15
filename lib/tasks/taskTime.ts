@@ -19,9 +19,12 @@ export interface UnifiedTimeRow {
   user?: { id: string; full_name: string | null; email: string } | null;
 }
 
-/** Columns to select from time_entries when serving task time. */
+/** Columns to select from time_entries when serving task time.
+ *  The users embed must name its foreign key: time_entries points at users
+ *  twice (user_id and edited_by), so a bare `user:users(…)` is ambiguous and
+ *  PostgREST rejects the whole request with PGRST201. */
 export const UNIFIED_TIME_SELECT =
-  'id, task_id, step_id, user_id, entry_date, start_time, minutes, notes, created_at, user:users(id, full_name, email)';
+  'id, task_id, step_id, user_id, entry_date, start_time, minutes, notes, created_at, user:users!time_entries_user_id_fkey(id, full_name, email)';
 
 /** A time_entries row → the TaskTimeEntry shape the Tasks UI expects. */
 export function unifiedRowToTaskTimeEntry(r: UnifiedTimeRow): TaskTimeEntry {
@@ -43,11 +46,16 @@ export function unifiedRowToTaskTimeEntry(r: UnifiedTimeRow): TaskTimeEntry {
 }
 
 /** True if a Supabase error means the unified columns/table aren't there yet
- *  (undefined column / relation), so callers can fall back to task_time_entries. */
-export function isMissingSchema(error: { code?: string; message?: string } | null): boolean {
+ *  (undefined column / relation), so callers can fall back to task_time_entries.
+ *
+ *  Codes only. This used to also match any message mentioning task_id/step_id/
+ *  time_entries, which swallowed unrelated failures — an ambiguous embed, an RLS
+ *  denial — as "not migrated yet" and silently wrote task time to the legacy
+ *  table with nothing logged. Anything that isn't one of these codes should
+ *  surface as a real error rather than a quiet fallback. */
+export function isMissingSchema(error: { code?: string } | null): boolean {
   if (!error) return false;
-  return error.code === '42703' || error.code === '42P01' || error.code === 'PGRST205'
-    || /task_id|step_id|time_entries/.test(error.message ?? '');
+  return error.code === '42703' || error.code === '42P01' || error.code === 'PGRST205';
 }
 
 /**
