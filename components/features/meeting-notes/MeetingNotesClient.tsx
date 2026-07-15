@@ -345,6 +345,7 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
   // Refs
   const recogRef         = useRef<SpeechRecognitionInstance | null>(null);
   const timerRef         = useRef<NodeJS.Timeout | null>(null);
+  const recordStartedAt  = useRef<number | null>(null);
   const transcriptRef    = useRef('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunks  = useRef<Blob[]>([]);
@@ -531,6 +532,29 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
     setInterim('');
   }
 
+  // ── Recording duration ─────────────────────────────────────────────────────
+
+  // Read the elapsed time off the wall clock on each tick rather than counting
+  // ticks: browsers throttle setInterval in a background tab, so counting would
+  // undercount a meeting the user tabbed away from.
+  const startDurationTimer = useCallback(() => {
+    recordStartedAt.current = Date.now();
+    setDuration(0);
+    timerRef.current = setInterval(() => {
+      const startedAt = recordStartedAt.current;
+      if (startedAt !== null) setDuration(Math.round((Date.now() - startedAt) / 1000));
+    }, 1000);
+  }, []);
+
+  // Stop the clock, taking one last exact reading — the final tick can be up to
+  // a second old, or much older if the tab was throttled when the user stopped.
+  const stopDurationTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    const startedAt = recordStartedAt.current;
+    if (startedAt !== null) setDuration(Math.round((Date.now() - startedAt) / 1000));
+    recordStartedAt.current = null;
+  }, []);
+
   // ── Mic-only recording ─────────────────────────────────────────────────────
 
   const startMicRecording = useCallback(async () => {
@@ -548,8 +572,8 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
     startSpeechRecognition();
     setIsRecording(true);
     setPhase('recording');
-    timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-  }, [speechSupport]);
+    startDurationTimer();
+  }, [speechSupport, startDurationTimer]);
 
   // ── Screen recording ───────────────────────────────────────────────────────
 
@@ -607,19 +631,19 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
         mediaRecorderRef.current.stop();
       }
       stopSpeechRecognition();
-      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      stopDurationTimer();
       setIsRecording(false); setIsScreenRecording(false);
     };
 
     recorder.start(2000); // collect data every 2s
     setIsRecording(true); setIsScreenRecording(true);
     setPhase('recording');
-    timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-  }, [speechSupport]);
+    startDurationTimer();
+  }, [speechSupport, startDurationTimer, stopDurationTimer]);
 
   const stopRecording = useCallback(() => {
     stopSpeechRecognition();
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    stopDurationTimer();
 
     if (mediaRecorderRef.current?.state === 'recording') {
       mediaRecorderRef.current.stop();
@@ -629,7 +653,7 @@ export default function MeetingNotesClient({ seed, onBack }: MeetingNotesClientP
       screenStreamRef.current = null;
     }
     setIsRecording(false); setIsScreenRecording(false);
-  }, []);
+  }, [stopDurationTimer]);
 
   // ── Download recording locally ────────────────────────────────────────────
 
