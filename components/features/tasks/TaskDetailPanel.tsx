@@ -2,11 +2,11 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  X, Clock, RefreshCw, User, ChevronDown, CheckCircle2,
+  X, RefreshCw, User, CheckCircle2,
   Play, Pause, Plus, Trash2, ExternalLink, Loader2, AlertCircle, Puzzle,
   XCircle, Users, UserCheck, Check, GripVertical, Sparkles, Pencil,
 } from 'lucide-react';
-import { TaskStatusBadge, StepStatusBadge } from './TaskStatusBadge';
+import { TaskStatusBadge } from './TaskStatusBadge';
 import DueDatePill from './DueDatePill';
 import Tooltip from '@/components/ui/Tooltip';
 import { sortStepsByWorkflow } from '@/utils/taskUtils';
@@ -467,7 +467,11 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
   }
 
   function toggleStep(stepId: string) {
-    setSelectedStepIds(prev => { const n = new Set(prev); n.has(stepId) ? n.delete(stepId) : n.add(stepId); return n; });
+    setSelectedStepIds(prev => {
+      const n = new Set(prev);
+      if (n.has(stepId)) n.delete(stepId); else n.add(stepId);
+      return n;
+    });
   }
 
   // 'start' steps are workflow entry markers, not actionable work items — exclude from counts and the checklist.
@@ -785,12 +789,6 @@ export default function TaskDetailPanel({ task, currentUserId, onClose, onUpdate
                         const isUpdating = updatingStep === s.id || (s.step_type === 'end' && updatingTask);
                         const isNextUp   = s.id === nextStep?.id;
                         const isEndStep  = s.step_type === 'end';
-
-                        const rowBg = isDone     ? 'bg-green-50/60'
-                                    : isProgress ? 'bg-indigo-50/40'
-                                    : isWaiting  ? 'bg-amber-50/40'
-                                    : isEndStep  ? 'bg-indigo-50/30'
-                                    : '';
 
                         const isCustom = !s.template_step_id && task.template_id;
                         const isDragging = draggingStepId === s.id;
