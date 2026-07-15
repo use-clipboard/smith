@@ -17,7 +17,7 @@ import { useModules } from '@/components/ui/ModulesProvider';
 import type { IncomeRow, ExpenseRow } from '@/components/features/landlord/LandlordEditModal';
 import {
   matchProperty, computePersonMatrix, matrixCell, findUnallocatedProperty, UNALLOCATED_LABEL,
-  personShareRows, personShareAdjustments,
+  personShareRows, personShareAdjustments, normalizeForMatch,
 } from '@/utils/landlordAllocation';
 import { computeRentComputation, buildComparisonRows, PROPERTY_INCOME_ALLOWANCE, type LandlordEntityType, type RentComputationOpts, type RentComputation } from '@/utils/landlordComputation';
 import ClientSelector, { SelectedClient } from '@/components/ui/ClientSelector';
@@ -897,6 +897,56 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
     }
   }, [current, pushHistory]);
 
+  // ── Grouped mode: the single combined property ──────────────────────────
+  // In group mode every transaction lands on one "All properties" entry, and
+  // ownership is allocated against that. It's a real register property so the
+  // owners editor, the per-person split and next year's re-run all just work.
+  const groupProperty = useMemo(
+    () => properties.find(p => normalizeForMatch(p.address) === normalizeForMatch(GROUP_LABEL)) ?? null,
+    [properties],
+  );
+
+  // Create it as soon as group mode is on, so ownership can be set upfront
+  // rather than only after the scan.
+  const [groupPropBusy, setGroupPropBusy] = useState(false);
+  const [groupPropFailed, setGroupPropFailed] = useState(false);
+  // One attempt per client: fetch doesn't reject on a 4xx, so without this a
+  // failed create would refresh, still find no property, and re-fire this effect
+  // forever. The review step's addDetectedProperties is the backstop.
+  const groupPropTriedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const clientId = selectedClient?.id;
+    if (!groupAll || !clientId) { groupPropTriedRef.current = null; return; }
+    if (propsLoading || groupProperty || groupPropTriedRef.current === clientId) return;
+    groupPropTriedRef.current = clientId;
+    let cancelled = false;
+    setGroupPropBusy(true);
+    setGroupPropFailed(false);
+    void fetch('/api/mtd-it/properties', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, address: GROUP_LABEL, ownership_pct: 100, property_type: 'uk' }),
+    })
+      .then(async res => {
+        if (cancelled) return;
+        if (!res.ok) { setGroupPropFailed(true); return; }
+        await refreshProperties();
+      })
+      .catch(() => { if (!cancelled) setGroupPropFailed(true); })
+      .finally(() => { if (!cancelled) setGroupPropBusy(false); });
+    return () => { cancelled = true; };
+  }, [groupAll, selectedClient?.id, propsLoading, groupProperty, refreshProperties]);
+
+  // Unticking: bin the combined property again, but ONLY while it's untouched.
+  // mtd_it_properties is shared with MTD IT, so an idle tick mustn't leave a
+  // stray "All properties" in the client's register — while a grouping set up
+  // earlier (or last year) must survive.
+  const handleGroupAllChange = useCallback(async (checked: boolean) => {
+    setGroupAll(checked);
+    if (checked || !groupProperty || groupProperty.owners.length > 0) return;
+    await fetch(`/api/mtd-it/properties?id=${groupProperty.id}`, { method: 'DELETE' }).catch(() => {});
+    await refreshProperties();
+  }, [groupProperty, refreshProperties]);
+
   // Bulk-create the AI-detected addresses that aren't in the register yet.
   const addDetectedProperties = useCallback(async (addrs: string[]) => {
     if (!selectedClient?.id) return;
@@ -1397,10 +1447,21 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             <LandlordPropertiesPanel
               clientId={selectedClient.id}
               primaryName={selectedClient.name}
-              properties={properties}
-              loading={propsLoading}
+              // Grouped mode: every row is on the combined property, so shares set
+              // on the client's other properties would do nothing — show only the
+              // one that's actually in play.
+              properties={groupAll ? (groupProperty ? [groupProperty] : []) : properties}
+              loading={propsLoading || (groupAll && groupPropBusy)}
               onRefetch={() => void refreshProperties()}
+              allowAdd={!groupAll}
+              emptyLabel={groupAll ? 'Setting up the combined property…' : undefined}
             />
+          )}
+          {groupAll && groupProperty && groupProperty.owners.length === 0 && (
+            <p className="text-xs text-amber-600 flex items-center gap-1.5">
+              <AlertTriangle size={12} className="shrink-0" />
+              No owners linked yet — the whole portfolio will sit with {selectedClient?.name ?? 'the client'} at {groupProperty.ownership_pct}%.
+            </p>
           )}
         </div>
 
@@ -2159,13 +2220,33 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
             </div>
 
             <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer flex-wrap">
-              <input type="checkbox" checked={groupAll} onChange={e => setGroupAll(e.target.checked)} className="rounded" />
+              <input type="checkbox" checked={groupAll} onChange={e => void handleGroupAllChange(e.target.checked)} className="rounded" />
               Group all properties into one
               <span className="text-xs text-[var(--text-muted)]">— combine income &amp; expenses across the portfolio and allocate ownership once</span>
             </label>
 
             {groupAll ? (
-              <p className="text-xs text-[var(--text-muted)] leading-snug">Everything will be analysed as a single &ldquo;{GROUP_LABEL}&rdquo; property rather than split by address. After the scan you&apos;ll set who owns it and their shares.</p>
+              <>
+                <p className="text-xs text-[var(--text-muted)] leading-snug">
+                  Everything will be analysed as a single &ldquo;{GROUP_LABEL}&rdquo; property rather than split by address.
+                  {selectedClient
+                    ? ' Link the owners and set their shares below — the per-person breakdown and the individual reports use these.'
+                    : ' Select a client above to set who owns it and their shares.'}
+                </p>
+                {selectedClient && (
+                  <LandlordPropertiesPanel
+                    clientId={selectedClient.id}
+                    primaryName={selectedClient.name}
+                    properties={groupProperty ? [groupProperty] : []}
+                    loading={propsLoading || groupPropBusy}
+                    onRefetch={() => void refreshProperties()}
+                    allowAdd={false}
+                    emptyLabel={groupPropFailed
+                      ? 'Couldn’t set the combined property up just now — it’ll be created after the scan, and you can set the shares at the Review Properties step.'
+                      : 'Setting up the combined property…'}
+                  />
+                )}
+              </>
             ) : propertyMode === 'suggest' ? (
               <p className="text-xs text-[var(--text-muted)] leading-snug">We&apos;ll detect properties from your documents. After the scan you can review them, set ownership %, and save them to this client so they&apos;re ready next time.</p>
             ) : !selectedClient ? (

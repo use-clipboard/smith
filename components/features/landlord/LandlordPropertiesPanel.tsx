@@ -12,12 +12,19 @@ interface Props {
   properties: LandlordProperty[];
   loading: boolean;
   onRefetch: () => void;
+  /** Hide Add/Remove when the caller owns the list — e.g. grouped mode, where
+   *  there is exactly one combined property and adding more does nothing. */
+  allowAdd?: boolean;
+  /** Message for the empty state (defaults to the register wording). */
+  emptyLabel?: string;
 }
 
 // Editor for a client's saved property register (shared with MTD IT). Each
 // property carries the primary landlord's ownership % plus additional owners
 // (clients or named individuals) managed via the owners modal.
-export default function LandlordPropertiesPanel({ clientId, primaryName, properties, loading, onRefetch }: Props) {
+export default function LandlordPropertiesPanel({
+  clientId, primaryName, properties, loading, onRefetch, allowAdd = true, emptyLabel,
+}: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError]   = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -74,7 +81,9 @@ export default function LandlordPropertiesPanel({ clientId, primaryName, propert
       {loading ? (
         <div className="text-xs text-[var(--text-muted)] flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading properties…</div>
       ) : properties.length === 0 ? (
-        <p className="text-xs text-[var(--text-muted)] italic">No saved properties for this client yet. Add one to allocate income &amp; expenses to it.</p>
+        <p className="text-xs text-[var(--text-muted)] italic">
+          {emptyLabel ?? 'No saved properties for this client yet. Add one to allocate income & expenses to it.'}
+        </p>
       ) : (
         properties.map(p => {
           const ownerCount = p.owners.length;
@@ -100,17 +109,19 @@ export default function LandlordPropertiesPanel({ clientId, primaryName, propert
               {total > 100.01 && (
                 <Tooltip label="Owner shares exceed 100%"><AlertTriangle size={13} className="text-amber-500 shrink-0" /></Tooltip>
               )}
-              <Tooltip label="Remove property">
-                <button onClick={() => void removeProperty(p.id)} disabled={busyId === p.id} className="p-1 text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50" aria-label="Remove property">
-                  {busyId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-                </button>
-              </Tooltip>
+              {allowAdd && (
+                <Tooltip label="Remove property">
+                  <button onClick={() => void removeProperty(p.id)} disabled={busyId === p.id} className="p-1 text-[var(--text-muted)] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded disabled:opacity-50" aria-label="Remove property">
+                    {busyId === p.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  </button>
+                </Tooltip>
+              )}
             </div>
           );
         })
       )}
 
-      {adding ? (
+      {!allowAdd ? null : adding ? (
         <div className="flex items-center gap-2 px-3 py-2 bg-[var(--accent-light)] border border-[var(--accent)]/30 rounded-lg text-sm">
           <Building2 size={14} className="text-[var(--accent)] shrink-0" />
           <input
