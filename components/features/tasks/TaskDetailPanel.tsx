@@ -130,11 +130,12 @@ function TimeTracker({ task, steps, onLogTime }: {
     if (startedAt) setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000));
   }, [startedAt]);
 
-  useState(() => {
+  useEffect(() => {
     if (!running) return;
+    tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  });
+  }, [running, tick]);
 
   async function handleStop() {
     if (!startedAt) return;
