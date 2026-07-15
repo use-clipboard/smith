@@ -194,7 +194,7 @@ export default function TimesheetsProvider({
     }]
   ), [liveStaff, userId, userName, isAdmin, defaultRatePence]);
 
-  const clients = liveClients ?? [];
+  const clients = useMemo<TsClient[]>(() => liveClients ?? [], [liveClients]);
 
   // ── Load everything from the API ────────────────────────────────────────────
   useEffect(() => {
