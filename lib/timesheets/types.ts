@@ -71,6 +71,9 @@ export interface TimeEntry {
 export interface TimerState {
   running: boolean;
   paused: boolean;
+  /** Epoch ms when the timer was first started — survives pause/resume, so the
+   *  logged entry gets the real start time rather than the stop time. */
+  firstStartedAt?: number;
   /** Epoch ms when the current running segment began (null while paused/stopped). */
   segmentStartedAt: number | null;
   /** Milliseconds banked from previous (paused) segments. */

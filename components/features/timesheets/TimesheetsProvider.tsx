@@ -6,7 +6,7 @@ import {
 import type { TimeEntry, TimerState, TimerInstance, AiSuggestion, TimeEntryType, TsClient, TsStaff, TsActivity, WeekStatus, WeekApprovalStatus } from '@/lib/timesheets/types';
 import { MAX_TIMERS } from '@/lib/timesheets/types';
 import { DEPARTMENTS, DEFAULT_ACTIVITIES } from '@/lib/timesheets/defaults';
-import { todayIso, startOfWeek, fmtDuration } from '@/lib/timesheets/format';
+import { toIsoDate, startOfWeek, fmtDuration } from '@/lib/timesheets/format';
 import { nextTimerColor, TIMER_COLORS } from '@/lib/timesheets/palette';
 
 const UNDO_MS = 8000; // window to undo a just-logged timer
@@ -358,12 +358,15 @@ export default function TimesheetsProvider({
     const inc = Math.max(1, roundingRef.current);
     const minutes = Math.max(inc, Math.round(raw / inc) * inc);
     const meStaff = liveStaff?.find(s => s.id === userId);
-    const now2 = new Date();
-    const hh = String(now2.getHours()).padStart(2, '0');
-    const mm = String(now2.getMinutes()).padStart(2, '0');
+    // Log against when the timer was first started, not when it was stopped.
+    // Timers persisted before firstStartedAt existed fall back to working the
+    // start back from the elapsed time.
+    const startedAt = new Date(t.firstStartedAt ?? (Date.now() - currentElapsedMs));
+    const hh = String(startedAt.getHours()).padStart(2, '0');
+    const mm = String(startedAt.getMinutes()).padStart(2, '0');
     const id = addEntry({
       userId,
-      date: todayIso(),
+      date: toIsoDate(startedAt),
       start: `${hh}:${mm}`,
       clientId: t.clientId,
       clientName: t.clientName || 'Internal',
@@ -393,7 +396,7 @@ export default function TimesheetsProvider({
         id: tmpTimerId(),
         label: cfg.label?.trim() || cfg.clientName || cfg.activity || 'Timer',
         color: cfg.color || nextTimerColor(prev.map(t => t.color)),
-        running: true, paused: false, segmentStartedAt: Date.now(), accumulatedMs: 0,
+        running: true, paused: false, firstStartedAt: Date.now(), segmentStartedAt: Date.now(), accumulatedMs: 0,
         clientId: cfg.clientId, clientName: cfg.clientName, taskId: cfg.taskId ?? null, taskTitle: cfg.taskTitle,
         activity: cfg.activity, department: cfg.department, type: cfg.type, notes: cfg.notes ?? '',
       };
