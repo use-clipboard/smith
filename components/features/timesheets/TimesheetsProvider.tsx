@@ -180,6 +180,7 @@ export default function TimesheetsProvider({
   const [timerUndo, setTimerUndo] = useState<{ label: string; expiresAt: number } | null>(null);
   const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
   const pendingDeleteRef = useRef<Set<string>>(new Set()); // tmp ids deleted before their POST resolved
+  const lastWrittenRef = useRef<string | null>(null); // last blob this tab persisted (see the storage listener)
   const [scanning, setScanning] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -255,8 +256,34 @@ export default function TimesheetsProvider({
   // Persist timers + suggestions (device-local).
   useEffect(() => {
     if (!ready) return;
-    try { window.localStorage.setItem(metaKey, JSON.stringify({ timers, suggestions })); } catch { /* quota */ }
+    const serialised = JSON.stringify({ timers, suggestions });
+    if (serialised === lastWrittenRef.current) return; // unchanged — don't wake other tabs
+    lastWrittenRef.current = serialised;
+    try { window.localStorage.setItem(metaKey, serialised); } catch { /* quota */ }
   }, [timers, suggestions, ready, metaKey]);
+
+  // Adopt timers/suggestions changed by another tab. Every tab mounts this
+  // provider (it lives in AppShell) and each writes the whole blob, so without
+  // this a tab holding stale state would overwrite a timer another tab is
+  // running — losing time that was never logged, or resurrecting a stopped
+  // timer so its work gets billed twice.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== metaKey || !e.newValue) return;
+      let m: { timers?: TimerInstance[]; suggestions?: AiSuggestion[] };
+      try { m = JSON.parse(e.newValue); } catch { return; }
+      // Remember what we adopted before applying it, so the persist effect above
+      // sees no change and stays quiet. Otherwise each tab's adoption would
+      // trigger a write back to the other, and they'd write to each other
+      // indefinitely.
+      lastWrittenRef.current = e.newValue;
+      setTimers(Array.isArray(m.timers) ? m.timers.slice(0, MAX_TIMERS) : []);
+      setSuggestions(Array.isArray(m.suggestions) ? m.suggestions : []);
+      setNow(Date.now());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [metaKey]);
 
   // Refs for synchronous lock checks inside mutations.
   const entriesRef = useRef(entries);
