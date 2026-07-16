@@ -6,6 +6,7 @@ import {
 import type { EmailMessage } from '@/lib/gmail';
 import type { Client } from './AllocateModal';
 import { useModules } from '@/components/ui/ModulesProvider';
+import { DEFAULT_EMAIL_FONT } from '@/lib/emailFonts';
 
 interface SelectedRecipient { name: string; email: string }
 interface ReplyAllRecipients { to: SelectedRecipient[]; cc: SelectedRecipient[] }
@@ -28,6 +29,10 @@ export interface ComposeSnapshot {
   showBcc:            boolean;
   subject:            string;
   bodyHtml:           string;
+  /** Font id for this email (lib/emailFonts.ts) — the firm default unless the
+   *  sender overrode it from the toolbar. Held here so the choice survives a
+   *  minimise/restore, which unmounts the editor. */
+  bodyFont:           string;
   attachedFiles:      File[];
   driveAttachments:   DriveAttachment[];
   selectedClients:    Client[];
@@ -58,6 +63,9 @@ export interface ComposeOpenContext {
   /** Pre-fill the body HTML directly. Used when resuming a saved draft so we
    *  bypass the reply/forward body builders entirely. */
   defaultHtmlBody?:    string | null;
+  /** Font the resumed draft was saved in, recovered from its wrapper by
+   *  /api/email/draft. Null means "use the firm default". */
+  defaultBodyFont?:    string | null;
 }
 
 type Mode = 'closed' | 'open' | 'minimised';
@@ -74,6 +82,8 @@ interface ComposeWindowState {
   signature:   string | null;
   googleEmail: string;
   displayName: string;
+  /** The firm's default email font — the font every compose starts in. */
+  firmFont:    string;
 }
 
 interface ComposeWindowValue extends ComposeWindowState {
@@ -115,6 +125,7 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
     signature:   null,
     googleEmail: '',
     displayName: userName ?? '',
+    firmFont:    DEFAULT_EMAIL_FONT,
   });
 
   // Track whether we've fetched identity yet so we don't re-fetch on every open.
@@ -122,13 +133,15 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
   const fetchIdentity = useCallback(async () => {
     if (identityLoaded) return;
     try {
-      const [statusRes, sigRes] = await Promise.all([
+      const [statusRes, sigRes, fontRes] = await Promise.all([
         fetch('/api/email/status').catch(() => null),
         fetch('/api/email/signature').catch(() => null),
+        fetch('/api/email/firm-settings').catch(() => null),
       ]);
       let googleEmail = '';
       let displayName = userName ?? '';
       let signature: string | null = null;
+      let firmFont = DEFAULT_EMAIL_FONT;
       if (statusRes?.ok) {
         const d = await statusRes.json() as { googleEmail?: string; displayName?: string };
         googleEmail = d.googleEmail ?? '';
@@ -138,7 +151,11 @@ export default function ComposeWindowProvider({ userName, children }: ProviderPr
         const d = await sigRes.json() as { signature?: string | null };
         signature = d.signature ?? null;
       }
-      setState(s => ({ ...s, googleEmail, displayName, signature }));
+      if (fontRes?.ok) {
+        const d = await fontRes.json() as { settings?: { defaultFont?: string } };
+        if (d.settings?.defaultFont) firmFont = d.settings.defaultFont;
+      }
+      setState(s => ({ ...s, googleEmail, displayName, signature, firmFont }));
     } catch { /* identity is non-critical for opening the modal */ }
     finally { setIdentityLoaded(true); }
   }, [identityLoaded, userName]);

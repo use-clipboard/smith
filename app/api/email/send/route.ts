@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { getRefreshedGmailClient, buildRawMessage, firstInvalidRecipient } from '@/lib/gmail';
+import { wrapBodyFont, isEmailFontId } from '@/lib/emailFonts';
+import { getFirmEmailFont } from '@/lib/emailFirmSettings';
 
 // Larger attachments can't ride in the request body (the serverless function is
 // capped at ~4.5 MB), so the browser stages them in this bucket first and sends
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest) {
   let bcc: string[] = [];
   let subject = '';
   let htmlBody = '';
+  let bodyFont: string | undefined;
   let replyToMessageId: string | undefined;
   let threadId: string | undefined;
   let importance: 'high' | undefined;
@@ -59,6 +62,7 @@ export async function POST(req: NextRequest) {
     bcc = JSON.parse((formData.get('bcc') as string) || '[]') as string[];
     subject = (formData.get('subject') as string) || '';
     htmlBody = (formData.get('htmlBody') as string) || '';
+    bodyFont = (formData.get('bodyFont') as string) || undefined;
     replyToMessageId = (formData.get('replyToMessageId') as string) || undefined;
     threadId = (formData.get('threadId') as string) || undefined;
     importance = (formData.get('importance') as string) === 'high' ? 'high' : undefined;
@@ -79,6 +83,7 @@ export async function POST(req: NextRequest) {
     bcc = (body.bcc as string[]) ?? [];
     subject = (body.subject as string) ?? '';
     htmlBody = (body.htmlBody as string) ?? '';
+    bodyFont = body.bodyFont as string | undefined;
     replyToMessageId = body.replyToMessageId as string | undefined;
     threadId = body.threadId as string | undefined;
     importance = body.importance === 'high' ? 'high' : undefined;
@@ -120,6 +125,13 @@ export async function POST(req: NextRequest) {
     attachments = [...attachments, ...fetched.filter((a): a is NonNullable<typeof a> => a !== null)];
   }
 
+  // Resolve the body font. The compose window names one (it knows the firm
+  // default and shows it while typing), so the DB read only happens for callers
+  // that don't — never letting an unnamed font mean "no font at all".
+  const resolvedFont = isEmailFontId(bodyFont)
+    ? bodyFont!
+    : await getFirmEmailFont(supabase, ctx.firmId);
+
   try {
     const { gmail, accessToken } = await getRefreshedGmailClient(connection.refresh_token);
 
@@ -127,7 +139,10 @@ export async function POST(req: NextRequest) {
       from: connection.google_email,
       to, cc, bcc,
       subject: subject || '(no subject)',
-      htmlBody,
+      // The editor emits unstyled HTML and the message is sent raw, so the font
+      // has to be inlined here or the recipient sees their client's default.
+      // wrapBodyFont replaces any wrapper already present rather than nesting.
+      htmlBody: wrapBodyFont(htmlBody, resolvedFont),
       replyToMessageId,
       importance,
       attachments: attachments.length > 0 ? attachments : undefined,

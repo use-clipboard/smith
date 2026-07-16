@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { getRefreshedGmailClient, buildRawMessage, parseGmailMessage, firstInvalidRecipient } from '@/lib/gmail';
+import { wrapBodyFont, unwrapBodyFont, isEmailFontId } from '@/lib/emailFonts';
+import { getFirmEmailFont } from '@/lib/emailFirmSettings';
 
 // ─── Draft handling ───────────────────────────────────────────────────────
 // GET /api/email/draft?threadId=…   — load the latest draft on that thread
@@ -21,6 +23,8 @@ const DraftSchema = z.object({
   bcc:     z.array(z.string()).default([]),
   subject: z.string(),
   htmlBody: z.string(),
+  /** Font id from lib/emailFonts.ts; falls back to the firm default when absent. */
+  bodyFont: z.string().optional(),
   replyToMessageId: z.string().optional(),
   threadId: z.string().optional(),
   fromEmail: z.string().optional(),
@@ -64,13 +68,21 @@ export async function POST(req: NextRequest) {
     const fromName  = parsed.data.fromName;
     const from      = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
 
+    // Wrap the draft in the same font as a send would, so a draft opened in
+    // Gmail itself — or saved, resumed and sent later — looks the same
+    // throughout. wrapBodyFont is idempotent, which matters here: the resumed
+    // body comes back already wrapped from the GET below.
+    const font = isEmailFontId(parsed.data.bodyFont)
+      ? parsed.data.bodyFont!
+      : await getFirmEmailFont(supabase, ctx.firmId);
+
     const raw = buildRawMessage({
       from,
       to:  parsed.data.to,
       cc:  parsed.data.cc.length  > 0 ? parsed.data.cc  : undefined,
       bcc: parsed.data.bcc.length > 0 ? parsed.data.bcc : undefined,
       subject:          parsed.data.subject,
-      htmlBody:         parsed.data.htmlBody,
+      htmlBody:         wrapBodyFont(parsed.data.htmlBody, font),
       replyToMessageId: parsed.data.replyToMessageId,
     });
 
@@ -159,6 +171,11 @@ export async function GET(req: NextRequest) {
     // BCC isn't returned by parseGmailMessage — pull it manually from headers.
     const bccHeader = rawMsg.payload?.headers?.find(h => h.name?.toLowerCase() === 'bcc')?.value ?? '';
 
+    // Hand the editor the body without our font wrapper, and the font id
+    // separately — the editor works on unwrapped HTML, and this is what makes a
+    // per-email font choice survive save → resume without being stored anywhere.
+    const { html: unwrappedBody, fontId } = unwrapBodyFont(parsed.body);
+
     return NextResponse.json({
       draft: {
         draftId:  resolvedDraftId,
@@ -167,7 +184,8 @@ export async function GET(req: NextRequest) {
         to:       parsed.to,
         cc:       parsed.cc,
         bcc:      parseAddressList(bccHeader),
-        htmlBody: parsed.body,
+        htmlBody: unwrappedBody,
+        bodyFont: fontId,
         attachments: parsed.attachments
           .filter(a => !!a.attachmentId)
           .map(a => ({

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Mail, Wifi, WifiOff, Check, Loader2, ExternalLink, AlertTriangle, Bold, Italic, Underline, Link } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import TriageCategoryManager from '@/components/features/settings/TriageCategoryManager';
+import { EMAIL_FONTS, DEFAULT_EMAIL_FONT, emailFontStack } from '@/lib/emailFonts';
 
 interface GmailStatus {
   connected: boolean;
@@ -13,7 +14,7 @@ interface GmailStatus {
   connectedAt: string | null;
 }
 
-export default function EmailTriageTab() {
+export default function EmailTriageTab({ isAdmin = false }: { isAdmin?: boolean }) {
   const [status, setStatus] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
@@ -24,6 +25,49 @@ export default function EmailTriageTab() {
   const [inboxLabel, setInboxLabel] = useState('INBOX');
   const [labels, setLabels] = useState<{ id: string; name: string }[]>([]);
   const [desktopNotifs, setDesktopNotifs] = useState(true);
+
+  // Firm-wide default font for outgoing email. Everyone sees it (it's what
+  // their compose window starts in); only admins can change it.
+  const [firmFont, setFirmFont] = useState(DEFAULT_EMAIL_FONT);
+  const [savingFont, setSavingFont] = useState(false);
+  const [fontSaved, setFontSaved] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/email/firm-settings')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { settings?: { defaultFont?: string } } | null) => {
+        if (cancelled || !d?.settings?.defaultFont) return;
+        setFirmFont(d.settings.defaultFont);
+      })
+      .catch(() => { /* the default stands */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleSaveFont(next: string) {
+    setFirmFont(next);
+    setSavingFont(true);
+    setFontSaved(false);
+    setFontError(null);
+    try {
+      const res = await fetch('/api/email/firm-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultFont: next }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(d.error ?? 'Couldn’t save the font.');
+      }
+      setFontSaved(true);
+      setTimeout(() => setFontSaved(false), 2500);
+    } catch (e) {
+      setFontError(e instanceof Error ? e.message : 'Couldn’t save the font.');
+    } finally {
+      setSavingFont(false);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -302,6 +346,49 @@ export default function EmailTriageTab() {
           </div>
         </div>
       )}
+
+      {/* Firm default font — a firm-wide setting, so it sits outside the
+          Gmail-connected gate: an admin sets the house font for everyone
+          whether or not they've connected their own mailbox. Staff see it
+          read-only so they know where their compose font comes from. */}
+      <div className="glass-solid rounded-xl p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--text-primary)]">Outgoing Email Font</h3>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            {isAdmin
+              ? 'The font every email from your firm starts in.'
+              : 'Set by your firm admin.'}
+            {' '}Senders can still change the font for an individual email from the compose toolbar.
+          </p>
+        </div>
+
+        <select
+          value={firmFont}
+          onChange={e => void handleSaveFont(e.target.value)}
+          disabled={!isAdmin || savingFont}
+          aria-label="Firm default email font"
+          className="input-base text-sm disabled:opacity-60"
+          style={{ fontFamily: emailFontStack(firmFont) }}
+        >
+          {EMAIL_FONTS.map(f => (
+            <option key={f.id} value={f.id} style={{ fontFamily: f.stack }}>{f.label}</option>
+          ))}
+        </select>
+
+        <p className="text-xs text-[var(--text-muted)]" style={{ fontFamily: emailFontStack(firmFont) }}>
+          Preview — your emails will look like this.
+        </p>
+
+        {isAdmin && (
+          <p className="text-[11px] text-[var(--text-muted)]">
+            Only fonts that render reliably in email clients are listed. Anything else would
+            silently fall back to the recipient’s default font, so it isn’t offered.
+          </p>
+        )}
+        {savingFont && <p className="text-xs text-[var(--text-muted)] flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> Saving…</p>}
+        {fontSaved && <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Check size={11} /> Saved</p>}
+        {fontError && <p className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1"><AlertTriangle size={11} /> {fontError}</p>}
+      </div>
 
       {/* Triage categories */}
       {status?.connected && (

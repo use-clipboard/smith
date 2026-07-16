@@ -6,7 +6,7 @@ import {
   X, Send, Loader2, Sparkles, Check, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
   Smile, Minus, AlertCircle, PenLine, Flag, Trash2, HardDrive, FolderInput,
-  Undo2, Redo2, Paintbrush,
+  Undo2, Redo2, Paintbrush, Type,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
@@ -15,6 +15,7 @@ import { useSmartCompose, stripGhostHtml } from './useSmartCompose';
 import { useEditorHistory } from './useEditorHistory';
 import { useFormatPainter } from './useFormatPainter';
 import { sanitisePastedHtml, plainTextToHtml } from './pasteSanitiser';
+import { EMAIL_FONTS, DEFAULT_EMAIL_FONT, emailFontStack } from '@/lib/emailFonts';
 import type { ComposeSnapshot, DriveAttachment } from './ComposeWindowProvider';
 import DriveFolderPicker from './DriveFolderPicker';
 import { createClient as createBrowserSupabase } from '@/lib/supabase';
@@ -111,8 +112,12 @@ interface Props {
   /** Pre-fill the body HTML verbatim — used when resuming a draft so we
    *  skip the reply/forward body builders that would otherwise overwrite it. */
   defaultHtmlBody?:    string | null;
+  /** Font a resumed draft was saved in; null means use the firm default. */
+  defaultBodyFont?:    string | null;
   /** Full thread messages for the "show quoted thread" panel (reply mode only) */
   threadMessages?: EmailMessage[] | null;
+  /** The firm's default email font — what a fresh compose starts in. */
+  firmFont?: string;
   signature: string | null;
   googleEmail: string;
   displayName: string;
@@ -531,7 +536,7 @@ function FmtBtn({ title, onActivate, children, disabled = false, active = false 
 export default function ComposeModal({
   open, onClose, replyTo, prefilledBody, replyAllRecipients, forwardOf, defaultClients, defaultTo,
   defaultSubject, defaultAttachments,
-  defaultDraftId, defaultBcc, defaultHtmlBody,
+  defaultDraftId, defaultBcc, defaultHtmlBody, defaultBodyFont, firmFont,
   signature, googleEmail, displayName, tasksModuleActive, onSent, onForwardSent, onReplySent, onCreateTaskFromSent,
   onDiscarded, onDraftCreated, onMinimise, initialSnapshot, onRestore, onPendingSendChange,
 }: Props) {
@@ -551,6 +556,15 @@ export default function ComposeModal({
     if (target === 'bcc') setShowBcc(true);
   }
   const [subject, setSubject] = useState('');
+  // This email's base font. Starts at the firm default and is only diverged from
+  // if the sender picks another — the choice is per email, not remembered.
+  const [bodyFont, setBodyFont] = useState(firmFont ?? DEFAULT_EMAIL_FONT);
+  const [fontMenuOpen, setFontMenuOpen] = useState(false);
+  const fontMenuRef = useRef<HTMLDivElement>(null);
+  // True once the sender has picked a font for this email. The firm default is
+  // fetched lazily and can land after the window is already open, so without
+  // this an early manual choice would be overwritten a moment later.
+  const fontTouched = useRef(false);
   const [important, setImportant] = useState(false);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -628,6 +642,50 @@ export default function ComposeModal({
 
   function undoBody() { history.undo(); scheduleAutoSave(); }
   function redoBody() { history.redo(); scheduleAutoSave(); }
+
+  // The firm default is fetched lazily on first open, so it can arrive after
+  // this window has mounted. Adopt it when it does — unless the sender has
+  // already made a choice for this email, which always wins.
+  useEffect(() => {
+    if (!open || fontTouched.current || !firmFont) return;
+    setBodyFont(defaultBodyFont ?? firmFont);
+  }, [open, firmFont, defaultBodyFont]);
+
+  /**
+   * Pick a font. With a selection, restyle just that run — the same "applies to
+   * what you've selected" behaviour as every other toolbar button. With no
+   * selection, change the whole email's base font, which is what the firm
+   * default sets and what a per-email override is normally meant to change.
+   */
+  function chooseFont(id: string) {
+    fontTouched.current = true;
+    setFontMenuOpen(false);
+    const sel = window.getSelection();
+    const hasRange = !!sel && !sel.isCollapsed && !!bodyRef.current?.contains(sel.anchorNode);
+    if (hasRange) {
+      bodyRef.current?.focus();
+      // styleWithCSS so this lands as an inline style rather than a <font> tag;
+      // inline styles survive mail-client sanitisers far more reliably.
+      document.execCommand('styleWithCSS', false, 'true');
+      document.execCommand('fontName', false, emailFontStack(id));
+      document.execCommand('styleWithCSS', false, 'false');
+      history.commit();
+      scheduleAutoSave();
+      return;
+    }
+    setBodyFont(id);
+    scheduleAutoSave();
+  }
+
+  // Close the font menu on an outside click, matching the colour picker.
+  useEffect(() => {
+    if (!fontMenuOpen) return;
+    function handler(e: MouseEvent) {
+      if (fontMenuRef.current && !fontMenuRef.current.contains(e.target as Node)) setFontMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [fontMenuOpen]);
 
   // Set by Ctrl+Shift+V so the paste handler that fires immediately after knows
   // to ignore the clipboard's HTML flavour. ClipboardEvent carries no modifier
@@ -773,6 +831,10 @@ export default function ComposeModal({
       setDriveAttachments(initialSnapshot.driveAttachments);
       setSelectedClients(initialSnapshot.selectedClients);
       setCreateTaskEnabled(initialSnapshot.createTaskEnabled);
+      setBodyFont(initialSnapshot.bodyFont);
+      // The snapshot's font is authoritative — pin it so a late-arriving firm
+      // default can't overwrite what the user had chosen before minimising.
+      fontTouched.current = true;
       requestAnimationFrame(() => {
         if (bodyRef.current) bodyRef.current.innerHTML = initialSnapshot.bodyHtml;
         // Restoring a minimised window is a fresh start for undo — the stack
@@ -784,6 +846,10 @@ export default function ComposeModal({
     // Fresh compose / reply / forward — never carry Drive links across contexts.
     setDriveAttachments([]);
     setPendingLargeFiles([]);
+    // A font choice belongs to the email it was made for, so it resets here.
+    // A resumed draft brings its own back (recovered from the saved body).
+    fontTouched.current = false;
+    setBodyFont(defaultBodyFont ?? firmFont ?? DEFAULT_EMAIL_FONT);
     if (forwardOf) {
       setTo([]); setCc([]); setShowCc(false);
       setSubject(forwardOf.subject.startsWith('Fwd:') ? forwardOf.subject : `Fwd: ${forwardOf.subject}`);
@@ -887,6 +953,7 @@ export default function ComposeModal({
     const snap: ComposeSnapshot = {
       to, cc, bcc, showCc, showBcc, subject,
       bodyHtml: readBody(),
+      bodyFont,
       attachedFiles, driveAttachments, selectedClients, createTaskEnabled,
     };
     onMinimise?.(snap);
@@ -934,6 +1001,9 @@ export default function ComposeModal({
       formData.append('bcc', JSON.stringify(snap.bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email)));
       formData.append('subject', snap.subject || '(no subject)');
       formData.append('htmlBody', bodyHtml);
+      // The route inlines this onto the body — the editor's font is CSS on the
+      // element and would never reach the recipient on its own.
+      formData.append('bodyFont', snap.bodyFont);
       if (important) formData.append('importance', 'high');
       if (replyTo?.id) formData.append('replyToMessageId', replyTo.id);
       if (replyTo?.threadId) formData.append('threadId', replyTo.threadId);
@@ -1091,6 +1161,7 @@ export default function ComposeModal({
           bcc: bcc.map(r => r.name ? `${r.name} <${r.email}>` : r.email),
           subject: subject || '(no subject)',
           htmlBody: htmlBody || '',
+          bodyFont,
           replyToMessageId: replyTo?.id,
           threadId: replyTo?.threadId,
           fromEmail: googleEmail,
@@ -1471,6 +1542,7 @@ export default function ComposeModal({
                       onMinimise({
                         to, cc, bcc, showCc, showBcc, subject,
                         bodyHtml: readBody(),
+                        bodyFont,
                         attachedFiles, driveAttachments, selectedClients, createTaskEnabled,
                       });
                     }}
@@ -1554,6 +1626,53 @@ export default function ComposeModal({
           <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)] shrink-0 bg-transparent">
             <FmtBtn title="Undo (Ctrl+Z)" onActivate={undoBody} disabled={!history.canUndo}><Undo2 size={13} /></FmtBtn>
             <FmtBtn title="Redo (Ctrl+Shift+Z)" onActivate={redoBody} disabled={!history.canRedo}><Redo2 size={13} /></FmtBtn>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
+            {/* Font — starts at the firm default; changing it here affects only
+                this email (or just the selection, if there is one). */}
+            <div className="relative" ref={fontMenuRef}>
+              <Tooltip label="Font for this email — your firm's default is used unless you change it">
+                <button
+                  type="button"
+                  aria-label="Font"
+                  aria-haspopup="listbox"
+                  aria-expanded={fontMenuOpen}
+                  onMouseDown={e => { e.preventDefault(); setFontMenuOpen(o => !o); }}
+                  className="flex items-center gap-1 px-1.5 py-1 rounded text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)] transition-colors max-w-[110px]"
+                >
+                  <Type size={12} className="shrink-0" />
+                  <span className="truncate">{EMAIL_FONTS.find(f => f.id === bodyFont)?.label ?? 'Font'}</span>
+                </button>
+              </Tooltip>
+              {fontMenuOpen && (
+                <div
+                  role="listbox"
+                  className="absolute left-0 top-full mt-1 z-50 py-1 bg-[var(--bg-card-solid)] border border-[var(--border)] rounded-xl shadow-lg w-44"
+                >
+                  {EMAIL_FONTS.map(f => (
+                    <button
+                      key={f.id}
+                      role="option"
+                      aria-selected={f.id === bodyFont}
+                      onMouseDown={e => { e.preventDefault(); chooseFont(f.id); }}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-nav-hover)] transition-colors flex items-center justify-between gap-2 ${
+                        f.id === bodyFont ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
+                      }`}
+                      // Preview each option in its own face — the point of the
+                      // list is choosing how the email will look.
+                      style={{ fontFamily: f.stack }}
+                    >
+                      <span className="truncate">{f.label}</span>
+                      {f.id === bodyFont && <Check size={12} className="shrink-0 text-indigo-600" />}
+                    </button>
+                  ))}
+                  <p className="px-3 pt-1.5 pb-0.5 text-[10px] leading-snug text-[var(--text-muted)] border-t border-[var(--border)] mt-1">
+                    Applies to this email. Select text first to change just that part.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="w-px h-4 bg-[var(--border)] mx-1" />
 
@@ -1768,7 +1887,10 @@ export default function ComposeModal({
                 history.commit();
               }}
               className={`w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_ul_ul]:list-[circle] [&_ol_ol]:list-[lower-alpha] ${painter.armed ? 'cursor-crosshair' : ''}`}
-              style={{ minHeight: 160, maxHeight: '50vh' }}
+              // Compose in the font the email will actually be sent in. This
+              // styles the editor only — it never reaches innerHTML, so the
+              // send/draft routes are what inline it onto the real message.
+              style={{ minHeight: 160, maxHeight: '50vh', fontFamily: emailFontStack(bodyFont) }}
             />
           </div>
 

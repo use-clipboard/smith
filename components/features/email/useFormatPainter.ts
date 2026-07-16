@@ -6,10 +6,11 @@ import { useCallback, useRef, useState, type RefObject } from 'react';
  * Format painter for the compose body — pick up the formatting at the caret,
  * then paint it onto the next selection the user makes.
  *
- * Scope is deliberately the same five formats the toolbar itself offers (bold,
- * italic, underline, strikethrough, colour). Copying font family/size too would
- * mean pulling in styling the user has no way to set or clear by hand, which is
- * how pasted-in Word formatting becomes unfixable.
+ * Scope is exactly what the toolbar itself offers: bold, italic, underline,
+ * strikethrough, colour and font family. That boundary is the point — anything
+ * the painter can apply, the user must be able to change back by hand, or the
+ * painter becomes another way to create formatting nobody can fix. Font size
+ * stays out for that reason, since the toolbar has no size control.
  */
 
 export interface PaintedFormat {
@@ -19,6 +20,8 @@ export interface PaintedFormat {
   strike: boolean;
   /** Resolved rgb() string from getComputedStyle. */
   color: string;
+  /** Resolved font-family stack from getComputedStyle. */
+  fontFamily: string;
 }
 
 /** Read the effective formatting at the current selection. */
@@ -38,6 +41,7 @@ function captureAt(root: HTMLElement): PaintedFormat | null {
     underline: decoration.includes('underline'),
     strike:    decoration.includes('line-through'),
     color:     cs.color,
+    fontFamily: cs.fontFamily,
   };
 }
 
@@ -53,6 +57,7 @@ function paintOnto(doc: Document, fmt: PaintedFormat): void {
   set('underline', fmt.underline);
   set('strikeThrough', fmt.strike);
   doc.execCommand('foreColor', false, fmt.color);
+  if (fmt.fontFamily) doc.execCommand('fontName', false, fmt.fontFamily);
 }
 
 export interface FormatPainter {

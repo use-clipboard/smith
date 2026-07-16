@@ -76,7 +76,9 @@ export default function GlobalComposeWindow() {
       defaultDraftId={cw.ctx?.defaultDraftId ?? null}
       defaultBcc={cw.ctx?.defaultBcc ?? null}
       defaultHtmlBody={cw.ctx?.defaultHtmlBody ?? null}
+      defaultBodyFont={cw.ctx?.defaultBodyFont ?? null}
       threadMessages={cw.ctx?.threadMessages ?? null}
+      firmFont={cw.firmFont}
       signature={cw.signature}
       googleEmail={cw.googleEmail}
       displayName={cw.displayName}

@@ -1103,6 +1103,8 @@ export default function EmailTriagePage() {
             cc:       Array<{ name: string; email: string }>;
             bcc:      Array<{ name: string; email: string }>;
             htmlBody: string;
+            /** Font the draft was saved in, recovered from the body wrapper. */
+            bodyFont: string | null;
             attachments: Array<{ messageId: string; attachmentId: string; filename: string; mimeType: string; size: number }>;
           };
         };
@@ -1129,6 +1131,7 @@ export default function EmailTriagePage() {
             defaultBcc:       draft.bcc,
             defaultSubject:   draft.subject,
             defaultHtmlBody:  draft.htmlBody,
+            defaultBodyFont:  draft.bodyFont,
             defaultAttachments: files.filter((f): f is File => f !== null),
           });
           return;

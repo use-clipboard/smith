@@ -620,7 +620,7 @@ export default function SettingsClient({
 
       {/* Email Triage tab — all users, shown when module is active */}
       {activeTab === 'email-triage' && emailTriageModuleActive && (
-        <EmailTriageTab />
+        <EmailTriageTab isAdmin={isAdmin} />
       )}
 
       {/* HR tab — admin only, shown when HR module is active */}
