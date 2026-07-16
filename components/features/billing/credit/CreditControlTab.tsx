@@ -25,9 +25,7 @@ const RISK_META = {
   high:   { label: 'High',   cls: 'bg-rose-50 text-rose-600' },
 };
 
-interface Props { onGoToSettings: () => void }
-
-export default function CreditControlTab({ onGoToSettings }: Props) {
+export default function CreditControlTab() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<AttentionItem | null>(null);
@@ -60,7 +58,7 @@ export default function CreditControlTab({ onGoToSettings }: Props) {
             <p className="text-[12px] text-[var(--text-muted)]">{data.autoChaseEnabled ? 'SMITH sends overdue reminders automatically on your schedule.' : 'Turn it on to chase overdue invoices automatically.'}</p>
           </div>
         </div>
-        <button onClick={onGoToSettings} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--accent)] hover:underline">Configure chaser <ArrowRight size={14} /></button>
+        <a href="/settings?tab=billing-tool" className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--accent)] hover:underline">Configure chaser <ArrowRight size={14} /></a>
       </div>
 
       {/* KPIs */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
+import { canAccessBookkeeping } from '@/lib/bookkeeping/access';
 import SettingsClient from './SettingsClient';
 
 interface Bootstrap {
@@ -59,6 +60,9 @@ export default function SettingsHosted() {
       proposalsModuleActive={data.activeModules.includes('proposals')}
       mtdItModuleActive={data.activeModules.includes('mtd-it')}
       landlordModuleActive={data.activeModules.includes('landlord')}
+      billingModuleActive={data.activeModules.includes('billing')}
+      bookkeepingActive={canAccessBookkeeping(data.activeModules)}
+      documentVaultActive={data.activeModules.includes('document-vault')}
       emailSenderName={data.emailSenderName}
       emailSenderAddress={data.emailSenderAddress}
     />

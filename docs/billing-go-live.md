@@ -28,9 +28,9 @@ automation OFF until you've verified the basics.
 - [ ] Create a webhook → `https://<domain>/api/billing/stripe/webhook`
 - [ ] Subscribe to events: `checkout.session.completed`, `setup_intent.setup_failed`
 - [ ] Copy the signing secret into `STRIPE_WEBHOOK_SECRET`
-- [ ] Billing → Settings → "Card payments (Stripe)" shows **Connected** (+ webhook OK)
+- [ ] Settings → Billing → Payments → "Card payments (Stripe)" shows **Connected** (+ webhook OK)
 
-## 5. Firm configuration (Billing → Settings)
+## 5. Firm configuration (Settings → Billing)
 - [ ] Business name, address, VAT number, **bank details** (these print on invoices/statements)
 - [ ] Invoice numbering prefixes + default VAT / payment terms
 - [ ] Review the **auto-chaser ladder** wording; leave the global **auto-chaser OFF** for now

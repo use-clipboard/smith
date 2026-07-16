@@ -3,13 +3,12 @@
 import { useState } from 'react';
 import {
   ReceiptText, LayoutDashboard, FileText, RefreshCw, CreditCard,
-  Landmark, Users, BarChart3, SlidersHorizontal, Plus, Sparkles, Upload,
+  Landmark, Users, BarChart3, Plus, Sparkles, Upload,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import BillingOverview from './overview/BillingOverview';
 import InvoicesTab from './invoices/InvoicesTab';
 import NewInvoiceDrawer from './invoices/NewInvoiceDrawer';
-import BillingSettingsTab from './settings/BillingSettingsTab';
 import ImportInvoicesModal from './import/ImportInvoicesModal';
 import RecurringTab from './recurring/RecurringTab';
 import CreditControlTab from './credit/CreditControlTab';
@@ -18,9 +17,11 @@ import DirectDebitsTab from './directdebits/DirectDebitsTab';
 import ReportsTab from './reports/ReportsTab';
 import ClientsBillingTab from './clients/ClientsBillingTab';
 
+// Billing's settings now live in the app's own Settings → Billing tab, like
+// every other tool — hence no 'settings' tab here.
 type BillingTab =
   | 'overview' | 'invoices' | 'recurring' | 'credit_control'
-  | 'payments' | 'direct_debits' | 'clients' | 'reports' | 'settings';
+  | 'payments' | 'direct_debits' | 'clients' | 'reports';
 
 const TABS: { id: BillingTab; label: string; icon: typeof ReceiptText }[] = [
   { id: 'overview',       label: 'Overview',       icon: LayoutDashboard },
@@ -31,7 +32,6 @@ const TABS: { id: BillingTab; label: string; icon: typeof ReceiptText }[] = [
   { id: 'direct_debits',  label: 'Direct Debits',  icon: Landmark },
   { id: 'clients',        label: 'Clients',        icon: Users },
   { id: 'reports',        label: 'Reports',        icon: BarChart3 },
-  { id: 'settings',       label: 'Settings',       icon: SlidersHorizontal },
 ];
 
 export default function BillingModule() {
@@ -92,12 +92,11 @@ export default function BillingModule() {
         <InvoicesTab key={refreshKey} onNewInvoice={() => setNewInvoiceOpen(true)} onImport={() => setImportOpen(true)} />
       )}
       {tab === 'recurring' && <RecurringTab />}
-      {tab === 'credit_control' && <CreditControlTab onGoToSettings={() => setTab('settings')} />}
+      {tab === 'credit_control' && <CreditControlTab />}
       {tab === 'payments' && <PaymentsTab />}
       {tab === 'direct_debits' && <DirectDebitsTab />}
       {tab === 'clients' && <ClientsBillingTab />}
       {tab === 'reports' && <ReportsTab />}
-      {tab === 'settings' && <BillingSettingsTab />}
 
       {newInvoiceOpen && (
         <NewInvoiceDrawer onClose={() => setNewInvoiceOpen(false)} onSaved={handleSaved} />

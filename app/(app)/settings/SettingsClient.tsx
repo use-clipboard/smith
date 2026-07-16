@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive, Clock, Landmark, House } from 'lucide-react';
+import { SlidersHorizontal, User, Building2, Lock, Puzzle, CreditCard, Layers, Key, UsersRound, CalendarDays, UserPlus, CheckSquare, Mail, HeartHandshake, FileSignature, ChevronDown, Wrench, MessagesSquare, CalendarCheck, BookCopy, LayoutDashboard, FolderArchive, Clock, Landmark, House, ReceiptText } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import GoogleDriveSettings from '@/components/features/settings/GoogleDriveSettings';
 import DeleteAccountSection from '@/components/features/settings/DeleteAccountSection';
@@ -26,12 +26,13 @@ import ProposalsSettingsTab from './tabs/ProposalsSettingsTab';
 import AgentSmithSettingsTab from './tabs/AgentSmithSettingsTab';
 import CommunityTab from './tabs/CommunityTab';
 import BookkeepingSettingsTab from './tabs/BookkeepingSettingsTab';
+import BillingSettingsTab from '@/components/features/billing/settings/BillingSettingsTab';
 import AccountsStudioDefaultsTab from './tabs/AccountsStudioDefaultsTab';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import AgentHatIcon from '@/components/ui/AgentHatIcon';
 import { createClient } from '@/lib/supabase';
 
-type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
+type Tab = 'preferences' | 'dashboard' | 'profile' | 'account' | 'team' | 'api-key' | 'modules' | 'tiers' | 'billing' | 'calendar' | 'staff-hire' | 'tasks' | 'timesheets' | 'email-triage' | 'hr' | 'proposals' | 'mtd-it' | 'landlord' | 'billing-tool' | 'agent-smith' | 'community' | 'bookkeeping' | 'document-vault' | 'accounts-studio-defaults';
 
 interface Props {
   userId: string;
@@ -53,6 +54,7 @@ interface Props {
   proposalsModuleActive?: boolean;
   mtdItModuleActive?: boolean;
   landlordModuleActive?: boolean;
+  billingModuleActive?: boolean;
   bookkeepingActive?: boolean;
   documentVaultActive?: boolean;
   emailSenderName?: string | null;
@@ -69,7 +71,7 @@ const TIER_LABELS: Record<string, string> = {
 export default function SettingsClient({
   userId, firmId, userEmail, userName, avatarUrl, userRole,
   firmName, firmLogoUrl, subscriptionTier, activeModules, seatCount,
-  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, landlordModuleActive, bookkeepingActive, documentVaultActive,
+  calendarModuleActive, staffHireModuleActive, tasksModuleActive, emailTriageModuleActive, hrModuleActive, proposalsModuleActive, mtdItModuleActive, landlordModuleActive, billingModuleActive, bookkeepingActive, documentVaultActive,
   emailSenderName, emailSenderAddress,
 }: Props) {
   const isAdmin = userRole === 'admin';
@@ -84,7 +86,7 @@ export default function SettingsClient({
   const resolvedTab = (rawTab === 'appearance' ? 'preferences' : rawTab) as Tab | null;
   const initialTab: Tab = resolvedTab ?? 'preferences';
   const [activeTab, setActiveTab] = useState<Tab>(
-    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'tiers' || initialTab === 'billing' ? 'preferences' : initialTab)
+    isAdmin ? initialTab : (initialTab === 'modules' || initialTab === 'tiers' || initialTab === 'billing' || initialTab === 'billing-tool' ? 'preferences' : initialTab)
   );
 
   const [displayName, setDisplayName] = useState(userName);
@@ -128,6 +130,10 @@ export default function SettingsClient({
     { id: 'proposals' as Tab,    label: 'Proposals',    icon: FileSignature,  adminOnly: true,  hidden: !proposalsModuleActive,    group: 'tools' as TabGroup },
     { id: 'mtd-it' as Tab,       label: 'MTD IT',       icon: CalendarCheck,  adminOnly: true,  hidden: !mtdItModuleActive,        group: 'tools' as TabGroup },
     { id: 'landlord' as Tab,     label: 'Landlord',     icon: House,       adminOnly: true,  hidden: !landlordModuleActive,     group: 'tools' as TabGroup },
+    // 'billing-tool' is the Billing *tool*'s own settings (how the firm invoices
+    // its clients) — distinct from the 'billing' tab above, which is SMITH's
+    // subscription. Different ids, so ?tab= deep links stay unambiguous.
+    { id: 'billing-tool' as Tab, label: 'Billing',      icon: ReceiptText,    adminOnly: true,  hidden: !billingModuleActive,      group: 'tools' as TabGroup },
     { id: 'bookkeeping' as Tab,  label: 'Bookkeeping',  icon: BookCopy,       adminOnly: true,  hidden: !bookkeepingActive,        group: 'tools' as TabGroup },
     { id: 'accounts-studio-defaults' as Tab, label: 'Accounts Studio', icon: Landmark, adminOnly: true, hidden: !accountsStudioAllowed, group: 'tools' as TabGroup },
     { id: 'agent-smith' as Tab,  label: 'Agent Smith',  icon: AgentHatIcon,   adminOnly: true,  hidden: false,                     group: 'tools' as TabGroup },
@@ -640,6 +646,11 @@ export default function SettingsClient({
 
       {activeTab === 'landlord' && isAdmin && landlordModuleActive && (
         <LandlordSettingsTab />
+      )}
+
+      {/* Billing tool tab — admin only, shown when the Billing module is active */}
+      {activeTab === 'billing-tool' && isAdmin && billingModuleActive && (
+        <BillingSettingsTab />
       )}
 
       {/* Bookkeeping tab — gated by canAccessBookkeeping (server-side) */}
