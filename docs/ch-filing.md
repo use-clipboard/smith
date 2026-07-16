@@ -12,6 +12,12 @@ Timing matters: CH moves to **software-only filing from 1 April 2027** and
   replacement; the XML Gateway is the live route today.
 - **Accounts payload:** **iXBRL**, tagged against the **FRC 2023 taxonomy suite**
   (v1.0.1, usable from 5 Apr 2023).
+  > ⚠ **Verify the taxonomy version before correcting any QNames.** CH publish
+  > *"Companies House technical interface specification (TIS) for accounts"*
+  > **v5.9**, last updated **1 April 2026** — newer than the research this spike
+  > was built on. It may mandate a later FRC suite than 2023. Read v5.9 first:
+  > validating the concept map against the wrong taxonomy means doing it twice.
+  > (ODT download from the TIS page linked below.)
 - **Auth:** presenter ID + MD5‑coded authentication value; plus the company's
   authentication code for the specific filing.
 - **Validation:** CH provides an **iXBRL accounts test validation service**
@@ -59,11 +65,48 @@ loaded with the FRC 2023 taxonomy), then correct the QNames in the one table in
 
 ---
 
-## CH test‑account request email — SENT
+## Reference
+
+- **Read first (the test-account requirements):**
+  <https://www.gov.uk/government/publications/technical-interface-specifications-for-companies-house-software/important-information-for-software-developers-read-first>
+- **Technical interface specifications (schemas):**
+  <https://www.gov.uk/government/publications/technical-interface-specifications-for-companies-house-software>
+  — *TIS* v5.3 · ***TIS for accounts* v5.9** (updated 1 Apr 2026) — the one we need.
+
+## What CH require for a test account
+
+Exactly five details — nothing more. From the "read first" guidance:
+
+> the presenter's **name**, **contact name**, **address**, **email address**,
+> **telephone number**
+
+And on whose details to give:
+
+> "Apart from the address, these are usually the developer's details. Our main
+> contact during testing is usually the development team, and not the presenter
+> or company."
+
+So: address = the firm's office; the rest = whoever actually does the testing.
+
+## Obligations once testing starts
+
+- **Test flag = 1** on every test submission.
+- **A unique submission (envelope) number per submission.**
+- **Email CH when you've made test submissions** — they are reviewed **manually**
+  and sit **pending** until someone at CH looks at them.
+
+That last point matters for planning: this is not a self-serve sandbox with a
+fast feedback loop. Every round trip costs a human at CH. Validate the iXBRL as
+far as possible offline (CH iXBRL test validation service, or Arelle + the
+correct FRC taxonomy) before spending submissions.
+
+## Timeline
+
+### 1. Request — SENT 09 Jul 2026
 
 Sent to `xml@companieshouse.gov.uk` by Christos Marneros (Marneros Marcus & Co
 Limited). Written as the firm (the presenter) developing its own filing
-software. Awaiting reply with test presenter ID + authentication value.
+software.
 
 > **To:** xml@companieshouse.gov.uk
 > **Subject:** Request for XML Gateway test account — software accounts filing
@@ -96,8 +139,55 @@ software. Awaiting reply with test presenter ID + authentication value.
 > Christos Marneros
 > Marneros Marcus & Co Limited
 
-_When CH reply with the test presenter ID + authentication value: download a
-sample iXBRL from Approve & Publish → iXBRL → Download (beta), run it through the
-CH iXBRL test validation service, then correct the CONCEPTS/entry‑point/dimension
-QNames in `lib/accounts-studio/ixbrl.ts` until it passes. Test submissions use
-test flag = 1._
+Note the address was filled in but the **telephone was left as a placeholder and
+dropped**, and the email given (`christos@marnerosmarcus.co.uk`) differed from
+the address it was sent from (`christos@mmandco.com`).
+
+### 2. CH reply — received ~16 Jul 2026
+
+From **Cloideach, Software Liaison Manager, XML Team**:
+
+> Before we can issue a test account, please read the following guidance as you
+> have not provided some key details we require before a test account can be
+> created: *Important information for software developers - read first*
+> […] Once I receive the full information, I will request a test account.
+
+**Diagnosis:** of the five required details we supplied four. **The missing one
+was the telephone number.** No other information is required — CH did not ask for
+software name/version, transaction types, volumes or filing-agent status, and the
+guidance doesn't request them.
+
+### 3. Our reply — sent 16 Jul 2026
+
+All five details restated in one block (CH asked for "the full information", so
+re-sending the lot beats making them cross-reference the first email). The
+`mmandco.com` / `marnerosmarcus.co.uk` split was resolved in favour of
+**`christos@mmandco.com`** — the address CH already replied to — with a line
+explaining that MM&Co is the trading name of Marneros Marcus & Co Limited so the
+domain mismatch doesn't look like an error.
+
+> - Presenter name:  Marneros Marcus & Co Limited
+> - Contact name:    Christos Marneros
+> - Address:         First Floor, Hagley Court, 40 Vicarage Road, Edgbaston,
+>                    Birmingham, B15 3EZ
+> - Email address:   christos@mmandco.com
+> - Telephone:       0121 440 0800
+
+Deliberately did **not** re-ask for schema/version notes or the validation
+service — that's all on the page they pointed us at.
+
+**→ AWAITING** test presenter ID + authentication value.
+
+## Next steps (in order)
+
+1. **Read *TIS for accounts* v5.9** (1 Apr 2026) and confirm which FRC taxonomy
+   suite it mandates — this gates step 3, so do it first even while waiting.
+2. When the test presenter credentials arrive, download a sample from
+   Accounts Studio → Approve & Publish → iXBRL → **Download (beta)**.
+3. Run it through the CH iXBRL test validation service (or Arelle + the correct
+   FRC taxonomy) and correct the CONCEPTS / entry-point / dimension QNames in
+   `lib/accounts-studio/ixbrl.ts` until it passes. The generator's structure
+   shouldn't need to change — only that one table.
+4. Build the XML Gateway envelope (presenter ID + MD5 auth, **test flag 1**,
+   unique envelope number, company auth code, iXBRL attachment); submit; email CH
+   to have it reviewed; surface their validation errors in the Publish stage.
