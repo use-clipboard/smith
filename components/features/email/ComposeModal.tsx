@@ -6,11 +6,15 @@ import {
   X, Send, Loader2, Sparkles, Check, UserPlus, CheckSquare,
   Paperclip, Bold, Italic, Underline, Strikethrough, List, ListOrdered, Palette,
   Smile, Minus, AlertCircle, PenLine, Flag, Trash2, HardDrive, FolderInput,
+  Undo2, Redo2, Paintbrush,
 } from 'lucide-react';
 import type { EmailMessage } from '@/lib/gmail';
 import AllocateModal, { type Client } from './AllocateModal';
 import Tooltip from '@/components/ui/Tooltip';
 import { useSmartCompose, stripGhostHtml } from './useSmartCompose';
+import { useEditorHistory } from './useEditorHistory';
+import { useFormatPainter } from './useFormatPainter';
+import { sanitisePastedHtml, plainTextToHtml } from './pasteSanitiser';
 import type { ComposeSnapshot, DriveAttachment } from './ComposeWindowProvider';
 import DriveFolderPicker from './DriveFolderPicker';
 import { createClient as createBrowserSupabase } from '@/lib/supabase';
@@ -492,17 +496,31 @@ function runAutoCorrect(root: HTMLElement): void {
   sel.addRange(newRange);
 }
 
-function FmtBtn({ title, onActivate, children }: {
+function FmtBtn({ title, onActivate, children, disabled = false, active = false }: {
   title: string;
   onActivate: () => void;
   children: React.ReactNode;
+  disabled?: boolean;
+  /** Renders the button as latched — used by the format painter while armed. */
+  active?: boolean;
 }) {
   return (
     <Tooltip label={title}>
       <button
         aria-label={title}
-        onMouseDown={e => { e.preventDefault(); onActivate(); }}
-        className="p-1 rounded hover:bg-[var(--bg-nav-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+        aria-pressed={active || undefined}
+        disabled={disabled}
+        // mouseDown + preventDefault keeps the body's selection intact: a plain
+        // click would blur the editor first and the command would have nothing
+        // to act on.
+        onMouseDown={e => { e.preventDefault(); if (!disabled) onActivate(); }}
+        className={`p-1 rounded transition-colors ${
+          disabled
+            ? 'text-[var(--text-muted)] opacity-40 cursor-default'
+            : active
+              ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/25 dark:text-indigo-400'
+              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] hover:text-[var(--text-primary)]'
+        }`}
       >
         {children}
       </button>
@@ -601,6 +619,48 @@ export default function ComposeModal({
 
   const bodyRef = useRef<HTMLDivElement>(null);
 
+  // Explicit undo/redo. The body is uncontrolled, so the browser's own stack
+  // works for typing — but it's wiped by every innerHTML assignment below (the
+  // AI actions especially), and can't see autocorrect or Smart Compose at all.
+  // Our own stack covers all of them; see useEditorHistory.
+  const history = useEditorHistory(bodyRef);
+  const painter = useFormatPainter(bodyRef);
+
+  function undoBody() { history.undo(); scheduleAutoSave(); }
+  function redoBody() { history.redo(); scheduleAutoSave(); }
+
+  // Set by Ctrl+Shift+V so the paste handler that fires immediately after knows
+  // to ignore the clipboard's HTML flavour. ClipboardEvent carries no modifier
+  // state of its own, so the keydown has to leave the note here.
+  const pastePlainOnce = useRef(false);
+
+  function handlePaste(e: React.ClipboardEvent<HTMLDivElement>) {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const html = cd.getData('text/html');
+    const text = cd.getData('text/plain');
+    // No text of any flavour means a file/image paste — the browser's own
+    // handling of that is better than anything we'd do here.
+    if (!html && !text) { pastePlainOnce.current = false; return; }
+
+    e.preventDefault();
+    const plainOnly = pastePlainOnce.current;
+    pastePlainOnce.current = false;
+
+    let out = plainOnly || !html ? plainTextToHtml(text) : sanitisePastedHtml(html);
+    // Sanitising can legitimately empty the payload (markup that was all
+    // styling). Fall back to the plain-text flavour rather than swallow it.
+    if (!out.trim() && text) out = plainTextToHtml(text);
+    if (!out) return;
+
+    history.commit();
+    // insertHTML respects the current selection (replacing it if the user is
+    // pasting over something), unlike assigning innerHTML.
+    document.execCommand('insertHTML', false, out);
+    history.commit();
+    scheduleAutoSave();
+  }
+
   // Close colour picker on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -662,6 +722,9 @@ export default function ComposeModal({
     // first guarantees there's a caret to operate on.
     bodyRef.current?.focus();
     document.execCommand(command, false, value);
+    // A toolbar press is a discrete action — snapshot it now rather than
+    // letting it merge into whatever the user types next.
+    history.commit();
   }
 
   function buildInitialBody(replyMsg: typeof replyTo, aiBody?: string | null, fwdMsg?: typeof forwardOf): string {
@@ -712,6 +775,9 @@ export default function ComposeModal({
       setCreateTaskEnabled(initialSnapshot.createTaskEnabled);
       requestAnimationFrame(() => {
         if (bodyRef.current) bodyRef.current.innerHTML = initialSnapshot.bodyHtml;
+        // Restoring a minimised window is a fresh start for undo — the stack
+        // doesn't survive the unmount, and the snapshot is the new baseline.
+        history.reset(initialSnapshot.bodyHtml);
       });
       return;
     }
@@ -788,6 +854,9 @@ export default function ComposeModal({
         bodyRef.current.innerHTML = defaultHtmlBody && defaultHtmlBody.length > 0
           ? defaultHtmlBody
           : buildInitialBody(replyTo, prefilledBody, forwardOf);
+        // Baseline for undo: the template/draft we opened with. Undo can walk
+        // back to this but no further — there's nothing sensible before it.
+        history.reset(bodyRef.current.innerHTML);
       }
     });
     // Cancel any in-flight forward attachment fetch when the context changes/closes.
@@ -1082,7 +1151,11 @@ export default function ComposeModal({
       if (data.result && bodyRef.current) {
         const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
         const quoted = currentHtml.includes('<blockquote') ? '<br/>' + currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        // Pin the user's own prose as an undo target before we overwrite it —
+        // this is the whole reason the editor has an explicit history.
+        history.commit();
         bodyRef.current.innerHTML = data.result + sig + quoted;
+        history.commit();
       }
     } catch {
       setError('Rewrite failed. Please try again.');
@@ -1112,7 +1185,9 @@ export default function ComposeModal({
         const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
         // Preserve any quoted reply thread that was already in the editor.
         const quoted = currentHtml.includes('<blockquote') ? '<br/>' + currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        history.commit();
         bodyRef.current.innerHTML = data.result + sig + quoted;
+        history.commit();
         setHelpWriteText('');
         setHelpWriteOpen(false);
       }
@@ -1142,7 +1217,9 @@ export default function ComposeModal({
         const sig = signature ? `<br/><br/>--<br/>${signature}` : '';
         const currentHtml = readBody();
         const quoted = currentHtml.includes('<blockquote') ? currentHtml.substring(currentHtml.indexOf('<blockquote')) : '';
+        history.commit();
         bodyRef.current.innerHTML = `<p>${data.reply.replace(/\n/g, '<br/>')}</p>${sig}${quoted ? '<br/>' + quoted : ''}`;
+        history.commit();
       }
     } finally {
       setSuggestingReply(false);
@@ -1475,6 +1552,11 @@ export default function ComposeModal({
 
           {/* Formatting toolbar */}
           <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-[var(--border)] shrink-0 bg-transparent">
+            <FmtBtn title="Undo (Ctrl+Z)" onActivate={undoBody} disabled={!history.canUndo}><Undo2 size={13} /></FmtBtn>
+            <FmtBtn title="Redo (Ctrl+Shift+Z)" onActivate={redoBody} disabled={!history.canRedo}><Redo2 size={13} /></FmtBtn>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
             <FmtBtn title="Bold" onActivate={() => fmt('bold')}><Bold size={13} /></FmtBtn>
             <FmtBtn title="Italic" onActivate={() => fmt('italic')}><Italic size={13} /></FmtBtn>
             <FmtBtn title="Underline" onActivate={() => fmt('underline')}><Underline size={13} /></FmtBtn>
@@ -1512,6 +1594,20 @@ export default function ComposeModal({
                 </div>
               )}
             </div>
+
+            <div className="w-px h-4 bg-[var(--border)] mx-1" />
+
+            {/* Format painter — pick up the formatting at the caret, then drag
+                over the text to paint it onto. */}
+            <FmtBtn
+              title={painter.armed
+                ? 'Format painter on — select the text to paint (Esc to cancel)'
+                : 'Format painter — put the cursor in text you like, click, then select the text to paint'}
+              onActivate={painter.toggle}
+              active={painter.armed}
+            >
+              <Paintbrush size={13} />
+            </FmtBtn>
 
             <div className="w-px h-4 bg-[var(--border)] mx-1" />
 
@@ -1608,9 +1704,48 @@ export default function ComposeModal({
                 const ne = e.nativeEvent as InputEvent;
                 if (ne.isComposing) return;
                 runAutoCorrect(e.currentTarget);
+                history.scheduleCommit();
                 scheduleAutoSave();
               }}
+              onMouseUp={() => {
+                // The painter fires on mouseup, once the drag has actually
+                // produced a selection to paint onto.
+                if (painter.applyToSelection()) { history.commit(); scheduleAutoSave(); }
+              }}
+              onKeyUp={e => {
+                // Keyboard selection (Shift+arrows) is a valid paint target too.
+                if (!painter.armed || !e.shiftKey) return;
+                if (painter.applyToSelection()) { history.commit(); scheduleAutoSave(); }
+              }}
+              onBlur={painter.disarm}
+              onPaste={handlePaste}
               onKeyDown={e => {
+                // Our own undo/redo, not the browser's — see useEditorHistory
+                // for why the native stack isn't trustworthy here.
+                const mod = e.ctrlKey || e.metaKey;
+                if (mod && e.key.toLowerCase() === 'z') {
+                  e.preventDefault();
+                  if (e.shiftKey) redoBody(); else undoBody();
+                  return;
+                }
+                if (mod && e.key.toLowerCase() === 'y') {   // Windows-style redo
+                  e.preventDefault();
+                  redoBody();
+                  return;
+                }
+                if (mod && e.shiftKey && e.key.toLowerCase() === 'v') {
+                  // Flag it and let the paste event through — handlePaste reads
+                  // this and takes the plain-text flavour only.
+                  pastePlainOnce.current = true;
+                  return;
+                }
+                if (e.key === 'Escape' && painter.armed) {
+                  // Cancel the painter without closing the whole compose window.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  painter.disarm();
+                  return;
+                }
                 // Tab indents instead of leaving the field. Inside a list it
                 // nests/un-nests (sub-bullets / sub-numbers); in plain text it
                 // inserts an indent. Skip if smart-compose already used Tab to
@@ -1630,8 +1765,9 @@ export default function ComposeModal({
                 } else {
                   document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
                 }
+                history.commit();
               }}
-              className="w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_ul_ul]:list-[circle] [&_ol_ol]:list-[lower-alpha]"
+              className={`w-full p-4 text-sm text-[var(--text-primary)] outline-none overflow-y-auto [&_blockquote]:opacity-70 [&_blockquote]:text-sm [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_li]:my-1 [&_ul_ul]:list-[circle] [&_ol_ol]:list-[lower-alpha] ${painter.armed ? 'cursor-crosshair' : ''}`}
               style={{ minHeight: 160, maxHeight: '50vh' }}
             />
           </div>
