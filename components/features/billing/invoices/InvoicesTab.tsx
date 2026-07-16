@@ -5,6 +5,8 @@ import { Search, Plus, FileText, Upload, Clock, Mail, Send, CheckCircle2, Bell, 
 import { GlassCard } from '@/components/features/timesheets/shared/ui';
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, InvoiceStatus } from '@/lib/billing/types';
+import { fetchLetterhead } from '@/lib/billing/fetchLetterhead';
+import { renderInvoicePdfBase64 } from '@/lib/billing/invoicePdfBlob';
 import { STATUS_META, STATUS_FILTERS } from '../shared/status';
 import InvoiceDetailPanel from './InvoiceDetailPanel';
 import BillFromTimeModal from './BillFromTimeModal';
@@ -76,7 +78,34 @@ export default function InvoicesTab({ onNewInvoice, onImport }: Props) {
     setBulkBusy(false);
     flash(`${ok} ${verb}${fail ? `, ${fail} skipped` : ''}`); load();
   }
-  const bulkEmail = () => bulkLoop(id => `/api/billing/invoices/${id}/send-email`, () => '{}', 'sent');
+  // Bulk email renders each invoice's PDF the same way a single send does, so a
+  // client can't tell which route their invoice came out of. Sequential by
+  // design — html2canvas is main-thread, and a parallel burst would lock the tab.
+  async function bulkEmail() {
+    setBulkBusy(true);
+    const letterhead = await fetchLetterhead().catch(() => null);
+    let ok = 0, fail = 0, noPdf = 0;
+    for (const id of selected) {
+      const url = `/api/billing/invoices/${id}/send-email`;
+      let pdf_base64: string | undefined;
+      if (letterhead) {
+        try {
+          const pr = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prepare: true }) });
+          const invoice = pr.ok ? ((await pr.json()) as { invoice: Invoice }).invoice : null;
+          if (!invoice) throw new Error('prepare failed');
+          pdf_base64 = await renderInvoicePdfBase64(invoice, letterhead);
+        } catch (e) {
+          console.error('bulk invoice pdf', e); // sends link-only — surfaced below
+        }
+      }
+      if (!pdf_base64) noPdf++;
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pdf_base64 }) });
+      if (r.ok) ok++; else fail++;
+    }
+    setBulkBusy(false);
+    // Never report a clean "12 sent" when some went without their invoice.
+    flash(`${ok} sent${fail ? `, ${fail} skipped` : ''}${noPdf ? ` — ${noPdf} sent without the PDF attached` : ''}`); load();
+  }
   const bulkRemind = () => bulkLoop(() => '/api/billing/credit-control/send', id => JSON.stringify({ invoiceId: id }), 'reminded');
 
   function exportCsv() {

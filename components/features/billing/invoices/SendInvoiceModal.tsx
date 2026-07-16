@@ -1,23 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Mail, Loader2, Send, AlertTriangle, ExternalLink } from 'lucide-react';
+import { X, Mail, Loader2, Send, AlertTriangle, ExternalLink, Paperclip } from 'lucide-react';
+import type { Invoice } from '@/lib/billing/types';
+import type { InvoiceLetterhead } from '@/lib/billing/invoicePdf';
+import { renderInvoicePdfBase64 } from '@/lib/billing/invoicePdfBlob';
 
 interface Preview { to: string | null; senderEmail: string | null; subject: string; body: string; portalLink: string; ready: boolean; warning: string | null }
 
 interface Props {
   invoiceId: string;
   invoiceNumber: string | null;
+  /** Branding for the attached PDF. Without it the email still sends, link-only. */
+  letterhead?: InvoiceLetterhead;
   onClose: () => void;
   onSent: () => void;
   onGoToSettings?: () => void;
 }
 
-export default function SendInvoiceModal({ invoiceId, invoiceNumber, onClose, onSent, onGoToSettings }: Props) {
+export default function SendInvoiceModal({ invoiceId, invoiceNumber, letterhead, onClose, onSent, onGoToSettings }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,10 +35,37 @@ export default function SendInvoiceModal({ invoiceId, invoiceNumber, onClose, on
 
   async function send() {
     setSending(true); setError(null);
-    const r = await fetch(`/api/billing/invoices/${invoiceId}/send-email`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, body }),
+    const url = `/api/billing/invoices/${invoiceId}/send-email`;
+
+    // The invoice PDF has to be rendered here — the server has no browser to do
+    // it in. Prepare first so a draft has its real number on the attachment
+    // rather than "DRAFT".
+    let pdf_base64: string | undefined;
+    if (letterhead) {
+      try {
+        setStage('Preparing invoice…');
+        const pr = await fetch(url, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prepare: true }),
+        });
+        const invoice = pr.ok ? ((await pr.json()) as { invoice: Invoice }).invoice : null;
+        if (!invoice) throw new Error('could not prepare the invoice');
+        setStage('Building PDF…');
+        pdf_base64 = await renderInvoicePdfBase64(invoice, letterhead);
+      } catch (e) {
+        console.error('invoice pdf render', e);
+        // Don't quietly downgrade to a link-only email — the client would get
+        // something different from what this screen promised.
+        setSending(false); setStage(null);
+        if (!confirm('The invoice PDF could not be generated. Send the email without it attached?')) return;
+        setSending(true);
+      }
+    }
+
+    setStage('Sending…');
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subject, body, pdf_base64 }),
     });
-    setSending(false);
+    setSending(false); setStage(null);
     if (r.ok) onSent();
     else { const d = await r.json().catch(() => null); setError(d?.error ?? 'Could not send the invoice.'); }
   }
@@ -71,6 +104,12 @@ export default function SendInvoiceModal({ invoiceId, invoiceNumber, onClose, on
               <textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className="w-full resize-none rounded-lg border border-black/10 px-3 py-2 text-[13px] outline-none focus:border-[var(--accent)]" />
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">A &ldquo;View &amp; pay invoice&rdquo; button linking to the client&rsquo;s secure statement is added automatically. Edit the default template in Settings.</p>
             </div>
+            <div className="flex items-center gap-1.5 rounded-lg bg-black/[0.02] px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+              <Paperclip size={12} className="shrink-0 text-[var(--text-muted)]" />
+              {letterhead
+                ? <span>The invoice PDF is attached automatically, using your branding.</span>
+                : <span className="text-amber-600">Branding didn&rsquo;t load — this email will send without the PDF attached.</span>}
+            </div>
             {error && <p className="text-[13px] text-[var(--danger)]">{error}</p>}
           </div>
         )}
@@ -81,7 +120,9 @@ export default function SendInvoiceModal({ invoiceId, invoiceNumber, onClose, on
             : <span />}
           <div className="flex gap-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
-            <button onClick={send} disabled={sending || !preview?.ready} className="btn-primary disabled:opacity-50"><Send size={14} /> {sending ? 'Sending…' : 'Send invoice'}</button>
+            <button onClick={send} disabled={sending || !preview?.ready} className="btn-primary disabled:opacity-50">
+              {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {sending ? (stage ?? 'Sending…') : 'Send invoice'}
+            </button>
           </div>
         </div>
       </div>

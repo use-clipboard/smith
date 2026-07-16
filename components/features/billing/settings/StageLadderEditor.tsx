@@ -82,9 +82,10 @@ export default function StageLadderEditor({ canEdit }: { canEdit: boolean }) {
       />
 
       {/* Merge tag reference */}
-      <div className="mb-3 flex flex-wrap gap-1.5">
+      <div className="mb-2 flex flex-wrap gap-1.5">
         {MERGE_TAGS.map(t => <span key={t} className="rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--text-muted)]">{t}</span>)}
       </div>
+      <p className="mb-3 text-[11px] text-[var(--text-muted)]">A &ldquo;View &amp; pay invoice&rdquo; button linking to the client&rsquo;s secure statement is added to every reminder automatically — no need to write one into the text.</p>
 
       <div className="space-y-2">
         {sorted.map((st) => {

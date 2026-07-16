@@ -4,8 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Save, Lock, Check, Hash, Percent, Building2, Landmark, BookCopy, CreditCard, MailWarning, Mail, Plus, Palette, Upload, Trash2, Wand2 } from 'lucide-react';
 import { GlassCard, SectionHeader } from '@/components/features/timesheets/shared/ui';
 import type { BillingSettings } from '@/lib/billing/types';
+import type { InvoiceLetterhead } from '@/lib/billing/invoicePdf';
 import { INVOICE_MERGE_TAGS } from '@/lib/billing/invoiceMergeTags';
 import StageLadderEditor from './StageLadderEditor';
+import InvoicePreview, { InvoiceThumbnail } from './InvoicePreview';
+import InvoiceEmailPreviewCard from './InvoiceEmailPreviewCard';
+import StatementSettingsCard from './StatementSettingsCard';
 
 type Editable = Pick<BillingSettings,
   | 'invoicePrefix' | 'creditNotePrefix' | 'defaultPaymentTermsDays' | 'defaultVatRate'
@@ -13,7 +17,9 @@ type Editable = Pick<BillingSettings,
   | 'businessName' | 'businessAddress' | 'vatNumber' | 'bankDetails' | 'invoiceFooter'
   | 'autoChaseEnabled' | 'chaseWeekdaysOnly' | 'chaseMinBalancePence' | 'chaseReplyTo'
   | 'vatRegistered' | 'emailSenderMailboxId' | 'invoiceEmailSubject' | 'invoiceEmailBody'
-  | 'invoiceAccent' | 'invoiceTemplate' | 'defaultTerms' | 'bookkeepingBookId' | 'allocationPreference'>;
+  | 'invoiceAccent' | 'invoiceTemplate' | 'defaultTerms' | 'bookkeepingBookId' | 'allocationPreference'
+  | 'statementMode' | 'statementPeriodMonths' | 'statementAutoEnabled' | 'statementFrequency'
+  | 'statementDay' | 'statementMinBalancePence' | 'statementEmailSubject' | 'statementEmailBody'>;
 
 const EDITABLE_KEYS: (keyof Editable)[] = [
   'invoicePrefix', 'creditNotePrefix', 'defaultPaymentTermsDays', 'defaultVatRate',
@@ -22,7 +28,19 @@ const EDITABLE_KEYS: (keyof Editable)[] = [
   'autoChaseEnabled', 'chaseWeekdaysOnly', 'chaseMinBalancePence', 'chaseReplyTo',
   'vatRegistered', 'emailSenderMailboxId', 'invoiceEmailSubject', 'invoiceEmailBody',
   'invoiceAccent', 'invoiceTemplate', 'defaultTerms', 'bookkeepingBookId', 'allocationPreference',
+  'statementMode', 'statementPeriodMonths', 'statementAutoEnabled', 'statementFrequency',
+  'statementDay', 'statementMinBalancePence', 'statementEmailSubject', 'statementEmailBody',
 ];
+
+/** Trails `value` by `ms` — keeps the preview iframe from rebuilding on every keystroke. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
 
 export default function BillingSettingsTab() {
   const [form, setForm] = useState<Editable | null>(null);
@@ -30,7 +48,13 @@ export default function BillingSettingsTab() {
   const [canEdit, setCanEdit] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [subTab, setSubTab] = useState<'general' | 'branding' | 'emails' | 'credit' | 'payments'>('general');
+  const [subTab, setSubTab] = useState<'general' | 'branding' | 'emails' | 'statements' | 'credit' | 'payments'>('general');
+  // Lifted out of InvoiceDesignCard so the preview reflects the logo too.
+  const [logo, setLogo] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/billing/logo').then(r => (r.ok ? r.json() : null)).then(d => setLogo(d?.dataUrl ?? null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('/api/billing/settings')
@@ -39,39 +63,22 @@ export default function BillingSettingsTab() {
         if (!s) return;
         setCanEdit(s.canEdit);
         setNextNumbers({ invoice: s.nextInvoiceNumber, creditNote: s.nextCreditNoteNumber });
-        setForm({
-          invoicePrefix: s.invoicePrefix,
-          creditNotePrefix: s.creditNotePrefix,
-          defaultPaymentTermsDays: s.defaultPaymentTermsDays,
-          defaultVatRate: s.defaultVatRate,
-          postToBookkeeping: s.postToBookkeeping,
-          bookkeepingSalesAccount: s.bookkeepingSalesAccount,
-          firstInvoiceMode: s.firstInvoiceMode,
-          businessName: s.businessName,
-          businessAddress: s.businessAddress,
-          vatNumber: s.vatNumber,
-          bankDetails: s.bankDetails,
-          invoiceFooter: s.invoiceFooter,
-          autoChaseEnabled: s.autoChaseEnabled,
-          chaseWeekdaysOnly: s.chaseWeekdaysOnly,
-          chaseMinBalancePence: s.chaseMinBalancePence,
-          chaseReplyTo: s.chaseReplyTo,
-          vatRegistered: s.vatRegistered,
-          emailSenderMailboxId: s.emailSenderMailboxId,
-          invoiceEmailSubject: s.invoiceEmailSubject,
-          invoiceEmailBody: s.invoiceEmailBody,
-          invoiceAccent: s.invoiceAccent,
-          invoiceTemplate: s.invoiceTemplate,
-          defaultTerms: s.defaultTerms,
-          bookkeepingBookId: s.bookkeepingBookId,
-          allocationPreference: s.allocationPreference,
-        });
+        // Derived from EDITABLE_KEYS rather than hand-mapped: this list and the
+        // save payload are then the same list, so a new setting can't load
+        // without saving (or vice versa).
+        setForm(Object.fromEntries(EDITABLE_KEYS.map(k => [k, s[k]])) as unknown as Editable);
       })
       .catch(() => {});
   }, []);
 
   function set<K extends keyof Editable>(key: K, value: Editable[K]) {
     setForm(f => (f ? { ...f, [key]: value } : f));
+    setSaved(false);
+  }
+
+  /** Merge several fields at once — used by cards that own a group of settings. */
+  function patch(p: Partial<Editable>) {
+    setForm(f => (f ? { ...f, ...p } : f));
     setSaved(false);
   }
 
@@ -87,14 +94,35 @@ export default function BillingSettingsTab() {
     if (r.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); }
   }
 
+  // The preview trails the form slightly so typing an address doesn't rebuild
+  // the document on every keystroke.
+  const debouncedForm = useDebounced(form, 250);
+
   if (!form) {
     return <div className="space-y-4">{Array.from({ length: 3 }, (_, i) => <div key={i} className="h-40 animate-pulse rounded-[20px] bg-white/50" />)}</div>;
   }
 
   const disabled = !canEdit;
 
+  // What the preview renders: the saved-or-typing branding, exactly as the PDF
+  // export assembles it (InvoiceDetailPanel does the same mapping).
+  const p = debouncedForm ?? form;
+  const letterhead: InvoiceLetterhead = {
+    businessName: p.businessName,
+    businessAddress: p.businessAddress,
+    vatNumber: p.vatNumber,
+    bankDetails: p.bankDetails,
+    invoiceFooter: p.invoiceFooter,
+    accent: p.invoiceAccent,
+    template: p.invoiceTemplate,
+    logoDataUrl: logo,
+    defaultTerms: p.defaultTerms,
+  };
+  const previewNumber = `${form.invoicePrefix}${String(nextNumbers.invoice).padStart(4, '0')}`;
+  const previewVatRate = form.vatRegistered ? form.defaultVatRate : 0;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className={`mx-auto space-y-4 ${subTab === 'branding' || subTab === 'emails' ? 'max-w-6xl' : 'max-w-3xl'}`}>
       {!canEdit && (
         <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-3 text-[13px] text-amber-700 border border-amber-200">
           <Lock size={14} className="shrink-0" /> Only firm admins can change billing settings. These are read-only for you.
@@ -103,7 +131,7 @@ export default function BillingSettingsTab() {
 
       {/* Sub-tabs */}
       <div className="flex flex-wrap gap-1 border-b border-black/5">
-        {([['general', 'General'], ['branding', 'Branding'], ['emails', 'Emails'], ['credit', 'Credit control'], ['payments', 'Payments']] as const).map(([id, label]) => (
+        {([['general', 'General'], ['branding', 'Branding'], ['emails', 'Emails'], ['statements', 'Statements'], ['credit', 'Credit control'], ['payments', 'Payments']] as const).map(([id, label]) => (
           <button key={id} onClick={() => setSubTab(id)} className={`relative px-4 py-2.5 text-[13px] font-semibold transition-colors ${subTab === id ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
             {label}{subTab === id && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-[var(--accent)]" />}
           </button>
@@ -142,7 +170,9 @@ export default function BillingSettingsTab() {
       <AllocationCard preference={form.allocationPreference} onChange={v => set('allocationPreference', v)} disabled={disabled} />
       </>)}
 
-      {subTab === 'branding' && (<>
+      {subTab === 'branding' && (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+      <div className="space-y-4">
       {/* Letterhead */}
       <GlassCard>
         <SectionHeader title="Invoice letterhead" subtitle="Your firm's details, shown at the top of every invoice PDF" />
@@ -160,6 +190,9 @@ export default function BillingSettingsTab() {
         disabled={disabled}
         onAccent={v => set('invoiceAccent', v)}
         onTemplate={v => set('invoiceTemplate', v)}
+        letterhead={letterhead}
+        logo={logo}
+        onLogo={setLogo}
       />
 
       {/* Remittance */}
@@ -171,18 +204,53 @@ export default function BillingSettingsTab() {
           <TextAreaField label="Terms & conditions (printed at the bottom of every invoice)" value={form.defaultTerms} onChange={v => set('defaultTerms', v)} disabled={disabled} rows={3} placeholder="Payment is due within the stated terms. Late payment may incur statutory interest." />
         </div>
       </GlassCard>
-      </>)}
+      </div>
+
+      {/* Live preview — the real invoice document, following the form */}
+      <div className="xl:sticky xl:top-4">
+        <GlassCard>
+          <SectionHeader title="Preview" subtitle="A specimen invoice, exactly as your clients will receive it" />
+          <div className="flex justify-center">
+            <InvoicePreview letterhead={letterhead} width={312} invoiceNumber={previewNumber} vatRate={previewVatRate} />
+          </div>
+          <p className="mt-2.5 text-center text-[11px] text-[var(--text-muted)]">Sample figures — your letterhead, colour and logo are real.</p>
+        </GlassCard>
+      </div>
+      </div>
+      )}
 
       {subTab === 'emails' && (
-      <InvoiceEmailCard
-        mailboxId={form.emailSenderMailboxId}
-        subject={form.invoiceEmailSubject}
-        body={form.invoiceEmailBody}
-        disabled={disabled}
-        onMailbox={v => set('emailSenderMailboxId', v)}
-        onSubject={v => set('invoiceEmailSubject', v)}
-        onBody={v => set('invoiceEmailBody', v)}
-      />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
+        <InvoiceEmailCard
+          mailboxId={form.emailSenderMailboxId}
+          subject={form.invoiceEmailSubject}
+          body={form.invoiceEmailBody}
+          disabled={disabled}
+          onMailbox={v => set('emailSenderMailboxId', v)}
+          onSubject={v => set('invoiceEmailSubject', v)}
+          onBody={v => set('invoiceEmailBody', v)}
+        />
+        <div className="xl:sticky xl:top-4">
+          <InvoiceEmailPreviewCard
+            subject={p.invoiceEmailSubject}
+            body={p.invoiceEmailBody}
+            letterhead={letterhead}
+            invoiceNumber={previewNumber}
+            vatRate={previewVatRate}
+            mailboxId={form.emailSenderMailboxId}
+            disabled={disabled}
+          />
+        </div>
+      </div>
+      )}
+
+      {subTab === 'statements' && (
+        <StatementSettingsCard
+          form={form}
+          disabled={disabled}
+          mailboxId={form.emailSenderMailboxId}
+          onChange={patch}
+        />
       )}
 
       {subTab === 'credit' && (<>
@@ -330,15 +398,14 @@ const TEMPLATES: { id: 'modern' | 'classic' | 'minimal'; label: string; desc: st
   { id: 'minimal', label: 'Minimal', desc: 'Monochrome, thin lines' },
 ];
 
-function InvoiceDesignCard({ accent, template, disabled, onAccent, onTemplate }: {
+function InvoiceDesignCard({ accent, template, disabled, onAccent, onTemplate, letterhead, logo, onLogo }: {
   accent: string; template: 'modern' | 'classic' | 'minimal'; disabled: boolean;
   onAccent: (v: string) => void; onTemplate: (v: 'modern' | 'classic' | 'minimal') => void;
+  letterhead: InvoiceLetterhead; logo: string | null; onLogo: (v: string | null) => void;
 }) {
-  const [logo, setLogo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { fetch('/api/billing/logo').then(r => (r.ok ? r.json() : null)).then(d => setLogo(d?.dataUrl ?? null)).catch(() => {}); }, []);
+  const setLogo = onLogo;
 
   async function upload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (file) e.target.value = '';
@@ -360,9 +427,16 @@ function InvoiceDesignCard({ accent, template, disabled, onAccent, onTemplate }:
           <div className="grid grid-cols-3 gap-2">
             {TEMPLATES.map(t => (
               <button key={t.id} onClick={() => !disabled && onTemplate(t.id)} disabled={disabled}
-                className={`rounded-xl border p-3 text-left transition ${template === t.id ? 'border-[var(--accent)] bg-[var(--accent)]/[0.06]' : 'border-black/10 hover:bg-black/[0.02]'} ${disabled ? 'opacity-60' : ''}`}>
-                <div className="text-[13px] font-semibold text-[var(--text-primary)]">{t.label}</div>
-                <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t.desc}</div>
+                aria-pressed={template === t.id}
+                className={`overflow-hidden rounded-xl border p-2 text-left transition ${template === t.id ? 'border-[var(--accent)] bg-[var(--accent)]/[0.06]' : 'border-black/10 hover:bg-black/[0.02]'} ${disabled ? 'opacity-60' : ''}`}>
+                {/* The swatch is the real document's top band, in the firm's own colour */}
+                <div className="mb-2 flex justify-center">
+                  <InvoiceThumbnail letterhead={{ ...letterhead, template: t.id }} width={150} />
+                </div>
+                <div className="px-1 pb-0.5">
+                  <div className="text-[13px] font-semibold text-[var(--text-primary)]">{t.label}</div>
+                  <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{t.desc}</div>
+                </div>
               </button>
             ))}
           </div>

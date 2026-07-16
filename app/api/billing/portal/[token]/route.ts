@@ -17,13 +17,22 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   }
 
   const [{ data: settings }, { data: firm }, { data: client }, { data: invData }] = await Promise.all([
-    supabase.from('billing_settings').select('business_name, business_address, vat_number, bank_details, invoice_footer, invoice_accent, invoice_template, default_terms, logo_path').eq('firm_id', tok.firm_id).maybeSingle(),
+    supabase.from('billing_settings').select('business_name, business_address, vat_number, bank_details, invoice_footer, invoice_accent, invoice_template, default_terms, logo_path, statement_mode').eq('firm_id', tok.firm_id).maybeSingle(),
     supabase.from('firms').select('name').eq('id', tok.firm_id).maybeSingle(),
     supabase.from('clients').select('name').eq('id', tok.client_id).maybeSingle(),
     supabase.from('invoices').select('*').eq('firm_id', tok.firm_id).eq('client_id', tok.client_id).not('status', 'in', '("draft","cancelled")').order('issue_date', { ascending: false }).limit(200),
   ]);
 
-  const invoices = (invData ?? []) as InvoiceRow[];
+  const allInvoices = (invData ?? []) as InvoiceRow[];
+  const OPEN = ['sent', 'viewed', 'part_paid', 'overdue'];
+
+  // Honour the firm's statement setting: an open-item firm shouldn't have its
+  // portal quietly showing paid history the emailed statement omits.
+  const statementMode = (settings?.statement_mode as string) ?? 'outstanding';
+  const invoices = statementMode === 'outstanding'
+    ? allInvoices.filter(r => OPEN.includes(r.status) && balancePence(r.total_pence, r.amount_paid_pence, r.credit_pence ?? 0) > 0)
+    : allInvoices;
+
   const ids = invoices.map(i => i.id);
   const linesByInvoice = new Map<string, InvoiceLineRow[]>();
   if (ids.length) {

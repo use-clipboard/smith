@@ -4,7 +4,10 @@ import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
 import type { BillingSettings } from '@/lib/billing/types';
-import { DEFAULT_INVOICE_EMAIL_SUBJECT, DEFAULT_INVOICE_EMAIL_BODY } from '@/lib/billing/types';
+import {
+  DEFAULT_INVOICE_EMAIL_SUBJECT, DEFAULT_INVOICE_EMAIL_BODY,
+  DEFAULT_STATEMENT_EMAIL_SUBJECT, DEFAULT_STATEMENT_EMAIL_BODY,
+} from '@/lib/billing/types';
 
 const DEFAULTS: BillingSettings = {
   invoicePrefix: 'INV-',
@@ -36,6 +39,14 @@ const DEFAULTS: BillingSettings = {
   bookkeepingBookId: null,
   hasLogo: false,
   allocationPreference: 'oldest',
+  statementMode: 'outstanding',
+  statementPeriodMonths: 3,
+  statementAutoEnabled: false,
+  statementFrequency: 'monthly',
+  statementDay: 1,
+  statementMinBalancePence: 0,
+  statementEmailSubject: DEFAULT_STATEMENT_EMAIL_SUBJECT,
+  statementEmailBody: DEFAULT_STATEMENT_EMAIL_BODY,
 };
 
 // GET /api/billing/settings → firm billing config (defaults if not yet created).
@@ -86,6 +97,14 @@ export async function GET() {
     bookkeepingBookId: data.bookkeeping_book_id ?? null,
     hasLogo: !!data.logo_path,
     allocationPreference: (data.allocation_preference as 'oldest' | 'newest') ?? 'oldest',
+    statementMode: (data.statement_mode as BillingSettings['statementMode']) ?? DEFAULTS.statementMode,
+    statementPeriodMonths: data.statement_period_months ?? DEFAULTS.statementPeriodMonths,
+    statementAutoEnabled: data.statement_auto_enabled ?? false,
+    statementFrequency: (data.statement_frequency as BillingSettings['statementFrequency']) ?? DEFAULTS.statementFrequency,
+    statementDay: data.statement_day ?? DEFAULTS.statementDay,
+    statementMinBalancePence: data.statement_min_balance_pence ?? 0,
+    statementEmailSubject: data.statement_email_subject || DEFAULT_STATEMENT_EMAIL_SUBJECT,
+    statementEmailBody: data.statement_email_body || DEFAULT_STATEMENT_EMAIL_BODY,
   };
 
   return NextResponse.json({ ...settings, canEdit, firmName });
@@ -117,6 +136,14 @@ const UpdateSchema = z.object({
   defaultTerms: z.string().max(2000).optional(),
   bookkeepingBookId: z.string().uuid().nullable().optional(),
   allocationPreference: z.enum(['oldest', 'newest']).optional(),
+  statementMode: z.enum(['outstanding', 'activity']).optional(),
+  statementPeriodMonths: z.number().int().min(1).max(24).optional(),
+  statementAutoEnabled: z.boolean().optional(),
+  statementFrequency: z.enum(['weekly', 'monthly']).optional(),
+  statementDay: z.number().int().min(1).max(31).optional(),
+  statementMinBalancePence: z.number().int().min(0).max(100_000_000).optional(),
+  statementEmailSubject: z.string().max(300).optional(),
+  statementEmailBody: z.string().max(4000).optional(),
 });
 
 // PUT /api/billing/settings — save firm billing config (admin only).
@@ -157,6 +184,14 @@ export async function PUT(req: NextRequest) {
   if (p.defaultTerms !== undefined) patch.default_terms = p.defaultTerms;
   if (p.bookkeepingBookId !== undefined) patch.bookkeeping_book_id = p.bookkeepingBookId;
   if (p.allocationPreference !== undefined) patch.allocation_preference = p.allocationPreference;
+  if (p.statementMode !== undefined) patch.statement_mode = p.statementMode;
+  if (p.statementPeriodMonths !== undefined) patch.statement_period_months = p.statementPeriodMonths;
+  if (p.statementAutoEnabled !== undefined) patch.statement_auto_enabled = p.statementAutoEnabled;
+  if (p.statementFrequency !== undefined) patch.statement_frequency = p.statementFrequency;
+  if (p.statementDay !== undefined) patch.statement_day = p.statementDay;
+  if (p.statementMinBalancePence !== undefined) patch.statement_min_balance_pence = p.statementMinBalancePence;
+  if (p.statementEmailSubject !== undefined) patch.statement_email_subject = p.statementEmailSubject;
+  if (p.statementEmailBody !== undefined) patch.statement_email_body = p.statementEmailBody;
 
   const supabase = createClient();
   const { error } = await supabase

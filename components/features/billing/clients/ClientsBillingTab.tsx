@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, Link2, RefreshCw, Check } from 'lucide-react';
+import { Users, Link2, RefreshCw, Check, FileText } from 'lucide-react';
+import SendStatementModal from '../statements/SendStatementModal';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import { GlassCard, SectionHeader, KpiCard } from '@/components/features/timesheets/shared/ui';
 import { fmtPence } from '@/lib/billing/totals';
@@ -23,6 +24,7 @@ export default function ClientsBillingTab() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
+  const [statementOpen, setStatementOpen] = useState(false);
 
   function pick(id: string, name: string) {
     setClientId(id); setClientName(name); setSummary(null);
@@ -53,6 +55,7 @@ export default function ClientsBillingTab() {
         {summary && (
           <div className="flex items-center gap-3">
             {linkMsg && <span className="flex items-center gap-1 text-[12px] font-medium text-[var(--accent)]"><Check size={13} /> {linkMsg}</span>}
+            <button onClick={() => setStatementOpen(true)} className="btn-secondary"><FileText size={14} /> Send statement</button>
             <button onClick={sharePortal} className="btn-secondary"><Link2 size={14} /> Share portal link</button>
           </div>
         )}
@@ -129,6 +132,19 @@ export default function ClientsBillingTab() {
             </div>
           </div>
         </>
+      )}
+
+      {statementOpen && clientId && (
+        <SendStatementModal
+          clientId={clientId}
+          clientName={clientName}
+          onClose={() => setStatementOpen(false)}
+          onSent={to => {
+            setStatementOpen(false);
+            setLinkMsg(`Statement sent to ${to}`);
+            setTimeout(() => setLinkMsg(null), 3600);
+          }}
+        />
       )}
     </div>
   );

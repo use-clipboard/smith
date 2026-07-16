@@ -37,6 +37,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/billing/statements/run",
+      "schedule": "30 7 * * *"
+    },
+    {
       "path": "/api/cron/email-attachments-cleanup",
       "schedule": "30 3 * * *"
     }

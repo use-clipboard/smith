@@ -152,7 +152,21 @@ export interface BillingSettings {
   bookkeepingBookId: string | null;      // target book for posting sales
   hasLogo: boolean;                      // whether a logo is uploaded
   allocationPreference: 'oldest' | 'newest';
+  // Statements.
+  statementMode: StatementMode;
+  statementPeriodMonths: number;         // how far back 'activity' looks
+  statementAutoEnabled: boolean;
+  statementFrequency: 'weekly' | 'monthly';
+  statementDay: number;                  // monthly: 1–31 (clamped); weekly: 1 (Mon) – 7 (Sun)
+  statementMinBalancePence: number;
+  statementEmailSubject: string;
+  statementEmailBody: string;
 }
+
+/** 'outstanding' = open items only. 'activity' = invoices + payments over a
+ *  period, with brought-forward and closing balances. Drives the statement
+ *  document, the emailed statement and the client portal alike. */
+export type StatementMode = 'outstanding' | 'activity';
 
 /** Sensible default invoice-email template (used when the firm hasn't set one). */
 export const DEFAULT_INVOICE_EMAIL_SUBJECT = 'Invoice {{invoice_number}} from {{firm_name}}';
@@ -160,6 +174,15 @@ export const DEFAULT_INVOICE_EMAIL_BODY =
   'Dear {{client_name}},\n\n' +
   'Please find your invoice {{invoice_number}} for {{invoice_total}}, due {{due_date}}.\n\n' +
   'You can view and pay it securely online using the button below.\n\n' +
+  'Kind regards,\n{{firm_name}}';
+
+/** Sensible default statement-email template. */
+export const DEFAULT_STATEMENT_EMAIL_SUBJECT = 'Statement of account — {{statement_date}}';
+export const DEFAULT_STATEMENT_EMAIL_BODY =
+  'Dear {{client_name}},\n\n' +
+  'Please find your statement of account as at {{statement_date}}. The balance outstanding is {{amount_due}}.\n\n' +
+  'A summary is below, and you can view everything — and pay securely — using the button underneath.\n\n' +
+  'If you have any questions about your account, just reply to this email.\n\n' +
   'Kind regards,\n{{firm_name}}';
 
 /** Aged-debtor bucket totals (pence) for the Overview donut. */

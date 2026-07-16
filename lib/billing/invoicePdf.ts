@@ -3,6 +3,10 @@
 // Same approach as lib/timesheets/reportPdf.ts: compose a clean, fully
 // self-contained A4 HTML document and open it in a popup for the browser's
 // "Save as PDF". No external assets, no new dependency.
+//
+// buildInvoiceHtml() is split out from the export so Settings → Billing →
+// Branding can render the very same document into an iframe. The preview is
+// then the real thing, not a mock-up that quietly drifts from the PDF.
 
 import { fmtPence } from './totals';
 import type { Invoice } from './types';
@@ -34,7 +38,9 @@ function ukDate(iso: string | null): string {
   return `${d}-${m}-${y}`;
 }
 
-export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead): void {
+/** The complete, self-contained A4 invoice document. Shared by the PDF export
+ *  and the branding preview. */
+export function buildInvoiceHtml(invoice: Invoice, letterhead: InvoiceLetterhead): string {
   const from = letterhead.businessName.trim() || 'Your firm';
   const partlyPaid = invoice.amountPaidPence > 0 && invoice.balancePence > 0;
 
@@ -162,6 +168,12 @@ export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead
   </div>
 </body>
 </html>`;
+
+  return html;
+}
+
+export function exportInvoicePdf(invoice: Invoice, letterhead: InvoiceLetterhead): void {
+  const html = buildInvoiceHtml(invoice, letterhead);
 
   const popup = window.open('', '_blank', 'width=900,height=1100');
   if (!popup) { window.print(); return; }

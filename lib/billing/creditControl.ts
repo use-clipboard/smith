@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fmtPence, balancePence } from './totals';
+import { getOrCreatePortalLink } from './portalLink';
 import { sendChaserEmail } from '@/lib/email';
 
 export interface StageSeed {
@@ -147,8 +148,11 @@ export async function chaseInvoiceOnce(
   if (!stage) return { ok: false, error: 'Stage not found' };
 
   const { data: firm } = await supabase.from('firms').select('name').eq('id', args.firmId).maybeSingle();
-  const { data: cfg } = await supabase.from('billing_settings').select('business_name, chase_reply_to').eq('firm_id', args.firmId).maybeSingle();
+  const { data: cfg } = await supabase.from('billing_settings').select('business_name, chase_reply_to, invoice_accent').eq('firm_id', args.firmId).maybeSingle();
   const firmName = (cfg?.business_name as string) || firm?.name || 'Our practice';
+  // Same "View & pay invoice" button the invoice email carries — a chased client
+  // shouldn't have to reply to an email to work out how to pay.
+  const portalLink = await getOrCreatePortalLink(supabase, { firmId: args.firmId, clientId: inv.client_id, userId: args.userId ?? null });
 
   const ctx: ChaserContext = {
     client_name: clientName,
@@ -162,7 +166,11 @@ export async function chaseInvoiceOnce(
   const body = renderChaserTemplate(stage.body, ctx);
 
   try {
-    await sendChaserEmail({ to: clientEmail, subject, body, fromName: firmName, replyTo: (cfg?.chase_reply_to as string) || undefined });
+    await sendChaserEmail({
+      to: clientEmail, subject, body, fromName: firmName,
+      replyTo: (cfg?.chase_reply_to as string) || undefined,
+      portalLink, accent: (cfg?.invoice_accent as string | null) ?? null,
+    });
   } catch (err) {
     console.error('manual chase send', err);
     return { ok: false, error: 'Email failed to send' };
@@ -194,7 +202,7 @@ export async function runCreditControlChase(
   // Which firms have auto-chase on (+ their config).
   let settingsQuery = supabase
     .from('billing_settings')
-    .select('firm_id, auto_chase_enabled, chase_weekdays_only, chase_min_balance_pence, chase_reply_to, business_name')
+    .select('firm_id, auto_chase_enabled, chase_weekdays_only, chase_min_balance_pence, chase_reply_to, business_name, invoice_accent')
     .eq('auto_chase_enabled', true);
   if (opts.firmId) settingsQuery = settingsQuery.eq('firm_id', opts.firmId);
   const { data: firmSettings } = await settingsQuery;
@@ -271,6 +279,9 @@ export async function runCreditControlChase(
       const subject = renderChaserTemplate(stage.subject, ctx);
       const body = renderChaserTemplate(stage.body, ctx);
 
+      // The cron has no user behind it, so the token is minted with created_by null.
+      const portalLink = await getOrCreatePortalLink(supabase, { firmId, clientId: inv.client_id, userId: null });
+
       try {
         await sendChaserEmail({
           to: clientEmail,
@@ -278,6 +289,8 @@ export async function runCreditControlChase(
           body,
           fromName: firmName,
           replyTo: (cfg.chase_reply_to as string) || undefined,
+          portalLink,
+          accent: (cfg.invoice_accent as string | null) ?? null,
         });
         // Log the send + mark superseded stages as sent (no email).
         const rows = [

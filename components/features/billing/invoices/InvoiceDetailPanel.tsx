@@ -5,11 +5,10 @@ import { X, Send, CheckCircle2, Banknote, Trash2, Clock, Eye, FileText, Download
 import { fmtPence } from '@/lib/billing/totals';
 import type { Invoice, CreditNote } from '@/lib/billing/types';
 import { exportInvoicePdf, type InvoiceLetterhead } from '@/lib/billing/invoicePdf';
+import { fetchLetterhead, EMPTY_LETTERHEAD } from '@/lib/billing/fetchLetterhead';
 import { STATUS_META } from '../shared/status';
 import { fmtDate } from './InvoicesTab';
 import SendInvoiceModal from './SendInvoiceModal';
-
-const EMPTY_LETTERHEAD: InvoiceLetterhead = { businessName: '', businessAddress: '', vatNumber: '', bankDetails: '', invoiceFooter: '' };
 
 const AUDIT_LABEL: Record<string, string> = {
   created: 'Created', sent: 'Issued (sent)', viewed: 'Viewed', paid: 'Marked paid', part_paid: 'Part paid',
@@ -80,29 +79,14 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
     else { const d = await r.json().catch(() => null); setPayMsg(d?.error ?? 'Could not raise credit note'); setTimeout(() => setPayMsg(null), 3000); }
   }
 
-  // Firm letterhead / bank details for the PDF (fetched once).
+  // Firm letterhead / bank details / branding for the PDF (fetched once).
+  const [letterheadReady, setLetterheadReady] = useState(false);
   useEffect(() => {
-    fetch('/api/billing/settings')
-      .then(r => (r.ok ? r.json() : null))
-      .then(s => {
-        if (!s) return;
-        setLetterhead(prev => ({
-          ...prev,
-          businessName: s.businessName ?? '',
-          businessAddress: s.businessAddress ?? '',
-          vatNumber: s.vatNumber ?? '',
-          bankDetails: s.bankDetails ?? '',
-          invoiceFooter: s.invoiceFooter ?? '',
-          accent: s.invoiceAccent ?? '#7C3AED',
-          template: s.invoiceTemplate ?? 'modern',
-          defaultTerms: s.defaultTerms ?? '',
-        }));
-      })
+    let cancelled = false;
+    fetchLetterhead()
+      .then(lh => { if (!cancelled) { setLetterhead(lh); setLetterheadReady(true); } })
       .catch(() => {});
-    // Logo (data URL) for the PDF.
-    fetch('/api/billing/logo').then(r => (r.ok ? r.json() : null)).then(d => {
-      if (d?.dataUrl) setLetterhead(prev => ({ ...prev, logoDataUrl: d.dataUrl }));
-    }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   // Is Stripe connected? Controls the "Pay by card" affordance.
@@ -335,6 +319,7 @@ export default function InvoiceDetailPanel({ invoiceId, onClose, onChanged }: Pr
         <SendInvoiceModal
           invoiceId={invoiceId}
           invoiceNumber={inv.number}
+          letterhead={letterheadReady ? letterhead : undefined}
           onClose={() => setSendOpen(false)}
           onSent={() => { setSendOpen(false); load(); onChanged(); setPayMsg('Invoice sent'); setTimeout(() => setPayMsg(null), 3000); }}
         />

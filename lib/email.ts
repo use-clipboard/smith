@@ -120,18 +120,30 @@ export interface ChaserEmailOptions {
   fromName: string;
   /** Where client replies should go (the firm's mailbox). */
   replyTo?: string;
+  /** The client's statement portal — adds a "View & pay invoice" button. */
+  portalLink?: string | null;
+  /** Firm brand colour for that button. */
+  accent?: string | null;
 }
 
 function escapeChaserHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
-/** Wrap a plain-text chaser body in a clean, neutral HTML shell. */
-export function renderChaserEmailHtml(body: string): string {
+/** Wrap a plain-text chaser body in a clean, neutral HTML shell.
+ *  The body is always escaped — stage templates are plain text, so a firm can't
+ *  inject markup — and the pay button is appended as trusted markup. */
+export function renderChaserEmailHtml(body: string, opts: { portalLink?: string | null; accent?: string | null } = {}): string {
   const paras = body.split(/\n{2,}/).map(p =>
     `<p style="margin:0 0 14px;line-height:1.6;color:#1F2937;font-size:14px">${escapeChaserHtml(p).replace(/\n/g, '<br/>')}</p>`,
   ).join('');
-  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:8px 4px">${paras}</div>`;
+
+  const accent = /^#[0-9a-fA-F]{6}$/.test(opts.accent ?? '') ? opts.accent! : '#7C3AED';
+  const button = opts.portalLink
+    ? `<p style="margin:18px 0 4px"><a href="${escapeChaserHtml(opts.portalLink)}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px;font-size:14px">View &amp; pay invoice</a></p>`
+    : '';
+
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:8px 4px">${paras}${button}</div>`;
 }
 
 export async function sendChaserEmail(opts: ChaserEmailOptions) {
@@ -144,7 +156,7 @@ export async function sendChaserEmail(opts: ChaserEmailOptions) {
     from: `${fromName} <${addr}>`,
     to: opts.to,
     subject: opts.subject,
-    html: renderChaserEmailHtml(opts.body),
+    html: renderChaserEmailHtml(opts.body, { portalLink: opts.portalLink, accent: opts.accent }),
     ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
   });
   if (error) throw new Error(`Failed to send chaser: ${error.message}`);

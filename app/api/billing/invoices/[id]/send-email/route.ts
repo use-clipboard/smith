@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import crypto from 'crypto';
 import { getUserContext } from '@/lib/getUserContext';
 import { buildModuleChecker, moduleNotActive } from '@/lib/modules';
 import { createClient } from '@/lib/supabase-server';
-import { getBaseUrl } from '@/lib/getBaseUrl';
+import { getOrCreatePortalLink } from '@/lib/billing/portalLink';
 import { balancePence, fmtPence } from '@/lib/billing/totals';
 import { resolveInvoiceMergeTags, type InvoiceMergeContext } from '@/lib/billing/invoiceMergeTags';
 import { DEFAULT_INVOICE_EMAIL_SUBJECT, DEFAULT_INVOICE_EMAIL_BODY } from '@/lib/billing/types';
 import { resolveTaskEmailSender } from '@/lib/tasks/taskEmailSender';
 import { buildRawMessage } from '@/lib/gmail';
+import { buildInvoiceEmailHtml } from '@/lib/billing/invoiceEmailHtml';
+import { mapInvoiceRow, type InvoiceRow, type InvoiceLineRow } from '@/lib/billing/map';
 
 function ukDate(iso: string | null): string | null {
   if (!iso) return null;
   const [y, m, d] = iso.slice(0, 10).split('-');
   return `${d}-${m}-${y}`;
-}
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
 interface Ctx { firmId: string; userId: string }
@@ -26,7 +24,7 @@ interface Ctx { firmId: string; userId: string }
 async function build(supabase: ReturnType<typeof createClient>, ctx: Ctx, invoiceId: string) {
   const [{ data: inv }, { data: settings }, { data: firm }] = await Promise.all([
     supabase.from('invoices').select('*').eq('id', invoiceId).eq('firm_id', ctx.firmId).maybeSingle(),
-    supabase.from('billing_settings').select('invoice_email_subject, invoice_email_body, email_sender_mailbox_id, business_name').eq('firm_id', ctx.firmId).maybeSingle(),
+    supabase.from('billing_settings').select('invoice_email_subject, invoice_email_body, email_sender_mailbox_id, business_name, invoice_accent').eq('firm_id', ctx.firmId).maybeSingle(),
     supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle(),
   ]);
   if (!inv) return null;
@@ -46,17 +44,7 @@ async function build(supabase: ReturnType<typeof createClient>, ctx: Ctx, invoic
   }
 
   // Reuse or mint a statement-portal link for this client.
-  let portalLink = '';
-  if (inv.client_id) {
-    const nowIso = new Date().toISOString();
-    const { data: tok } = await supabase.from('billing_portal_tokens').select('token').eq('firm_id', ctx.firmId).eq('client_id', inv.client_id).gt('expires_at', nowIso).order('created_at', { ascending: false }).limit(1).maybeSingle();
-    let token = tok?.token as string | undefined;
-    if (!token) {
-      token = crypto.randomBytes(24).toString('hex');
-      await supabase.from('billing_portal_tokens').insert({ firm_id: ctx.firmId, client_id: inv.client_id, token, created_by: ctx.userId });
-    }
-    portalLink = `${getBaseUrl()}/statement/${token}`;
-  }
+  const portalLink = await getOrCreatePortalLink(supabase, { firmId: ctx.firmId, clientId: inv.client_id, userId: ctx.userId });
 
   const firmName = (settings?.business_name as string) || firm?.name || 'Our practice';
   const mergeCtx: InvoiceMergeContext = {
@@ -74,9 +62,22 @@ async function build(supabase: ReturnType<typeof createClient>, ctx: Ctx, invoic
 
   return {
     inv, mailboxId, senderEmail, clientEmail, portalLink, firmName,
+    accent: (settings?.invoice_accent as string | null) ?? null,
     subject: resolveInvoiceMergeTags(subjectTpl, mergeCtx),
     body: resolveInvoiceMergeTags(bodyTpl, mergeCtx),
   };
+}
+
+/** Give a draft its invoice number before the client renders the PDF —
+ *  otherwise the attachment the client receives is stamped "DRAFT".
+ *  Only the number is allocated here; the invoice isn't marked sent until the
+ *  email actually goes, and a retry reuses the number, so no gaps in the run. */
+async function ensureNumber(supabase: ReturnType<typeof createClient>, firmId: string, inv: Record<string, unknown>): Promise<string | null> {
+  if (inv.number) return inv.number as string;
+  const { allocateInvoiceNumber } = await import('@/lib/billing/numbering');
+  const number = await allocateInvoiceNumber(supabase, firmId);
+  await supabase.from('invoices').update({ number, updated_at: new Date().toISOString() }).eq('id', inv.id as string).eq('firm_id', firmId);
+  return number;
 }
 
 // GET — preview: resolved subject/body, recipient, sender, and any blockers.
@@ -91,7 +92,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!b) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const warning = !b.senderEmail
-    ? 'No firm email is connected for invoices. Connect one in Billing → Settings → Invoice emails.'
+    ? 'No firm email is connected for invoices. Connect one in Settings → Billing → Emails.'
     : !b.clientEmail ? 'This client has no email address on file.' : null;
 
   return NextResponse.json({
@@ -100,7 +101,16 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   });
 }
 
-const SendSchema = z.object({ subject: z.string().max(300).optional(), body: z.string().max(6000).optional() });
+const SendSchema = z.object({
+  subject: z.string().max(300).optional(),
+  body: z.string().max(6000).optional(),
+  /** Allocate the number and hand the invoice back, so the caller can render the
+   *  PDF it will post on the real send. No email, no status change. */
+  prepare: z.boolean().optional(),
+  /** The rendered invoice PDF, attached to the client's email. ~14MB of base64
+   *  ≈ 10MB of PDF, comfortably inside Gmail's 25MB limit. */
+  pdf_base64: z.string().max(14_000_000).optional(),
+});
 
 // POST — send the invoice email from the firm mailbox and mark it sent.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -114,21 +124,45 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const b = await build(supabase, { firmId: ctx.firmId, userId: ctx.userId }, params.id);
   if (!b) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   if (!b.clientEmail) return NextResponse.json({ error: 'This client has no email address on file.' }, { status: 400 });
-  if (!b.mailboxId) return NextResponse.json({ error: 'Connect a firm email for invoices in Billing → Settings first.' }, { status: 400 });
+  if (!b.mailboxId) return NextResponse.json({ error: 'Connect a firm email for invoices in Settings → Billing first.' }, { status: 400 });
+
+  // ── Stage 1: prepare ──────────────────────────────────────────────────────
+  // Allocate the number, then hand back the invoice so the caller can render a
+  // PDF that carries it. Nothing is sent and the status is untouched.
+  if (overrides.success && overrides.data.prepare) {
+    const number = await ensureNumber(supabase, ctx.firmId, b.inv);
+    const { data: lines } = await supabase
+      .from('invoice_lines').select('*').eq('invoice_id', b.inv.id).order('position', { ascending: true });
+    const invoice = mapInvoiceRow({ ...b.inv, number } as InvoiceRow, (lines ?? []) as InvoiceLineRow[]);
+    return NextResponse.json({ invoice });
+  }
 
   const sender = await resolveTaskEmailSender({ firmId: ctx.firmId, mode: 'specific', mailboxId: b.mailboxId, ownerUserId: null });
   if (!sender.ok) return NextResponse.json({ error: sender.reason }, { status: 400 });
 
   const subject = overrides.success && overrides.data.subject ? overrides.data.subject : b.subject;
   const bodyText = overrides.success && overrides.data.body ? overrides.data.body : b.body;
-  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#0f0f1a;line-height:1.6">
-    <p style="white-space:pre-wrap;margin:0 0 16px">${esc(bodyText)}</p>
-    ${b.portalLink ? `<p style="margin:0 0 16px"><a href="${esc(b.portalLink)}" style="display:inline-block;background:#7C3AED;color:#fff;text-decoration:none;font-weight:600;padding:10px 18px;border-radius:10px">View &amp; pay invoice</a></p>` : ''}
-    <p style="font-size:12px;color:#9ca3af;margin:24px 0 0">${esc(b.firmName)}</p>
-  </div>`;
+
+  // The invoice PDF, rendered by the caller (no server-side renderer exists).
+  // Absent — an older client, or a render that failed — the email still goes,
+  // with the portal link alone, exactly as it did before.
+  const pdfBase64 = overrides.success ? overrides.data.pdf_base64 : undefined;
+  const attachmentName = `${(b.inv.number as string | null) ?? 'Invoice'}.pdf`;
+  const attachments = pdfBase64
+    ? [{ filename: attachmentName, mimeType: 'application/pdf', data: Buffer.from(pdfBase64, 'base64') }]
+    : [];
+
+  const html = buildInvoiceEmailHtml({
+    bodyText,
+    portalLink: b.portalLink,
+    firmName: b.firmName,
+    accent: b.accent,
+    hasAttachment: attachments.length > 0,
+    attachmentName,
+  });
 
   try {
-    const raw = buildRawMessage({ from: sender.fromEmail, to: [b.clientEmail], subject, htmlBody: html });
+    const raw = buildRawMessage({ from: sender.fromEmail, to: [b.clientEmail], subject, htmlBody: html, attachments });
     await sender.gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
   } catch (err) {
     console.error('send invoice email', err);
