@@ -8,7 +8,7 @@ import { renderApprovalPdf, blobToBase64, type SummaryLine } from '@/lib/mtdIt/a
 import { fetchBrandPdfBundle } from '@/lib/mtdIt/fetchBrandPdfBundle';
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useComposeWindow } from '@/components/features/email/ComposeWindowProvider';
-import type { EditorEntry } from './MtdItStreamColumn';
+import type { EditorEntry } from '@/lib/mtdIt/types';
 import type { MtdItStream, MtdItStreams, MtdItProperty, MtdItTrade } from '@/types';
 
 interface Props {

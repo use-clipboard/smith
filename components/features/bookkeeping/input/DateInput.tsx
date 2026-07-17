@@ -28,6 +28,10 @@ interface Props {
   /** Visible value in dd/mm/yyyy format (or partial while typing). */
   value: string;
   onChange: (v: string) => void;
+  /** Fired on blur with the current text. Use it to reconcile a half-typed or
+   *  unparseable value once the user leaves the field — onChange deliberately
+   *  fires on every keystroke, including on text that isn't a date yet. */
+  onBlur?: (v: string) => void;
   placeholder?: string;
   className?: string;
   disabled?: boolean;
@@ -176,7 +180,7 @@ export function parseUkDateStrict(input: string): string {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function DateInput({
-  value, onChange, placeholder = 'dd/mm/yyyy', className = '', disabled,
+  value, onChange, onBlur, placeholder = 'dd/mm/yyyy', className = '', disabled,
   'data-row-id': dataRowId, 'data-cell': dataCell, ariaLabel, previousDate,
 }: Props) {
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -249,6 +253,7 @@ export default function DateInput({
         type="text"
         value={value}
         onChange={e => onChange(maybeAutoFormat(e.target.value))}
+        onBlur={onBlur ? e => onBlur(e.target.value) : undefined}
         onKeyDown={onKey}
         placeholder={placeholder}
         disabled={disabled}

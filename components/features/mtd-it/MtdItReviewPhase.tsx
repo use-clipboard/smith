@@ -4,16 +4,19 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Loader2, AlertTriangle, Undo2, Redo2, Save, CheckCircle2, Layers,
   Sparkles, ArrowLeft, BarChart3, Mail, Archive, FastForward, Landmark,
-  Lock, PenLine, FileSpreadsheet, BellRing, BellOff,
+  Lock, PenLine, FileSpreadsheet, BellRing, BellOff, Check,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
-import MtdItStreamColumn, { type EditorEntry } from './MtdItStreamColumn';
+import MtdItStreamSection, { type EditorEntry } from './MtdItStreamSection';
 import MtdItSourceViewerModal from './MtdItSourceViewerModal';
 import MtdItPnLModal from './MtdItPnLModal';
 import MtdItSendApprovalModal from './MtdItSendApprovalModal';
 import MtdItSaveToRecordsModal from './MtdItSaveToRecordsModal';
 import MtdItSubmitModal from './MtdItSubmitModal';
-import { applyAutoFlags } from '@/lib/mtdIt/flags';
+import { fromIso } from '@/components/features/bookkeeping/input/DateInput';
+import { round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
+import { applyAutoFlags, isLegacyAutoFlag } from '@/lib/mtdIt/flags';
+import { applySaveResult } from '@/lib/mtdIt/saveReconcile';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import { CONSOLIDATED_REPORTING_LIMIT } from '@/lib/mtdIt/categories';
 import { buildPnL, fmtMoneyGbp } from '@/lib/mtdIt/pnl';
@@ -100,6 +103,9 @@ function serverToEditor(e: ServerEntry): EditorEntry {
     _localId: `srv_${e.id}`,
     _isNew: false,
     _dirty: false,
+    // The date field shows this text, so seed it from the stored date —
+    // otherwise every existing row renders an empty date box on load.
+    _dateText: fromIso(e.entry_date ?? ''),
     flag_dismissed: !!e.flag_dismissed,
     id: e.id,
     stream: e.stream,
@@ -121,7 +127,11 @@ function serverToEditor(e: ServerEntry): EditorEntry {
     gbp_amount: e.gbp_amount === null ? null : Number(e.gbp_amount),
     share_pct: Number(e.share_pct ?? 100),
     manual: e.manual,
-    flagged_reason: e.flagged_reason,
+    // Older builds persisted out-of-range/duplicate flags into flagged_reason
+    // (and prompts/mtd-it.ts asked Claude for them too). Those are derived, so
+    // drop them on load and let applyAutoFlags recompute — otherwise they read
+    // as a human's flag and can never be cleared, even once the row is fixed.
+    flagged_reason: isLegacyAutoFlag(e.flagged_reason) ? null : e.flagged_reason,
     drive_link: e.drive_link,
   };
 }
@@ -199,6 +209,13 @@ export default function MtdItReviewPhase({
   const [amending, setAmending] = useState(false);
   useEffect(() => { setAmending(false); }, [quarterStatus]);
 
+  // A filed or approved quarter is read-only until the user explicitly amends.
+  // Computed up here (not down in the render) because autosave has to know.
+  const isFiled    = quarterStatus === 'submitted';
+  const isApproved = quarterStatus === 'approved';
+  const lockable   = isFiled || isApproved;
+  const locked     = lockable && !amending;
+
   // Firm-level reminder settings (reminder_enabled + reminder_days). Drives the
   // "Reminder scheduled for …" hint on the send screen. The cron worker that
   // sends the reminder emails is wired (app/api/cron/mtd-it-reminders, daily);
@@ -266,31 +283,53 @@ export default function MtdItReviewPhase({
   const historyRef = useRef<EditorEntry[][]>([]);
   const redoRef    = useRef<EditorEntry[][]>([]);
   const HISTORY_LIMIT = 50;
-  const pushHistory = useCallback(() => {
+  // The refs hold the snapshots; this mirrors their depth so the buttons can
+  // re-render when it changes. Reading historyRef.current.length during render
+  // doesn't work — mutating a ref never triggers a render, so the buttons used
+  // to stay stuck at their initial disabled state.
+  const [depth, setDepth] = useState({ undo: 0, redo: 0 });
+  const syncDepth = useCallback(() => {
+    setDepth({ undo: historyRef.current.length, redo: redoRef.current.length });
+  }, []);
+
+  // Coalesce history per (row, field) rather than per keystroke. `patch` calls
+  // pushHistory on every character, so without this a 50-snapshot buffer is
+  // spent inside one typed word and Ctrl+Z undoes a single letter.
+  const lastPushKey = useRef<string | null>(null);
+  const pushHistory = useCallback((key?: string) => {
+    if (key && lastPushKey.current === key) return;
+    lastPushKey.current = key ?? null;
     historyRef.current.push(entries);
     if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift();
     redoRef.current = [];
-  }, [entries]);
+    syncDepth();
+  }, [entries, syncDepth]);
+
   const undo = useCallback(() => {
     if (historyRef.current.length === 0) return;
     const prev = historyRef.current.pop()!;
     redoRef.current.push(entries);
+    lastPushKey.current = null; // next edit starts a fresh coalescing run
     setEntries(applyAutoFlags(prev, rangeFrom, rangeTo));
-  }, [entries, rangeFrom, rangeTo]);
+    syncDepth();
+  }, [entries, rangeFrom, rangeTo, syncDepth]);
+
   const redo = useCallback(() => {
     if (redoRef.current.length === 0) return;
     const next = redoRef.current.pop()!;
     historyRef.current.push(entries);
+    lastPushKey.current = null;
     setEntries(applyAutoFlags(next, rangeFrom, rangeTo));
-  }, [entries, rangeFrom, rangeTo]);
-  // Keyboard shortcuts — only fire when not focused inside a form control
-  // that already handles undo (text inputs do their own undo on z).
+    syncDepth();
+  }, [entries, rangeFrom, rangeTo, syncDepth]);
+
+  // Keyboard shortcuts. These deliberately fire even when focus is inside a
+  // field: the review screen is a grid, so focus is essentially always in one,
+  // and the old "skip if in a field" guard meant the shortcut never fired at
+  // all. Our own history is more useful here than the browser's per-input undo.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey)) return;
-      const t = e.target as HTMLElement | null;
-      const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
-      if (inField) return;
       if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
       else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); redo(); }
     }
@@ -497,9 +536,11 @@ export default function MtdItReviewPhase({
   }, [viewingPdf, streams, entries, trades, properties, fxRates, clientName, clientRef, clientId, quarterLabel, taxYearLabel, rangeFrom, rangeTo, consolidated, taxYear]);
 
   // ── Consolidated reporting ───────────────────────────────────────────
+  // The threshold is about the client's own income, so this is share-adjusted
+  // and FX-converted — the same value the P&L and the filing use.
   const totalIncomeAllStreams = entries
     .filter(e => !e._deleted && e.entry_type === 'income')
-    .reduce((a, e) => a + (e.gross_amount || 0), 0);
+    .reduce((a, e) => a + round2(shareAdjustedGbp(e, fxRates)), 0);
   const overThreshold = totalIncomeAllStreams >= CONSOLIDATED_REPORTING_LIMIT;
 
   async function toggleConsolidated() {
@@ -536,10 +577,22 @@ export default function MtdItReviewPhase({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
+  // ── Autosave ─────────────────────────────────────────────────────────
+  const [lastSavedAt,    setLastSavedAt]    = useState<number | null>(null);
+  const [autoSaveFailed, setAutoSaveFailed] = useState(false);
+  const autoSaveBusy = useRef(false);
+
   // ── Save (bulk creates / updates / deletes) ──────────────────────────
   const [saving, setSaving] = useState<null | 'draft' | 'complete'>(null);
-  async function save(target: 'draft' | 'complete', opts?: { skipNav?: boolean; skipStatus?: boolean }) {
-    setSaving(target); setError(null);
+
+  async function save(
+    target: 'draft' | 'complete',
+    opts?: { skipNav?: boolean; skipStatus?: boolean; silent?: boolean },
+  ) {
+    // A silent (auto) save must not disable the toolbar buttons or clear an
+    // error the user is currently reading.
+    if (!opts?.silent) { setSaving(target); setError(null); }
+    const snapshot = entries;
     try {
       // Split the editor state into a bulk-save payload. Manual rules:
       //   _deleted true + has id    → goes in `deletes`
@@ -547,13 +600,17 @@ export default function MtdItReviewPhase({
       //   else _dirty true          → goes in `updates`
       // Strip editor-only bookkeeping fields. `flag_dismissed` is the one
       // editor field that DOES persist (it has its own DB column) — keep it.
-      const creates = entries
+      // `_autoFlag` and `_dateText` are derived and must never be written: the
+      // flag is recomputed from the rows, and the date text is just what's in
+      // the input box. (The API's Zod object would strip them anyway; being
+      // explicit keeps the payload readable.)
+      const creates = snapshot
         .filter(e => e._isNew && !e._deleted)
-        .map(({ _localId, _isNew, _dirty, _deleted, id, ...rest }) => rest);
-      const updates = entries
+        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, id, ...rest }) => rest);
+      const updates = snapshot
         .filter(e => !e._isNew && !e._deleted && e._dirty && e.id)
-        .map(({ _localId, _isNew, _dirty, _deleted, ...rest }) => rest);
-      const deletes = entries
+        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, ...rest }) => rest);
+      const deletes = snapshot
         .filter(e => e._deleted && !!e.id)
         .map(e => e.id!);
 
@@ -566,6 +623,18 @@ export default function MtdItReviewPhase({
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? 'Save failed');
       }
+      const saveJson = await res.json().catch(() => ({}));
+      // Attach the new ids and clear the dirty flags. Without this a second
+      // save would re-insert every new row — see lib/mtdIt/saveReconcile.
+      setEntries(prev => applySaveResult(prev, snapshot, (saveJson.created_ids ?? []) as string[]));
+      setLastSavedAt(Date.now());
+
+      // silent: an autosave — persist the entries and nothing else. It must
+      // never touch the quarter's status (that would regress a 'complete' or
+      // 'sent' quarter back to draft behind the user's back). The entries PUT
+      // already promotes not_started → draft on its own.
+      if (opts?.silent) return;
+
       // skipStatus: persist entries only, leaving the quarter status untouched
       // (used by "Save & Submit", which must not advance the quarter just to
       // open the submit modal). Otherwise bump status + consolidated flag.
@@ -592,12 +661,45 @@ export default function MtdItReviewPhase({
           onFinished(target);
         }
       }
+      setAutoSaveFailed(false);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Save failed');
+      // Autosave keeps the work in memory and retries on the next edit — the
+      // beforeunload guard still stands — but the user needs to know the safety
+      // net isn't currently catching them.
+      if (opts?.silent) setAutoSaveFailed(true);
+      return false;
     } finally {
-      setSaving(null);
+      if (!opts?.silent) setSaving(null);
     }
   }
+
+  // Autosave: people were losing a session's work by never pressing Save as
+  // draft. Fires ~2s after the last edit, so a burst of typing is one request.
+  //
+  // Deliberately does NOT run when:
+  //   - the quarter is locked (filed/approved and not being amended) — nothing
+  //     should ever write to a filed quarter without an explicit amend;
+  //   - a manual save is already in flight, or a previous autosave hasn't come
+  //     back yet (overlapping saves would double-insert the same new rows);
+  //   - we're on the send/save preview views, which are read-only summaries.
+  //
+  // `saveRef` keeps the effect off `save`'s identity, which changes every
+  // render — depending on it would reset the timer on every keystroke and the
+  // save would never fire.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!dirty || locked || view !== 'edit') return;
+    const t = setTimeout(() => {
+      if (autoSaveBusy.current || saving !== null) return;
+      autoSaveBusy.current = true;
+      void saveRef.current('draft', { silent: true, skipNav: true, skipStatus: true })
+        .finally(() => { autoSaveBusy.current = false; });
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [entries, dirty, locked, view, saving]);
 
   // ── Render ───────────────────────────────────────────────────────────
   if (loading) {
@@ -608,16 +710,6 @@ export default function MtdItReviewPhase({
   }
 
   const activeStreams = ACTIVE_STREAMS.filter(s => streams[s]);
-  const colsClass =
-    activeStreams.length === 3 ? 'lg:grid-cols-3' :
-    activeStreams.length === 2 ? 'lg:grid-cols-2' :
-    /* 1 */                       'lg:grid-cols-1';
-
-  // A filed or approved quarter is read-only until the user explicitly amends.
-  const isFiled    = quarterStatus === 'submitted';
-  const isApproved = quarterStatus === 'approved';
-  const lockable   = isFiled || isApproved;
-  const locked     = lockable && !amending;
 
   return (
     <div className="space-y-4">
@@ -778,7 +870,7 @@ export default function MtdItReviewPhase({
           <Tooltip label="Undo (Ctrl+Z)">
             <button
               onClick={undo}
-              disabled={historyRef.current.length === 0}
+              disabled={depth.undo === 0}
               aria-label="Undo"
               className="p-1.5 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             ><Undo2 size={13} /></button>
@@ -787,7 +879,7 @@ export default function MtdItReviewPhase({
           <Tooltip label="Redo (Ctrl+Shift+Z)">
             <button
               onClick={redo}
-              disabled={redoRef.current.length === 0}
+              disabled={depth.redo === 0}
               aria-label="Redo"
               className="p-1.5 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
             ><Redo2 size={13} /></button>
@@ -847,13 +939,17 @@ export default function MtdItReviewPhase({
         />
       )}
 
-      {/* Columns — only rendered in the edit view. Send/Save use read-only
+      {/* Streams — only rendered in the edit view. Send/Save use read-only
           summaries above so the figures can't drift after the user has been
-          shown them. */}
+          shown them.
+
+          Stacked full-width, one per stream, rather than side-by-side columns:
+          the grid needs the width to show every field, and a client with two or
+          three streams is the uncommon case. */}
       {view === 'edit' && (
-      <div className={`grid grid-cols-1 ${colsClass} gap-4`}>
+      <div className="space-y-4">
         {activeStreams.map(s => (
-          <MtdItStreamColumn
+          <MtdItStreamSection
             key={s}
             stream={s}
             entries={entries.filter(e => e.stream === s)}
@@ -862,9 +958,9 @@ export default function MtdItReviewPhase({
             fxRates={fxRates}
             consolidated={consolidated}
             pushHistory={pushHistory}
-            // Filed/approved quarters render read-only: rows can be opened and
-            // viewed (incl. the Expenses / Flagged tabs and source documents)
-            // but no field is editable until the user hits "Amend figures".
+            // Filed/approved quarters render read-only: rows and source
+            // documents can still be read, but no field is editable until the
+            // user hits "Amend figures".
             readOnly={locked}
             onChange={(nextForStream) => {
               // Splice this stream's slice back into the full array, keeping
@@ -900,10 +996,27 @@ export default function MtdItReviewPhase({
             <ArrowLeft size={14} />
             {view === 'edit' ? 'Back to setup' : view === 'send' ? 'Back to review' : 'Back to send'}
           </button>
-          <div className="text-xs text-gray-500 hidden sm:block">
-            {dirty
-              ? <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Unsaved changes</span>
-              : <span className="text-green-700">All saved</span>}
+          {/* Save status. Now that work saves itself, this has to say so —
+              "Unsaved changes" next to an autosaving editor reads as a warning
+              nobody needs to act on. A failure, though, is worth shouting. */}
+          <div className="text-xs hidden sm:block">
+            {autoSaveFailed ? (
+              <span className="inline-flex items-center gap-1 text-red-700">
+                <AlertTriangle size={11} /> Couldn&apos;t autosave — use Save as draft
+              </span>
+            ) : locked ? (
+              <span className="text-gray-500">Read-only</span>
+            ) : dirty ? (
+              <span className="inline-flex items-center gap-1 text-gray-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Saving…
+              </span>
+            ) : lastSavedAt ? (
+              <span className="inline-flex items-center gap-1 text-green-700">
+                <Check size={11} /> Saved {new Date(lastSavedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : (
+              <span className="text-green-700">All saved</span>
+            )}
           </div>
 
           {view === 'edit' && (
@@ -1377,15 +1490,9 @@ function MtdItSaveSummary({
   fxRates: Record<string, number>;
   dirty: boolean;
 }) {
-  // GBP-equivalent total for an entry, mirroring the logic in MtdItQuarterPage
-  // / lib/mtdIt/pnl (we re-implement to avoid the heavier buildPnL dep here).
-  function toGbp(e: EditorEntry): number {
-    const gross = e.gross_amount || 0;
-    if (e.currency === 'GBP') return gross;
-    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-    const rate = e.fx_rate ?? fxRates[e.currency];
-    return rate ? gross * rate : 0;
-  }
+  // The client's share of an entry, in GBP — same rule as the P&L and the
+  // figures filed with HMRC. See lib/mtdIt/amounts.
+  const toGbp = (e: EditorEntry): number => round2(shareAdjustedGbp(e, fxRates));
   const active = (['sole','uk_rental','foreign_rental'] as const).filter(s => streams[s]);
   const STREAM_LABEL: Record<MtdItStream, string> = { sole: 'Sole Trader', uk_rental: 'UK Rental', foreign_rental: 'Foreign Rental' };
   const totals = active.map(s => {

@@ -13,6 +13,7 @@ import {
   CONSOLIDATED_REPORTING_LIMIT,
 } from '@/lib/mtdIt/categories';
 import { thresholdForYear, MTD_IT_THRESHOLDS } from '@/lib/mtdIt/thresholds';
+import { isLegacyAutoFlag } from '@/lib/mtdIt/flags';
 import { fmtMoneyGbp } from '@/lib/mtdIt/pnl';
 import type { MtdItStream, MtdItStreams } from '@/types';
 
@@ -391,8 +392,13 @@ function LoadQuarterModal({ onClose, onLoad }: {
       if (!eRes.ok) throw new Error('Failed to load entries');
       const eJson = await eRes.json();
       const raw = (eJson.entries ?? []) as Array<{ stream: MtdItStream; entry_type: 'income'|'expense'; category: string; description: string|null; gross_amount: number; flagged_reason: string | null; flag_dismissed: boolean | null }>;
-      // Drop flagged rows — they aren't part of the clean P&L
-      const clean = raw.filter(r => !(r.flagged_reason && !r.flag_dismissed));
+      // Drop flagged rows — they aren't part of the clean P&L. Legacy auto-flag
+      // strings don't count: they're derived, and older builds persisted them.
+      // (No date range in scope here, so we don't re-derive out-of-range — this
+      // is a scratch calculator, not a filing path.)
+      const clean = raw.filter(r =>
+        !(r.flagged_reason && !isLegacyAutoFlag(r.flagged_reason) && !r.flag_dismissed),
+      );
       const mapped: CalcEntry[] = clean.map(r => ({
         _id: uid(),
         stream: r.stream,

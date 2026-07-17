@@ -21,9 +21,11 @@ import MtdItWizardStepper, { type WizardStep } from './MtdItWizardStepper';
 import MtdItReviewPhase from './MtdItReviewPhase';
 import MtdItDeleteQuarterModal from './MtdItDeleteQuarterModal';
 import ClientEmailLink from '@/components/features/email/ClientEmailLink';
-import MtdItCoOwnerImportModal, { type ImportableSource } from './MtdItCoOwnerImportModal';
+import MtdItCoOwnerImportModal, { type ImportableSource, type CoOwnerImportIssue } from './MtdItCoOwnerImportModal';
 import MtdItBookkeepingImportModal from './MtdItBookkeepingImportModal';
 import MtdItLandlordImportModal from './MtdItLandlordImportModal';
+import { round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
+import { isEntryFlagged, reflagStoredRows } from '@/lib/mtdIt/flags';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
 import type { MtdItClientRow as Row, MtdItStream, MtdItStreams, MtdItProperty } from '@/types';
@@ -80,25 +82,23 @@ function emptyStreamSummary(): StreamSummary { return { income: 0, expense: 0, c
 interface RawEntry {
   stream: MtdItStream;
   entry_type: 'income' | 'expense';
+  entry_date: string | null;
+  supplier: string | null;
   gross_amount: number;
   net_amount: number | null;
   vat_amount: number | null;
   currency: string;
   fx_rate: number | null;
   gbp_amount: number | null;
+  share_pct: number | null;
   flagged_reason: string | null;
   flag_dismissed: boolean | null;
 }
 
-// GBP equivalent for a single entry, applying its fx_rate (or the quarter-
-// level fallback for foreign rows). Mirrors the logic in lib/mtdIt/pnl.ts.
+/** The client's share of an entry, in GBP — same rule as the P&L and the
+ *  figures filed with HMRC. See lib/mtdIt/amounts. */
 function toGbp(e: RawEntry, fxRates: Record<string, number>): number {
-  const gross = e.gross_amount || 0;
-  if (e.currency === 'GBP') return gross;
-  if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-  const rate = e.fx_rate ?? fxRates[e.currency];
-  if (!rate || !Number.isFinite(rate)) return 0;
-  return gross * rate;
+  return round2(shareAdjustedGbp(e, fxRates));
 }
 
 function fmtMoneyGbp(amount: number): string {
@@ -141,6 +141,10 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
   // Importable co-owner sources for the setup-phase banner. Populated when
   // the quarter loads — empty = no banner shown.
   const [coOwnerSources, setCoOwnerSources] = useState<ImportableSource[]>([]);
+  // Co-owner links we couldn't turn into an import — nearly always the same
+  // property spelled differently on each client. Shown rather than guessed at:
+  // fuzzy-matching two real addresses into one would be a wrong filing.
+  const [coOwnerIssues, setCoOwnerIssues] = useState<CoOwnerImportIssue[]>([]);
   const [coOwnerImportOpen, setCoOwnerImportOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -186,7 +190,10 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         // for the same period, the banner offers a one-click import.
         void fetch(`/api/mtd-it/quarters/${qJson.quarter.id}/co-owner-import`)
           .then(r => r.ok ? r.json() : null)
-          .then(j => { if (j && Array.isArray(j.sources)) setCoOwnerSources(j.sources as ImportableSource[]); })
+          .then(j => {
+            if (j && Array.isArray(j.sources)) setCoOwnerSources(j.sources as ImportableSource[]);
+            if (j && Array.isArray(j.issues))  setCoOwnerIssues(j.issues as CoOwnerImportIssue[]);
+          })
           .catch(() => {});
 
         // Clear any unread approval notifications for this quarter as soon
@@ -285,10 +292,11 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
         uk_rental:      emptyStreamSummary(),
         foreign_rental: emptyStreamSummary(),
       };
-      for (const e of (data.entries ?? []) as RawEntry[]) {
-        // Exclude flagged-and-not-dismissed entries so the header total
-        // mirrors the editor's "clean" totals.
-        if (e.flagged_reason && !e.flag_dismissed) continue;
+      // Derive flags the same way the editor does so this header total mirrors
+      // its "clean" totals — out-of-range/duplicate flags aren't stored.
+      const rows = reflagStoredRows((data.entries ?? []) as RawEntry[], range.from, range.to);
+      for (const e of rows) {
+        if (isEntryFlagged(e)) continue;
         const s = e.stream as MtdItStream;
         if (!next[s]) continue;
         const gbp = toGbp(e, fxRates);
@@ -641,6 +649,34 @@ export default function MtdItQuarterPage({ clientId, taxYear, quarter }: Props) 
           <button
             onClick={() => setCoOwnerSources([])}
             className="text-xs text-gray-500 hover:text-gray-700 shrink-0"
+            aria-label="Dismiss"
+          >Dismiss</button>
+        </div>
+      )}
+
+      {/* Co-owner links that couldn't be matched up. Almost always an address
+          typed differently on the two clients — cheap to fix in Setup, and
+          invisible until now (the import just silently offered nothing). */}
+      {phase === 'setup' && coOwnerIssues.length > 0 && (
+        <div className="mb-3 flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="w-8 h-8 rounded-full bg-white text-amber-600 flex items-center justify-center shrink-0">
+            <AlertTriangle size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-amber-900">
+              {coOwnerIssues.length} co-owned propert{coOwnerIssues.length !== 1 ? 'ies' : 'y'} couldn&apos;t be matched up
+            </div>
+            <ul className="mt-1 space-y-1">
+              {coOwnerIssues.map((iss, i) => (
+                <li key={i} className="text-xs text-amber-800 leading-relaxed">
+                  <span className="font-medium">{iss.property_address}</span> — {iss.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button
+            onClick={() => setCoOwnerIssues([])}
+            className="text-xs text-amber-700 hover:text-amber-900 shrink-0"
             aria-label="Dismiss"
           >Dismiss</button>
         </div>

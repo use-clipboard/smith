@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Users, Search, Loader2, AlertTriangle, Plus, Check, Trash2 } from 'lucide-react';
+import { X, Users, Search, Loader2, AlertTriangle, Plus, Check, Trash2, Copy } from 'lucide-react';
 import type { MtdItProperty } from '@/types';
 
 interface Client {
@@ -17,6 +17,13 @@ interface Props {
   onChanged?: () => void;
 }
 
+/** What applying this property's split to the rest of the portfolio would do.
+ *  From GET /api/mtd-it/properties/[id]/apply-to-all. */
+interface ApplyPlan {
+  target_count: number;
+  overwrites: Array<{ address: string; owners: string[] }>;
+}
+
 // Lists existing co-owners on a property + lets the user add another MTD IT
 // client (with their share %) or remove an existing one. The bidirectional
 // link bookkeeping (matching property row on the other client, reverse link)
@@ -29,6 +36,13 @@ export default function MtdItPropertyCoOwnersModal({ property, onClose, onChange
   const [adding,     setAdding]     = useState<string | null>(null);
   const [draftShare, setDraftShare] = useState(50);
   const [busy,       setBusy]       = useState(false);
+
+  // Apply-this-split-to-all. `applyPlan` is fetched when the confirm opens so
+  // we can say what would be overwritten rather than asking "are you sure?"
+  // about an unknown number of properties. null = still loading.
+  const [applyConfirm, setApplyConfirm] = useState(false);
+  const [applyPlan,    setApplyPlan]    = useState<ApplyPlan | null>(null);
+  const [appliedMsg,   setAppliedMsg]   = useState('');
 
   // Pull MTD IT clients on mount. Filter out the current client + anyone
   // already a co-owner so the picker only shows valid new candidates.
@@ -97,8 +111,50 @@ export default function MtdItPropertyCoOwnersModal({ property, onClose, onChange
     }
   }
 
-  const totalShare = property.ownership_pct + ((property.co_owners ?? []).reduce((a, c) => a + c.co_owner_share_pct, 0));
+  async function openApplyConfirm() {
+    setAppliedMsg('');
+    setApplyPlan(null);
+    setApplyConfirm(true);
+    try {
+      const res = await fetch(`/api/mtd-it/properties/${property.id}/apply-to-all`);
+      if (!res.ok) throw new Error('Could not work out what would change');
+      const d = await res.json();
+      setApplyPlan({ target_count: d.target_count ?? 0, overwrites: d.overwrites ?? [] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not work out what would change');
+      setApplyConfirm(false);
+    }
+  }
+
+  async function applyToAll() {
+    setBusy(true); setError(null); setAppliedMsg('');
+    try {
+      const res = await fetch(`/api/mtd-it/properties/${property.id}/apply-to-all`, { method: 'POST' });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? 'Failed to apply the split');
+      setApplyConfirm(false);
+      setApplyPlan(null);
+      setAppliedMsg(d.applied > 0
+        ? `Applied to ${d.applied} other propert${d.applied === 1 ? 'y' : 'ies'}`
+        : 'No other properties to apply to');
+      // Partial application is possible — e.g. a co-owner without MTD IT on.
+      if (Array.isArray(d.failures) && d.failures.length > 0) {
+        setError(`Some properties couldn't be updated: ${d.failures.join('; ')}`);
+      }
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to apply the split');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const coOwners   = property.co_owners ?? [];
+  const totalShare = property.ownership_pct + coOwners.reduce((a, c) => a + c.co_owner_share_pct, 0);
   const overShare  = totalShare > 100.01; // a touch of float wiggle room
+  // Compare only the people who actually hold a share.
+  const shares = [property.ownership_pct, ...coOwners.map(c => c.co_owner_share_pct)].filter(s => s > 0);
+  const nonEqualSplit = shares.length > 1 && !shares.every(s => Math.abs(s - shares[0]) < 0.01);
 
   return createPortal(
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={!busy ? onClose : undefined}>
@@ -152,6 +208,76 @@ export default function MtdItPropertyCoOwnersModal({ property, onClose, onChange
               Total exceeds 100%. Check the shares — one of the owners is probably over.
             </div>
           )}
+
+          {/* Jointly-owned property between spouses is 50/50 by default; a
+              different split needs a Form 17 election. Same warning the Landlord
+              tool shows — easy to trip over when applying a split in bulk. */}
+          {nonEqualSplit && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-800">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>
+                Jointly-owned property between spouses or civil partners is split 50/50 by default.
+                A different split requires a <strong className="font-semibold">Form 17</strong> election to HMRC.
+              </span>
+            </div>
+          )}
+
+          {/* Apply this split across the portfolio. The common case is a couple
+              holding everything 50:50 — set it up once here rather than on
+              every property. Mirrors the Landlord tool's owners modal. */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            {applyConfirm ? (
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="text-xs text-gray-700">
+                  {applyPlan === null ? (
+                    <span className="inline-flex items-center gap-1.5 text-gray-500">
+                      <Loader2 size={11} className="animate-spin" /> Checking what would change…
+                    </span>
+                  ) : applyPlan.target_count === 0 ? (
+                    <>This client has no other {property.property_type === 'uk' ? 'UK' : 'foreign'} properties to apply to.</>
+                  ) : (
+                    <>
+                      Apply this split to <strong>{applyPlan.target_count}</strong> other{' '}
+                      {property.property_type === 'uk' ? 'UK' : 'foreign'} propert{applyPlan.target_count === 1 ? 'y' : 'ies'}?
+                      {applyPlan.overwrites.length > 0 && (
+                        <span className="block mt-1 text-amber-800">
+                          {applyPlan.overwrites.length} of them {applyPlan.overwrites.length === 1 ? 'has' : 'have'} a different split
+                          that will be overwritten:{' '}
+                          {applyPlan.overwrites.slice(0, 4).map(o =>
+                            `${o.address}${o.owners.length ? ` (${o.owners.join(', ')})` : ' (no co-owners)'}`,
+                          ).join('; ')}
+                          {applyPlan.overwrites.length > 4 && ` and ${applyPlan.overwrites.length - 4} more`}.
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void applyToAll()}
+                    disabled={busy || applyPlan === null || applyPlan.target_count === 0}
+                    className="btn-primary inline-flex items-center gap-1.5 text-xs py-1 px-2.5 disabled:opacity-50"
+                  >
+                    {busy && <Loader2 size={11} className="animate-spin" />} Yes, apply
+                  </button>
+                  <button
+                    onClick={() => { setApplyConfirm(false); setApplyPlan(null); }}
+                    disabled={busy}
+                    className="text-xs py-1 px-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 disabled:opacity-50"
+                  >Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => void openApplyConfirm()}
+                disabled={busy}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent)] hover:underline disabled:opacity-50"
+              >
+                <Copy size={12} /> Apply this split to all properties
+              </button>
+            )}
+            {appliedMsg && <span className="text-xs text-emerald-600">{appliedMsg}</span>}
+          </div>
 
           {/* Add co-owner */}
           <div className="pt-2">

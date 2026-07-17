@@ -1,7 +1,9 @@
 import { buildPnL, fmtMoneyGbp } from './pnl';
 import { formatDateUk } from './dateFormat';
 import { paletteFromHex } from './brandColors';
-import type { EditorEntry } from '@/components/features/mtd-it/MtdItStreamColumn';
+import { shareAdjustedGbp } from './amounts';
+import { isEntryFlagged } from './flags';
+import type { EditorEntry } from './types';
 
 /**
  * Renders the MTD IT approval-pack PDF as an in-memory Blob.
@@ -113,12 +115,10 @@ export async function renderApprovalPdf(opts: {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso); if (!m) return iso;
     return `${m[3]}-${m[2]}-${m[1]}`;
   }
+  /** The client's share of a row, in GBP — mirrors buildPnL. No quarter-level
+   *  fxRates in scope, so a non-GBP row relies on its own fx_rate. */
   function gbpAmount(e: EditorEntry): number {
-    const gross = e.gross_amount || 0;
-    if (e.currency === 'GBP') return gross;
-    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-    if (e.fx_rate && Number.isFinite(e.fx_rate)) return gross * e.fx_rate;
-    return 0;
+    return shareAdjustedGbp(e, {});
   }
 
   function drawBrandHeader(): number {
@@ -395,7 +395,7 @@ export async function renderApprovalPdf(opts: {
 
   // ── Transaction detail pages (one section per stream) ────────────────
   if (inc.transactionDetail && opts.entries && opts.entries.length > 0) {
-    const clean = opts.entries.filter(e => !e._deleted && !(e.flagged_reason && !e.flag_dismissed));
+    const clean = opts.entries.filter(e => !e._deleted && !isEntryFlagged(e));
     for (const s of opts.pnls) {
       const streamRows = clean.filter(e => e.stream === s.stream);
       if (streamRows.length === 0) continue;

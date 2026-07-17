@@ -16,6 +16,15 @@ export interface ImportableSource {
   existing_count_on_target: number;
 }
 
+/** A co-owner link the import couldn't resolve into a source — usually the same
+ *  property spelled differently on each client. Surfaced on the setup step so
+ *  someone can fix the spelling, rather than silently offering nothing. */
+export interface CoOwnerImportIssue {
+  property_address: string;
+  co_owner_name:    string;
+  reason:           string;
+}
+
 interface Props {
   quarterId:    string;
   sources:      ImportableSource[];

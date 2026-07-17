@@ -5,12 +5,14 @@
 // tax-year start to the end of the chosen quarter, per business source.
 //
 // Figures mirror the review-phase P&L EXACTLY (same GBP conversion, same
-// flagged-exclusion) so what's submitted equals what the user approved. We do
-// NOT silently apply co-owner share_pct here — if any entry carries a partial
-// share we surface a warning instead of quietly diverging from the P&L.
+// share_pct, same flagged-exclusion, same per-row rounding) so what's submitted
+// equals what the user approved. Every value goes through lib/mtdIt/amounts —
+// don't re-implement the conversion here.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MtdItQuarterType } from '@/types';
+import type { MtdItQuarterType, MtdItStream } from '@/types';
+import { round2, shareAdjustedGbp } from './amounts';
+import { isEntryFlagged, reflagStoredRows } from './flags';
 import { getQuarterDates } from './quarters';
 import { classifySeExpense, classifyPropertyExpense } from './categoryMap';
 import { resolveCountryCode } from './countryCodes';
@@ -43,11 +45,15 @@ export interface CumulativeResult {
 
 interface EntryRow {
   quarter_id: string;
-  stream: string;
+  // Narrowed from `string` so the row satisfies FlaggableEntry — the query
+  // filters on stream, so the value is always one of these.
+  stream: MtdItStream;
   trade_id: string | null;
   property_id: string | null;
   entry_type: string;
   category: string | null;
+  entry_date: string | null;
+  supplier: string | null;
   gross_amount: number | null;
   gbp_amount: number | null;
   currency: string | null;
@@ -61,17 +67,6 @@ const STREAM_FOR_TYPE: Record<TypeOfBusiness, 'sole' | 'uk_rental' | 'foreign_re
   'self-employment': 'sole', 'uk-property': 'uk_rental', 'foreign-property': 'foreign_rental',
 };
 
-function round2(n: number): number { return Math.round(n * 100) / 100; }
-
-/** GBP value for a row — identical rule to lib/mtdIt/pnl.ts. */
-function gbp(e: EntryRow, fxRates: Record<string, number>): number {
-  const gross = e.gross_amount || 0;
-  if (!e.currency || e.currency === 'GBP') return gross;
-  if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-  const rate = e.fx_rate ?? fxRates[e.currency];
-  if (!rate || !Number.isFinite(rate)) return 0;
-  return gross * rate;
-}
 
 /**
  * Compute the YTD cumulative figures for one business source up to and
@@ -109,7 +104,13 @@ export async function computeMtdItCumulative(
     .select('id, quarter, fx_rates')
     .eq('client_id', clientId).eq('tax_year', taxYear).lte('quarter', uptoQuarter);
   const fxByQuarter = new Map<string, Record<string, number>>();
-  for (const q of quarters ?? []) fxByQuarter.set(q.id as string, (q.fx_rates as Record<string, number>) ?? {});
+  // Each quarter has its own date window, so out-of-range has to be judged
+  // per quarter — see the reflag step below.
+  const rangeByQuarter = new Map<string, { from: string; to: string }>();
+  for (const q of quarters ?? []) {
+    fxByQuarter.set(q.id as string, (q.fx_rates as Record<string, number>) ?? {});
+    rangeByQuarter.set(q.id as string, getQuarterDates(taxYear, q.quarter as 1 | 2 | 3 | 4, quarterType));
+  }
   const quarterIds = (quarters ?? []).map(q => q.id as string);
 
   const expensesByField: Record<string, number> = {};
@@ -141,10 +142,20 @@ export async function computeMtdItCumulative(
     // Pull all of this stream's entries across the YTD quarters, then attribute.
     const { data: entries } = await supabase
       .from('mtd_it_entries')
-      .select('quarter_id, stream, trade_id, property_id, entry_type, category, gross_amount, gbp_amount, currency, fx_rate, share_pct, flagged_reason, flag_dismissed')
+      .select('quarter_id, stream, trade_id, property_id, entry_type, category, entry_date, supplier, gross_amount, gbp_amount, currency, fx_rate, share_pct, flagged_reason, flag_dismissed')
       .in('quarter_id', quarterIds).eq('stream', stream);
 
-    for (const e of (entries ?? []) as EntryRow[]) {
+    // Derive flags exactly as the review editor does, per quarter (each has its
+    // own date window). Out-of-range and duplicate flags are NOT persisted, so
+    // reading the stored flagged_reason alone would both miss real problems and
+    // honour stale strings an older build wrote. See lib/mtdIt/flags.
+    const reflagged: EntryRow[] = [];
+    for (const [qid, range] of rangeByQuarter) {
+      const forQuarter = ((entries ?? []) as EntryRow[]).filter(e => e.quarter_id === qid);
+      if (forQuarter.length > 0) reflagged.push(...reflagStoredRows(forQuarter, range.from, range.to));
+    }
+
+    for (const e of reflagged) {
       // Does this entry belong to this source? In aggregateStream mode every
       // entry on the stream counts. Otherwise: allocated to it, or unallocated
       // when this is the only source of the stream. (Attribution comes first so
@@ -156,8 +167,8 @@ export async function computeMtdItCumulative(
       }
       // Exclude unresolved flagged entries — same as the P&L's clean totals —
       // but count them so we can warn that they're being left out of the filing.
-      if (e.flagged_reason && !e.flag_dismissed) { flaggedExcluded++; continue; }
-      const value = round2(gbp(e, fxByQuarter.get(e.quarter_id) ?? {}));
+      if (isEntryFlagged(e)) { flaggedExcluded++; continue; }
+      const value = round2(shareAdjustedGbp(e, fxByQuarter.get(e.quarter_id) ?? {}));
       if (e.share_pct != null && e.share_pct < 100) sharedRows++;
       rowCount++;
       if (e.entry_type === 'income') {
@@ -173,7 +184,7 @@ export async function computeMtdItCumulative(
   }
 
   if (sharedRows > 0) {
-    warnings.push(`${sharedRows} entr${sharedRows === 1 ? 'y has' : 'ies have'} a co-owner share below 100% — these figures use the full amount (matching the P&L). Confirm the client's declared share before filing.`);
+    warnings.push(`${sharedRows} entr${sharedRows === 1 ? 'y is' : 'ies are'} split with a co-owner — only the client's share is included in these figures. Confirm the declared share before filing.`);
   }
   if (!source.hmrcBusinessId) {
     warnings.push('This source is not yet linked to an HMRC business — map it on the HMRC setup screen before filing.');
@@ -237,6 +248,15 @@ export interface FilingUnit {
 interface FilingTrade { id: string; name: string; hmrcBusinessId: string | null }
 interface FilingProperty { id: string; address: string; propertyType: 'uk' | 'foreign'; country: string | null; hmrcBusinessId: string | null }
 
+/** The result of planning a filing: the units to file, plus anything that must
+ *  be fixed first. `errors` is fatal — the submit route refuses to file while
+ *  it's non-empty. That's stricter than `figures.warnings`, which are advisory
+ *  nudges shown in the preview. */
+export interface FilingPlan {
+  units: FilingUnit[];
+  errors: string[];
+}
+
 export async function computeFilingUnits(
   supabase: SupabaseClient,
   opts: {
@@ -247,16 +267,35 @@ export async function computeFilingUnits(
     trades: FilingTrade[];
     props: FilingProperty[];
   },
-): Promise<FilingUnit[]> {
+): Promise<FilingPlan> {
   const { clientId, taxYear, quarterType, uptoQuarter, trades, props } = opts;
   const base = { clientId, taxYear, quarterType, uptoQuarter };
   const units: FilingUnit[] = [];
+  const errors: string[] = [];
 
   // Self-employment — one unit per trade.
+  let seAllocIncome = 0, seAllocExpense = 0;
   for (const t of trades) {
     const source: BusinessSource = { kind: 'trade', id: t.id, hmrcBusinessId: t.hmrcBusinessId, typeOfBusiness: 'self-employment', name: t.name };
     const figures = await computeMtdItCumulative(supabase, { ...base, source });
+    seAllocIncome += figures.income; seAllocExpense += figures.consolidatedExpenses;
     units.push({ typeOfBusiness: 'self-employment', businessId: t.hmrcBusinessId, name: t.name, figures, sourceIds: [t.id] });
+  }
+
+  // With one trade, computeMtdItCumulative sweeps untagged sole entries into it
+  // (see `onlySource`). With two or more, an untagged entry matches NO trade and
+  // is silently dropped — the P&L still shows it under "Unallocated", so the
+  // review screen and the filing disagree and nothing says so. Reconcile the
+  // whole stream against the sum of the per-trade units and refuse to file on a
+  // gap. This mirrors the check foreign property already does below.
+  if (trades.length > 1) {
+    const probe: BusinessSource = { kind: 'trade', id: trades[0].id, hmrcBusinessId: null, typeOfBusiness: 'self-employment', name: 'All trades' };
+    const whole = await computeMtdItCumulative(supabase, { ...base, source: probe, aggregateStream: true });
+    if (whole.income - seAllocIncome > 0.01 || whole.consolidatedExpenses - seAllocExpense > 0.01) {
+      errors.push(
+        "Some sole-trade entries aren't allocated to a trade. With more than one trade we can't tell which business they belong to, so they'd be left out of the filing entirely — set the Trade on each untagged row in Review & adjust.",
+      );
+    }
   }
 
   // UK property — aggregate every UK rental entry into the single UK business.
@@ -321,5 +360,5 @@ export async function computeFilingUnits(
     });
   }
 
-  return units;
+  return { units, errors };
 }

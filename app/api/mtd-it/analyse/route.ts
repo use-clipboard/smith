@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
   // Fetch property + trade lists so the prompt can offer them as IDs
   const clientId = (q as { client_id: string }).client_id;
   const [{ data: props }, { data: trades }] = await Promise.all([
-    supabase.from('mtd_it_properties').select('id, address, currency, property_type, active').eq('client_id', clientId),
+    supabase.from('mtd_it_properties').select('id, address, currency, property_type, active, ownership_pct').eq('client_id', clientId),
     supabase.from('mtd_it_trades').select('id, name, active').eq('client_id', clientId),
   ]);
   const propsForStream = (props ?? [])
@@ -219,16 +219,25 @@ export async function POST(req: NextRequest) {
   // Normalise + sanitise entries before writing
   const validPropertyIds = new Set(propsForStream.map(p => p.id));
   const validTradeIds    = new Set(tradesForStream.map(t => t.id));
+  // The client's ownership share per property, straight from Setup. An entry
+  // tagged to a property inherits its share, so a 50%-owned flat reports at 50%
+  // without anyone typing it on every row. Untagged rows keep 100% — we don't
+  // know whose share to use, and 100 is the safe (over- not under-declaring)
+  // default. See lib/mtdIt/amounts for where the share is applied.
+  const shareByProperty = new Map((props ?? []).map(p => [p.id as string, Number(p.ownership_pct ?? 100)]));
+
   const rows = rawEntries.map(e => {
     const type: 'income' | 'expense' = e.entry_type === 'income' ? 'income' : 'expense';
     const category = coerceCategory(stream as MtdItStream, type, e.category);
     const grossAmount = typeof e.gross_amount === 'number' ? e.gross_amount : 0;
     const currency = (e.currency ?? (stream === 'foreign_rental' ? 'EUR' : 'GBP')).toUpperCase().slice(0, 3);
+    const propertyId = stream !== 'sole' && e.property_id && validPropertyIds.has(e.property_id) ? e.property_id : null;
     return {
       quarter_id,
       stream,
       trade_id:        stream === 'sole'           && e.trade_id    && validTradeIds.has(e.trade_id)       ? e.trade_id    : null,
-      property_id:     stream !== 'sole'           && e.property_id && validPropertyIds.has(e.property_id) ? e.property_id : null,
+      property_id:     propertyId,
+      share_pct:       propertyId ? (shareByProperty.get(propertyId) ?? 100) : 100,
       source_file_name: file.name,
       page_number:    typeof e.page_number === 'number' ? e.page_number : null,
       entry_date:     typeof e.entry_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.entry_date) ? e.entry_date : null,

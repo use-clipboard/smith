@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { syncReverseShares } from '@/lib/mtdIt/propertyLinks';
 
 // Properties = per-client list of UK or foreign rental properties.
 // Each property carries ownership_pct so a shared-portfolio landlord can pre-
@@ -107,7 +108,7 @@ export async function PATCH(req: NextRequest) {
   const supabase = createClient();
   const { data: existing } = await supabase
     .from('mtd_it_properties')
-    .select('id, clients!inner(firm_id)')
+    .select('id, client_id, address, ownership_pct, clients!inner(firm_id)')
     .eq('id', id)
     .maybeSingle();
   const firm = (existing as unknown as { clients?: { firm_id?: string } } | null)?.clients?.firm_id;
@@ -120,6 +121,18 @@ export async function PATCH(req: NextRequest) {
 
   const { error } = await supabase.from('mtd_it_properties').update(parsed.data).eq('id', id);
   if (error) return NextResponse.json({ error: 'Failed to update property' }, { status: 500 });
+
+  // A co-owner's link records THIS client's share, snapshotted when the link
+  // was made. Changing the ownership here without re-syncing would leave the
+  // co-owner's setup showing the old number indefinitely.
+  if (parsed.data.ownership_pct != null && parsed.data.ownership_pct !== existing.ownership_pct) {
+    await syncReverseShares(createServiceClient(), {
+      id:            existing.id as string,
+      client_id:     existing.client_id as string,
+      address:       (parsed.data.address ?? existing.address) as string,
+      ownership_pct: parsed.data.ownership_pct,
+    });
+  }
   return NextResponse.json({ ok: true });
 }
 

@@ -14,7 +14,9 @@ import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import { fmtMoneyGbp, type PnLForStream, type PnLSection, type PnLBucket } from '@/lib/mtdIt/pnl';
 import { paletteFromHex } from '@/lib/mtdIt/brandColors';
-import type { EditorEntry } from '@/components/features/mtd-it/MtdItStreamColumn';
+import { shareAdjustedGbp } from './amounts';
+import { flagReasonFor, isEntryFlagged } from './flags';
+import type { EditorEntry } from './types';
 import type { MtdItProperty, MtdItTrade } from '@/types';
 
 export interface ExportContext {
@@ -305,7 +307,7 @@ export function exportPnLPdf(streams: PnLForStream[], ctx: ExportContext): void 
   if (inc.transactionDetail && ctx.entries && ctx.entries.length > 0) {
     // Group: stream -> entry_type -> category -> rows
     // Only clean, non-deleted, non-flagged entries.
-    const clean = ctx.entries.filter(e => !e._deleted && !(e.flagged_reason && !e.flag_dismissed));
+    const clean = ctx.entries.filter(e => !e._deleted && !isEntryFlagged(e));
     for (const s of streams) {
       const streamRows = clean.filter(e => e.stream === s.stream);
       if (streamRows.length === 0) continue;
@@ -555,13 +557,11 @@ export function exportPnLPdf(streams: PnLForStream[], ctx: ExportContext): void 
   }
 }
 
-/** GBP value for a single row, mirroring the rule used by buildPnL. */
+/** The client's share of a row, in GBP — mirrors buildPnL.
+ *  No quarter-level fxRates in scope here, so a non-GBP row relies on its own
+ *  fx_rate (or a stored gbp_amount) and is worth 0 without one. */
 function gbpAmount(e: EditorEntry): number {
-  const gross = e.gross_amount || 0;
-  if (e.currency === 'GBP') return gross;
-  if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-  if (e.fx_rate && Number.isFinite(e.fx_rate)) return gross * e.fx_rate;
-  return 0;
+  return shareAdjustedGbp(e, {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -644,13 +644,9 @@ export function exportEntriesXlsx(
   const propById  = new Map(properties.map(p => [p.id, p.address]));
   const tradeById = new Map(trades.map(t => [t.id, t.name]));
 
-  const toGbp = (e: EditorEntry): number => {
-    const gross = e.gross_amount || 0;
-    if (e.currency === 'GBP') return gross;
-    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-    const rate = e.fx_rate ?? fxRates[e.currency];
-    return rate ? gross * rate : 0;
-  };
+  // The GBP column is the client's share, so it foots to the P&L and to what's
+  // filed. The Gross and Share % columns alongside it show how it was derived.
+  const toGbp = (e: EditorEntry): number => shareAdjustedGbp(e, fxRates);
 
   const allocatedTo = (e: EditorEntry): string => {
     if (e.stream === 'sole') return e.trade_id ? (tradeById.get(e.trade_id) ?? '') : '';
@@ -678,7 +674,7 @@ export function exportEntriesXlsx(
   ]);
 
   for (const e of rows) {
-    const flagged = !!e.flagged_reason && !e.flag_dismissed;
+    const flagReason = flagReasonFor(e);
     aoa.push([
       ENTRY_STREAM_LABEL[e.stream] ?? e.stream,
       allocatedTo(e),
@@ -695,8 +691,8 @@ export function exportEntriesXlsx(
       e.fx_rate ?? (e.currency !== 'GBP' ? (fxRates[e.currency] ?? null) : null),
       Math.round(toGbp(e) * 100) / 100,
       e.share_pct ?? 100,
-      flagged ? 'Yes' : '',
-      flagged ? (e.flagged_reason ?? '') : '',
+      flagReason ? 'Yes' : '',
+      flagReason ?? '',
       e.source_file_name ?? '',
       e.page_number ?? null,
     ]);

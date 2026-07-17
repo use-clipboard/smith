@@ -92,11 +92,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // single foreign business (split by country). Aggregation is the whole point —
   // a client with several UK (or foreign) properties files ONE combined return
   // per business, so filing one property at a time would under-declare.
-  const units = await computeFilingUnits(service, {
+  const { units, errors: planErrors } = await computeFilingUnits(service, {
     clientId: client.id as string, taxYear: quarter.tax_year as number, quarterType, uptoQuarter,
     trades: (trades ?? []).map(t => ({ id: t.id as string, name: t.name as string, hmrcBusinessId: (t.hmrc_business_id as string | null) ?? null })),
     props: (props ?? []).map(p => ({ id: p.id as string, address: p.address as string, propertyType: p.property_type as 'uk' | 'foreign', country: (p.country as string | null) ?? null, hmrcBusinessId: (p.hmrc_business_id as string | null) ?? null })),
   });
+
+  // Refuse to file anything that would under-declare. This lives here, before
+  // the HMRC loop, rather than relying on the modal's disabled button: the modal
+  // can be deep-linked open or left stale, and a filing is not reversible.
+  if (planErrors.length > 0) {
+    return NextResponse.json({ error: planErrors[0], errors: planErrors }, { status: 400 });
+  }
 
   // Real HMRC obligation periods (best-effort) so we file against the right one.
   const obligationsByBusiness = await fetchObligationPeriods(conn, nino, fraudHeaders, body.testScenario || undefined, quarter.tax_year as number);

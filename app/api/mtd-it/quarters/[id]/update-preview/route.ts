@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   // Use the SAME filing units as the real submission, so the preview figures are
   // exactly what gets filed (UK/foreign property aggregated into one unit each).
-  const units = await computeFilingUnits(service, {
+  const { units, errors } = await computeFilingUnits(service, {
     clientId: client.id as string, taxYear: quarter.tax_year as number, quarterType, uptoQuarter,
     trades: (trades ?? []).map(t => ({ id: t.id as string, name: t.name as string, hmrcBusinessId: (t.hmrc_business_id as string | null) ?? null })),
     props: (props ?? []).map(p => ({ id: p.id as string, address: p.address as string, propertyType: p.property_type as 'uk' | 'foreign', country: (p.country as string | null) ?? null, hmrcBusinessId: (p.hmrc_business_id as string | null) ?? null })),
@@ -50,5 +50,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({
     quarter: { id: quarter.id, tax_year: quarter.tax_year, quarter: quarter.quarter, status: quarter.status },
     results,
+    // Blocking problems, as opposed to each unit's advisory `warnings`. The
+    // submit route enforces these; the modal surfaces them and disables Submit.
+    errors,
   });
 }

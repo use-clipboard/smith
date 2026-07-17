@@ -27,7 +27,9 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
   const [draftCurrency, setDraftCurrency] = useState('GBP');
   const [draftPct,     setDraftPct]       = useState(100);
 
-  async function refresh() {
+  /** Returns the freshly-loaded list so callers can act on it without reading
+   *  `items` out of a stale closure. */
+  async function refresh(): Promise<MtdItProperty[]> {
     setLoading(true); setError(null);
     try {
       const res = await fetch(`/api/mtd-it/properties?client_id=${clientId}`);
@@ -36,8 +38,10 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
       const list = (data.properties ?? []) as MtdItProperty[];
       setItems(list);
       onChange?.(list);
+      return list;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load properties');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -183,10 +187,11 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
         <MtdItPropertyCoOwnersModal
           property={coOwnersOpen}
           onClose={() => setCoOwnersOpen(null)}
-          onChanged={() => { void refresh().then(() => {
-            // Keep the modal in sync with the latest co-owner list after add/remove.
-            // We re-find the property by id from the freshly-loaded list.
-            setCoOwnersOpen(prev => prev ? (items.find(x => x.id === prev.id) ?? null) : prev);
+          onChanged={() => { void refresh().then(list => {
+            // Keep the modal in sync with the latest co-owner list after an
+            // add/remove/apply-to-all. Re-find from the list refresh() just
+            // returned — reading `items` here would be the pre-refresh array.
+            setCoOwnersOpen(prev => prev ? (list.find(x => x.id === prev.id) ?? null) : prev);
           }); }}
         />
       )}

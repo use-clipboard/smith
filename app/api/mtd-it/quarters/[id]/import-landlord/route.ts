@@ -9,9 +9,13 @@ import type { MtdItQuarterType } from '@/types';
 // quarter's UK-property entries, for the transactions whose date falls in the
 // quarter window. Mirrors import-bookkeeping / co-owner-import. Capital items are
 // excluded; residential finance costs ARE included as an expense (the SA
-// restriction is applied later at finalisation, not quarterly). Full transaction
-// amounts are stored with share_pct = the matched property's ownership (MTD IT's
-// "full amount + warn on partial share" convention).
+// restriction is applied later at finalisation, not quarterly).
+//
+// The saved Landlord analysis stores WHOLE-PROPERTY amounts (its per-person
+// split happens at computation time, not in result_data), so we store the full
+// amount here and carry the matched property's ownership in share_pct. The row
+// therefore still reconciles to its source document, and lib/mtdIt/amounts
+// applies the share wherever a figure is totalled, reported or filed.
 
 type DB = ReturnType<typeof createClient>;
 

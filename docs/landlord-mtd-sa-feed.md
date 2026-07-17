@@ -20,16 +20,29 @@ The key consequence: **Feed A must NOT apply the finance/allowance/loss logic** 
 it posts raw per-owner income + expenses (finance included as an expense, capital
 excluded). Feed B is where `computeRentComputation`'s tax treatment lives.
 
-## The load-bearing insight — per-owner pre-split
+## The load-bearing insight — full amount, share applied at compute
 
-`lib/mtdIt/computeUpdate.ts` sums the **full `gross_amount`** of every entry and
-only *warns* when `share_pct < 100`; it never divides. So MTD IT expects each
-client's entries to already hold **that client's own share**.
+> Superseded 2026-07-17. This previously said MTD IT "never divides", so the feed
+> had to pre-split each amount. That was the *intent* but never the behaviour:
+> `share_pct` was written and then ignored everywhere, so a 50% owner's figures
+> came out at 200%. The rule below is what the code now does.
 
-Therefore the feed must, for a co-owned property, post to **each owner's** MTD IT
-client entries valued at **their share** of each transaction — exactly what
-`computePersonBreakdown` / the property `ownership_pct` + `property_owners` shares
-produce. We are not posting the whole-property figure with a share flag.
+Entries hold the **whole-property `gross_amount`** plus the owner's `share_pct`.
+Every figure — the totals strip, the P&L, the Excel export, the approval PDF, the
+client approval page and the cumulative update filed with HMRC — is valued via
+`shareAdjustedGbp()` in `lib/mtdIt/amounts.ts`, which applies the share once, at
+the point of use.
+
+Keeping the full amount on the row means it still reconciles to the invoice a
+reviewer opens next to it, and the Share % column shows how the reported figure
+was derived. For a co-owned property, post to **each owner's** MTD IT client
+tagged to their matching property row, carrying that property's `ownership_pct`.
+
+Note `mtd_it_properties.ownership_pct` holds the **primary** landlord's share;
+additional co-owners live in `property_owners` (see `utils/landlordAllocation.ts`).
+The feed currently carries only the primary share — a property whose shares don't
+sum to 100 leaves a gap that nobody declares. Landlord surfaces that as
+`unaccountedShare`; MTD IT does not yet.
 
 HMRC models **all UK property as one business** (foreign split by country), so we
 don't file per-property — we post entries tagged to each client's matching

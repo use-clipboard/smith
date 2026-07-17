@@ -10,7 +10,7 @@ import DriveFolderPicker from '@/components/ui/DriveFolderPicker';
 import { buildPnL, fmtMoneyGbp } from '@/lib/mtdIt/pnl';
 import { renderApprovalPdf, blobToBase64 } from '@/lib/mtdIt/approvalPdf';
 import { fetchBrandPdfBundle } from '@/lib/mtdIt/fetchBrandPdfBundle';
-import type { EditorEntry } from './MtdItStreamColumn';
+import type { EditorEntry } from '@/lib/mtdIt/types';
 import type { MtdItStream, MtdItStreams, MtdItProperty, MtdItTrade } from '@/types';
 
 interface Props {

@@ -8,7 +8,7 @@ import { buildPnL, fmtMoneyGbp, type PnLBucket, type PnLForStream, type PnLSecti
 import { exportPnLPdf, exportPnLXlsx, type ExportContext } from '@/lib/mtdIt/pnlExport';
 import { fetchBrandPdfBundle, type BrandPdfBundle } from '@/lib/mtdIt/fetchBrandPdfBundle';
 import { formatDateUk } from '@/lib/mtdIt/dateFormat';
-import type { EditorEntry } from './MtdItStreamColumn';
+import type { EditorEntry } from '@/lib/mtdIt/types';
 import type { MtdItStream, MtdItStreams, MtdItProperty, MtdItTrade } from '@/types';
 
 interface Props {

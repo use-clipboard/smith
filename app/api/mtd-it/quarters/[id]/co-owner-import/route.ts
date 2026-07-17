@@ -21,24 +21,30 @@ import { getUserContext } from '@/lib/getUserContext';
 // ── Shared helpers ────────────────────────────────────────────────────
 function normAddress(a: string): string { return a.replace(/\s+/g, ' ').trim().toLowerCase(); }
 
-interface QuarterInfo { id: string; client_id: string; tax_year: number; quarter: number; firm_id: string; }
+interface QuarterInfo {
+  id: string; client_id: string; tax_year: number; quarter: number; firm_id: string;
+  /** The client's quarter type. Two co-owners on different types don't share a
+   *  date window, so their "Q1" quarters are not interchangeable. */
+  quarter_type: string;
+}
 
 async function loadQuarter(quarterId: string): Promise<QuarterInfo | null> {
   const supabase = createClient();
   const { data } = await supabase
     .from('mtd_it_quarters')
-    .select('id, client_id, tax_year, quarter, clients!inner(firm_id)')
+    .select('id, client_id, tax_year, quarter, clients!inner(firm_id, mtd_it_quarter_type)')
     .eq('id', quarterId)
     .maybeSingle();
   if (!data) return null;
-  const f = (data as unknown as { clients?: { firm_id?: string } }).clients?.firm_id;
-  if (!f) return null;
+  const c = (data as unknown as { clients?: { firm_id?: string; mtd_it_quarter_type?: string | null } }).clients;
+  if (!c?.firm_id) return null;
   return {
-    id:        data.id as string,
-    client_id: data.client_id as string,
-    tax_year:  data.tax_year as number,
-    quarter:   data.quarter as number,
-    firm_id:   f,
+    id:           data.id as string,
+    client_id:    data.client_id as string,
+    tax_year:     data.tax_year as number,
+    quarter:      data.quarter as number,
+    firm_id:      c.firm_id,
+    quarter_type: c.mtd_it_quarter_type ?? 'calendar',
   };
 }
 
@@ -56,6 +62,15 @@ interface ImportableSource {
   existing_count_on_target: number;
 }
 
+/** A co-owner link we couldn't turn into an importable source. These used to be
+ *  silent `continue`s, which meant a firm with a mis-typed address just saw
+ *  nothing offered and no reason why. */
+interface ImportIssue {
+  property_address: string;
+  co_owner_name:    string;
+  reason:           string;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
@@ -71,7 +86,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .select('id, address, property_type, ownership_pct')
     .eq('client_id', q.client_id)
     .in('property_type', ['uk', 'foreign']);
-  if (!myProps || myProps.length === 0) return NextResponse.json({ sources: [] });
+  if (!myProps || myProps.length === 0) return NextResponse.json({ sources: [], issues: [] });
 
   // Their co-owner links.
   const myPropIds = myProps.map(p => p.id as string);
@@ -79,15 +94,38 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .from('mtd_it_property_links')
     .select('property_id, co_owner_client_id')
     .in('property_id', myPropIds);
-  if (!links || links.length === 0) return NextResponse.json({ sources: [] });
+  if (!links || links.length === 0) return NextResponse.json({ sources: [], issues: [] });
 
   // For each link, find the co-owner's matching quarter (same tax_year + quarter)
   // and count clean entries on the matching property (by normalised address).
   const sources: ImportableSource[] = [];
+  const issues: ImportIssue[] = [];
   for (const link of links) {
     const myProp = myProps.find(p => p.id === link.property_id);
     if (!myProp) continue;
     const wantedAddr = normAddress(myProp.address as string);
+    const myAddr = myProp.address as string;
+
+    // Co-owner name up front — every issue below needs it to be intelligible.
+    const { data: coClient } = await service
+      .from('clients')
+      .select('name, mtd_it_quarter_type')
+      .eq('id', link.co_owner_client_id)
+      .maybeSingle();
+    const coName = coClient?.name ?? 'the co-owner';
+
+    // Both clients must be on the same quarter type, or "Q1 2026" means a
+    // different date window for each and we'd copy entries into the wrong
+    // period — silently, and into a real HMRC filing.
+    const coQuarterType = coClient?.mtd_it_quarter_type ?? 'calendar';
+    if (coQuarterType !== q.quarter_type) {
+      issues.push({
+        property_address: myAddr,
+        co_owner_name: coName,
+        reason: `${coName} uses ${coQuarterType} quarters and this client uses ${q.quarter_type}, so the two quarters cover different dates. Entries can't be copied across until the quarter types match.`,
+      });
+      continue;
+    }
 
     // Find the co-owner's quarter row for this tax year + quarter
     const { data: coQuarter } = await service
@@ -97,7 +135,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       .eq('tax_year', q.tax_year)
       .eq('quarter',  q.quarter)
       .maybeSingle();
-    if (!coQuarter) continue;
+    if (!coQuarter) continue; // they simply haven't started this quarter — not a problem worth reporting
 
     // Find the matching co-owner property by address
     const { data: coProps } = await service
@@ -105,7 +143,22 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       .select('id, address')
       .eq('client_id', link.co_owner_client_id);
     const coProp = (coProps ?? []).find(p => normAddress(p.address as string) === wantedAddr);
-    if (!coProp) continue;
+    if (!coProp) {
+      // The link says these two clients share this property, but we match the
+      // property row itself on address — and the two sides are spelled
+      // differently ("122 Grayswood Ave" vs "122 Grayswood Avenue"). We don't
+      // guess: fuzzy-matching two genuinely different addresses into one would
+      // be a wrong filing. Show it and let someone fix the spelling in Setup.
+      const theirs = (coProps ?? []).map(p => p.address as string);
+      issues.push({
+        property_address: myAddr,
+        co_owner_name: coName,
+        reason: theirs.length === 0
+          ? `${coName} has no properties set up, so there's nothing to match "${myAddr}" against.`
+          : `${coName} has no property called "${myAddr}". Their addresses are: ${theirs.map(t => `"${t}"`).join(', ')}. Make the spelling match in Setup on both clients and this will import.`,
+      });
+      continue;
+    }
 
     // Count clean entries on the co-owner's quarter that are tagged to that
     // property. Clean = not deleted (deletes are physical here), not flagged
@@ -118,9 +171,6 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       .or('flagged_reason.is.null,flag_dismissed.eq.true');
 
     if (!cleanCount || cleanCount === 0) continue;
-
-    // Co-owner name (one-off look-up — fine for the typical < 10 sources)
-    const { data: coClient } = await service.from('clients').select('name').eq('id', link.co_owner_client_id).maybeSingle();
 
     // Existing entries on THIS quarter for the target property — so we can
     // show "you already have N entries" in the conflict picker.
@@ -144,7 +194,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     });
   }
 
-  return NextResponse.json({ sources });
+  return NextResponse.json({ sources, issues });
 }
 
 const PostSchema = z.object({
@@ -201,6 +251,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .maybeSingle();
     if (!link) {
       console.warn('co-owner-import: no link between target + source, skipping', it);
+      continue;
+    }
+
+    // Both clients must be on the same quarter type. The GET won't offer a
+    // mismatched pair, but this POST takes ids from the caller — and copying
+    // entries between two quarters that cover different dates would put them in
+    // the wrong period of a real HMRC filing.
+    const { data: sourceClient } = await service
+      .from('clients')
+      .select('mtd_it_quarter_type')
+      .eq('id', sourceProp.client_id)
+      .maybeSingle();
+    if ((sourceClient?.mtd_it_quarter_type ?? 'calendar') !== q.quarter_type) {
+      console.warn('co-owner-import: quarter-type mismatch, skipping', it);
       continue;
     }
 

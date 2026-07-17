@@ -5,12 +5,17 @@
 // • Foreign-rental amounts are converted to GBP using each row's fx_rate,
 //   falling back to the quarter-level fxRates map. Rows without any usable
 //   rate contribute 0 to the GBP total (and surface in `unconverted`).
+// • Amounts are the client's SHARE of each row (share_pct), not the whole
+//   invoice — see lib/mtdIt/amounts.ts. computeUpdate applies the same rule,
+//   so the P&L and the figures filed with HMRC agree.
 // • Breakdown by trade (sole) or property (rental) — rows without a
 //   trade/property go into an "Unallocated" bucket. If every row is
 //   unallocated, the breakdown is suppressed (caller can show just the
 //   stream-level P&L).
 
-import type { EditorEntry } from '@/components/features/mtd-it/MtdItStreamColumn';
+import { round2, shareAdjustedGbp } from './amounts';
+import { isEntryFlagged } from './flags';
+import type { EditorEntry } from './types';
 import type { MtdItStream, MtdItProperty, MtdItTrade } from '@/types';
 
 export interface PnLLine     { category: string; amount: number; }
@@ -48,22 +53,15 @@ const STREAM_LABEL: Record<MtdItStream, string> = {
   foreign_rental: 'Foreign Rental',
 };
 
-/** GBP value for a single row, applying fx_rate (or quarter-level fallback). */
-function gbpAmount(e: EditorEntry, fxRates: Record<string, number>): number {
-  const gross = e.gross_amount || 0;
-  if (e.currency === 'GBP') return gross;
-  if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-  const rate = e.fx_rate ?? fxRates[e.currency];
-  if (!rate || !Number.isFinite(rate)) return 0;
-  return gross * rate;
-}
-
 function emptySection(title: string): PnLSection { return { title, lines: [], total: 0 }; }
 
 function buildSection(title: string, entries: EditorEntry[], fxRates: Record<string, number>): PnLSection {
   const byCategory = new Map<string, number>();
   for (const e of entries) {
-    const v = gbpAmount(e, fxRates);
+    // Round per row, not at the end: a partial share_pct puts a long tail on
+    // every row, and computeUpdate (the filing path) rounds per row too. Summing
+    // raw here would drift the P&L away from the figures actually filed.
+    const v = round2(shareAdjustedGbp(e, fxRates));
     byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + v);
   }
   const lines = Array.from(byCategory.entries())
@@ -94,7 +92,7 @@ export function buildPnL(opts: {
   const { stream, trades, properties, fxRates } = opts;
 
   // Exclude flagged + deleted; the P&L mirrors the editor's "clean" totals.
-  const clean = opts.entries.filter(e => !e._deleted && !(e.flagged_reason && !e.flag_dismissed));
+  const clean = opts.entries.filter(e => !e._deleted && !isEntryFlagged(e));
 
   const income  = buildSection('Income',  clean.filter(r => r.entry_type === 'income'),  fxRates);
   const expense = buildSection('Expense', clean.filter(r => r.entry_type === 'expense'), fxRates);

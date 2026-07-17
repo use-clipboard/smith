@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
+import { isEntryFlagged, reflagStoredRows, type FlaggableEntry } from '@/lib/mtdIt/flags';
+import type { ValuableEntry } from '@/lib/mtdIt/amounts';
+import { getQuarterDates } from '@/lib/mtdIt/quarters';
+import type { MtdItQuarterType } from '@/types';
+
+/** The entry columns this route needs: enough to derive flags and to value the
+ *  row at the client's share. */
+type ComparisonRow = FlaggableEntry & ValuableEntry & {
+  quarter_id: string;
+  entry_type: string;
+};
 
 // GET /api/mtd-it/quarters/comparison?client_id=...&tax_year=2026
 //   Returns per-quarter totals (income, expense, net) for every quarter
@@ -38,7 +50,7 @@ export async function GET(req: NextRequest) {
   // Firm-scope check via the client row
   const { data: client } = await supabase
     .from('clients')
-    .select('id, firm_id')
+    .select('id, firm_id, mtd_it_quarter_type')
     .eq('id', clientId)
     .maybeSingle();
   if (!client || client.firm_id !== ctx.firmId) {
@@ -64,40 +76,43 @@ export async function GET(req: NextRequest) {
   // Pull entries in one go
   const { data: entries, error: eErr } = await supabase
     .from('mtd_it_entries')
-    .select('quarter_id, entry_type, gross_amount, currency, fx_rate, gbp_amount, flagged_reason, flag_dismissed')
+    .select('quarter_id, stream, entry_type, entry_date, supplier, gross_amount, currency, fx_rate, gbp_amount, share_pct, flagged_reason, flag_dismissed')
     .in('quarter_id', quarterIds);
   if (eErr) {
     console.error('GET /api/mtd-it/quarters/comparison entries', eErr);
     return NextResponse.json({ error: 'Failed to load entries' }, { status: 500 });
   }
 
-  // Per-quarter fx-rate fallback map (jsonb {EUR: 0.85, USD: 0.78, ...})
+  // Per-quarter fx-rate fallback map (jsonb {EUR: 0.85, USD: 0.78, ...}) and
+  // date window — out-of-range is judged against each quarter's own window.
   const fxByQuarter = new Map<string, Record<string, number>>();
+  const rangeByQuarter = new Map<string, { from: string; to: string }>();
+  const quarterType = (client.mtd_it_quarter_type ?? 'calendar') as MtdItQuarterType;
   for (const q of quarters) {
     fxByQuarter.set(q.id as string, (q.fx_rates as Record<string, number>) ?? {});
-  }
-
-  // GBP amount mirroring lib/mtdIt/pnl.ts → gbpAmount
-  function gbp(e: { currency: string; gross_amount: number | null; gbp_amount: number | null; fx_rate: number | null }, fx: Record<string, number>): number {
-    const gross = e.gross_amount ?? 0;
-    if (e.currency === 'GBP') return gross;
-    if (typeof e.gbp_amount === 'number') return e.gbp_amount;
-    const rate = e.fx_rate ?? fx[e.currency];
-    if (!rate || !Number.isFinite(rate)) return 0;
-    return gross * rate;
+    rangeByQuarter.set(q.id as string, getQuarterDates(taxYear, q.quarter as 1 | 2 | 3 | 4, quarterType));
   }
 
   // Aggregate
   const totals = new Map<string, { income: number; expense: number }>();
   for (const id of quarterIds) totals.set(id, { income: 0, expense: 0 });
-  for (const e of entries ?? []) {
-    if (e.flagged_reason && !e.flag_dismissed) continue;
-    const t = totals.get(e.quarter_id as string);
+  // Derive flags per quarter, as the review editor does — out-of-range and
+  // duplicate flags aren't stored, and older stored ones are stale.
+  const allRows = (entries ?? []) as unknown as ComparisonRow[];
+  const reflagged: ComparisonRow[] = [];
+  for (const [qid, range] of rangeByQuarter) {
+    const forQuarter = allRows.filter(e => e.quarter_id === qid);
+    if (forQuarter.length > 0) reflagged.push(...reflagStoredRows(forQuarter, range.from, range.to));
+  }
+  for (const e of reflagged) {
+    if (isEntryFlagged(e)) continue;
+    const t = totals.get(e.quarter_id);
     if (!t) continue;
-    const fx = fxByQuarter.get(e.quarter_id as string) ?? {};
-    const val = gbp(e as { currency: string; gross_amount: number | null; gbp_amount: number | null; fx_rate: number | null }, fx);
-    if ((e.entry_type as string) === 'income') t.income += val;
-    else                                       t.expense += val;
+    const fx = fxByQuarter.get(e.quarter_id) ?? {};
+    // Client's share, FX-converted — same rule as the P&L and the filing.
+    const val = round2(shareAdjustedGbp(e, fx));
+    if (e.entry_type === 'income') t.income += val;
+    else                           t.expense += val;
   }
 
   const rows: RowOut[] = quarters

@@ -18,6 +18,39 @@ import { getUserContext } from '@/lib/getUserContext';
 const STREAM = z.enum(['sole', 'uk_rental', 'foreign_rental']);
 const TYPE   = z.enum(['income', 'expense']);
 
+type NewEntry = { property_id?: string | null; share_pct?: number | null };
+
+/**
+ * Default share_pct from the property's ownership set up in Setup.
+ *
+ * Setup is where the firm records who owns what, so that's the source of truth
+ * for the share — nobody should be retyping it per row. Applied at INSERT only,
+ * and only when the caller didn't send one, so a share deliberately typed on a
+ * row is never overwritten later.
+ *
+ * Untagged rows keep 100: we don't know whose share to apply, and 100 errs
+ * towards over- rather than under-declaring.
+ */
+async function withPropertyShares<T extends NewEntry>(
+  supabase: ReturnType<typeof createClient>,
+  rows: T[],
+): Promise<T[]> {
+  const needed = [...new Set(
+    rows.filter(r => r.share_pct == null && r.property_id).map(r => r.property_id as string),
+  )];
+  if (needed.length === 0) return rows;
+  const { data } = await supabase
+    .from('mtd_it_properties')
+    .select('id, ownership_pct')
+    .in('id', needed);
+  const share = new Map((data ?? []).map(p => [p.id as string, Number(p.ownership_pct ?? 100)]));
+  return rows.map(r =>
+    r.share_pct == null && r.property_id
+      ? { ...r, share_pct: share.get(r.property_id) ?? 100 }
+      : r,
+  );
+}
+
 const EntryBase = {
   stream:          STREAM,
   trade_id:        z.string().uuid().nullable().optional(),
@@ -98,9 +131,10 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createClient();
+  const [row] = await withPropertyShares(supabase, [{ ...parsed.data, manual: parsed.data.manual ?? true }]);
   const { data, error } = await supabase
     .from('mtd_it_entries')
-    .insert({ ...parsed.data, manual: parsed.data.manual ?? true })
+    .insert(row)
     .select()
     .single();
   if (error) {
@@ -148,7 +182,7 @@ export async function PUT(req: NextRequest) {
   // Creates
   let createdRows: Array<{ id: string }> = [];
   if (creates.length > 0) {
-    const rows = creates.map(c => ({ ...c, quarter_id, manual: c.manual ?? true }));
+    const rows = await withPropertyShares(supabase, creates.map(c => ({ ...c, quarter_id, manual: c.manual ?? true })));
     const { data, error } = await supabase.from('mtd_it_entries').insert(rows).select('id');
     if (error) {
       console.error('PUT /api/mtd-it/entries createMany', error);
@@ -227,6 +261,10 @@ export async function PUT(req: NextRequest) {
     created: createdRows.length,
     updated: updates.length,
     deleted: deletes.length,
+    // Ids of the rows just created, in the same order as `creates`. The editor
+    // needs these to attach a DB id to each new row — without them it can't
+    // tell "saved" from "new", and a second save would insert duplicates.
+    created_ids: createdRows.map(r => r.id),
   });
 }
 

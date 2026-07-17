@@ -62,6 +62,10 @@ export default function MtdItSubmitModal({
   onSubmitted: () => void;
 }) {
   const [preview, setPreview] = useState<PreviewSource[] | null>(null);
+  // Blocking problems (as opposed to each source's advisory `warnings`) — the
+  // figures would under-declare, so Submit stays disabled. The submit route
+  // enforces this too; this is just the explanation.
+  const [blockers, setBlockers] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [useConsolidated, setUseConsolidated] = useState(false);
   const [testScenario, setTestScenario] = useState('');
@@ -118,6 +122,7 @@ export default function MtdItSubmitModal({
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error ?? 'Could not compute the figures.'); return; }
       setPreview((d.results ?? []) as PreviewSource[]);
+      setBlockers((d.errors ?? []) as string[]);
     } catch { setError('Could not compute the figures.'); }
   }, [quarterId]);
   useEffect(() => { void load(); void loadHistory(); }, [load, loadHistory]);
@@ -254,6 +259,25 @@ export default function MtdItSubmitModal({
           </div>
           )}
 
+          {/* Blocking problems — these would under-declare, so we don't file
+              until they're fixed. Distinct from the amber per-source warnings
+              below, which are "check this looks right" nudges. */}
+          {!done && blockers.length > 0 && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-2.5">
+              <AlertTriangle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-rose-900 mb-1">
+                  {blockers.length === 1 ? 'This has to be fixed before filing' : 'These have to be fixed before filing'}
+                </p>
+                <ul className="space-y-1">
+                  {blockers.map((b, i) => (
+                    <li key={i} className="text-[11px] text-rose-800 leading-relaxed">{b}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Result panel — shown after submitting. */}
           {done && results && (
             <div className="space-y-3">
@@ -350,9 +374,15 @@ export default function MtdItSubmitModal({
             </div>
             <div className="flex items-center gap-2">
               <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
-              <button onClick={() => void submit()} disabled={submitting || submittable.length === 0} className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:opacity-50">
-                {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} Submit {submittable.length ? `(${submittable.length})` : ''}
-              </button>
+              <Tooltip label={blockers.length > 0 ? blockers[0] : 'File these figures with HMRC'}>
+                <button
+                  onClick={() => void submit()}
+                  disabled={submitting || submittable.length === 0 || blockers.length > 0}
+                  className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} Submit {submittable.length ? `(${submittable.length})` : ''}
+                </button>
+              </Tooltip>
             </div>
           </div>
         )}

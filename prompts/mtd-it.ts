@@ -30,7 +30,10 @@ const COMMON_RULES = `
 - Use ISO dates (YYYY-MM-DD) throughout.
 - gross_amount, net_amount, vat_amount are numbers (no currency symbols, no thousands separators).
 - Where you can't determine net or VAT, set them to null. gross_amount must always be filled.
-- If the document seems to fall outside the requested quarter (${'see range below'}), still extract the row but set flagged_reason to "Outside quarter date range".
+- Extract every row you find, including ones dated outside the quarter — do NOT
+  flag them. The app checks dates against the quarter window itself, exactly and
+  deterministically, so a flag here would just duplicate that (and, being stored,
+  would stick around after the reviewer fixed the date).
 - If you see what looks like a duplicate within the same file, set flagged_reason to "Possible duplicate in same document".
 `;
 
