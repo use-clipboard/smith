@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase-server';
 import { OPTIONAL_MODULE_IDS } from '@/config/modules.config';
+import { resolveActiveModules } from '@/lib/modules';
 import { canAccessBookkeeping } from '@/lib/bookkeeping/access';
 import SettingsClient from './SettingsClient';
 
@@ -41,8 +42,11 @@ export default async function SettingsPage() {
       emailSenderName = (firm as Record<string, unknown>)?.email_from_name as string | null ?? null;
       emailSenderAddress = (firm as Record<string, unknown>)?.email_from_address as string | null ?? null;
 
-      const stored = (firm?.active_modules as string[] | null) ?? [];
-      if (stored.length > 0) activeModules = stored;
+      // Union the stored snapshot with the tier's modules — exactly as
+      // getUserContext does. Without this, Settings disagrees with the rest of
+      // the app: a tool added to a tier after the firm last saved its plan is
+      // usable, but its settings tab is invisible.
+      activeModules = resolveActiveModules(firm?.active_modules as string[] | null, subscriptionTier);
     } catch {
       // Pre-migration: active_modules / seat_count columns don't exist yet
       // Fall back to separate query for just name + tier
