@@ -3,6 +3,7 @@
 
 export interface StatementMergeContext {
   client_name?: string | null;
+  client_code?: string | null;      // the client reference, e.g. K278
   statement_date?: string | null;   // dd-mm-yyyy
   amount_due?: string | null;       // pre-formatted, e.g. "£1,572.00"
   period_from?: string | null;      // dd-mm-yyyy ('activity' mode)
@@ -15,6 +16,7 @@ export interface StatementTagDef { tag: string; label: string; example: string }
 
 export const STATEMENT_MERGE_TAGS: StatementTagDef[] = [
   { tag: '{{client_name}}',    label: 'Client name',      example: 'Northgate Joinery Ltd' },
+  { tag: '{{client_code}}',    label: 'Client code',      example: 'K278' },
   { tag: '{{statement_date}}', label: 'Statement date',   example: '31-07-2026' },
   { tag: '{{amount_due}}',     label: 'Balance due',      example: '£1,572.00' },
   { tag: '{{period_from}}',    label: 'Period from',      example: '01-05-2026' },
@@ -26,6 +28,7 @@ export const STATEMENT_MERGE_TAGS: StatementTagDef[] = [
 export function resolveStatementMergeTags(template: string, ctx: StatementMergeContext): string {
   const values: Record<string, string> = {
     '{{client_name}}':    ctx.client_name    ?? '[Client name]',
+    '{{client_code}}':    ctx.client_code    ?? '',
     '{{statement_date}}': ctx.statement_date ?? '[Statement date]',
     '{{amount_due}}':     ctx.amount_due     ?? '[Balance due]',
     '{{period_from}}':    ctx.period_from    ?? '',

@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   const mode = (cfg.statement_mode ?? 'outstanding') as StatementMode;
 
   const [{ data: client }, data] = await Promise.all([
-    supabase.from('clients').select('name, contact_email').eq('id', clientId).eq('firm_id', ctx.firmId).maybeSingle(),
+    supabase.from('clients').select('name, contact_email, client_ref').eq('id', clientId).eq('firm_id', ctx.firmId).maybeSingle(),
     buildStatement(supabase, { firmId: ctx.firmId, clientId, mode, periodMonths: cfg.statement_period_months ?? 3 }),
   ]);
   if (!client || !data) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -61,6 +61,7 @@ export async function GET(req: NextRequest) {
   const openCount = data.lines.filter(l => l.kind === 'invoice' && (l.balancePence ?? 1) > 0).length;
   const mergeCtx: StatementMergeContext = {
     client_name: data.clientName,
+    client_code: (client.client_ref as string | null) ?? '',
     statement_date: ukDate(data.statementDate),
     amount_due: fmtPence(data.closingPence),
     period_from: ukDate(data.periodFrom),

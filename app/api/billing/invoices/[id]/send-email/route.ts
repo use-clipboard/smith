@@ -30,9 +30,11 @@ async function build(supabase: ReturnType<typeof createClient>, ctx: Ctx, invoic
   if (!inv) return null;
 
   let clientEmail: string | null = null;
+  let clientCode = '';
   if (inv.client_id) {
-    const { data: c } = await supabase.from('clients').select('contact_email').eq('id', inv.client_id).maybeSingle();
+    const { data: c } = await supabase.from('clients').select('contact_email, client_ref').eq('id', inv.client_id).maybeSingle();
     clientEmail = c?.contact_email || null;
+    clientCode = (c?.client_ref as string | null) ?? '';
   }
 
   // Sender: the firm mailbox chosen for billing.
@@ -49,6 +51,7 @@ async function build(supabase: ReturnType<typeof createClient>, ctx: Ctx, invoic
   const firmName = (settings?.business_name as string) || firm?.name || 'Our practice';
   const mergeCtx: InvoiceMergeContext = {
     client_name: inv.client_name,
+    client_code: clientCode,
     invoice_number: inv.number ?? 'DRAFT',
     invoice_total: fmtPence(inv.total_pence),
     amount_due: fmtPence(balancePence(inv.total_pence, inv.amount_paid_pence, inv.credit_pence ?? 0)),

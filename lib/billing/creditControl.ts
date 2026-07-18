@@ -56,6 +56,7 @@ export const DEFAULT_STAGES: StageSeed[] = [
 
 export const CHASER_TAGS: { tag: string; label: string }[] = [
   { tag: '{{client_name}}', label: 'Client name' },
+  { tag: '{{client_code}}', label: 'Client code' },
   { tag: '{{invoice_number}}', label: 'Invoice number' },
   { tag: '{{amount_due}}', label: 'Amount outstanding' },
   { tag: '{{due_date}}', label: 'Due date' },
@@ -65,6 +66,7 @@ export const CHASER_TAGS: { tag: string; label: string }[] = [
 
 export interface ChaserContext {
   client_name: string;
+  client_code: string;
   invoice_number: string;
   amount_due: string;
   due_date: string;
@@ -134,10 +136,12 @@ export async function chaseInvoiceOnce(
 
   let clientEmail: string | null = null;
   let clientName = inv.client_name ?? 'there';
+  let clientCode = '';
   if (inv.client_id) {
-    const { data: client } = await supabase.from('clients').select('name, contact_email').eq('id', inv.client_id).maybeSingle();
+    const { data: client } = await supabase.from('clients').select('name, contact_email, client_ref').eq('id', inv.client_id).maybeSingle();
     clientEmail = client?.contact_email ?? null;
     clientName = client?.name ?? clientName;
+    clientCode = (client?.client_ref as string | null) ?? '';
   }
   if (!clientEmail) return { ok: false, error: 'This client has no contact email on file' };
 
@@ -156,6 +160,7 @@ export async function chaseInvoiceOnce(
 
   const ctx: ChaserContext = {
     client_name: clientName,
+    client_code: clientCode,
     invoice_number: inv.number ?? 'your invoice',
     amount_due: fmtPence(bal),
     due_date: ukDate(inv.due_date),
@@ -244,10 +249,12 @@ export async function runCreditControlChase(
       // Client email.
       let clientEmail: string | null = null;
       let clientName = inv.client_name ?? 'there';
+      let clientCode = '';
       if (inv.client_id) {
-        const { data: client } = await supabase.from('clients').select('name, contact_email').eq('id', inv.client_id).maybeSingle();
+        const { data: client } = await supabase.from('clients').select('name, contact_email, client_ref').eq('id', inv.client_id).maybeSingle();
         clientEmail = client?.contact_email ?? null;
         clientName = client?.name ?? clientName;
+        clientCode = (client?.client_ref as string | null) ?? '';
       }
       if (!clientEmail) continue; // nothing to send to
 
@@ -270,6 +277,7 @@ export async function runCreditControlChase(
 
       const ctx: ChaserContext = {
         client_name: clientName,
+        client_code: clientCode,
         invoice_number: inv.number ?? 'your invoice',
         amount_due: fmtPence(bal),
         due_date: ukDate(inv.due_date),

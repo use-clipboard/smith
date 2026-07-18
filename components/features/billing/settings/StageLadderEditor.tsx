@@ -6,8 +6,9 @@ import { GlassCard, SectionHeader } from '@/components/features/timesheets/share
 import type { CreditControlStage, ChaserTone } from '@/lib/billing/types';
 
 // Local copy (can't import the server chaser lib into a client component).
+// Keep in sync with CHASER_TAGS in lib/billing/creditControl.ts.
 const MERGE_TAGS = [
-  '{{client_name}}', '{{invoice_number}}', '{{amount_due}}',
+  '{{client_name}}', '{{client_code}}', '{{invoice_number}}', '{{amount_due}}',
   '{{due_date}}', '{{days_overdue}}', '{{firm_name}}',
 ];
 const TONES: { id: ChaserTone; label: string }[] = [

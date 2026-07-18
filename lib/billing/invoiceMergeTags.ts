@@ -4,6 +4,7 @@
 
 export interface InvoiceMergeContext {
   client_name?: string | null;
+  client_code?: string | null;   // the client reference, e.g. K278
   invoice_number?: string | null;
   invoice_total?: string | null;   // pre-formatted, e.g. "£1,200.00"
   amount_due?: string | null;      // pre-formatted
@@ -17,6 +18,7 @@ export interface MergeTagDef { tag: string; label: string; example: string }
 
 export const INVOICE_MERGE_TAGS: MergeTagDef[] = [
   { tag: '{{client_name}}',    label: 'Client name',    example: 'Acme Ltd' },
+  { tag: '{{client_code}}',    label: 'Client code',    example: 'K278' },
   { tag: '{{invoice_number}}', label: 'Invoice number', example: 'INV-0001' },
   { tag: '{{invoice_total}}',  label: 'Invoice total',  example: '£1,200.00' },
   { tag: '{{amount_due}}',     label: 'Amount due',     example: '£1,200.00' },
@@ -30,6 +32,7 @@ export const INVOICE_MERGE_TAGS: MergeTagDef[] = [
 export function resolveInvoiceMergeTags(template: string, ctx: InvoiceMergeContext): string {
   const values: Record<string, string> = {
     '{{client_name}}':    ctx.client_name    ?? '[Client name]',
+    '{{client_code}}':    ctx.client_code    ?? '',
     '{{invoice_number}}': ctx.invoice_number ?? '[Invoice number]',
     '{{invoice_total}}':  ctx.invoice_total  ?? '[Invoice total]',
     '{{amount_due}}':     ctx.amount_due     ?? '[Amount due]',

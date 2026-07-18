@@ -79,7 +79,7 @@ export async function sendStatementToClient(
   const mode = (args.cfg.statement_mode ?? 'outstanding') as StatementMode;
 
   const { data: client } = await supabase
-    .from('clients').select('name, contact_email').eq('id', args.clientId).eq('firm_id', args.firmId).maybeSingle();
+    .from('clients').select('name, contact_email, client_ref').eq('id', args.clientId).eq('firm_id', args.firmId).maybeSingle();
   if (!client) return { ok: false, error: 'Client not found' };
   const to = (client.contact_email as string | null) || null;
   if (!to) return { ok: false, error: 'This client has no contact email on file' };
@@ -106,6 +106,7 @@ export async function sendStatementToClient(
   const openCount = data.lines.filter(l => l.kind === 'invoice' && (l.balancePence ?? 1) > 0).length;
   const ctx: StatementMergeContext = {
     client_name: data.clientName,
+    client_code: (client.client_ref as string | null) ?? '',
     statement_date: ukDate(data.statementDate),
     amount_due: fmtPence(data.closingPence),
     period_from: ukDate(data.periodFrom),

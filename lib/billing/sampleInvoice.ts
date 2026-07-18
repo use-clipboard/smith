@@ -64,6 +64,7 @@ export function sampleMergeContext(opts: SampleOpts & { firmName?: string; porta
   const inv = buildSampleInvoice(opts);
   return {
     client_name: inv.clientName,
+    client_code: 'K278',
     invoice_number: inv.number,
     invoice_total: fmtPence(inv.totalPence),
     amount_due: fmtPence(inv.balancePence),
