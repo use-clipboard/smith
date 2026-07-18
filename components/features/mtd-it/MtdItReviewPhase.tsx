@@ -606,10 +606,10 @@ export default function MtdItReviewPhase({
       // explicit keeps the payload readable.)
       const creates = snapshot
         .filter(e => e._isNew && !e._deleted)
-        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, id, ...rest }) => rest);
+        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, _fxAutoKey, id, ...rest }) => rest);
       const updates = snapshot
         .filter(e => !e._isNew && !e._deleted && e._dirty && e.id)
-        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, ...rest }) => rest);
+        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, _fxAutoKey, ...rest }) => rest);
       const deletes = snapshot
         .filter(e => e._deleted && !!e.id)
         .map(e => e.id!);

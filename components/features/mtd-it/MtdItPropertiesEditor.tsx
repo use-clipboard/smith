@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle, Users } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import { currencyOptionsIncluding } from '@/lib/mtdIt/currencyCodes';
 import MtdItPropertyCoOwnersModal from './MtdItPropertyCoOwnersModal';
 import type { MtdItProperty } from '@/types';
 
@@ -133,12 +134,18 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
                 onBlur={e => { if ((e.target.value || null) !== p.country) void patchProperty(p.id, { country: e.target.value || null }); }}
                 className="w-24 px-1.5 py-0.5 text-xs bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
               />
-              <input
-                defaultValue={p.currency}
-                maxLength={3}
-                onBlur={e => { const v = e.target.value.toUpperCase().slice(0, 3); if (v && v !== p.currency) void patchProperty(p.id, { currency: v }); }}
-                className="w-14 px-1.5 py-0.5 text-xs font-mono bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
-              />
+              <Tooltip label="Currency — used to pull the right HMRC exchange rate">
+                <select
+                  value={p.currency}
+                  onChange={e => { if (e.target.value !== p.currency) void patchProperty(p.id, { currency: e.target.value }); }}
+                  aria-label="Currency"
+                  className="w-20 px-1.5 py-0.5 text-xs font-mono bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+                >
+                  {currencyOptionsIncluding(p.currency).map(c => (
+                    <option key={c.code} value={c.code}>{c.code}</option>
+                  ))}
+                </select>
+              </Tooltip>
             </>
           )}
           <Tooltip label="Ownership %">
@@ -215,13 +222,16 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
                 placeholder="Country"
                 className="w-24 px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
               />
-              <input
-                value={draftCurrency}
-                onChange={e => setDraftCurrency(e.target.value.toUpperCase().slice(0, 3))}
-                placeholder="CCY"
-                maxLength={3}
-                className="w-14 px-1.5 py-0.5 text-xs font-mono bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-              />
+              <select
+                value={draftCurrency === 'GBP' ? 'EUR' : draftCurrency}
+                onChange={e => setDraftCurrency(e.target.value)}
+                aria-label="Currency"
+                className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+              >
+                {currencyOptionsIncluding(draftCurrency === 'GBP' ? 'EUR' : draftCurrency)
+                  .filter(c => c.code !== 'GBP')
+                  .map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
             </>
           )}
           <input

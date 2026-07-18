@@ -27,7 +27,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import {
   Plus, Trash2, Flag, FlagOff, ChevronDown, ChevronRight,
-  Briefcase, House, Globe2, Layers, Eye, ExternalLink,
+  Briefcase, House, Globe2, Layers, Eye, ExternalLink, RefreshCw,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import DateInput, { fromIso, parseUkDateStrict } from '@/components/features/bookkeeping/input/DateInput';
@@ -37,8 +37,38 @@ import {
 } from '@/lib/mtdIt/categories';
 import { grossGbp, round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
 import { flagReasonFor, isEntryFlagged } from '@/lib/mtdIt/flags';
+import { currencyOptionsIncluding } from '@/lib/mtdIt/currencyCodes';
 import type { EditorEntry } from '@/lib/mtdIt/types';
 import type { MtdItStream, MtdItProperty, MtdItTrade } from '@/types';
+
+// ── HMRC FX rate fetch (client) ──────────────────────────────────────────
+// The month's rate is the same for every entry in that month, so cache per
+// CURRENCY|YYYY-MM across the whole editor session — a quarter of foreign rows
+// then costs at most three HMRC lookups. `null` = HMRC has no rate for that
+// pair; we still cache it so we don't re-ask on every keystroke.
+const fxCache = new Map<string, Promise<number | null>>();
+
+function fxKey(currency: string, isoDate: string): string {
+  return `${currency.toUpperCase()}|${isoDate.slice(0, 7)}`;
+}
+
+function fetchFxRate(currency: string, isoDate: string): Promise<number | null> {
+  const key = fxKey(currency, isoDate);
+  const hit = fxCache.get(key);
+  if (hit) return hit;
+  const p = fetch(`/api/mtd-it/fx-rate?currency=${encodeURIComponent(currency)}&date=${encodeURIComponent(isoDate)}`)
+    .then(r => r.ok ? r.json() : { rate: null })
+    .then(d => (typeof d.rate === 'number' ? round2Fx(d.rate) : null))
+    .catch(() => null);
+  fxCache.set(key, p);
+  return p;
+}
+
+/** FX rates carry more precision than money — keep 6dp so a small rate like
+ *  0.0079 isn't flattened to 0.01. */
+function round2Fx(n: number): number {
+  return Math.round(n * 1e6) / 1e6;
+}
 
 export type { EditorEntry };
 
@@ -501,6 +531,38 @@ function EntryRow(props: {
   // share, since it explains the FX rate sitting next to it, not the split.
   const gbpEquiv = showFx && e.currency !== 'GBP' ? grossGbp(e, fxRates) || null : null;
 
+  // Auto-fill the HMRC monthly rate once the currency and a real date are both
+  // in. Fills when the field is blank, and refreshes when the currency/month
+  // changes IF the current value was itself auto-filled (_fxAutoKey matches the
+  // old key). A hand-typed rate clears _fxAutoKey, so it's never overwritten.
+  const canAutoFx = showFx && !readOnly && e.currency !== 'GBP' && !!e.entry_date;
+  const fxTargetKey = canAutoFx ? fxKey(e.currency, e.entry_date!) : null;
+  useEffect(() => {
+    if (!fxTargetKey || !e.entry_date) return;
+    const blank = e.fx_rate == null;
+    const staleAuto = e._fxAutoKey != null && e._fxAutoKey !== fxTargetKey;
+    if (!blank && !staleAuto) return; // a hand-typed value, or already correct
+    let cancelled = false;
+    fetchFxRate(e.currency, e.entry_date).then(rate => {
+      if (cancelled || rate == null) return;
+      onPatch({ fx_rate: rate, _fxAutoKey: fxTargetKey });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fxTargetKey, e.fx_rate]);
+
+  /** Manual edit of the rate — drops the auto marker so we stop refreshing it. */
+  function onFxRateChange(raw: string) {
+    onPatch({ fx_rate: raw === '' ? null : Number(raw), _fxAutoKey: null });
+  }
+  /** Re-pull the official HMRC rate, overriding a manual value on request. */
+  function refetchFx() {
+    if (!e.entry_date || e.currency === 'GBP') return;
+    fetchFxRate(e.currency, e.entry_date).then(rate => {
+      if (rate != null) onPatch({ fx_rate: rate, _fxAutoKey: fxKey(e.currency, e.entry_date!) });
+    });
+  }
+
   const rowTone = flagReason
     ? 'bg-amber-50/50 border-l-2 border-l-amber-400'
     : e._isNew ? 'bg-purple-50/30' : '';
@@ -647,31 +709,51 @@ function EntryRow(props: {
 
         {showFx && (
           <Td>
-            <input
-              type="text"
+            {/* Currency is a dropdown so the code always matches HMRC's, which is
+                what the auto rate lookup keys on. Changing it re-pulls the rate
+                (unless one was typed by hand). */}
+            <select
               value={e.currency}
-              maxLength={3}
-              onChange={ev => onPatch({ currency: ev.target.value.toUpperCase().slice(0, 3) })}
+              onChange={ev => onPatch({ currency: ev.target.value })}
               disabled={readOnly}
               aria-label="Currency"
-              className={`${CELL} font-mono uppercase`}
-            />
+              className={`${CELL} font-mono`}
+            >
+              {currencyOptionsIncluding(e.currency).map(c => (
+                <option key={c.code} value={c.code}>{c.code}</option>
+              ))}
+            </select>
           </Td>
         )}
 
         {showFx && (
           <Td>
-            <Tooltip label={gbpEquiv !== null ? `≈ ${fmtMoney(gbpEquiv, 'GBP')} at this rate` : '1 unit → GBP'}>
-              <input
-                type="number" step="0.0001"
-                value={e.fx_rate ?? ''}
-                onChange={ev => onPatch({ fx_rate: ev.target.value === '' ? null : Number(ev.target.value) })}
-                disabled={readOnly}
-                placeholder={fxRates[e.currency] ? String(fxRates[e.currency]) : '—'}
-                aria-label="FX rate (1 unit to GBP)"
-                className={CELL_NUM}
-              />
-            </Tooltip>
+            <div className="flex items-center">
+              <Tooltip label={
+                e._fxAutoKey
+                  ? `HMRC rate for ${e.currency} (${e._fxAutoKey.slice(4)})${gbpEquiv !== null ? ` · ≈ ${fmtMoney(gbpEquiv, 'GBP')}` : ''}. Type to override.`
+                  : gbpEquiv !== null ? `≈ ${fmtMoney(gbpEquiv, 'GBP')} at this rate` : '1 unit → GBP'
+              }>
+                <input
+                  type="number" step="0.0001"
+                  value={e.fx_rate ?? ''}
+                  onChange={ev => onFxRateChange(ev.target.value)}
+                  disabled={readOnly}
+                  placeholder={fxRates[e.currency] ? String(fxRates[e.currency]) : '—'}
+                  aria-label="FX rate (1 unit to GBP)"
+                  className={`${CELL_NUM} ${e._fxAutoKey ? 'text-emerald-700' : ''}`}
+                />
+              </Tooltip>
+              {!readOnly && e.currency !== 'GBP' && e.entry_date && (
+                <Tooltip label="Pull the official HMRC monthly rate for this currency and date">
+                  <button
+                    onClick={refetchFx}
+                    aria-label="Use HMRC rate"
+                    className="p-0.5 rounded text-gray-300 hover:text-emerald-600 hover:bg-emerald-50 shrink-0"
+                  ><RefreshCw size={11} /></button>
+                </Tooltip>
+              )}
+            </div>
           </Td>
         )}
 

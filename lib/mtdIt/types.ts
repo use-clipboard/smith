@@ -16,6 +16,10 @@ import type { MtdItStream } from '@/types';
 //                 format. entry_date only gets written once that text parses to
 //                 a real day, so a half-typed year can't re-sort or re-flag the
 //                 row mid-keystroke.
+//   - _fxAutoKey: the "CURRENCY|YYYY-MM" the current fx_rate was auto-filled
+//                 for. Lets the editor tell an auto-filled rate (safe to refresh
+//                 when the currency/date changes) from one the user typed (must
+//                 be left alone). null/absent = manual or not applicable.
 // Everything prefixed with _ is editor-only and never persisted (the entries
 // API validates with a Zod object, which strips unknown keys).
 export interface EditorEntry {
@@ -25,6 +29,7 @@ export interface EditorEntry {
   _deleted?: boolean;
   _autoFlag?: string | null;
   _dateText?: string;
+  _fxAutoKey?: string | null;
   flag_dismissed?: boolean;
 
   id?: string;
