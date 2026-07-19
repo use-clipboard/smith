@@ -398,11 +398,14 @@ export function buildRawMessage(opts: {
   htmlBody: string;
   replyToMessageId?: string;
   threadId?: string;
+  /** Optional Reply-To address (replies go here instead of the From address). */
+  replyTo?: string;
   attachments?: Array<{ filename: string; mimeType: string; data: Buffer }>;
   /** 'high' adds Outlook/Gmail high-importance headers. */
   importance?: 'high' | 'normal';
 }): string {
   const fromLine = encodeAddressLine(opts.from);
+  const replyToLine = opts.replyTo ? `Reply-To: ${encodeAddressLine(opts.replyTo)}\r\n` : '';
   // Omit the To header entirely when there are no recipients (e.g. a draft
   // saved before a recipient is chosen) — an empty `To:` header is invalid.
   const toLine   = opts.to.length   ? `To: ${opts.to.map(encodeAddressLine).join(', ')}\r\n`   : '';
@@ -428,6 +431,7 @@ export function buildRawMessage(opts: {
       toLine +
       ccLine +
       bccLine +
+      replyToLine +
       `Subject: ${subjectEncoded}\r\n` +
       refLine +
       priorityLines +
@@ -466,6 +470,7 @@ export function buildRawMessage(opts: {
     toLine +
     ccLine +
     bccLine +
+    replyToLine +
     `Subject: ${subjectEncoded}\r\n` +
     refLine +
     priorityLines +

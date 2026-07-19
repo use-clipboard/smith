@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Search, Bell, MessageSquare, X, FileSearch, ArrowLeftRight, Building2, House,
   ClipboardCheck, Gauge, Receipt, ShieldAlert, FileText, Users, CalendarDays, MicVocal, UserPlus,
-  Maximize2, Clock,
+  Maximize2, Clock, Megaphone,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import Tooltip from './Tooltip';
@@ -51,6 +51,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/summarise':       'Summarise Documents',
   '/ch-secretarial':  'CH Secretarial',
   '/email':           'Email Triage',
+  '/campaigns':       'Campaigns',
   '/vault':           'Document Vault',
   '/calendar':        'Calendar',
   '/meeting-notes':   'Meeting Notes',
@@ -83,6 +84,7 @@ const TOOLS = [
   { label: 'Risk Assessment',      href: '/risk-assessment', icon: ShieldAlert },
   { label: 'Summarise',            href: '/summarise',       icon: FileText },
   { label: 'CH Secretarial',       href: '/ch-secretarial',  icon: Building2 },
+  { label: 'Campaigns',            href: '/campaigns',       icon: Megaphone },
   { label: 'Calendar',             href: '/calendar',        icon: CalendarDays },
   { label: 'Meeting Notes',        href: '/meeting-notes',   icon: MicVocal },
   { label: 'Staff Hire',           href: '/staff-hire',      icon: UserPlus },

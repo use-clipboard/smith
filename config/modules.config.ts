@@ -334,6 +334,19 @@ export const MODULES: ModuleConfig[] = [
     group: 'client_engagement',
   },
 
+  {
+    id: 'campaigns',
+    name: 'Campaigns',
+    description: 'Intelligent client communications — newsletters, tax reminders, deadline campaigns and mail merges. Build live audiences from your own client, task, compliance and billing data, write with AI, send from your Gmail, and track opens, clicks and replies.',
+    iconName: 'Megaphone',
+    route: '/campaigns',
+    alwaysOn: false,
+    enhancedBy: ['email-triage', 'tasks', 'billing', 'ch-secretarial', 'mtd-it'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'client_engagement',
+  },
+
   // ─── Integrations ─────────────────────────────────────────────────────────
   {
     id: 'google-drive',
@@ -389,7 +402,7 @@ const COMPLIANCE_MODULE_IDS = [
 /** Tools that Practice adds on top of Compliance. */
 const PRACTICE_ONLY_MODULE_IDS = [
   'tasks', 'timesheets', 'document-vault', 'policies', 'meeting-notes', 'staff-hire',
-  'hr', 'proposals', 'billing', 'email-triage', 'google-calendar',
+  'hr', 'proposals', 'billing', 'email-triage', 'campaigns', 'google-calendar',
 ];
 
 /** Module IDs included in each customer tier. */

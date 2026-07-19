@@ -43,6 +43,18 @@
     {
       "path": "/api/cron/email-attachments-cleanup",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/campaigns-send",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/campaigns-automations",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/campaigns-replies",
+      "schedule": "10 * * * *"
     }
   ]
 }
