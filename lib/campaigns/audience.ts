@@ -411,11 +411,56 @@ async function resolveSpreadsheet(
   return recipients;
 }
 
+/**
+ * Communication-frequency guard: hold back anyone this firm has already emailed
+ * within `days`. Marks them 'too_recent' in place (no-op when days <= 0).
+ *
+ * Deliberately counts *any* campaign email, including automation and journey
+ * sends, since the point is how much mail the client is receiving overall.
+ */
+export async function applyFrequencyGuard(
+  supabase: SupabaseClient,
+  firmId: string,
+  recipients: ResolvedRecipient[],
+  days: number,
+): Promise<void> {
+  if (!days || days <= 0) return;
+  const candidates = recipients.filter(r => !r.excludedReason && r.email);
+  if (candidates.length === 0) return;
+
+  const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  const recent = new Set<string>();
+  try {
+    // Page through recent sends for the firm rather than filtering by a long
+    // email IN() list — simpler and avoids URL limits on big audiences.
+    const PAGE = 1000;
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from('campaign_recipients')
+        .select('email')
+        .eq('firm_id', firmId)
+        .gte('sent_at', since)
+        .range(offset, offset + PAGE - 1);
+      if (error || !data) break;
+      for (const row of data) {
+        const e = ((row.email as string) ?? '').trim().toLowerCase();
+        if (e) recent.add(e);
+      }
+      if (data.length < PAGE) break;
+    }
+  } catch { return; }   // can't tell → don't block the send
+
+  for (const r of candidates) {
+    if (recent.has(r.email.trim().toLowerCase())) r.excludedReason = 'too_recent';
+  }
+}
+
 /** Summarise a resolved list into the preview shape (count + sample). */
 export function summarise(recipients: ResolvedRecipient[], sampleSize = 8): AudiencePreview {
   const noEmail = recipients.filter(r => r.excludedReason === 'no_email').length;
   const unsubscribed = recipients.filter(r => r.excludedReason === 'unsubscribed').length;
   const duplicates = recipients.filter(r => r.excludedReason === 'duplicate').length;
+  const tooRecent = recipients.filter(r => r.excludedReason === 'too_recent').length;
   const sendable = recipients.filter(r => !r.excludedReason).length;
   return {
     total: recipients.length,
@@ -423,6 +468,7 @@ export function summarise(recipients: ResolvedRecipient[], sampleSize = 8): Audi
     noEmail,
     unsubscribed,
     duplicates,
+    tooRecent,
     sample: recipients.slice(0, sampleSize),
   };
 }

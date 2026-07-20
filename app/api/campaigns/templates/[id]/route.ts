@@ -20,6 +20,8 @@ const PatchSchema = z.object({
   subject: z.string().max(300).optional(),
   preview_text: z.string().max(300).optional(),
   body_html: z.string().optional(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  design: z.record(z.string(), z.any()).nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

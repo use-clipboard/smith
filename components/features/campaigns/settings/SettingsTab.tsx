@@ -136,7 +136,7 @@ export default function SettingsTab() {
         <div>
           <label className="text-xs font-semibold text-[var(--text-secondary)]">Frequency guard (days)</label>
           <input type="number" min={0} value={settings.frequency_guard_days} onChange={e => set('frequency_guard_days', Number(e.target.value) || 0)} className={`mt-1 ${inputCls} w-32`} />
-          <p className="text-[11px] text-[var(--text-muted)] mt-1">0 = off. Warn when a client was emailed within this many days. <span className="italic">Enforcement arrives in a later phase.</span></p>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1">0 = off. Clients emailed by any campaign within this many days are held back from the send — you’ll see them counted as “emailed too recently” in the audience preview.</p>
         </div>
 
       </section>

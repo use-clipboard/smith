@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
-import { runCampaignSend } from '@/lib/campaigns/runSend';
+import { runCampaignSend, continueCampaignSend } from '@/lib/campaigns/runSend';
 
 // ─── /api/cron/campaigns-send ──────────────────────────────────────────────
 // Sends campaigns whose scheduled time has arrived. Each scheduled campaign is
@@ -52,6 +52,32 @@ export async function GET(request: Request) {
     } catch (err) {
       console.error('[campaigns-send]', campaign.id, err);
       results.push({ id: campaign.id, error: 'Unexpected error' });
+    }
+  }
+
+  // ── Resume part-sent campaigns whose next daily batch is due ────────────────
+  const { data: batching } = await service
+    .from('campaigns')
+    .select('*')
+    .eq('status', 'sending')
+    .lte('next_batch_at', nowIso)
+    .limit(10);
+
+  for (const campaign of (batching ?? [])) {
+    try {
+      if (!campaign.created_by) continue;
+      const { data: conn } = await service
+        .from('email_connections').select('refresh_token, google_email').eq('user_id', campaign.created_by).maybeSingle();
+      if (!conn?.refresh_token) continue;
+      const res = await continueCampaignSend({
+        service, read: service, firmId: campaign.firm_id, campaign,
+        senderEmail: conn.google_email, senderRefreshToken: conn.refresh_token,
+      });
+      results.push(res.ok
+        ? { id: campaign.id, sent: res.sent, failed: res.failed }
+        : { id: campaign.id, error: res.error });
+    } catch (err) {
+      console.error('[campaigns-send] batch resume', campaign.id, err);
     }
   }
 

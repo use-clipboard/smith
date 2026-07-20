@@ -50,6 +50,7 @@ export default function AudiencePreview({ source, definition, memberClientIds }:
         {data && data.noEmail > 0 && <span className="inline-flex items-center gap-1 mr-2 text-amber-600"><AlertTriangle size={11} />{data.noEmail} no email</span>}
         {data && data.unsubscribed > 0 && <span className="mr-2">{data.unsubscribed} unsubscribed</span>}
         {data && data.duplicates > 0 && <span className="mr-2">{data.duplicates} duplicate address{data.duplicates === 1 ? '' : 'es'}</span>}
+        {data && data.tooRecent > 0 && <span className="mr-2">{data.tooRecent} emailed too recently</span>}
       </div>
 
       {data && data.sample.length > 0 && (

@@ -7,7 +7,13 @@ import type { CampaignTemplate } from '@/types/campaigns';
 import { STARTER_TEMPLATES } from '@/lib/campaigns/starterTemplates';
 import TemplateEditorModal from './TemplateEditorModal';
 
-export interface UsableTemplate { name: string; subject: string; preview_text: string; body_html: string }
+import type { NewsletterDesign } from '@/types/campaigns';
+
+export interface UsableTemplate {
+  name: string; subject: string; preview_text: string; body_html: string;
+  /** Present when the template was built in the newsletter designer. */
+  design?: NewsletterDesign | null;
+}
 
 interface EditorState {
   template?: CampaignTemplate | null;
@@ -90,7 +96,7 @@ export default function TemplatesTab({ onUseInCampaign }: { onUseInCampaign: (t:
             {saved.map(t => (
               <TemplateCard
                 key={t.id} name={t.name} category={t.category} description={t.description} bodyHtml={t.body_html}
-                onUse={() => onUseInCampaign({ name: t.name, subject: t.subject, preview_text: t.preview_text, body_html: t.body_html })}
+                onUse={() => onUseInCampaign({ name: t.name, subject: t.subject, preview_text: t.preview_text, body_html: t.body_html, design: t.design ?? null })}
                 actions={
                   <>
                     <button onClick={() => setEditor({ template: t })} className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label="Edit"><Pencil size={14} /></button>

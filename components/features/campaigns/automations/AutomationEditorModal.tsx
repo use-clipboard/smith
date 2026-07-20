@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { X, Sparkles, Loader2, Workflow, Mail, Clock, Target, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
-import type { CampaignAutomation, CampaignAudience, CampaignTemplate, AutomationTriggerType, AutomationMode, JourneyStep, JourneyGoal } from '@/types/campaigns';
+import type { CampaignAutomation, CampaignAudience, CampaignTemplate, AutomationTriggerType, AutomationMode, JourneyStep, JourneyGoal, JourneyBranchAction } from '@/types/campaigns';
 import { TRIGGERS, TRIGGER_BY_TYPE } from '@/lib/campaigns/triggerMeta';
 import { STARTER_TEMPLATES } from '@/lib/campaigns/starterTemplates';
 
@@ -17,6 +17,21 @@ const GOAL_LABELS: Record<JourneyGoal, string> = {
 };
 
 function stepId(): string { try { return crypto.randomUUID(); } catch { return `s_${Math.random().toString(36).slice(2)}`; } }
+
+/** Branch actions are edited as a single string so one <select> covers
+ *  finish / continue / jump-to-step-N. */
+function branchToValue(b: JourneyBranchAction | undefined, fallback: 'finish' | 'continue'): string {
+  if (!b) return fallback;
+  return b.action === 'jump' ? `jump:${b.toStepId}` : b.action;
+}
+function valueToBranch(v: string): JourneyBranchAction {
+  if (v.startsWith('jump:')) return { action: 'jump', toStepId: v.slice(5) };
+  return { action: v === 'finish' ? 'finish' : 'continue' };
+}
+function stepShortLabel(s: JourneyStep, i: number): string {
+  const kind = s.type === 'email' ? 'Email' : s.type === 'wait' ? 'Wait' : 'Check';
+  return `Step ${i + 1} — ${kind}`;
+}
 
 interface Props {
   automation?: CampaignAutomation | null;
@@ -287,12 +302,35 @@ export default function AutomationEditorModal({ automation, audiences, onClose, 
                       </div>
                     )}
                     {s.type === 'check' && (
-                      <div className="text-sm text-[var(--text-secondary)]">
-                        If the client has
-                        <select value={s.goal} onChange={e => updateStep(s.id, { goal: e.target.value as JourneyGoal })} className={`${inputCls} my-1`}>
-                          {(Object.keys(GOAL_LABELS) as JourneyGoal[]).map(g => <option key={g} value={g}>{GOAL_LABELS[g]}</option>)}
-                        </select>
-                        the journey finishes here. Otherwise it continues.
+                      <div className="space-y-2 text-sm text-[var(--text-secondary)]">
+                        <div>
+                          Check whether the client has
+                          <select value={s.goal} onChange={e => updateStep(s.id, { goal: e.target.value as JourneyGoal })} className={`${inputCls} mt-1`}>
+                            {(Object.keys(GOAL_LABELS) as JourneyGoal[]).map(g => <option key={g} value={g}>{GOAL_LABELS[g]}</option>)}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[11px] font-semibold text-[var(--text-secondary)]">If they have</label>
+                            <select value={branchToValue(s.onMet, 'finish')} onChange={e => updateStep(s.id, { onMet: valueToBranch(e.target.value) })} className={`mt-1 ${inputCls}`}>
+                              <option value="finish">Finish the journey</option>
+                              <option value="continue">Continue to next step</option>
+                              {steps.filter(o => o.id !== s.id).map(o => (
+                                <option key={o.id} value={`jump:${o.id}`}>Jump to {stepShortLabel(o, steps.indexOf(o))}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-[var(--text-secondary)]">If they haven’t</label>
+                            <select value={branchToValue(s.onNotMet, 'continue')} onChange={e => updateStep(s.id, { onNotMet: valueToBranch(e.target.value) })} className={`mt-1 ${inputCls}`}>
+                              <option value="continue">Continue to next step</option>
+                              <option value="finish">Finish the journey</option>
+                              {steps.filter(o => o.id !== s.id).map(o => (
+                                <option key={o.id} value={`jump:${o.id}`}>Jump to {stepShortLabel(o, steps.indexOf(o))}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

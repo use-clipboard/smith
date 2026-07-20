@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
-import { resolveAudience, summarise } from '@/lib/campaigns/audience';
+import { resolveAudience, summarise, applyFrequencyGuard } from '@/lib/campaigns/audience';
+import { getCampaignFirmSettings } from '@/lib/campaigns/settings';
 
 export const maxDuration = 60;
 
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
       definition: parsed.data.definition as any,
       member_client_ids: parsed.data.member_client_ids,
     });
+    // Reflect the firm's frequency guard so the preview count matches what a
+    // send would actually do.
+    const settings = await getCampaignFirmSettings(supabase, ctx.firmId);
+    await applyFrequencyGuard(supabase, ctx.firmId, recipients, settings.frequency_guard_days);
     return NextResponse.json(summarise(recipients));
   } catch (err) {
     console.error('[campaigns/preview]', err);

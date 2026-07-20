@@ -155,10 +155,17 @@ export interface AutomationTriggerConfig {
 
 export type JourneyGoal = 'opened' | 'clicked' | 'uploaded_document' | 'paid_invoice' | 'completed_task';
 
+/** What a check step does on each outcome. Omitted = the original behaviour
+ *  (met → finish the journey, not met → carry on to the next step). */
+export type JourneyBranchAction =
+  | { action: 'finish' }
+  | { action: 'continue' }
+  | { action: 'jump'; toStepId: string };
+
 export type JourneyStep =
   | { id: string; type: 'email'; subject: string; preview_text: string; body_html: string }
   | { id: string; type: 'wait'; days: number }
-  | { id: string; type: 'check'; goal: JourneyGoal };
+  | { id: string; type: 'check'; goal: JourneyGoal; onMet?: JourneyBranchAction; onNotMet?: JourneyBranchAction };
 
 export type AutomationMode = 'single' | 'journey';
 
@@ -191,6 +198,7 @@ export interface CampaignAutomation {
 export type DesignBlock =
   | { id: string; type: 'heading'; text: string }
   | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'columns'; left: string; right: string }
   | { id: string; type: 'image'; src: string; alt: string; href: string }
   | { id: string; type: 'button'; label: string; href: string }
   | { id: string; type: 'divider' }
@@ -256,6 +264,8 @@ export interface CampaignTemplate {
   preview_text: string;
   body_html: string;
   body_font: string | null;
+  /** Newsletter-designer layout, when the template was built with the designer. */
+  design: NewsletterDesign | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -270,7 +280,7 @@ export interface ResolvedRecipient {
   business_type: string | null;
   merge_data: Record<string, string>;
   /** Why this recipient is not sendable, if so (no email, unsubscribed…). */
-  excludedReason?: 'no_email' | 'unsubscribed' | 'duplicate';
+  excludedReason?: 'no_email' | 'unsubscribed' | 'duplicate' | 'too_recent';
 }
 
 export interface AudiencePreview {
@@ -279,5 +289,7 @@ export interface AudiencePreview {
   noEmail: number;
   unsubscribed: number;
   duplicates: number;
+  /** Held back by the firm's communication-frequency guard. */
+  tooRecent: number;
   sample: ResolvedRecipient[];
 }

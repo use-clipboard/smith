@@ -22,6 +22,9 @@ const CreateSchema = z.object({
   subject: z.string().max(300).optional().default(''),
   preview_text: z.string().max(300).optional().default(''),
   body_html: z.string().optional().default(''),
+  // Newsletter-designer layout, when the template came from the designer.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  design: z.record(z.string(), z.any()).nullable().optional(),
 });
 
 // POST /api/campaigns/templates — save a template.
@@ -41,6 +44,7 @@ export async function POST(req: NextRequest) {
     subject: parsed.data.subject,
     preview_text: parsed.data.preview_text,
     body_html: parsed.data.body_html,
+    design: parsed.data.design ?? null,
     created_by: ctx.userId,
   }).select('*').single();
 

@@ -1,12 +1,14 @@
 'use client';
 
-import { Heading1, Type, Image as ImageIcon, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Heading1, Type, Columns2, Image as ImageIcon, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import type { DesignBlock, NewsletterDesign } from '@/types/campaigns';
 import { blockId, DEFAULT_BRAND_COLOR } from '@/lib/campaigns/newsletter';
 
 const BLOCK_META: Record<DesignBlock['type'], { label: string; Icon: typeof Type }> = {
   heading: { label: 'Heading', Icon: Heading1 },
   text:    { label: 'Text',    Icon: Type },
+  columns: { label: 'Columns', Icon: Columns2 },
   image:   { label: 'Image',   Icon: ImageIcon },
   button:  { label: 'Button',  Icon: MousePointerClick },
   divider: { label: 'Divider', Icon: Minus },
@@ -17,6 +19,7 @@ function newBlock(type: DesignBlock['type']): DesignBlock {
   switch (type) {
     case 'heading': return { id: blockId(), type, text: 'Your headline' };
     case 'text':    return { id: blockId(), type, text: 'Write your message here.' };
+    case 'columns': return { id: blockId(), type, left: 'Left column.', right: 'Right column.' };
     case 'image':   return { id: blockId(), type, src: '', alt: '', href: '' };
     case 'button':  return { id: blockId(), type, label: 'Read more', href: '' };
     case 'spacer':  return { id: blockId(), type, height: 16 };
@@ -25,6 +28,8 @@ function newBlock(type: DesignBlock['type']): DesignBlock {
 }
 
 export default function NewsletterDesigner({ design, onChange }: { design: NewsletterDesign; onChange: (d: NewsletterDesign) => void }) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
   const inputCls = 'w-full text-[13px] rounded-lg border border-[var(--border)] px-2.5 py-1.5 focus:outline-none focus:border-[var(--accent)]';
 
   function setBlocks(blocks: DesignBlock[]) { onChange({ ...design, blocks }); }
@@ -39,6 +44,16 @@ export default function NewsletterDesigner({ design, onChange }: { design: Newsl
     if (i < 0 || j < 0 || j >= design.blocks.length) return;
     const next = [...design.blocks];
     [next[i], next[j]] = [next[j], next[i]];
+    setBlocks(next);
+  }
+  /** Drag reorder. The ↑↓ buttons stay for keyboard/assistive use. */
+  function drop(to: number) {
+    const from = dragIndex;
+    setDragIndex(null); setOverIndex(null);
+    if (from === null || from === to) return;
+    const next = [...design.blocks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
     setBlocks(next);
   }
 
@@ -69,8 +84,22 @@ export default function NewsletterDesigner({ design, onChange }: { design: Newsl
       {design.blocks.map((b, i) => {
         const { label, Icon } = BLOCK_META[b.type] ?? BLOCK_META.text;
         return (
-          <div key={b.id} className="rounded-xl border border-[var(--border)] p-3">
+          <div
+            key={b.id}
+            onDragOver={e => { e.preventDefault(); if (overIndex !== i) setOverIndex(i); }}
+            onDrop={e => { e.preventDefault(); drop(i); }}
+            className={`rounded-xl border p-3 transition-colors ${overIndex === i && dragIndex !== null && dragIndex !== i ? 'border-[var(--accent)] bg-[var(--accent-light)]/20' : 'border-[var(--border)]'} ${dragIndex === i ? 'opacity-50' : ''}`}
+          >
             <div className="flex items-center gap-2 mb-2">
+              <span
+                draggable
+                onDragStart={() => setDragIndex(i)}
+                onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
+                className="cursor-grab active:cursor-grabbing text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                aria-label="Drag to reorder"
+              >
+                <GripVertical size={14} />
+              </span>
               <Icon size={13} style={{ color: 'var(--accent)' }} />
               <span className="text-[13px] font-semibold text-[var(--text-primary)]">{label}</span>
               <div className="ml-auto flex items-center gap-0.5">
@@ -87,6 +116,13 @@ export default function NewsletterDesigner({ design, onChange }: { design: Newsl
             {b.type === 'text' && (
               <textarea value={b.text} onChange={e => update(b.id, { text: e.target.value })} rows={4} className={`${inputCls} resize-y`}
                 placeholder={'Your message. Blank line = new paragraph.\n**bold** and [link](https://example.com) work.'} />
+            )}
+
+            {b.type === 'columns' && (
+              <div className="grid grid-cols-2 gap-2">
+                <textarea value={b.left} onChange={e => update(b.id, { left: e.target.value })} rows={4} className={`${inputCls} resize-y`} placeholder="Left column" />
+                <textarea value={b.right} onChange={e => update(b.id, { right: e.target.value })} rows={4} className={`${inputCls} resize-y`} placeholder="Right column" />
+              </div>
             )}
 
             {b.type === 'image' && (

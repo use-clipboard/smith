@@ -70,7 +70,8 @@ export default function CampaignsModule({ userEmail }: { userEmail: string | nul
 
   // Jump straight into a new campaign, optionally pre-filled. The wizard reads
   // these from a one-shot prefill store on window.
-  function startCampaign(prefill: { audienceId?: string; name?: string; subject?: string; preview_text?: string; body_html?: string }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function startCampaign(prefill: { audienceId?: string; name?: string; subject?: string; preview_text?: string; body_html?: string; design?: any }) {
     setEditing('new');
     (window as unknown as { __campaignPrefill?: unknown }).__campaignPrefill = prefill;
   }
@@ -134,7 +135,7 @@ export default function CampaignsModule({ userEmail }: { userEmail: string | nul
       {tab === 'templates' && (
         <TemplatesTab
           key={refreshKey}
-          onUseInCampaign={(t) => startCampaign({ name: t.name, subject: t.subject, preview_text: t.preview_text, body_html: t.body_html })}
+          onUseInCampaign={(t) => startCampaign({ name: t.name, subject: t.subject, preview_text: t.preview_text, body_html: t.body_html, design: t.design ?? null })}
         />
       )}
       {tab === 'settings' && <SettingsTab key={refreshKey} />}

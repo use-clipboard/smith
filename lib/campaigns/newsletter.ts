@@ -82,6 +82,18 @@ function renderBlock(block: DesignBlock, brand: string): string {
       return `<tr><td style="padding:4px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#3a3a3c;">${html}</td></tr>`;
     }
 
+    case 'columns': {
+      // Two 50% cells in a table — the only column layout that survives Outlook.
+      // On narrow screens they simply stay side by side (email clients ignore
+      // media queries inconsistently, so we don't pretend to stack).
+      const cell = (t: string) =>
+        `<td width="50%" valign="top" style="width:50%;padding:0 8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#3a3a3c;">`
+        + (t ?? '').split(/\n{2,}/).filter(p => p.trim() !== '')
+          .map(p => `<p style="margin:0 0 10px;">${inlineFormat(p, brand).replace(/\n/g, '<br>')}</p>`).join('')
+        + `</td>`;
+      return `<tr><td style="padding:4px 16px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>${cell(block.left)}${cell(block.right)}</tr></table></td></tr>`;
+    }
+
     case 'image': {
       const src = safeUrl(block.src);
       if (!src) return '';

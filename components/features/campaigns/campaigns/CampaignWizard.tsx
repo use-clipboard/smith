@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ArrowLeft, ArrowRight, Check, Users, PenLine, Sparkles, Eye, Send,
-  CalendarClock, Loader2, X, CheckCircle2, AlertTriangle, ShieldAlert,
+  CalendarClock, Loader2, X, CheckCircle2, AlertTriangle, ShieldAlert, LayoutTemplate,
 } from 'lucide-react';
 
 const ACTION_TEXT: Record<string, string> = {
@@ -58,7 +58,7 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
         if (live && metaRes.ok) setMeta(await metaRes.json());
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const prefill = (window as any).__campaignPrefill as { audienceId?: string; name?: string; subject?: string; preview_text?: string; body_html?: string } | undefined;
+        const prefill = (window as any).__campaignPrefill as { audienceId?: string; name?: string; subject?: string; preview_text?: string; body_html?: string; design?: NewsletterDesign | null } | undefined;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).__campaignPrefill = undefined;
 
@@ -82,7 +82,8 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
         if (live && c) {
           setCampaign(c);
           setForm({ name: c.name, subject: c.subject, preview_text: c.preview_text, body_html: c.body_html, audience_id: c.audience_id });
-          setDesign(designFromSettings(c.settings));
+          // A template built in the designer carries its blocks across.
+          setDesign(prefill?.design ?? designFromSettings(c.settings));
           if (c.status === 'sent') setStep(6);
         }
       } finally { if (live) setLoading(false); }
@@ -305,6 +306,22 @@ function StepContent({ form, set, subjectRef, bodyRef, lastFocused, design, onDe
   const [tone, setTone] = useState('professional');
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [tplMsg, setTplMsg] = useState<string | null>(null);
+
+  // Save the current content (blocks included) as a reusable firm template.
+  async function saveAsTemplate() {
+    const name = (form.name || form.subject || 'Untitled template').slice(0, 200);
+    setTplMsg(null);
+    const r = await fetch('/api/campaigns/templates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name, category: design ? 'Newsletter' : 'General',
+        subject: form.subject, preview_text: form.preview_text, body_html: form.body_html,
+        design: design ?? null,
+      }),
+    });
+    setTplMsg(r.ok ? `Saved “${name}” to Templates.` : 'Could not save the template.');
+  }
 
   async function generate() {
     if (!aiPrompt.trim()) return;
@@ -402,6 +419,13 @@ function StepContent({ form, set, subjectRef, bodyRef, lastFocused, design, onDe
               className="mt-1 w-full text-[13px] font-mono rounded-lg border border-[var(--border)] px-3 py-2 focus:outline-none focus:border-[var(--accent)] resize-y"
             />
           )}
+
+          <div className="flex items-center gap-2 mt-2">
+            <button onClick={saveAsTemplate} disabled={!form.body_html.trim()} className="btn-secondary text-xs">
+              <LayoutTemplate size={13} /> Save as template
+            </button>
+            {tplMsg && <span className="text-xs text-[var(--text-secondary)]">{tplMsg}</span>}
+          </div>
         </div>
       </div>
 
@@ -729,25 +753,35 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
 // ── Step 6: Results ─────────────────────────────────────────────────────────────
 function StepResults({ campaign, onClose }: { campaign: Campaign; onClose: (opts?: { sent?: boolean }) => void }) {
   const [stats, setStats] = useState<Record<string, number> | null>((campaign.stats as Record<string, number>) ?? null);
+  const [status, setStatus] = useState<string>(campaign.status);
   useEffect(() => {
     let live = true;
     (async () => {
       const r = await fetch(`/api/campaigns/${campaign.id}`);
-      if (r.ok && live) setStats(((await r.json()).campaign?.stats) ?? null);
+      if (r.ok && live) {
+        const c = (await r.json()).campaign;
+        setStats(c?.stats ?? null);
+        if (c?.status) setStatus(c.status);
+      }
     })();
     return () => { live = false; };
   }, [campaign.id]);
 
-  const scheduled = campaign.status === 'scheduled';
+  const scheduled = status === 'scheduled';
+  const batching = status === 'sending' && (stats?.pending ?? 0) > 0;
 
   return (
     <div className="max-w-lg mx-auto text-center py-8">
       <div className="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center mx-auto mb-4">
         {scheduled ? <CalendarClock size={26} className="text-green-600" /> : <CheckCircle2 size={26} className="text-green-600" />}
       </div>
-      <h3 className="text-lg font-semibold text-[var(--text-primary)]">{scheduled ? 'Campaign scheduled' : 'Campaign sent'}</h3>
+      <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+        {scheduled ? 'Campaign scheduled' : batching ? 'Sending in batches' : 'Campaign sent'}
+      </h3>
       <p className="text-sm text-[var(--text-secondary)] mt-1 mb-5">
-        {scheduled ? 'SMITH will send it automatically at the scheduled time.' : 'Opens and clicks will appear here and in Reports as they come in.'}
+        {scheduled ? 'SMITH will send it automatically at the scheduled time.'
+          : batching ? `This audience is larger than one day's Gmail allowance, so it goes out in daily batches — ${stats?.pending ?? 0} still to send. SMITH continues automatically.`
+          : 'Opens and clicks will appear here and in Reports as they come in.'}
       </p>
       {!scheduled && stats && (
         <div className="grid grid-cols-3 gap-3 mb-6">

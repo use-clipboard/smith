@@ -173,10 +173,21 @@ async function executeEnrollment(ctx: RunCtx, enr: Enrollment) {
   let lastRecipientId: string | null = enr.last_recipient_id ?? null;
   let lastSentAt: string | null = enr.last_sent_at ?? null;
 
-  // Bounded loop (a journey can't have more transitions than steps + slack).
-  for (let guard = 0; guard <= steps.length + 1; guard++) {
+  // Steps already run in THIS pass. Branching can jump backwards, so without
+  // this a loop with no wait in it would fire emails in a tight cycle. Revisiting
+  // a step within one pass defers the enrollment to tomorrow instead — a legit
+  // "chase until done" loop always has a wait in it, which ends the pass anyway.
+  const visited = new Set<number>();
+
+  for (let guard = 0; guard <= steps.length * 2 + 2; guard++) {
     const step = steps[stepIndex];
     if (!step) { status = 'completed'; break; }
+
+    if (visited.has(stepIndex)) {
+      nextActionAt = new Date(ctx.now.getTime() + 86_400_000);
+      break;
+    }
+    visited.add(stepIndex);
 
     if (step.type === 'email') {
       // Respect an unsubscribe that happened mid-journey.
@@ -196,9 +207,17 @@ async function executeEnrollment(ctx: RunCtx, enr: Enrollment) {
       break; // schedule and resume later
     }
 
-    // check
+    // check — branch on the outcome
     const met = await checkGoal(ctx.service, step.goal, { lastRecipientId, lastSentAt, clientId: enr.client_id ?? null });
-    if (met) { status = 'completed'; break; }
+    const branch = met ? (step.onMet ?? { action: 'finish' as const }) : (step.onNotMet ?? { action: 'continue' as const });
+
+    if (branch.action === 'finish') { status = 'completed'; break; }
+    if (branch.action === 'jump') {
+      const target = steps.findIndex(s => s.id === branch.toStepId);
+      // A deleted target shouldn't strand the journey — fall through instead.
+      stepIndex = target >= 0 ? target : stepIndex + 1;
+      continue;
+    }
     stepIndex++;
   }
 
