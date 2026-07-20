@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   Send, CheckCircle2, Eye, MousePointerClick, TrendingDown, UserMinus,
   CalendarClock, Clock, Sparkles, ArrowRight, Megaphone, Reply,
+  Target, FileUp, ClipboardCheck, PoundSterling,
 } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
 
@@ -12,8 +13,12 @@ interface Kpis {
   bounceRate: number; unsubscribes: number; scheduled: number; awaitingApproval: number; activeAutomations: number;
 }
 interface Suggestion { key: string; title: string; detail: string; count: number; action: string }
+interface Outcomes {
+  windowDays: number; clientsEmailed: number; anyOutcome: number;
+  documentsUploaded: number; tasksCompleted: number; invoicesPaid: number;
+}
 interface CampaignRow { id: string; name: string; subject: string; status: string; sent_at: string | null; scheduled_at: string | null; stats: Record<string, number> }
-interface OverviewData { kpis: Kpis; suggestions: Suggestion[]; recent: CampaignRow[]; upcoming: CampaignRow[]; totalCampaigns: number }
+interface OverviewData { kpis: Kpis; suggestions: Suggestion[]; outcomes: Outcomes; recent: CampaignRow[]; upcoming: CampaignRow[]; totalCampaigns: number }
 
 function ukDateTime(d?: string | null): string {
   if (!d) return '—';
@@ -124,6 +129,39 @@ export default function CampaignsOverview({
           </div>
         </div>
       </div>
+
+      {/* Outcomes roll-up — the bit a newsletter tool can't tell you */}
+      {data.outcomes && data.outcomes.clientsEmailed > 0 && (
+        <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent-light)]/30 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Target size={16} style={{ color: 'var(--accent)' }} />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">What clients did after your campaigns</h3>
+            <span className="text-xs text-[var(--text-secondary)]">last {data.outcomes.windowDays} days</span>
+          </div>
+          <div className="text-sm text-[var(--text-primary)] mb-4">
+            <span className="text-2xl font-semibold">{data.outcomes.anyOutcome}</span>
+            <span className="text-[var(--text-secondary)]"> of {data.outcomes.clientsEmailed} clients you emailed took an action.</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {([
+              [FileUp, data.outcomes.documentsUploaded, 'uploaded documents / records'],
+              [ClipboardCheck, data.outcomes.tasksCompleted, 'had a task completed'],
+              [PoundSterling, data.outcomes.invoicesPaid, 'paid an invoice'],
+            ] as const).map(([Icon, val, label], i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center shrink-0"><Icon size={18} className="text-[var(--accent)]" /></div>
+                <div>
+                  <div className="text-2xl font-semibold text-[var(--text-primary)] leading-none">{val}</div>
+                  <div className="text-xs text-[var(--text-secondary)] mt-1">{label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] mt-4">
+            Practice activity over the same period — shown for context, not as proof the emails caused it.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Recent campaigns */}

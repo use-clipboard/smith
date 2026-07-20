@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
+import { computeCampaignOutcomes } from '@/lib/campaigns/outcomes';
 import type { CHCompanyData } from '@/types/ch';
+
+const OUTCOME_WINDOW_DAYS = 30;
 
 export const maxDuration = 30;
 
@@ -33,7 +36,7 @@ export async function GET() {
       .select('id, name, subject, status, audience_id, scheduled_at, sent_at, stats, settings, created_at')
       .eq('firm_id', ctx.firmId).order('created_at', { ascending: false }),
     supabase.from('campaign_recipients')
-      .select('status, sent_at, opened_at, first_clicked_at, bounced_at, unsubscribed_at, replied_at')
+      .select('client_id, status, sent_at, opened_at, first_clicked_at, bounced_at, unsubscribed_at, replied_at')
       .eq('firm_id', ctx.firmId),
   ]);
 
@@ -109,9 +112,22 @@ export async function GET() {
     if (overdueClients.size > 0) suggestions.push({ key: 'overdue_invoices', title: `${overdueClients.size} clients have an overdue invoice`, detail: 'A friendly payment reminder can speed things up.', count: overdueClients.size, action: 'Payment reminder' });
   } catch { /* no billing module */ }
 
+  // ── Outcomes roll-up: what clients emailed recently went on to do ───────────
+  // Approximate but honest: everyone emailed in the window, matched against
+  // practice activity over the same window.
+  const windowStart = new Date(Date.now() - OUTCOME_WINDOW_DAYS * 86_400_000);
+  const recentlyEmailed = rcpts.filter(r => r.sent_at && new Date(r.sent_at as string) >= windowStart);
+  const emailedClientIds = Array.from(new Set(
+    recentlyEmailed.map(r => r.client_id as string | null).filter((v): v is string => !!v),
+  ));
+  const outcomes = {
+    ...(await computeCampaignOutcomes(supabase, emailedClientIds, windowStart.toISOString(), OUTCOME_WINDOW_DAYS)),
+    clientsEmailed: emailedClientIds.length,
+  };
+
   const recent = (campaigns ?? []).filter(c => c.sent_at).slice(0, 6);
   const upcoming = (campaigns ?? []).filter(c => c.status === 'scheduled')
     .sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at))).slice(0, 6);
 
-  return NextResponse.json({ kpis, suggestions, recent, upcoming, totalCampaigns: (campaigns ?? []).length });
+  return NextResponse.json({ kpis, suggestions, outcomes, recent, upcoming, totalCampaigns: (campaigns ?? []).length });
 }
