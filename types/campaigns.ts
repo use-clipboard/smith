@@ -210,6 +210,23 @@ export interface CampaignFirmSettings {
   unsubscribe_footer: string;
   default_dedupe: 'per_email' | 'per_client';
   frequency_guard_days: number;
+  /** Campaigns must be approved before sending. */
+  require_approval: boolean;
+  /** Only require approval at/above this recipient count (0 = always). */
+  approval_min_recipients: number;
+  /** When false only an admin may approve; when true the author may self-approve. */
+  allow_self_approve: boolean;
+}
+
+export type ApprovalAction = 'submitted' | 'approved' | 'changes_requested' | 'withdrawn' | 'sent';
+
+export interface CampaignApproval {
+  id: string;
+  campaign_id: string;
+  user_id: string | null;
+  action: ApprovalAction;
+  comment: string;
+  created_at: string;
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────

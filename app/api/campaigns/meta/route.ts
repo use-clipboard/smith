@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
+import { getCampaignFirmSettings } from '@/lib/campaigns/settings';
 
 // GET /api/campaigns/meta — dynamic options for the builder + wizard:
 // the firm's team members (for the "account manager" filter) and the current
@@ -21,6 +22,8 @@ export async function GET() {
     name: (u.full_name as string) || (u.email as string) || 'Unnamed',
   }));
 
+  const settings = await getCampaignFirmSettings(supabase, ctx.firmId);
+
   return NextResponse.json({
     team,
     gmail: {
@@ -28,5 +31,11 @@ export async function GET() {
       email: connection?.google_email ?? null,
     },
     emailTriageActive: ctx.activeModules.includes('email-triage'),
+    userRole: ctx.userRole,
+    approval: {
+      required: settings.require_approval,
+      minRecipients: settings.approval_min_recipients,
+      allowSelfApprove: settings.allow_self_approve,
+    },
   });
 }

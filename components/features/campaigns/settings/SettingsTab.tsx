@@ -49,6 +49,9 @@ export default function SettingsTab() {
           unsubscribe_footer: settings.unsubscribe_footer,
           default_dedupe: settings.default_dedupe,
           frequency_guard_days: settings.frequency_guard_days,
+          require_approval: settings.require_approval,
+          approval_min_recipients: settings.approval_min_recipients,
+          allow_self_approve: settings.allow_self_approve,
         }),
       });
       if (r.ok) { setSettings((await r.json()).settings); setSaved(true); }
@@ -132,11 +135,48 @@ export default function SettingsTab() {
           <p className="text-[11px] text-[var(--text-muted)] mt-1">0 = off. Warn when a client was emailed within this many days. <span className="italic">Enforcement arrives in a later phase.</span></p>
         </div>
 
-        <div className="flex items-center gap-3 pt-1">
-          <button onClick={save} disabled={saving} className="btn-primary">{saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Save settings</button>
-          {saved && <span className="text-xs text-green-600 flex items-center gap-1"><Check size={12} /> Saved</span>}
-        </div>
       </section>
+
+      {/* Approvals */}
+      <section className="glass-solid rounded-2xl border border-[var(--border)] p-5 space-y-4">
+        <div className="flex items-center gap-2"><ShieldCheck size={16} style={{ color: 'var(--accent)' }} /><h3 className="text-sm font-semibold text-[var(--text-primary)]">Approvals</h3></div>
+
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input type="checkbox" checked={settings.require_approval} onChange={e => set('require_approval', e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+          <span>
+            <span className="text-sm text-[var(--text-primary)] font-medium">Campaigns must be approved before they send</span>
+            <span className="block text-xs text-[var(--text-secondary)]">Authors submit for review; an approver signs off before anything goes out.</span>
+          </span>
+        </label>
+
+        {settings.require_approval && (
+          <div className="pl-6 space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-[var(--text-secondary)]">Only require approval from this many recipients</label>
+              <input type="number" min={0} value={settings.approval_min_recipients} onChange={e => set('approval_min_recipients', Number(e.target.value) || 0)} className={`mt-1 ${inputCls} w-32`} />
+              <p className="text-[11px] text-[var(--text-muted)] mt-1">0 = always require approval. Set e.g. 50 to let small, targeted sends go without review.</p>
+            </div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={settings.allow_self_approve} onChange={e => set('allow_self_approve', e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
+              <span>
+                <span className="text-sm text-[var(--text-primary)] font-medium">Let authors approve their own campaigns</span>
+                <span className="block text-xs text-[var(--text-secondary)]">Off (recommended): only an admin can approve.</span>
+              </span>
+            </label>
+          </div>
+        )}
+
+        <p className="text-[11px] text-[var(--text-muted)]">
+          Every submission, approval, change request and send is recorded on the campaign’s audit trail. Editing an
+          approved campaign’s content or audience clears its approval, so it has to be reviewed again.
+        </p>
+      </section>
+
+      {/* Save (covers sending, defaults and approvals) */}
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={saving} className="btn-primary">{saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Save settings</button>
+        {saved && <span className="text-xs text-green-600 flex items-center gap-1"><Check size={12} /> Saved</span>}
+      </div>
 
       {/* Suppression list */}
       <section className="glass-solid rounded-2xl border border-[var(--border)] p-5">

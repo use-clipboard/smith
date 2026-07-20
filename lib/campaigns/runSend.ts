@@ -144,6 +144,16 @@ export async function runCampaignSend(p: RunSendParams): Promise<SendResult> {
   const fs = await getCampaignFirmSettings(read, firmId);
   const { sendable, skipped } = splitResolved(resolved, settings.dedupe ?? fs.default_dedupe);
 
+  // Governance: block an unapproved send once the firm requires review. Checked
+  // against the real recipient count so the threshold means what it says, and
+  // against approved_at (not status) so it survives scheduling.
+  if (fs.require_approval && sendable.length >= (fs.approval_min_recipients || 0) && !campaign.approved_at) {
+    return {
+      ok: false, status: 403,
+      error: `This campaign needs approval before it can be sent (${sendable.length} recipients).`,
+    };
+  }
+
   await service.from('campaigns').update({
     audience_snapshot: { source: audience.source, definition: audience.definition, resolved: resolved.length },
   }).eq('id', campaign.id);

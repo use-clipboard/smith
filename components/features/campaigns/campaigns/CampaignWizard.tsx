@@ -3,8 +3,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   ArrowLeft, ArrowRight, Check, Users, PenLine, Sparkles, Eye, Send,
-  CalendarClock, Loader2, X, CheckCircle2, AlertTriangle,
+  CalendarClock, Loader2, X, CheckCircle2, AlertTriangle, ShieldAlert,
 } from 'lucide-react';
+
+const ACTION_TEXT: Record<string, string> = {
+  submitted: 'submitted it for review',
+  approved: 'approved it',
+  changes_requested: 'requested changes',
+  withdrawn: 'withdrew it',
+  sent: 'sent it',
+};
 import Spinner from '@/components/ui/Spinner';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import type { Campaign, CampaignAudience } from '@/types/campaigns';
@@ -513,8 +521,43 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
   const [when, setWhen] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>(campaign.status);
+  const [comment, setComment] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [approval, setApproval] = useState<{ trail: any[]; canApprove: boolean; isAuthor: boolean; approvalRequired: boolean } | null>(null);
 
-  const canSend = audienceChosen && !!meta?.gmail.connected;
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const r = await fetch(`/api/campaigns/${campaign.id}/approval`);
+      if (r.ok && live) {
+        const d = await r.json();
+        setApproval({ trail: d.trail ?? [], canApprove: !!d.canApprove, isAuthor: !!d.isAuthor, approvalRequired: !!d.approvalRequired });
+        if (d.status) setStatus(d.status);
+      }
+    })();
+    return () => { live = false; };
+  }, [campaign.id]);
+
+  const approvalRequired = approval?.approvalRequired ?? false;
+  const approved = status === 'approved';
+  const gateOpen = !approvalRequired || approved;
+  const canSend = audienceChosen && !!meta?.gmail.connected && gateOpen;
+
+  async function act(action: 'submit' | 'approve' | 'request_changes' | 'withdraw') {
+    setBusy(true); setError(null);
+    try {
+      const r = await fetch(`/api/campaigns/${campaign.id}/approval`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, comment }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setError(d.error || 'Could not update the approval.'); return; }
+      setStatus(d.status);
+      setApproval(a => (a ? { ...a, trail: d.trail ?? a.trail } : a));
+      setComment('');
+    } finally { setBusy(false); }
+  }
 
   async function sendNow() {
     setBusy(true); setError(null);
@@ -540,6 +583,50 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
       <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">Approve &amp; schedule</h3>
       <p className="text-xs text-[var(--text-secondary)] mb-4">Campaigns send from your connected Gmail ({meta?.gmail.email || 'not connected'}).</p>
 
+      {/* Approval gate */}
+      {approvalRequired && (
+        <div className={`rounded-xl border p-4 mb-4 ${approved ? 'border-green-300 bg-green-50' : 'border-amber-300 bg-amber-50'}`}>
+          <div className="flex items-center gap-2 mb-1">
+            {approved ? <CheckCircle2 size={15} className="text-green-600" /> : <ShieldAlert size={15} className="text-amber-600" />}
+            <span className="text-sm font-semibold text-[var(--text-primary)]">
+              {approved ? 'Approved — ready to send'
+                : status === 'awaiting_review' ? 'Awaiting review'
+                : status === 'changes_requested' ? 'Changes requested'
+                : 'Approval required'}
+            </span>
+          </div>
+          <p className="text-xs text-[var(--text-secondary)] mb-3">
+            {approved ? 'This campaign has been signed off and can go out.'
+              : status === 'awaiting_review' ? 'A reviewer needs to approve this before it can send.'
+              : status === 'changes_requested' ? 'A reviewer asked for changes — update it and resubmit.'
+              : 'Your firm requires campaigns to be approved before sending.'}
+          </p>
+
+          {(status === 'awaiting_review' && approval?.canApprove) && (
+            <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="Optional comment for the author…"
+              className="w-full text-[13px] rounded-lg border border-[var(--border)] px-3 py-2 mb-2 focus:outline-none focus:border-[var(--accent)]" />
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {(status === 'draft' || status === 'changes_requested') && (
+              <button onClick={() => act('submit')} disabled={busy} className="btn-primary text-xs">Submit for review</button>
+            )}
+            {status === 'awaiting_review' && approval?.canApprove && (
+              <>
+                <button onClick={() => act('approve')} disabled={busy} className="btn-primary text-xs">Approve</button>
+                <button onClick={() => act('request_changes')} disabled={busy} className="btn-secondary text-xs">Request changes</button>
+              </>
+            )}
+            {status === 'awaiting_review' && approval?.isAuthor && (
+              <button onClick={() => act('withdraw')} disabled={busy} className="btn-secondary text-xs">Withdraw</button>
+            )}
+            {status === 'awaiting_review' && !approval?.canApprove && !approval?.isAuthor && (
+              <span className="text-xs text-[var(--text-secondary)]">Waiting on an admin to review.</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2 mb-4">
         {(['now', 'schedule'] as const).map(m => (
           <button key={m} onClick={() => setMode(m)} className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border ${mode === m ? 'border-[var(--accent)] bg-[var(--accent-light)]/20' : 'border-[var(--border)]'}`}>
@@ -559,7 +646,10 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
 
       {!canSend && (
         <div className="flex items-center gap-2 text-xs text-amber-600 mb-3">
-          <AlertTriangle size={14} /> {!audienceChosen ? 'Choose an audience first.' : 'Connect Gmail (Email Triage) to send.'}
+          <AlertTriangle size={14} />
+          {!audienceChosen ? 'Choose an audience first.'
+            : !meta?.gmail.connected ? 'Connect Gmail (Email Triage) to send.'
+            : 'This campaign needs approval before it can send.'}
         </div>
       )}
       {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
@@ -572,6 +662,23 @@ function StepSchedule({ campaign, meta, audienceChosen, onSent, save }: { campai
         <button onClick={schedule} disabled={busy || !canSend} className="btn-primary">
           {busy ? <Loader2 size={15} className="animate-spin" /> : <CalendarClock size={15} />} Schedule campaign
         </button>
+      )}
+
+      {/* Audit trail */}
+      {approval && approval.trail.length > 0 && (
+        <div className="mt-6 pt-4 border-t border-black/5">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)] mb-2">Audit trail</h4>
+          <div className="space-y-1.5">
+            {approval.trail.map(t => (
+              <div key={t.id} className="text-xs text-[var(--text-secondary)]">
+                <span className="font-medium text-[var(--text-primary)]">{t.user_name}</span> {ACTION_TEXT[t.action] ?? t.action}
+                {' · '}
+                {new Date(t.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {t.comment && <span className="block italic text-[var(--text-muted)]">“{t.comment}”</span>}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -27,6 +27,9 @@ const PutSchema = z.object({
   unsubscribe_footer: z.string().max(500).optional(),
   default_dedupe: z.enum(['per_email', 'per_client']).optional(),
   frequency_guard_days: z.number().int().min(0).max(365).optional(),
+  require_approval: z.boolean().optional(),
+  approval_min_recipients: z.number().int().min(0).max(100000).optional(),
+  allow_self_approve: z.boolean().optional(),
 });
 
 // PUT /api/campaigns/settings — upsert the firm's campaign defaults.

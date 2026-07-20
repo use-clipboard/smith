@@ -63,9 +63,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'A sent or in-progress campaign cannot be edited.' }, { status: 409 });
   }
 
+  // Editing what actually goes out invalidates any approval — an approved
+  // campaign can't be quietly rewritten and then sent.
+  const contentChanged = ['subject', 'preview_text', 'body_html', 'audience_id']
+    .some(k => k in parsed.data);
+  const approvalReset = contentChanged
+    ? { approved_at: null, approved_by: null, ...(existing.status === 'approved' ? { status: 'draft' } : {}) }
+    : {};
+
   const { data, error } = await supabase
     .from('campaigns')
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update({ ...parsed.data, ...approvalReset, updated_at: new Date().toISOString() })
     .eq('id', params.id)
     .eq('firm_id', ctx.firmId)
     .select('*')

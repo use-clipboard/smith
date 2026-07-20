@@ -32,9 +32,12 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     senderEmail: connection.google_email, senderRefreshToken: connection.refresh_token,
   });
 
-  // Persist the refreshed Gmail access token (best-effort — runCampaignSend
-  // already refreshed it internally for the actual send).
   if (result.ok) {
+    // Audit trail: who actually pressed send.
+    await supabase.from('campaign_approvals').insert({
+      firm_id: ctx.firmId, campaign_id: params.id, user_id: ctx.userId, action: 'sent',
+      comment: `Sent to ${result.sent} recipient${result.sent === 1 ? '' : 's'}`,
+    }).then(undefined, () => { /* non-fatal */ });
     return NextResponse.json({ ok: true, sent: result.sent, failed: result.failed, recipients: result.recipients });
   }
   return NextResponse.json({ error: result.error }, { status: result.status });
