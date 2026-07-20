@@ -20,6 +20,8 @@ import type {
 import { isGroup } from '@/types/campaigns';
 import { BUSINESS_TYPE_OPTIONS } from '@/lib/campaigns/fields';
 import { buildMergeData, firstNameFrom, type CampaignMergeSource } from '@/lib/campaigns/mergeFields';
+import { rowToRecipient, rowMergeData } from '@/lib/campaigns/spreadsheet';
+import type { SpreadsheetAudienceData } from '@/types/campaigns';
 import type { CHCompanyData } from '@/types/ch';
 
 type Attr = string | number | boolean | null;
@@ -329,6 +331,11 @@ export async function resolveAudience(
   firmId: string,
   input: ResolveInput,
 ): Promise<ResolvedRecipient[]> {
+  // Spreadsheet audiences carry their own rows — no client segmentation needed.
+  if (input.source === 'spreadsheet') {
+    return resolveSpreadsheet(supabase, firmId, input.definition);
+  }
+
   const clients = await loadClients(supabase, firmId);
   const clientIds = clients.map(c => c.id);
   const [ch, users, tasks, billing, mtdOutstanding, unsub] = await Promise.all([
@@ -351,8 +358,12 @@ export async function resolveAudience(
   }
 
   const recipients = matched.map(c => toRecipient(c, aux));
+  markExclusions(recipients, unsub);
+  return recipients;
+}
 
-  // Mark exclusions: no email, unsubscribed, then duplicate email addresses.
+/** Mark no-email / unsubscribed / duplicate recipients (in place). */
+function markExclusions(recipients: ResolvedRecipient[], unsub: Set<string>) {
   const seenEmail = new Set<string>();
   for (const r of recipients) {
     const email = r.email.trim().toLowerCase();
@@ -361,6 +372,42 @@ export async function resolveAudience(
     if (seenEmail.has(email)) { r.excludedReason = 'duplicate'; continue; }
     seenEmail.add(email);
   }
+}
+
+/** Resolve a spreadsheet audience: one recipient per row, matched to a client by
+ *  email where possible (so outcome-linking + timeline still work). */
+async function resolveSpreadsheet(
+  supabase: SupabaseClient,
+  firmId: string,
+  definition: ResolveInput['definition'],
+): Promise<ResolvedRecipient[]> {
+  const def = definition as unknown as SpreadsheetAudienceData | null;
+  if (!def || def.kind !== 'spreadsheet' || !Array.isArray(def.rows) || !Array.isArray(def.columns)) return [];
+
+  // email → client_id, so spreadsheet recipients still tie back to client records.
+  const emailToClient = new Map<string, string>();
+  try {
+    const rows = await loadClients(supabase, firmId);
+    for (const c of rows) {
+      const e = (c.contact_email ?? '').trim().toLowerCase();
+      if (e && !emailToClient.has(e)) emailToClient.set(e, c.id);
+    }
+  } catch { /* ignore */ }
+  const unsub = await loadUnsubscribes(supabase, firmId);
+
+  const recipients: ResolvedRecipient[] = def.rows.map(row => {
+    const rr = rowToRecipient(def.columns, row);
+    const email = rr.email.trim();
+    return {
+      client_id: emailToClient.get(email.toLowerCase()) ?? null,
+      name: rr.name,
+      email,
+      client_ref: rr.reference || null,
+      business_type: null,
+      merge_data: rowMergeData(rr),
+    };
+  });
+  markExclusions(recipients, unsub);
   return recipients;
 }
 

@@ -235,8 +235,8 @@ function StepAudience({ audiences, value, onChange, selected }: {
         )}
       </div>
       <div>
-        {selected && selected.definition && 'children' in selected.definition ? (
-          <AudiencePreviewInline audienceId={selected.id} definition={selected.definition} />
+        {selected ? (
+          <AudiencePreviewInline audience={selected} />
         ) : (
           <div className="glass-solid rounded-2xl border border-[var(--border)] p-4 text-sm text-[var(--text-secondary)]">
             Select an audience to see how many clients will receive this campaign.
@@ -248,19 +248,20 @@ function StepAudience({ audiences, value, onChange, selected }: {
 }
 
 // Small inline preview that reuses the preview endpoint for a chosen audience.
-function AudiencePreviewInline({ audienceId, definition }: { audienceId: string; definition: unknown }) {
+function AudiencePreviewInline({ audience }: { audience: CampaignAudience }) {
   const [count, setCount] = useState<{ sendable: number; total: number } | null>(null);
   useEffect(() => {
     let live = true;
+    setCount(null);
     (async () => {
       const r = await fetch('/api/campaigns/audiences/preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: 'dynamic', definition }),
+        body: JSON.stringify({ source: audience.source, definition: audience.definition, member_client_ids: audience.member_client_ids }),
       });
       if (r.ok && live) { const d = await r.json(); setCount({ sendable: d.sendable, total: d.total }); }
     })();
     return () => { live = false; };
-  }, [audienceId, definition]);
+  }, [audience]);
   return (
     <div className="glass-solid rounded-2xl border border-[var(--border)] p-4">
       <div className="flex items-center gap-2 mb-2"><Users size={15} style={{ color: 'var(--accent)' }} /><h4 className="text-sm font-semibold text-[var(--text-primary)]">Live audience</h4></div>

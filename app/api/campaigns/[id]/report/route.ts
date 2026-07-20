@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
+import { computeCampaignOutcomes } from '@/lib/campaigns/outcomes';
 
-// GET /api/campaigns/[id]/report — engagement report for a sent campaign.
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+const ALLOWED_WINDOWS = [7, 14, 30];
+
+// GET /api/campaigns/[id]/report?window=14 — engagement + outcomes for a sent campaign.
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getCampaignsContext();
   if (!ctx) return NextResponse.json({ error: 'No access' }, { status: 403 });
+
+  const windowParam = Number(new URL(req.url).searchParams.get('window'));
+  const windowDays = ALLOWED_WINDOWS.includes(windowParam) ? windowParam : 14;
 
   const supabase = createClient();
   const { data: campaign } = await supabase
@@ -58,5 +64,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   }
   const timeline = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-  return NextResponse.json({ campaign, totals, topLinks, timeline, recipients: rcpts });
+  // ── Outcome-linking: what recipient clients did AFTER the send ───────────────
+  const clientIds = rcpts.map(r => r.client_id as string | null).filter((v): v is string => !!v);
+  const outcomes = await computeCampaignOutcomes(supabase, clientIds, campaign.sent_at as string, windowDays);
+
+  // Annotate each recipient with its outcome flags for the recipient list.
+  const recipientsWithOutcomes = rcpts.map(r => ({
+    ...r,
+    outcomes: r.client_id ? (outcomes.byClient[r.client_id as string] ?? null) : null,
+  }));
+
+  return NextResponse.json({ campaign, totals, topLinks, timeline, outcomes, recipients: recipientsWithOutcomes });
 }

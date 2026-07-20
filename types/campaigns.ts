@@ -176,6 +176,22 @@ export interface CampaignAutomation {
   updated_at: string;
 }
 
+// ── Spreadsheet audiences (CSV/Excel mail-merge) ──────────────────────────────
+export type SpreadsheetColumnRole =
+  | 'email' | 'first_name' | 'full_name' | 'business_name' | 'reference' | 'custom' | 'ignore';
+
+export interface SpreadsheetColumn {
+  key: string;      // stable slug, unique within the sheet; also the {{custom.<key>}} suffix
+  header: string;   // original header text
+  role: SpreadsheetColumnRole;
+}
+
+export interface SpreadsheetAudienceData {
+  kind: 'spreadsheet';
+  columns: SpreadsheetColumn[];
+  rows: Record<string, string>[];   // keyed by column key
+}
+
 // ── Firm settings ─────────────────────────────────────────────────────────────
 export interface CampaignFirmSettings {
   reply_to: string | null;
