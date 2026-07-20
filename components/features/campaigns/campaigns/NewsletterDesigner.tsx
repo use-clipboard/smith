@@ -1,9 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Heading1, Type, Columns2, Image as ImageIcon, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
-import type { DesignBlock, NewsletterDesign } from '@/types/campaigns';
-import { blockId, DEFAULT_BRAND_COLOR } from '@/lib/campaigns/newsletter';
+import { useState, useEffect, useCallback } from 'react';
+import { Heading1, Type, Columns2, Image as ImageIcon, MousePointerClick, Minus, MoveVertical, Trash2, ChevronUp, ChevronDown, GripVertical, Bookmark } from 'lucide-react';
+import type { DesignBlock, NewsletterDesign, CampaignTemplate } from '@/types/campaigns';
+import { blockId, DEFAULT_BRAND_COLOR, compileDesign, emptyDesign } from '@/lib/campaigns/newsletter';
+
+/** Saved blocks are stored as templates in this category, so they need no table
+ *  of their own and the whole firm can reuse them. */
+const BLOCK_CATEGORY = 'Block';
 
 const BLOCK_META: Record<DesignBlock['type'], { label: string; Icon: typeof Type }> = {
   heading: { label: 'Heading', Icon: Heading1 },
@@ -30,6 +34,38 @@ function newBlock(type: DesignBlock['type']): DesignBlock {
 export default function NewsletterDesigner({ design, onChange }: { design: NewsletterDesign; onChange: (d: NewsletterDesign) => void }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [savedBlocks, setSavedBlocks] = useState<CampaignTemplate[]>([]);
+
+  const loadBlocks = useCallback(async () => {
+    const r = await fetch('/api/campaigns/templates');
+    if (!r.ok) return;
+    const all = ((await r.json()).templates ?? []) as CampaignTemplate[];
+    setSavedBlocks(all.filter(t => t.category === BLOCK_CATEGORY && t.design?.blocks?.length));
+  }, []);
+  useEffect(() => { loadBlocks(); }, [loadBlocks]);
+
+  /** Save one block to the firm's reusable library. */
+  async function saveBlock(block: DesignBlock) {
+    const name = prompt('Save this block as:', BLOCK_META[block.type]?.label ?? 'Block');
+    if (!name?.trim()) return;
+    const single: NewsletterDesign = { ...emptyDesign(), brandColor: design.brandColor, blocks: [block] };
+    await fetch('/api/campaigns/templates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(), category: BLOCK_CATEGORY, description: 'Reusable content block',
+        body_html: compileDesign(single), design: single,
+      }),
+    });
+    loadBlocks();
+  }
+
+  /** Append a saved block's contents, with fresh ids so it's an independent copy. */
+  function insertSavedBlock(templateId: string) {
+    const t = savedBlocks.find(s => s.id === templateId);
+    if (!t?.design?.blocks?.length) return;
+    const copies = t.design.blocks.map(b => ({ ...b, id: blockId() }));
+    setBlocks([...design.blocks, ...copies]);
+  }
   const inputCls = 'w-full text-[13px] rounded-lg border border-[var(--border)] px-2.5 py-1.5 focus:outline-none focus:border-[var(--accent)]';
 
   function setBlocks(blocks: DesignBlock[]) { onChange({ ...design, blocks }); }
@@ -105,6 +141,7 @@ export default function NewsletterDesigner({ design, onChange }: { design: Newsl
               <div className="ml-auto flex items-center gap-0.5">
                 <button onClick={() => move(b.id, -1)} disabled={i === 0} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30" aria-label="Move up"><ChevronUp size={14} /></button>
                 <button onClick={() => move(b.id, 1)} disabled={i === design.blocks.length - 1} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30" aria-label="Move down"><ChevronDown size={14} /></button>
+                <button onClick={() => saveBlock(b)} className="p-1 text-[var(--text-muted)] hover:text-[var(--accent)]" aria-label="Save block for reuse"><Bookmark size={13} /></button>
                 <button onClick={() => remove(b.id)} className="p-1 text-[var(--text-muted)] hover:text-red-600" aria-label="Remove block"><Trash2 size={13} /></button>
               </div>
             </div>
@@ -154,13 +191,23 @@ export default function NewsletterDesigner({ design, onChange }: { design: Newsl
       })}
 
       {/* Add */}
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         {(Object.keys(BLOCK_META) as DesignBlock['type'][]).map(t => {
           const { label, Icon } = BLOCK_META[t];
           return (
             <button key={t} onClick={() => add(t)} className="btn-secondary text-xs"><Icon size={13} /> {label}</button>
           );
         })}
+        {savedBlocks.length > 0 && (
+          <select
+            defaultValue=""
+            onChange={e => { insertSavedBlock(e.target.value); e.target.value = ''; }}
+            className="text-xs rounded-lg border border-[var(--border)] px-2 py-1.5 focus:outline-none focus:border-[var(--accent)]"
+          >
+            <option value="">Insert saved block…</option>
+            {savedBlocks.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
       </div>
 
       <p className="text-[11px] text-[var(--text-muted)]">

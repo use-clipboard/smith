@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
 import { computeCampaignOutcomes } from '@/lib/campaigns/outcomes';
+import { getCampaignFirmSettings } from '@/lib/campaigns/settings';
 import type { CHCompanyData } from '@/types/ch';
 
 const OUTCOME_WINDOW_DAYS = 30;
@@ -125,9 +126,29 @@ export async function GET() {
     clientsEmailed: emailedClientIds.length,
   };
 
+  // ── Anything waiting on a reviewer ──────────────────────────────────────────
+  const settings = await getCampaignFirmSettings(supabase, ctx.firmId);
+  let pendingAutomations: { id: string; name: string }[] = [];
+  if (settings.require_approval) {
+    const { data } = await supabase
+      .from('campaign_automations')
+      .select('id, name')
+      .eq('firm_id', ctx.firmId)
+      .is('approved_at', null);
+    pendingAutomations = (data ?? []).map(a => ({ id: a.id as string, name: a.name as string }));
+  }
+  const approvals = {
+    required: settings.require_approval,
+    canApprove: ctx.userRole === 'admin' || settings.allow_self_approve,
+    campaigns: campaigns
+      .filter(c => c.status === 'awaiting_review')
+      .map(c => ({ id: c.id as string, name: c.name as string, subject: c.subject as string })),
+    automations: pendingAutomations,
+  };
+
   const recent = (campaigns ?? []).filter(c => c.sent_at).slice(0, 6);
   const upcoming = (campaigns ?? []).filter(c => c.status === 'scheduled')
     .sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at))).slice(0, 6);
 
-  return NextResponse.json({ kpis, suggestions, outcomes, recent, upcoming, totalCampaigns: (campaigns ?? []).length });
+  return NextResponse.json({ kpis, suggestions, outcomes, approvals, recent, upcoming, totalCampaigns: (campaigns ?? []).length });
 }

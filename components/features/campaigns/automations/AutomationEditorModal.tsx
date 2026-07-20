@@ -5,6 +5,7 @@ import { X, Sparkles, Loader2, Workflow, Mail, Clock, Target, Trash2, ChevronUp,
 import type { CampaignAutomation, CampaignAudience, CampaignTemplate, AutomationTriggerType, AutomationMode, JourneyStep, JourneyGoal, JourneyBranchAction } from '@/types/campaigns';
 import { TRIGGERS, TRIGGER_BY_TYPE } from '@/lib/campaigns/triggerMeta';
 import { STARTER_TEMPLATES } from '@/lib/campaigns/starterTemplates';
+import JourneyFlow from './JourneyFlow';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -273,8 +274,9 @@ export default function AutomationEditorModal({ automation, audiences, onClose, 
               </>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-[var(--text-secondary)]">Build a sequence. Each client moves through it on their own — send an email, wait, then check if they’ve acted: if they have, the journey finishes; if not, it continues to the next step.</p>
+                <p className="text-xs text-[var(--text-secondary)]">Build a sequence. Each client moves through it on their own — send an email, wait, then check if they’ve acted, branching on the answer.</p>
                 {steps.length === 0 && <div className="text-xs text-[var(--text-muted)] italic p-3 border border-dashed border-[var(--border)] rounded-lg">No steps yet — start with an email.</div>}
+                <JourneyFlow steps={steps} />
                 {steps.map((s, i) => (
                   <div key={s.id} className="rounded-xl border border-[var(--border)] p-3">
                     <div className="flex items-center gap-2 mb-2">

@@ -12,13 +12,17 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export interface ClientOutcomes { documents: boolean; tasks: boolean; invoices: boolean }
+export interface ClientOutcomes {
+  documents: boolean; tasks: boolean; invoices: boolean; mtd: boolean; accounts: boolean;
+}
 
 export interface CampaignOutcomes {
   windowDays: number;
   documentsUploaded: number;   // distinct clients who uploaded a document
   tasksCompleted: number;      // distinct clients who had a task completed
   invoicesPaid: number;        // distinct clients who paid an invoice
+  mtdSubmitted: number;        // distinct clients whose MTD quarter reached submitted/approved
+  accountsApproved: number;    // distinct clients who approved their accounts
   anyOutcome: number;          // distinct clients with at least one of the above
   /** Per-client flags, for annotating the recipient list. */
   byClient: Record<string, ClientOutcomes>;
@@ -35,17 +39,21 @@ async function collectClientIds(
   clientIds: string[],
   fromIso: string,
   toIso: string,
+  /** Optional extra `column IN (...)` filter, e.g. a status whitelist. */
+  statusFilter?: { column: string; values: string[] },
 ): Promise<Set<string>> {
   const found = new Set<string>();
   try {
     for (let i = 0; i < clientIds.length; i += CHUNK) {
       const slice = clientIds.slice(i, i + CHUNK);
-      const { data, error } = await supabase
+      let q = supabase
         .from(table)
         .select('client_id')
         .in('client_id', slice)
         .gte(dateColumn, fromIso)
         .lte(dateColumn, toIso);
+      if (statusFilter) q = q.in(statusFilter.column, statusFilter.values);
+      const { data, error } = await q;
       if (error) break;              // table/column missing — treat as no data
       const rows = (data ?? []) as unknown as Array<{ client_id: string | null }>;
       for (const row of rows) {
@@ -58,6 +66,50 @@ async function collectClientIds(
   return found;
 }
 
+/**
+ * Clients who approved their statutory accounts in the window. Accounts Studio
+ * approvals hang off an engagement rather than a client, so this resolves
+ * client → engagements → approvals. Degrades to empty if the module isn't there.
+ */
+async function collectAccountsApproved(
+  supabase: SupabaseClient,
+  clientIds: string[],
+  fromIso: string,
+  toIso: string,
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  try {
+    for (let i = 0; i < clientIds.length; i += CHUNK) {
+      const slice = clientIds.slice(i, i + CHUNK);
+      const { data: engs, error } = await supabase
+        .from('accounts_studio_engagements')
+        .select('id, client_id')
+        .in('client_id', slice);
+      if (error) break;
+      const clientByEngagement = new Map<string, string>();
+      for (const e of (engs ?? [])) {
+        const row = e as unknown as { id: string; client_id: string | null };
+        if (row.client_id) clientByEngagement.set(row.id, row.client_id);
+      }
+      const engIds = Array.from(clientByEngagement.keys());
+      for (let j = 0; j < engIds.length; j += CHUNK) {
+        const { data: aps, error: apErr } = await supabase
+          .from('accounts_studio_approvals')
+          .select('engagement_id')
+          .in('engagement_id', engIds.slice(j, j + CHUNK))
+          .gte('approved_at', fromIso)
+          .lte('approved_at', toIso);
+        if (apErr) break;
+        for (const a of (aps ?? [])) {
+          const cid = clientByEngagement.get((a as unknown as { engagement_id: string }).engagement_id);
+          if (cid) found.add(cid);
+        }
+      }
+    }
+  } catch { /* module absent */ }
+  return found;
+}
+
 export async function computeCampaignOutcomes(
   supabase: SupabaseClient,
   clientIds: string[],
@@ -65,7 +117,10 @@ export async function computeCampaignOutcomes(
   windowDays: number,
 ): Promise<CampaignOutcomes> {
   const ids = Array.from(new Set(clientIds.filter(Boolean)));
-  const empty: CampaignOutcomes = { windowDays, documentsUploaded: 0, tasksCompleted: 0, invoicesPaid: 0, anyOutcome: 0, byClient: {} };
+  const empty: CampaignOutcomes = {
+    windowDays, documentsUploaded: 0, tasksCompleted: 0, invoicesPaid: 0,
+    mtdSubmitted: 0, accountsApproved: 0, anyOutcome: 0, byClient: {},
+  };
   if (ids.length === 0 || !sentAt) return empty;
 
   const from = new Date(sentAt);
@@ -74,11 +129,17 @@ export async function computeCampaignOutcomes(
   const toIso = to.toISOString();
 
   // Documents can land in either the basic `documents` table or the Vault.
-  const [docsA, docsB, tasks, invoices] = await Promise.all([
+  const [docsA, docsB, tasks, invoices, mtd, accounts] = await Promise.all([
     collectClientIds(supabase, 'documents', 'created_at', ids, fromIso, toIso),
     collectClientIds(supabase, 'vault_documents', 'created_at', ids, fromIso, toIso),
     collectClientIds(supabase, 'tasks', 'completed_at', ids, fromIso, toIso),
     collectClientIds(supabase, 'invoices', 'paid_at', ids, fromIso, toIso),
+    // mtd_it_quarters has no submitted_at, so we require the quarter to actually
+    // BE submitted/approved and to have changed in the window. Not a perfect
+    // signal (a later edit to a submitted quarter would also count) but the
+    // status requirement keeps false positives rare.
+    collectClientIds(supabase, 'mtd_it_quarters', 'updated_at', ids, fromIso, toIso, { column: 'status', values: ['submitted', 'approved'] }),
+    collectAccountsApproved(supabase, ids, fromIso, toIso),
   ]);
 
   const docs = new Set<string>([...docsA, ...docsB]);
@@ -86,19 +147,23 @@ export async function computeCampaignOutcomes(
   const byClient: Record<string, ClientOutcomes> = {};
   const mark = (set: Set<string>, key: keyof ClientOutcomes) => {
     for (const cid of set) {
-      byClient[cid] = byClient[cid] ?? { documents: false, tasks: false, invoices: false };
+      byClient[cid] = byClient[cid] ?? { documents: false, tasks: false, invoices: false, mtd: false, accounts: false };
       byClient[cid][key] = true;
     }
   };
   mark(docs, 'documents');
   mark(tasks, 'tasks');
   mark(invoices, 'invoices');
+  mark(mtd, 'mtd');
+  mark(accounts, 'accounts');
 
   return {
     windowDays,
     documentsUploaded: docs.size,
     tasksCompleted: tasks.size,
     invoicesPaid: invoices.size,
+    mtdSubmitted: mtd.size,
+    accountsApproved: accounts.size,
     anyOutcome: Object.keys(byClient).length,
     byClient,
   };

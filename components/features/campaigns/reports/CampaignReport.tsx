@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft, Eye, MousePointerClick, Send, TrendingDown, UserMinus, Reply,
-  FileUp, ClipboardCheck, PoundSterling, Target,
+  FileUp, ClipboardCheck, PoundSterling, Target, CalendarCheck, Landmark,
 } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
 
@@ -12,6 +12,8 @@ interface Outcomes {
   documentsUploaded: number;
   tasksCompleted: number;
   invoicesPaid: number;
+  mtdSubmitted: number;
+  accountsApproved: number;
   anyOutcome: number;
 }
 
@@ -116,10 +118,12 @@ export default function CampaignReport({ campaignId, onBack }: { campaignId: str
           <span className="text-[var(--text-secondary)]"> of {t.sent} recipients took an action in the {o.windowDays} days after opening.</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-5 gap-4">
           <OutcomeTile icon={FileUp} value={o.documentsUploaded} label="uploaded documents / records" />
           <OutcomeTile icon={ClipboardCheck} value={o.tasksCompleted} label="had a task completed" />
           <OutcomeTile icon={PoundSterling} value={o.invoicesPaid} label="paid an invoice" />
+          <OutcomeTile icon={CalendarCheck} value={o.mtdSubmitted} label="MTD quarter submitted" />
+          <OutcomeTile icon={Landmark} value={o.accountsApproved} label="approved their accounts" />
         </div>
 
         <p className="text-[11px] text-[var(--text-muted)] mt-4">

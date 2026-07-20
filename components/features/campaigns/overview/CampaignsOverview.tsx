@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Send, CheckCircle2, Eye, MousePointerClick, TrendingDown, UserMinus,
   CalendarClock, Clock, Sparkles, ArrowRight, Megaphone, Reply,
-  Target, FileUp, ClipboardCheck, PoundSterling,
+  Target, FileUp, ClipboardCheck, PoundSterling, CalendarCheck, Landmark,
+  ShieldAlert, Workflow,
 } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
 
@@ -16,9 +17,16 @@ interface Suggestion { key: string; title: string; detail: string; count: number
 interface Outcomes {
   windowDays: number; clientsEmailed: number; anyOutcome: number;
   documentsUploaded: number; tasksCompleted: number; invoicesPaid: number;
+  mtdSubmitted: number; accountsApproved: number;
 }
 interface CampaignRow { id: string; name: string; subject: string; status: string; sent_at: string | null; scheduled_at: string | null; stats: Record<string, number> }
-interface OverviewData { kpis: Kpis; suggestions: Suggestion[]; outcomes: Outcomes; recent: CampaignRow[]; upcoming: CampaignRow[]; totalCampaigns: number }
+interface Approvals {
+  required: boolean;
+  canApprove: boolean;
+  campaigns: { id: string; name: string; subject: string }[];
+  automations: { id: string; name: string }[];
+}
+interface OverviewData { kpis: Kpis; suggestions: Suggestion[]; outcomes: Outcomes; approvals: Approvals; recent: CampaignRow[]; upcoming: CampaignRow[]; totalCampaigns: number }
 
 function ukDateTime(d?: string | null): string {
   if (!d) return '—';
@@ -51,16 +59,25 @@ export default function CampaignsOverview({
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      try {
-        const r = await fetch('/api/campaigns/overview');
-        if (r.ok && live) setData(await r.json());
-      } finally { if (live) setLoading(false); }
-    })();
-    return () => { live = false; };
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/campaigns/overview');
+      if (r.ok) setData(await r.json());
+    } finally { setLoading(false); }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function approve(kind: 'campaign' | 'automation', id: string) {
+    const url = kind === 'campaign'
+      ? `/api/campaigns/${id}/approval`
+      : `/api/campaigns/automations/${id}/approval`;
+    await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approve' }),
+    });
+    load();
+  }
 
   if (loading) return <div className="flex items-center justify-center py-20"><Spinner className="w-6 h-6 text-[var(--accent)]" /></div>;
   if (!data) return <div className="text-sm text-[var(--text-secondary)] py-10 text-center">Couldn’t load the dashboard.</div>;
@@ -130,6 +147,42 @@ export default function CampaignsOverview({
         </div>
       </div>
 
+      {/* Waiting on a reviewer */}
+      {data.approvals?.required && (data.approvals.campaigns.length > 0 || data.approvals.automations.length > 0) && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldAlert size={16} className="text-amber-600" />
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Waiting for approval</h3>
+          </div>
+          <div className="space-y-2">
+            {data.approvals.campaigns.map(c => (
+              <div key={c.id} className="flex items-center gap-3 bg-white/70 rounded-xl px-3 py-2">
+                <Megaphone size={14} className="text-[var(--text-muted)] shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13.5px] font-medium text-[var(--text-primary)] truncate">{c.name}</div>
+                  <div className="text-xs text-[var(--text-secondary)] truncate">{c.subject || 'Campaign'}</div>
+                </div>
+                {data.approvals.canApprove
+                  ? <button onClick={() => approve('campaign', c.id)} className="btn-primary text-xs shrink-0">Approve</button>
+                  : <span className="text-xs text-[var(--text-secondary)] shrink-0">Awaiting an admin</span>}
+              </div>
+            ))}
+            {data.approvals.automations.map(a => (
+              <div key={a.id} className="flex items-center gap-3 bg-white/70 rounded-xl px-3 py-2">
+                <Workflow size={14} className="text-[var(--text-muted)] shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13.5px] font-medium text-[var(--text-primary)] truncate">{a.name}</div>
+                  <div className="text-xs text-[var(--text-secondary)]">Automation — can’t run until approved</div>
+                </div>
+                {data.approvals.canApprove
+                  ? <button onClick={() => approve('automation', a.id)} className="btn-primary text-xs shrink-0">Approve</button>
+                  : <span className="text-xs text-[var(--text-secondary)] shrink-0">Awaiting an admin</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Outcomes roll-up — the bit a newsletter tool can't tell you */}
       {data.outcomes && data.outcomes.clientsEmailed > 0 && (
         <div className="rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent-light)]/30 p-5">
@@ -142,11 +195,13 @@ export default function CampaignsOverview({
             <span className="text-2xl font-semibold">{data.outcomes.anyOutcome}</span>
             <span className="text-[var(--text-secondary)]"> of {data.outcomes.clientsEmailed} clients you emailed took an action.</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-5 gap-4">
             {([
               [FileUp, data.outcomes.documentsUploaded, 'uploaded documents / records'],
               [ClipboardCheck, data.outcomes.tasksCompleted, 'had a task completed'],
               [PoundSterling, data.outcomes.invoicesPaid, 'paid an invoice'],
+              [CalendarCheck, data.outcomes.mtdSubmitted, 'MTD quarter submitted'],
+              [Landmark, data.outcomes.accountsApproved, 'approved their accounts'],
             ] as const).map(([Icon, val, label], i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white/70 flex items-center justify-center shrink-0"><Icon size={18} className="text-[var(--accent)]" /></div>

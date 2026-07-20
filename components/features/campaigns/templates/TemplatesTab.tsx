@@ -65,7 +65,12 @@ export default function TemplatesTab({ onUseInCampaign }: { onUseInCampaign: (t:
     setLoading(true);
     try {
       const r = await fetch('/api/campaigns/templates');
-      if (r.ok) setSaved((await r.json()).templates ?? []);
+      if (r.ok) {
+        const all = ((await r.json()).templates ?? []) as CampaignTemplate[];
+        // Reusable designer blocks are stored as templates too; they belong in
+        // the designer's "insert saved block" menu, not the template gallery.
+        setSaved(all.filter(t => t.category !== 'Block'));
+      }
     } finally { setLoading(false); }
   }, []);
 
