@@ -28,14 +28,17 @@ export async function GET() {
 
   const supabase = createClient();
 
-  const [{ data: campaigns }, { data: recipients }] = await Promise.all([
+  const [{ data: campaignsRaw }, { data: recipients }] = await Promise.all([
     supabase.from('campaigns')
-      .select('id, name, subject, status, audience_id, scheduled_at, sent_at, stats, created_at')
+      .select('id, name, subject, status, audience_id, scheduled_at, sent_at, stats, settings, created_at')
       .eq('firm_id', ctx.firmId).order('created_at', { ascending: false }),
     supabase.from('campaign_recipients')
       .select('status, sent_at, opened_at, first_clicked_at, bounced_at, unsubscribed_at, replied_at')
       .eq('firm_id', ctx.firmId),
   ]);
+
+  // Hide internal backing campaigns used by journey automations.
+  const campaigns = (campaignsRaw ?? []).filter(c => !(c.settings as Record<string, unknown> | null)?.journey_automation_id);
 
   const rcpts = recipients ?? [];
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);

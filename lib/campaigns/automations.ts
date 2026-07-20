@@ -24,7 +24,7 @@ export type { TriggerMeta } from '@/lib/campaigns/triggerMeta';
 type TriggerType = AutomationTriggerType;
 
 /** Build the synthetic audience definition for an event trigger. */
-function triggerDefinition(type: TriggerType, days: number): AudienceGroup | null {
+export function buildTriggerDefinition(type: TriggerType, days: number): AudienceGroup | null {
   const group = (field: string, operator: 'is_true' | 'within_days', value: string | number | boolean): AudienceGroup => ({
     id: uidLike(), kind: 'group', combinator: 'and', negate: false,
     children: [{ id: uidLike(), kind: 'rule', field, operator, value }],
@@ -100,7 +100,7 @@ export async function runAutomation(params: {
       resolved = await resolveAudience(service, automation.firm_id, { source: audience.source, definition: audience.definition, member_client_ids: audience.member_client_ids });
     } else {
       const days = Number(automation.trigger_config?.days ?? meta.defaultDays ?? 30);
-      const def = triggerDefinition(automation.trigger_type, days);
+      const def = buildTriggerDefinition(automation.trigger_type, days);
       resolved = await resolveAudience(service, automation.firm_id, { source: 'dynamic', definition: def ?? undefined });
     }
   } catch {

@@ -25,6 +25,9 @@ const TriggerConfig = z.object({
 
 const CreateSchema = z.object({
   name: z.string().trim().min(1).max(200).default('Untitled automation'),
+  mode: z.enum(['single', 'journey']).optional().default('single'),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  steps: z.array(z.record(z.string(), z.any())).optional().default([]),
   trigger_type: z.enum(['recurring', 'year_end_approaching', 'cs_approaching', 'invoice_overdue', 'mtd_quarter_outstanding', 'task_overdue']).default('recurring'),
   trigger_config: TriggerConfig,
   audience_id: z.string().uuid().nullable().optional(),
@@ -50,6 +53,8 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase.from('campaign_automations').insert({
     firm_id: ctx.firmId,
     name: parsed.data.name,
+    mode: parsed.data.mode,
+    steps: parsed.data.steps,
     trigger_type: parsed.data.trigger_type,
     trigger_config: parsed.data.trigger_config,
     audience_id: parsed.data.audience_id ?? null,

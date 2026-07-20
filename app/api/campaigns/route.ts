@@ -11,12 +11,14 @@ export async function GET() {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('campaigns')
-    .select('id, name, subject, status, send_mode, audience_id, scheduled_at, sent_at, stats, created_at, updated_at')
+    .select('id, name, subject, status, send_mode, audience_id, scheduled_at, sent_at, stats, settings, created_at, updated_at')
     .eq('firm_id', ctx.firmId)
     .order('created_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: 'Failed to load campaigns' }, { status: 500 });
-  return NextResponse.json({ campaigns: data ?? [] });
+  // Hide the internal backing campaigns that journey automations send through.
+  const campaigns = (data ?? []).filter(c => !(c.settings as Record<string, unknown> | null)?.journey_automation_id);
+  return NextResponse.json({ campaigns });
 }
 
 const CreateSchema = z.object({

@@ -18,6 +18,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 const PatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   status: z.enum(['active', 'paused']).optional(),
+  mode: z.enum(['single', 'journey']).optional(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  steps: z.array(z.record(z.string(), z.any())).optional(),
   trigger_type: z.enum(['recurring', 'year_end_approaching', 'cs_approaching', 'invoice_overdue', 'mtd_quarter_outstanding', 'task_overdue']).optional(),
   trigger_config: z.object({
     frequency: z.enum(['monthly', 'weekly']).optional(),

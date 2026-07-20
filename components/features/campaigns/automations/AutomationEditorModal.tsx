@@ -1,12 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Sparkles, Loader2, Workflow } from 'lucide-react';
-import type { CampaignAutomation, CampaignAudience, CampaignTemplate, AutomationTriggerType } from '@/types/campaigns';
+import { X, Sparkles, Loader2, Workflow, Mail, Clock, Target, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import type { CampaignAutomation, CampaignAudience, CampaignTemplate, AutomationTriggerType, AutomationMode, JourneyStep, JourneyGoal } from '@/types/campaigns';
 import { TRIGGERS, TRIGGER_BY_TYPE } from '@/lib/campaigns/triggerMeta';
 import { STARTER_TEMPLATES } from '@/lib/campaigns/starterTemplates';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const GOAL_LABELS: Record<JourneyGoal, string> = {
+  opened: 'opened the last email',
+  clicked: 'clicked a link in it',
+  uploaded_document: 'uploaded a document / records',
+  paid_invoice: 'paid an invoice',
+  completed_task: 'had a task completed',
+};
+
+function stepId(): string { try { return crypto.randomUUID(); } catch { return `s_${Math.random().toString(36).slice(2)}`; } }
 
 interface Props {
   automation?: CampaignAutomation | null;
@@ -26,6 +36,8 @@ export default function AutomationEditorModal({ automation, audiences, onClose, 
   const [subject, setSubject] = useState(automation?.subject ?? '');
   const [previewText, setPreviewText] = useState(automation?.preview_text ?? '');
   const [body, setBody] = useState(automation?.body_html ?? '');
+  const [mode, setMode] = useState<AutomationMode>(automation?.mode ?? 'single');
+  const [steps, setSteps] = useState<JourneyStep[]>(automation?.steps ?? []);
   const [saving, setSaving] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -69,16 +81,41 @@ export default function AutomationEditorModal({ automation, audiences, onClose, 
     } finally { setAiBusy(false); }
   }
 
+  function addStep(type: JourneyStep['type']) {
+    const s: JourneyStep = type === 'email'
+      ? { id: stepId(), type: 'email', subject: '', preview_text: '', body_html: '' }
+      : type === 'wait' ? { id: stepId(), type: 'wait', days: 7 }
+      : { id: stepId(), type: 'check', goal: 'uploaded_document' };
+    setSteps(prev => [...prev, s]);
+  }
+  function updateStep(id: string, patch: Partial<JourneyStep>) {
+    setSteps(prev => prev.map(s => (s.id === id ? ({ ...s, ...patch } as JourneyStep) : s)));
+  }
+  function removeStep(id: string) { setSteps(prev => prev.filter(s => s.id !== id)); }
+  function moveStep(id: string, dir: -1 | 1) {
+    setSteps(prev => {
+      const i = prev.findIndex(s => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
   async function save() {
     if (!name.trim()) { setError('Give the automation a name.'); return; }
     if (meta.recurring && !audienceId) { setError('Choose an audience to send to.'); return; }
+    if (mode === 'journey' && steps.filter(s => s.type === 'email').length === 0) { setError('Add at least one email step to the journey.'); return; }
     setSaving(true); setError(null);
     try {
       const trigger_config = meta.recurring ? { frequency, day, hour } : (meta.hasDays ? { days } : {});
       const payload = {
-        name: name.trim(), trigger_type: triggerType, trigger_config,
+        name: name.trim(), mode, trigger_type: triggerType, trigger_config,
         audience_id: meta.recurring ? audienceId : null,
-        subject, preview_text: previewText, body_html: body,
+        ...(mode === 'journey'
+          ? { steps }
+          : { subject, preview_text: previewText, body_html: body }),
       };
       const url = automation ? `/api/campaigns/automations/${automation.id}` : '/api/campaigns/automations';
       const method = automation ? 'PATCH' : 'POST';
@@ -174,39 +211,99 @@ export default function AutomationEditorModal({ automation, audiences, onClose, 
 
           {/* Content */}
           <div className="space-y-3">
-            <div>
-              <label className="text-xs font-semibold text-[var(--text-secondary)]">Start from a template <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
-              <select defaultValue="" onChange={e => { applyTemplate(e.target.value); e.target.value = ''; }} className={`mt-1 ${inputCls}`}>
-                <option value="">Choose a template…</option>
-                {savedTemplates.length > 0 && (
-                  <optgroup label="Your templates">
-                    {savedTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </optgroup>
-                )}
-                <optgroup label="Starter templates">
-                  {STARTER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </optgroup>
-              </select>
+            {/* Single vs journey */}
+            <div className="inline-flex rounded-lg border border-[var(--border)] overflow-hidden text-xs font-semibold">
+              {(['single', 'journey'] as AutomationMode[]).map(m => (
+                <button key={m} onClick={() => setMode(m)} className={`px-3 py-1.5 ${mode === m ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-black/5'}`}>
+                  {m === 'single' ? 'Single email' : 'Multi-step journey'}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="text-xs font-semibold text-[var(--text-secondary)]">Subject line</label>
-              <input value={subject} onChange={e => setSubject(e.target.value)} className={`mt-1 ${inputCls}`} placeholder="Use {{client.first_name}} etc." />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-[var(--text-secondary)]">Preview text</label>
-              <input value={previewText} onChange={e => setPreviewText(e.target.value)} className={`mt-1 ${inputCls}`} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-[var(--text-secondary)]">Body (HTML)</label>
-              <textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className={`mt-1 ${inputCls} font-mono text-[13px] resize-y`} placeholder="<p>Dear {{client.first_name | default: &quot;client&quot;}},</p>" />
-            </div>
-            <div className="glass-solid rounded-xl border border-[var(--border)] p-3">
-              <div className="flex items-center gap-2 mb-2"><Sparkles size={14} style={{ color: 'var(--accent)' }} /><span className="text-xs font-semibold text-[var(--text-primary)]">Write with SMITH</span></div>
-              <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} rows={2} className={`${inputCls} text-[13px] resize-y`} placeholder="Describe the email…" />
-              <button onClick={generate} disabled={aiBusy || !aiPrompt.trim()} className="btn-primary text-xs mt-2 ml-auto">
-                {aiBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Generate
-              </button>
-            </div>
+
+            {mode === 'single' ? (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-secondary)]">Start from a template <span className="text-[var(--text-muted)] font-normal">(optional)</span></label>
+                  <select defaultValue="" onChange={e => { applyTemplate(e.target.value); e.target.value = ''; }} className={`mt-1 ${inputCls}`}>
+                    <option value="">Choose a template…</option>
+                    {savedTemplates.length > 0 && (
+                      <optgroup label="Your templates">
+                        {savedTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </optgroup>
+                    )}
+                    <optgroup label="Starter templates">
+                      {STARTER_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </optgroup>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-secondary)]">Subject line</label>
+                  <input value={subject} onChange={e => setSubject(e.target.value)} className={`mt-1 ${inputCls}`} placeholder="Use {{client.first_name}} etc." />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-secondary)]">Preview text</label>
+                  <input value={previewText} onChange={e => setPreviewText(e.target.value)} className={`mt-1 ${inputCls}`} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-[var(--text-secondary)]">Body (HTML)</label>
+                  <textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className={`mt-1 ${inputCls} font-mono text-[13px] resize-y`} placeholder="<p>Dear {{client.first_name | default: &quot;client&quot;}},</p>" />
+                </div>
+                <div className="glass-solid rounded-xl border border-[var(--border)] p-3">
+                  <div className="flex items-center gap-2 mb-2"><Sparkles size={14} style={{ color: 'var(--accent)' }} /><span className="text-xs font-semibold text-[var(--text-primary)]">Write with SMITH</span></div>
+                  <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} rows={2} className={`${inputCls} text-[13px] resize-y`} placeholder="Describe the email…" />
+                  <button onClick={generate} disabled={aiBusy || !aiPrompt.trim()} className="btn-primary text-xs mt-2 ml-auto">
+                    {aiBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Generate
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-[var(--text-secondary)]">Build a sequence. Each client moves through it on their own — send an email, wait, then check if they’ve acted: if they have, the journey finishes; if not, it continues to the next step.</p>
+                {steps.length === 0 && <div className="text-xs text-[var(--text-muted)] italic p-3 border border-dashed border-[var(--border)] rounded-lg">No steps yet — start with an email.</div>}
+                {steps.map((s, i) => (
+                  <div key={s.id} className="rounded-xl border border-[var(--border)] p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="w-6 h-6 rounded-full bg-[var(--accent-light)] flex items-center justify-center text-[11px] font-bold text-[var(--accent)] shrink-0">{i + 1}</span>
+                      <span className="text-[13px] font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                        {s.type === 'email' && <><Mail size={13} style={{ color: 'var(--accent)' }} /> Send email</>}
+                        {s.type === 'wait' && <><Clock size={13} style={{ color: 'var(--accent)' }} /> Wait</>}
+                        {s.type === 'check' && <><Target size={13} style={{ color: 'var(--accent)' }} /> Check goal</>}
+                      </span>
+                      <div className="ml-auto flex items-center gap-0.5">
+                        <button onClick={() => moveStep(s.id, -1)} disabled={i === 0} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30" aria-label="Move up"><ChevronUp size={14} /></button>
+                        <button onClick={() => moveStep(s.id, 1)} disabled={i === steps.length - 1} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-30" aria-label="Move down"><ChevronDown size={14} /></button>
+                        <button onClick={() => removeStep(s.id)} className="p-1 text-[var(--text-muted)] hover:text-red-600" aria-label="Remove step"><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                    {s.type === 'email' && (
+                      <div className="space-y-2">
+                        <input value={s.subject} onChange={e => updateStep(s.id, { subject: e.target.value })} placeholder="Subject line" className={`${inputCls} text-[13px]`} />
+                        <textarea value={s.body_html} onChange={e => updateStep(s.id, { body_html: e.target.value })} rows={5} placeholder="<p>Dear {{client.first_name | default: &quot;client&quot;}},</p>" className={`${inputCls} font-mono text-[12px] resize-y`} />
+                      </div>
+                    )}
+                    {s.type === 'wait' && (
+                      <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                        Wait <input type="number" min={0} value={s.days} onChange={e => updateStep(s.id, { days: Number(e.target.value) || 0 })} className={`${inputCls} w-20`} /> days before the next step.
+                      </div>
+                    )}
+                    {s.type === 'check' && (
+                      <div className="text-sm text-[var(--text-secondary)]">
+                        If the client has
+                        <select value={s.goal} onChange={e => updateStep(s.id, { goal: e.target.value as JourneyGoal })} className={`${inputCls} my-1`}>
+                          {(Object.keys(GOAL_LABELS) as JourneyGoal[]).map(g => <option key={g} value={g}>{GOAL_LABELS[g]}</option>)}
+                        </select>
+                        the journey finishes here. Otherwise it continues.
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button onClick={() => addStep('email')} className="btn-secondary text-xs"><Mail size={13} /> Email</button>
+                  <button onClick={() => addStep('wait')} className="btn-secondary text-xs"><Clock size={13} /> Wait</button>
+                  <button onClick={() => addStep('check')} className="btn-secondary text-xs"><Target size={13} /> Check goal</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

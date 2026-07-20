@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
-import { runAutomation, TRIGGER_BY_TYPE } from '@/lib/campaigns/automations';
+import { runAutomation, TRIGGER_BY_TYPE, computeNextRun } from '@/lib/campaigns/automations';
+import { enrollJourney, advanceEnrollments } from '@/lib/campaigns/journeys';
 
 // ─── /api/cron/campaigns-automations ───────────────────────────────────────
 // Fires active campaign automations. Recurring ones fire when their next_run_at
@@ -43,6 +44,21 @@ export async function GET(request: Request) {
         if (!a.next_run_at || new Date(a.next_run_at) > now) { continue; }
       }
 
+      // ── Journey automations: enroll new matches; the advance pass (below)
+      // progresses everyone through the steps. ──
+      if (a.mode === 'journey') {
+        const enrolled = await enrollJourney(service, a, now);
+        if (meta.recurring) {
+          await service.from('campaign_automations')
+            .update({ last_run_at: now.toISOString(), next_run_at: computeNextRun(a.trigger_config ?? {}, now).toISOString(), updated_at: now.toISOString() })
+            .eq('id', a.id);
+        } else {
+          await service.from('campaign_automations').update({ last_run_at: now.toISOString(), updated_at: now.toISOString() }).eq('id', a.id);
+        }
+        results.push({ id: a.id, fired: enrolled > 0, sent: enrolled, reason: `enrolled ${enrolled}` });
+        continue;
+      }
+
       if (!a.created_by) { results.push({ id: a.id, fired: false, reason: 'No author to send as' }); continue; }
       const { data: conn } = await service
         .from('email_connections').select('refresh_token, google_email').eq('user_id', a.created_by).maybeSingle();
@@ -56,5 +72,10 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ processed: results.length, results });
+  // Advance all due journey enrollments (across every firm) in one pass.
+  let advanced = 0;
+  try { advanced = (await advanceEnrollments(service, now)).advanced; }
+  catch (err) { console.error('[campaigns-automations] advance', err); }
+
+  return NextResponse.json({ processed: results.length, advanced, results });
 }

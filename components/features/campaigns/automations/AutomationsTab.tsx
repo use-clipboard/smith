@@ -84,6 +84,7 @@ export default function AutomationsTab() {
                   </div>
                   <div className="text-xs text-[var(--text-secondary)] mt-0.5">
                     {meta?.label ?? a.trigger_type}
+                    {a.mode === 'journey' && ` · journey (${a.steps?.length ?? 0} steps)`}
                     {a.trigger_type === 'recurring' && a.next_run_at && ` · next ${ukDateTime(a.next_run_at)}`}
                     {a.last_run_at && ` · last ran ${ukDateTime(a.last_run_at)}`}
                   </div>

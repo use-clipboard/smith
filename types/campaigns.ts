@@ -153,11 +153,22 @@ export interface AutomationTriggerConfig {
   days?: number;   // lead time for *_approaching triggers
 }
 
+export type JourneyGoal = 'opened' | 'clicked' | 'uploaded_document' | 'paid_invoice' | 'completed_task';
+
+export type JourneyStep =
+  | { id: string; type: 'email'; subject: string; preview_text: string; body_html: string }
+  | { id: string; type: 'wait'; days: number }
+  | { id: string; type: 'check'; goal: JourneyGoal };
+
+export type AutomationMode = 'single' | 'journey';
+
 export interface CampaignAutomation {
   id: string;
   firm_id: string;
   name: string;
   status: 'active' | 'paused';
+  mode: AutomationMode;
+  steps: JourneyStep[];
   trigger_type: AutomationTriggerType;
   trigger_config: AutomationTriggerConfig;
   audience_id: string | null;
