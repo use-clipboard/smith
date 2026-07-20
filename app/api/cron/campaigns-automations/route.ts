@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase-server';
 import { runAutomation, TRIGGER_BY_TYPE, computeNextRun } from '@/lib/campaigns/automations';
 import { enrollJourney, advanceEnrollments } from '@/lib/campaigns/journeys';
+import { getCampaignFirmSettings } from '@/lib/campaigns/settings';
 
 // ─── /api/cron/campaigns-automations ───────────────────────────────────────
 // Fires active campaign automations. Recurring ones fire when their next_run_at
@@ -34,10 +35,25 @@ export async function GET(request: Request) {
 
   const results: { id: string; fired: boolean; sent?: number; reason?: string }[] = [];
 
+  // Firm-level approval settings, cached per firm across this run.
+  const settingsByFirm = new Map<string, Awaited<ReturnType<typeof getCampaignFirmSettings>>>();
+  async function firmSettings(firmId: string) {
+    if (!settingsByFirm.has(firmId)) settingsByFirm.set(firmId, await getCampaignFirmSettings(service, firmId));
+    return settingsByFirm.get(firmId)!;
+  }
+
   for (const a of (automations ?? [])) {
     try {
       const meta = TRIGGER_BY_TYPE[a.trigger_type];
       if (!meta) continue;
+
+      // Defensive: never fire an unapproved automation when the firm requires
+      // review, even if one slipped past the activation guard.
+      const fs = await firmSettings(a.firm_id);
+      if (fs.require_approval && !a.approved_at) {
+        results.push({ id: a.id, fired: false, reason: 'Awaiting approval' });
+        continue;
+      }
 
       // Recurring only fires once its scheduled time has arrived.
       if (meta.recurring) {

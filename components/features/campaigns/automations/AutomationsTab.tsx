@@ -18,23 +18,56 @@ export default function AutomationsTab() {
   const [audiences, setAudiences] = useState<CampaignAudience[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<CampaignAutomation | null | 'new'>(null);
+  const [approval, setApproval] = useState<{ required: boolean; canApprove: boolean }>({ required: false, canApprove: false });
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [aRes, audRes] = await Promise.all([fetch('/api/campaigns/automations'), fetch('/api/campaigns/audiences')]);
+      const [aRes, audRes, metaRes] = await Promise.all([
+        fetch('/api/campaigns/automations'),
+        fetch('/api/campaigns/audiences'),
+        fetch('/api/campaigns/meta'),
+      ]);
       if (aRes.ok) setRows((await aRes.json()).automations ?? []);
       if (audRes.ok) setAudiences((await audRes.json()).audiences ?? []);
+      if (metaRes.ok) {
+        const m = await metaRes.json();
+        setApproval({
+          required: !!m.approval?.required,
+          canApprove: m.userRole === 'admin' || !!m.approval?.allowSelfApprove,
+        });
+      }
     } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   async function toggle(a: CampaignAutomation) {
-    await fetch(`/api/campaigns/automations/${a.id}`, {
+    setError(null);
+    const r = await fetch(`/api/campaigns/automations/${a.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: a.status === 'active' ? 'paused' : 'active' }),
     });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setError(d.error || 'Could not change that automation.');
+      return;
+    }
+    load();
+  }
+
+  async function approve(a: CampaignAutomation) {
+    setError(null);
+    const r = await fetch(`/api/campaigns/automations/${a.id}/approval`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approve' }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      setError(d.error || 'Could not approve that automation.');
+      return;
+    }
     load();
   }
   async function remove(id: string) {
@@ -56,6 +89,8 @@ export default function AutomationsTab() {
         <button onClick={() => setEditing('new')} className="btn-primary shrink-0"><Plus size={15} /> New automation</button>
       </div>
 
+      {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
       {rows.length === 0 ? (
         <div className="glass-solid rounded-2xl border border-[var(--border)] p-10 text-center max-w-lg mx-auto mt-6">
           <div className="w-12 h-12 rounded-2xl bg-[var(--accent-light)] flex items-center justify-center mx-auto mb-4">
@@ -70,17 +105,24 @@ export default function AutomationsTab() {
           {rows.map(a => {
             const meta = TRIGGER_BY_TYPE[a.trigger_type];
             const active = a.status === 'active';
+            const needsApproval = approval.required && !a.approved_at;
             return (
               <div key={a.id} className="glass-solid rounded-2xl border border-[var(--border)] p-4 flex items-center gap-4">
-                <button onClick={() => toggle(a)}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${active ? 'bg-green-100 text-green-600' : 'bg-black/5 text-[var(--text-muted)]'}`}
+                <button onClick={() => toggle(a)} disabled={needsApproval && !active}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 disabled:opacity-40 ${active ? 'bg-green-100 text-green-600' : 'bg-black/5 text-[var(--text-muted)]'}`}
                   aria-label={active ? 'Pause' : 'Activate'}>
                   {active ? <Pause size={16} /> : <Play size={16} />}
                 </button>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold text-[var(--text-primary)] truncate">{a.name}</span>
                     <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{active ? 'Active' : 'Paused'}</span>
+                    {needsApproval && (
+                      <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Needs approval</span>
+                    )}
+                    {needsApproval && approval.canApprove && (
+                      <button onClick={() => approve(a)} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">Approve</button>
+                    )}
                   </div>
                   <div className="text-xs text-[var(--text-secondary)] mt-0.5">
                     {meta?.label ?? a.trigger_type}

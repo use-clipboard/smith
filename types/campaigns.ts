@@ -186,6 +186,9 @@ export interface CampaignAutomation {
   from_email: string | null;
   reply_to: string | null;
   require_approval: boolean;
+  /** Set when the automation itself has been signed off; cleared on content edits. */
+  approved_at: string | null;
+  approved_by: string | null;
   settings: Record<string, unknown>;
   last_run_at: string | null;
   next_run_at: string | null;

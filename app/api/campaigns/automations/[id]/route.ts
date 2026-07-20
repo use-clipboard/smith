@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getCampaignsContext } from '@/lib/campaigns/guard';
 import { computeNextRun } from '@/lib/campaigns/automations';
+import { getCampaignFirmSettings } from '@/lib/campaigns/settings';
 import type { AutomationTriggerConfig } from '@/types/campaigns';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -43,10 +44,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const supabase = createClient();
-  const { data: existing } = await supabase.from('campaign_automations').select('trigger_type, trigger_config, next_run_at').eq('id', params.id).eq('firm_id', ctx.firmId).maybeSingle();
+  const { data: existing } = await supabase
+    .from('campaign_automations')
+    .select('trigger_type, trigger_config, next_run_at, approved_at, status')
+    .eq('id', params.id).eq('firm_id', ctx.firmId).maybeSingle();
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  const settings = await getCampaignFirmSettings(supabase, ctx.firmId);
   const patch: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
+
+  // Governance: automations send unattended, so an unapproved one can't be
+  // switched on while the firm requires review.
+  if (parsed.data.status === 'active' && settings.require_approval && !existing.approved_at) {
+    return NextResponse.json(
+      { error: 'This automation needs approval before it can be switched on.' },
+      { status: 403 },
+    );
+  }
+
+  // Changing what it sends (or who to / when) invalidates any approval, and
+  // stops it running unreviewed in the meantime.
+  const contentChanged = ['subject', 'preview_text', 'body_html', 'steps', 'audience_id', 'trigger_type', 'trigger_config', 'mode']
+    .some(k => k in parsed.data);
+  if (contentChanged && existing.approved_at) {
+    patch.approved_at = null;
+    patch.approved_by = null;
+    if (settings.require_approval) patch.status = 'paused';
+  }
 
   // Recompute next_run_at when the schedule or trigger type changes to recurring.
   const triggerType = parsed.data.trigger_type ?? existing.trigger_type;
