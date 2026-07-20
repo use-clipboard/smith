@@ -15,8 +15,10 @@ const ACTION_TEXT: Record<string, string> = {
 };
 import Spinner from '@/components/ui/Spinner';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
-import type { Campaign, CampaignAudience } from '@/types/campaigns';
+import type { Campaign, CampaignAudience, NewsletterDesign } from '@/types/campaigns';
 import { CAMPAIGN_MERGE_TAGS, resolveCampaignMergeTags } from '@/lib/campaigns/mergeFields';
+import { compileDesign, designFromSettings, emptyDesign } from '@/lib/campaigns/newsletter';
+import NewsletterDesigner from './NewsletterDesigner';
 
 const STEPS = [
   { id: 1, label: 'Audience',        icon: Users },
@@ -39,6 +41,9 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
 
   // Local editable copy of the fields we touch.
   const [form, setForm] = useState({ name: '', subject: '', preview_text: '', body_html: '', audience_id: '' as string | null });
+  // Non-null when the campaign is built with the newsletter designer; the
+  // compiled HTML still lives in form.body_html so every send path is unchanged.
+  const [design, setDesign] = useState<NewsletterDesign | null>(null);
   const lastFocused = useRef<'subject' | 'body'>('body');
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -77,6 +82,7 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
         if (live && c) {
           setCampaign(c);
           setForm({ name: c.name, subject: c.subject, preview_text: c.preview_text, body_html: c.body_html, audience_id: c.audience_id });
+          setDesign(designFromSettings(c.settings));
           if (c.status === 'sent') setStep(6);
         }
       } finally { if (live) setLoading(false); }
@@ -99,7 +105,13 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
   }
 
   async function goTo(next: number) {
-    await save(form);
+    // Persist the design alongside the form so the block structure survives a
+    // reopen (null clears it when the author switches back to plain HTML).
+    await save({
+      ...form,
+      settings: { ...((campaign?.settings ?? {}) as Record<string, unknown>), design },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
     setStep(next);
   }
 
@@ -178,6 +190,11 @@ export default function CampaignWizard({ campaignId, onClose }: { campaignId: st
         <StepContent
           form={form} set={set}
           subjectRef={subjectRef} bodyRef={bodyRef} lastFocused={lastFocused}
+          design={design}
+          onDesignChange={(d: NewsletterDesign | null) => {
+            setDesign(d);
+            if (d) set('body_html', compileDesign(d));
+          }}
         />
       )}
       {step === 3 && (
@@ -283,7 +300,7 @@ function AudiencePreviewInline({ audience }: { audience: CampaignAudience }) {
 
 // ── Step 2: Content ─────────────────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function StepContent({ form, set, subjectRef, bodyRef, lastFocused }: any) {
+function StepContent({ form, set, subjectRef, bodyRef, lastFocused, design, onDesignChange }: any) {
   const [aiPrompt, setAiPrompt] = useState('');
   const [tone, setTone] = useState('professional');
   const [aiBusy, setAiBusy] = useState(false);
@@ -343,23 +360,48 @@ function StepContent({ form, set, subjectRef, bodyRef, lastFocused }: any) {
           />
         </div>
         <div>
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-[var(--text-secondary)]">Body <span className="text-[var(--text-muted)] font-normal">(HTML)</span></label>
-            <div className="flex gap-1">
-              {['rewrite', 'shorten', 'expand'].map(m => (
-                <button key={m} onClick={() => quick(m)} disabled={aiBusy} className="text-[11px] px-2 py-0.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] capitalize">{m}</button>
-              ))}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <label className="text-xs font-semibold text-[var(--text-secondary)]">Body</label>
+            <div className="flex items-center gap-2">
+              {!design && (
+                <div className="flex gap-1">
+                  {['rewrite', 'shorten', 'expand'].map(m => (
+                    <button key={m} onClick={() => quick(m)} disabled={aiBusy} className="text-[11px] px-2 py-0.5 rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] capitalize">{m}</button>
+                  ))}
+                </div>
+              )}
+              <div className="inline-flex rounded-lg border border-[var(--border)] overflow-hidden text-[11px] font-semibold">
+                <button
+                  onClick={() => onDesignChange(null)}
+                  className={`px-2 py-1 ${!design ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-black/5'}`}
+                >Plain HTML</button>
+                <button
+                  onClick={() => {
+                    if (design) return;
+                    if (form.body_html.trim() && !confirm('Switching to the designer replaces the current email body. Continue?')) return;
+                    onDesignChange(emptyDesign());
+                  }}
+                  className={`px-2 py-1 ${design ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-black/5'}`}
+                >Designer</button>
+              </div>
             </div>
           </div>
-          <textarea
-            ref={bodyRef}
-            value={form.body_html}
-            onFocus={() => { lastFocused.current = 'body'; }}
-            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => set('body_html', e.target.value)}
-            rows={14}
-            placeholder="<p>Dear {{client.first_name | default: &quot;client&quot;}},</p>"
-            className="mt-1 w-full text-[13px] font-mono rounded-lg border border-[var(--border)] px-3 py-2 focus:outline-none focus:border-[var(--accent)] resize-y"
-          />
+
+          {design ? (
+            <div className="mt-2">
+              <NewsletterDesigner design={design} onChange={onDesignChange} />
+            </div>
+          ) : (
+            <textarea
+              ref={bodyRef}
+              value={form.body_html}
+              onFocus={() => { lastFocused.current = 'body'; }}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => set('body_html', e.target.value)}
+              rows={14}
+              placeholder="<p>Dear {{client.first_name | default: &quot;client&quot;}},</p>"
+              className="mt-1 w-full text-[13px] font-mono rounded-lg border border-[var(--border)] px-3 py-2 focus:outline-none focus:border-[var(--accent)] resize-y"
+            />
+          )}
         </div>
       </div>
 

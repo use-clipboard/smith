@@ -187,6 +187,22 @@ export interface CampaignAutomation {
   updated_at: string;
 }
 
+// ── Newsletter designer ───────────────────────────────────────────────────────
+export type DesignBlock =
+  | { id: string; type: 'heading'; text: string }
+  | { id: string; type: 'text'; text: string }
+  | { id: string; type: 'image'; src: string; alt: string; href: string }
+  | { id: string; type: 'button'; label: string; href: string }
+  | { id: string; type: 'divider' }
+  | { id: string; type: 'spacer'; height: number };
+
+export interface NewsletterDesign {
+  kind: 'newsletter';
+  brandColor: string;
+  logoUrl: string;
+  blocks: DesignBlock[];
+}
+
 // ── Spreadsheet audiences (CSV/Excel mail-merge) ──────────────────────────────
 export type SpreadsheetColumnRole =
   | 'email' | 'first_name' | 'full_name' | 'business_name' | 'reference' | 'custom' | 'ignore';
