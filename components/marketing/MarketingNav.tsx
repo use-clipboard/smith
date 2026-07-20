@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { SmithLogoLoader } from '@/components/ui/SmithLogoLoader';
 import WaitlistButton from './WaitlistButton';
 
 /**
@@ -23,6 +24,12 @@ export default function MarketingNav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [progress, setProgress] = useState(0);
+  // Shown the moment "Log in" is clicked. The link triggers a full-page
+  // navigation to /login, which the middleware may then redirect on to
+  // /dashboard for an already-signed-in user — up to a few server round-trips
+  // with no UI change. Without immediate feedback the click feels dead, so we
+  // paint a full-screen loader over the marketing page until it unloads.
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     const onScroll = () => {
@@ -37,6 +44,15 @@ export default function MarketingNav() {
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
     };
+  }, []);
+
+  // Clear the overlay if the user returns via the browser back button — a
+  // bfcache restore re-shows this page with its prior React state, so without
+  // this the loader would still be covering the screen.
+  useEffect(() => {
+    const onPageShow = () => setNavigating(false);
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
 
   return (
@@ -77,6 +93,7 @@ export default function MarketingNav() {
         <div className="hidden items-center gap-3 md:flex">
           <Link
             href="/login"
+            onClick={() => setNavigating(true)}
             className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:text-slate-900"
           >
             Log in
@@ -114,6 +131,27 @@ export default function MarketingNav() {
         />
       </div>
 
+      {/* Full-screen loader while the login navigation resolves. Neutral copy —
+          the destination is the dashboard for a signed-in user, or the login
+          form otherwise. */}
+      {navigating && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-white/90 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="" className="h-9 w-9 rounded-md" />
+            <span className="text-xl font-extrabold tracking-tight text-slate-900">SMITH</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+            <SmithLogoLoader size={16} className="text-primary-600" />
+            One moment…
+          </div>
+        </div>
+      )}
+
       {/* Mobile menu */}
       {open && (
         <div className="border-t border-slate-200/70 bg-white/95 backdrop-blur-md md:hidden">
@@ -129,7 +167,11 @@ export default function MarketingNav() {
               </a>
             ))}
             <div className="mt-2 flex flex-col gap-2 border-t border-slate-200 pt-3">
-              <Link href="/login" className="rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              <Link
+                href="/login"
+                onClick={() => { setOpen(false); setNavigating(true); }}
+                className="rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
                 Log in
               </Link>
               <WaitlistButton
