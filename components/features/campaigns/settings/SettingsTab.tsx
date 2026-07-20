@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Mail, Check, Loader2, UserMinus, Plus, X, ShieldCheck } from 'lucide-react';
 import Spinner from '@/components/ui/Spinner';
 import type { CampaignFirmSettings } from '@/types/campaigns';
+import DeliverabilityPanel from './DeliverabilityPanel';
 
 interface Suppression { id: string; email: string; client_id: string | null; scope: string; created_at: string }
 
@@ -98,6 +99,9 @@ export default function SettingsTab() {
           <p className="text-[11px] text-[var(--text-muted)] mt-1">Replies go here instead of the sending mailbox. Leave blank to reply to the sender.</p>
         </div>
       </section>
+
+      {/* Deliverability */}
+      <DeliverabilityPanel />
 
       {/* Defaults */}
       <section className="glass-solid rounded-2xl border border-[var(--border)] p-5 space-y-4">
