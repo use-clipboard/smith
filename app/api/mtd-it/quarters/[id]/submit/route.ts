@@ -174,7 +174,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const skipped = results.filter(r => r.status === 'skipped').length;
   let quarterStatus = quarter.status as string;
   if (submitted > 0 && errors === 0 && skipped === 0) {
-    await service.from('mtd_it_quarters').update({ status: 'submitted', updated_at: new Date().toISOString() }).eq('id', quarter.id);
+    // submitted_at is the precise filing moment (updated_at moves on any edit).
+    const submittedIso = new Date().toISOString();
+    await service.from('mtd_it_quarters')
+      .update({ status: 'submitted', submitted_at: submittedIso, updated_at: submittedIso })
+      .eq('id', quarter.id);
     quarterStatus = 'submitted';
   }
 

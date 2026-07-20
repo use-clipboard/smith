@@ -74,6 +74,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
+  // Stamp the filing moment the first time a quarter reaches 'submitted' (the
+  // submit route does the same). updated_at moves on every edit, so anything
+  // asking "when was this filed?" needs its own timestamp.
+  if (statusApplied === 'submitted' && qmeta.status !== 'submitted') {
+    updates.submitted_at = new Date().toISOString();
+  }
+
   const { error } = await supabase.from('mtd_it_quarters').update(updates).eq('id', params.id);
   if (error) {
     console.error('PATCH /api/mtd-it/quarters/[id]', error);

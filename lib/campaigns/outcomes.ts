@@ -134,11 +134,9 @@ export async function computeCampaignOutcomes(
     collectClientIds(supabase, 'vault_documents', 'created_at', ids, fromIso, toIso),
     collectClientIds(supabase, 'tasks', 'completed_at', ids, fromIso, toIso),
     collectClientIds(supabase, 'invoices', 'paid_at', ids, fromIso, toIso),
-    // mtd_it_quarters has no submitted_at, so we require the quarter to actually
-    // BE submitted/approved and to have changed in the window. Not a perfect
-    // signal (a later edit to a submitted quarter would also count) but the
-    // status requirement keeps false positives rare.
-    collectClientIds(supabase, 'mtd_it_quarters', 'updated_at', ids, fromIso, toIso, { column: 'status', values: ['submitted', 'approved'] }),
+    // Exact: submitted_at is stamped at the filing moment (20260775), so this no
+    // longer has to approximate from updated_at.
+    collectClientIds(supabase, 'mtd_it_quarters', 'submitted_at', ids, fromIso, toIso),
     collectAccountsApproved(supabase, ids, fromIso, toIso),
   ]);
 
