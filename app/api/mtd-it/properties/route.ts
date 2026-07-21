@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   const supabase = createClient();
   const { data: properties, error } = await supabase
     .from('mtd_it_properties')
-    .select('id, client_id, address, country, currency, ownership_pct, property_type, active, created_at')
+    .select('id, client_id, address, country, currency, ownership_pct, property_type, use_type, active, created_at')
     .eq('client_id', clientId)
     .order('created_at', { ascending: true });
   if (error) return NextResponse.json({ error: 'Failed to load properties' }, { status: 500 });
@@ -66,6 +66,7 @@ const CreateSchema = z.object({
   currency:      z.string().length(3).default('GBP'),
   ownership_pct: z.number().min(0).max(100).default(100),
   property_type: z.enum(['uk', 'foreign']),
+  use_type:      z.enum(['residential', 'commercial']).nullable().optional(),
 });
 
 // POST /api/mtd-it/properties
@@ -95,6 +96,7 @@ const PatchSchema = z.object({
   currency:      z.string().length(3).optional(),
   ownership_pct: z.number().min(0).max(100).optional(),
   property_type: z.enum(['uk', 'foreign']).optional(),
+  use_type:      z.enum(['residential', 'commercial']).nullable().optional(),
   active:        z.boolean().optional(),
 }).strict();
 

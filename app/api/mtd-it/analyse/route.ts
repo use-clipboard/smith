@@ -141,12 +141,12 @@ export async function POST(req: NextRequest) {
   // Fetch property + trade lists so the prompt can offer them as IDs
   const clientId = (q as { client_id: string }).client_id;
   const [{ data: props }, { data: trades }] = await Promise.all([
-    supabase.from('mtd_it_properties').select('id, address, currency, property_type, active, ownership_pct').eq('client_id', clientId),
+    supabase.from('mtd_it_properties').select('id, address, currency, property_type, use_type, active, ownership_pct').eq('client_id', clientId),
     supabase.from('mtd_it_trades').select('id, name, active').eq('client_id', clientId),
   ]);
   const propsForStream = (props ?? [])
     .filter(p => p.active !== false && (stream === 'uk_rental' ? p.property_type === 'uk' : stream === 'foreign_rental' ? p.property_type === 'foreign' : false))
-    .map(p => ({ id: p.id, address: p.address, currency: p.currency }));
+    .map(p => ({ id: p.id, address: p.address, currency: p.currency, use_type: (p.use_type as 'residential' | 'commercial' | null) ?? null }));
   const tradesForStream = stream === 'sole'
     ? (trades ?? []).filter(t => t.active !== false).map(t => ({ id: t.id, name: t.name }))
     : [];

@@ -20,7 +20,7 @@ interface ApprovalSummary {
   quarter_label: string;
   period_from: string;
   period_to: string;
-  totals: Record<string, { income: number; expense: number }>;
+  totals: Record<string, { income: number; expense: number; residentialFinanceCost?: number }>;
   expires_at: string | null;
 }
 
@@ -197,20 +197,34 @@ export default function MtdItApproveClient({ token }: { token: string }) {
                     <th className="text-left  px-4 py-2 font-medium text-gray-700 text-xs uppercase tracking-wide">Stream</th>
                     <th className="text-right px-4 py-2 font-medium text-green-700 text-xs uppercase tracking-wide">Income</th>
                     <th className="text-right px-4 py-2 font-medium text-red-700 text-xs uppercase tracking-wide">Expense</th>
+                    {Object.values(data.totals).some(t => (t.residentialFinanceCost ?? 0) > 0) && (
+                      <th className="text-right px-4 py-2 font-medium text-indigo-700 text-xs uppercase tracking-wide">Resi. finance</th>
+                    )}
                     <th className="text-right px-4 py-2 font-medium text-gray-700 text-xs uppercase tracking-wide">Net</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {Object.entries(data.totals).map(([stream, t]) => (
-                    <tr key={stream}>
-                      <td className="px-4 py-2 text-gray-800">{STREAM_LABEL[stream] ?? stream}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-green-700">{fmtMoney(t.income)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-red-700">{fmtMoney(t.expense)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-medium">{fmtMoney(t.income - t.expense)}</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const showResi = Object.values(data.totals).some(t => (t.residentialFinanceCost ?? 0) > 0);
+                    return Object.entries(data.totals).map(([stream, t]) => (
+                      <tr key={stream}>
+                        <td className="px-4 py-2 text-gray-800">{STREAM_LABEL[stream] ?? stream}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-green-700">{fmtMoney(t.income)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-red-700">{fmtMoney(t.expense)}</td>
+                        {showResi && (
+                          <td className="px-4 py-2 text-right tabular-nums text-indigo-700">{(t.residentialFinanceCost ?? 0) > 0 ? fmtMoney(t.residentialFinanceCost ?? 0) : '—'}</td>
+                        )}
+                        <td className="px-4 py-2 text-right tabular-nums font-medium">{fmtMoney(t.income - t.expense)}</td>
+                      </tr>
+                    ));
+                  })()}
                 </tbody>
               </table>
+              {Object.values(data.totals).some(t => (t.residentialFinanceCost ?? 0) > 0) && (
+                <p className="px-4 py-2 text-[11px] text-gray-500 border-t border-gray-100">
+                  Residential finance costs (e.g. mortgage interest) are not deducted from profit — relief is given separately as a 20% reduction of the tax due.
+                </p>
+              )}
             </div>
           )}
 

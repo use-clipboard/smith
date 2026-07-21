@@ -1125,15 +1125,19 @@ function StreamPanel(props: {
           </SubSection>
         )}
         {stream === 'uk_rental' && (
-          <SubSection title="Properties" hint="Tag each UK property with its ownership % so shared portfolios get applied automatically.">
-            <MtdItPropertiesEditor clientId={clientId} filter="uk" />
-          </SubSection>
+          <>
+            <SubSection title="Properties" hint="Tag each UK property with its ownership % so shared portfolios get applied automatically.">
+              <MtdItPropertiesEditor clientId={clientId} filter="uk" />
+            </SubSection>
+            <ResidentialFinanceBfInput clientId={clientId} taxYear={qrow.tax_year} stream="uk_rental" />
+          </>
         )}
         {stream === 'foreign_rental' && (
           <>
             <SubSection title="Properties" hint="Set the currency on each property — amounts stay in source currency until you set the FX rate below.">
               <MtdItPropertiesEditor clientId={clientId} filter="foreign" onChange={onForeignPropertiesChange} />
             </SubSection>
+            <ResidentialFinanceBfInput clientId={clientId} taxYear={qrow.tax_year} stream="foreign_rental" />
             {detectedCurrencies.length > 0 && (
               <SubSection title="FX rates" hint="1 unit of foreign currency → GBP. Used at quarter-close to consolidate totals.">
                 <div className="flex flex-wrap gap-2">
@@ -1301,6 +1305,64 @@ function SubSection({ title, hint, children }: { title: string; hint?: string; c
       </div>
       {children}
     </div>
+  );
+}
+
+// Brought-forward unrelieved residential finance costs. A per-tax-year figure
+// (shared across the 4 quarters), entered by the accountant from the prior
+// year's computation and reported to HMRC alongside the current-period amount.
+function ResidentialFinanceBfInput({ clientId, taxYear, stream }: { clientId: string; taxYear: number; stream: 'uk_rental' | 'foreign_rental' }) {
+  const [amount, setAmount] = useState<number>(0);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/mtd-it/finance-bf?client_id=${clientId}&tax_year=${taxYear}`);
+        const d = await r.json().catch(() => ({}));
+        if (!cancelled && r.ok) setAmount(Number(d.broughtForward?.[stream] ?? 0));
+      } finally { if (!cancelled) setLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [clientId, taxYear, stream]);
+
+  async function save(v: number) {
+    setSaving(true);
+    try {
+      await fetch('/api/mtd-it/finance-bf', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: clientId, tax_year: taxYear, stream, amount: v }),
+      });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <SubSection
+      title="Residential finance costs brought forward"
+      hint="Unrelieved residential finance costs carried over from the prior year's tax computation. Applies to the whole tax year; reported to HMRC alongside this year's figure. Leave 0 if none."
+    >
+      <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm">
+        <span className="text-gray-400 text-xs">£</span>
+        <input
+          type="number"
+          step="0.01"
+          min={0}
+          disabled={!loaded}
+          defaultValue={loaded ? (amount || '') : ''}
+          key={loaded ? 'ready' : 'loading'}
+          onBlur={e => {
+            const v = Math.max(0, Number(e.target.value) || 0);
+            if (v !== amount) { setAmount(v); void save(v); }
+          }}
+          placeholder="0.00"
+          className="w-28 px-2 py-0.5 text-sm text-right bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300 disabled:opacity-50"
+          aria-label="Residential finance costs brought forward (£)"
+        />
+        {saving && <Loader2 size={12} className="animate-spin text-gray-400" />}
+      </label>
+    </SubSection>
   );
 }
 

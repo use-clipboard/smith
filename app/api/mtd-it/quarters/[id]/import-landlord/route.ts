@@ -3,13 +3,19 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { getQuarterDates } from '@/lib/mtdIt/quarters';
+import { landlordCategoryToMtd } from '@/lib/mtdIt/landlordCategoryMap';
 import type { MtdItQuarterType } from '@/types';
 
 // Import from Landlord (Feed A) — pull a saved Landlord Analysis into this MTD IT
 // quarter's UK-property entries, for the transactions whose date falls in the
 // quarter window. Mirrors import-bookkeeping / co-owner-import. Capital items are
-// excluded; residential finance costs ARE included as an expense (the SA
-// restriction is applied later at finalisation, not quarterly).
+// excluded.
+//
+// Landlord (SA105) categories are mapped onto the MTD category list on import
+// (landlordCategoryToMtd) so rows aren't "non-standard" and — crucially —
+// finance costs land in "Residential Finance Costs" (restricted, reported in
+// HMRC's separate field), or "Non-Residential Finance Costs" when the matched
+// property is marked commercial.
 //
 // The saved Landlord analysis stores WHOLE-PROPERTY amounts (its per-person
 // split happens at computation time, not in result_data), so we store the full
@@ -93,7 +99,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       .select('id, client_id, result_data')
       .eq('id', outputId).eq('feature', 'landlord_analysis').maybeSingle();
     if (!out || out.client_id !== q.client_id) return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
-    const lines = windowLines((out.result_data ?? {}) as LandlordResult, q.from, q.to);
+    const lines = windowLines((out.result_data ?? {}) as LandlordResult, q.from, q.to)
+      // Show the MTD categories the rows will import as. Property matching (and
+      // hence the commercial-finance nuance) happens at import; the preview shows
+      // the residential default.
+      .map(l => ({ ...l, category: landlordCategoryToMtd(l.category) }));
     return NextResponse.json({ from: q.from, to: q.to, status: q.status, lines, existing_landlord_count: existingLandlord ?? 0 });
   }
 
@@ -156,10 +166,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // shared with the Landlord tool) to tag the entry + carry the ownership share.
   const { data: props } = await supabase
     .from('mtd_it_properties')
-    .select('id, address, ownership_pct')
+    .select('id, address, ownership_pct, use_type')
     .eq('client_id', q.client_id).eq('property_type', 'uk');
-  const propByAddr = new Map<string, { id: string; ownership_pct: number }>();
-  for (const p of props ?? []) propByAddr.set(normAddress(p.address as string), { id: p.id as string, ownership_pct: Number(p.ownership_pct) });
+  const propByAddr = new Map<string, { id: string; ownership_pct: number; use_type: 'residential' | 'commercial' | null }>();
+  for (const p of props ?? []) propByAddr.set(normAddress(p.address as string), { id: p.id as string, ownership_pct: Number(p.ownership_pct), use_type: (p.use_type as 'residential' | 'commercial' | null) ?? null });
 
   let replaced = 0;
   if (body.mode === 'replace') {
@@ -172,6 +182,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const rows = lines.map(l => {
     const match = l.property ? propByAddr.get(normAddress(l.property)) : undefined;
+    // Map the SA105 category onto the MTD list; finance costs resolve to
+    // residential (default) or non-residential from the matched property's marker.
+    const category = landlordCategoryToMtd(l.category, { propertyUseType: match?.use_type ?? null });
     return {
       quarter_id: params.id,
       stream: 'uk_rental',
@@ -181,7 +194,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       entry_date: l.entry_date,
       description: l.description,
       supplier: l.supplier || null,
-      category: l.category,
+      category,
       entry_type: l.entry_type,
       gross_amount: l.amount,
       net_amount: l.amount,

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabase-server';
 import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
 import { round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
+import { isResidentialFinanceCost } from '@/lib/mtdIt/financeCosts';
 import { isEntryFlagged, reflagStoredRows, type FlaggableEntry } from '@/lib/mtdIt/flags';
 import type { ValuableEntry } from '@/lib/mtdIt/amounts';
 import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
@@ -45,7 +46,7 @@ function pickQuarterContext(row: NonNullable<Awaited<ReturnType<typeof loadAppro
 
 /** The entry columns this page needs: enough to derive flags and to value the
  *  row at the client's share. */
-type SummaryRow = FlaggableEntry & ValuableEntry & { entry_type: string };
+type SummaryRow = FlaggableEntry & ValuableEntry & { entry_type: string; category: string | null };
 
 // ── GET ─────────────────────────────────────────────────────────────────
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
@@ -64,7 +65,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   // Aggregate entries by stream + type for the summary table on the page.
   const { data: entries } = await service
     .from('mtd_it_entries')
-    .select('stream, entry_type, entry_date, supplier, gross_amount, currency, fx_rate, gbp_amount, share_pct, flagged_reason, flag_dismissed')
+    .select('stream, entry_type, entry_date, supplier, category, gross_amount, currency, fx_rate, gbp_amount, share_pct, flagged_reason, flag_dismissed')
     .eq('quarter_id', quarter.id ?? '');
 
   // Derive flags the same way the reviewer's screen does, rather than trusting
@@ -78,17 +79,24 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   // to match the figures in the email / PDF (those are built from the active
   // streams). `streams_snapshot` is the source of truth for what's in scope.
   const streamsSnapshot = quarter.streams_snapshot ?? null;
-  const totals: Record<string, { income: number; expense: number }> = {};
+  const totals: Record<string, { income: number; expense: number; residentialFinanceCost: number }> = {};
   for (const e of reflagged) {
     if (isEntryFlagged(e)) continue;
     const s = e.stream as string;
     if (streamsSnapshot && !streamsSnapshot[s]) continue;
-    if (!totals[s]) totals[s] = { income: 0, expense: 0 };
+    if (!totals[s]) totals[s] = { income: 0, expense: 0, residentialFinanceCost: 0 };
     // The client approves the figures we file, so this must be the client's
     // SHARE — same rule as the P&L, the PDF and computeUpdate. See amounts.ts.
     const amount = round2(shareAdjustedGbp(e, {}));
-    if (e.entry_type === 'income')  totals[s].income  += amount;
-    if (e.entry_type === 'expense') totals[s].expense += amount;
+    if (e.entry_type === 'income') {
+      totals[s].income += amount;
+    } else if (s !== 'sole' && isResidentialFinanceCost(e.category)) {
+      // Residential finance costs are not deducted — kept out of expense/net,
+      // reported separately (relieved as a 20% tax reducer). Matches the filing.
+      totals[s].residentialFinanceCost += amount;
+    } else {
+      totals[s].expense += amount;
+    }
   }
 
   return NextResponse.json({

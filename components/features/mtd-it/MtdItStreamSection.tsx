@@ -27,7 +27,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import {
   Plus, Trash2, Flag, FlagOff, ChevronDown, ChevronRight,
-  Briefcase, House, Globe2, Layers, Eye, ExternalLink, RefreshCw,
+  Briefcase, House, Globe2, Layers, Eye, ExternalLink, RefreshCw, AlertTriangle,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
 import DateInput, { fromIso, parseUkDateStrict } from '@/components/features/bookkeeping/input/DateInput';
@@ -35,6 +35,7 @@ import {
   SOLE_TRADER_INCOME, SOLE_TRADER_EXPENSES,
   UK_RENTAL_INCOME, UK_RENTAL_EXPENSES,
 } from '@/lib/mtdIt/categories';
+import { financeCategoryImpliedUse } from '@/lib/mtdIt/financeCosts';
 import { grossGbp, round2, shareAdjustedGbp } from '@/lib/mtdIt/amounts';
 import { flagReasonFor, isEntryFlagged } from '@/lib/mtdIt/flags';
 import { currencyOptionsIncluding } from '@/lib/mtdIt/currencyCodes';
@@ -517,8 +518,19 @@ function EntryRow(props: {
     ? trades.map(t => ({ id: t.id, label: t.name }))
     : properties
         .filter(p => p.property_type === (stream === 'uk_rental' ? 'uk' : 'foreign'))
-        .map(p => ({ id: p.id, label: p.address }));
+        // Suffix the residential/commercial marker so the reviewer can eyeball
+        // whether a finance-cost row is tagged to the right kind of property.
+        .map(p => ({ id: p.id, label: `${p.address}${p.use_type === 'residential' ? '  🏠 Residential' : p.use_type === 'commercial' ? '  🏢 Commercial' : ''}` }));
   const allocValue = stream === 'sole' ? e.trade_id : e.property_id;
+
+  // Mismatch check: a finance-cost row whose category disagrees with the tax
+  // character marked on the property it's tagged to (e.g. a Residential Finance
+  // Cost sitting on a property flagged Commercial). Advisory only — the category
+  // still decides the actual HMRC treatment.
+  const allocatedProperty = stream !== 'sole' && e.property_id ? properties.find(p => p.id === e.property_id) : undefined;
+  const impliedUse = financeCategoryImpliedUse(e.category);
+  const useMismatch = allocatedProperty?.use_type && impliedUse && allocatedProperty.use_type !== impliedUse
+    ? { propUse: allocatedProperty.use_type, impliedUse } : null;
   // Picking a property brings its ownership share across from Setup — that's
   // where the firm records who owns what, so nobody should be retyping it per
   // row. A share typed by hand afterwards stays until the property changes again.
@@ -835,6 +847,25 @@ function EntryRow(props: {
                   Clear flag
                 </button>
               )}
+            </div>
+          </td>
+        </tr>
+      )}
+
+      {/* Finance-cost category vs property tax-character mismatch — advisory. */}
+      {useMismatch && (
+        <tr>
+          <td colSpan={20} className="px-2 pb-1.5 pt-0">
+            <div className="flex items-start gap-1.5 text-[11px] text-amber-700 pl-1">
+              <AlertTriangle size={10} className="shrink-0 mt-0.5" />
+              <span className="flex-1">
+                This is a <strong>{useMismatch.impliedUse === 'residential' ? 'Residential' : 'Non-Residential'}</strong> finance cost,
+                but the property is marked <strong>{useMismatch.propUse === 'residential' ? 'Residential' : 'Commercial'}</strong>.
+                {useMismatch.impliedUse === 'residential'
+                  ? ' Residential finance costs get the 20% tax reducer; commercial ones are fully deductible.'
+                  : ' Check the category — the property looks residential.'}
+                {' '}Change the category or the property’s type.
+              </span>
             </div>
           </td>
         </tr>

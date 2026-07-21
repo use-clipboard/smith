@@ -15,6 +15,7 @@ import { round2, shareAdjustedGbp } from './amounts';
 import { isEntryFlagged, reflagStoredRows } from './flags';
 import { getQuarterDates } from './quarters';
 import { classifySeExpense, classifyPropertyExpense } from './categoryMap';
+import { isResidentialFinanceCost } from './financeCosts';
 import { resolveCountryCode } from './countryCodes';
 
 export type TypeOfBusiness = 'self-employment' | 'uk-property' | 'foreign-property';
@@ -37,8 +38,18 @@ export interface CumulativeResult {
   /** Itemised expense totals keyed by the HMRC field name (self-employment or
    *  property fields, depending on the source type). */
   expensesByField: Record<string, number>;
-  /** Single consolidated expense total (used for property, or SE if requested). */
+  /** Single consolidated expense total (used for property, or SE if requested).
+   *  EXCLUDES residential finance costs — those are relieved via a tax reducer,
+   *  not deducted, and are reported separately (see residentialFinanceCost). */
   consolidatedExpenses: number;
+  /** Restricted residential finance costs (ITTOIA s.272A) for the period, in
+   *  GBP. Property streams only; held OUT of expensesByField/consolidatedExpenses
+   *  and reported to HMRC in the separate `residentialFinancialCost` field. */
+  residentialFinanceCost: number;
+  /** Unrelieved residential finance costs brought forward from the prior tax
+   *  year (a manual figure from the prior-year computation). Reported alongside
+   *  the current-period amount. Set by computeFilingUnits, per business type. */
+  residentialFinanceCostBroughtFwd: number;
   rowCount: number;
   warnings: string[];
 }
@@ -114,7 +125,7 @@ export async function computeMtdItCumulative(
   const quarterIds = (quarters ?? []).map(q => q.id as string);
 
   const expensesByField: Record<string, number> = {};
-  let income = 0, consolidatedExpenses = 0, rowCount = 0, sharedRows = 0, flaggedExcluded = 0;
+  let income = 0, consolidatedExpenses = 0, residentialFinanceCost = 0, rowCount = 0, sharedRows = 0, flaggedExcluded = 0;
 
   if (quarterIds.length > 0) {
     const stream = STREAM_FOR_TYPE[source.typeOfBusiness];
@@ -173,6 +184,11 @@ export async function computeMtdItCumulative(
       rowCount++;
       if (e.entry_type === 'income') {
         income += value;
+      } else if (source.typeOfBusiness !== 'self-employment' && isResidentialFinanceCost(e.category)) {
+        // Restricted residential finance cost — relieved as a 20% tax reducer,
+        // NOT deducted. Kept out of both the itemised fields and the
+        // consolidated total; reported to HMRC in its own field.
+        residentialFinanceCost += value;
       } else {
         consolidatedExpenses += value;
         const field = source.typeOfBusiness === 'self-employment'
@@ -214,6 +230,8 @@ export async function computeMtdItCumulative(
     income: round2(income),
     expensesByField,
     consolidatedExpenses: round2(consolidatedExpenses),
+    residentialFinanceCost: round2(residentialFinanceCost),
+    residentialFinanceCostBroughtFwd: 0, // set per business type in computeFilingUnits
     rowCount,
     warnings,
   };
@@ -234,6 +252,11 @@ export interface ForeignCountrySplit {
   income: number;
   expensesByField: Record<string, number>;
   consolidatedExpenses: number;
+  residentialFinanceCost: number;
+  /** Brought-forward unrelieved residential finance cost. The stored figure is
+   *  per foreign-property business (not per country); it's attached to the first
+   *  country split so the foreign body carries it exactly once. */
+  residentialFinanceCostBroughtFwd: number;
 }
 
 export interface FilingUnit {
@@ -273,6 +296,17 @@ export async function computeFilingUnits(
   const units: FilingUnit[] = [];
   const errors: string[] = [];
 
+  // Brought-forward unrelieved residential finance costs (manual, per tax year,
+  // per property business). Reported alongside the current-period figure.
+  const { data: bfRows } = await supabase
+    .from('mtd_it_finance_bf')
+    .select('stream, amount')
+    .eq('client_id', clientId).eq('tax_year', taxYear);
+  const bfByStream = new Map<string, number>();
+  for (const r of bfRows ?? []) bfByStream.set(r.stream as string, Number(r.amount ?? 0));
+  const ukBroughtFwd = round2(bfByStream.get('uk_rental') ?? 0);
+  const foreignBroughtFwd = round2(bfByStream.get('foreign_rental') ?? 0);
+
   // Self-employment — one unit per trade.
   let seAllocIncome = 0, seAllocExpense = 0;
   for (const t of trades) {
@@ -304,6 +338,7 @@ export async function computeFilingUnits(
     const businessId = uk.map(p => p.hmrcBusinessId).find(Boolean) ?? null;
     const source: BusinessSource = { kind: 'property', id: uk[0].id, hmrcBusinessId: businessId, typeOfBusiness: 'uk-property', name: 'UK property' };
     const figures = await computeMtdItCumulative(supabase, { ...base, source, aggregateStream: true });
+    figures.residentialFinanceCostBroughtFwd = ukBroughtFwd;
     units.push({
       typeOfBusiness: 'uk-property', businessId,
       name: uk.length === 1 ? uk[0].address : `UK property (${uk.length} properties)`,
@@ -318,6 +353,7 @@ export async function computeFilingUnits(
     // Whole-stream total (captures unallocated entries too).
     const totalSource: BusinessSource = { kind: 'property', id: fg[0].id, hmrcBusinessId: businessId, typeOfBusiness: 'foreign-property', name: 'Foreign property' };
     const figures = await computeMtdItCumulative(supabase, { ...base, source: totalSource, aggregateStream: true });
+    figures.residentialFinanceCostBroughtFwd = foreignBroughtFwd;
 
     const resolved = fg.map(p => ({ p, code: resolveCountryCode(p.country) }));
     const distinctCodes = [...new Set(resolved.filter(r => r.code).map(r => r.code as string))];
@@ -326,28 +362,33 @@ export async function computeFilingUnits(
     let foreignCountries: ForeignCountrySplit[];
     if (distinctCodes.length <= 1 && !anyUnresolved) {
       // One country (or all the same): file the whole stream total under it,
-      // so unallocated entries are included rather than dropped.
+      // so unallocated entries are included rather than dropped. The whole b/f
+      // pool sits on this single country entry.
       const code = distinctCodes[0] ?? null;
-      foreignCountries = [{ countryCode: code, rawCountry: fg[0].country, income: figures.income, expensesByField: figures.expensesByField, consolidatedExpenses: figures.consolidatedExpenses }];
+      foreignCountries = [{ countryCode: code, rawCountry: fg[0].country, income: figures.income, expensesByField: figures.expensesByField, consolidatedExpenses: figures.consolidatedExpenses, residentialFinanceCost: figures.residentialFinanceCost, residentialFinanceCostBroughtFwd: foreignBroughtFwd }];
       if (!code) figures.warnings.push('Set a country on the foreign property before filing.');
     } else {
       // Multiple countries (or some unrecognised): split per property by
       // allocation. Warn loudly about anything that would be left out.
       const byKey = new Map<string, ForeignCountrySplit>();
-      let allocIncome = 0, allocExpense = 0;
+      let allocIncome = 0, allocExpense = 0, allocResiFinance = 0;
       for (const { p, code } of resolved) {
         const src: BusinessSource = { kind: 'property', id: p.id, hmrcBusinessId: businessId, typeOfBusiness: 'foreign-property', name: p.address };
         const fig = await computeMtdItCumulative(supabase, { ...base, source: src });
-        allocIncome += fig.income; allocExpense += fig.consolidatedExpenses;
+        allocIncome += fig.income; allocExpense += fig.consolidatedExpenses; allocResiFinance += fig.residentialFinanceCost;
         const key = code ?? `__unresolved__${p.id}`;
-        const entry = byKey.get(key) ?? { countryCode: code, rawCountry: p.country, income: 0, expensesByField: {}, consolidatedExpenses: 0 };
+        const entry = byKey.get(key) ?? { countryCode: code, rawCountry: p.country, income: 0, expensesByField: {}, consolidatedExpenses: 0, residentialFinanceCost: 0, residentialFinanceCostBroughtFwd: 0 };
         entry.income += fig.income;
         entry.consolidatedExpenses += fig.consolidatedExpenses;
+        entry.residentialFinanceCost = round2(entry.residentialFinanceCost + fig.residentialFinanceCost);
         for (const [f, v] of Object.entries(fig.expensesByField)) entry.expensesByField[f] = round2((entry.expensesByField[f] ?? 0) + v);
         byKey.set(key, entry);
       }
       foreignCountries = [...byKey.values()];
-      if (figures.income - allocIncome > 0.01 || figures.consolidatedExpenses - allocExpense > 0.01) {
+      // Brought-forward is a single business-level figure; attach it to the
+      // first country split so the foreign body carries it exactly once.
+      if (foreignCountries.length > 0) foreignCountries[0].residentialFinanceCostBroughtFwd = foreignBroughtFwd;
+      if (figures.income - allocIncome > 0.01 || figures.consolidatedExpenses - allocExpense > 0.01 || figures.residentialFinanceCost - allocResiFinance > 0.01) {
         figures.warnings.push("Some foreign rental entries aren't allocated to a property, so they can't be assigned a country — allocate them or they'll be left out of the filing.");
       }
       if (anyUnresolved) figures.warnings.push('A foreign property has an unrecognised country — fix it before filing.');

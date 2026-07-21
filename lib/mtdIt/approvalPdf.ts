@@ -390,6 +390,19 @@ export async function renderApprovalPdf(opts: {
       y = drawCategoryTable(y, s.income,  'income');
       y += 12;
       y = drawCategoryTable(y, s.expense, 'expense');
+      y += 12;
+    }
+
+    // Residential finance costs — shown separately so the client understands the
+    // profit isn't reduced by their mortgage interest; relief comes as a reducer.
+    if (s.residentialFinanceCost > 0) {
+      y = ensureSpace(y, 44);
+      fillRect(margin, y, contentW, 36, COLOR.brandSoft, 4);
+      strokeRect(margin, y, contentW, 36, COLOR.rule, 4);
+      text('Residential finance costs (not deducted)', margin + 14, y + 15, { bold: true, size: 9, color: COLOR.brandInk });
+      text(fmtMoneyGbp(s.residentialFinanceCost), pageW - margin - 14, y + 15, { bold: true, size: 10, align: 'right', color: COLOR.brandInk });
+      text('Mortgage/loan interest on residential lets is not deducted from profit; relief is given as a 20% reduction of the tax due.', margin + 14, y + 29, { size: 8, color: COLOR.textMuted });
+      y += 44;
     }
   }
 

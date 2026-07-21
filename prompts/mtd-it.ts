@@ -18,7 +18,7 @@ export interface PromptContext {
   fromIso: string;                 // YYYY-MM-DD, inclusive
   toIso:   string;                 // YYYY-MM-DD, inclusive
   /** Property addresses available to tag rental rows against. */
-  properties?: Array<{ id: string; address: string; currency: string }>;
+  properties?: Array<{ id: string; address: string; currency: string; use_type?: 'residential' | 'commercial' | null }>;
   /** Trade names available to tag sole-trader rows against. */
   trades?:     Array<{ id: string; name: string }>;
 }
@@ -37,11 +37,27 @@ const COMMON_RULES = `
 - If you see what looks like a duplicate within the same file, set flagged_reason to "Possible duplicate in same document".
 `;
 
+// Finance-cost guidance for the rental streams. The residential/non-residential
+// split matters because residential finance costs are restricted (relieved as a
+// 20% tax reducer, reported to HMRC separately) while commercial ones are fully
+// deductible. Default to residential — it's the common case for lettings.
+const FINANCE_COST_RULE = `
+**Finance costs — pick the RIGHT one of two categories**
+- Mortgage/loan interest, and incidental costs of arranging finance (arrangement or broker fees), are finance costs.
+- Use **"Residential Finance Costs"** for residential lets (houses, flats, HMOs, holiday lets). These are RESTRICTED — relieved as a 20% tax reducer, reported to HMRC separately — so never fold them into other expenses.
+- Use **"Non-Residential Finance Costs"** ONLY when the property is clearly commercial (office, shop, warehouse, land) — or is tagged "commercial" in the properties list above.
+- If unsure, DEFAULT to "Residential Finance Costs".
+- Never file finance costs under "Premises Running Costs" or "Other Expenses".
+`;
+
 function buildPropertyHint(props?: PromptContext['properties']): string {
   if (!props || props.length === 0) {
     return `**Properties**: none defined yet. Leave property_id null.`;
   }
-  const list = props.map(p => `  - id: ${p.id}  |  ${p.address} (${p.currency})`).join('\n');
+  const list = props.map(p => {
+    const use = p.use_type ? `, ${p.use_type}` : '';
+    return `  - id: ${p.id}  |  ${p.address} (${p.currency}${use})`;
+  }).join('\n');
   return `**Properties (tag each row against one if you can match it confidently by address; otherwise null):**
 ${list}`;
 }
@@ -114,7 +130,7 @@ Extract EVERY income or expense transaction visible in the documents. Categorise
 **Expense categories** (entry_type: "expense"): ${JSON.stringify(UK_RENTAL_EXPENSES)}
 
 If a transaction doesn't obviously fit, use "Other Income" / "Other Expenses".
-
+${FINANCE_COST_RULE}
 ${COMMON_RULES}
 
 **Required JSON schema**
@@ -155,7 +171,7 @@ Extract EVERY income or expense transaction visible in the documents. Categorise
 **Expense categories** (entry_type: "expense"): ${JSON.stringify(UK_RENTAL_EXPENSES)}
 
 If a transaction doesn't obviously fit, use "Other Income" / "Other Expenses".
-
+${FINANCE_COST_RULE}
 ${COMMON_RULES}
 
 **Required JSON schema**

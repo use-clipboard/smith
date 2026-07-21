@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, House, Loader2, AlertTriangle, Users, Building2 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import PropertyUseTypeSelect, { type PropertyUseType } from '@/components/ui/PropertyUseTypeSelect';
 import LandlordOwnersModal from './LandlordOwnersModal';
 import type { LandlordProperty } from '@/types';
 
@@ -66,6 +67,19 @@ export default function LandlordPropertiesPanel({
     finally { setBusyId(null); }
   }
 
+  async function patchUseType(id: string, use_type: PropertyUseType) {
+    setBusyId(id); setError(null);
+    try {
+      const res = await fetch(`/api/mtd-it/properties?id=${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_type }),
+      });
+      if (!res.ok) throw new Error('Failed to update');
+      onRefetch();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Failed to update'); }
+    finally { setBusyId(null); }
+  }
+
   async function removeProperty(id: string) {
     setBusyId(id); setError(null);
     try {
@@ -95,6 +109,11 @@ export default function LandlordPropertiesPanel({
                 defaultValue={p.address}
                 onBlur={e => { if (e.target.value.trim() && e.target.value !== p.address) void patchAddress(p.id, e.target.value.trim()); }}
                 className="flex-1 min-w-0 px-1.5 py-0.5 text-sm bg-transparent border border-transparent rounded hover:border-[var(--border)] focus:outline-none focus:border-[var(--border-input)]"
+              />
+              <PropertyUseTypeSelect
+                value={p.use_type ?? null}
+                disabled={busyId === p.id}
+                onChange={v => { if (v !== (p.use_type ?? null)) void patchUseType(p.id, v); }}
               />
               <Tooltip label="Manage owners & shares">
                 <button

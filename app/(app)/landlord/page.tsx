@@ -355,10 +355,11 @@ function LandlordTool({ seed, onBack }: { seed: LandlordSeed | null; onBack: () 
       const pData = pRes.ok ? await pRes.json() : { properties: [] };
       const oData = oRes.ok ? await oRes.json() : { owners: [] };
       const owners = (oData.owners ?? []) as PropertyOwner[];
-      type FetchedProp = { id: string; client_id: string; address: string; ownership_pct: number; property_type: 'uk' | 'foreign'; active: boolean };
+      type FetchedProp = { id: string; client_id: string; address: string; ownership_pct: number; property_type: 'uk' | 'foreign'; use_type?: 'residential' | 'commercial' | null; active: boolean };
       const merged: LandlordProperty[] = ((pData.properties ?? []) as FetchedProp[]).map(p => ({
         id: p.id, client_id: p.client_id, address: p.address,
-        ownership_pct: Number(p.ownership_pct), property_type: p.property_type, active: p.active,
+        ownership_pct: Number(p.ownership_pct), property_type: p.property_type,
+        use_type: p.use_type ?? null, active: p.active,
         owners: owners.filter(o => o.property_id === p.id),
       }));
       setProperties(merged);

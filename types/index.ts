@@ -958,6 +958,11 @@ export interface MtdItProperty {
   currency: string;
   ownership_pct: number;
   property_type: 'uk' | 'foreign';
+  /** Tax character of the property, for finance-cost treatment. Optional marker:
+   *  the entry category is what actually decides treatment, but this drives the
+   *  at-a-glance badge and the "residential finance cost on a commercial property"
+   *  mismatch warning. Former FHLs count as residential (FHL abolished Apr 2025). */
+  use_type: 'residential' | 'commercial' | null;
   active: boolean;
   created_at: string;
   /** Other MTD IT clients in the firm that share this property. Populated by
@@ -989,6 +994,9 @@ export interface LandlordProperty {
   address: string;
   ownership_pct: number;
   property_type: 'uk' | 'foreign';
+  /** Residential vs commercial — drives the finance-cost restriction. Shared with
+   *  the MTD IT tool (mtd_it_properties.use_type). Nullable = not set. */
+  use_type: 'residential' | 'commercial' | null;
   active: boolean;
   owners: PropertyOwner[];
 }

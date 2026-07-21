@@ -33,6 +33,7 @@ ${JSON.stringify(ctx.pastExpenses ?? []).slice(0, 18000)}
 export function buildLandlordPrompt(pastContext?: LandlordPastContext | null): string {
   const categories = [
     "Allowable loan interest and other financial costs",
+    "Non-residential loan interest and other financial costs",
     "Car, van and other travel expenses",
     "Costs of services provided, including wages",
     "Legal, management and other professional fees",
@@ -61,6 +62,7 @@ Your goal is to extract both INCOME and EXPENSE transactions and flag anything i
     1. **DueDate**: The main date on the invoice/receipt. Format as YYYY-MM-DD.
     2. **Description**: A concise summary of the expense.
     3. **Category**: You MUST assign one of the following exact categories: [${categories.join(', ')}].
+       - **Finance costs** (mortgage/loan interest, arrangement/broker fees): use "Allowable loan interest and other financial costs" for RESIDENTIAL lets (the default — these are restricted, giving a 20% tax reducer). Use "Non-residential loan interest and other financial costs" ONLY when the property is clearly commercial (office, shop, warehouse, land). If unsure, default to the residential one.
     4. **Amount**: The total gross amount of the expense.
     5. **Supplier**: The name of the supplier.
     6. **TenantPayable**: Set to \`true\` if the cost is to be recharged to a tenant, otherwise \`false\`.

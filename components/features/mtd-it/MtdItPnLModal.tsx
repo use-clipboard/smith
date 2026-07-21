@@ -210,6 +210,17 @@ function PnLCard({ pnl, consolidated }: { pnl: PnLForStream; consolidated: boole
         <SectionBlock section={pnl.income}  consolidated={consolidated} tone="text-green-700" />
         <SectionBlock section={pnl.expense} consolidated={consolidated} tone="text-red-700" />
       </div>
+      {pnl.residentialFinanceCost > 0 && (
+        <div className="px-4 py-2 border-t border-gray-100 bg-indigo-50/40 text-xs space-y-0.5">
+          <div className="flex items-center justify-between">
+            <span className="text-indigo-800 font-medium">Residential finance costs (not deducted)</span>
+            <span className="tabular-nums text-indigo-800">{fmtMoneyGbp(pnl.residentialFinanceCost)}</span>
+          </div>
+          <p className="text-[10px] text-indigo-500/90">
+            Restricted under s.272A — relieved as a 20% basic-rate tax reducer (≈ {fmtMoneyGbp(pnl.residentialFinanceReducer)}), not deducted from profit. HMRC calculates the final, capped relief.
+          </p>
+        </div>
+      )}
       <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">Net (Income − Expense)</span>
         <span className={`text-base font-semibold tabular-nums ${pnl.net >= 0 ? 'text-gray-900' : 'text-red-700'}`}>{fmtMoneyGbp(pnl.net)}</span>
@@ -232,6 +243,12 @@ function BucketCard({ bucket, streamBorder, consolidated }: { bucket: PnLBucket;
       <div className="px-3 py-2 text-xs space-y-1.5">
         <SectionBlock section={bucket.income}  consolidated={consolidated} tone="text-green-700" compact />
         <SectionBlock section={bucket.expense} consolidated={consolidated} tone="text-red-700"   compact />
+        {bucket.residentialFinanceCost > 0 && (
+          <div className="flex items-center justify-between text-indigo-700">
+            <span>Resi. finance (not deducted)</span>
+            <span className="tabular-nums">{fmtMoneyGbp(bucket.residentialFinanceCost)}</span>
+          </div>
+        )}
       </div>
       <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs">
         <span className="font-semibold uppercase tracking-wide text-gray-600">Net</span>

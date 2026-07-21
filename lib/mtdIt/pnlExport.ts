@@ -293,6 +293,18 @@ export function exportPnLPdf(streams: PnLForStream[], ctx: ExportContext): void 
       y += 12;
     }
 
+    // Residential finance costs — reported separately, relieved as a 20% tax
+    // reducer, NOT included in the expense total or net above.
+    if (s.residentialFinanceCost > 0) {
+      y = ensureSpace(y, 44);
+      fillRect(margin, y, contentW, 36, COLOR.brandSoft, 4);
+      strokeRect(margin, y, contentW, 36, COLOR.rule, 4);
+      text('Residential finance costs (not deducted)', margin + 14, y + 15, { bold: true, size: 9, color: COLOR.brandInk });
+      text(fmtMoneyGbp(s.residentialFinanceCost), pageW - margin - 14, y + 15, { bold: true, size: 10, align: 'right', color: COLOR.brandInk });
+      text(`Restricted under s.272A - relieved as a 20% tax reducer (approx ${fmtMoneyGbp(s.residentialFinanceReducer)}). HMRC computes the final capped relief.`, margin + 14, y + 29, { size: 8, color: COLOR.textMuted });
+      y += 44;
+    }
+
     if (inc.breakdown && s.breakdown.length > 0) {
       y = ensureSpace(y, 80);
       text('Breakdown by ' + (s.stream === 'sole' ? 'trade' : 'property'), margin, y, { bold: true, size: 11, color: COLOR.brandInk });
@@ -604,6 +616,11 @@ export function exportPnLXlsx(streams: PnLForStream[], ctx: ExportContext): void
     rows.push(...sectionToRows(s.income));
     rows.push(...sectionToRows(s.expense));
     rows.push(['NET (Income - Expense)', s.net]);
+    if (s.residentialFinanceCost > 0) {
+      rows.push([null]);
+      rows.push(['Residential finance costs (not deducted)', s.residentialFinanceCost]);
+      rows.push(['  Relieved as 20% tax reducer (approx)', s.residentialFinanceReducer]);
+    }
     rows.push([null]);
     if (s.breakdown.length > 0) {
       rows.push(['BREAKDOWN']);

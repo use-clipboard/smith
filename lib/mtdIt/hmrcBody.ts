@@ -65,6 +65,14 @@ export function buildUkPropertyCumulativeBody(
           .filter(([, v]) => typeof v === 'number' && v !== 0)
           .map(([k, v]) => [k, round2(v as number)]),
       );
+  // Residential finance costs (restricted, ITTOIA s.272A) are reported in their
+  // own field, NOT summed into expenses. HMRC's Property Business API permits
+  // `residentialFinancialCost`/`residentialFinancialCostsCarriedForward`
+  // ALONGSIDE `consolidatedExpenses`, so they emit in both modes. Note the HMRC
+  // spelling is "Financial" (not "Finance"). ⚠ verify the exact envelope against
+  // the HMRC sandbox — this builder is the ONE place to adjust.
+  if (r.residentialFinanceCost > 0) expenses.residentialFinancialCost = round2(r.residentialFinanceCost);
+  if (r.residentialFinanceCostBroughtFwd > 0) expenses.residentialFinancialCostsCarriedForward = round2(r.residentialFinanceCostBroughtFwd);
   return {
     fromDate: r.periodStartDate,
     toDate: r.periodEndDate,
@@ -84,6 +92,12 @@ export interface ForeignPropertyCountryEntry {
   income: number;
   expensesByField: Record<string, number>;
   consolidatedExpenses: number;
+  /** Restricted residential finance cost for this country (GBP) — reported in
+   *  the separate `residentialFinancialCost` field, not deducted. */
+  residentialFinanceCost: number;
+  /** Unrelieved residential finance cost brought forward (business-level; only
+   *  the first country entry carries it). Emits as `broughtFwdResidentialFinancialCost`. */
+  residentialFinanceCostBroughtFwd: number;
 }
 
 export interface ForeignPropertyCumulativeBody {
@@ -118,6 +132,12 @@ export function buildForeignPropertyCumulativeBody(
               .filter(([, v]) => typeof v === 'number' && v !== 0)
               .map(([k, v]) => [k, round2(v as number)]),
           );
+      // Restricted residential finance cost sits outside the deductible total.
+      // Foreign uses the same base field name as UK (`residentialFinancialCost`,
+      // "Financial" not "Finance") but a DIFFERENT brought-forward field name
+      // (`broughtFwdResidentialFinancialCost`). ⚠ verify against the HMRC sandbox.
+      if (c.residentialFinanceCost > 0) expenses.residentialFinancialCost = round2(c.residentialFinanceCost);
+      if (c.residentialFinanceCostBroughtFwd > 0) expenses.broughtFwdResidentialFinancialCost = round2(c.residentialFinanceCostBroughtFwd);
       return {
         countryCode: c.countryCode,
         income: { rentIncome: { rentAmount: round2(c.income) } },

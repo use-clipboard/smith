@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle, Users } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import PropertyUseTypeSelect, { type PropertyUseType } from '@/components/ui/PropertyUseTypeSelect';
 import { currencyOptionsIncluding } from '@/lib/mtdIt/currencyCodes';
 import MtdItPropertyCoOwnersModal from './MtdItPropertyCoOwnersModal';
 import type { MtdItProperty } from '@/types';
@@ -13,6 +14,8 @@ interface Props {
   filter?: 'uk' | 'foreign';
   onChange?: (props: MtdItProperty[]) => void;
 }
+
+type UseType = PropertyUseType;
 
 export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Props) {
   const [items, setItems]     = useState<MtdItProperty[]>([]);
@@ -27,6 +30,7 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
   const [draftCountry, setDraftCountry]   = useState('');
   const [draftCurrency, setDraftCurrency] = useState('GBP');
   const [draftPct,     setDraftPct]       = useState(100);
+  const [draftUseType, setDraftUseType]   = useState<UseType>(null);
 
   /** Returns the freshly-loaded list so callers can act on it without reading
    *  `items` out of a stale closure. */
@@ -65,13 +69,14 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
           currency:      type === 'foreign' ? (draftCurrency.toUpperCase() || 'EUR') : 'GBP',
           ownership_pct: Math.max(0, Math.min(100, draftPct)),
           property_type: type,
+          use_type: draftUseType,
         }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? 'Failed to add property');
       }
-      setDraftAddress(''); setDraftCountry(''); setDraftCurrency(type === 'foreign' ? 'EUR' : 'GBP'); setDraftPct(100); setAdding(null);
+      setDraftAddress(''); setDraftCountry(''); setDraftCurrency(type === 'foreign' ? 'EUR' : 'GBP'); setDraftPct(100); setDraftUseType(null); setAdding(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add property');
@@ -125,6 +130,11 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
             defaultValue={p.address}
             onBlur={e => { if (e.target.value !== p.address) void patchProperty(p.id, { address: e.target.value }); }}
             className="flex-1 min-w-0 px-1.5 py-0.5 text-sm bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+          />
+          <PropertyUseTypeSelect
+            value={p.use_type ?? null}
+            disabled={busyId === p.id}
+            onChange={v => { if (v !== (p.use_type ?? null)) void patchProperty(p.id, { use_type: v }); }}
           />
           {p.property_type === 'foreign' && (
             <>
@@ -214,6 +224,7 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
             autoFocus
             className="flex-1 min-w-0 px-1.5 py-0.5 text-sm bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
           />
+          <PropertyUseTypeSelect value={draftUseType} onChange={setDraftUseType} />
           {adding === 'foreign' && (
             <>
               <input

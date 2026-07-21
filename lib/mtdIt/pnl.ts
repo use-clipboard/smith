@@ -15,6 +15,7 @@
 
 import { round2, shareAdjustedGbp } from './amounts';
 import { isEntryFlagged } from './flags';
+import { isResidentialFinanceCost, RESIDENTIAL_FINANCE_REDUCER_RATE } from './financeCosts';
 import type { EditorEntry } from './types';
 import type { MtdItStream, MtdItProperty, MtdItTrade } from '@/types';
 
@@ -27,7 +28,11 @@ export interface PnLBucket {
   sublabel?: string | null;
   unallocated: boolean;
   income: PnLSection;
+  /** DEDUCTIBLE expenses only — residential finance costs are held out (below). */
   expense: PnLSection;
+  /** Restricted residential finance costs (relieved as a 20% tax reducer, NOT
+   *  deducted). Excluded from `expense` and from `net`. */
+  residentialFinanceCost: number;
   net: number;
   /** Number of rows that fell into this bucket. */
   rowCount: number;
@@ -37,8 +42,14 @@ export interface PnLForStream {
   streamLabel: string;
   /** Aggregated income section across the whole stream. */
   income: PnLSection;
-  /** Aggregated expense section across the whole stream. */
+  /** Aggregated DEDUCTIBLE expense section across the whole stream. */
   expense: PnLSection;
+  /** Restricted residential finance costs for the whole stream — reported
+   *  separately, relieved as a 20% tax reducer, and NOT subtracted from `net`. */
+  residentialFinanceCost: number;
+  /** Indicative basic-rate (20%) tax reducer on the residential finance cost.
+   *  For display only — HMRC does the real, capped calculation at Final Declaration. */
+  residentialFinanceReducer: number;
   net: number;
   rowCount: number;
   /** Per-trade or per-property breakdown. Empty if every row is unallocated. */
@@ -71,12 +82,24 @@ function buildSection(title: string, entries: EditorEntry[], fxRates: Record<str
   return { title, lines, total };
 }
 
+/** Sum the client's share (GBP) of a set of rows, rounded per row to match the
+ *  filing path. */
+function sumRows(rows: EditorEntry[], fxRates: Record<string, number>): number {
+  return round2(rows.reduce((a, r) => a + round2(shareAdjustedGbp(r, fxRates)), 0));
+}
+
 function buildBucket(label: string, sublabel: string | null | undefined, rows: EditorEntry[], fxRates: Record<string, number>, unallocated: boolean): PnLBucket {
-  const income  = buildSection('Income',  rows.filter(r => r.entry_type === 'income'),  fxRates);
-  const expense = buildSection('Expense', rows.filter(r => r.entry_type === 'expense'), fxRates);
+  const income  = buildSection('Income', rows.filter(r => r.entry_type === 'income'), fxRates);
+  const expenseRows = rows.filter(r => r.entry_type === 'expense');
+  // Residential finance costs are relieved as a tax reducer, not deducted — keep
+  // them out of the expense section and the net figure.
+  const deductibleRows = expenseRows.filter(r => !isResidentialFinanceCost(r.category));
+  const resiRows       = expenseRows.filter(r =>  isResidentialFinanceCost(r.category));
+  const expense = buildSection('Expense', deductibleRows, fxRates);
   return {
     label, sublabel: sublabel ?? undefined, unallocated,
     income, expense,
+    residentialFinanceCost: sumRows(resiRows, fxRates),
     net: income.total - expense.total,
     rowCount: rows.length,
   };
@@ -94,8 +117,12 @@ export function buildPnL(opts: {
   // Exclude flagged + deleted; the P&L mirrors the editor's "clean" totals.
   const clean = opts.entries.filter(e => !e._deleted && !isEntryFlagged(e));
 
-  const income  = buildSection('Income',  clean.filter(r => r.entry_type === 'income'),  fxRates);
-  const expense = buildSection('Expense', clean.filter(r => r.entry_type === 'expense'), fxRates);
+  const income = buildSection('Income', clean.filter(r => r.entry_type === 'income'), fxRates);
+  const cleanExpense   = clean.filter(r => r.entry_type === 'expense');
+  const deductibleRows = cleanExpense.filter(r => !isResidentialFinanceCost(r.category));
+  const resiRows       = cleanExpense.filter(r =>  isResidentialFinanceCost(r.category));
+  const expense = buildSection('Expense', deductibleRows, fxRates);
+  const residentialFinanceCost = sumRows(resiRows, fxRates);
 
   // Build the per-trade or per-property breakdown.
   const breakdown: PnLBucket[] = [];
@@ -155,6 +182,8 @@ export function buildPnL(opts: {
     streamLabel: STREAM_LABEL[stream],
     income,
     expense,
+    residentialFinanceCost,
+    residentialFinanceReducer: round2(residentialFinanceCost * RESIDENTIAL_FINANCE_REDUCER_RATE),
     net: income.total - expense.total,
     rowCount: clean.length,
     breakdown,

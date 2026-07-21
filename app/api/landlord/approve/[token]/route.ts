@@ -59,7 +59,7 @@ type OutputRow = {
 async function loadRegister(service: ReturnType<typeof createServiceClient>, clientId: string): Promise<LandlordProperty[]> {
   const { data: props } = await service
     .from('mtd_it_properties')
-    .select('id, client_id, address, ownership_pct, property_type, active')
+    .select('id, client_id, address, ownership_pct, property_type, use_type, active')
     .eq('client_id', clientId);
   if (!props || props.length === 0) return [];
   const { data: owners } = await service
@@ -72,6 +72,7 @@ async function loadRegister(service: ReturnType<typeof createServiceClient>, cli
     address: p.address as string,
     ownership_pct: Number(p.ownership_pct),
     property_type: p.property_type as 'uk' | 'foreign',
+    use_type: (p.use_type as 'residential' | 'commercial' | null) ?? null,
     active: p.active as boolean,
     owners: ((owners ?? []) as PropertyOwner[]).filter(o => o.property_id === p.id).map(o => ({ ...o, share_pct: Number(o.share_pct) })),
   }));

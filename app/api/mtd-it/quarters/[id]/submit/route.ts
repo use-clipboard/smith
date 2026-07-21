@@ -137,7 +137,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       // Foreign — drop any country we couldn't resolve (never file a blank code).
       // NOTE: the foreign cumulative envelope is isolated in hmrcBody.ts and
       // should be verified against the HMRC sandbox before live use.
-      const countries = (unit.foreignCountries ?? []).filter(c => c.countryCode) as Array<{ countryCode: string; income: number; expensesByField: Record<string, number>; consolidatedExpenses: number }>;
+      const countries = (unit.foreignCountries ?? []).filter(c => c.countryCode) as Array<{ countryCode: string; income: number; expensesByField: Record<string, number>; consolidatedExpenses: number; residentialFinanceCost: number; residentialFinanceCostBroughtFwd: number }>;
       if (countries.length === 0) {
         results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'Set a valid country (e.g. "France" or "FRA") on the foreign property before filing.' });
         continue;

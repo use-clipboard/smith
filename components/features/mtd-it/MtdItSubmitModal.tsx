@@ -24,6 +24,8 @@ interface PreviewSource {
   income: number;
   consolidatedExpenses: number;
   expensesByField: Record<string, number>;
+  residentialFinanceCost: number;
+  residentialFinanceCostBroughtFwd: number;
   rowCount: number;
   warnings: string[];
 }
@@ -214,9 +216,17 @@ export default function MtdItSubmitModal({
                       <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1.5"><Building2 size={13} className="text-slate-400" /> {s.name}</span>
                       <span className="text-[10px] uppercase tracking-wide text-slate-500">{TYPE_LABEL[s.typeOfBusiness]}</span>
                     </div>
-                    <div className="mt-1.5 flex items-center gap-4 text-xs text-slate-600">
+                    <div className="mt-1.5 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
                       <span>Income <strong className="tabular-nums">{gbp(s.income)}</strong></span>
                       <span>Expenses <strong className="tabular-nums">{gbp(s.consolidatedExpenses)}</strong></span>
+                      {s.residentialFinanceCost > 0 && (
+                        <Tooltip label="Residential finance costs are reported separately and relieved as a 20% basic-rate tax reducer — not deducted from profit.">
+                          <span className="cursor-help">Resi. finance <strong className="tabular-nums">{gbp(s.residentialFinanceCost)}</strong></span>
+                        </Tooltip>
+                      )}
+                      {s.residentialFinanceCostBroughtFwd > 0 && (
+                        <span className="text-slate-400">b/f {gbp(s.residentialFinanceCostBroughtFwd)}</span>
+                      )}
                       <span className="text-slate-400">{uk(s.periodStartDate)}–{uk(s.periodEndDate)} · {s.rowCount} rows</span>
                     </div>
                     {unmapped && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Not linked to an HMRC business — map it on the HMRC setup screen.</p>}
