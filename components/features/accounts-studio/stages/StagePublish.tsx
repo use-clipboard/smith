@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
   Loader2, Send, Signature, Landmark, PartyPopper, Download, AlertCircle, Scissors, Info,
-  CheckCircle2, RotateCcw,
+  CheckCircle2, RotateCcw, Building2, KeyRound, XCircle,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { filletEligibility } from '@/lib/accounts-studio/statements';
-import { buildIxbrl, ddmmyyyyToIso, type IxbrlFramework } from '@/lib/accounts-studio/ixbrl';
-import { publishEngagement, markSubmitted } from '../persistence';
+import { buildIxbrlFromEngagement } from '@/lib/accounts-studio/ixbrlFromEngagement';
+import { publishEngagement, markSubmitted, submitToCompaniesHouse, type ChSubmitResult } from '../persistence';
 import { getFirmBranding, type FirmBranding } from '../branding';
 import SendApprovalModal from '../SendApprovalModal';
 import { useSendApproval } from '../useSendApproval';
@@ -55,6 +55,12 @@ export default function StagePublish({
   const [prefillEmail, setPrefillEmail] = useState('');
   const [sendBusy, setSendBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Companies House XML Gateway filing (test).
+  const [chOpen, setChOpen] = useState(false);
+  const [chAuthCode, setChAuthCode] = useState('');
+  const [chBusy, setChBusy] = useState(false);
+  const [chError, setChError] = useState('');
+  const [chResult, setChResult] = useState<ChSubmitResult | null>(null);
   const status = engagement.approvalStatus;
 
   const { isModuleActive } = useModules();
@@ -124,26 +130,30 @@ export default function StagePublish({
   // structured statements. Not yet filing-valid: run through the CH iXBRL test
   // validation service before filing. See lib/accounts-studio/ixbrl.ts.
   function downloadIxbrl() {
-    if (!engagement.statements) return;
     setBusyDoc('ixbrl'); setError('');
     try {
-      const ii = engagement.importInfo;
-      const framework: IxbrlFramework = /105/.test(engagement.framework) ? 'frs105' : 'frs102-1a';
-      const html = buildIxbrl({
-        companyName: engagement.companyName,
-        companyNumber: engagement.companyNumber,
-        periodStartIso: ii?.from ?? ddmmyyyyToIso(engagement.periodStart),
-        periodEndIso: ii?.to ?? ddmmyyyyToIso(engagement.periodEnd),
-        priorStartIso: ii?.priorFrom ?? null,
-        priorEndIso: ii?.priorTo ?? (engagement.comparativePeriod ? ddmmyyyyToIso(engagement.comparativePeriod) : null),
-        framework,
-        statements: engagement.statements,
-      });
+      const html = buildIxbrlFromEngagement(engagement);
+      if (!html) { setError('Prepare the accounts before generating iXBRL.'); return; }
       downloadBlob(new Blob([html], { type: 'application/xhtml+xml' }), `iXBRL_${engagement.companyName.replace(/\s+/g, '_')}_${engagement.periodEnd}.html`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate iXBRL.');
     } finally {
       setBusyDoc(null);
+    }
+  }
+
+  // ── Companies House XML Gateway filing (test) ───────────────────────────────
+  async function fileToCH() {
+    if (!chAuthCode.trim()) { setChError('Enter the company authentication code.'); return; }
+    setChBusy(true); setChError(''); setChResult(null);
+    try {
+      const res = await submitToCompaniesHouse(engagement.id, { companyAuthCode: chAuthCode.trim() });
+      setChResult(res);
+      if (res.ok) setChAuthCode('');
+    } catch (e) {
+      setChError(e instanceof Error ? e.message : 'Filing failed.');
+    } finally {
+      setChBusy(false);
     }
   }
 
@@ -337,8 +347,52 @@ export default function StagePublish({
                 <p className="text-[11px] text-[var(--text-muted)]">{status === 'approved' ? 'Records the accounts as filed' : 'Available once the client has approved'}</p>
               </div>
             </button>
+
+            {/* File to Companies House (XML Gateway — test environment) */}
+            <button onClick={() => setChOpen(o => !o)} disabled={!ready}
+              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Building2 size={15} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">File iXBRL to Companies House <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Test</span></p>
+                <p className="text-[11px] text-[var(--text-muted)]">Submit the tagged accounts over the XML Gateway</p>
+              </div>
+            </button>
           </div>
-          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Direct Companies House / iXBRL filing is coming soon — for now this records the submission.</p>
+
+          {chOpen && (
+            <div className="mt-2 rounded-xl border border-indigo-200/70 bg-indigo-50/40 p-3">
+              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
+              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
+              <div className="flex gap-2">
+                <input
+                  value={chAuthCode}
+                  onChange={ev => setChAuthCode(ev.target.value)}
+                  placeholder="e.g. A1B2C3"
+                  autoComplete="off" spellCheck={false}
+                  className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] tracking-wider text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                />
+                <button onClick={fileToCH} disabled={chBusy || !chAuthCode.trim()}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                  {chBusy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} {chBusy ? 'Filing…' : 'File'}
+                </button>
+              </div>
+              {chError && <p className="mt-2 flex items-start gap-1.5 text-[11.5px] text-red-600"><XCircle size={13} className="mt-px shrink-0" /> {chError}</p>}
+              {chResult && (
+                <div className={`mt-2 rounded-lg border px-3 py-2 text-[11.5px] ${chResult.ok ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-red-200 bg-red-50/70 text-red-700'}`}>
+                  <p className="flex items-center gap-1.5 font-semibold">
+                    {chResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                    {chResult.ok ? `Submitted — number ${chResult.submissionNumber}` : 'Rejected by Companies House'}
+                  </p>
+                  <p className="mt-0.5">{chResult.message}</p>
+                  {chResult.ok && chResult.isTest && (
+                    <p className="mt-1 text-[10.5px] text-emerald-700">Test submissions are reviewed manually — email the Companies House XML team to have submission {chResult.submissionNumber} checked.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Filing goes to the Companies House XML Gateway test environment. &ldquo;Mark as submitted&rdquo; records the accounts as filed on the client record.</p>
         </StudioCard>
 
         {showSend && (

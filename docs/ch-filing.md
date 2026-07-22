@@ -176,18 +176,105 @@ domain mismatch doesn't look like an error.
 Deliberately did **not** re-ask for schema/version notes or the validation
 service — that's all on the page they pointed us at.
 
-**→ AWAITING** test presenter ID + authentication value.
+### 4. CH issued the test account — received 21 Jul 2026
+
+From **Cloideach, Software Liaison Manager, XML Team**. Test presenter credentials
+(store server-side only — they're in `.env.local` locally):
+
+| Field | Value | Env var |
+|---|---|---|
+| Test Presenter ID | `66666651000` | `CH_XMLGW_PRESENTER_ID` |
+| Authentication Value | `W2JKbT5LXjr` | `CH_XMLGW_AUTH_VALUE` |
+| Test Flag | `1` | (derived from `CH_XMLGW_ENV=test`) |
+| Test Package Reference | `0012` | `CH_XMLGW_PACKAGE_REF` |
+
+Cloideach's rules: **submission numbers must be unique and incremental** (a reused
+or out-of-order number = immediate rejection), and **email him when a test has
+been submitted** so he can review it manually. Next step per CH: "tell me when
+you have submitted tests so I can review them."
+
+## Gateway plumbing — BUILT 21 Jul 2026
+
+The XML Gateway submission layer is implemented (transport only — the iXBRL
+payload's QNames still need validating, see below):
+
+- **`lib/companiesHouse/config.ts`** — env-based presenter creds + `test`/`live`
+  switch; `isChGatewayConfigured()`.
+- **`lib/companiesHouse/gateway.ts`** — the wire format in one file. Builds the
+  GovTalk envelope + FormSubmission, computes the **CHMD5** token
+  (`md5(SenderID + AuthValue + TransactionID)`, lowercase hex — confirmed against
+  the php-govtalk CompaniesHouse extension), POSTs to the gateway, parses the
+  GovTalk response (Qualifier / CorrelationID / `<Error><Text>`).
+- **`lib/accounts-studio/ixbrlFromEngagement.ts`** — single Engagement→iXBRL
+  mapper shared by the Publish "Download (beta)" button and the submit route, so
+  the reviewed document and the filed document are identical. Also holds the CH
+  `CompanyType` code map (⚠ enum best-known).
+- **`app/api/accounts-studio/engagements/[id]/ch-submit`** — regenerates the
+  iXBRL server-side, allocates the next submission number, submits, and logs
+  every attempt (success or rejection, with raw response + filed iXBRL).
+- **Migration `20260778_ch_gateway_submissions.sql`** — audit-log table +
+  `ch_gateway_submission_seq` sequence + `next_ch_submission_number()` allocator
+  (one monotonic source feeds both SubmissionNumber and TransactionID).
+- **Publish UI** — "File iXBRL to Companies House (Test)" with a company
+  authentication-code input; shows the submission number on acceptance, or the
+  CH rejection reason.
+
+### ⚠ Verify against the schema on the first round-trip
+
+The envelope structure + CHMD5 are from authoritative sources, but a few
+`FormHeader` specifics are best-known and isolated with `⚠` comments — the CH
+**`CompanyType`** enumeration, whether `CustomerReference` is required, and the
+`Document` Category/ContentType casing. The first CH validation response is the
+oracle: correct the flagged fields in `gateway.ts` / `ixbrlFromEngagement.ts`.
+
+## iXBRL offline validation — DONE (FRS 102 1A + FRS 105) 21–22 Jul 2026
+
+Validated with **Arelle 2.42.1** against the live **FRC 2023** taxonomy
+(`--validate --calcDecimals`, i.e. XBRL Dimensions + calculation checks on).
+
+- **FRS 102 Section 1A: CLEAN** — no errors, warnings or inconsistencies. Two
+  real bugs were found and fixed in `lib/accounts-studio/ixbrl.ts`:
+  1. `<xbrli:scenario>` was emitted **inside `<xbrli:entity>`** (invalid — XBRL
+     2.1 puts scenario as a child of `<context>` after `<period>`). Fixed.
+  2. `<style>` was missing the required `type="text/css"` attribute. Fixed.
+- **Every concept QName resolved** against the taxonomy (no `missingReferences`),
+  and the creditor-maturity dimension passed XBRL Dimensions validation — so the
+  CONCEPTS table + maturity dimension in `ixbrl.ts` are confirmed correct. The
+  `core`/`bus` namespace URIs match what the FRS-102 entry point imports.
+- **How to reproduce:** `pip install arelle-release`, generate a sample from
+  Publish → iXBRL → Download (beta), then
+  `python -m arelle.CntlrCmdLine --validate --calcDecimals --file sample.html`.
+  Articulate the figures (NetCurrentAssets = CurrentAssets − CreditorsWithin,
+  etc.) or the calc linkbase flags inconsistencies.
+
+- **FRS 105 (micro): CLEAN too** (fixed 22 Jul 2026). There is **no separate
+  FRS-105 taxonomy** — micro-entity accounts tag against the **FRS-102 entry
+  point** (the FRC "UK GAAP" taxonomy carries both small-company and micro
+  concepts). That's why every `/FRS-105/…` URL 403'd — it doesn't exist. Fixed
+  `ENTRY_POINTS['frs105']` to point at the FRS-102 entry point; the FRS 105 sample
+  now validates clean under Arelle (dims + calc). Confirmed via SureFile Accounts'
+  supported-taxonomy list (lists "FRS 102/FRS 105" under one entry point) + FRC
+  digital-reporting guidance.
+
+### ⚠ Still outstanding on the iXBRL
+
+- **Companies House business rules** are a separate layer ON TOP of taxonomy
+  validity — CH require mandatory content (balance-sheet statements, director
+  approval name, accountant's report, etc.) that a minimal fact set omits. The CH
+  iXBRL validation service / first test submission is what surfaces those; extend
+  the tagged facts in `ixbrl.ts` to satisfy them.
 
 ## Next steps (in order)
 
 1. **Read *TIS for accounts* v5.9** (1 Apr 2026) and confirm which FRC taxonomy
-   suite it mandates — this gates step 3, so do it first even while waiting.
-2. When the test presenter credentials arrive, download a sample from
-   Accounts Studio → Approve & Publish → iXBRL → **Download (beta)**.
-3. Run it through the CH iXBRL test validation service (or Arelle + the correct
-   FRC taxonomy) and correct the CONCEPTS / entry-point / dimension QNames in
-   `lib/accounts-studio/ixbrl.ts` until it passes. The generator's structure
-   shouldn't need to change — only that one table.
-4. Build the XML Gateway envelope (presenter ID + MD5 auth, **test flag 1**,
-   unique envelope number, company auth code, iXBRL attachment); submit; email CH
-   to have it reviewed; surface their validation errors in the Publish stage.
+   suite it mandates (2023 is still accepted, so not urgent — but confirm).
+2. **First test submission** — with `.env.local` creds set, use the Publish
+   "File iXBRL to Companies House (Test)" button against a CH **test company** +
+   its authentication code. Read the gateway response; fix the flagged envelope
+   fields (`CompanyType` etc.) from the actual rejection text.
+3. **Email Cloideach** (xml@companieshouse.gov.uk) with the submission number so
+   he reviews it. Iterate until accepted.
+4. **Fix the FRS-105 entry point** (see above) so micro-entity accounts validate.
+5. **Poll for outcome** — add a GetSubmissionStatus poll using the stored
+   CorrelationID (not built yet; manual review means the ack is the realistic
+   first signal). Then apply for the **live** presenter account.

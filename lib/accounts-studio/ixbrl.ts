@@ -1,20 +1,29 @@
-// Accounts Studio — iXBRL generation SPIKE.
+// Accounts Studio — iXBRL generation.
 //
 // Produces an Inline XBRL (iXBRL) document — a single XHTML file that is both
 // human-readable and machine-tagged — from an engagement's structured
 // FinancialStatements, for online filing to Companies House.
 //
-// ── STATUS: spike / not yet filing-valid ────────────────────────────────────
-// The STRUCTURE here (XHTML wrapper, ix:header, contexts, units, ix:nonFraction
-// / ix:nonNumeric facts, entity identifier, currency) is the real shape CH
-// expects. What still needs validating against the actual FRC 2023 taxonomy is
-// the CONCEPT MAP below — the exact tag QNames and which facts need the
-// creditor-maturity dimension. Every concept is flagged; run the output through
-// the Companies House iXBRL test validation service (or Arelle + the FRC 2023
-// taxonomy) and correct the CONCEPTS table until it passes. Nothing else in the
-// generator should need to change.
+// ── STATUS ───────────────────────────────────────────────────────────────────
+// Both FRS 102 Section 1A and FRS 105 output VALIDATE CLEAN against the FRC 2023
+// taxonomy under Arelle 2.42.1 — no errors, warnings or inconsistencies, WITH
+// XBRL Dimensions + calculation validation. (Micro-entity FRS 105 has no separate
+// taxonomy; it tags against the same FRS-102 entry point — see ENTRY_POINTS.)
+// That covers: well-formed iXBRL, valid XBRL 2.1, the creditor-maturity dimension
+// (carried on <scenario>), every concept QName in the CONCEPTS table below
+// resolving against the taxonomy, and articulated figures. (Validated 2026-07-21;
+// see docs/ch-filing.md.)
 //
-// FRC 2023 suite: v1.0.1 (hotfix 17 Feb 2023), usable from 5 Apr 2023.
+// ⚠ STILL EXTERNAL to this technical pass: Companies House business rules — CH's
+// own validation layer requires mandatory content beyond taxonomy-validity (e.g.
+// the balance-sheet statements, director-approval name, accountant's report, and
+// for micro-entities the s.442/micro-entity provisions statements). Test via the
+// CH iXBRL validation service / a test submission; extend the tagged facts as
+// needed. (The micro-entity concept SET differs from small-company, but that's a
+// content question on top of the taxonomy-validity confirmed here.)
+//
+// FRC 2023 suite: v1.0.1 (hotfix 17 Feb 2023), usable from 5 Apr 2023. CH also
+// accepts the 2024/2025/2026 suites — bump the dated URLs/namespaces together.
 
 import type { FinancialStatements } from './statements';
 
@@ -28,7 +37,9 @@ const NS = {
   xlink:   'http://www.w3.org/1999/xlink',
   xbrldi:  'http://xbrl.org/2006/xbrldi',
   iso4217: 'http://www.xbrl.org/2003/iso4217',
-  // FRC 2023 taxonomy namespaces (dated 2023-01-01). VERIFY prefixes/URIs.
+  // FRC 2023 taxonomy namespaces (dated 2023-01-01). core + bus confirmed via
+  // Arelle validation (the FRS-102 entry point imports frc-core + bus at these
+  // exact URIs). `countries` is declared for foreign-property use but unused here.
   core:      'http://xbrl.frc.org.uk/fr/2023-01-01/core',
   bus:       'http://xbrl.frc.org.uk/cd/2023-01-01/business',
   countries: 'http://xbrl.frc.org.uk/cd/2023-01-01/countries',
@@ -37,10 +48,17 @@ const NS = {
 /** Companies House uses this scheme for the entity identifier (company number). */
 const CH_ENTITY_SCHEME = 'http://www.companieshouse.gov.uk/';
 
-/** Taxonomy entry point (schemaRef target) per framework. VERIFY exact URL/version. */
+/** Taxonomy entry point (schemaRef target) per framework.
+ *
+ * There is NO separate FRS-105 taxonomy: micro-entity (FRS 105) accounts tag
+ * against the FRS-102 "UK GAAP" entry point, which carries both the small-company
+ * and micro-entity concepts. (A `/FRS-105/…` URL does not exist — it 403s.) So
+ * both frameworks resolve to the same entry point; the keys are kept distinct in
+ * case the FRC ever splits out a micro entry point. Both Arelle-validated. */
+const FRS_102_ENTRY = 'https://xbrl.frc.org.uk/FRS-102/2023-01-01/FRS-102-2023-01-01.xsd';
 const ENTRY_POINTS: Record<IxbrlFramework, string> = {
-  'frs105':    'https://xbrl.frc.org.uk/FRS-105/2023-01-01/FRS-105-2023-01-01.xsd',
-  'frs102-1a': 'https://xbrl.frc.org.uk/FRS-102/2023-01-01/FRS-102-2023-01-01.xsd',
+  'frs105':    FRS_102_ENTRY,
+  'frs102-1a': FRS_102_ENTRY,
 };
 
 export type IxbrlFramework = 'frs105' | 'frs102-1a';
@@ -58,9 +76,11 @@ export interface IxbrlInput {
 }
 
 // ── Concept map ──────────────────────────────────────────────────────────────
-// Maps the figures we hold to FRC 2023 concept QNames. THESE ARE BEST-KNOWN AND
-// MUST BE VALIDATED. `dim` marks facts that need the creditor-maturity dimension
-// (a scenario on the context) — CH requires creditors to be split within/after.
+// Maps the figures we hold to FRC 2023 concept QNames. Every QName below was
+// confirmed to resolve against the taxonomy by Arelle (no missingReferences).
+// `maturity` marks the creditor facts that carry the maturity dimension — CH
+// requires creditors to be split within/after one year, via the dimensioned
+// contexts (IC-W / IC-A etc.).
 type PLKey = 'turnoverTotal' | 'grossProfit' | 'operatingProfit' | 'taxation' | 'netProfit';
 type BSKey =
   | 'fixedAssetsTotal' | 'currentAssetsTotal' | 'creditorsWithinTotal' | 'netCurrentAssets'
@@ -86,7 +106,8 @@ const BS_CONCEPTS: Record<BSKey, { qname: string; maturity?: 'within' | 'after' 
   totalEquity:            { qname: 'core:Equity' },
 };
 
-// Creditor-maturity dimension + members (explicit dimension). VERIFY.
+// Creditor-maturity dimension + members (explicit dimension). Confirmed by
+// Arelle: the dimension + members resolve and pass XBRL Dimensions validation.
 const MATURITY_DIM = 'core:MaturitiesOrExpirationPeriodsDimension';
 const MATURITY_MEMBER: Record<'within' | 'after', string> = {
   within: 'core:WithinOneYear',
@@ -118,26 +139,29 @@ function row(label: string, fact: string): string {
 // W/A = creditor-maturity dimensioned instants.
 function contexts(input: IxbrlInput): string {
   const id = `<xbrli:identifier scheme="${CH_ENTITY_SCHEME}">${esc(input.companyNumber || '00000000')}</xbrli:identifier>`;
-  const entity = (inner = '') => `<xbrli:entity>${id}${inner}</xbrli:entity>`;
+  const entity = `<xbrli:entity>${id}</xbrli:entity>`;
   const dur = (start: string, end: string) => `<xbrli:period><xbrli:startDate>${start}</xbrli:startDate><xbrli:endDate>${end}</xbrli:endDate></xbrli:period>`;
   const inst = (d: string) => `<xbrli:period><xbrli:instant>${d}</xbrli:instant></xbrli:period>`;
+  // The creditor-maturity dimension is carried on the context's <scenario> — a
+  // direct child of <context> AFTER <period> (XBRL 2.1: <entity> may only hold
+  // an <identifier> + optional <segment>, never <scenario>).
   const scenario = (member: string) =>
     `<xbrli:scenario><xbrldi:explicitMember dimension="${MATURITY_DIM}">${member}</xbrldi:explicitMember></xbrli:scenario>`;
 
   const list: string[] = [];
-  const ctx = (cid: string, ent: string, period: string) =>
-    list.push(`<xbrli:context id="${cid}">${ent}${period}</xbrli:context>`);
+  const ctx = (cid: string, period: string, scen = '') =>
+    list.push(`<xbrli:context id="${cid}">${entity}${period}${scen}</xbrli:context>`);
 
-  ctx('DC', entity(), dur(input.periodStartIso, input.periodEndIso));
-  ctx('IC', entity(), inst(input.periodEndIso));
-  ctx('IC-W', entity(scenario(MATURITY_MEMBER.within)), inst(input.periodEndIso));
-  ctx('IC-A', entity(scenario(MATURITY_MEMBER.after)), inst(input.periodEndIso));
+  ctx('DC', dur(input.periodStartIso, input.periodEndIso));
+  ctx('IC', inst(input.periodEndIso));
+  ctx('IC-W', inst(input.periodEndIso), scenario(MATURITY_MEMBER.within));
+  ctx('IC-A', inst(input.periodEndIso), scenario(MATURITY_MEMBER.after));
 
   if (input.statements.hasPrior && input.priorStartIso && input.priorEndIso) {
-    ctx('DP', entity(), dur(input.priorStartIso, input.priorEndIso));
-    ctx('IP', entity(), inst(input.priorEndIso));
-    ctx('IP-W', entity(scenario(MATURITY_MEMBER.within)), inst(input.priorEndIso));
-    ctx('IP-A', entity(scenario(MATURITY_MEMBER.after)), inst(input.priorEndIso));
+    ctx('DP', dur(input.priorStartIso, input.priorEndIso));
+    ctx('IP', inst(input.priorEndIso));
+    ctx('IP-W', inst(input.priorEndIso), scenario(MATURITY_MEMBER.within));
+    ctx('IP-A', inst(input.priorEndIso), scenario(MATURITY_MEMBER.after));
   }
   return list.join('\n      ');
 }
@@ -191,7 +215,7 @@ export function buildIxbrl(input: IxbrlInput): string {
   <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
     <title>${esc(input.companyName)} — Statutory accounts</title>
-    <style>
+    <style type="text/css">
       body{font-family:Arial,Helvetica,sans-serif;color:#111;max-width:760px;margin:40px auto;padding:0 24px;}
       h1{font-size:20px;margin:0 0 4px;} .sub{color:#555;font-size:12px;margin:0 0 24px;}
       h2{font-size:15px;border-bottom:1px solid #ccc;padding-bottom:4px;margin:28px 0 8px;}

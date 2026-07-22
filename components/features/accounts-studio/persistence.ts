@@ -125,6 +125,38 @@ export async function markSubmitted(engagementId: string): Promise<Engagement> {
   return { ...d.engagement.data, id: d.engagement.id };
 }
 
+// ── Companies House XML Gateway filing ───────────────────────────────────────
+
+export interface ChSubmitInput {
+  companyAuthCode: string;
+  companyType?: string;
+  contactName?: string;
+  contactNumber?: string;
+}
+export interface ChSubmitResult {
+  ok: boolean;
+  status: 'submitted' | 'accepted' | 'rejected' | 'error';
+  message: string;
+  submissionNumber: string;
+  correlationId: string | null;
+  isTest: boolean;
+}
+
+/** File the engagement's iXBRL accounts to the Companies House XML Gateway. */
+export async function submitToCompaniesHouse(engagementId: string, input: ChSubmitInput): Promise<ChSubmitResult> {
+  const r = await fetch(`${BASE}/${engagementId}/ch-submit`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  // ch-submit returns a 502 with {error} on a gateway rejection AND a 200 with
+  // {ok:false} is not used — read both shapes so the caller sees the CH message.
+  const ct = r.headers.get('content-type') ?? '';
+  const d = ct.includes('application/json') ? await r.json().catch(() => ({})) : {};
+  if (!r.ok && (d as { error?: string }).error) throw new Error((d as { error: string }).error);
+  if (!r.ok && !(d as { status?: string }).status) throw new Error('Filing failed. Please try again.');
+  return d as ChSubmitResult;
+}
+
 /**
  * Copy the accounts into a fresh draft — for preparing amended accounts. Clones
  * everything up to the point of sending to the client, resetting the approval /
