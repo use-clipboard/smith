@@ -13,17 +13,22 @@ export function ixbrlFramework(framework: string): IxbrlFramework {
 }
 
 /**
- * Companies House FormSubmission CompanyType code for the entity.
- *
- * ⚠ These codes are best-known and must be confirmed against
- * FormSubmission-v2-11.xsd — the first CH validation response is the oracle.
- * Isolated here so a correction is a one-line change. 'EW' = England & Wales.
+ * Companies House FormSubmission `CompanyType` code — the country of
+ * incorporation + entity classification. Valid values per FormSubmission-v2-11
+ * .xsd: EW (England & Wales), SC (Scotland), NI (Northern Ireland), R (older NI),
+ * OC (E&W LLP), SO (Scottish LLP), NC (NI LLP). Jurisdiction is read from the
+ * company-number prefix (SCxxxxxx / NIxxxxxx / OCxxxxxx / SOxxxxxx / NCxxxxxx);
+ * plain-numeric numbers are England & Wales.
  */
-export function chCompanyType(entityType: EntityType): string {
-  switch (entityType) {
-    case 'llp': return 'LLEW';
-    default: return 'EW';
-  }
+export function chCompanyType(entityType: EntityType, companyNumber: string): string {
+  const p = (companyNumber ?? '').trim().toUpperCase();
+  const isLlp = entityType === 'llp';
+  if (p.startsWith('SO')) return 'SO';
+  if (p.startsWith('NC')) return 'NC';
+  if (p.startsWith('OC')) return 'OC';
+  if (p.startsWith('SC')) return isLlp ? 'SO' : 'SC';
+  if (p.startsWith('NI') || p.startsWith('R')) return isLlp ? 'NC' : 'NI';
+  return isLlp ? 'OC' : 'EW';
 }
 
 /** Build the iXBRL accounts document for an engagement (or null if no statements). */

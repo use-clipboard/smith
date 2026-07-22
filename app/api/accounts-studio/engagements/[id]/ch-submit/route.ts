@@ -78,20 +78,29 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (seqErr || seq == null) {
     return NextResponse.json({ error: 'Could not allocate a submission number.' }, { status: 500 });
   }
-  const submissionNumber = String(seq);
+  // FormSubmission requires SubmissionNumber to be EXACTLY 6 chars → zero-pad.
+  // (Ceiling 999999 submissions per presenter — years away for this firm.) The
+  // raw numeric value is the GovTalk TransactionID / CHMD5 nonce (unique+numeric).
+  const submissionNumber = String(seq).padStart(6, '0');
+  const transactionId = String(seq);
+
+  // CompanyNumber is xs:integer in the schema ("digits only") — strip any
+  // jurisdiction prefix (SC/NI/OC…); the prefix is conveyed by CompanyType.
+  const companyNumberDigits = e.companyNumber.trim().replace(/\D/g, '');
 
   const dateSigned = isoDate(e.approvedAt) ?? isoDate(e.periodEnd) ?? new Date().toISOString().slice(0, 10);
-  const companyType = input.companyType?.trim() || chCompanyType(e.entityType);
-  const filename = `${e.companyName.replace(/[^\w]+/g, '_')}_${e.periodEnd}.xhtml`;
+  const companyType = input.companyType?.trim() || chCompanyType(e.entityType, e.companyNumber);
+  // Filename max 32 chars. Keep it meaningful but hard-cap.
+  const filename = `accounts-${companyNumberDigits || 'draft'}.xhtml`.slice(0, 32);
 
   const envelope = buildSubmissionEnvelope({
     ixbrl,
-    companyNumber: e.companyNumber.trim(),
+    companyNumber: companyNumberDigits,
     companyName: e.companyName,
     companyType,
     companyAuthCode: input.companyAuthCode.trim(),
     submissionNumber,
-    transactionId: submissionNumber,
+    transactionId,
     contactName: input.contactName?.trim() || e.preparedBy || 'Accounts',
     contactNumber: input.contactNumber?.trim() || '',
     dateSigned,
@@ -107,8 +116,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     engagement_id: row.id,
     client_id: (row.client_id as string | null) ?? e.clientId ?? null,
     submission_number: seq,
-    transaction_id: submissionNumber,
-    company_number: e.companyNumber.trim(),
+    transaction_id: transactionId,
+    company_number: companyNumberDigits,
     company_name: e.companyName,
     is_test: CH_XMLGW_ENV !== 'live',
     status: result.status,

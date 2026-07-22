@@ -39,13 +39,17 @@
 //   Value = md5( SenderID + AuthenticationValue + TransactionID ), lowercase hex.
 //   TransactionID must be numeric and unique per message (it's the nonce).
 //
-// ── ⚠ VERIFY against FormSubmission-v2-11.xsd + TIS for accounts v5.9 ─────────
-// The envelope STRUCTURE and the auth hash are from authoritative sources, but a
-// few FormHeader specifics are best-known and will be confirmed by the first CH
-// validation response: the exact CompanyType enumeration, whether CustomerReference
-// is required, and the Document Category / ContentType casing. All are isolated
-// below and flagged. The gateway's job on a bad field is to REJECT with a clear
-// message — which is exactly the signal we're testing for.
+// ── Schema-validated 2026-07-22 ──────────────────────────────────────────────
+// The generated envelope validates CLEAN (offline, via xmlschema) against BOTH
+// Companies House schemas: the GovTalk envelope (Egov_ch-v2-0.xsd) and the
+// FormSubmission body (FormSubmission-v2-11.xsd). Confirmed there: CompanyType
+// enum (EW/SC/NI/R/OC/SO/NC), SubmissionNumber = exactly 6 chars, CompanyNumber =
+// integer/digits-only, Filename ≤ 32 chars, ContentType application/xml, Category
+// ACCOUNTS, CustomerReference optional.
+//
+// ⚠ REMAINING unknown is CH's BUSINESS-rule layer (not schema): mandatory iXBRL
+// content per accounts type, whether the dummy auth code is accepted in test,
+// etc. The first test submission's response is the oracle for those.
 
 import { createHash } from 'crypto';
 import {
@@ -97,7 +101,7 @@ export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
 
   const formHeader = [
     `<CompanyNumber>${esc(input.companyNumber)}</CompanyNumber>`,
-    // ⚠ CompanyType enum — confirm valid values against FormSubmission-v2-11.xsd.
+    // CompanyType: EW/SC/NI/R/OC/SO/NC (see chCompanyType). Schema-validated.
     `<CompanyType>${esc(input.companyType)}</CompanyType>`,
     `<CompanyName>${esc(input.companyName)}</CompanyName>`,
     `<CompanyAuthenticationCode>${esc(input.companyAuthCode)}</CompanyAuthenticationCode>`,

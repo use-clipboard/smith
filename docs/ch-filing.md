@@ -264,17 +264,44 @@ Validated with **Arelle 2.42.1** against the live **FRC 2023** taxonomy
   iXBRL validation service / first test submission is what surfaces those; extend
   the tagged facts in `ixbrl.ts` to satisfy them.
 
+## Envelope schema-validated — DONE 22 Jul 2026
+
+The generated GovTalk submission validates CLEAN offline (Python `xmlschema`)
+against BOTH CH schemas: the envelope (`Egov_ch-v2-0.xsd`) and the FormSubmission
+body (`FormSubmission-v2-11.xsd`). Three real bugs were found from the schema and
+fixed before any submission:
+
+- **`CompanyType`** — the LLP mapping returned `'LLEW'` (invalid). Valid enum is
+  `EW/SC/NI/R/OC/SO/NC`; `chCompanyType()` now derives it from the entity type +
+  company-number prefix (LLP → `OC`/`SO`/`NC`; company → `EW`/`SC`/`NI`).
+- **`SubmissionNumber`** — schema requires EXACTLY 6 chars; the sequence value is
+  now zero-padded (`000001`). The raw numeric value remains the GovTalk
+  TransactionID / CHMD5 nonce.
+- **`Filename`** — schema caps it at 32 chars; now `accounts-<number>.xhtml`.
+- Also: `CompanyNumber` is `xs:integer` (digits only) → the jurisdiction prefix
+  is stripped (conveyed by `CompanyType` instead). ⚠ For real Scottish/NI/LLP
+  companies confirm CH wants the digits without the prefix (fine for dummy tests).
+
+## CH confirmed: use dummy data — reply 22 Jul 2026 (Ioan, XML Team)
+
+> For XML Gateway testing, you can use dummy company data and authentication
+> codes… There is no specific test company number or authentication code you must
+> use… Once you have submitted your test filing, please send us the submission
+> number and we will review the submission.
+
+So we are **unblocked for the first test submission** — no dependency on CH
+providing a test company. Use any dummy 8-digit company number + a 6–8 char
+dummy auth code.
+
 ## Next steps (in order)
 
-1. **Read *TIS for accounts* v5.9** (1 Apr 2026) and confirm which FRC taxonomy
-   suite it mandates (2023 is still accepted, so not urgent — but confirm).
-2. **First test submission** — with `.env.local` creds set, use the Publish
-   "File iXBRL to Companies House (Test)" button against a CH **test company** +
-   its authentication code. Read the gateway response; fix the flagged envelope
-   fields (`CompanyType` etc.) from the actual rejection text.
-3. **Email Cloideach** (xml@companieshouse.gov.uk) with the submission number so
-   he reviews it. Iterate until accepted.
-4. **Fix the FRS-105 entry point** (see above) so micro-entity accounts validate.
+1. **First test submission** — with `.env.local` creds set (they are), use the
+   Publish → "File iXBRL to Companies House (Test)" button on a prepared FRS 102
+   1A engagement, with a dummy company auth code. Read the gateway response.
+2. **Email the XML team** (xml@companieshouse.gov.uk) with the submission number
+   so they review it. Iterate on any CH business-rule feedback.
+3. **Read *TIS for accounts* v5.9** (2023 suite still accepted, so not urgent).
+4. **Fix the FRS-105 entry point** — DONE (shares the FRS-102 entry point).
 5. **Poll for outcome** — add a GetSubmissionStatus poll using the stored
    CorrelationID (not built yet; manual review means the ack is the realistic
    first signal). Then apply for the **live** presenter account.
