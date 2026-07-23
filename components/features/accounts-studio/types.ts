@@ -170,6 +170,9 @@ export interface Engagement {
   comparativePeriod: string; // dd-mm-yyyy — end of prior year
   dormant: boolean;
   microEligible: boolean;
+  /** Average number of employees during the period — a required Companies House
+   *  iXBRL fact (and a standard accounts note). Set on the Publish stage. */
+  averageEmployees?: number | null;
   /** Show prior-year comparative columns. Defaults to true (undefined) when a
    *  prior year exists. Set false to prepare the accounts without comparatives. */
   showComparatives?: boolean;

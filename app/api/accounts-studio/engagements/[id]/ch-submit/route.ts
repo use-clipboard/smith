@@ -6,6 +6,7 @@ import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { isChGatewayConfigured, CH_XMLGW_ENV } from '@/lib/companiesHouse/config';
 import { buildSubmissionEnvelope, submitToGateway } from '@/lib/companiesHouse/gateway';
 import { buildIxbrlFromEngagement, chCompanyType } from '@/lib/accounts-studio/ixbrlFromEngagement';
+import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,8 @@ const Body = z.object({
   companyType: z.string().max(16).optional(),
   contactName: z.string().max(120).optional(),
   contactNumber: z.string().max(60).optional(),
+  // Average employees entered on the filing panel (may pre-date the autosave).
+  averageEmployees: z.number().int().min(0).max(1_000_000).optional(),
 });
 
 /** ISO or dd-mm-yyyy → yyyy-mm-dd. */
@@ -66,7 +69,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'The client must approve the accounts before they can be filed.' }, { status: 409 });
   }
 
-  const ixbrl = buildIxbrlFromEngagement(e);
+  // Firm-level filing metadata: an accountant's report means audit-exempt WITH
+  // report (else without). Best-effort — defaults to no report on any failure.
+  let hasAccountantsReport = false;
+  try {
+    const settings = await getAccountsStudioFirmSettings(supabase, ctx.firmId);
+    hasAccountantsReport = !!(settings?.accountantsReport && settings.accountantsReport.trim());
+  } catch { /* default: no accountant's report */ }
+
+  const ixbrl = buildIxbrlFromEngagement(e, { hasAccountantsReport, averageEmployees: input.averageEmployees });
   if (!ixbrl) return NextResponse.json({ error: 'Prepare the accounts (import a trial balance) before filing.' }, { status: 400 });
 
   // Allocate a unique, incremental submission number. The same value doubles as

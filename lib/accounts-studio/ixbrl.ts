@@ -81,6 +81,8 @@ export interface IxbrlInput {
   approvalDateIso?: string | null;
   /** Average number of employees during the period. Defaults to 0. */
   averageEmployees?: number | null;
+  /** Whether the company was dormant in the period (tags EntityDormantTruefalse). */
+  dormant?: boolean;
   /** True if an accountant's report accompanies the (unaudited) accounts. */
   hasAccountantsReport?: boolean;
   /** Filing as filleted (balance sheet + notes only) vs full accounts. */
@@ -290,7 +292,7 @@ export function buildIxbrl(input: IxbrlInput): string {
     `<tr><td class="lbl">Accounts status</td><td>${fixedFact('bus:AccountsStatusAuditedOrUnaudited', 'DC-STA', 'Unaudited')}</td></tr>`,
     `<tr><td class="lbl">Accounts type</td><td>${fixedFact('bus:AccountsType', 'DC-TYP', input.filleted ? 'Filleted accounts' : 'Full accounts')}</td></tr>`,
     `<tr><td class="lbl">Company trading status</td><td>${fixedFact('bus:EntityTradingStatus', 'DC', 'Trading')}</td></tr>`,
-    `<tr><td class="lbl">Dormant</td><td>${text('bus:EntityDormantTruefalse', 'DC', 'false')}</td></tr>`,
+    `<tr><td class="lbl">Dormant</td><td>${text('bus:EntityDormantTruefalse', 'DC', input.dormant ? 'true' : 'false')}</td></tr>`,
     `<tr><td class="lbl">Average employees during the period</td><td>${numPure('core:AverageNumberEmployeesDuringPeriod', 'DC', employees)}</td></tr>`,
     `<tr><td class="lbl">Balance sheet date</td><td>${dateFact('bus:BalanceSheetDate', 'IC', input.periodEndIso)}</td></tr>`,
     `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,

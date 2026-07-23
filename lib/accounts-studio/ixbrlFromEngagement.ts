@@ -31,8 +31,18 @@ export function chCompanyType(entityType: EntityType, companyNumber: string): st
   return isLlp ? 'OC' : 'EW';
 }
 
+/** Firm-level options for the iXBRL that don't live on the engagement itself. */
+export interface IxbrlFirmOptions {
+  /** True when the firm attaches an accountant's report (→ audit-exempt WITH
+   *  report). Derived from the Accounts Studio firm settings. */
+  hasAccountantsReport?: boolean;
+  /** Override the average number of employees (e.g. from the filing panel before
+   *  the engagement autosave lands). Falls back to the engagement value. */
+  averageEmployees?: number | null;
+}
+
 /** Build the iXBRL accounts document for an engagement (or null if no statements). */
-export function buildIxbrlFromEngagement(e: Engagement): string | null {
+export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions = {}): string | null {
   if (!e.statements) return null;
   const ii = e.importInfo;
   const directors = (e.directors ?? []).filter(Boolean);
@@ -46,9 +56,11 @@ export function buildIxbrlFromEngagement(e: Engagement): string | null {
     priorEndIso: ii?.priorTo ?? (e.comparativePeriod ? ddmmyyyyToIso(e.comparativePeriod) : null),
     framework: ixbrlFramework(e.framework),
     statements: e.statements,
-    // CH filing metadata. averageEmployees isn't in the engagement model yet →
-    // defaults to 0; the signing director + approval date come from the sign-off.
+    // CH filing metadata, wired to real data:
     signatory,
     approvalDateIso: e.approvedAt ? e.approvedAt.slice(0, 10) : null,
+    dormant: e.dormant,
+    averageEmployees: opts.averageEmployees ?? e.averageEmployees ?? 0,
+    hasAccountantsReport: opts.hasAccountantsReport ?? false,
   });
 }
