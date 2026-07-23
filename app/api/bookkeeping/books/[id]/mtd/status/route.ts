@@ -27,7 +27,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { data: conns } = await service
       .from('hmrc_connections')
       .select('kind, status, book_id')
-      .eq('firm_id', ctx.firmId);
+      .eq('firm_id', ctx.firmId)
+      // VAT connections only — without this, a firm's MTD IT agent connection
+      // shows as a phantom "connected (agent)" here while VAT calls fail.
+      .eq('service', 'vat');
     const agent = (conns ?? []).find(c => c.kind === 'agent');
     const business = (conns ?? []).find(c => c.kind === 'business' && c.book_id === params.id);
     const chosen = business ?? agent ?? null;
