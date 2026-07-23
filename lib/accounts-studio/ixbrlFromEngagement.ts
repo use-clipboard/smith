@@ -36,9 +36,6 @@ export interface IxbrlFirmOptions {
   /** True when the firm attaches an accountant's report (→ audit-exempt WITH
    *  report). Derived from the Accounts Studio firm settings. */
   hasAccountantsReport?: boolean;
-  /** Override the average number of employees (e.g. from the filing panel before
-   *  the engagement autosave lands). Falls back to the engagement value. */
-  averageEmployees?: number | null;
 }
 
 /** Build the iXBRL accounts document for an engagement (or null if no statements). */
@@ -56,11 +53,13 @@ export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions =
     priorEndIso: ii?.priorTo ?? (e.comparativePeriod ? ddmmyyyyToIso(e.comparativePeriod) : null),
     framework: ixbrlFramework(e.framework),
     statements: e.statements,
-    // CH filing metadata, wired to real data:
+    // CH filing metadata, wired to real data. Employees are entered on the
+    // Notes & Disclosures stage (Employees note) and read from the engagement.
     signatory,
     approvalDateIso: e.approvedAt ? e.approvedAt.slice(0, 10) : null,
     dormant: e.dormant,
-    averageEmployees: opts.averageEmployees ?? e.averageEmployees ?? 0,
+    averageEmployees: e.averageEmployees ?? 0,
+    averageEmployeesPrior: e.averageEmployeesPrior ?? null,
     hasAccountantsReport: opts.hasAccountantsReport ?? false,
   });
 }

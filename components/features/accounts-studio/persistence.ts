@@ -132,7 +132,6 @@ export interface ChSubmitInput {
   companyType?: string;
   contactName?: string;
   contactNumber?: string;
-  averageEmployees?: number;
 }
 export interface ChSubmitResult {
   ok: boolean;

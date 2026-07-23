@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
   Loader2, Send, Signature, Landmark, PartyPopper, Download, AlertCircle, Scissors, Info,
-  CheckCircle2, RotateCcw, Building2, KeyRound, XCircle, Users,
+  CheckCircle2, RotateCcw, Building2, KeyRound, XCircle,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
@@ -58,7 +58,6 @@ export default function StagePublish({
   // Companies House XML Gateway filing (test).
   const [chOpen, setChOpen] = useState(false);
   const [chAuthCode, setChAuthCode] = useState('');
-  const [chEmployees, setChEmployees] = useState<string>(engagement.averageEmployees != null ? String(engagement.averageEmployees) : '');
   const [chBusy, setChBusy] = useState(false);
   const [chError, setChError] = useState('');
   const [chResult, setChResult] = useState<ChSubmitResult | null>(null);
@@ -145,14 +144,15 @@ export default function StagePublish({
 
   // ── Companies House XML Gateway filing (test) ───────────────────────────────
   async function fileToCH() {
+    // Filing details are accounts data, captured earlier in the flow: the
+    // registration number on Import Data, the employee count on Notes &
+    // Disclosures → Employees. Fail early here with a pointer.
+    if (!engagement.companyNumber?.trim()) { setChError('No company registration number — set it on the Import Data step first.'); return; }
+    if (engagement.averageEmployees == null) { setChError('Average number of employees is not set — enter it in Notes & Disclosures → Employees.'); return; }
     if (!chAuthCode.trim()) { setChError('Enter the company authentication code.'); return; }
-    const employees = chEmployees.trim() === '' ? undefined : Math.max(0, Math.round(Number(chEmployees)));
-    if (employees !== undefined && !Number.isFinite(employees)) { setChError('Average employees must be a number.'); return; }
     setChBusy(true); setChError(''); setChResult(null);
-    // Persist the employee count on the engagement so it sticks for next time.
-    if (employees !== undefined && employees !== engagement.averageEmployees) patch(e => ({ ...e, averageEmployees: employees }));
     try {
-      const res = await submitToCompaniesHouse(engagement.id, { companyAuthCode: chAuthCode.trim(), averageEmployees: employees });
+      const res = await submitToCompaniesHouse(engagement.id, { companyAuthCode: chAuthCode.trim() });
       setChResult(res);
       if (res.ok) setChAuthCode('');
     } catch (e) {
@@ -366,15 +366,6 @@ export default function StagePublish({
 
           {chOpen && (
             <div className="mt-2 rounded-xl border border-indigo-200/70 bg-indigo-50/40 p-3">
-              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><Users size={12} /> Average number of employees</label>
-              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Average during the period — a required Companies House iXBRL figure. Saved with the accounts.</p>
-              <input
-                type="number" min={0} step={1}
-                value={chEmployees}
-                onChange={ev => setChEmployees(ev.target.value)}
-                placeholder="e.g. 3"
-                className="mb-3 w-32 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-              />
               <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
               <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
               <div className="flex gap-2">

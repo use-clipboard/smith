@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine, FileSpreadsheet, Upload, Download, ScanLine, Sparkles, type LucideIcon } from 'lucide-react';
+import { Check, Loader2, ArrowRight, ShieldCheck, BookCopy, RefreshCw, AlertCircle, ChevronLeft, ClipboardPaste, Table2, PencilLine, FileSpreadsheet, Upload, Download, ScanLine, Sparkles, Building2, type LucideIcon } from 'lucide-react';
 import { IMPORT_SOURCES, ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { buildDisclosures } from '@/lib/accounts-studio/disclosures';
 import { buildStatements, detectSize, detectFramework } from '@/lib/accounts-studio/statements';
@@ -51,6 +51,48 @@ function fyLabel(fy: FyRow): string {
 /** TrialBalanceRow[] → the library's SavedTbRow[] shape. */
 function tbToSavedRows(tb: TrialBalanceRow[]): SavedTbRow[] {
   return tb.map(r => ({ name: r.name, type: r.accountType as BalanceAccountType, ledger: r.ledger, debit: r.debit, credit: r.credit }));
+}
+
+/** Entity types registered at Companies House — the registration number appears
+ *  on their accounts and is required for CH filing. */
+const CH_REGISTERED_ENTITIES = new Set<Engagement['entityType']>(['limited_company', 'cic', 'dormant_company', 'llp']);
+
+/** Company registration number — accounts data, captured here on Import Data.
+ *  Auto-filled when the company was linked via the Companies House lookup;
+ *  editable for engagements set up without it (flagged on Final Review if
+ *  still missing). Hidden for unregistered entities (sole traders etc.). */
+function CompanyNumberCard({
+  engagement, patch,
+}: {
+  engagement: Engagement;
+  patch: (u: (e: Engagement) => Engagement) => void;
+}) {
+  const [value, setValue] = useState(engagement.companyNumber ?? '');
+  if (!CH_REGISTERED_ENTITIES.has(engagement.entityType)) return null;
+  const save = () => {
+    const v = value.trim();
+    if (v !== (engagement.companyNumber ?? '')) patch(e => ({ ...e, companyNumber: v }));
+  };
+  return (
+    <StudioCard className="px-5 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Building2 size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13.5px] font-semibold text-[var(--text-primary)]">Company registration number</p>
+          <p className="text-[11.5px] text-[var(--text-muted)]">Shown on the accounts and required for Companies House filing.</p>
+        </div>
+        <input
+          value={value}
+          onChange={ev => setValue(ev.target.value)}
+          onBlur={save}
+          onKeyDown={ev => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }}
+          placeholder="e.g. 12345678"
+          autoComplete="off" spellCheck={false}
+          className="w-40 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] tracking-wider text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+        />
+      </div>
+    </StudioCard>
+  );
 }
 
 export default function StageImport({
@@ -128,6 +170,8 @@ export default function StageImport({
             </div>
           </div>
         </StudioCard>
+
+        <CompanyNumberCard engagement={engagement} patch={patch} />
 
         <StatementsView statements={engagement.statements} periodLabel={periodLabel} />
 
@@ -234,6 +278,9 @@ export default function StageImport({
   // ── Source picker ──────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-4xl">
+      <div className="mb-4">
+        <CompanyNumberCard engagement={engagement} patch={patch} />
+      </div>
       <div className="mb-5 flex items-center gap-2 text-[13px] text-[var(--text-secondary)]">
         <ShieldCheck size={15} className="text-emerald-500" />
         No manual mapping needed — SMITH reads the trial balance straight from the ledger.

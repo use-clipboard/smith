@@ -81,6 +81,9 @@ export interface IxbrlInput {
   approvalDateIso?: string | null;
   /** Average number of employees during the period. Defaults to 0. */
   averageEmployees?: number | null;
+  /** Prior-period average employees — tagged in the prior duration context when
+   *  the statements carry comparatives. */
+  averageEmployeesPrior?: number | null;
   /** Whether the company was dormant in the period (tags EntityDormantTruefalse). */
   dormant?: boolean;
   /** True if an accountant's report accompanies the (unaudited) accounts. */
@@ -293,7 +296,14 @@ export function buildIxbrl(input: IxbrlInput): string {
     `<tr><td class="lbl">Accounts type</td><td>${fixedFact('bus:AccountsType', 'DC-TYP', input.filleted ? 'Filleted accounts' : 'Full accounts')}</td></tr>`,
     `<tr><td class="lbl">Company trading status</td><td>${fixedFact('bus:EntityTradingStatus', 'DC', 'Trading')}</td></tr>`,
     `<tr><td class="lbl">Dormant</td><td>${text('bus:EntityDormantTruefalse', 'DC', input.dormant ? 'true' : 'false')}</td></tr>`,
-    `<tr><td class="lbl">Average employees during the period</td><td>${numPure('core:AverageNumberEmployeesDuringPeriod', 'DC', employees)}</td></tr>`,
+    // Prior-period employees tag only when the DP context exists (declared for
+    // hasPrior WITH both prior dates — a comparative entered without a prior
+    // period start, e.g. CSV imports, shows in the note but isn't tagged).
+    `<tr><td class="lbl">Average employees during the period</td><td>${numPure('core:AverageNumberEmployeesDuringPeriod', 'DC', employees)}${
+      fs.hasPrior && input.priorStartIso && input.priorEndIso && input.averageEmployeesPrior != null
+        ? ` (prior year: ${numPure('core:AverageNumberEmployeesDuringPeriod', 'DP', Math.max(0, Math.round(input.averageEmployeesPrior)))})`
+        : ''
+    }</td></tr>`,
     `<tr><td class="lbl">Balance sheet date</td><td>${dateFact('bus:BalanceSheetDate', 'IC', input.periodEndIso)}</td></tr>`,
     `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,
     `<tr><td class="lbl">Approved and signed on behalf of the board by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,

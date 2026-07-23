@@ -18,8 +18,6 @@ const Body = z.object({
   companyType: z.string().max(16).optional(),
   contactName: z.string().max(120).optional(),
   contactNumber: z.string().max(60).optional(),
-  // Average employees entered on the filing panel (may pre-date the autosave).
-  averageEmployees: z.number().int().min(0).max(1_000_000).optional(),
 });
 
 /** ISO or dd-mm-yyyy → yyyy-mm-dd. */
@@ -62,9 +60,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const e = { ...(row.data as Engagement), id: row.id as string };
 
+  // Filing details are accounts data captured earlier in the flow — the
+  // registration number on Import Data, the employee count on Notes &
+  // Disclosures — never entered at filing time.
   if (!e.companyNumber?.trim()) {
-    return NextResponse.json({ error: 'Set the company registration number before filing.' }, { status: 400 });
+    return NextResponse.json({ error: 'No company registration number — set it on the Import Data step first.' }, { status: 400 });
   }
+  if (e.averageEmployees == null) {
+    return NextResponse.json({ error: 'Average number of employees is not set — enter it in Notes & Disclosures → Employees.' }, { status: 400 });
+  }
+
   if (CH_XMLGW_ENV === 'live' && e.approvalStatus !== 'approved') {
     return NextResponse.json({ error: 'The client must approve the accounts before they can be filed.' }, { status: 409 });
   }
@@ -77,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     hasAccountantsReport = !!(settings?.accountantsReport && settings.accountantsReport.trim());
   } catch { /* default: no accountant's report */ }
 
-  const ixbrl = buildIxbrlFromEngagement(e, { hasAccountantsReport, averageEmployees: input.averageEmployees });
+  const ixbrl = buildIxbrlFromEngagement(e, { hasAccountantsReport });
   if (!ixbrl) return NextResponse.json({ error: 'Prepare the accounts (import a trial balance) before filing.' }, { status: 400 });
 
   // Allocate a unique, incremental submission number. The same value doubles as

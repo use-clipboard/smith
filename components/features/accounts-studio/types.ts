@@ -171,8 +171,15 @@ export interface Engagement {
   dormant: boolean;
   microEligible: boolean;
   /** Average number of employees during the period — a required Companies House
-   *  iXBRL fact (and a standard accounts note). Set on the Publish stage. */
+   *  iXBRL fact and the Employees note. Entered on Notes & Disclosures. */
   averageEmployees?: number | null;
+  /** Prior-period average employees (comparative in the Employees note + iXBRL).
+   *  Auto-filled from last year's engagement when one exists for the client. */
+  averageEmployeesPrior?: number | null;
+  /** Structured values behind specific disclosure notes (note id → field → value),
+   *  e.g. depreciation rates per asset class on the accounting policies note.
+   *  See lib/accounts-studio/noteInputs.ts. */
+  disclosureData?: Record<string, Record<string, string>>;
   /** Show prior-year comparative columns. Defaults to true (undefined) when a
    *  prior year exists. Set false to prepare the accounts without comparatives. */
   showComparatives?: boolean;

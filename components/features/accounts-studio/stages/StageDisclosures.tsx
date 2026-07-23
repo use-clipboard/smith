@@ -12,6 +12,7 @@ import { ENTITY_LABELS } from '../data';
 import { addableNotes, makeNote, noteRuleMeta, type DisclosureContext } from '@/lib/accounts-studio/disclosures';
 import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
 import { hasPlaceholders, countPlaceholders, highlightPlaceholders } from '@/lib/accounts-studio/placeholders';
+import { noteInputSpec, carryForwardFromPrior, type NoteInputSpec, type PriorCarry } from '@/lib/accounts-studio/noteInputs';
 import type { Engagement, DisclosureSection, SectionStatus, NoteLevel } from '../types';
 
 const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; hint: string }> = {
@@ -50,8 +51,20 @@ export default function StageDisclosures({
     const params = new URLSearchParams({ clientId: engagement.clientId, periodEnd: engagement.periodEnd, excludeId: engagement.id });
     fetch(`/api/accounts-studio/prior-disclosures?${params.toString()}`)
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d?.found) { setPriorNotes(d.notes ?? {}); setPriorLabel(typeof d.periodEnd === 'string' ? d.periodEnd.slice(-4) : ''); } })
+      .then(d => {
+        if (!d?.found) return;
+        setPriorNotes(d.notes ?? {});
+        setPriorLabel(typeof d.periodEnd === 'string' ? d.periodEnd.slice(-4) : '');
+        // Auto-carry structured values from last year's engagement (employee
+        // comparative, depreciation rates …). Fills gaps only — never overwrites
+        // values already entered — so re-running is a no-op.
+        if (d.carry && !readOnly) {
+          patch(e => carryForwardFromPrior(e, d.carry as PriorCarry) ?? e);
+          setMountKey(k => k + 1);
+        }
+      })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engagement.clientId, engagement.periodEnd, engagement.id]);
 
   const section = sections.find(s => s.id === selectedId) ?? sections[0];
@@ -578,6 +591,17 @@ export default function StageDisclosures({
           </div>
         )}
 
+        {/* Structured data behind this note (employees, depreciation rates …) */}
+        {section && noteInputSpec(section.id) && (noteInputSpec(section.id)!.visible?.(engagement) ?? true) && (
+          <NoteDataPanel
+            spec={noteInputSpec(section.id)!}
+            engagement={engagement}
+            patch={patch}
+            readOnly={readOnly}
+            onApplied={() => setMountKey(k => k + 1)}
+          />
+        )}
+
         {/* Content-editable body */}
         <div className="flex-1 overflow-y-auto p-4">
           {section.content || section.status !== 'missing' ? (
@@ -667,4 +691,58 @@ function stripHtml(html: string): string {
 
 function textToHtml(text: string): string {
   return text.split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`).join('');
+}
+
+// ── Structured note data panel ───────────────────────────────────────────────
+// Some notes are really DATA (average employees, depreciation rates). This
+// panel renders the note's input fields above the editor; entering values
+// stores them on the engagement AND rewrites the relevant note wording, so the
+// accounts pack, the live preview and the Companies House iXBRL all agree.
+// Prior-year fields appear only when the engagement has comparatives, and are
+// auto-carried from last year's engagement when the tool finds one.
+function NoteDataPanel({
+  spec, engagement, patch, onApplied, readOnly,
+}: {
+  spec: NoteInputSpec;
+  engagement: Engagement;
+  patch: (u: (e: Engagement) => Engagement) => void;
+  onApplied: () => void;
+  readOnly: boolean;
+}) {
+  const readStr = JSON.stringify(spec.read(engagement));
+  const [values, setValues] = useState<Record<string, string>>(() => spec.read(engagement));
+  // Re-seed whenever the stored values change underneath us (note switch,
+  // prior-year carry-forward). While typing, readStr is stable, so no clobber.
+  useEffect(() => { setValues(JSON.parse(readStr)); }, [readStr]);
+
+  const hasPrior = !!engagement.statements?.hasPrior;
+  const fields = spec.fields.filter(f => (!f.priorOnly || hasPrior) && (f.relevant?.(engagement) ?? true));
+  const apply = () => { patch(e => spec.apply(e, values)); onApplied(); };
+  if (fields.length === 0) return null;
+
+  return (
+    <div className="mx-3 mt-3 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-3">
+      <p className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-primary)]"><Info size={12} className="text-[var(--accent)]" /> {spec.title}</p>
+      <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">{spec.hint}</p>
+      <div className="flex flex-wrap gap-2">
+        {fields.map(f => (
+          <label key={f.key} className="flex flex-col gap-0.5">
+            <span className="text-[10.5px] font-semibold text-[var(--text-secondary)]">{f.label}</span>
+            <input
+              type={f.kind === 'number' ? 'number' : 'text'}
+              min={f.kind === 'number' ? 0 : undefined}
+              value={values[f.key] ?? ''}
+              disabled={readOnly}
+              onChange={ev => setValues(v => ({ ...v, [f.key]: ev.target.value }))}
+              onBlur={apply}
+              onKeyDown={ev => { if (ev.key === 'Enter') (ev.target as HTMLInputElement).blur(); }}
+              placeholder={f.placeholder}
+              autoComplete="off" spellCheck={false}
+              className={`${f.kind === 'number' ? 'w-28' : 'w-44'} rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60`}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }

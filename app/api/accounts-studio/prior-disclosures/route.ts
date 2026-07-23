@@ -55,5 +55,11 @@ export async function GET(req: NextRequest) {
       notes[s.id] = { title: s.title ?? s.id, content: s.content };
     }
   }
-  return NextResponse.json({ found: true, periodEnd: (prior.d.periodEnd as string) ?? '', notes });
+  // Structured values that roll forward year to year (employees comparative,
+  // depreciation rates …) — see lib/accounts-studio/noteInputs.ts.
+  const carry = {
+    averageEmployees: typeof prior.d.averageEmployees === 'number' ? prior.d.averageEmployees : null,
+    disclosureData: (prior.d.disclosureData && typeof prior.d.disclosureData === 'object') ? prior.d.disclosureData : null,
+  };
+  return NextResponse.json({ found: true, periodEnd: (prior.d.periodEnd as string) ?? '', notes, carry });
 }

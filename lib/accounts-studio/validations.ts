@@ -86,6 +86,15 @@ export function computeValidations(e: Engagement): ValidationCheck[] {
     push('reports', "Members' report", has ? 'pass' : 'warn', has ? "Members' report drafted." : "Members' report has no content yet.");
   }
 
+  // 6b. Company registration number — printed on the accounts and required for
+  // Companies House filing. Only registered entities (companies, CICs, LLPs);
+  // sole traders / partnerships / trusts have none.
+  if (isCompany(e.entityType) || e.entityType === 'llp') {
+    const num = e.companyNumber?.trim();
+    push('company-number', 'Company registration number', num ? 'pass' : 'fail',
+      num ? `Registered number ${num}.` : 'Missing — set it on the Import Data step. It appears on the accounts and is required for Companies House filing.');
+  }
+
   // 7. Reporting period.
   push('period', 'Reporting period', e.periodStart && e.periodEnd ? 'pass' : 'fail',
     e.periodStart && e.periodEnd ? `Year ended ${e.periodEnd}.` : 'The reporting period is not set.');
