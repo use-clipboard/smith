@@ -42,6 +42,7 @@ const NS = {
   // exact URIs). `countries` is declared for foreign-property use but unused here.
   core:      'http://xbrl.frc.org.uk/fr/2023-01-01/core',
   bus:       'http://xbrl.frc.org.uk/cd/2023-01-01/business',
+  direp:     'http://xbrl.frc.org.uk/reports/2023-01-01/direp',
   countries: 'http://xbrl.frc.org.uk/cd/2023-01-01/countries',
 };
 
@@ -73,6 +74,17 @@ export interface IxbrlInput {
   priorEndIso?: string | null;
   framework: IxbrlFramework;
   statements: FinancialStatements;
+  // ── Filing metadata required by Companies House business rules ──────────────
+  /** Director who signed the accounts (name). Defaults to "The director". */
+  signatory?: string | null;
+  /** Date the accounts were approved/authorised for issue (yyyy-mm-dd). Defaults to period end. */
+  approvalDateIso?: string | null;
+  /** Average number of employees during the period. Defaults to 0. */
+  averageEmployees?: number | null;
+  /** True if an accountant's report accompanies the (unaudited) accounts. */
+  hasAccountantsReport?: boolean;
+  /** Filing as filleted (balance sheet + notes only) vs full accounts. */
+  filleted?: boolean;
 }
 
 // ── Concept map ──────────────────────────────────────────────────────────────
@@ -114,6 +126,38 @@ const MATURITY_MEMBER: Record<'within' | 'after', string> = {
   after:  'core:AfterOneYear',
 };
 
+// ── Companies House mandatory filing-metadata tags (small-co unaudited FRS 102
+// 1A). CH rejects a filing that omits these. The four "AccountingStandards /
+// AccountsStatus / AccountsType / EntityOfficers" concepts are FRC "fixed" items
+// tagged with a SEGMENT dimension member (contextElement=segment, per Arelle).
+// The audit-exemption statements are direp string facts. All QNames + members +
+// context elements verified against the FRC 2023 taxonomy via Arelle.
+const DIM = {
+  standards: 'bus:AccountingStandardsDimension',
+  status:    'bus:AccountsStatusDimension',
+  type:      'bus:AccountsTypeDimension',
+  officer:   'bus:EntityOfficersDimension',
+};
+const MEMBER = {
+  frs102:      'bus:FRS102',
+  auditExemptNoReport:   'bus:AuditExempt-NoAccountantsReport',
+  auditExemptWithReport: 'bus:AuditExemptWithAccountantsReport',
+  fullAccounts:     'bus:FullAccounts',
+  filletedAccounts: 'bus:FilletedAccounts',
+  director1:   'bus:Director1',
+};
+// The four audit-exemption / small-company statements CH requires (direp).
+const STATEMENTS = {
+  smallRegime:   { qname: 'direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime',
+    text: 'These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime.' },
+  s477Exemption: { qname: 'direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies',
+    text: 'For the year ending {END} the company was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.' },
+  directorsAck:  { qname: 'direp:StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct',
+    text: 'The directors acknowledge their responsibilities for complying with the requirements of the Act with respect to accounting records and the preparation of accounts.' },
+  membersNoAudit:{ qname: 'direp:StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit',
+    text: 'The members have not required the company to obtain an audit of its financial statements for the year in question in accordance with section 476 of the Companies Act 2006.' },
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const pounds = (n: number) => Math.round(n); // micro/small accounts are to the nearest £1
@@ -127,6 +171,21 @@ function num(concept: string, contextRef: string, value: number): string {
 /** An inline text (non-numeric) fact. */
 function text(concept: string, contextRef: string, value: string): string {
   return `<ix:nonNumeric name="${concept}" contextRef="${contextRef}">${esc(value)}</ix:nonNumeric>`;
+}
+/** yyyy-mm-dd → dd/mm/yyyy for display in a date fact. */
+function ukSlash(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+/** An inline DATE fact (xsd:date concept): shown dd/mm/yyyy, transformed to ISO. */
+function dateFact(concept: string, contextRef: string, iso: string): string {
+  return `<ix:nonNumeric name="${concept}" contextRef="${contextRef}" format="ixt:date-day-month-year">${ukSlash(iso)}</ix:nonNumeric>`;
+}
+/** A FRC "fixed" fact (fixedItemType): the fact content MUST be empty — the value
+ *  is carried by the context's dimension member. We show a human label as plain
+ *  text next to the empty tagged element so the document still reads sensibly. */
+function fixedFact(concept: string, contextRef: string, label: string): string {
+  return `${esc(label)}<ix:nonNumeric name="${concept}" contextRef="${contextRef}"></ix:nonNumeric>`;
 }
 
 /** A £ money row for the readable body: label + tagged figure (or plain if untagged). */
@@ -163,6 +222,20 @@ function contexts(input: IxbrlInput): string {
     ctx('IP-W', inst(input.priorEndIso), scenario(MATURITY_MEMBER.within));
     ctx('IP-A', inst(input.priorEndIso), scenario(MATURITY_MEMBER.after));
   }
+
+  // Segment-dimensioned duration contexts for the CH filing-metadata "fixed"
+  // facts (AccountingStandards / AccountsStatus / AccountsType / signing
+  // director). The dimension member sits in <segment> INSIDE <entity>.
+  const durP = dur(input.periodStartIso, input.periodEndIso);
+  const segEntity = (dim: string, member: string) =>
+    `<xbrli:entity>${id}<xbrli:segment><xbrldi:explicitMember dimension="${dim}">${member}</xbrldi:explicitMember></xbrli:segment></xbrli:entity>`;
+  const segCtx = (cid: string, dim: string, member: string) =>
+    list.push(`<xbrli:context id="${cid}">${segEntity(dim, member)}${durP}</xbrli:context>`);
+  segCtx('DC-STD', DIM.standards, MEMBER.frs102);
+  segCtx('DC-STA', DIM.status, input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport);
+  segCtx('DC-TYP', DIM.type, input.filleted ? MEMBER.filletedAccounts : MEMBER.fullAccounts);
+  segCtx('DC-DIR', DIM.officer, MEMBER.director1);
+
   return list.join('\n      ');
 }
 
@@ -206,6 +279,27 @@ export function buildIxbrl(input: IxbrlInput): string {
     bsRow('Total equity', 'totalEquity', bs.totalEquity),
   ].join('\n        ');
 
+  // ── Companies House mandatory filing metadata + statements ──────────────────
+  const sig = input.signatory?.trim() || 'The director';
+  const approvalIso = input.approvalDateIso || input.periodEndIso;
+  const employees = Math.max(0, Math.round(input.averageEmployees ?? 0));
+  const numPure = (concept: string, ctx: string, n: number) =>
+    `<ix:nonFraction name="${concept}" contextRef="${ctx}" unitRef="pure" decimals="0" format="ixt:num-dot-decimal">${n}</ix:nonFraction>`;
+  const metaRows = [
+    `<tr><td class="lbl">Accounting standards</td><td>${fixedFact('bus:AccountingStandardsApplied', 'DC-STD', 'FRS 102')}</td></tr>`,
+    `<tr><td class="lbl">Accounts status</td><td>${fixedFact('bus:AccountsStatusAuditedOrUnaudited', 'DC-STA', 'Unaudited')}</td></tr>`,
+    `<tr><td class="lbl">Accounts type</td><td>${fixedFact('bus:AccountsType', 'DC-TYP', input.filleted ? 'Filleted accounts' : 'Full accounts')}</td></tr>`,
+    `<tr><td class="lbl">Company trading status</td><td>${fixedFact('bus:EntityTradingStatus', 'DC', 'Trading')}</td></tr>`,
+    `<tr><td class="lbl">Dormant</td><td>${text('bus:EntityDormantTruefalse', 'DC', 'false')}</td></tr>`,
+    `<tr><td class="lbl">Average employees during the period</td><td>${numPure('core:AverageNumberEmployeesDuringPeriod', 'DC', employees)}</td></tr>`,
+    `<tr><td class="lbl">Balance sheet date</td><td>${dateFact('bus:BalanceSheetDate', 'IC', input.periodEndIso)}</td></tr>`,
+    `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,
+    `<tr><td class="lbl">Approved and signed on behalf of the board by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
+  ].join('\n        ');
+  const statementsHtml = [STATEMENTS.smallRegime, STATEMENTS.s477Exemption, STATEMENTS.directorsAck, STATEMENTS.membersNoAudit]
+    .map(s => `<p class="stmt">${text(s.qname, 'DC', s.text.replace('{END}', ukSlash(input.periodEndIso)))}</p>`)
+    .join('\n      ');
+
   const nsAttrs = Object.entries(NS).map(([k, v]) => `xmlns:${k}="${v}"`).join('\n      ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -231,6 +325,7 @@ export function buildIxbrl(input: IxbrlInput): string {
         </ix:references>
         <ix:resources>
           <xbrli:unit id="GBP"><xbrli:measure>iso4217:GBP</xbrli:measure></xbrli:unit>
+          <xbrli:unit id="pure"><xbrli:measure>xbrli:pure</xbrli:measure></xbrli:unit>
           ${contexts(input)}
         </ix:resources>
       </ix:header>
@@ -238,7 +333,7 @@ export function buildIxbrl(input: IxbrlInput): string {
 
     <h1>${text('bus:EntityCurrentLegalOrRegisteredName', 'DC', input.companyName)}</h1>
     <p class="sub">Company registration number ${text('bus:UKCompaniesHouseRegisteredNumber', 'DC', input.companyNumber)}<br/>
-      Financial statements for the year ended ${esc(input.periodEndIso)}</p>
+      Financial statements for the period ${dateFact('bus:StartDateForPeriodCoveredByReport', 'IC', input.periodStartIso)} to ${dateFact('bus:EndDateForPeriodCoveredByReport', 'IC', input.periodEndIso)}</p>
 
     <h2>Statement of comprehensive income</h2>
     <table>
@@ -251,6 +346,16 @@ export function buildIxbrl(input: IxbrlInput): string {
     <table>
       <tbody>
         ${bsRows}
+      </tbody>
+    </table>
+
+    <h2>Statements required under the Companies Act 2006</h2>
+    ${statementsHtml}
+
+    <h2>Filing information</h2>
+    <table>
+      <tbody>
+        ${metaRows}
       </tbody>
     </table>
 

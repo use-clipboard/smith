@@ -35,9 +35,16 @@
 //   </Body>
 // </GovTalkMessage>
 //
-// ── CHMD5 authentication (CONFIRMED against php-govtalk CompaniesHouse ext) ────
-//   Value = md5( SenderID + AuthenticationValue + TransactionID ), lowercase hex.
-//   TransactionID must be numeric and unique per message (it's the nonce).
+// ── Software Filing authentication (CONFIRMED against CH TIS v5.3) ────────────
+// The Software Filing (accounts) service hashes BOTH credentials independently
+// with the lowercase MD5 algorithm — it does NOT concatenate them, and the
+// TransactionID plays no part in authentication (it is only a tracking id):
+//   <SenderID>          = md5(Presenter_ID)               ("Software Filing user_id")
+//   <Authentication>
+//     <Method>          = clear                           (TIS: "the only allowed value is 'clear'")
+//     <Value>           = md5(Presenter Authentication Code)
+// (The senderId+password+transactionId "CHMD5" recipe is Companies House's DATA
+// gateway, a different service — using it here returns 502 Authorisation Failure.)
 //
 // ── Schema-validated 2026-07-22 ──────────────────────────────────────────────
 // The generated envelope validates CLEAN (offline, via xmlschema) against BOTH
@@ -66,9 +73,9 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** CHMD5 token: md5(senderId + authValue + transactionId), lowercase hex. */
-export function chmd5(senderId: string, authValue: string, transactionId: string): string {
-  return createHash('md5').update(`${senderId}${authValue}${transactionId}`).digest('hex');
+/** Lowercase MD5 hex — the Software Filing credential hash (TIS v5.3). */
+export function md5Lower(value: string): string {
+  return createHash('md5').update(value).digest('hex');
 }
 
 export interface ChSubmissionInput {
@@ -93,9 +100,10 @@ export interface ChSubmissionInput {
 
 /** Build the full GovTalk submission envelope for an accounts filing. */
 export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
-  const senderId = chPresenterId();
-  const authValue = chAuthValue();
-  const token = chmd5(senderId, authValue, input.transactionId);
+  // Software Filing auth (TIS v5.3): SenderID = md5(presenter id), Value =
+  // md5(presenter auth code), Method 'clear'. NOT concatenated, no transaction id.
+  const senderId = md5Lower(chPresenterId());
+  const authToken = md5Lower(chAuthValue());
   const data = Buffer.from(input.ixbrl, 'utf8').toString('base64');
   const pkgRef = chPackageReference();
 
@@ -125,10 +133,10 @@ export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
     </MessageDetails>
     <SenderDetails>
       <IDAuthentication>
-        <SenderID>${esc(senderId)}</SenderID>
+        <SenderID>${senderId}</SenderID>
         <Authentication>
-          <Method>CHMD5</Method>
-          <Value>${token}</Value>
+          <Method>clear</Method>
+          <Value>${authToken}</Value>
         </Authentication>
       </IDAuthentication>
     </SenderDetails>

@@ -35,6 +35,8 @@ export function chCompanyType(entityType: EntityType, companyNumber: string): st
 export function buildIxbrlFromEngagement(e: Engagement): string | null {
   if (!e.statements) return null;
   const ii = e.importInfo;
+  const directors = (e.directors ?? []).filter(Boolean);
+  const signatory = (e.signatory && directors.includes(e.signatory)) ? e.signatory : directors[0] ?? null;
   return buildIxbrl({
     companyName: e.companyName,
     companyNumber: e.companyNumber,
@@ -44,5 +46,9 @@ export function buildIxbrlFromEngagement(e: Engagement): string | null {
     priorEndIso: ii?.priorTo ?? (e.comparativePeriod ? ddmmyyyyToIso(e.comparativePeriod) : null),
     framework: ixbrlFramework(e.framework),
     statements: e.statements,
+    // CH filing metadata. averageEmployees isn't in the engagement model yet →
+    // defaults to 0; the signing director + approval date come from the sign-off.
+    signatory,
+    approvalDateIso: e.approvedAt ? e.approvedAt.slice(0, 10) : null,
   });
 }
