@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import TabBar from './TabBar';
@@ -145,9 +146,14 @@ function AppShellInner({
 }: AppShellInnerProps) {
   const { tabs, activeTabId } = useTabContext();
   const { screenNudgeActive } = useChatContext();
+  const pathname = usePathname();
   const activeTab = tabs.find(t => t.id === activeTabId);
+  // Standalone admin/compliance pages (HMRC approval testers, reached by URL,
+  // not in the nav) must always render — without this, a restored tool tab
+  // (e.g. Email Triage) hides the route children and the page appears "dead".
+  const isStandalonePage = !!pathname && pathname.startsWith('/hmrc-');
   // When a tool tab is active, TabPanels handles rendering — hide the Next.js children
-  const isToolTabActive = !!activeTab && isToolRoute(activeTab.route);
+  const isToolTabActive = !isStandalonePage && !!activeTab && isToolRoute(activeTab.route);
 
   return (
     <div className={`h-screen p-3 bg-transparent ${screenNudgeActive ? 'animate-nudge' : ''}`}>
@@ -190,8 +196,11 @@ function AppShellInner({
             {children}
           </main>
 
-          {/* Tool pages — always mounted, CSS-toggled. Never unmounted while the tab is open. */}
-          <TabPanels />
+          {/* Tool pages — always mounted, CSS-toggled. Never unmounted while the tab is open.
+              Hidden entirely on standalone admin pages so they can't overlay the route content. */}
+          <div style={{ display: isStandalonePage ? 'none' : undefined }} className="contents">
+            <TabPanels />
+          </div>
         </div>
       </div>
       </div>
