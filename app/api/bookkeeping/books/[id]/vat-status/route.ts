@@ -91,6 +91,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq('book_id', params.id)
     .lte('effective_from', today)
     .order('effective_from', { ascending: false })
+    // Same-day changes tie on effective_from — the latest-recorded one wins.
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (current) {

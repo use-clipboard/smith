@@ -83,7 +83,10 @@ async function resolveVatStatus(
     .from('bookkeeping_vat_status_changes')
     .select('effective_from, vat_registered, vat_scheme, flat_rate_percentage')
     .eq('book_id', bookId)
-    .order('effective_from', { ascending: true });
+    .order('effective_from', { ascending: true })
+    // Same-day changes tie on effective_from — order by creation so the
+    // latest-recorded change wins when we take the last applicable row.
+    .order('created_at', { ascending: true });
   // Table missing (pre-migration) or any error → signal fallback.
   if (error || !data || data.length === 0) return null;
 
