@@ -306,7 +306,9 @@ export default function MtdSubmitModal({
                             <input type="radio" name="obligation" checked={selectedKey === o.periodKey} onChange={() => setSelectedKey(o.periodKey)} />
                             <span className="flex-1">
                               <span className="text-slate-800">{uk(o.start)} → {uk(o.end)}</span>
-                              <span className="block text-[11px] text-slate-400">Due {uk(o.due)} · period key {o.periodKey}</span>
+                              {/* Period key deliberately NOT shown — HMRC requires it stays
+                                  software-internal (VAT MTD approvals checklist). */}
+                              <span className="block text-[11px] text-slate-400">Due {uk(o.due)}</span>
                             </span>
                           </label>
                         </li>
@@ -324,9 +326,23 @@ export default function MtdSubmitModal({
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Figures to submit</span>
                         <span className="text-[10px] text-slate-400">for {uk(selectedObl.start)} → {uk(selectedObl.end)}{oblBoxesLoading ? ' · computing…' : ''}</span>
                       </div>
+                      {/* All 9 boxes are shown — the VAT (MTD) end-to-end service
+                          guide expects the completed return displayed to the user
+                          before the declaration + submission. Values are computed
+                          from the digital records; no manual keying. */}
                       <table className="w-full text-xs">
                         <tbody className="divide-y divide-slate-50">
-                          {([['Box 1 — VAT due (sales)', b.box1], ['Box 4 — VAT reclaimed', b.box4], ['Box 5 — Net VAT', b.box5], ['Box 6 — Sales ex VAT', b.box6], ['Box 7 — Purchases ex VAT', b.box7]] as [string, number][]).map(([l, v]) => (
+                          {([
+                            ['Box 1 — VAT due on sales', b.box1],
+                            ['Box 2 — VAT due on acquisitions (NI)', b.box2],
+                            ['Box 3 — Total VAT due', b.box3],
+                            ['Box 4 — VAT reclaimed on purchases', b.box4],
+                            ['Box 5 — Net VAT due', b.box5],
+                            ['Box 6 — Total sales ex VAT', b.box6],
+                            ['Box 7 — Total purchases ex VAT', b.box7],
+                            ['Box 8 — Goods supplied to NI/EU ex VAT', b.box8],
+                            ['Box 9 — Acquisitions from NI/EU ex VAT', b.box9],
+                          ] as [string, number][]).map(([l, v]) => (
                             <tr key={l}><td className="px-3 py-1 text-slate-600">{l}</td><td className="px-3 py-1 text-right tabular-nums text-slate-800">{money(v)}</td></tr>
                           ))}
                         </tbody>
@@ -347,10 +363,17 @@ export default function MtdSubmitModal({
                   </label>
                 </div>
 
-                {/* Declaration */}
-                <label className="flex items-start gap-2 text-xs text-slate-700">
+                {/* Declaration — HMRC's REQUIRED legal declaration wording (VAT
+                    (MTD) end-to-end service guide). The text differs for agents
+                    vs businesses; confirming it is what sets `finalised: true`
+                    on the API call. Do not reword. */}
+                <label className="flex items-start gap-2 text-xs text-slate-700 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2">
                   <input type="checkbox" checked={finalised} onChange={e => setFinalised(e.target.checked)} className="mt-0.5" />
-                  <span>I confirm the information is true and complete. Once submitted it cannot be changed (a correction is a separate adjustment).</span>
+                  <span className="font-medium">
+                    {status?.connection?.kind === 'agent'
+                      ? 'I confirm that my client has received a copy of the information contained in this return and approved the information as being correct and complete to the best of their knowledge and belief.'
+                      : 'When you submit this VAT information you are making a legal declaration that the information is true and complete. A false declaration can result in prosecution.'}
+                  </span>
                 </label>
 
                 <button type="button" onClick={submit} disabled={!canSubmit} className="w-full inline-flex items-center justify-center gap-2 text-sm px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
