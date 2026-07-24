@@ -748,8 +748,22 @@ function ApprovalRow({ holiday, busy, defaultPushToCalendar, onApprove, onReject
   const [pushToCal, setPushToCal] = useState(defaultPushToCalendar);
   const [rejecting, setRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [balance, setBalance] = useState<BalanceInfo | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(true);
   const r = holiday.requester;
   const name = r?.full_name ?? r?.email ?? 'Team member';
+
+  useEffect(() => {
+    if (!r?.id) { setBalanceLoading(false); return; }
+    let cancelled = false;
+    setBalanceLoading(true);
+    fetch(`/api/hr/holidays/balance?userId=${r.id}`)
+      .then(res => (res.ok ? res.json() : null))
+      .then((b: BalanceInfo | null) => { if (!cancelled) setBalance(b); })
+      .catch(() => { /* balance is best-effort — approval still works without it */ })
+      .finally(() => { if (!cancelled) setBalanceLoading(false); });
+    return () => { cancelled = true; };
+  }, [r?.id]);
 
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-4 space-y-3">
@@ -763,6 +777,8 @@ function ApprovalRow({ holiday, busy, defaultPushToCalendar, onApprove, onReject
           {holiday.reason && <p className="text-xs text-[var(--text-muted)] mt-1.5 italic">&ldquo;{holiday.reason}&rdquo;</p>}
         </div>
       </div>
+
+      <ApprovalBalanceStrip loading={balanceLoading} balance={balance} requestDays={holiday.total_days} />
 
       {!rejecting ? (
         <div className="flex items-center justify-between gap-3 pt-1 border-t border-gray-100">
@@ -797,6 +813,56 @@ function ApprovalRow({ holiday, busy, defaultPushToCalendar, onApprove, onReject
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Compact entitlement summary shown on each approval so the manager can see,
+// at a glance, how much of the holiday year the requester has already used,
+// their full allowance, and what would be left if this request is approved.
+function ApprovalBalanceStrip({ loading, balance, requestDays }: {
+  loading: boolean;
+  balance: BalanceInfo | null;
+  requestDays: number;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-lg border border-[var(--border)] bg-gray-50/70 px-3 py-2 text-xs text-[var(--text-muted)] inline-flex items-center gap-2">
+        <Loader2 size={12} className="animate-spin" /> Loading holiday balance…
+      </div>
+    );
+  }
+  if (!balance) return null;
+
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  const remainingNow = balance.entitlement - balance.used;      // before this request
+  const afterApproval = remainingNow - requestDays;             // if this is approved
+  const overBooked = afterApproval < 0;
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-gray-50/70 px-3 py-2">
+      <div className="flex items-center gap-5">
+        <BalanceStat label="Used" value={fmt(balance.used)} />
+        <BalanceStat label="Allowance" value={fmt(balance.entitlement)} />
+        <BalanceStat label="Remaining" value={fmt(remainingNow)} tone={remainingNow <= 0 ? 'amber' : 'default'} />
+      </div>
+      <p className={`mt-1.5 text-[11px] ${overBooked ? 'text-red-600 font-medium' : 'text-[var(--text-muted)]'}`}>
+        {overBooked
+          ? `Approving this would put ${balance.entitlement > 0 ? 'them' : 'the team member'} ${fmt(Math.abs(afterApproval))} day${Math.abs(afterApproval) === 1 ? '' : 's'} over their allowance.`
+          : `Approving this leaves ${fmt(afterApproval)} day${afterApproval === 1 ? '' : 's'} for the rest of the holiday year.`}
+        {balance.pro_rated && ' Allowance is pro-rated for their first year.'}
+      </p>
+    </div>
+  );
+}
+
+function BalanceStat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'amber' }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
+      <p className={`text-lg font-bold leading-tight ${tone === 'amber' ? 'text-amber-700' : 'text-[var(--text-primary)]'}`}>
+        {value}<span className="text-[10px] font-medium ml-0.5 text-[var(--text-muted)]">days</span>
+      </p>
     </div>
   );
 }
