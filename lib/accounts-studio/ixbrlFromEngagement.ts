@@ -57,7 +57,7 @@ export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions =
     // Notes & Disclosures stage (Employees note) and read from the engagement.
     signatory,
     approvalDateIso: e.approvedAt ? e.approvedAt.slice(0, 10) : null,
-    dormant: e.dormant,
+    dormant: !!e.dormant || e.entityType === 'dormant_company',
     averageEmployees: e.averageEmployees ?? 0,
     averageEmployeesPrior: e.averageEmployeesPrior ?? null,
     hasAccountantsReport: opts.hasAccountantsReport ?? false,

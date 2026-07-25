@@ -164,6 +164,9 @@ const STATEMENTS = {
   // Filleted only — the s.444 election not to deliver the P&L to the registrar.
   s444NotDelivered:{ qname: 'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
     text: 'The directors have elected not to deliver a copy of the profit and loss account to the Registrar of Companies in accordance with section 444 of the Companies Act 2006.' },
+  // Dormant only — the s.480 audit exemption (replaces the s.477 small-company one).
+  s480Exemption: { qname: 'direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection480CompaniesAct2006RelatingToDormantCompanies',
+    text: 'For the year ending {END} the company was dormant and entitled to exemption from audit under section 480 of the Companies Act 2006 relating to dormant companies.' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -311,16 +314,24 @@ export function buildIxbrl(input: IxbrlInput): string {
     `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,
     `<tr><td class="lbl">Approved and signed on behalf of the board by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
   ].join('\n        ');
-  // Filleted small-company accounts add the s.444 "P&L not delivered" statement.
-  const activeStatements = [STATEMENTS.smallRegime, STATEMENTS.s477Exemption, STATEMENTS.directorsAck, STATEMENTS.membersNoAudit];
-  if (input.filleted) activeStatements.push(STATEMENTS.s444NotDelivered);
+  // Statement set varies by filing type:
+  //  • audit exemption: dormant → s.480, otherwise small-company s.477;
+  //  • filleted (non-dormant) → add the s.444 "P&L not delivered" election.
+  const activeStatements = [
+    STATEMENTS.smallRegime,
+    input.dormant ? STATEMENTS.s480Exemption : STATEMENTS.s477Exemption,
+    STATEMENTS.directorsAck,
+    STATEMENTS.membersNoAudit,
+  ];
+  if (input.filleted && !input.dormant) activeStatements.push(STATEMENTS.s444NotDelivered);
   const statementsHtml = activeStatements
     .map(s => `<p class="stmt">${text(s.qname, 'DC', s.text.replace('{END}', ukSlash(input.periodEndIso)))}</p>`)
     .join('\n      ');
 
-  // Filleted accounts withhold the profit & loss account (s.444) — no P&L
-  // section and no P&L facts are tagged. Full accounts render it as normal.
-  const plSection = input.filleted ? '' : `
+  // The P&L is withheld for filleted accounts (s.444) and absent for dormant
+  // companies (no transactions) — no P&L section and no P&L facts in either.
+  const omitProfitLoss = input.filleted || input.dormant;
+  const plSection = omitProfitLoss ? '' : `
     <h2>Statement of comprehensive income</h2>
     <table>
       <tbody>
