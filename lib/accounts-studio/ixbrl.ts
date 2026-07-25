@@ -161,6 +161,9 @@ const STATEMENTS = {
     text: 'The directors acknowledge their responsibilities for complying with the requirements of the Act with respect to accounting records and the preparation of accounts.' },
   membersNoAudit:{ qname: 'direp:StatementThatMembersHaveNotRequiredCompanyToObtainAnAudit',
     text: 'The members have not required the company to obtain an audit of its financial statements for the year in question in accordance with section 476 of the Companies Act 2006.' },
+  // Filleted only — the s.444 election not to deliver the P&L to the registrar.
+  s444NotDelivered:{ qname: 'direp:StatementThatDirectorsHaveElectedNotToDeliverProfitLossAccountUnderSection4445ACompaniesAct2006',
+    text: 'The directors have elected not to deliver a copy of the profit and loss account to the Registrar of Companies in accordance with section 444 of the Companies Act 2006.' },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -308,9 +311,23 @@ export function buildIxbrl(input: IxbrlInput): string {
     `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,
     `<tr><td class="lbl">Approved and signed on behalf of the board by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
   ].join('\n        ');
-  const statementsHtml = [STATEMENTS.smallRegime, STATEMENTS.s477Exemption, STATEMENTS.directorsAck, STATEMENTS.membersNoAudit]
+  // Filleted small-company accounts add the s.444 "P&L not delivered" statement.
+  const activeStatements = [STATEMENTS.smallRegime, STATEMENTS.s477Exemption, STATEMENTS.directorsAck, STATEMENTS.membersNoAudit];
+  if (input.filleted) activeStatements.push(STATEMENTS.s444NotDelivered);
+  const statementsHtml = activeStatements
     .map(s => `<p class="stmt">${text(s.qname, 'DC', s.text.replace('{END}', ukSlash(input.periodEndIso)))}</p>`)
     .join('\n      ');
+
+  // Filleted accounts withhold the profit & loss account (s.444) — no P&L
+  // section and no P&L facts are tagged. Full accounts render it as normal.
+  const plSection = input.filleted ? '' : `
+    <h2>Statement of comprehensive income</h2>
+    <table>
+      <tbody>
+        ${plRows}
+      </tbody>
+    </table>
+`;
 
   const nsAttrs = Object.entries(NS).map(([k, v]) => `xmlns:${k}="${v}"`).join('\n      ');
 
@@ -346,14 +363,7 @@ export function buildIxbrl(input: IxbrlInput): string {
     <h1>${text('bus:EntityCurrentLegalOrRegisteredName', 'DC', input.companyName)}</h1>
     <p class="sub">Company registration number ${text('bus:UKCompaniesHouseRegisteredNumber', 'DC', input.companyNumber)}<br/>
       Financial statements for the period ${dateFact('bus:StartDateForPeriodCoveredByReport', 'IC', input.periodStartIso)} to ${dateFact('bus:EndDateForPeriodCoveredByReport', 'IC', input.periodEndIso)}</p>
-
-    <h2>Statement of comprehensive income</h2>
-    <table>
-      <tbody>
-        ${plRows}
-      </tbody>
-    </table>
-
+${plSection}
     <h2>Statement of financial position</h2>
     <table>
       <tbody>

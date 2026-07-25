@@ -185,6 +185,9 @@ export interface Engagement {
   showComparatives?: boolean;
   /** Mark these as amended accounts (adds "Amended" to the cover/titles). */
   amended?: boolean;
+  /** File filleted accounts to Companies House (balance sheet + notes only, P&L
+   *  and directors' report withheld under s.444). Small companies only. */
+  fileFilleted?: boolean;
   preparedBy: string;
   reviewedBy: string;
   source: ImportSourceId | null;

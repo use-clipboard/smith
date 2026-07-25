@@ -366,6 +366,19 @@ export default function StagePublish({
 
           {chOpen && (
             <div className="mt-2 rounded-xl border border-indigo-200/70 bg-indigo-50/40 p-3">
+              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><Scissors size={12} /> What are you filing?</label>
+              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies file <strong>filleted</strong> accounts — balance sheet and notes only, with the profit &amp; loss account withheld from the public record under s.444.</p>
+              <div className="mb-3 inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
+                {([['full', 'Full accounts'], ['filleted', 'Filleted accounts']] as const).map(([val, lbl]) => {
+                  const active = (val === 'filleted') === !!engagement.fileFilleted;
+                  return (
+                    <button key={val} onClick={() => patch(e => ({ ...e, fileFilleted: val === 'filleted' }))}
+                      className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
               <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
               <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
               <div className="flex gap-2">
