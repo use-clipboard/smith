@@ -90,6 +90,9 @@ export interface IxbrlInput {
   hasAccountantsReport?: boolean;
   /** Filing as filleted (balance sheet + notes only) vs full accounts. */
   filleted?: boolean;
+  /** Limited Liability Partnership — signing officer is a member (PartnerLLP1),
+   *  statements use members/LLP wording, CompanyType is OC/SO/NC. */
+  isLlp?: boolean;
 }
 
 // ── Concept map ──────────────────────────────────────────────────────────────
@@ -150,8 +153,14 @@ const MEMBER = {
   fullAccounts:     'bus:FullAccounts',
   filletedAccounts: 'bus:FilletedAccounts',
   director1:   'bus:Director1',
+  partnerLlp1: 'bus:PartnerLLP1',
 };
 // The four audit-exemption / small-company statements CH requires (direp).
+// ⚠ Companies House CONTENT-validates these statements: the tagged text must
+// contain the concept's canonical phrase (e.g. "small companies", "Directors
+// acknowledge"). The FRC taxonomy has NO LLP-specific duplicates, so LLPs reuse
+// the SAME company concepts AND must keep the company phrasing — do NOT reword
+// to "LLPs"/"members" or CH rejects (learned from submission 000010).
 const STATEMENTS = {
   smallRegime:   { qname: 'direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime',
     text: 'These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime.' },
@@ -245,7 +254,7 @@ function contexts(input: IxbrlInput): string {
   segCtx('DC-STD', DIM.standards, MEMBER.frs102);
   segCtx('DC-STA', DIM.status, input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport);
   segCtx('DC-TYP', DIM.type, input.filleted ? MEMBER.filletedAccounts : MEMBER.fullAccounts);
-  segCtx('DC-DIR', DIM.officer, MEMBER.director1);
+  segCtx('DC-DIR', DIM.officer, input.isLlp ? MEMBER.partnerLlp1 : MEMBER.director1);
 
   return list.join('\n      ');
 }
@@ -312,12 +321,12 @@ export function buildIxbrl(input: IxbrlInput): string {
     }</td></tr>`,
     `<tr><td class="lbl">Balance sheet date</td><td>${dateFact('bus:BalanceSheetDate', 'IC', input.periodEndIso)}</td></tr>`,
     `<tr><td class="lbl">Approved by the board on</td><td>${dateFact('core:DateAuthorisationFinancialStatementsForIssue', 'IC', approvalIso)}</td></tr>`,
-    `<tr><td class="lbl">Approved and signed on behalf of the board by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
+    `<tr><td class="lbl">Approved and signed on behalf of the ${input.isLlp ? 'members' : 'board'} by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
   ].join('\n        ');
   // Statement set varies by filing type:
   //  • audit exemption: dormant → s.480, otherwise small-company s.477;
   //  • filleted (non-dormant) → add the s.444 "P&L not delivered" election.
-  const activeStatements = [
+  const activeStatements: Array<{ qname: string; text: string }> = [
     STATEMENTS.smallRegime,
     input.dormant ? STATEMENTS.s480Exemption : STATEMENTS.s477Exemption,
     STATEMENTS.directorsAck,

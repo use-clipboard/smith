@@ -62,5 +62,6 @@ export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions =
     averageEmployeesPrior: e.averageEmployeesPrior ?? null,
     hasAccountantsReport: opts.hasAccountantsReport ?? false,
     filleted: !!e.fileFilleted,
+    isLlp: e.entityType === 'llp',
   });
 }
