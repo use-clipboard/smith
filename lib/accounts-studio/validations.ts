@@ -93,6 +93,11 @@ export function computeValidations(e: Engagement): ValidationCheck[] {
     const num = e.companyNumber?.trim();
     push('company-number', 'Company registration number', num ? 'pass' : 'fail',
       num ? `Registered number ${num}.` : 'Missing — set it on the Import Data step. It appears on the accounts and is required for Companies House filing.');
+
+    // 6c. Average number of employees — a required Companies House iXBRL fact.
+    const emp = e.averageEmployees;
+    push('employees', 'Average number of employees', emp != null ? 'pass' : 'warn',
+      emp != null ? `${emp} employee${emp === 1 ? '' : 's'} on average.` : 'Not set — enter it in Notes & Disclosures → Employees before filing to Companies House.');
   }
 
   // 7. Reporting period.

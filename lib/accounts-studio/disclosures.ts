@@ -268,8 +268,11 @@ const NOTE_RULES: NoteRule[] = [
   {
     id: 'employees', title: 'Employees',
     requirement: 'Average number of employees during the period.',
-    // Required for small companies; optional for micro-entities, sole traders and trusts.
-    frameworks: T_ALL_FRS, level: ctx => (frameworkTier(ctx) === 'frs105' || ctx.entityType === 'sole_trader' || ctx.entityType === 'trust') ? 'optional' : 'mandatory',
+    // Mandatory for companies (incl. micro-entities) and LLPs — the average
+    // number of employees is a required Companies House iXBRL fact, so the note
+    // must be present to capture it. Optional only for non-CH-filed sole traders
+    // and trusts.
+    frameworks: T_ALL_FRS, level: ctx => (ctx.entityType === 'sole_trader' || ctx.entityType === 'trust') ? 'optional' : 'mandatory',
     build: ctx => ({
       status: 'needs-review',
       content: `<h3>Employees</h3><p>The average number of employees during the year was [ ]${ctx.priorYear ? ` (${ctx.priorYear}: [ ])` : ''}.</p>`,

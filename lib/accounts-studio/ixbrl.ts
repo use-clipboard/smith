@@ -148,6 +148,7 @@ const DIM = {
 };
 const MEMBER = {
   frs102:      'bus:FRS102',
+  microEntities: 'bus:Micro-entities',
   auditExemptNoReport:   'bus:AuditExempt-NoAccountantsReport',
   auditExemptWithReport: 'bus:AuditExemptWithAccountantsReport',
   fullAccounts:     'bus:FullAccounts',
@@ -162,8 +163,11 @@ const MEMBER = {
 // the SAME company concepts AND must keep the company phrasing — do NOT reword
 // to "LLPs"/"members" or CH rejects (learned from submission 000010).
 const STATEMENTS = {
+  // `micro` variant is used for FRS 105 — CH's content check requires the phrase
+  // "micro" (not "small companies") when AccountingStandards = Micro-entities.
   smallRegime:   { qname: 'direp:StatementThatAccountsHaveBeenPreparedInAccordanceWithProvisionsSmallCompaniesRegime',
-    text: 'These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime.' },
+    text: 'These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime.',
+    micro: 'These financial statements have been prepared in accordance with the micro-entity provisions of FRS 105 “The Financial Reporting Standard applicable to the Micro-entities Regime”.' },
   s477Exemption: { qname: 'direp:StatementThatCompanyEntitledToExemptionFromAuditUnderSection477CompaniesAct2006RelatingToSmallCompanies',
     text: 'For the year ending {END} the company was entitled to exemption from audit under section 477 of the Companies Act 2006 relating to small companies.' },
   directorsAck:  { qname: 'direp:StatementThatDirectorsAcknowledgeTheirResponsibilitiesUnderCompaniesAct',
@@ -251,7 +255,7 @@ function contexts(input: IxbrlInput): string {
     `<xbrli:entity>${id}<xbrli:segment><xbrldi:explicitMember dimension="${dim}">${member}</xbrldi:explicitMember></xbrli:segment></xbrli:entity>`;
   const segCtx = (cid: string, dim: string, member: string) =>
     list.push(`<xbrli:context id="${cid}">${segEntity(dim, member)}${durP}</xbrli:context>`);
-  segCtx('DC-STD', DIM.standards, MEMBER.frs102);
+  segCtx('DC-STD', DIM.standards, input.framework === 'frs105' ? MEMBER.microEntities : MEMBER.frs102);
   segCtx('DC-STA', DIM.status, input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport);
   segCtx('DC-TYP', DIM.type, input.filleted ? MEMBER.filletedAccounts : MEMBER.fullAccounts);
   segCtx('DC-DIR', DIM.officer, input.isLlp ? MEMBER.partnerLlp1 : MEMBER.director1);
@@ -326,15 +330,19 @@ export function buildIxbrl(input: IxbrlInput): string {
   // Statement set varies by filing type:
   //  • audit exemption: dormant → s.480, otherwise small-company s.477;
   //  • filleted (non-dormant) → add the s.444 "P&L not delivered" election.
-  const activeStatements: Array<{ qname: string; text: string }> = [
+  const activeStatements: Array<{ qname: string; text: string; micro?: string }> = [
     STATEMENTS.smallRegime,
     input.dormant ? STATEMENTS.s480Exemption : STATEMENTS.s477Exemption,
     STATEMENTS.directorsAck,
     STATEMENTS.membersNoAudit,
   ];
   if (input.filleted && !input.dormant) activeStatements.push(STATEMENTS.s444NotDelivered);
+  const isMicro = input.framework === 'frs105';
   const statementsHtml = activeStatements
-    .map(s => `<p class="stmt">${text(s.qname, 'DC', s.text.replace('{END}', ukSlash(input.periodEndIso)))}</p>`)
+    .map(s => {
+      const body = (isMicro && s.micro) ? s.micro : s.text;
+      return `<p class="stmt">${text(s.qname, 'DC', body.replace('{END}', ukSlash(input.periodEndIso)))}</p>`;
+    })
     .join('\n      ');
 
   // The P&L is withheld for filleted accounts (s.444) and absent for dormant
