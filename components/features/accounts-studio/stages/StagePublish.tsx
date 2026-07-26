@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
-  FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
+  FileText, FileCode2, Calculator, ClipboardSignature, FileStack,
   Loader2, Send, Signature, Landmark, PartyPopper, Download, AlertCircle, Scissors, Info,
   CheckCircle2, RotateCcw, Building2, KeyRound, XCircle, ShieldCheck,
 } from 'lucide-react';
@@ -43,9 +43,8 @@ const REAL_DOCS = [
 
 // Regulated outputs — deliberately not simulated. Their own projects.
 const COMING_SOON = [
-  { id: 'ixbrl',      title: 'iXBRL Accounts',           description: 'FRC-tagged for online filing', icon: FileCode2,  format: 'iXBRL' },
-  { id: 'ch-package', title: 'Companies House Package',  description: 'Ready-to-submit filing bundle', icon: Package,   format: 'ZIP' },
-  { id: 'ct',         title: 'Corporation Tax Accounts', description: 'Accounts for the CT600',        icon: Calculator, format: 'iXBRL' },
+  { id: 'ixbrl', title: 'iXBRL Accounts',           description: 'FRC-tagged for online filing', icon: FileCode2,  format: 'iXBRL' },
+  { id: 'ct',    title: 'Corporation Tax Accounts', description: 'Accounts for the CT600',        icon: Calculator, format: 'iXBRL' },
 ] as const;
 
 function fileName(e: Engagement, suffix: string): string {
@@ -60,6 +59,7 @@ export default function StagePublish({
 }) {
   const [busyDoc, setBusyDoc] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [confirmSave, setConfirmSave] = useState(false);
   const [error, setError] = useState('');
   const [showSend, setShowSend] = useState(false);
   const [prefillEmail, setPrefillEmail] = useState('');
@@ -232,39 +232,30 @@ export default function StagePublish({
     );
   }
 
-  // ── Published — real download ───────────────────────────────────────────────
-  if (engagement.published) {
-    return (
-      <div className="mx-auto max-w-xl">
-        <StudioCard className="overflow-hidden text-center">
-          <div className="relative flex flex-col items-center gap-3 px-8 py-12 text-white"
-            style={{ background: 'linear-gradient(140deg,#4F46E5 0%,#7C3AED 55%,#9333EA 100%)' }}>
-            <div className="pointer-events-none absolute -left-10 -top-12 h-44 w-44 rounded-full bg-white/15 blur-2xl" />
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-white/20 backdrop-blur"><PartyPopper size={32} className="text-white" /></div>
-            <h2 className="text-2xl font-bold">Accounts Published</h2>
-            <p className="max-w-sm text-[13px] text-white/85">{engagement.companyName} — statutory accounts for the year ended {engagement.periodEnd} are complete and saved to the client record.</p>
-          </div>
-          <div className="space-y-3 px-8 py-7">
-            <button onClick={() => download('Statutory_Accounts', 'statutory')} disabled={busyDoc !== null} className="btn-primary w-full justify-center">
-              {busyDoc ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Download statutory accounts (PDF)
-            </button>
-            {error && <p className="text-[12px] text-red-600">{error}</p>}
-            <p className="text-[11.5px] text-[var(--text-muted)]">
-              Filing to Companies House, iXBRL tagging and the CT600 hand-off are coming soon.
-            </p>
-          </div>
-        </StudioCard>
-      </div>
-    );
-  }
-
-  // ── Pre-publish ─────────────────────────────────────────────────────────────
+  // ── Review → approve → file → finish ────────────────────────────────────────
+  const filed = status === 'submitted';
+  const completed = filed || engagement.published;
   return (
-    <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-5">
+    <div className="mx-auto max-w-5xl space-y-4">
+      {/* Slim completion banner — never hides the actions below. */}
+      {completed && (
+        <StudioCard className="flex flex-wrap items-center gap-3 border border-emerald-200/70 bg-emerald-50/60 px-5 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600"><CheckCircle2 size={18} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-bold text-[var(--text-primary)]">{filed ? 'Filed with Companies House' : 'Saved to the client record'}</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">{engagement.companyName} — year ended {engagement.periodEnd}. {filed ? 'The accounts are recorded as filed.' : 'You can still file them at Companies House below.'}</p>
+          </div>
+          <button onClick={() => download('Statutory_Accounts', 'statutory')} disabled={busyDoc !== null} className="btn-secondary shrink-0">
+            {busyDoc ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Download accounts
+          </button>
+        </StudioCard>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-5">
       <StudioCard className="overflow-hidden lg:col-span-3">
         <div className="border-b border-black/5 px-6 py-4">
-          <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Documents</h3>
-          <p className="text-[12px] text-[var(--text-muted)]">Generate and download the real accounts pack. Regulated filings are coming soon.</p>
+          <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Review &amp; download</h3>
+          <p className="text-[12px] text-[var(--text-muted)]">Check the accounts pack, then approve and file it on the right.</p>
         </div>
         <div className="divide-y divide-black/5">
           {REAL_DOCS.map(doc => {
@@ -318,13 +309,13 @@ export default function StagePublish({
                 <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${isIxbrl ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-slate-100 text-slate-400'}`}><Icon size={17} /></div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-[var(--text-primary)]">{doc.title}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{isIxbrl ? 'FRC-tagged draft — validate via the CH iXBRL test service before filing.' : doc.description}</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">{isIxbrl ? 'FRC-tagged accounts — the same file SMITH submits to Companies House.' : doc.description}</p>
                 </div>
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-slate-500">{doc.format}</span>
                 {isIxbrl ? (
                   <button onClick={downloadIxbrl} disabled={busyDoc !== null || !engagement.statements}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-nav-hover)] disabled:opacity-50">
-                    {busyDoc === 'ixbrl' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download (beta)
+                    {busyDoc === 'ixbrl' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} Download
                   </button>
                 ) : (
                   <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-amber-700">Soon</span>
@@ -353,7 +344,9 @@ export default function StagePublish({
 
         {/* Client approval & submission */}
         <StudioCard className="p-4">
-          <h4 className="mb-2 flex items-center gap-1.5 px-1 text-[13px] font-bold text-[var(--text-primary)]"><ClipboardSignature size={14} /> Client approval &amp; submission</h4>
+          <h4 className="mb-1 flex items-center gap-1.5 px-1 text-[13px] font-bold text-[var(--text-primary)]"><ClipboardSignature size={14} /> Approve &amp; file</h4>
+
+          <StepHeader n={1} title="Approve with the client" done={status === 'approved' || filed} active={!filed && status !== 'approved'} />
 
           {/* Status line */}
           {status === 'sent' && (
@@ -372,6 +365,18 @@ export default function StagePublish({
               {engagement.changesNote && <p className="mt-1 pl-5">{engagement.changesNote}</p>}
             </div>
           )}
+
+          {/* Send / re-send (step 1 action) */}
+          <button onClick={startSend} disabled={!ready || sendBusy || sendingApproval}
+            className="mb-3 flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">{sendBusy || sendingApproval ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-[var(--text-primary)]">{status ? 'Re-send for approval' : 'Send for approval'}</p>
+              <p className="text-[11px] text-[var(--text-muted)]">Email the accounts to the client to sign</p>
+            </div>
+          </button>
+
+          <StepHeader n={2} title="File at Companies House" done={filed} active={status === 'approved' && !filed} />
 
           {/* Companies House filing status — persists across refreshes */}
           {chHistory.length > 0 && (() => {
@@ -395,33 +400,23 @@ export default function StagePublish({
           })()}
 
           <div className="space-y-1.5">
-            {/* Send / re-send */}
-            <button onClick={startSend} disabled={!ready || sendBusy || sendingApproval}
-              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]">{sendBusy || sendingApproval ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}</div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-[var(--text-primary)]">{status ? 'Re-send for approval' : 'Send for approval'}</p>
-                <p className="text-[11px] text-[var(--text-muted)]">Email the accounts to the client to sign</p>
-              </div>
-            </button>
-
-            {/* Mark as submitted — enabled once approved */}
-            <button onClick={submitToCH} disabled={status !== 'approved' || submitting}
-              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 disabled:cursor-not-allowed disabled:opacity-45">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">{submitting ? <Loader2 size={15} className="animate-spin" /> : <Landmark size={15} />}</div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-[var(--text-primary)]">Mark as submitted to Companies House</p>
-                <p className="text-[11px] text-[var(--text-muted)]">{status === 'approved' ? 'Records the accounts as filed' : 'Available once the client has approved'}</p>
-              </div>
-            </button>
-
-            {/* File to Companies House (XML Gateway — test environment) */}
+            {/* File to Companies House (XML Gateway) — the primary filing path */}
             <button onClick={() => setChOpen(o => !o)} disabled={!ready}
               className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Building2 size={15} /></div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-[var(--text-primary)]">File iXBRL to Companies House <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Test</span></p>
                 <p className="text-[11px] text-[var(--text-muted)]">Submit the tagged accounts over the XML Gateway</p>
+              </div>
+            </button>
+
+            {/* Mark as submitted — manual fallback (accounts filed outside SMITH) */}
+            <button onClick={submitToCH} disabled={status !== 'approved' || submitting}
+              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 disabled:cursor-not-allowed disabled:opacity-45">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">{submitting ? <Loader2 size={15} className="animate-spin" /> : <Landmark size={15} />}</div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)]">Mark as submitted</p>
+                <p className="text-[11px] text-[var(--text-muted)]">{status === 'approved' ? 'Already filed elsewhere? Record it as filed' : 'Available once the client has approved'}</p>
               </div>
             </button>
           </div>
@@ -533,7 +528,29 @@ export default function StagePublish({
             </div>
           )}
 
-          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Filing goes to the Companies House XML Gateway test environment. &ldquo;Mark as submitted&rdquo; records the accounts as filed on the client record.</p>
+          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Filing goes to the Companies House XML Gateway test environment.</p>
+
+          <div className="mt-1 border-t border-black/5 pt-2">
+            <StepHeader n={3} title="Save to the client record" done={!!engagement.published} active={filed && !engagement.published} />
+            {engagement.published ? (
+              <p className="flex items-center gap-1.5 px-1 text-[12px] font-medium text-emerald-700"><CheckCircle2 size={13} /> Saved to the client record.</p>
+            ) : confirmSave ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-3 py-2">
+                <span className="text-[12px] font-medium text-[var(--text-primary)]">Save the final pack to the client record?</span>
+                <button onClick={publish} disabled={publishing} className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-1 text-[12px] font-semibold text-white disabled:opacity-50">
+                  {publishing ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Yes, save
+                </button>
+                <button onClick={() => setConfirmSave(false)} className="rounded-full border border-[var(--border)] px-3 py-1 text-[12px] text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)]">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmSave(true)} disabled={publishing}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
+                <PartyPopper size={14} /> Save final pack to client record
+              </button>
+            )}
+            <p className="mt-1.5 px-1 text-[10.5px] text-[var(--text-muted)]">Optional — records the finished accounts on the client&apos;s record. You can still file at Companies House at any time.</p>
+            {error && <p className="mt-1.5 px-1 text-[11.5px] text-red-600">{error}</p>}
+          </div>
         </StudioCard>
 
         {showSend && (
@@ -547,12 +564,19 @@ export default function StagePublish({
             onClose={() => setShowSend(false)}
           />
         )}
-
-        <button onClick={publish} disabled={publishing} className="btn-primary w-full justify-center py-3 text-[14px] disabled:opacity-45">
-          {publishing ? <><Loader2 size={16} className="animate-spin" /> Publishing…</> : <><PartyPopper size={16} /> Publish accounts</>}
-        </button>
-        <p className="text-center text-[11px] text-[var(--text-muted)]">Publishing marks the accounts complete and saves them to the client record.</p>
       </div>
+      </div>
+    </div>
+  );
+}
+
+function StepHeader({ n, title, done, active }: { n: number; title: string; done: boolean; active: boolean }) {
+  return (
+    <div className="mb-1.5 mt-1 flex items-center gap-2 px-1">
+      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10.5px] font-bold ${done ? 'bg-emerald-100 text-emerald-600' : active ? 'bg-[var(--accent)] text-white' : 'bg-slate-100 text-slate-400'}`}>
+        {done ? <CheckCircle2 size={12} /> : n}
+      </span>
+      <span className={`text-[12px] font-bold ${active ? 'text-[var(--text-primary)]' : done ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>{title}</span>
     </div>
   );
 }
