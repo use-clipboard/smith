@@ -132,6 +132,12 @@ export interface ChSubmitInput {
   companyType?: string;
   contactName?: string;
   contactNumber?: string;
+  // Audit details from the filing panel — sent explicitly so a pending autosave
+  // can't stale them.
+  audited?: boolean;
+  auditorName?: string;
+  auditFirm?: string;
+  auditReportDate?: string;
 }
 export interface ChSubmitResult {
   ok: boolean;

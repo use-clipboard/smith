@@ -18,6 +18,12 @@ const Body = z.object({
   companyType: z.string().max(16).optional(),
   contactName: z.string().max(120).optional(),
   contactNumber: z.string().max(60).optional(),
+  // Audit details from the filing panel (override the stored engagement so a
+  // pending autosave can't stale them).
+  audited: z.boolean().optional(),
+  auditorName: z.string().max(200).optional(),
+  auditFirm: z.string().max(200).optional(),
+  auditReportDate: z.string().max(20).optional(),
 });
 
 /** ISO or dd-mm-yyyy → yyyy-mm-dd. */
@@ -81,6 +87,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const settings = await getAccountsStudioFirmSettings(supabase, ctx.firmId);
     hasAccountantsReport = !!(settings?.accountantsReport && settings.accountantsReport.trim());
   } catch { /* default: no accountant's report */ }
+
+  // Audit details from the filing panel win over the stored engagement (avoids a
+  // pending-autosave race). Only applied when the filing is marked audited.
+  if (input.audited) {
+    e.audited = true;
+    if (input.auditorName !== undefined) e.auditorName = input.auditorName;
+    if (input.auditFirm !== undefined) e.auditFirm = input.auditFirm;
+    if (input.auditReportDate !== undefined) e.auditReportDate = input.auditReportDate;
+  }
 
   const ixbrl = buildIxbrlFromEngagement(e, { hasAccountantsReport });
   if (!ixbrl) return NextResponse.json({ error: 'Prepare the accounts (import a trial balance) before filing.' }, { status: 400 });

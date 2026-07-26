@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   FileText, FileCode2, Package, Calculator, ClipboardSignature, FileStack,
   Loader2, Send, Signature, Landmark, PartyPopper, Download, AlertCircle, Scissors, Info,
-  CheckCircle2, RotateCcw, Building2, KeyRound, XCircle,
+  CheckCircle2, RotateCcw, Building2, KeyRound, XCircle, ShieldCheck,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
@@ -58,6 +58,9 @@ export default function StagePublish({
   // Companies House XML Gateway filing (test).
   const [chOpen, setChOpen] = useState(false);
   const [chAuthCode, setChAuthCode] = useState('');
+  const [chAuditor, setChAuditor] = useState(engagement.auditorName ?? '');
+  const [chAuditFirm, setChAuditFirm] = useState(engagement.auditFirm ?? '');
+  const [chAuditDate, setChAuditDate] = useState(engagement.auditReportDate ?? '');
   const [chBusy, setChBusy] = useState(false);
   const [chError, setChError] = useState('');
   const [chResult, setChResult] = useState<ChSubmitResult | null>(null);
@@ -152,7 +155,10 @@ export default function StagePublish({
     if (!chAuthCode.trim()) { setChError('Enter the company authentication code.'); return; }
     setChBusy(true); setChError(''); setChResult(null);
     try {
-      const res = await submitToCompaniesHouse(engagement.id, { companyAuthCode: chAuthCode.trim() });
+      const res = await submitToCompaniesHouse(engagement.id, {
+        companyAuthCode: chAuthCode.trim(),
+        ...(engagement.audited ? { audited: true, auditorName: chAuditor.trim(), auditFirm: chAuditFirm.trim(), auditReportDate: chAuditDate.trim() } : {}),
+      });
       setChResult(res);
       if (res.ok) setChAuthCode('');
     } catch (e) {
@@ -379,6 +385,36 @@ export default function StagePublish({
                   );
                 })}
               </div>
+              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><ShieldCheck size={12} /> Audit status</label>
+              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies are <strong>audit-exempt</strong>. Choose Audited only if an auditor has reported on these accounts.</p>
+              <div className="mb-2 inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
+                {([['unaudited', 'Audit-exempt'], ['audited', 'Audited']] as const).map(([val, lbl]) => {
+                  const active = (val === 'audited') === !!engagement.audited;
+                  return (
+                    <button key={val} onClick={() => patch(e => ({ ...e, audited: val === 'audited' }))}
+                      className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
+              {engagement.audited && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <input value={chAuditor} onChange={ev => setChAuditor(ev.target.value)}
+                    onBlur={() => { if (chAuditor.trim() !== (engagement.auditorName ?? '')) patch(e => ({ ...e, auditorName: chAuditor.trim() })); }}
+                    placeholder="Senior statutory auditor" autoComplete="off"
+                    className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                  <input value={chAuditFirm} onChange={ev => setChAuditFirm(ev.target.value)}
+                    onBlur={() => { if (chAuditFirm.trim() !== (engagement.auditFirm ?? '')) patch(e => ({ ...e, auditFirm: chAuditFirm.trim() })); }}
+                    placeholder="Audit firm" autoComplete="off"
+                    className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                  <input value={chAuditDate} onChange={ev => setChAuditDate(ev.target.value)}
+                    onBlur={() => { if (chAuditDate.trim() !== (engagement.auditReportDate ?? '')) patch(e => ({ ...e, auditReportDate: chAuditDate.trim() })); }}
+                    placeholder="Report date dd-mm-yyyy" autoComplete="off"
+                    className="w-40 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                </div>
+              )}
+
               <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
               <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
               <div className="flex gap-2">

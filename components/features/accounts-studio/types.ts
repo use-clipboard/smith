@@ -188,6 +188,16 @@ export interface Engagement {
   /** File filleted accounts to Companies House (balance sheet + notes only, P&L
    *  and directors' report withheld under s.444). Small companies only. */
   fileFilleted?: boolean;
+  // ── Audited accounts ────────────────────────────────────────────────────────
+  /** The accounts are audited (an auditor's report replaces the audit-exemption
+   *  statements; AccountsStatus is tagged Audited). */
+  audited?: boolean;
+  /** Senior statutory auditor who signs the audit report. */
+  auditorName?: string | null;
+  /** Audit firm name. */
+  auditFirm?: string | null;
+  /** Date of the auditor's report (dd-mm-yyyy). */
+  auditReportDate?: string | null;
   preparedBy: string;
   reviewedBy: string;
   source: ImportSourceId | null;

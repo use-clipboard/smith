@@ -43,6 +43,7 @@ const NS = {
   core:      'http://xbrl.frc.org.uk/fr/2023-01-01/core',
   bus:       'http://xbrl.frc.org.uk/cd/2023-01-01/business',
   direp:     'http://xbrl.frc.org.uk/reports/2023-01-01/direp',
+  aurep:     'http://xbrl.frc.org.uk/reports/2023-01-01/aurep',
   countries: 'http://xbrl.frc.org.uk/cd/2023-01-01/countries',
 };
 
@@ -93,6 +94,19 @@ export interface IxbrlInput {
   /** Limited Liability Partnership — signing officer is a member (PartnerLLP1),
    *  statements use members/LLP wording, CompanyType is OC/SO/NC. */
   isLlp?: boolean;
+  // ── Audited accounts ────────────────────────────────────────────────────────
+  /** Accounts are audited — replaces the audit-exemption statements with an
+   *  auditor's report and tags AccountsStatus = Audited. */
+  audited?: boolean;
+  /** Senior statutory auditor (the person signing the audit report). */
+  auditorName?: string | null;
+  /** Audit firm name (for the readable report). */
+  auditFirm?: string | null;
+  /** Date of the auditor's report (yyyy-mm-dd). Defaults to the approval date. */
+  auditReportDateIso?: string | null;
+  /** Community Interest Company — tags the legal form as a CIC. Files as a
+   *  company otherwise (the CIC34 report is a separate statutory form). */
+  isCic?: boolean;
 }
 
 // ── Concept map ──────────────────────────────────────────────────────────────
@@ -145,16 +159,19 @@ const DIM = {
   status:    'bus:AccountsStatusDimension',
   type:      'bus:AccountsTypeDimension',
   officer:   'bus:EntityOfficersDimension',
+  legalForm: 'bus:LegalFormEntityDimension',
 };
 const MEMBER = {
   frs102:      'bus:FRS102',
   microEntities: 'bus:Micro-entities',
+  audited:     'bus:Audited',
   auditExemptNoReport:   'bus:AuditExempt-NoAccountantsReport',
   auditExemptWithReport: 'bus:AuditExemptWithAccountantsReport',
   fullAccounts:     'bus:FullAccounts',
   filletedAccounts: 'bus:FilletedAccounts',
   director1:   'bus:Director1',
   partnerLlp1: 'bus:PartnerLLP1',
+  cic:         'bus:CommunityInterestCompanyCIC',
 };
 // The four audit-exemption / small-company statements CH requires (direp).
 // ⚠ Companies House CONTENT-validates these statements: the tagged text must
@@ -256,9 +273,10 @@ function contexts(input: IxbrlInput): string {
   const segCtx = (cid: string, dim: string, member: string) =>
     list.push(`<xbrli:context id="${cid}">${segEntity(dim, member)}${durP}</xbrli:context>`);
   segCtx('DC-STD', DIM.standards, input.framework === 'frs105' ? MEMBER.microEntities : MEMBER.frs102);
-  segCtx('DC-STA', DIM.status, input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport);
+  segCtx('DC-STA', DIM.status, input.audited ? MEMBER.audited : (input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport));
   segCtx('DC-TYP', DIM.type, input.filleted ? MEMBER.filletedAccounts : MEMBER.fullAccounts);
   segCtx('DC-DIR', DIM.officer, input.isLlp ? MEMBER.partnerLlp1 : MEMBER.director1);
+  if (input.isCic) segCtx('DC-CIC', DIM.legalForm, MEMBER.cic);
 
   return list.join('\n      ');
 }
@@ -310,6 +328,7 @@ export function buildIxbrl(input: IxbrlInput): string {
   const numPure = (concept: string, ctx: string, n: number) =>
     `<ix:nonFraction name="${concept}" contextRef="${ctx}" unitRef="pure" decimals="0" format="ixt:num-dot-decimal">${n}</ix:nonFraction>`;
   const metaRows = [
+    ...(input.isCic ? [`<tr><td class="lbl">Legal form</td><td>${fixedFact('bus:LegalFormEntity', 'DC-CIC', 'Community interest company')}</td></tr>`] : []),
     `<tr><td class="lbl">Accounting standards</td><td>${fixedFact('bus:AccountingStandardsApplied', 'DC-STD', 'FRS 102')}</td></tr>`,
     `<tr><td class="lbl">Accounts status</td><td>${fixedFact('bus:AccountsStatusAuditedOrUnaudited', 'DC-STA', 'Unaudited')}</td></tr>`,
     `<tr><td class="lbl">Accounts type</td><td>${fixedFact('bus:AccountsType', 'DC-TYP', input.filleted ? 'Filleted accounts' : 'Full accounts')}</td></tr>`,
@@ -328,14 +347,18 @@ export function buildIxbrl(input: IxbrlInput): string {
     `<tr><td class="lbl">Approved and signed on behalf of the ${input.isLlp ? 'members' : 'board'} by</td><td>${fixedFact('core:DirectorSigningFinancialStatements', 'DC-DIR', sig)}</td></tr>`,
   ].join('\n        ');
   // Statement set varies by filing type:
+  //  • audited → the audit-exemption statements (s.477/s.480 + members-not-
+  //    -required) are REMOVED — an audited company isn't claiming exemption;
   //  • audit exemption: dormant → s.480, otherwise small-company s.477;
   //  • filleted (non-dormant) → add the s.444 "P&L not delivered" election.
   const activeStatements: Array<{ qname: string; text: string; micro?: string }> = [
     STATEMENTS.smallRegime,
-    input.dormant ? STATEMENTS.s480Exemption : STATEMENTS.s477Exemption,
     STATEMENTS.directorsAck,
-    STATEMENTS.membersNoAudit,
   ];
+  if (!input.audited) {
+    activeStatements.splice(1, 0, input.dormant ? STATEMENTS.s480Exemption : STATEMENTS.s477Exemption);
+    activeStatements.push(STATEMENTS.membersNoAudit);
+  }
   if (input.filleted && !input.dormant) activeStatements.push(STATEMENTS.s444NotDelivered);
   const isMicro = input.framework === 'frs105';
   const statementsHtml = activeStatements
@@ -356,6 +379,40 @@ export function buildIxbrl(input: IxbrlInput): string {
       </tbody>
     </table>
 `;
+
+  // Independent auditor's report (audited accounts only) — a standard unqualified
+  // opinion. The senior statutory auditor + report date come from the engagement;
+  // the opinion/basis wording is a default the accountant can refine.
+  const auditReportIso = input.auditReportDateIso || approvalIso;
+  const auditorName = input.auditorName?.trim() || 'The senior statutory auditor';
+  const auditFirm = input.auditFirm?.trim() || 'The audit firm';
+  const opinionText = `In our opinion the financial statements give a true and fair view of the state of the company's affairs as at ${ukSlash(input.periodEndIso)} and of its profit for the year then ended; have been properly prepared in accordance with United Kingdom Generally Accepted Accounting Practice; and have been prepared in accordance with the requirements of the Companies Act 2006.`;
+  const basisText = `We conducted our audit in accordance with International Standards on Auditing (UK) and applicable law. We are independent of the company in accordance with the ethical requirements that are relevant to our audit of the financial statements in the UK, and we have fulfilled our other ethical responsibilities in accordance with these requirements. We believe that the audit evidence we have obtained is sufficient and appropriate to provide a basis for our opinion.`;
+  const s418Text = `In so far as the ${input.isLlp ? 'members are' : 'directors are'} aware, there is no relevant audit information of which the company's auditors are unaware, and the ${input.isLlp ? 'members have' : 'directors have'} taken all the steps that they ought to have taken to make themselves aware of any relevant audit information and to establish that the company's auditors are aware of that information.`;
+  // Audited FULL accounts also require the directors'-report signing + the s.418
+  // "provision of information to auditors" statement + the audit firm name (CH's
+  // mandatory audit set — learned from submission 000014).
+  const auditorSection = input.audited ? `
+    <h2>Directors' report</h2>
+    <table>
+      <tbody>
+        <tr><td class="lbl">Directors' report approved and signed by</td><td>${fixedFact('direp:DirectorSigningDirectorsReport', 'DC-DIR', sig)}</td></tr>
+        <tr><td class="lbl">Date of the directors' report</td><td>${dateFact('direp:DateSigningDirectorsReport', 'IC', approvalIso)}</td></tr>
+      </tbody>
+    </table>
+    <p class="stmt">${text('direp:StatementOnQualityCompletenessInformationProvidedToAuditors', 'DC', s418Text)}</p>
+
+    <h2>Independent auditor's report</h2>
+    <p class="stmt">${text('aurep:OpinionAuditorsOnEntity', 'DC', opinionText)}</p>
+    <p class="stmt">${text('aurep:BasisForOpinionAuditorsOnEntity', 'DC', basisText)}</p>
+    <table>
+      <tbody>
+        <tr><td class="lbl">Senior statutory auditor</td><td>${text('aurep:NameSeniorStatutoryAuditor', 'DC', auditorName)}</td></tr>
+        <tr><td class="lbl">Auditor</td><td>${text('bus:NameEntityAuditors', 'DC', auditFirm)}</td></tr>
+        <tr><td class="lbl">Date of the auditor's report</td><td>${dateFact('aurep:DateAuditorsReport', 'IC', auditReportIso)}</td></tr>
+      </tbody>
+    </table>
+` : '';
 
   const nsAttrs = Object.entries(NS).map(([k, v]) => `xmlns:${k}="${v}"`).join('\n      ');
 
@@ -401,7 +458,7 @@ ${plSection}
 
     <h2>Statements required under the Companies Act 2006</h2>
     ${statementsHtml}
-
+${auditorSection}
     <h2>Filing information</h2>
     <table>
       <tbody>
@@ -414,8 +471,8 @@ ${plSection}
 </html>`;
 }
 
-/** Convert a dd-mm-yyyy string to yyyy-mm-dd (XBRL date form). */
+/** Convert a dd-mm-yyyy (or dd/mm/yyyy) string to yyyy-mm-dd (XBRL date form). */
 export function ddmmyyyyToIso(dmy: string): string {
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dmy.trim());
+  const m = /^(\d{2})[-/](\d{2})[-/](\d{4})$/.exec(dmy.trim());
   return m ? `${m[3]}-${m[2]}-${m[1]}` : dmy;
 }

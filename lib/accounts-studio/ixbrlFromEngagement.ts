@@ -63,5 +63,10 @@ export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions =
     hasAccountantsReport: opts.hasAccountantsReport ?? false,
     filleted: !!e.fileFilleted,
     isLlp: e.entityType === 'llp',
+    audited: !!e.audited,
+    auditorName: e.auditorName ?? null,
+    auditFirm: e.auditFirm ?? null,
+    auditReportDateIso: e.auditReportDate ? ddmmyyyyToIso(e.auditReportDate) : null,
+    isCic: e.entityType === 'cic',
   });
 }
