@@ -48,11 +48,15 @@ export async function GET(req: NextRequest) {
   const prior = candidates[0];
   if (!prior) return NextResponse.json({ found: false, notes: {} });
 
-  const disclosures = Array.isArray(prior.d.disclosures) ? prior.d.disclosures as { id?: string; title?: string; content?: string }[] : [];
+  const disclosures = Array.isArray(prior.d.disclosures) ? prior.d.disclosures as { id?: string; title?: string; content?: string; phValues?: Record<string, string> }[] : [];
   const notes: Record<string, { title: string; content: string }> = {};
+  // Fill-in-the-blanks answers from last year, per note — so the user can copy a
+  // stable answer (principal activity, controlling party …) into this year.
+  const phValues: Record<string, Record<string, string>> = {};
   for (const s of disclosures) {
     if (s?.id && typeof s.content === 'string' && s.content.trim()) {
       notes[s.id] = { title: s.title ?? s.id, content: s.content };
+      if (s.phValues && typeof s.phValues === 'object' && Object.keys(s.phValues).length) phValues[s.id] = s.phValues;
     }
   }
   // Structured values that roll forward year to year (employees comparative,
@@ -61,5 +65,5 @@ export async function GET(req: NextRequest) {
     averageEmployees: typeof prior.d.averageEmployees === 'number' ? prior.d.averageEmployees : null,
     disclosureData: (prior.d.disclosureData && typeof prior.d.disclosureData === 'object') ? prior.d.disclosureData : null,
   };
-  return NextResponse.json({ found: true, periodEnd: (prior.d.periodEnd as string) ?? '', notes, carry });
+  return NextResponse.json({ found: true, periodEnd: (prior.d.periodEnd as string) ?? '', notes, phValues, carry });
 }

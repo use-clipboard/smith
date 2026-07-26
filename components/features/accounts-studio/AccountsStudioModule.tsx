@@ -186,13 +186,13 @@ export default function AccountsStudioModule({ userEmail }: { userEmail: string 
         <div className="min-w-0 flex-1">
           {stage === 'import' && <StageImport engagement={engagement} patch={patch} advance={() => advanceFrom('import')} />}
           {stage === 'preparation' && <StagePreparation engagement={engagement} patch={patch} advance={() => advanceFrom('preparation')} readOnly={engagement.approvalStatus === 'submitted'} />}
-          {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} readOnly={engagement.approvalStatus === 'submitted'} />}
+          {stage === 'disclosures' && <StageDisclosures engagement={engagement} patch={patch} advance={() => advanceFrom('disclosures')} readOnly={engagement.approvalStatus === 'submitted'} saveState={saveState} />}
           {stage === 'final-review' && <StageFinalReview engagement={engagement} advance={() => advanceFrom('final-review')} />}
           {stage === 'publish' && <StagePublish engagement={engagement} patch={patch} />}
         </div>
         {assistantOpen && (
           <div className="hidden w-[340px] shrink-0 xl:block" style={{ height: 'calc(100vh - 240px)' }}>
-            <AssistantPanel engagement={engagement} />
+            <AssistantPanel engagement={engagement} stage={stage} />
           </div>
         )}
       </div>

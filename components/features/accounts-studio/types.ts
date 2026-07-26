@@ -73,6 +73,12 @@ export interface DisclosureSection {
   included?: boolean;
   /** Rule-engine classification: mandatory / conditional / optional (for the badge). */
   level?: NoteLevel;
+  /** Fill-in-the-blanks support. When a note has placeholders ([ ], £[ ], "please
+   *  confirm"), `phTemplate` holds the note wording WITH the blanks, and
+   *  `phValues` the values the user entered (keyed p0, p1…). `content` is
+   *  regenerated from the two so no blank ever reaches the filed accounts. */
+  phTemplate?: string;
+  phValues?: Record<string, string>;
 }
 
 // ── Imported ledger data (Stage 1 → real trial balance + statements) ─────────

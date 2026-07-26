@@ -151,10 +151,10 @@ function directorsReportHtml(ctx: DisclosureContext, isLlp: boolean): string {
   const many = dirs.length > 1;
   const served = dirs.length
     ? `<p>The ${officer} who served the ${entity} during the year ${many || isLlp ? 'were' : 'was'} as follows:</p><p>${dirs.join('<br>')}</p>`
-    : `<p>The ${officer} who served the ${entity} during the year ${isLlp ? 'are' : 'is'} set out below — please confirm.</p>`;
+    : `<p>The ${officer} who served the ${entity} during the year ${many || isLlp ? 'were' : 'was'} [ ].</p>`;
   return `<h3>${isLlp ? "Members' report" : "Director's report"}</h3>`
     + `<p>The ${officer} present${many || isLlp ? '' : 's'} their annual report and the financial statements for the year then ended.</p>`
-    + `<p><strong>Principal activity.</strong> The principal activity of the ${entity} during the financial year is set out below — please confirm.</p>`
+    + `<p><strong>Principal activity.</strong> The principal activity of the ${entity} during the financial year was [ ].</p>`
     + `<p><strong>${Officer}.</strong></p>${served}`
     + `<p><strong>Statement of ${officer}' responsibilities.</strong> The ${officer} ${isLlp ? 'are' : 'is'} responsible for preparing the report and the financial statements in accordance with applicable law and United Kingdom Generally Accepted Accounting Practice.</p>`
     + `<p>Company law requires the ${officer} to prepare financial statements for each financial year which give a true and fair view of the state of affairs of the ${entity} and of its profit or loss for that period. In preparing these financial statements the ${officer} ${isLlp ? 'are' : 'is'} required to select suitable accounting policies and apply them consistently; make judgements and accounting estimates that are reasonable and prudent; and prepare the financial statements on the going concern basis unless it is inappropriate to presume that the ${entity} will continue in business.</p>`

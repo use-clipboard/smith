@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Bold, Italic, List, Link2, Sparkles, HelpCircle, History, RotateCcw,
   ArrowRight, Check, Loader2, X, FileText, Wand2, Plus, Eye, EyeOff,
-  AlertTriangle, Info, ChevronDown, ShieldCheck, Undo2, Redo2,
+  AlertTriangle, Info, ChevronDown, ShieldCheck, Undo2, Redo2, Cloud, CloudOff,
 } from 'lucide-react';
 import { StudioCard, SectionStatusPill, SectionStatusDot } from '../primitives';
 import Tooltip from '@/components/ui/Tooltip';
@@ -13,7 +13,10 @@ import { addableNotes, makeNote, noteRuleMeta, type DisclosureContext } from '@/
 import { checkDisclosures } from '@/lib/accounts-studio/disclosureCheck';
 import { hasPlaceholders, countPlaceholders, highlightPlaceholders } from '@/lib/accounts-studio/placeholders';
 import { noteInputSpec, carryForwardFromPrior, type NoteInputSpec, type PriorCarry } from '@/lib/accounts-studio/noteInputs';
+import { parsePlaceholderFields, fillTemplate, templateHasFields, normalizeLegacyTemplate, extractPriorValues, type PlaceholderField } from '@/lib/accounts-studio/placeholderFields';
 import type { Engagement, DisclosureSection, SectionStatus, NoteLevel } from '../types';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; hint: string }> = {
   mandatory: { label: 'Required', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-400', hint: 'Required — this note must be included in the accounts under the applicable framework.' },
@@ -22,12 +25,13 @@ const LEVEL_BADGE: Record<NoteLevel, { label: string; cls: string; dot: string; 
 };
 
 export default function StageDisclosures({
-  engagement, patch, advance, readOnly = false,
+  engagement, patch, advance, readOnly = false, saveState = 'idle',
 }: {
   engagement: Engagement;
   patch: (u: (e: Engagement) => Engagement) => void;
   advance: () => void;
   readOnly?: boolean;
+  saveState?: SaveState;
 }) {
   const sections = engagement.disclosures;
   const [selectedId, setSelectedId] = useState(sections[0]?.id ?? '');
@@ -42,6 +46,7 @@ export default function StageDisclosures({
   const [reviewReply, setReviewReply] = useState<string | null>(null);
   // Prior-period note wording for this client (roll a note forward year to year).
   const [priorNotes, setPriorNotes] = useState<Record<string, { title: string; content: string }>>({});
+  const [priorPhValues, setPriorPhValues] = useState<Record<string, Record<string, string>>>({});
   const [priorLabel, setPriorLabel] = useState('');
   const [priorOpen, setPriorOpen] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -54,6 +59,7 @@ export default function StageDisclosures({
       .then(d => {
         if (!d?.found) return;
         setPriorNotes(d.notes ?? {});
+        setPriorPhValues(d.phValues ?? {});
         setPriorLabel(typeof d.periodEnd === 'string' ? d.periodEnd.slice(-4) : '');
         // Auto-carry structured values from last year's engagement (employee
         // comparative, depreciation rates …). Fills gaps only — never overwrites
@@ -114,6 +120,13 @@ export default function StageDisclosures({
     if (readOnly) return;
     patch(e => ({ ...e, disclosures: e.disclosures.map(s => s.id === id ? updater(s) : s) }));
   }, [patch, readOnly]);
+
+  // Commit a fill-in-the-blanks answer: store the template + values and the
+  // regenerated content, then refresh the editor so it shows the filled wording.
+  const commitFields = useCallback((id: string, content: string, template: string, values: Record<string, string>) => {
+    updateSection(id, s => ({ ...s, content, phTemplate: template, phValues: values }));
+    setMountKey(k => k + 1);
+  }, [updateSection]);
 
   // ── Undo / redo over the whole disclosures array ────────────────────────────
   // A snapshot stack. Discrete actions (AI rewrite, add/remove note, include/
@@ -206,7 +219,9 @@ export default function StageDisclosures({
     const html = editorRef.current?.innerHTML ?? '';
     // Begin a typing burst — snapshot the pre-edit state once and drop the redo stack.
     if (!preEditRef.current) { preEditRef.current = engagement.disclosures; undoFuture.current = []; bump(); }
-    updateSection(section.id, s => ({ ...s, content: html, status: s.status === 'missing' ? 'draft' : s.status }));
+    // A manual text edit supersedes the fill-in template — drop it so the fields
+    // panel re-derives from the edited wording (and never overwrites the edit).
+    updateSection(section.id, s => ({ ...s, content: html, phTemplate: undefined, phValues: undefined, status: s.status === 'missing' ? 'draft' : s.status }));
     if (typingTimer.current) clearTimeout(typingTimer.current);
     typingTimer.current = setTimeout(() => flushTyping(), 700);
   }
@@ -217,6 +232,7 @@ export default function StageDisclosures({
       ...s,
       content: html,
       status: newStatus ?? s.status,
+      phTemplate: undefined, phValues: undefined, // new wording → re-derive fields
       history: [{ id: `v${s.history.length + 1}`, label: versionLabel, at: nowStamp(), content: html }, ...s.history],
     } : s));
     setMountKey(k => k + 1);
@@ -316,7 +332,7 @@ export default function StageDisclosures({
         if (res.ok) {
           const data = await res.json();
           const html = data.html || textToHtml(data.reply || '');
-          if (html) updateSection(t.id, s => ({ ...s, content: html, status: 'needs-review', history: [{ id: `v${s.history.length + 1}`, label: 'Drafted with SMITH', at: nowStamp(), content: html }, ...s.history] }));
+          if (html) updateSection(t.id, s => ({ ...s, content: html, status: 'needs-review', phTemplate: undefined, phValues: undefined, history: [{ id: `v${s.history.length + 1}`, label: 'Drafted with SMITH', at: nowStamp(), content: html }, ...s.history] }));
         }
       } catch { /* skip this note, keep going */ }
       setDraftingAll({ done: i + 1, total: draftTargets.length });
@@ -512,15 +528,18 @@ export default function StageDisclosures({
             </div>
             <p className="truncate text-[11px] text-[var(--text-muted)]">{section.requirement}</p>
           </div>
-          <button
-            onClick={draftAll}
-            disabled={aiBusy !== null || draftingAll !== null || draftTargets.length === 0 || readOnly}
-            title="Draft every note that isn't complete with SMITH"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/15 disabled:opacity-50"
-          >
-            {draftingAll ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-            {draftingAll ? `Drafting ${draftingAll.done}/${draftingAll.total}…` : 'Draft all'}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <AutosaveChip state={saveState} />
+            <button
+              onClick={draftAll}
+              disabled={aiBusy !== null || draftingAll !== null || draftTargets.length === 0 || readOnly}
+              title="Draft every note that isn't complete with SMITH"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)]/10 px-2.5 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/15 disabled:opacity-50"
+            >
+              {draftingAll ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+              {draftingAll ? `Drafting ${draftingAll.done}/${draftingAll.total}…` : 'Draft all'}
+            </button>
+          </div>
         </div>
 
         {/* Toolbar */}
@@ -602,6 +621,19 @@ export default function StageDisclosures({
           />
         )}
 
+        {/* Fill-in-the-blanks for any note with placeholders (no bespoke panel). */}
+        {section && !noteInputSpec(section.id) && templateHasFields(section.phTemplate ?? normalizeLegacyTemplate(section.content)) && (
+          <PlaceholderFieldsPanel
+            key={`${section.id}-${mountKey}`}
+            section={section}
+            readOnly={readOnly}
+            onCommit={commitFields}
+            priorStructured={priorPhValues[section.id]}
+            priorContent={priorNotes[section.id]?.content}
+            priorLabel={priorLabel}
+          />
+        )}
+
         {/* Content-editable body */}
         <div className="flex-1 overflow-y-auto p-4">
           {section.content || section.status !== 'missing' ? (
@@ -675,6 +707,127 @@ function ToolBtn({ children, onClick, label, disabled }: { children: React.React
       className={`flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-black/[0.05] hover:text-[var(--text-primary)]'}`}>
       {children}
     </button>
+  );
+}
+
+// ── Autosave indicator ───────────────────────────────────────────────────────
+// Reassures the user their work is saved as they go (mirrors the header one, but
+// right where they're typing). Resting state says "Autosaves" so it's clear even
+// before the first change.
+function AutosaveChip({ state }: { state: SaveState }) {
+  const map: Record<SaveState, { icon: React.ReactNode; text: string; cls: string }> = {
+    idle:   { icon: <Cloud size={12} />,                            text: 'Autosaves', cls: 'text-[var(--text-muted)]' },
+    saving: { icon: <Loader2 size={12} className="animate-spin" />, text: 'Saving…',   cls: 'text-[var(--text-muted)]' },
+    saved:  { icon: <Check size={12} />,                            text: 'Saved',     cls: 'text-emerald-600' },
+    error:  { icon: <CloudOff size={12} />,                         text: 'Not saved', cls: 'text-red-600' },
+  };
+  const m = map[state];
+  return <span className={`inline-flex items-center gap-1 text-[11px] font-medium ${m.cls}`}>{m.icon}{m.text}</span>;
+}
+
+// ── Fill-in-the-blanks panel ─────────────────────────────────────────────────
+// Renders an input for every "[ ]" / "£[ ]" blank and a checkbox for every
+// "please confirm" in the note, and regenerates the note wording from the
+// answers — so the accountant never edits the paragraph, and no blank reaches
+// the filed accounts. Works off the stored template (see placeholderFields.ts).
+function PlaceholderFieldsPanel({
+  section, readOnly, onCommit, priorStructured, priorContent, priorLabel,
+}: {
+  section: DisclosureSection;
+  readOnly: boolean;
+  onCommit: (id: string, content: string, template: string, values: Record<string, string>) => void;
+  priorStructured?: Record<string, string>;
+  priorContent?: string;
+  priorLabel?: string;
+}) {
+  const template = section.phTemplate ?? normalizeLegacyTemplate(section.content);
+  const fields = useMemo(() => parsePlaceholderFields(template), [template]);
+  const storedStr = JSON.stringify(section.phValues ?? {});
+  const [vals, setVals] = useState<Record<string, string>>(() => JSON.parse(storedStr));
+  useEffect(() => { setVals(JSON.parse(storedStr)); }, [storedStr]);
+
+  // Last year's answers for this same note — prefer the stored structured values,
+  // else recover them by aligning last year's wording to this year's template.
+  const prior = useMemo(() => {
+    if (priorStructured && Object.keys(priorStructured).length) return priorStructured;
+    if (priorContent) return extractPriorValues(template, priorContent);
+    return {};
+  }, [priorStructured, priorContent, template]);
+  const priorAvailable = fields.some(f => prior[f.id] != null && prior[f.id] !== '');
+
+  if (fields.length === 0) return null;
+
+  const commit = (next: Record<string, string>) => onCommit(section.id, fillTemplate(template, next), template, next);
+  const setValue = (id: string, v: string) => setVals(m => ({ ...m, [id]: v }));
+  const applyOne = (id: string, v: string) => { const next = { ...vals, [id]: v }; setVals(next); commit(next); };
+  const toggleConfirm = (id: string) => applyOne(id, vals[id] === 'yes' ? '' : 'yes');
+
+  // Copy last year into any field the user hasn't answered yet (never overwrites).
+  const copyPrior = () => {
+    const next = { ...vals };
+    for (const f of fields) {
+      const pv = prior[f.id];
+      if (pv == null || pv === '') continue;
+      if (f.kind === 'confirm') { if (next[f.id] !== 'yes' && pv === 'yes') next[f.id] = 'yes'; }
+      else if (!(next[f.id] ?? '').trim()) next[f.id] = pv;
+    }
+    setVals(next); commit(next);
+  };
+
+  return (
+    <div className="mx-3 mt-3 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-primary)]"><Info size={12} className="text-[var(--accent)]" /> Details to complete</p>
+        {priorAvailable && !readOnly && (
+          <button type="button" onClick={copyPrior}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/30 bg-white px-2 py-1 text-[10.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/5">
+            <RotateCcw size={11} /> Copy from last year{priorLabel ? ` (${priorLabel})` : ''}
+          </button>
+        )}
+      </div>
+      <p className="mb-2.5 text-[10.5px] text-[var(--text-muted)]">Enter the details below — SMITH writes them into the note. Nothing is left blank in the filed accounts.</p>
+      <div className="space-y-2.5">
+        {fields.map((f: PlaceholderField) => {
+          const pv = prior[f.id];
+          const hasPrior = pv != null && pv !== '';
+          return (
+            <div key={f.id} className="rounded-lg border border-[var(--border)] bg-white/70 p-2.5">
+              <p className="mb-1.5 text-[11.5px] leading-snug text-[var(--text-secondary)]">
+                {f.before && <span className="text-[var(--text-muted)]">…{f.before} </span>}
+                <span className="rounded bg-amber-100 px-1 text-[10.5px] font-semibold text-amber-700">{f.kind === 'confirm' ? 'confirm' : (f.hint || 'fill in')}</span>
+                {f.after && <span className="text-[var(--text-muted)]"> {f.after}…</span>}
+              </p>
+              {f.kind === 'confirm' ? (
+                <label className="inline-flex cursor-pointer items-center gap-2 text-[12.5px] font-medium text-[var(--text-primary)]">
+                  <input type="checkbox" checked={vals[f.id] === 'yes'} disabled={readOnly} onChange={() => toggleConfirm(f.id)} className="rounded" />
+                  Confirm this is correct
+                </label>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  {f.pound && <span className="text-[13px] font-semibold text-[var(--text-muted)]">£</span>}
+                  <input
+                    value={vals[f.id] ?? ''}
+                    disabled={readOnly}
+                    onChange={e => setValue(f.id, e.target.value)}
+                    onBlur={() => commit(vals)}
+                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    placeholder={f.hint || 'Enter the detail…'}
+                    autoComplete="off" spellCheck={false}
+                    className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] disabled:opacity-60"
+                  />
+                </div>
+              )}
+              {hasPrior && !readOnly && f.kind === 'value' && (vals[f.id] ?? '').trim() !== pv && (
+                <button type="button" onClick={() => applyOne(f.id, pv)}
+                  className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-[var(--accent)] hover:underline">
+                  <RotateCcw size={10} /> Last year: {f.pound ? '£' : ''}{pv} — use
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

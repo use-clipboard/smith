@@ -2,16 +2,58 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Loader2, Copy, Check } from 'lucide-react';
-import type { Engagement, AssistantMessage } from './types';
+import type { Engagement, AssistantMessage, StageId } from './types';
 import { ENTITY_LABELS } from './data';
 
-const SUGGESTIONS = [
-  'Explain FRS 102 Section 1A requirements',
-  'Why is the related party disclosure required?',
-  'Draft a going concern statement for these accounts',
-  'Simplify the directors’ report',
-  'Explain the Companies House validation',
-];
+// Starter prompts tailored to the wizard step the user is on. Framework/entity
+// are woven in where it reads naturally so the suggestions match this job.
+function suggestionsForStage(stage: StageId, e: Engagement): string[] {
+  const fw = e.framework?.trim();
+  const entity = ENTITY_LABELS[e.entityType];
+  switch (stage) {
+    case 'import':
+      return [
+        'What should a trial balance include for statutory accounts?',
+        'How do I treat a suspense or rounding difference?',
+        'Which nominal accounts map to fixed assets vs debtors?',
+        'Do I need prior-year comparatives, and how are they shown?',
+      ];
+    case 'preparation':
+      return [
+        fw ? `Explain the ${fw} requirements` : 'Which accounting framework applies here?',
+        `Which size regime applies to a ${entity}?`,
+        'Is a cash flow statement required for these accounts?',
+        'What’s the difference between full and filleted accounts?',
+      ];
+    case 'disclosures':
+      return [
+        'Why is the related party disclosure required?',
+        'Draft a going concern statement for these accounts',
+        'What must the accounting policies note cover?',
+        'Simplify the directors’ report',
+      ];
+    case 'final-review':
+      return [
+        'What are common review points before filing?',
+        'Do the balance sheet and net assets tie back?',
+        'What should I double-check in the disclosures?',
+        'Explain the Companies House validation checks',
+      ];
+    case 'publish':
+      return [
+        'Should I file full or filleted accounts?',
+        'When are these accounts due at Companies House?',
+        'Explain the Companies House iXBRL validation',
+        'What happens after I file the accounts?',
+      ];
+    default:
+      return [
+        'Explain the requirements for these accounts',
+        'Why is the related party disclosure required?',
+        'Draft a going concern statement for these accounts',
+      ];
+  }
+}
 
 // The assistant replies in plain prose, but strip any stray markdown it slips
 // in — bold markers, horizontal-rule dividers, hash headings and list bullets.
@@ -26,7 +68,8 @@ function cleanMarkdown(text: string): string {
     .trim();
 }
 
-export default function AssistantPanel({ engagement }: { engagement: Engagement }) {
+export default function AssistantPanel({ engagement, stage }: { engagement: Engagement; stage: StageId }) {
+  const suggestions = suggestionsForStage(stage, engagement);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -97,7 +140,7 @@ export default function AssistantPanel({ engagement }: { engagement: Engagement 
               Ask anything about preparing these statutory accounts — I focus on production and UK accounting standards, not analytical review.
             </p>
             <div className="space-y-1.5">
-              {SUGGESTIONS.map(s => (
+              {suggestions.map(s => (
                 <button
                   key={s}
                   onClick={() => send(s)}
