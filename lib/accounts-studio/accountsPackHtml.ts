@@ -339,7 +339,7 @@ interface EntityProfile {
   infoTitle: string;             // Company / LLP / Partnership / Business / Trust Information
 }
 function entityProfile(e: Engagement): EntityProfile {
-  const isCompany = e.entityType === 'limited_company' || e.entityType === 'cic' || e.entityType === 'dormant_company';
+  const isCompany = e.entityType === 'limited_company' || e.entityType === 'company_limited_by_guarantee' || e.entityType === 'cic' || e.entityType === 'dormant_company';
   const isLlp = e.entityType === 'llp';
   const isPartnership = e.entityType === 'partnership';
   const isSoleTrader = e.entityType === 'sole_trader';

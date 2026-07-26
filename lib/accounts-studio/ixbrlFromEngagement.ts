@@ -67,6 +67,6 @@ export function buildIxbrlFromEngagement(e: Engagement, opts: IxbrlFirmOptions =
     auditorName: e.auditorName ?? null,
     auditFirm: e.auditFirm ?? null,
     auditReportDateIso: e.auditReportDate ? ddmmyyyyToIso(e.auditReportDate) : null,
-    isCic: e.entityType === 'cic',
+    legalForm: e.entityType === 'cic' ? 'cic' : e.entityType === 'company_limited_by_guarantee' ? 'guarantee' : undefined,
   });
 }

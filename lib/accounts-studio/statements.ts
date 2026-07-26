@@ -250,7 +250,7 @@ export function detectSize(turnover: number, grossAssets: number): StudioSize {
 // Only companies/LLPs that qualify as small (or micro) under the small companies
 // regime may deliver "filleted" accounts (balance sheet + notes, no P&L /
 // directors' report). Medium/large entities must file full accounts.
-const FILING_ENTITIES = ['limited_company', 'cic', 'dormant_company', 'llp'];
+const FILING_ENTITIES = ['limited_company', 'company_limited_by_guarantee', 'cic', 'dormant_company', 'llp'];
 
 export function filletEligibility(entityType: string, size: StudioSize): {
   filingEntity: boolean;   // files at Companies House at all

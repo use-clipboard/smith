@@ -21,6 +21,7 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
   partnership: 'Partnership',
   llp: 'LLP',
   limited_company: 'Limited Company',
+  company_limited_by_guarantee: 'Company Limited by Guarantee',
   cic: 'Community Interest Company',
   charity: 'Charity',
   trust: 'Trust',
@@ -74,6 +75,7 @@ export function entityFromBusinessType(bt?: string | null): EntityType {
   if (v.includes('partnership')) return 'partnership';
   if (v.includes('llp')) return 'llp';
   if (v.includes('community interest') || v === 'cic') return 'cic';
+  if (v.includes('guarantee')) return 'company_limited_by_guarantee';
   if (v.includes('charity')) return 'charity';
   if (v.includes('trust')) return 'trust';
   if (v.includes('dormant')) return 'dormant_company';

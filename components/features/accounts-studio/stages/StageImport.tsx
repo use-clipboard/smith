@@ -55,7 +55,7 @@ function tbToSavedRows(tb: TrialBalanceRow[]): SavedTbRow[] {
 
 /** Entity types registered at Companies House — the registration number appears
  *  on their accounts and is required for CH filing. */
-const CH_REGISTERED_ENTITIES = new Set<Engagement['entityType']>(['limited_company', 'cic', 'dormant_company', 'llp']);
+const CH_REGISTERED_ENTITIES = new Set<Engagement['entityType']>(['limited_company', 'company_limited_by_guarantee', 'cic', 'dormant_company', 'llp']);
 
 /** Company registration number — accounts data, captured here on Import Data.
  *  Auto-filled when the company was linked via the Companies House lookup;

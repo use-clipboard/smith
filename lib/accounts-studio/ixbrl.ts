@@ -104,9 +104,10 @@ export interface IxbrlInput {
   auditFirm?: string | null;
   /** Date of the auditor's report (yyyy-mm-dd). Defaults to the approval date. */
   auditReportDateIso?: string | null;
-  /** Community Interest Company — tags the legal form as a CIC. Files as a
-   *  company otherwise (the CIC34 report is a separate statutory form). */
-  isCic?: boolean;
+  /** Legal form to tag when it isn't an ordinary private company: 'cic'
+   *  (community interest company) or 'guarantee' (company limited by guarantee).
+   *  Files as a company otherwise. (CIC34 is a separate statutory form.) */
+  legalForm?: 'cic' | 'guarantee';
 }
 
 // ── Concept map ──────────────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ const MEMBER = {
   director1:   'bus:Director1',
   partnerLlp1: 'bus:PartnerLLP1',
   cic:         'bus:CommunityInterestCompanyCIC',
+  guarantee:   'bus:CompanyLimitedByGuarantee',
 };
 // The four audit-exemption / small-company statements CH requires (direp).
 // ⚠ Companies House CONTENT-validates these statements: the tagged text must
@@ -276,7 +278,7 @@ function contexts(input: IxbrlInput): string {
   segCtx('DC-STA', DIM.status, input.audited ? MEMBER.audited : (input.hasAccountantsReport ? MEMBER.auditExemptWithReport : MEMBER.auditExemptNoReport));
   segCtx('DC-TYP', DIM.type, input.filleted ? MEMBER.filletedAccounts : MEMBER.fullAccounts);
   segCtx('DC-DIR', DIM.officer, input.isLlp ? MEMBER.partnerLlp1 : MEMBER.director1);
-  if (input.isCic) segCtx('DC-CIC', DIM.legalForm, MEMBER.cic);
+  if (input.legalForm) segCtx('DC-LEGAL', DIM.legalForm, input.legalForm === 'cic' ? MEMBER.cic : MEMBER.guarantee);
 
   return list.join('\n      ');
 }
@@ -328,7 +330,7 @@ export function buildIxbrl(input: IxbrlInput): string {
   const numPure = (concept: string, ctx: string, n: number) =>
     `<ix:nonFraction name="${concept}" contextRef="${ctx}" unitRef="pure" decimals="0" format="ixt:num-dot-decimal">${n}</ix:nonFraction>`;
   const metaRows = [
-    ...(input.isCic ? [`<tr><td class="lbl">Legal form</td><td>${fixedFact('bus:LegalFormEntity', 'DC-CIC', 'Community interest company')}</td></tr>`] : []),
+    ...(input.legalForm ? [`<tr><td class="lbl">Legal form</td><td>${fixedFact('bus:LegalFormEntity', 'DC-LEGAL', input.legalForm === 'cic' ? 'Community interest company' : 'Company limited by guarantee')}</td></tr>`] : []),
     `<tr><td class="lbl">Accounting standards</td><td>${fixedFact('bus:AccountingStandardsApplied', 'DC-STD', 'FRS 102')}</td></tr>`,
     `<tr><td class="lbl">Accounts status</td><td>${fixedFact('bus:AccountsStatusAuditedOrUnaudited', 'DC-STA', 'Unaudited')}</td></tr>`,
     `<tr><td class="lbl">Accounts type</td><td>${fixedFact('bus:AccountsType', 'DC-TYP', input.filleted ? 'Filleted accounts' : 'Full accounts')}</td></tr>`,

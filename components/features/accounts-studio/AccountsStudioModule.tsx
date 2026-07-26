@@ -27,7 +27,7 @@ import type { Engagement, StageId, EntityType } from './types';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 const ALL_STAGES: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
-const ENTITY_CHOICES: EntityType[] = ['limited_company', 'sole_trader', 'partnership', 'llp', 'cic', 'charity', 'trust', 'dormant_company'];
+const ENTITY_CHOICES: EntityType[] = ['limited_company', 'company_limited_by_guarantee', 'sole_trader', 'partnership', 'llp', 'cic', 'charity', 'trust', 'dormant_company'];
 
 export default function AccountsStudioModule({ userEmail }: { userEmail: string | null }) {
   const allowed = canAccessAccountsStudio(userEmail);

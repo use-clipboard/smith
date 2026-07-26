@@ -19,7 +19,7 @@ function parseUk(dmy: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-const isCompany = (e: string) => e === 'limited_company' || e === 'cic' || e === 'dormant_company';
+const isCompany = (e: string) => e === 'limited_company' || e === 'company_limited_by_guarantee' || e === 'cic' || e === 'dormant_company';
 
 export function computeValidations(e: Engagement): ValidationCheck[] {
   const checks: ValidationCheck[] = [];

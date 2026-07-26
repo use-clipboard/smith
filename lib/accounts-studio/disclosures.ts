@@ -92,7 +92,7 @@ export function frameworkTier(ctx: DisclosureContext): FrameworkTier {
   return 'frs102-full';
 }
 
-const COMPANIES: EntityType[] = ['limited_company', 'cic', 'dormant_company'];
+const COMPANIES: EntityType[] = ['limited_company', 'company_limited_by_guarantee', 'cic', 'dormant_company'];
 const COMPANIES_LLP: EntityType[] = [...COMPANIES, 'llp'];
 const PARTNERSHIPS: EntityType[] = ['partnership'];
 const PARTNERSHIP_LLP: EntityType[] = ['partnership', 'llp'];

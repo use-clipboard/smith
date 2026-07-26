@@ -19,6 +19,7 @@ export type EntityType =
   | 'partnership'
   | 'llp'
   | 'limited_company'
+  | 'company_limited_by_guarantee'
   | 'cic'
   | 'charity'
   | 'trust'
