@@ -11,12 +11,22 @@ import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { filletEligibility } from '@/lib/accounts-studio/statements';
 import { buildIxbrlFromEngagement } from '@/lib/accounts-studio/ixbrlFromEngagement';
-import { publishEngagement, markSubmitted, submitToCompaniesHouse, type ChSubmitResult } from '../persistence';
+import { publishEngagement, markSubmitted, submitToCompaniesHouse, logAuditClientEvent, type ChSubmitResult } from '../persistence';
 import { getFirmBranding, type FirmBranding } from '../branding';
 import SendApprovalModal from '../SendApprovalModal';
 import { useSendApproval } from '../useSendApproval';
 import { useModules } from '@/components/ui/ModulesProvider';
 import type { Engagement } from '../types';
+
+type ChSubmissionSummary = {
+  submissionNumber: string;
+  status: 'submitted' | 'accepted' | 'rejected' | 'error';
+  isTest: boolean;
+  companyNumber: string;
+  companyName: string;
+  errorMessage: string | null;
+  createdAt: string;
+};
 
 function ukDate(iso?: string): string {
   if (!iso) return '';
@@ -64,7 +74,21 @@ export default function StagePublish({
   const [chBusy, setChBusy] = useState(false);
   const [chError, setChError] = useState('');
   const [chResult, setChResult] = useState<ChSubmitResult | null>(null);
+  const [chHistory, setChHistory] = useState<ChSubmissionSummary[]>([]);
   const status = engagement.approvalStatus;
+
+  // Load the Companies House filing history so the last submission's number,
+  // status and date persist across refreshes (not just the in-session result).
+  async function loadChHistory() {
+    try {
+      const r = await fetch(`/api/accounts-studio/engagements/${engagement.id}/ch-submit`);
+      if (r.ok) setChHistory((await r.json())?.submissions ?? []);
+    } catch { /* non-critical */ }
+  }
+  useEffect(() => {
+    if (engagement.id) loadChHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement.id]);
 
   const { isModuleActive } = useModules();
   const { send: sendApproval, sending: sendingApproval, error: sendError } = useSendApproval(engagement, (e) => patch(() => e));
@@ -106,6 +130,14 @@ export default function StagePublish({
   const directors = (engagement.directors ?? []).filter(Boolean);
   const signatory = (engagement.signatory && directors.includes(engagement.signatory)) ? engagement.signatory : directors[0];
 
+  // ── Pre-filing summary + readiness (Companies House) ────────────────────────
+  const acctTypeLabel = engagement.fileFilleted ? 'Filleted accounts' : 'Full accounts';
+  const auditLabel = engagement.audited ? 'Audited' : 'Audit-exempt';
+  const fileBlockers: string[] = [];
+  if (!engagement.companyNumber?.trim()) fileBlockers.push('Company registration number — set it on the Import Data step');
+  if (engagement.averageEmployees == null) fileBlockers.push('Average number of employees — set it in Notes & Disclosures → Employees');
+  if (engagement.audited && !chAuditor.trim() && !(engagement.auditorName ?? '').trim()) fileBlockers.push('Senior statutory auditor — enter it in the audit details below');
+
   const [branding, setBranding] = useState<FirmBranding>({ firmName: null, logoUrl: null, accountantDetails: null, accountantsReport: null });
   useEffect(() => { getFirmBranding().then(setBranding); }, []);
 
@@ -122,6 +154,7 @@ export default function StagePublish({
         { hardPageBreaks: true, pageNumbers: true },
       );
       downloadBlob(blob, fileName(engagement, suffix));
+      logAuditClientEvent({ action: 'downloaded', summary: `Downloaded ${suffix.replace(/_/g, ' ')} (PDF)`, engagementId: engagement.id, clientId: engagement.clientId ?? null, companyName: engagement.companyName });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate the PDF.');
     } finally {
@@ -138,6 +171,7 @@ export default function StagePublish({
       const html = buildIxbrlFromEngagement(engagement, { hasAccountantsReport: !!branding.accountantsReport });
       if (!html) { setError('Prepare the accounts before generating iXBRL.'); return; }
       downloadBlob(new Blob([html], { type: 'application/xhtml+xml' }), `iXBRL_${engagement.companyName.replace(/\s+/g, '_')}_${engagement.periodEnd}.html`);
+      logAuditClientEvent({ action: 'downloaded', summary: 'Downloaded the iXBRL accounts (beta)', engagementId: engagement.id, clientId: engagement.clientId ?? null, companyName: engagement.companyName });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not generate iXBRL.');
     } finally {
@@ -161,6 +195,7 @@ export default function StagePublish({
       });
       setChResult(res);
       if (res.ok) setChAuthCode('');
+      loadChHistory();
     } catch (e) {
       setChError(e instanceof Error ? e.message : 'Filing failed.');
     } finally {
@@ -338,6 +373,27 @@ export default function StagePublish({
             </div>
           )}
 
+          {/* Companies House filing status — persists across refreshes */}
+          {chHistory.length > 0 && (() => {
+            const last = chHistory[0];
+            const ok = last.status === 'submitted' || last.status === 'accepted';
+            return (
+              <div className={`mb-2 rounded-xl border px-3 py-2 text-[12px] ${ok ? 'border-indigo-200/70 bg-indigo-50/60 text-indigo-800' : 'border-red-200/70 bg-red-50/60 text-red-700'}`}>
+                <p className="flex items-center gap-2 font-semibold">
+                  {ok ? <Building2 size={13} className="shrink-0" /> : <XCircle size={13} className="shrink-0" />}
+                  {ok
+                    ? `Filed to Companies House — submission ${last.submissionNumber}`
+                    : `Companies House rejected submission ${last.submissionNumber}`}
+                  {last.isTest && <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Test</span>}
+                </p>
+                <p className="mt-0.5 pl-5 text-[11px]">
+                  {ok ? `Accepted on ${ukDate(last.createdAt)}.` : (last.errorMessage || `Rejected on ${ukDate(last.createdAt)}.`)}
+                  {chHistory.length > 1 && <span className="text-[var(--text-muted)]"> · {chHistory.length} attempts</span>}
+                </p>
+              </div>
+            );
+          })()}
+
           <div className="space-y-1.5">
             {/* Send / re-send */}
             <button onClick={startSend} disabled={!ready || sendBusy || sendingApproval}
@@ -371,68 +427,99 @@ export default function StagePublish({
           </div>
 
           {chOpen && (
-            <div className="mt-2 rounded-xl border border-indigo-200/70 bg-indigo-50/40 p-3">
-              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><Scissors size={12} /> What are you filing?</label>
-              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies file <strong>filleted</strong> accounts — balance sheet and notes only, with the profit &amp; loss account withheld from the public record under s.444.</p>
-              <div className="mb-3 inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
-                {([['full', 'Full accounts'], ['filleted', 'Filleted accounts']] as const).map(([val, lbl]) => {
-                  const active = (val === 'filleted') === !!engagement.fileFilleted;
-                  return (
-                    <button key={val} onClick={() => patch(e => ({ ...e, fileFilleted: val === 'filleted' }))}
-                      className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
-                      {lbl}
-                    </button>
-                  );
-                })}
+            <div className="mt-2 space-y-3 rounded-xl border border-indigo-200/70 bg-indigo-50/40 p-3">
+              {/* ── Pre-filing summary ── */}
+              <div className="rounded-lg border border-[var(--border)] bg-white/80 p-2.5">
+                <p className="mb-2 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)]"><FileText size={12} /> You&rsquo;re filing</p>
+                <div className="divide-y divide-black/[0.04]">
+                  <FileSummaryRow label="Company" value={engagement.companyName || '—'} />
+                  <FileSummaryRow label="Registration no." value={engagement.companyNumber?.trim() || 'Not set'} ok={!!engagement.companyNumber?.trim()} />
+                  <FileSummaryRow label="Framework" value={engagement.framework || '—'} />
+                  <FileSummaryRow label="Accounts type" value={acctTypeLabel} />
+                  <FileSummaryRow label="Audit status" value={auditLabel} />
+                  <FileSummaryRow label="Avg. employees" value={engagement.averageEmployees == null ? 'Not set' : String(engagement.averageEmployees)} ok={engagement.averageEmployees != null} />
+                  <FileSummaryRow label="Period" value={`${engagement.periodStart || '—'} to ${engagement.periodEnd || '—'}`} />
+                </div>
               </div>
-              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><ShieldCheck size={12} /> Audit status</label>
-              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies are <strong>audit-exempt</strong>. Choose Audited only if an auditor has reported on these accounts.</p>
-              <div className="mb-2 inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
-                {([['unaudited', 'Audit-exempt'], ['audited', 'Audited']] as const).map(([val, lbl]) => {
-                  const active = (val === 'audited') === !!engagement.audited;
-                  return (
-                    <button key={val} onClick={() => patch(e => ({ ...e, audited: val === 'audited' }))}
-                      className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
-                      {lbl}
-                    </button>
-                  );
-                })}
-              </div>
-              {engagement.audited && (
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <input value={chAuditor} onChange={ev => setChAuditor(ev.target.value)}
-                    onBlur={() => { if (chAuditor.trim() !== (engagement.auditorName ?? '')) patch(e => ({ ...e, auditorName: chAuditor.trim() })); }}
-                    placeholder="Senior statutory auditor" autoComplete="off"
-                    className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
-                  <input value={chAuditFirm} onChange={ev => setChAuditFirm(ev.target.value)}
-                    onBlur={() => { if (chAuditFirm.trim() !== (engagement.auditFirm ?? '')) patch(e => ({ ...e, auditFirm: chAuditFirm.trim() })); }}
-                    placeholder="Audit firm" autoComplete="off"
-                    className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
-                  <input value={chAuditDate} onChange={ev => setChAuditDate(ev.target.value)}
-                    onBlur={() => { if (chAuditDate.trim() !== (engagement.auditReportDate ?? '')) patch(e => ({ ...e, auditReportDate: chAuditDate.trim() })); }}
-                    placeholder="Report date dd-mm-yyyy" autoComplete="off"
-                    className="w-40 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+
+              {fileBlockers.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-2.5 text-[11px] text-amber-800">
+                  <p className="flex items-center gap-1.5 font-semibold"><AlertCircle size={12} className="shrink-0" /> Complete these before filing:</p>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                    {fileBlockers.map(b => <li key={b}>{b}</li>)}
+                  </ul>
                 </div>
               )}
 
-              <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
-              <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
-              <div className="flex gap-2">
-                <input
-                  value={chAuthCode}
-                  onChange={ev => setChAuthCode(ev.target.value)}
-                  placeholder="e.g. A1B2C3"
-                  autoComplete="off" spellCheck={false}
-                  className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] tracking-wider text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                />
-                <button onClick={fileToCH} disabled={chBusy || !chAuthCode.trim()}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
-                  {chBusy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} {chBusy ? 'Filing…' : 'File'}
-                </button>
+              {/* ── Filing options ── */}
+              <div className="rounded-lg border border-[var(--border)] bg-white/60 p-2.5">
+                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Filing options</p>
+                <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><Scissors size={12} /> What are you filing?</label>
+                <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies file <strong>filleted</strong> accounts — balance sheet and notes only, with the profit &amp; loss account withheld from the public record under s.444.</p>
+                <div className="mb-3 inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
+                  {([['full', 'Full accounts'], ['filleted', 'Filleted accounts']] as const).map(([val, lbl]) => {
+                    const active = (val === 'filleted') === !!engagement.fileFilleted;
+                    return (
+                      <button key={val} onClick={() => patch(e => ({ ...e, fileFilleted: val === 'filleted' }))}
+                        className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
+                        {lbl}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><ShieldCheck size={12} /> Audit status</label>
+                <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Most small companies are <strong>audit-exempt</strong>. Choose Audited only if an auditor has reported on these accounts.</p>
+                <div className="inline-flex rounded-lg border border-[var(--border)] bg-white p-0.5 text-[12px] font-semibold">
+                  {([['unaudited', 'Audit-exempt'], ['audited', 'Audited']] as const).map(([val, lbl]) => {
+                    const active = (val === 'audited') === !!engagement.audited;
+                    return (
+                      <button key={val} onClick={() => patch(e => ({ ...e, audited: val === 'audited' }))}
+                        className={`rounded-md px-3 py-1.5 transition-colors ${active ? 'bg-indigo-600 text-white' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
+                        {lbl}
+                      </button>
+                    );
+                  })}
+                </div>
+                {engagement.audited && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <input value={chAuditor} onChange={ev => setChAuditor(ev.target.value)}
+                      onBlur={() => { if (chAuditor.trim() !== (engagement.auditorName ?? '')) patch(e => ({ ...e, auditorName: chAuditor.trim() })); }}
+                      placeholder="Senior statutory auditor" autoComplete="off"
+                      className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                    <input value={chAuditFirm} onChange={ev => setChAuditFirm(ev.target.value)}
+                      onBlur={() => { if (chAuditFirm.trim() !== (engagement.auditFirm ?? '')) patch(e => ({ ...e, auditFirm: chAuditFirm.trim() })); }}
+                      placeholder="Audit firm" autoComplete="off"
+                      className="w-52 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                    <input value={chAuditDate} onChange={ev => setChAuditDate(ev.target.value)}
+                      onBlur={() => { if (chAuditDate.trim() !== (engagement.auditReportDate ?? '')) patch(e => ({ ...e, auditReportDate: chAuditDate.trim() })); }}
+                      placeholder="Report date dd-mm-yyyy" autoComplete="off"
+                      className="w-40 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]" />
+                  </div>
+                )}
               </div>
-              {chError && <p className="mt-2 flex items-start gap-1.5 text-[11.5px] text-red-600"><XCircle size={13} className="mt-px shrink-0" /> {chError}</p>}
+
+              {/* ── Authorise & file ── */}
+              <div className="rounded-lg border border-[var(--border)] bg-white/60 p-2.5">
+                <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Authorise &amp; file</p>
+                <label className="mb-1 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--text-primary)]"><KeyRound size={12} /> Company authentication code</label>
+                <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">The 6-character code Companies House issues for this company. Required for every filing; not stored.</p>
+                <div className="flex gap-2">
+                  <input
+                    value={chAuthCode}
+                    onChange={ev => setChAuthCode(ev.target.value)}
+                    placeholder="e.g. A1B2C3"
+                    autoComplete="off" spellCheck={false}
+                    className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[13px] tracking-wider text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                  />
+                  <button onClick={fileToCH} disabled={chBusy || !chAuthCode.trim() || fileBlockers.length > 0}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                    {chBusy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} {chBusy ? 'Filing…' : 'File'}
+                  </button>
+                </div>
+              </div>
+              {chError && <p className="flex items-start gap-1.5 text-[11.5px] text-red-600"><XCircle size={13} className="mt-px shrink-0" /> {chError}</p>}
               {chResult && (
-                <div className={`mt-2 rounded-lg border px-3 py-2 text-[11.5px] ${chResult.ok ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-red-200 bg-red-50/70 text-red-700'}`}>
+                <div className={`rounded-lg border px-3 py-2 text-[11.5px] ${chResult.ok ? 'border-emerald-200 bg-emerald-50/70 text-emerald-800' : 'border-red-200 bg-red-50/70 text-red-700'}`}>
                   <p className="flex items-center gap-1.5 font-semibold">
                     {chResult.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
                     {chResult.ok ? `Submitted — number ${chResult.submissionNumber}` : 'Rejected by Companies House'}
@@ -466,6 +553,15 @@ export default function StagePublish({
         </button>
         <p className="text-center text-[11px] text-[var(--text-muted)]">Publishing marks the accounts complete and saves them to the client record.</p>
       </div>
+    </div>
+  );
+}
+
+function FileSummaryRow({ label, value, ok = true }: { label: string; value: string; ok?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1.5 first:pt-0 last:pb-0">
+      <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{label}</span>
+      <span className={`text-right text-[12px] font-semibold leading-snug break-words ${ok ? 'text-[var(--text-primary)]' : 'text-amber-600'}`}>{value}</span>
     </div>
   );
 }

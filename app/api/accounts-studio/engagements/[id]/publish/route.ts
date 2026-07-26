@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,12 +62,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     result_data: resultData,
   };
 
+  const firmId = ctx.firmId, userId = ctx.userId;
+  async function logPublish(republished: boolean) {
+    await logAuditEvent({
+      firmId,
+      engagementId: params.id,
+      clientId: body.clientId ?? null,
+      companyName: body.companyName || body.clientName || null,
+      actorId: userId,
+      action: 'published',
+      summary: republished ? 'Re-published the statutory accounts' : 'Published the statutory accounts',
+    });
+  }
+
   // Re-publish updates the existing audit row.
   if (body.outputId) {
     const { data, error } = await supabase
       .from('outputs').update(cols).eq('id', body.outputId).eq('firm_id', ctx.firmId)
       .select('id').maybeSingle();
-    if (!error && data) return NextResponse.json({ outputId: data.id });
+    if (!error && data) { await logPublish(true); return NextResponse.json({ outputId: data.id }); }
   }
 
   const { data, error } = await supabase
@@ -75,5 +89,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .select('id').single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  await logPublish(false);
   return NextResponse.json({ outputId: data.id });
 }

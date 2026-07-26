@@ -53,13 +53,32 @@ export async function listEngagements(): Promise<AccountsHistoryItem[]> {
 }
 
 /** Create a new engagement; returns the stored engagement (server stamps id + preparedBy). */
-export async function createEngagement(e: Engagement): Promise<Engagement> {
+export async function createEngagement(e: Engagement, copiedFromId?: string): Promise<Engagement> {
   const r = await fetch(BASE, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: e }),
+    body: JSON.stringify(copiedFromId ? { data: e, copiedFromId } : { data: e }),
   });
   const d = await readJson<{ engagement: EngagementDto }>(r, 'Could not create the engagement.');
   return { ...d.engagement.data, id: d.engagement.id };
+}
+
+/**
+ * Record a client-side action (a download, or the list export) in the Accounts
+ * Studio audit trail. Best-effort — never blocks the user's action.
+ */
+export async function logAuditClientEvent(input: {
+  action: 'downloaded' | 'exported';
+  summary: string;
+  engagementId?: string | null;
+  clientId?: string | null;
+  companyName?: string | null;
+}): Promise<void> {
+  try {
+    await fetch('/api/accounts-studio/audit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+  } catch { /* non-critical */ }
 }
 
 /** Persist the current engagement snapshot (autosave). */
@@ -186,7 +205,7 @@ export async function copyEngagement(e: Engagement): Promise<Engagement> {
       'final-review': 'upcoming', publish: 'upcoming',
     },
   };
-  return createEngagement(clone);
+  return createEngagement(clone, e.id);
 }
 
 /** Record the published statutory accounts against the client record. Returns the outputs.id. */

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ArrowRight, Building2, Ruler, BookOpen, CalendarRange, Sparkles, TrendingUp, Scale, AlertCircle, Users, Plus, Check, SlidersHorizontal } from 'lucide-react';
+import { ArrowRight, Building2, Ruler, BookOpen, CalendarRange, Sparkles, TrendingUp, Scale, AlertCircle, Users, Plus, Check, SlidersHorizontal, Landmark } from 'lucide-react';
 import { ENTITY_LABELS, SIZE_LABELS } from '../data';
 import { StudioCard } from '../primitives';
 import StatementsView from '../StatementsView';
@@ -32,6 +32,24 @@ function frameworkOptions(entity: EntityType, current: string): string[] {
     default:            opts = ['FRS 105 (Micro-entity)', 'FRS 102 Section 1A', 'FRS 102']; // company / CIC / dormant
   }
   return opts.includes(current) ? opts : [current, ...opts];
+}
+
+// Plain-English statement of what this entity + framework files as at Companies
+// House — so the accountant can see the filing consequence of the framework they
+// pick, not just its name. Non-CH entities (sole trader/partnership/trust/charity)
+// don't file at Companies House at all.
+function chFilingNote(entity: EntityType, framework: string): { text: string; filed: boolean } {
+  const chRegistered = ['limited_company', 'company_limited_by_guarantee', 'cic', 'dormant_company', 'llp'].includes(entity);
+  if (!chRegistered) {
+    const where = entity === 'charity' ? 'the Charity Commission'
+      : entity === 'trust' ? 'HMRC (no public filing)'
+      : 'HMRC via Self Assessment';
+    return { text: `Not filed at Companies House — these accounts are for ${where}.`, filed: false };
+  }
+  const kind = /105/i.test(framework) ? 'micro-entity (FRS 105)'
+    : /section 1a|\b1a\b/i.test(framework) ? 'small-company (FRS 102 Section 1A)'
+    : 'full (FRS 102)';
+  return { text: `Files at Companies House as ${kind} accounts.`, filed: true };
 }
 
 // Re-derive the note set for a changed framework, preserving anything the user
@@ -144,6 +162,14 @@ export default function StagePreparation({
             >
               {frameworkOptions(engagement.entityType, engagement.framework).map(f => <option key={f} value={f}>{f}</option>)}
             </select>
+            {(() => {
+              const note = chFilingNote(engagement.entityType, engagement.framework);
+              return (
+                <p className={`mt-1.5 flex items-start gap-1.5 text-[11px] ${note.filed ? 'text-[var(--text-muted)]' : 'text-amber-600'}`}>
+                  <Landmark size={12} className="mt-px shrink-0" /> {note.text}
+                </p>
+              );
+            })()}
           </div>
           <div className="grid grid-cols-2 gap-2">
             {detections.map(d => (
@@ -336,7 +362,7 @@ function PartnersEditor({ engagement, patch }: { engagement: Engagement; patch: 
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button onClick={addRow} className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--accent)] hover:underline"><Plus size={13} /> Add {isLlp ? 'member' : 'partner'}</button>
         <div className="flex-1" />
-        <span className="text-[11.5px] text-[var(--text-muted)]">Profit for the year <strong className="text-[var(--text-secondary)]">{money(netProfit)}</strong></span>
+        <span className="text-[11.5px] text-[var(--text-muted)]">Profit / (loss) for the year <strong className={netProfit < 0 ? 'text-rose-600' : 'text-emerald-600'}>{money(netProfit)}</strong></span>
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${fundsMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
           {fundsMatch ? <><Check size={11} /> Funds tie to net assets</> : <><AlertCircle size={11} /> Funds {money(comp.totals.partnersFunds)} vs net assets {money(netAssets)}</>}
         </span>

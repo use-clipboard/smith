@@ -6,6 +6,7 @@ import { createNotification } from '@/lib/notifications';
 import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { buildApprovalEmailHtml } from '@/lib/accounts-studio/approvalEmail';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // PUBLIC (no auth — the token is the access). Uses the service-role client.
@@ -112,6 +113,20 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       : { ...e, approvalStatus: 'rejected', rejectedAt: now, changesNote: note ?? undefined };
     await service.from('accounts_studio_engagements').update({ data: nextData, updated_at: now }).eq('id', row.engagement_id);
   }
+
+  // Audit — the actor is the client (no user id); record their typed name.
+  await logAuditEvent({
+    firmId: row.firm_id,
+    engagementId: row.engagement_id,
+    clientId: e.clientId ?? null,
+    companyName: e.companyName ?? null,
+    actorId: null,
+    actorName: name?.trim() || 'Client',
+    action: action === 'approve' ? 'client_approved' : 'client_rejected',
+    summary: action === 'approve'
+      ? `Approved by ${name?.trim() || 'the client'}`
+      : `Changes requested${note?.trim() ? `: ${note.trim()}` : ''}`,
+  });
 
   // Notify the preparer (in-app + best-effort email via their Gmail).
   if (row.sent_by) {

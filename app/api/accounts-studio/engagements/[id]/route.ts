@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
+import { diffEngagement, summariseChanges } from '@/lib/accounts-studio/auditTypes';
+import type { Engagement } from '@/components/features/accounts-studio/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,6 +94,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // Field-level audit — only when a tracked field actually changed, so routine
+  // autosaves (stage progress, cursor moves) log nothing.
+  const changes = diffEngagement(prev as Partial<Engagement>, { ...body.data, ...preserved } as Partial<Engagement>);
+  if (changes.length) {
+    await logAuditEvent({
+      firmId: ctx.firmId,
+      engagementId: params.id,
+      clientId,
+      companyName: (body.data.companyName as string | undefined) ?? (prev.companyName as string | undefined) ?? null,
+      actorId: ctx.userId,
+      action: 'edited',
+      summary: summariseChanges(changes),
+      changes,
+    });
+  }
+
   return NextResponse.json({ ok: true, updatedAt: data.updated_at });
 }
 
@@ -100,9 +119,29 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (error) return error;
 
   const supabase = createClient();
+  // Capture identity before deletion so the audit row survives the delete.
+  const { data: existing } = await supabase
+    .from('accounts_studio_engagements')
+    .select('data, client_id')
+    .eq('id', params.id).eq('firm_id', ctx.firmId)
+    .maybeSingle();
+
   const { error: dbErr } = await supabase
     .from('accounts_studio_engagements')
     .delete().eq('id', params.id).eq('firm_id', ctx.firmId);
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 });
+
+  if (existing) {
+    const e = (existing.data ?? {}) as Partial<Engagement>;
+    await logAuditEvent({
+      firmId: ctx.firmId,
+      engagementId: null, // the engagement no longer exists
+      clientId: (existing.client_id as string | null) ?? null,
+      companyName: e.companyName ?? null,
+      actorId: ctx.userId,
+      action: 'deleted',
+      summary: `Deleted the accounts${e.companyName ? ` for ${e.companyName}` : ''}`,
+    });
+  }
   return NextResponse.json({ ok: true });
 }

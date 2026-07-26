@@ -619,6 +619,8 @@ function defaultStart(toIso: string): string {
   return dt.toISOString().slice(0, 10);
 }
 const money0 = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
+/** Signed money — a loss shows in brackets, e.g. (£5,000). */
+const moneySigned = (n: number) => (n < 0 ? `(£${Math.round(Math.abs(n)).toLocaleString('en-GB')})` : `£${Math.round(n).toLocaleString('en-GB')}`);
 
 function ClipboardImport({
   engagement, onBack, onImported,
@@ -637,6 +639,7 @@ function ClipboardImport({
   const dr = detected.reduce((s, r) => s + r.debit, 0);
   const cr = detected.reduce((s, r) => s + r.credit, 0);
   const balanced = Math.abs(dr - cr) < 0.5;
+  const profit = detected.reduce((s, r) => ((r.type === 'income' || r.type === 'expense') ? s + (r.credit - r.debit) : s), 0);
 
   function review() {
     if (!detected.length) { setError('Nothing detected — paste rows like "Account, Debit, Credit".'); return; }
@@ -690,6 +693,9 @@ function ClipboardImport({
             <span className="font-semibold">{detected.length} account{detected.length === 1 ? '' : 's'} detected</span>
             <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${balanced ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
               {balanced ? <><Check size={11} /> Balanced</> : <><AlertCircle size={11} /> Out by {money0(Math.abs(dr - cr))}</>}
+            </span>
+            <span className={`inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold ${profit < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+              Profit / (loss) {moneySigned(profit)}
             </span>
           </div>
         )}
@@ -776,6 +782,8 @@ function TbEditor({
 
   // A saved prior-year TB is available when one exists for (year-end − 1 year).
   const priorMeta = toIso ? (saved.find(s => s.periodEnd === priorPeriodEnd(toIso)) ?? null) : null;
+  // Saved TBs to offer in the "load" dropdown — exclude the year already loaded.
+  const otherSavedTbs = saved.filter(s => s.periodEnd !== toIso);
 
   const set = (id: number, patch: Partial<BuilderRow>) => setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
   const remove = (id: number) => setRows(rs => rs.filter(r => r.id !== id));
@@ -810,12 +818,79 @@ function TbEditor({
     setPriorLoaded(true);
   }
 
+  // Paste / upload last year's trial balance to fill the prior-year columns —
+  // matched to the current rows by account name (unmatched names are appended).
+  const [priorPaste, setPriorPaste] = useState(false);
+  const [priorRaw, setPriorRaw] = useState('');
+  const [priorScanning, setPriorScanning] = useState(false);
+  const priorFileRef = useRef<HTMLInputElement>(null);
+  const priorScanRef = useRef<HTMLInputElement>(null);
+
+  function applyPriorRows(parsed: ManualRow[]) {
+    setIncludePrior(true);
+    setRows(rs => {
+      const next = rs.map(r => ({ ...r }));
+      const byName = new Map(next.map((r, i) => [r.name.trim().toLowerCase(), i] as const));
+      for (const pr of parsed) {
+        const idx = byName.get(pr.name.trim().toLowerCase());
+        if (idx !== undefined) { next[idx].priorDebit = num(pr.debit); next[idx].priorCredit = num(pr.credit); }
+        else next.push(blank({ name: pr.name, type: pr.type, priorDebit: num(pr.debit), priorCredit: num(pr.credit) }));
+      }
+      return next;
+    });
+    setPriorLoaded(true);
+    setPriorPaste(false);
+    setPriorRaw('');
+    setError('');
+  }
+  function applyPriorText(text: string) {
+    const parsed = parseTrialBalance(text);
+    if (!parsed.length) { setError('Could not read any prior-year rows — expected Account, Debit, Credit.'); return; }
+    applyPriorRows(parsed);
+  }
+  async function onPriorFile(ev: React.ChangeEvent<HTMLInputElement>) {
+    const f = ev.target.files?.[0];
+    ev.target.value = ''; // allow re-selecting the same file
+    if (!f) return;
+    try { applyPriorText(await f.text()); }
+    catch { setError('Could not read that file. Make sure it is a .csv.'); }
+  }
+  // Scan last year's TB from a PDF/image via the same AI extractor as the
+  // current-year scan, then merge into the prior-year columns.
+  async function onPriorScanFiles(ev: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(ev.target.files ?? []);
+    ev.target.value = '';
+    if (!files.length) return;
+    setPriorScanning(true); setError('');
+    try {
+      const payload = await Promise.all(files.map(readBase64));
+      const res = await fetch('/api/accounts-studio/extract-tb', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: payload }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? 'Could not read the trial balance.');
+      const scanned = (d.rows ?? []) as { name: string; type: BalType; debit: number; credit: number }[];
+      if (!scanned.length) throw new Error('No account lines were found — try a clearer scan.');
+      applyPriorRows(scanned.map(r => ({ name: r.name, type: r.type, ledger: '', debit: r.debit, credit: r.credit })));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read the trial balance.');
+    } finally {
+      setPriorScanning(false);
+    }
+  }
+
   const curDr = rows.reduce((s, r) => s + parseNum(r.debit), 0);
   const curCr = rows.reduce((s, r) => s + parseNum(r.credit), 0);
   const priDr = rows.reduce((s, r) => s + parseNum(r.priorDebit), 0);
   const priCr = rows.reduce((s, r) => s + parseNum(r.priorCredit), 0);
   const curBalanced = Math.abs(curDr - curCr) < 0.5;
   const priBalanced = Math.abs(priDr - priCr) < 0.5;
+  // Profit / (loss) = income − expenses (credit − debit on the P&L accounts). A
+  // quick sanity check that income and expenses were entered the right way round.
+  const isPl = (t: BalType) => t === 'income' || t === 'expense';
+  const curProfit = rows.reduce((s, r) => (isPl(r.type) ? s + (parseNum(r.credit) - parseNum(r.debit)) : s), 0);
+  const priProfit = rows.reduce((s, r) => (isPl(r.type) ? s + (parseNum(r.priorCredit) - parseNum(r.priorDebit)) : s), 0);
 
   function build() {
     const clean = rows.filter(r => r.name.trim() && (parseNum(r.debit) || parseNum(r.credit) || (includePrior && (parseNum(r.priorDebit) || parseNum(r.priorCredit)))));
@@ -850,16 +925,39 @@ function TbEditor({
             <h3 className="text-[15px] font-bold text-[var(--text-primary)]">{heading.title}</h3>
             <p className="text-[12px] text-[var(--text-muted)]">{heading.sub}</p>
           </div>
-          <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)]">
-            <input type="checkbox" checked={includePrior} onChange={e => setIncludePrior(e.target.checked)} className="rounded" />
-            Include last year
-          </label>
+          <div className="flex flex-col items-end gap-0.5">
+            <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[var(--text-secondary)]">
+              <input type="checkbox" checked={includePrior} onChange={e => setIncludePrior(e.target.checked)} className="rounded" />
+              Include last year
+            </label>
+            {priorMeta && !includePrior && (
+              <button type="button" onClick={() => void loadPriorYear()} className="text-[10.5px] font-semibold text-[var(--accent)] hover:underline">
+                Last year&apos;s accounts on file — use them
+              </button>
+            )}
+          </div>
         </div>
 
         {topSlot}
 
-        {/* Saved trial balances */}
-        {saved.length > 0 && (
+        {/* Reporting period — set the year end first; it drives the prior-year lookup below. */}
+        <div className="mb-4 rounded-xl border border-[var(--border)] bg-white/60 p-3">
+          <p className="mb-2 text-[12px] font-semibold text-[var(--text-secondary)]">Reporting period</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Period start</label>
+              <input type="date" value={fromIso} onChange={e => setFromIso(e.target.value)} className="input-base py-1.5 text-sm" />
+              <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Optional — defaults to a year before the end.</p>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Year end <span className="text-red-500">*</span></label>
+              <input type="date" value={toIso} onChange={e => { setToIso(e.target.value); setPriorLoaded(false); }} className="input-base py-1.5 text-sm" />
+            </div>
+          </div>
+        </div>
+
+        {/* Saved trial balances — excludes the year already loaded */}
+        {otherSavedTbs.length > 0 && (
           <div className="mb-3">
             <select
               value=""
@@ -867,21 +965,64 @@ function TbEditor({
               className="input-base py-1.5 text-sm"
             >
               <option value="">Load a saved trial balance…</option>
-              {saved.map(s => (
+              {otherSavedTbs.map(s => (
                 <option key={s.id} value={s.periodEnd}>Year to {isoToUk(s.periodEnd)}{s.source ? ` · ${s.source}` : ''} ({s.rowCount} rows)</option>
               ))}
             </select>
           </div>
         )}
 
-        {/* Prior-year available */}
-        {priorMeta && !priorLoaded && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--accent)]/20 bg-[var(--accent)]/5 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-            <Check size={14} className="text-[var(--accent)]" />
-            A saved trial balance for the year to {isoToUk(priorMeta.periodEnd)} is available.
-            <button type="button" onClick={() => void loadPriorYear()} className="ml-auto rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[11.5px] font-semibold text-white hover:opacity-90">
-              Load as comparatives
-            </button>
+        {/* Prior year — auto-find last year's accounts in SMITH, or paste /
+            upload / scan the TB. Only shown once "Include last year" is ticked. */}
+        {includePrior && (
+          <div className="mb-3 rounded-xl border border-[var(--border)] bg-white/60 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[12px] font-semibold text-[var(--text-secondary)]">Prior year comparatives</span>
+              {priorLoaded && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10.5px] font-bold text-emerald-700"><Check size={11} /> Loaded</span>}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button type="button" onClick={() => setPriorPaste(p => !p)}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${priorPaste ? 'border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] bg-white text-[var(--text-secondary)] hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5'}`}>
+                  <ClipboardPaste size={12} /> Paste
+                </button>
+                <button type="button" onClick={() => priorFileRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5">
+                  <Upload size={12} /> Upload CSV
+                </button>
+                <button type="button" onClick={() => priorScanRef.current?.click()} disabled={priorScanning}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)]/30 hover:bg-[var(--accent)]/5 disabled:opacity-50">
+                  {priorScanning ? <Loader2 size={12} className="animate-spin" /> : <ScanLine size={12} />} {priorScanning ? 'Reading…' : 'Scan PDF/image'}
+                </button>
+                <input ref={priorFileRef} type="file" accept=".csv,text/csv" onChange={onPriorFile} className="hidden" />
+                <input ref={priorScanRef} type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" multiple onChange={onPriorScanFiles} className="hidden" />
+              </div>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">SMITH looks for last year&apos;s accounts on file — or paste, upload or scan the trial balance. Accounts are matched by name and the prior-year columns filled for you.</p>
+            {priorMeta && !priorLoaded && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--accent)]/25 bg-[var(--accent)]/5 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+                <BookCopy size={14} className="shrink-0 text-[var(--accent)]" />
+                <span>Found last year&apos;s accounts in SMITH — <strong>year to {isoToUk(priorMeta.periodEnd)}</strong> ({priorMeta.rowCount} rows).</span>
+                <button type="button" onClick={() => void loadPriorYear()} className="ml-auto rounded-lg bg-[var(--accent)] px-2.5 py-1 text-[11.5px] font-semibold text-white hover:opacity-90">
+                  Load as comparatives
+                </button>
+              </div>
+            )}
+            {priorPaste && (
+              <div className="mt-2">
+                <textarea
+                  value={priorRaw}
+                  onChange={e => setPriorRaw(e.target.value)}
+                  rows={6}
+                  placeholder={'Account, Debit, Credit\nSales, 0, 110000\nCost of sales, 38000, 0\nBank, 4200, 0\n…'}
+                  className="input-base w-full font-mono text-[12px] leading-relaxed"
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => { setPriorPaste(false); setPriorRaw(''); }} className="btn-secondary">Cancel</button>
+                  <button type="button" onClick={() => applyPriorText(priorRaw)} disabled={!priorRaw.trim()} className="btn-primary disabled:opacity-40">
+                    <Table2 size={14} /> Add as prior year
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -940,6 +1081,12 @@ function TbEditor({
                 {includePrior && <td className="px-2 py-1.5 text-right tabular-nums">{money0(priCr)}</td>}
                 <td />
               </tr>
+              <tr className="border-t border-slate-200/70">
+                <td className="px-2 py-1.5 font-medium" colSpan={2}>Profit / (loss) for the year</td>
+                <td colSpan={2} className={`px-2 py-1.5 text-right tabular-nums ${curProfit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{moneySigned(curProfit)}</td>
+                {includePrior && <td colSpan={2} className={`px-2 py-1.5 text-right tabular-nums ${priProfit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{moneySigned(priProfit)}</td>}
+                <td />
+              </tr>
             </tfoot>
           </table>
         </div>
@@ -955,18 +1102,6 @@ function TbEditor({
               Prior {priBalanced ? '✓' : `out ${money0(Math.abs(priDr - priCr))}`}
             </span>
           )}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Period start</label>
-            <input type="date" value={fromIso} onChange={e => setFromIso(e.target.value)} className="input-base py-1.5 text-sm" />
-            <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Optional — defaults to a year before the end.</p>
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-[var(--text-secondary)]">Year end <span className="text-red-500">*</span></label>
-            <input type="date" value={toIso} onChange={e => { setToIso(e.target.value); setPriorLoaded(false); }} className="input-base py-1.5 text-sm" />
-          </div>
         </div>
 
         {error && (

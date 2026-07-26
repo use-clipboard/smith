@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // POST /api/accounts-studio/engagements/[id]/mark-approval-sent
@@ -28,5 +29,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   await supabase.from('accounts_studio_engagements')
     .update({ data: nextData, updated_at: new Date().toISOString() })
     .eq('id', params.id).eq('firm_id', ctx.firmId);
+
+  await logAuditEvent({
+    firmId: ctx.firmId,
+    engagementId: params.id,
+    clientId: e.clientId ?? null,
+    companyName: e.companyName ?? null,
+    actorId: ctx.userId,
+    action: 'sent_for_approval',
+    summary: 'Sent to the client for approval',
+  });
+
   return NextResponse.json({ engagement: { id: row.id, data: nextData } });
 }

@@ -8,6 +8,7 @@ import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
 import { buildApprovalEmailHtml } from '@/lib/accounts-studio/approvalEmail';
 import { renderTemplate } from '@/lib/mtdIt/emailTemplates';
 import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // POST /api/accounts-studio/engagements/[id]/send-approval
@@ -133,6 +134,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       await service.from('accounts_studio_approvals').delete().eq('id', approval.id);
       return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to send via Gmail' }, { status: 502 });
     }
+  }
+
+  // Audit the direct send. The compose (prepare_only) flow logs from
+  // mark-approval-sent once the email is really sent from the compose window.
+  if (!prepare_only) {
+    await logAuditEvent({
+      firmId: ctx.firmId,
+      engagementId: params.id,
+      clientId: e.clientId ?? null,
+      companyName: e.companyName ?? null,
+      actorId: ctx.userId,
+      action: 'sent_for_approval',
+      summary: `Sent to ${recipient_email} for approval`,
+    });
   }
 
   // ── Advance status → 'sent' — DIRECT send only. For the compose (prepare_only)

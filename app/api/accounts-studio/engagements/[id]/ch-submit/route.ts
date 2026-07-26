@@ -7,6 +7,7 @@ import { isChGatewayConfigured, CH_XMLGW_ENV } from '@/lib/companiesHouse/config
 import { buildSubmissionEnvelope, submitToGateway, pollGateway } from '@/lib/companiesHouse/gateway';
 import { buildIxbrlFromEngagement, chCompanyType } from '@/lib/accounts-studio/ixbrlFromEngagement';
 import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,37 @@ function isoDate(v: string | undefined | null): string | null {
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(v.trim());
   return dmy ? `${dmy[3]}-${dmy[2]}-${dmy[1]}` : null;
+}
+
+// GET /api/accounts-studio/engagements/[id]/ch-submit
+// Returns this engagement's Companies House filing history (most recent first),
+// so the Publish stage can show the last submission's number, status and date
+// without re-filing. Read-only; RLS-scoped to the firm.
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const ctx = await getUserContext();
+  if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  if (!canAccessAccountsStudio(ctx.email)) return NextResponse.json({ error: 'Accounts Studio is not available for your account.' }, { status: 403 });
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('ch_gateway_submissions')
+    .select('submission_number, status, is_test, company_number, company_name, error_message, created_at')
+    .eq('engagement_id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error) return NextResponse.json({ submissions: [] });
+
+  const submissions = (data ?? []).map(r => ({
+    submissionNumber: String(r.submission_number).padStart(6, '0'),
+    status: r.status as string,
+    isTest: r.is_test as boolean,
+    companyNumber: r.company_number as string,
+    companyName: r.company_name as string,
+    errorMessage: (r.error_message as string | null) ?? null,
+    createdAt: r.created_at as string,
+  }));
+  return NextResponse.json({ submissions });
 }
 
 // POST /api/accounts-studio/engagements/[id]/ch-submit
@@ -171,6 +203,29 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ixbrl,
     submitted_by: ctx.userId,
   });
+
+  await logAuditEvent({
+    firmId: ctx.firmId,
+    engagementId: params.id,
+    clientId: (row.client_id as string | null) ?? e.clientId ?? null,
+    companyName: e.companyName ?? null,
+    actorId: ctx.userId,
+    action: 'filed_to_ch',
+    summary: result.ok
+      ? `Filed to Companies House${CH_XMLGW_ENV !== 'live' ? ' (test)' : ''} — submission ${submissionNumber}, ${result.status}`
+      : `Companies House filing rejected — submission ${submissionNumber}: ${result.message}`,
+  });
+
+  // Auto-advance the status to 'Filed' on a successful LIVE filing — the gateway
+  // filing IS the submission, so the badge should reflect it without a separate
+  // "Mark as submitted" click. Test filings are validation-only and never move
+  // the status. Sets approvalStatus='submitted' (the single 'Filed' state).
+  if (result.ok && CH_XMLGW_ENV === 'live' && e.approvalStatus !== 'submitted') {
+    const nextData: Engagement = { ...e, approvalStatus: 'submitted', submittedAt: new Date().toISOString(), published: true };
+    await supabase.from('accounts_studio_engagements')
+      .update({ data: nextData, published: true, updated_at: new Date().toISOString() })
+      .eq('id', params.id).eq('firm_id', ctx.firmId);
+  }
 
   return NextResponse.json({
     ok: result.ok,

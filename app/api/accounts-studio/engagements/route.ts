@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { getAccountsStudioFirmSettings, firmDefaultNotes } from '@/lib/accounts-studio/firmSettings';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,12 @@ const EngagementData = z
   })
   .passthrough();
 
-const CreateBody = z.object({ data: EngagementData });
+const CreateBody = z.object({
+  data: EngagementData,
+  // Set when this create is a "copy to amend" of an existing set — logged as a
+  // copy rather than a fresh creation.
+  copiedFromId: z.string().uuid().optional(),
+});
 
 // ── GET /api/accounts-studio/engagements ─────────────────────────────────────
 // List this firm's engagements, most-recently-edited first.
@@ -105,6 +111,16 @@ export async function POST(req: NextRequest) {
     .select('id, data, created_by, updated_at')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await logAuditEvent({
+    firmId: ctx.firmId,
+    engagementId: data.id as string,
+    clientId,
+    companyName: body.data.companyName,
+    actorId: ctx.userId,
+    action: body.copiedFromId ? 'copied' : 'created',
+    summary: body.copiedFromId ? 'Copied to a new draft (for amended accounts)' : 'Created a new set of accounts',
+  });
 
   return NextResponse.json({
     engagement: {

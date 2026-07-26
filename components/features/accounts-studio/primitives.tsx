@@ -46,16 +46,15 @@ export function SectionStatusDot({ status }: { status: SectionStatus }) {
   return <Circle size={13} className={map.missing} />;
 }
 
-type BadgeTone = 'draft' | 'progress' | 'ready' | 'filed' | 'sent' | 'approved' | 'rejected' | 'submitted';
+type BadgeTone = 'draft' | 'progress' | 'ready' | 'awaiting' | 'changes' | 'approved' | 'filed';
 const STATUS_BADGE: Record<BadgeTone, string> = {
-  draft:     'bg-slate-100 text-slate-600',
-  progress:  'bg-[var(--accent)]/10 text-[var(--accent)]',
-  ready:     'bg-sky-100 text-sky-700',
-  filed:     'bg-emerald-100 text-emerald-700',
-  sent:      'bg-sky-100 text-sky-700',
-  approved:  'bg-violet-100 text-violet-700',
-  rejected:  'bg-amber-100 text-amber-700',
-  submitted: 'bg-emerald-100 text-emerald-700',
+  draft:    'bg-slate-100 text-slate-600',      // Draft
+  progress: 'bg-[var(--accent)]/10 text-[var(--accent)]', // In progress
+  ready:    'bg-sky-100 text-sky-700',          // Ready to send
+  awaiting: 'bg-violet-100 text-violet-700',    // Awaiting approval
+  changes:  'bg-amber-100 text-amber-700',      // Changes requested
+  approved: 'bg-teal-100 text-teal-700',        // Approved
+  filed:    'bg-emerald-100 text-emerald-700',  // Filed
 };
 
 export function EngagementStatusBadge({ tone, label }: { tone: BadgeTone; label: string }) {

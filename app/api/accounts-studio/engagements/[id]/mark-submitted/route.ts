@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
+import { logAuditEvent } from '@/lib/accounts-studio/audit';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // POST /api/accounts-studio/engagements/[id]/mark-submitted
@@ -35,6 +36,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     .update({ data: nextData, published: true, updated_at: new Date().toISOString() })
     .eq('id', params.id).eq('firm_id', ctx.firmId);
   if (error) return NextResponse.json({ error: 'Failed to mark as submitted' }, { status: 500 });
+
+  await logAuditEvent({
+    firmId: ctx.firmId,
+    engagementId: params.id,
+    clientId: e.clientId ?? null,
+    companyName: e.companyName ?? null,
+    actorId: ctx.userId,
+    action: 'marked_submitted',
+    summary: 'Marked the accounts as submitted to Companies House',
+  });
 
   return NextResponse.json({ engagement: { id: row.id, data: nextData } });
 }

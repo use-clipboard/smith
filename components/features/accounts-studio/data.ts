@@ -142,7 +142,13 @@ export function buildEngagement(input: NewEngagementInput): Engagement {
 }
 
 // ─── History list ──────────────────────────────────────────────────────────
-export type EngagementStatusTone = 'draft' | 'progress' | 'ready' | 'filed' | 'sent' | 'approved' | 'rejected' | 'submitted';
+// A single, linear status model:
+//   Draft → In progress → Ready to send → Awaiting approval → Approved → Filed
+//                                              └─(changes requested)─┘
+// The tone drives the badge colour (primitives.tsx). The underlying data fields
+// (approvalStatus: 'sent'|'approved'|'rejected'|'submitted') are unchanged — only
+// the display labels/tones are derived here.
+export type EngagementStatusTone = 'draft' | 'progress' | 'ready' | 'awaiting' | 'changes' | 'approved' | 'filed';
 
 export interface AccountsHistoryItem {
   id: string;
@@ -154,17 +160,21 @@ export interface AccountsHistoryItem {
 }
 
 /** Derive the headline status for the history list. The client-approval /
- *  submission lifecycle (furthest point in the chain) takes precedence over the
- *  stage-based status once the accounts have been sent to the client. */
+ *  filing lifecycle (furthest point in the chain) takes precedence over the
+ *  stage-based status once the accounts have been sent to the client.
+ *
+ *  'Filed' means lodged at Companies House — set by a successful live gateway
+ *  filing or by "Mark as submitted" (both set approvalStatus='submitted'). The
+ *  internal `published` flag (saving the pack to the client record) is NOT a
+ *  filing status and no longer shows as 'Filed'. */
 export function engagementStatus(e: Engagement): { label: string; tone: EngagementStatusTone } {
-  if (e.approvalStatus === 'submitted') return { label: 'Submitted', tone: 'submitted' };
-  if (e.approvalStatus === 'approved')  return { label: 'Approved',   tone: 'approved' };
-  if (e.approvalStatus === 'rejected')  return { label: 'Changes requested', tone: 'rejected' };
-  if (e.approvalStatus === 'sent')      return { label: 'Sent to client', tone: 'sent' };
-  if (e.published) return { label: 'Filed', tone: 'filed' };
+  if (e.approvalStatus === 'submitted') return { label: 'Filed',              tone: 'filed' };
+  if (e.approvalStatus === 'approved')  return { label: 'Approved',           tone: 'approved' };
+  if (e.approvalStatus === 'rejected')  return { label: 'Changes requested',  tone: 'changes' };
+  if (e.approvalStatus === 'sent')      return { label: 'Awaiting approval',  tone: 'awaiting' };
   const stages: StageId[] = ['import', 'preparation', 'disclosures', 'final-review', 'publish'];
   const allButPublishDone = stages.slice(0, stages.length - 1).every(s => e.stageStatus[s] === 'complete');
-  if (allButPublishDone) return { label: 'Ready to file', tone: 'ready' };
+  if (allButPublishDone) return { label: 'Ready to send', tone: 'ready' };
   const started = stages.some(s => e.stageStatus[s] === 'complete');
   return started ? { label: 'In progress', tone: 'progress' } : { label: 'Draft', tone: 'draft' };
 }
