@@ -4,7 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { canAccessAccountsStudio } from '@/lib/accounts-studio/access';
 import { isChGatewayConfigured, CH_XMLGW_ENV } from '@/lib/companiesHouse/config';
-import { buildSubmissionEnvelope, submitToGateway } from '@/lib/companiesHouse/gateway';
+import { buildSubmissionEnvelope, submitToGateway, pollGateway } from '@/lib/companiesHouse/gateway';
 import { buildIxbrlFromEngagement, chCompanyType } from '@/lib/accounts-studio/ixbrlFromEngagement';
 import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSettings';
 import type { Engagement } from '@/components/features/accounts-studio/types';
@@ -138,7 +138,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     filename,
   });
 
-  const result = await submitToGateway(envelope);
+  let result = await submitToGateway(envelope);
+
+  // Asynchronous path: if the gateway only ACKNOWLEDGED (didn't return a final
+  // response), poll for the outcome/certificate using the CorrelationID. Our
+  // test gateway answers synchronously (final 'response'), so this is exercised
+  // mainly in live. Bounded so the request can't hang.
+  if (result.status === 'submitted' && result.correlationId) {
+    for (let attempt = 0; attempt < 4 && result.status === 'submitted' && result.correlationId; attempt++) {
+      const waitMs = Math.min(Math.max((result.pollSeconds ?? 3), 2), 8) * 1000;
+      await new Promise(r => setTimeout(r, waitMs));
+      result = await pollGateway(result.correlationId, transactionId);
+    }
+  }
 
   // Audit every attempt — success or rejection — with the raw response and the
   // exact iXBRL filed, so a rejection's reasons are always inspectable.

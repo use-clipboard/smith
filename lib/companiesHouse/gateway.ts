@@ -78,6 +78,19 @@ export function md5Lower(value: string): string {
   return createHash('md5').update(value).digest('hex');
 }
 
+/** The SenderDetails / IDAuthentication block — identical for submit + poll. */
+function senderDetailsXml(): string {
+  return `<SenderDetails>
+      <IDAuthentication>
+        <SenderID>${md5Lower(chPresenterId())}</SenderID>
+        <Authentication>
+          <Method>clear</Method>
+          <Value>${md5Lower(chAuthValue())}</Value>
+        </Authentication>
+      </IDAuthentication>
+    </SenderDetails>`;
+}
+
 export interface ChSubmissionInput {
   /** The iXBRL accounts document (raw XHTML string). */
   ixbrl: string;
@@ -100,10 +113,6 @@ export interface ChSubmissionInput {
 
 /** Build the full GovTalk submission envelope for an accounts filing. */
 export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
-  // Software Filing auth (TIS v5.3): SenderID = md5(presenter id), Value =
-  // md5(presenter auth code), Method 'clear'. NOT concatenated, no transaction id.
-  const senderId = md5Lower(chPresenterId());
-  const authToken = md5Lower(chAuthValue());
   const data = Buffer.from(input.ixbrl, 'utf8').toString('base64');
   const pkgRef = chPackageReference();
 
@@ -131,15 +140,7 @@ export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
       <TransactionID>${esc(input.transactionId)}</TransactionID>
       <GatewayTest>${CH_GATEWAY_TEST_FLAG}</GatewayTest>
     </MessageDetails>
-    <SenderDetails>
-      <IDAuthentication>
-        <SenderID>${senderId}</SenderID>
-        <Authentication>
-          <Method>clear</Method>
-          <Value>${authToken}</Value>
-        </Authentication>
-      </IDAuthentication>
-    </SenderDetails>
+    ${senderDetailsXml()}
   </Header>
   <GovTalkDetails>
     <Keys/>
@@ -161,6 +162,36 @@ export function buildSubmissionEnvelope(input: ChSubmissionInput): string {
 </GovTalkMessage>`;
 }
 
+/** A GovTalk POLL request — retrieves the final response/certificate for an
+ *  asynchronous submission, using the CorrelationID from its acknowledgement.
+ *  (Our test submissions come back synchronously as a final 'response', so this
+ *  only fires when the gateway defers processing — expected mainly in live.) */
+export function buildPollEnvelope(correlationId: string, transactionId: string): string {
+  return `${XML_DECL}
+<GovTalkMessage xmlns="${ENVELOPE_NS}">
+  <EnvelopeVersion>1.0</EnvelopeVersion>
+  <Header>
+    <MessageDetails>
+      <Class>Accounts</Class>
+      <Qualifier>poll</Qualifier>
+      <TransactionID>${esc(transactionId)}</TransactionID>
+      <CorrelationID>${esc(correlationId)}</CorrelationID>
+      <GatewayTest>${CH_GATEWAY_TEST_FLAG}</GatewayTest>
+    </MessageDetails>
+    ${senderDetailsXml()}
+  </Header>
+  <GovTalkDetails>
+    <Keys/>
+  </GovTalkDetails>
+  <Body/>
+</GovTalkMessage>`;
+}
+
+/** POST a poll request and parse the response. */
+export function pollGateway(correlationId: string, transactionId: string): Promise<ChGatewayResult> {
+  return submitToGateway(buildPollEnvelope(correlationId, transactionId));
+}
+
 // ── Response parsing ─────────────────────────────────────────────────────────
 // The gateway replies with a GovTalkMessage whose <Qualifier> is 'acknowledgement'
 // (accepted for processing — poll for the outcome), 'response' (final), or
@@ -173,6 +204,8 @@ export interface ChGatewayResult {
   status: 'submitted' | 'accepted' | 'rejected' | 'error';
   qualifier: string | null;
   correlationId: string | null;
+  /** Seconds the gateway asks us to wait before polling (acknowledgement only). */
+  pollSeconds: number | null;
   /** Human-readable message (first error text, or a summary). */
   message: string;
   /** Raw response body for the audit log. */
@@ -200,22 +233,24 @@ function extractErrors(xml: string): string {
 export function parseGatewayResponse(raw: string, httpStatus: number): ChGatewayResult {
   const qualifier = firstTag(raw, 'Qualifier');
   const correlationId = firstTag(raw, 'CorrelationID');
+  const pollRaw = firstTag(raw, 'PollInterval');
+  const pollSeconds = pollRaw && /^\d+$/.test(pollRaw) ? Number(pollRaw) : null;
   const q = (qualifier ?? '').toLowerCase();
 
   if (q === 'error' || httpStatus < 200 || httpStatus >= 300) {
     const message = extractErrors(raw) || `Companies House rejected the submission (HTTP ${httpStatus}).`;
-    return { ok: false, status: 'rejected', qualifier, correlationId, message, raw, httpStatus };
+    return { ok: false, status: 'rejected', qualifier, correlationId, pollSeconds, message, raw, httpStatus };
   }
   if (q === 'acknowledgement') {
-    return { ok: true, status: 'submitted', qualifier, correlationId,
-      message: 'Accepted by the gateway for processing. Companies House review test submissions manually.', raw, httpStatus };
+    return { ok: true, status: 'submitted', qualifier, correlationId, pollSeconds,
+      message: 'Accepted by the gateway for processing — polling for the outcome.', raw, httpStatus };
   }
   if (q === 'response') {
-    return { ok: true, status: 'accepted', qualifier, correlationId, message: 'Accepted by Companies House.', raw, httpStatus };
+    return { ok: true, status: 'accepted', qualifier, correlationId, pollSeconds, message: 'Accepted by Companies House.', raw, httpStatus };
   }
   // Unknown qualifier — surface the raw for inspection rather than guessing.
   const errs = extractErrors(raw);
-  return { ok: !errs, status: errs ? 'rejected' : 'submitted', qualifier, correlationId,
+  return { ok: !errs, status: errs ? 'rejected' : 'submitted', qualifier, correlationId, pollSeconds,
     message: errs || 'Submitted — awaiting Companies House response.', raw, httpStatus };
 }
 
@@ -230,7 +265,7 @@ export async function submitToGateway(envelope: string): Promise<ChGatewayResult
     });
   } catch (e) {
     return {
-      ok: false, status: 'error', qualifier: null, correlationId: null,
+      ok: false, status: 'error', qualifier: null, correlationId: null, pollSeconds: null,
       message: e instanceof Error ? `Could not reach the Companies House gateway: ${e.message}` : 'Could not reach the Companies House gateway.',
       raw: '', httpStatus: 0,
     };
