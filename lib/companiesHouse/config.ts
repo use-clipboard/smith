@@ -14,7 +14,9 @@
 // ── Environment ──────────────────────────────────────────────────────────────
 // CH_XMLGW_PRESENTER_ID   Test/live presenter id (e.g. the test id 66666651000)
 // CH_XMLGW_AUTH_VALUE     Authentication value issued with the presenter id
-// CH_XMLGW_PACKAGE_REF    Test package reference (e.g. 0012); omit for live
+// CH_XMLGW_PACKAGE_REF    Package reference issued by the CH XML team — the test
+//                         package ref (e.g. 0012) for test, the LIVE package ref
+//                         for live. Included in the FormHeader whenever set.
 // CH_XMLGW_ENV            'test' (default) | 'live'  — sets the GatewayTest flag
 // CH_XMLGW_URL            Override the gateway URL (defaults below)
 

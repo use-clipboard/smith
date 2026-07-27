@@ -44,14 +44,14 @@ export default function MarketingHomePage() {
       </Reveal>
 
       <Reveal>
-        <Panel id="stack">
-          <StackComparison />
+        <Panel id="pricing">
+          <PricingCalculator />
         </Panel>
       </Reveal>
 
       <Reveal>
-        <Panel id="pricing">
-          <PricingCalculator />
+        <Panel id="stack">
+          <StackComparison />
         </Panel>
       </Reveal>
 
