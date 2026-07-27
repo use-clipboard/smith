@@ -205,7 +205,7 @@ export default function StackComparison() {
                 <ul className="mt-3 space-y-0.5 text-sm font-medium text-white/80">
                   <li>One platform</li>
                   <li>One login</li>
-                  <li>One invoice</li>
+                  <li>One source of truth</li>
                 </ul>
               </div>
               <div className="shrink-0 text-right">
