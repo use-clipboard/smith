@@ -3,6 +3,7 @@ import Reveal from '@/components/marketing/Reveal';
 import Hero from '@/components/marketing/Hero';
 import ToolsGrid from '@/components/marketing/ToolsGrid';
 import ToolShowcase from '@/components/marketing/ToolShowcase';
+import StackComparison from '@/components/marketing/StackComparison';
 import PainPoints from '@/components/marketing/PainPoints';
 import VideoSection from '@/components/marketing/VideoSection';
 import PricingCalculator from '@/components/marketing/PricingCalculator';
@@ -39,6 +40,12 @@ export default function MarketingHomePage() {
       <Reveal>
         <Panel id="video">
           <VideoSection />
+        </Panel>
+      </Reveal>
+
+      <Reveal>
+        <Panel id="stack">
+          <StackComparison />
         </Panel>
       </Reveal>
 
