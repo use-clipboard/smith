@@ -17,6 +17,9 @@ export interface AccountsStudioFirmSettings {
   approvalEmailBody: string;      // handlebars template (plain text)
   brandPrimaryColor: string;      // hex, e.g. #4F46E5 — email header + PDF cover
   brandLogoPath: string;          // storage path in the accounts-studio-branding bucket
+  /** Additional firm users to notify (in-app + email) when a client approves /
+   *  requests changes — on top of whoever sent it for approval. */
+  notifyUserIds: string[];
 }
 
 /** Default approval-email templates (used when a firm hasn't customised them). */
@@ -35,7 +38,7 @@ export const DEFAULT_BRAND_COLOR = '#4F46E5';
 export const EMPTY_FIRM_SETTINGS: AccountsStudioFirmSettings = {
   accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '',
   approvalEmailSubject: DEFAULT_APPROVAL_SUBJECT, approvalEmailBody: DEFAULT_APPROVAL_BODY, brandPrimaryColor: DEFAULT_BRAND_COLOR,
-  brandLogoPath: '',
+  brandLogoPath: '', notifyUserIds: [],
 };
 
 export async function getAccountsStudioFirmSettings(supabase: DB, firmId: string): Promise<AccountsStudioFirmSettings> {
@@ -59,6 +62,7 @@ export async function getAccountsStudioFirmSettings(supabase: DB, firmId: string
     approvalEmailBody: str(d.approval_email_body) || DEFAULT_APPROVAL_BODY,
     brandPrimaryColor: str(d.brand_primary_color) || DEFAULT_BRAND_COLOR,
     brandLogoPath: str(d.brand_logo_path),
+    notifyUserIds: Array.isArray(d.notify_user_ids) ? (d.notify_user_ids as unknown[]).filter((v): v is string => typeof v === 'string') : [],
   };
 }
 

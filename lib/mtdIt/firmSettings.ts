@@ -38,6 +38,10 @@ export interface MtdItFirmSettings {
   // records modal acts as the last-chance archive prompt before deletion
   // fires (see MtdItSaveToRecordsModal + the cleanup endpoint).
   auto_delete_source_on_complete: boolean;
+
+  // Additional firm users to notify (in-app + email) when a client approves /
+  // requests changes — on top of whoever sent it for approval.
+  notify_user_ids: string[];
 }
 
 /**

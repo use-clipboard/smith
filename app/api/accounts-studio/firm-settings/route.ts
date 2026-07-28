@@ -16,6 +16,7 @@ const Body = z.object({
   approvalEmailSubject: z.string().max(500).default(''),
   approvalEmailBody: z.string().max(20000).default(''),
   brandPrimaryColor: z.string().max(9).default('#4F46E5'),
+  notifyUserIds: z.array(z.string().uuid()).max(50).default([]),
 }).strict();
 
 // ── GET /api/accounts-studio/firm-settings ───────────────────────────────────
@@ -51,6 +52,7 @@ export async function PUT(req: NextRequest) {
     approval_email_subject: body.approvalEmailSubject,
     approval_email_body: body.approvalEmailBody,
     brand_primary_color: body.brandPrimaryColor,
+    notify_user_ids: body.notifyUserIds,
     updated_at: new Date().toISOString(),
   };
   let { error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' });
@@ -61,6 +63,7 @@ export async function PUT(req: NextRequest) {
     delete row.approval_email_subject;
     delete row.approval_email_body;
     delete row.brand_primary_color;
+    delete row.notify_user_ids;
     ({ error } = await supabase.from('accounts_studio_firm_settings').upsert(row, { onConflict: 'firm_id' }));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

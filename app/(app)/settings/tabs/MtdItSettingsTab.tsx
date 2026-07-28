@@ -6,6 +6,7 @@ import {
   Image as ImageIcon, FileText, Upload, X, Archive,
 } from 'lucide-react';
 import { TEMPLATE_VARIABLES } from '@/lib/mtdIt/emailTemplates';
+import NotifyMembersPicker from '@/components/settings/NotifyMembersPicker';
 
 interface Settings {
   approval_email_subject: string;
@@ -28,6 +29,7 @@ interface Settings {
   pdf_include_transaction_detail:   boolean;
   pdf_include_quarterly_comparison: boolean;
   auto_delete_source_on_complete: boolean;
+  notify_user_ids: string[];
 }
 
 // Settings tab for the MTD IT tool. Admin-only — non-admins see the gated
@@ -83,6 +85,7 @@ export default function MtdItSettingsTab() {
         pdf_include_transaction_detail:   settings.pdf_include_transaction_detail,
         pdf_include_quarterly_comparison: settings.pdf_include_quarterly_comparison,
         auto_delete_source_on_complete:   settings.auto_delete_source_on_complete,
+        notify_user_ids:                  settings.notify_user_ids ?? [],
       };
       const res = await fetch('/api/mtd-it/firm-settings', {
         method: 'PUT',
@@ -299,6 +302,15 @@ export default function MtdItSettingsTab() {
             On by default. When you click <strong>Save &amp; complete</strong>, the Save to records modal opens with a clear warning so you can archive to Drive / Vault first; the source files are removed from SMITH&apos;s storage once you close the modal. Your firm is still responsible for HMRC&apos;s 5-year retention — archive before completing.
           </p>
         </div>
+      </Section>
+
+      {/* ── Notify team members ───────────────────────────────────── */}
+      <Section
+        icon={<BellRing size={14} className="text-[var(--accent)]" />}
+        title="Notify team members"
+        hint="When a client approves or requests changes, whoever sent it for approval is always notified. Tick anyone else who should also get the in-app notification and email."
+      >
+        <NotifyMembersPicker value={settings.notify_user_ids ?? []} onChange={ids => patch('notify_user_ids', ids)} />
       </Section>
 
       {/* Variables reference */}

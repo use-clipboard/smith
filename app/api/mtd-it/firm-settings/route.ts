@@ -42,6 +42,8 @@ const PatchSchema = z.object({
   pdf_include_quarterly_comparison: z.boolean().optional(),
   // Source-document lifecycle
   auto_delete_source_on_complete: z.boolean().optional(),
+  // Additional team members to notify on a client response
+  notify_user_ids: z.array(z.string().uuid()).max(50).optional(),
 }).strict();
 
 export async function PUT(req: NextRequest) {
@@ -59,10 +61,16 @@ export async function PUT(req: NextRequest) {
   // Ensure the row exists, then PATCH
   await ensureMtdItFirmSettings(ctx.firmId);
   const supabase = createClient();
-  const { error } = await supabase
+  const payload: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() };
+  let { error } = await supabase
     .from('mtd_it_firm_settings')
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(payload)
     .eq('firm_id', ctx.firmId);
+  // Retry without the later-migration column if it isn't applied yet.
+  if (error?.code === '42703') {
+    delete payload.notify_user_ids;
+    ({ error } = await supabase.from('mtd_it_firm_settings').update(payload).eq('firm_id', ctx.firmId));
+  }
   if (error) {
     console.error('PUT /api/mtd-it/firm-settings', error);
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Loader2, Check, Landmark, Sparkles, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import RichTextEditor from '@/components/ui/RichTextEditor';
+import NotifyMembersPicker from '@/components/settings/NotifyMembersPicker';
 
 interface Settings {
   accountantsReport: string;
@@ -13,6 +14,7 @@ interface Settings {
   approvalEmailSubject: string;
   approvalEmailBody: string;
   brandPrimaryColor: string;
+  notifyUserIds: string[];
 }
 const DEFAULT_SUBJECT = 'Please approve the accounts for {{company_name}} — year ended {{period_end}}';
 const DEFAULT_BODY = `Hi {{client_name}},
@@ -27,6 +29,7 @@ Many thanks,
 const EMPTY: Settings = {
   accountantsReport: '', accountantDetails: '', accountantName: '', accountantAddress: '', governingBody: '',
   approvalEmailSubject: DEFAULT_SUBJECT, approvalEmailBody: DEFAULT_BODY, brandPrimaryColor: '#4F46E5',
+  notifyUserIds: [],
 };
 
 const EMAIL_VARS: { key: string; desc: string }[] = [
@@ -268,6 +271,13 @@ export default function AccountsStudioDefaultsTab() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Notify additional team members on client response */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
+        <h3 className="text-sm font-semibold text-gray-800">Notify team members</h3>
+        <p className="mb-3 text-xs text-gray-500">When a client approves or requests changes, the person who sent it for approval is always notified. Tick anyone else who should also get the in-app notification and email.</p>
+        <NotifyMembersPicker value={settings.notifyUserIds} onChange={ids => patch('notifyUserIds', ids)} />
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}

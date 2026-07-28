@@ -10,6 +10,7 @@ import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { renderTemplate, buildEmailHtml, formatDateUkForTemplate, formatDateTimeUkForTemplate } from '@/lib/mtdIt/emailTemplates';
 import { ensureMtdItFirmSettings } from '@/lib/mtdIt/firmSettings';
 import { createNotification } from '@/lib/notifications';
+import { resolveNotifyRecipients, type NotifyRecipient } from '@/lib/notifyExtras';
 
 // PUBLIC endpoints (no auth — token is the access).
 // GET  /api/mtd-it/approve/[token]   → summary of the quarter for the client to review
@@ -173,37 +174,45 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       .eq('status', 'sent');
   }
 
-  // ── Notify the preparer (email via their Gmail + in-app notification) ─
+  // ── Notify the preparer (email via their Gmail + in-app notification), plus
+  //    any additional team members configured in MTD IT settings ─────────────
   if (row.sent_by) {
-    // 1. In-app notification
+    let extras: NotifyRecipient[] = [];
     if (client.firm_id) {
       try {
-        await createNotification({
-          userId: row.sent_by,
-          firmId: client.firm_id,
-          type:   action === 'approve' ? 'mtd_it_approved' : 'mtd_it_changes_requested',
-          title:  action === 'approve'
-            ? `${client.name} (${client.client_ref ?? '—'}) has approved MTD IT`
-            : `${client.name} (${client.client_ref ?? '—'}) has requested changes`,
-          body:   action === 'approve'
-            ? `Approved Q${quarter.quarter} ${taxYearLabel(Number(quarter.tax_year ?? 2026))}.`
-            : (note ?? 'No note provided.'),
-          data: {
-            client_id:  client.id,
-            quarter_id: quarter.id,
-            approval_id: row.id,
-            action,
-            // Deep-link the bell notification straight to the quarter. On
-            // approve we add ?submit=1 so it opens the review with the Submit-
-            // to-HMRC modal ready; on a change request it just opens the quarter
-            // so the preparer can make the edits.
-            task_link: action === 'approve'
-              ? `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}?submit=1`
-              : `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}`,
-          },
-        });
-      } catch (e) {
-        console.error('createNotification (mtd_it approval)', e);
+        const s = await ensureMtdItFirmSettings(client.firm_id);
+        extras = await resolveNotifyRecipients(client.firm_id, s.notify_user_ids, row.sent_by);
+      } catch { /* extras are optional */ }
+    }
+
+    // 1. In-app notification — the preparer plus any configured team members
+    if (client.firm_id) {
+      const notif = {
+        firmId: client.firm_id,
+        type:   action === 'approve' ? 'mtd_it_approved' : 'mtd_it_changes_requested',
+        title:  action === 'approve'
+          ? `${client.name} (${client.client_ref ?? '—'}) has approved MTD IT`
+          : `${client.name} (${client.client_ref ?? '—'}) has requested changes`,
+        body:   action === 'approve'
+          ? `Approved Q${quarter.quarter} ${taxYearLabel(Number(quarter.tax_year ?? 2026))}.`
+          : (note ?? 'No note provided.'),
+        data: {
+          client_id:  client.id,
+          quarter_id: quarter.id,
+          approval_id: row.id,
+          action,
+          // Deep-link the bell notification straight to the quarter. On approve
+          // we add ?submit=1 so it opens the review with the Submit-to-HMRC modal
+          // ready; on a change request it just opens the quarter so the preparer
+          // can make the edits.
+          task_link: action === 'approve'
+            ? `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}?submit=1`
+            : `/mtd-it/${client.id}/${quarter.tax_year}/${quarter.quarter}`,
+        },
+      };
+      for (const userId of [row.sent_by, ...extras.map(u => u.id)]) {
+        try { await createNotification({ userId, ...notif }); }
+        catch (e) { console.error('createNotification (mtd_it approval)', e); }
       }
     }
 
@@ -250,7 +259,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
         const { gmail } = await getRefreshedGmailClient(conn.refresh_token);
         const raw = buildRawMessage({
           from: conn.google_email,
-          to: [preparer.email],
+          to: [preparer.email, ...extras.map(u => u.email)],
           subject,
           htmlBody: html,
         });

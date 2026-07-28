@@ -7,6 +7,7 @@ import { getAccountsStudioFirmSettings } from '@/lib/accounts-studio/firmSetting
 import { buildAccountsPackHtml } from '@/lib/accounts-studio/accountsPackHtml';
 import { buildApprovalEmailHtml } from '@/lib/accounts-studio/approvalEmail';
 import { logAuditEvent } from '@/lib/accounts-studio/audit';
+import { resolveNotifyRecipients } from '@/lib/notifyExtras';
 import type { Engagement } from '@/components/features/accounts-studio/types';
 
 // PUBLIC (no auth — the token is the access). Uses the service-role client.
@@ -128,19 +129,28 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       : `Changes requested${note?.trim() ? `: ${note.trim()}` : ''}`,
   });
 
-  // Notify the preparer (in-app + best-effort email via their Gmail).
+  // Notify the preparer (in-app + best-effort email via their Gmail), plus any
+  // additional team members the firm configured in Accounts Studio settings.
   if (row.sent_by) {
+    let extras: { id: string; email: string; fullName: string | null }[] = [];
     try {
-      await createNotification({
-        userId: row.sent_by, firmId: row.firm_id,
-        type: action === 'approve' ? 'accounts_studio_approved' : 'accounts_studio_changes_requested',
-        title: action === 'approve'
-          ? `${e.companyName} accounts approved by the client`
-          : `${e.companyName} — client requested changes`,
-        body: action === 'approve' ? `Approved by ${name!.trim()}.` : (note ?? 'No note provided.'),
-        data: { engagement_id: row.engagement_id, action, task_link: '/accounts-studio' },
-      });
-    } catch (err) { console.error('[accounts-studio approve] notify', err); }
+      const settings = await getAccountsStudioFirmSettings(service, row.firm_id);
+      extras = await resolveNotifyRecipients(row.firm_id, settings.notifyUserIds, row.sent_by);
+    } catch { /* extras are optional */ }
+
+    const notif = {
+      firmId: row.firm_id,
+      type: action === 'approve' ? 'accounts_studio_approved' : 'accounts_studio_changes_requested',
+      title: action === 'approve'
+        ? `${e.companyName} accounts approved by the client`
+        : `${e.companyName} — client requested changes`,
+      body: action === 'approve' ? `Approved by ${name!.trim()}.` : (note ?? 'No note provided.'),
+      data: { engagement_id: row.engagement_id, action, task_link: '/accounts-studio' },
+    };
+    for (const userId of [row.sent_by, ...extras.map(u => u.id)]) {
+      try { await createNotification({ userId, ...notif }); }
+      catch (err) { console.error('[accounts-studio approve] notify', err); }
+    }
 
     try {
       const { data: prep } = await service.from('users').select('email, full_name').eq('id', row.sent_by).maybeSingle();
@@ -156,7 +166,7 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
           approvalUrl: `${(process.env.NEXT_PUBLIC_SITE_URL ?? '').replace(/\/$/, '')}/accounts-studio`,
         });
         const { gmail } = await getRefreshedGmailClient(conn.refresh_token);
-        const raw = buildRawMessage({ from: conn.google_email, to: [prep.email], subject, htmlBody: html });
+        const raw = buildRawMessage({ from: conn.google_email, to: [prep.email, ...extras.map(u => u.email)], subject, htmlBody: html });
         await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
       }
     } catch (err) { console.error('[accounts-studio approve] preparer email (non-fatal)', err); }
