@@ -75,7 +75,17 @@ export default function StagePublish({
   const [chError, setChError] = useState('');
   const [chResult, setChResult] = useState<ChSubmitResult | null>(null);
   const [chHistory, setChHistory] = useState<ChSubmissionSummary[]>([]);
+  // Whether the gateway is configured + which environment (live vs test). Only
+  // booleans — never the credentials. Defaults assume test until loaded.
+  const [chEnv, setChEnv] = useState<{ configured: boolean; isTest: boolean }>({ configured: true, isTest: true });
   const status = engagement.approvalStatus;
+
+  useEffect(() => {
+    fetch('/api/accounts-studio/ch-config')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && typeof d.isTest === 'boolean') setChEnv({ configured: !!d.configured, isTest: !!d.isTest }); })
+      .catch(() => { /* keep defaults */ });
+  }, []);
 
   // Load the Companies House filing history so the last submission's number,
   // status and date persist across refreshes (not just the in-session result).
@@ -401,14 +411,26 @@ export default function StagePublish({
 
           <div className="space-y-1.5">
             {/* File to Companies House (XML Gateway) — the primary filing path */}
-            <button onClick={() => setChOpen(o => !o)} disabled={!ready}
-              className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Building2 size={15} /></div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-[var(--text-primary)]">File iXBRL to Companies House <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Test</span></p>
-                <p className="text-[11px] text-[var(--text-muted)]">Submit the tagged accounts over the XML Gateway</p>
+            {chEnv.configured ? (
+              <button onClick={() => setChOpen(o => !o)} disabled={!ready}
+                className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Building2 size={15} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-[var(--text-primary)]">File iXBRL to Companies House {chEnv.isTest
+                    ? <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700">Test</span>
+                    : <span className="ml-1 rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">Live</span>}</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Submit the tagged accounts over the XML Gateway</p>
+                </div>
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 rounded-xl border border-dashed border-[var(--border)] bg-white/40 px-3 py-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><Building2 size={15} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-[var(--text-secondary)]">Companies House filing not set up</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Add the XML Gateway presenter credentials to enable direct filing.</p>
+                </div>
               </div>
-            </button>
+            )}
 
             {/* Mark as submitted — manual fallback (accounts filed outside SMITH) */}
             <button onClick={submitToCH} disabled={status !== 'approved' || submitting}
@@ -528,7 +550,9 @@ export default function StagePublish({
             </div>
           )}
 
-          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">Filing goes to the Companies House XML Gateway test environment.</p>
+          <p className="mt-2 px-1 text-[10.5px] text-[var(--text-muted)]">{chEnv.isTest
+            ? 'Filing goes to the Companies House XML Gateway test environment.'
+            : 'Filings are submitted live to Companies House and are legally binding.'}</p>
 
           <div className="mt-1 border-t border-black/5 pt-2">
             <StepHeader n={3} title="Save to the client record" done={!!engagement.published} active={filed && !engagement.published} />
