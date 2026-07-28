@@ -433,12 +433,12 @@ export default function StagePublish({
             )}
 
             {/* Mark as submitted — manual fallback (accounts filed outside SMITH) */}
-            <button onClick={submitToCH} disabled={status !== 'approved' || submitting}
+            <button onClick={submitToCH} disabled={submitting}
               className="flex w-full items-center gap-3 rounded-xl border border-black/5 bg-white/60 px-3 py-2.5 text-left transition-colors hover:border-emerald-300 hover:bg-emerald-50/60 disabled:cursor-not-allowed disabled:opacity-45">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">{submitting ? <Loader2 size={15} className="animate-spin" /> : <Landmark size={15} />}</div>
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-semibold text-[var(--text-primary)]">Mark as submitted</p>
-                <p className="text-[11px] text-[var(--text-muted)]">{status === 'approved' ? 'Already filed elsewhere? Record it as filed' : 'Available once the client has approved'}</p>
+                <p className="text-[11px] text-[var(--text-muted)]">Already filed elsewhere? Record it as filed</p>
               </div>
             </button>
           </div>

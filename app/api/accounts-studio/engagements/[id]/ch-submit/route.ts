@@ -108,9 +108,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Average number of employees is not set — enter it in Notes & Disclosures → Employees.' }, { status: 400 });
   }
 
-  if (CH_XMLGW_ENV === 'live' && e.approvalStatus !== 'approved') {
-    return NextResponse.json({ error: 'The client must approve the accounts before they can be filed.' }, { status: 409 });
-  }
+  // Client approval is available but NOT required to file — the accountant can
+  // file directly (approval may happen outside SMITH, or the firm's process
+  // doesn't use it). The "Send for approval" flow remains for those who want it.
 
   // Firm-level filing metadata: an accountant's report means audit-exempt WITH
   // report (else without). Best-effort — defaults to no report on any failure.

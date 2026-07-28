@@ -27,9 +27,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (e.approvalStatus === 'submitted') {
     return NextResponse.json({ engagement: { id: row.id, data: e } });
   }
-  if (e.approvalStatus !== 'approved') {
-    return NextResponse.json({ error: 'The client must approve the accounts before they can be submitted.' }, { status: 409 });
-  }
+  // Client approval is not required — the accountant can record the accounts as
+  // submitted directly (approval may be handled outside SMITH).
 
   const nextData: Engagement = { ...e, approvalStatus: 'submitted', submittedAt: new Date().toISOString(), published: true };
   const { error } = await supabase.from('accounts_studio_engagements')
