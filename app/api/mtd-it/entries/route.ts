@@ -52,6 +52,11 @@ async function withPropertyShares<T extends NewEntry>(
 }
 
 const EntryBase = {
+  // Optional client-minted UUID. The bulk editor generates a row's id up front
+  // so a save can be reconciled without depending on the order Postgres returns
+  // inserted rows (see lib/mtdIt/saveReconcile). Absent on the single-create
+  // POST path, where the DB default fills it in.
+  id:              z.string().uuid().optional(),
   stream:          STREAM,
   trade_id:        z.string().uuid().nullable().optional(),
   property_id:     z.string().uuid().nullable().optional(),
@@ -179,11 +184,18 @@ export async function PUT(req: NextRequest) {
 
   const supabase = createClient();
 
-  // Creates
+  // Creates. Upsert on the client-supplied id rather than a plain insert: an
+  // autosave whose response was lost to the network is retried with the SAME
+  // ids, and an upsert makes that retry idempotent instead of inserting the
+  // rows a second time. Rows without an id (legacy callers) still insert
+  // normally — Postgres fills the default.
   let createdRows: Array<{ id: string }> = [];
   if (creates.length > 0) {
     const rows = await withPropertyShares(supabase, creates.map(c => ({ ...c, quarter_id, manual: c.manual ?? true })));
-    const { data, error } = await supabase.from('mtd_it_entries').insert(rows).select('id');
+    const { data, error } = await supabase
+      .from('mtd_it_entries')
+      .upsert(rows, { onConflict: 'id' })
+      .select('id');
     if (error) {
       console.error('PUT /api/mtd-it/entries createMany', error);
       return NextResponse.json({ error: 'Failed to create entries' }, { status: 500 });

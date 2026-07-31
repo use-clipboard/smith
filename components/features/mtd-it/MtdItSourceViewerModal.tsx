@@ -60,7 +60,11 @@ export default function MtdItSourceViewerModal({ quarterId, fileName, pageNumber
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden"
+        // Definite height, not just a max: a small receipt has a tiny intrinsic
+        // size, so a max-only dialog collapsed to ~20% of the screen and the
+        // document was barely readable. Fixing the height gives the body real
+        // room and lets a small image scale up to fill it.
+        className="bg-white rounded-2xl shadow-xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -105,8 +109,11 @@ export default function MtdItSourceViewerModal({ quarterId, fileName, pageNumber
           )}
           {!loading && !error && signed?.url && kind === 'image' && (
             <div className="h-full flex items-center justify-center p-4">
+              {/* w/h-full + object-contain scales a small receipt UP to fill the
+                  dialog (preserving aspect ratio) instead of leaving it postage-
+                  stamp sized at its natural resolution. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={signed.url} alt={fileName} className="max-w-full max-h-full object-contain" />
+              <img src={signed.url} alt={fileName} className="w-full h-full object-contain" />
             </div>
           )}
           {!loading && !error && signed?.url && kind === 'pdf' && (

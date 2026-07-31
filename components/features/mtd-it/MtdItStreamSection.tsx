@@ -24,7 +24,7 @@
  *     and allocation above it — the bookkeeping input sheets' pattern.
  */
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
   Plus, Trash2, Flag, FlagOff, ChevronDown, ChevronRight,
   Briefcase, House, Globe2, Layers, Eye, ExternalLink, RefreshCw, AlertTriangle,
@@ -76,7 +76,7 @@ export type { EditorEntry };
 // Borderless cell input — the grid draws the lines, the input fills the cell and
 // rings inside it on focus. Same shape the bookkeeping input sheets use.
 const CELL =
-  'w-full text-xs px-2 py-1 border-0 bg-transparent focus:outline-none ' +
+  'w-full text-xs px-2.5 py-2 border-0 bg-transparent focus:outline-none ' +
   'focus:ring-2 focus:ring-inset focus:ring-indigo-500 disabled:text-gray-500';
 const CELL_NUM = `${CELL} text-right tabular-nums`;
 
@@ -127,6 +127,20 @@ function shareForProperty(properties: MtdItProperty[], propertyId: string | null
   return properties.find(p => p.id === propertyId)?.ownership_pct ?? 100;
 }
 
+/** A fresh RFC-4122 UUID for a new row. crypto.randomUUID everywhere it exists
+ *  (all our browsers, over HTTPS); the Math.random fallback only matters for an
+ *  insecure-context dev box and still produces a valid v4 string the DB will
+ *  accept as a primary key. */
+function newRowId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 function emptyEntry(
   stream: MtdItStream,
   type: 'income' | 'expense',
@@ -134,8 +148,14 @@ function emptyEntry(
   opts: { category?: string; inheritFrom?: EditorEntry } = {},
 ): EditorEntry {
   const prev = opts.inheritFrom;
+  // The row owns its DB id from the moment it's created. That's what lets a save
+  // be reconciled by id without waiting to hear one back from the server, and
+  // makes an autosave retry idempotent (upsert on this id) — see
+  // lib/mtdIt/saveReconcile and the entries PUT route.
+  const id = newRowId();
   return {
-    _localId: `tmp_${Math.random().toString(36).slice(2)}_${Date.now()}`,
+    _localId: id,
+    id,
     _isNew: true,
     _dirty: true,
     // Inherit the date and allocation from the row above: on a long sheet
@@ -227,17 +247,31 @@ export default function MtdItStreamSection({
   const net = totalIncome - totalExpense;
 
   const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
+  // Multi-select: a set of _localIds within THIS stream. Selection is per-stream
+  // because the bulk category/allocation options are stream-specific (a UK
+  // rental category can't apply to a sole-trade row).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Filter the grid down to just the flagged rows so a reviewer can work through
+  // them without the clean rows in the way. Complements the pinned Flagged
+  // section (which gathers them without hiding everything else).
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
   // Set when we append a row so we can focus its first cell once it mounts.
-  const pendingFocus = useRef<string | null>(null);
+  // `scroll` decides whether the viewport follows the new row: the header Add
+  // buttons keep it still (so you can add several without the page marching to
+  // the bottom and hiding the buttons); tab-off-end and per-category adds follow
+  // the cursor, since you're already down there filling the row in.
+  const pendingFocus = useRef<{ id: string; scroll: boolean } | null>(null);
 
   useEffect(() => {
-    const id = pendingFocus.current;
-    if (!id) return;
+    const pending = pendingFocus.current;
+    if (!pending) return;
     pendingFocus.current = null;
-    const el = tableRef.current?.querySelector<HTMLInputElement>(`input[data-row-id="${id}"][data-cell="date"]`);
-    el?.focus();
-    el?.select();
+    const el = tableRef.current?.querySelector<HTMLInputElement>(`input[data-row-id="${pending.id}"][data-cell="date"]`);
+    if (!el) return;
+    el.focus({ preventScroll: !pending.scroll });
+    el.select();
+    if (pending.scroll) el.scrollIntoView({ block: 'nearest' });
   }, [entries.length]);
 
   // ── Mutations ────────────────────────────────────────────────────────
@@ -265,10 +299,15 @@ export default function MtdItStreamSection({
     onChange(entries.map(e => e._localId === localId ? { ...e, _deleted: true, _dirty: true } : e));
   }
 
-  function addEntry(type: 'income' | 'expense', category?: string, inheritFrom?: EditorEntry) {
+  function addEntry(
+    type: 'income' | 'expense',
+    category?: string,
+    inheritFrom?: EditorEntry,
+    opts?: { scrollToRow?: boolean },
+  ) {
     pushHistory();
     const fresh = emptyEntry(stream, type, properties, { category, inheritFrom });
-    pendingFocus.current = fresh._localId;
+    pendingFocus.current = { id: fresh._localId, scroll: opts?.scrollToRow ?? true };
     onChange([...entries, fresh]);
     if (category) setOpenCat(p => ({ ...p, [`${type}|${category}`]: true }));
     return fresh;
@@ -294,35 +333,164 @@ export default function MtdItStreamSection({
     if (text.trim() === '' || !parseUkDateStrict(text)) patch(localId, { entry_date: null });
   }
 
-  const groups = useMemo(() => buildGroups(visible, stream, consolidated), [visible, stream, consolidated]);
+  // ── Selection + bulk actions ─────────────────────────────────────────
+  const toggleSelect = (localId: string) =>
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(localId)) next.delete(localId); else next.add(localId);
+      return next;
+    });
 
+  // Selected + still present — the stale-safe set the bulk toolbar acts on (a
+  // deleted row can linger in the selection harmlessly).
+  const selectedVisible = visible.filter(e => selected.has(e._localId));
+  // Select-all tracks what's actually on screen: everything when unfiltered,
+  // just the flagged rows when the Flagged-only filter is on.
+  const shownRows = flaggedOnly ? flagged : visible;
+  const allShownSelected = shownRows.length > 0 && shownRows.every(e => selected.has(e._localId));
+  const toggleSelectAll = () =>
+    setSelected(allShownSelected ? new Set() : new Set(shownRows.map(e => e._localId)));
+  const clearSelection = () => setSelected(new Set());
+
+  /** Map a mutation over the selected, non-deleted rows. */
+  function mutateSelected(fn: (e: EditorEntry) => EditorEntry) {
+    pushHistory();
+    onChange(entries.map(e => (selected.has(e._localId) && !e._deleted ? fn(e) : e)));
+  }
+  function bulkDelete() {
+    mutateSelected(e => ({ ...e, _deleted: true, _dirty: true }));
+    clearSelection();
+  }
+  function bulkFlag(flag: boolean) {
+    mutateSelected(e =>
+      flag
+        ? { ...e, flagged_reason: e.flagged_reason ?? 'Manually flagged for review', flag_dismissed: false, _dirty: true }
+        // Unflag = dismiss, matching the single-row toggle: keep why it was
+        // raised, just stop excluding it.
+        : { ...e, flag_dismissed: true, _dirty: true });
+  }
+  function bulkSetCategory(category: string) {
+    const nextType = typeForCategory(stream, category);
+    mutateSelected(e => ({ ...e, category, ...(nextType ? { entry_type: nextType } : {}), _dirty: true }));
+  }
+  function bulkSetAlloc(v: string) {
+    mutateSelected(e =>
+      stream === 'sole'
+        ? { ...e, trade_id: v || null, _dirty: true }
+        : { ...e, property_id: v || null, share_pct: shareForProperty(properties, v || null), _dirty: true });
+  }
+
+  // Allocation options for the bulk "Set {trade/property}" dropdown — same
+  // source as each row's own allocation select.
+  const allocOptions = stream === 'sole'
+    ? trades.map(t => ({ id: t.id, label: t.name }))
+    : properties
+        .filter(p => p.property_type === (stream === 'uk_rental' ? 'uk' : 'foreign'))
+        .map(p => ({ id: p.id, label: p.address }));
+
+  // What the grid groups show. Not flagged-only: clean rows here, flagged rows
+  // hoisted into the pinned section above. Flagged-only: just the flagged rows,
+  // grouped as usual (the pinned section is redundant then).
+  const rowsForGroups = flaggedOnly ? flagged : clean;
+  const groups = buildGroups(rowsForGroups, stream, consolidated);
+  const FLAGGED_KEY = '__flagged__';
+  const flaggedOpen = openCat[FLAGGED_KEY] ?? true;
+
+  // +1 leading checkbox column on top of the data + actions columns.
   const colCount = 7 + (showShare ? 1 : 0) + (showFx ? 2 : 0) + 1;
+  const fullSpan = colCount + 3;
+
+  const selCount = selectedVisible.length;
 
   return (
-    <section className={`border ${M.border} rounded-xl bg-white shadow-sm overflow-hidden`}>
-      <header className={`flex items-center gap-2 px-3 py-2 ${M.bg}`}>
-        <M.Icon size={15} className={M.accent} />
-        <div className="text-sm font-semibold flex-1 min-w-0 truncate">{M.label}</div>
-        <span className="text-[11px] opacity-70">{visible.length} {visible.length === 1 ? 'entry' : 'entries'}</span>
-        {!readOnly && (
-          <>
-            <Tooltip label="Add income entry">
+    <section className={`border ${M.border} rounded-xl bg-white shadow-sm`}>
+      {/* Header + bulk bar stick together at the top of the scroll area so the
+          Add buttons (and, when a selection is live, the bulk actions) stay
+          reachable however far down a 100+ row list you've scrolled — no more
+          scrolling back to the top to add a line. */}
+      <div className="sticky top-0 z-20 rounded-t-xl overflow-hidden">
+        <header className={`flex items-center gap-2 px-3 py-2 ${M.bg}`}>
+          <M.Icon size={15} className={M.accent} />
+          <div className="text-sm font-semibold flex-1 min-w-0 truncate">{M.label}</div>
+          <span className="text-[11px] opacity-70">{visible.length} {visible.length === 1 ? 'entry' : 'entries'}</span>
+          {flagged.length > 0 && (
+            <Tooltip label={flaggedOnly ? 'Show all entries' : 'Show only flagged entries'}>
               <button
-                onClick={() => addEntry('income')}
-                aria-label="Add income entry"
-                className="inline-flex items-center gap-1 px-2 h-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 text-[11px] font-medium transition-colors shrink-0"
-              ><Plus size={12} strokeWidth={2.5} /> Income</button>
+                onClick={() => setFlaggedOnly(v => !v)}
+                aria-pressed={flaggedOnly}
+                className={`inline-flex items-center gap-1 px-2 h-6 rounded-full text-[11px] font-medium transition-colors shrink-0 ${
+                  flaggedOnly ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                }`}
+              ><Flag size={11} /> {flaggedOnly ? 'Flagged only' : `Flagged · ${flagged.length}`}</button>
             </Tooltip>
-            <Tooltip label="Add expense entry">
-              <button
-                onClick={() => addEntry('expense')}
-                aria-label="Add expense entry"
-                className="inline-flex items-center gap-1 px-2 h-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 text-[11px] font-medium transition-colors shrink-0"
-              ><Plus size={12} strokeWidth={2.5} /> Expense</button>
-            </Tooltip>
-          </>
+          )}
+          {!readOnly && (
+            <>
+              <Tooltip label="Add income entry">
+                <button
+                  onClick={() => addEntry('income', undefined, undefined, { scrollToRow: false })}
+                  aria-label="Add income entry"
+                  className="inline-flex items-center gap-1 px-2 h-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 text-[11px] font-medium transition-colors shrink-0"
+                ><Plus size={12} strokeWidth={2.5} /> Income</button>
+              </Tooltip>
+              <Tooltip label="Add expense entry">
+                <button
+                  onClick={() => addEntry('expense', undefined, undefined, { scrollToRow: false })}
+                  aria-label="Add expense entry"
+                  className="inline-flex items-center gap-1 px-2 h-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 text-[11px] font-medium transition-colors shrink-0"
+                ><Plus size={12} strokeWidth={2.5} /> Expense</button>
+              </Tooltip>
+            </>
+          )}
+        </header>
+
+        {/* Bulk action bar — only while rows are selected. */}
+        {!readOnly && selCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-indigo-50 border-b border-indigo-100 text-xs">
+            <span className="font-semibold text-indigo-800">{selCount} selected</span>
+            <span className="text-indigo-200">|</span>
+            <select
+              aria-label="Set category for selected"
+              value=""
+              onChange={ev => { if (ev.target.value) { bulkSetCategory(ev.target.value); ev.target.value = ''; } }}
+              className="text-xs rounded-md border border-indigo-200 bg-white px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Set category…</option>
+              <optgroup label="Income">
+                {categoriesForStream(stream, 'income').map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
+              <optgroup label="Expense">
+                {categoriesForStream(stream, 'expense').map(c => <option key={c} value={c}>{c}</option>)}
+              </optgroup>
+            </select>
+            <select
+              aria-label={`Set ${M.allocLabel.toLowerCase()} for selected`}
+              value=""
+              onChange={ev => {
+                const v = ev.target.value;
+                ev.target.value = '';
+                if (!v) return;                              // placeholder
+                bulkSetAlloc(v === '__untag__' ? '' : v);    // sentinel → untagged
+              }}
+              className="text-xs rounded-md border border-indigo-200 bg-white px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Set {M.allocLabel.toLowerCase()}…</option>
+              <option value="__untag__">— Untagged —</option>
+              {allocOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+            <button onClick={() => bulkFlag(true)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-amber-700 hover:bg-amber-100">
+              <Flag size={12} /> Flag
+            </button>
+            <button onClick={() => bulkFlag(false)} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-gray-600 hover:bg-gray-100">
+              <FlagOff size={12} /> Clear flag
+            </button>
+            <button onClick={bulkDelete} className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-red-600 hover:bg-red-50">
+              <Trash2 size={12} /> Delete
+            </button>
+            <button onClick={clearSelection} className="ml-auto text-indigo-600 hover:underline">Clear selection</button>
+          </div>
         )}
-      </header>
+      </div>
 
       <div className="grid grid-cols-3 gap-2 px-3 py-2 border-b border-gray-100 text-xs">
         <Total label="Income"  value={totalIncome}  tone="text-green-700" />
@@ -334,12 +502,14 @@ export default function MtdItStreamSection({
         <p className="px-3 py-1.5 text-[11px] text-amber-800 bg-amber-50 border-b border-amber-100">
           <strong>{flagged.length}</strong> flagged {flagged.length === 1 ? 'entry' : 'entries'}
           {' '}(<span className="tabular-nums">{fmtMoney(totalFlagged)}</span>) excluded from the totals above —
-          they&apos;re highlighted in place below. Fix the issue or clear the flag to include them.
+          {flaggedOnly
+            ? ' showing flagged only. Fix the issue or clear the flag to include them.'
+            : ' gathered in the Flagged section below. Fix the issue or clear the flag to include them.'}
         </p>
       )}
 
       {visible.length === 0 ? (
-        <div className="px-4 py-8 flex flex-col items-center gap-2">
+        <div className="px-4 py-8 flex flex-col items-center gap-2 rounded-b-xl">
           <p className="text-xs text-gray-500 italic">No entries yet.</p>
           {!readOnly && (
             <div className="flex gap-2">
@@ -352,11 +522,25 @@ export default function MtdItStreamSection({
             </div>
           )}
         </div>
+      ) : flaggedOnly && flagged.length === 0 ? (
+        <div className="px-4 py-8 text-center text-xs text-gray-500 italic rounded-b-xl">No flagged entries.</div>
       ) : (
-        <div ref={tableRef} className="overflow-x-auto">
+        <div ref={tableRef} className="overflow-x-auto rounded-b-xl">
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-[10px] uppercase tracking-wide text-gray-500">
+                <th className="w-[34px] px-2 py-1.5 text-center">
+                  {!readOnly && (
+                    <input
+                      type="checkbox"
+                      aria-label="Select all entries"
+                      checked={allShownSelected}
+                      ref={el => { if (el) el.indeterminate = selCount > 0 && !allShownSelected; }}
+                      onChange={toggleSelectAll}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 align-middle"
+                    />
+                  )}
+                </th>
                 <Th className="w-[118px]">Date</Th>
                 <Th className="w-[150px]">{M.allocLabel}</Th>
                 <Th className="w-[168px]">Category</Th>
@@ -372,11 +556,63 @@ export default function MtdItStreamSection({
                 <Th className="w-[92px]" />
               </tr>
             </thead>
+
+            {/* Pinned Flagged section — all flagged rows for the stream in one
+                place, so they're not scattered through the categories. Hidden
+                when the Flagged-only filter is on (the whole grid is flagged
+                then, so a separate section would be noise). */}
+            {!flaggedOnly && flagged.length > 0 && (
+              <tbody className="border-b border-amber-100">
+                <tr className="bg-amber-50/80">
+                  <td colSpan={fullSpan} className="px-2 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setOpenCat(p => ({ ...p, [FLAGGED_KEY]: !flaggedOpen }))}
+                        aria-expanded={flaggedOpen}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-800 hover:text-amber-900"
+                      >
+                        {flaggedOpen ? <ChevronDown size={11} className="text-amber-500" /> : <ChevronRight size={11} className="text-amber-500" />}
+                        <Flag size={11} className="text-amber-500" />
+                        Flagged
+                        <span className="text-[10px] text-amber-400">· {flagged.length}</span>
+                      </button>
+                      <span className="ml-auto tabular-nums text-amber-800 font-medium text-[11px]">{fmtMoney(totalFlagged)}</span>
+                    </div>
+                  </td>
+                </tr>
+                {flaggedOpen && flagged.map(e => (
+                  <EntryRow
+                    key={e._localId}
+                    entry={e}
+                    stream={stream}
+                    properties={properties}
+                    trades={trades}
+                    fxRates={fxRates}
+                    showShare={showShare}
+                    showFx={showFx}
+                    readOnly={readOnly}
+                    isLastOfAll={false}
+                    zebra={false}
+                    selected={selected.has(e._localId)}
+                    onToggleSelect={() => toggleSelect(e._localId)}
+                    onPatch={p => patch(e._localId, p)}
+                    onSetCategory={c => setCategory(e._localId, c)}
+                    onDateChange={txt => commitDate(e._localId, txt)}
+                    onDateBlur={txt => blurDate(e._localId, txt)}
+                    onToggleFlag={() => toggleFlag(e._localId)}
+                    onDelete={() => deleteEntry(e._localId)}
+                    onViewSource={onViewSource}
+                    onTabOffEnd={() => addEntry(e.entry_type, e.category, e)}
+                  />
+                ))}
+              </tbody>
+            )}
+
             {groups.map(g => (
               <tbody key={g.key} className="border-b border-gray-100 last:border-b-0">
                 {g.category !== null && (
                   <tr className="bg-gray-50/60">
-                    <td colSpan={colCount + 2} className="px-2 py-1">
+                    <td colSpan={fullSpan} className="px-2 py-1.5">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => setOpenCat(p => ({ ...p, [g.key]: !(p[g.key] ?? true) }))}
@@ -416,6 +652,9 @@ export default function MtdItStreamSection({
                     showFx={showFx}
                     readOnly={readOnly}
                     isLastOfAll={g.isLast && i === g.rows.length - 1}
+                    zebra={i % 2 === 1}
+                    selected={selected.has(e._localId)}
+                    onToggleSelect={() => toggleSelect(e._localId)}
                     onPatch={p => patch(e._localId, p)}
                     onSetCategory={c => setCategory(e._localId, c)}
                     onDateChange={txt => commitDate(e._localId, txt)}
@@ -497,6 +736,11 @@ function EntryRow(props: {
   showFx: boolean;
   readOnly: boolean;
   isLastOfAll: boolean;
+  /** Subtle row striping for readability on long lists. Off for flagged rows
+   *  (they carry their own amber tint). */
+  zebra: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
   previousDate?: string;
   onPatch: (p: Partial<EditorEntry>) => void;
   onSetCategory: (c: string) => void;
@@ -509,7 +753,8 @@ function EntryRow(props: {
 }) {
   const {
     entry: e, stream, properties, trades, fxRates, showShare, showFx, readOnly,
-    isLastOfAll, previousDate, onPatch, onSetCategory, onDateChange, onDateBlur,
+    isLastOfAll, zebra, selected, onToggleSelect, previousDate, onPatch,
+    onSetCategory, onDateChange, onDateBlur,
     onToggleFlag, onDelete, onViewSource, onTabOffEnd,
   } = props;
 
@@ -577,11 +822,25 @@ function EntryRow(props: {
 
   const rowTone = flagReason
     ? 'bg-amber-50/50 border-l-2 border-l-amber-400'
-    : e._isNew ? 'bg-purple-50/30' : '';
+    : e._isNew ? 'bg-purple-50/30'
+    : zebra ? 'bg-gray-50/50' : '';
 
   return (
     <>
-      <tr className={`border-t border-gray-100 ${rowTone}`}>
+      <tr className={`border-t border-gray-100 hover:bg-indigo-50/40 ${selected ? 'ring-1 ring-inset ring-indigo-300' : ''} ${rowTone}`}>
+        <Td>
+          <div className="flex items-center justify-center h-full">
+            {!readOnly && (
+              <input
+                type="checkbox"
+                aria-label="Select entry"
+                checked={selected}
+                onChange={onToggleSelect}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+            )}
+          </div>
+        </Td>
         <Td>
           <DateInput
             value={e._dateText ?? fromIso(e.entry_date ?? '')}

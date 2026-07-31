@@ -604,14 +604,23 @@ export default function MtdItReviewPhase({
       // flag is recomputed from the rows, and the date text is just what's in
       // the input box. (The API's Zod object would strip them anyway; being
       // explicit keeps the payload readable.)
+      //
+      // Note creates KEEP their `id`: new rows are minted with a client-side
+      // UUID (see emptyEntry), so the row owns its DB id before it's ever
+      // inserted. That's what lets the reconciler match rows without depending
+      // on the order Postgres hands ids back — see lib/mtdIt/saveReconcile.
       const creates = snapshot
         .filter(e => e._isNew && !e._deleted)
-        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, _fxAutoKey, id, ...rest }) => rest);
+        .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, _fxAutoKey, ...rest }) => rest);
       const updates = snapshot
         .filter(e => !e._isNew && !e._deleted && e._dirty && e.id)
         .map(({ _localId, _isNew, _dirty, _deleted, _autoFlag, _dateText, _fxAutoKey, ...rest }) => rest);
+      // Only delete rows the server actually holds. A row created and deleted
+      // before its first save is `_isNew` (never inserted) — dropping it from
+      // the editor is enough; sending its id to the delete endpoint would be a
+      // no-op at best.
       const deletes = snapshot
-        .filter(e => e._deleted && !!e.id)
+        .filter(e => e._deleted && !!e.id && !e._isNew)
         .map(e => e.id!);
 
       const res = await fetch('/api/mtd-it/entries', {
@@ -623,10 +632,12 @@ export default function MtdItReviewPhase({
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? 'Save failed');
       }
-      const saveJson = await res.json().catch(() => ({}));
-      // Attach the new ids and clear the dirty flags. Without this a second
-      // save would re-insert every new row — see lib/mtdIt/saveReconcile.
-      setEntries(prev => applySaveResult(prev, snapshot, (saveJson.created_ids ?? []) as string[]));
+      await res.json().catch(() => ({}));
+      // Clear _isNew/_dirty on the rows that were just persisted, keeping any
+      // row the user edited while the request was in flight dirty for the next
+      // save. Without this a second save would re-insert every new row — see
+      // lib/mtdIt/saveReconcile.
+      setEntries(prev => applySaveResult(prev, snapshot));
       setLastSavedAt(Date.now());
 
       // silent: an autosave — persist the entries and nothing else. It must
