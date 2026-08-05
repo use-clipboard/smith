@@ -948,9 +948,15 @@ export default function EmailTriagePage() {
       // Build the Gmail query: combine free-text search and/or unread filter.
       // When using a query we must also preserve the label scope, otherwise Gmail
       // searches everywhere (including archived mail).
-      const hasDbFilter = taskLinkedOnly || allocatedOnly || !!clientFilter || (!!categoryFilter && categoryFilter !== 'untriaged');
-
       const hasTextSearch = !!searchQuery.trim();
+      // A free-text search always runs as a global Gmail query (`q`) and takes
+      // precedence over the DB-backed category/allocation/client filters. Those
+      // filters can't be expressed as a Gmail search, so previously an active
+      // filter (e.g. a triage category card, or Allocated/Client) silently
+      // dropped the typed term and returned the unfiltered filter set — typing
+      // "Associate" found nothing even though Gmail had matches.
+      const hasDbFilter = !hasTextSearch && (taskLinkedOnly || allocatedOnly || !!clientFilter || (!!categoryFilter && categoryFilter !== 'untriaged'));
+
       let q = searchQuery;
       let needsScope = false;
       if (unreadOnly) { q = q ? `${q} is:unread` : 'is:unread'; needsScope = true; }

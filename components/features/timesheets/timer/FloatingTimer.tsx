@@ -1,6 +1,6 @@
 'use client';
 
-import { Pause, Play, Square } from 'lucide-react';
+import { AlertTriangle, Pause, Play, Square, X } from 'lucide-react';
 import { useTimesheets } from '../TimesheetsProvider';
 import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
 
@@ -11,11 +11,26 @@ import { fmtStopwatch, timerElapsedMs } from '@/lib/timesheets/format';
  * others are paused). Renders nothing when no timer is open.
  */
 export default function FloatingTimer() {
-  const { timers, nowMs, pauseTimer, resumeTimer, stopTimer } = useTimesheets();
-  if (timers.length === 0) return null;
+  const { timers, nowMs, pauseTimer, resumeTimer, stopTimer, staleTimerNotice, dismissStaleTimerNotice } = useTimesheets();
+  if (timers.length === 0 && !staleTimerNotice) return null;
 
   return (
     <div className="fixed bottom-4 left-4 z-[70] w-[300px] space-y-2">
+      {staleTimerNotice && (
+        <div className="rounded-[14px] border border-amber-300 bg-amber-50 px-3.5 py-2.5 shadow-[0_16px_48px_rgba(31,38,88,0.18)]">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+            <p className="flex-1 text-[11.5px] leading-snug text-amber-900">{staleTimerNotice}</p>
+            <button
+              onClick={dismissStaleTimerNotice}
+              aria-label="Dismiss"
+              className="shrink-0 rounded-md p-0.5 text-amber-700 hover:bg-amber-100"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        </div>
+      )}
       {timers.map(t => {
         const counting = !t.paused;
         const elapsed = timerElapsedMs(t, nowMs);

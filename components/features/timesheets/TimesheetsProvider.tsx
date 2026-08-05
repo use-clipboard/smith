@@ -14,6 +14,14 @@ const DEFAULT_CAPACITY_HOURS = 37.5;
 const weekKey = (userId: string, weekStart: string) => `${userId}__${weekStart}`;
 // Device-local timer + suggestions (so a running timer survives a refresh).
 const META_PREFIX = 'smith.timesheets.meta.';
+// Heartbeat — the last epoch ms the app was alive with a timer running. Written
+// every second while counting; read on load to tell a genuine refresh apart from
+// a timer left running while SMITH/the PC was closed. See reconcileLoadedTimers.
+const HB_PREFIX = 'smith.timesheets.hb.';
+// A still-"running" timer whose last heartbeat is older than this is treated as
+// stale (the app wasn't open, so the intervening time wasn't worked). Comfortably
+// above the ~60s interval a backgrounded tab's setInterval is throttled to.
+const STALE_TIMER_MS = 2 * 60 * 1000;
 
 interface StartConfig {
   clientId: string | null;
@@ -78,6 +86,11 @@ interface TimesheetsContextValue {
   undoTimer: () => void;
   dismissTimerUndo: () => void;
 
+  /** Set on load when a timer was auto-paused because it had been left running
+   *  while the app/PC was closed — a dismissible notice for the user. */
+  staleTimerNotice: string | null;
+  dismissStaleTimerNotice: () => void;
+
   /** Start a new timer (pauses any running one). No-op when MAX_TIMERS are open. */
   startTimer: (cfg: StartConfig) => void;
   pauseTimer: (id: string) => void;
@@ -102,6 +115,29 @@ interface TimesheetsContextValue {
 }
 
 const tmpTimerId = () => `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/** On load, a timer persisted as `running` keeps counting `now - segmentStartedAt`
+ *  — which silently bills every hour the app/PC was closed. Reconcile against the
+ *  last heartbeat: if the app wasn't alive within STALE_TIMER_MS of `now`, bank
+ *  only the time up to when we last saw it alive and pause the timer, so the user
+ *  decides whether to resume or Stop & log rather than losing/inflating the entry.
+ *  Normal refreshes (a tiny gap) pass through untouched and keep running. When
+ *  there's no heartbeat yet (a timer from before this shipped), fall back to the
+ *  segment's own start so a just-started timer still survives a reload. */
+function reconcileLoadedTimers(
+  list: TimerInstance[], hbTs: number | null, now: number,
+): { timers: TimerInstance[]; pausedCount: number } {
+  let pausedCount = 0;
+  const timers = list.map(t => {
+    if (!t.running || t.paused || !t.segmentStartedAt) return t;
+    const lastAlive = hbTs ?? t.segmentStartedAt;
+    if (now - lastAlive <= STALE_TIMER_MS) return t;
+    pausedCount += 1;
+    const liveMs = Math.max(0, lastAlive - t.segmentStartedAt);
+    return { ...t, paused: true, accumulatedMs: t.accumulatedMs + liveMs, segmentStartedAt: null };
+  });
+  return { timers, pausedCount };
+}
 
 /** Bank a running timer's elapsed time and pause it (no-op if already paused). */
 function pauseInstance(t: TimerInstance): TimerInstance {
@@ -178,6 +214,8 @@ export default function TimesheetsProvider({
   const [timers, setTimers] = useState<TimerInstance[]>([]);
   const [startModalOpen, setStartModalOpen] = useState(false);
   const [timerUndo, setTimerUndo] = useState<{ label: string; expiresAt: number } | null>(null);
+  const [staleTimerNotice, setStaleTimerNotice] = useState<string | null>(null);
+  const dismissStaleTimerNotice = useCallback(() => setStaleTimerNotice(null), []);
   const undoRef = useRef<string | null>(null); // id of the last timer-logged entry (tracks tmp→real swap)
   const pendingDeleteRef = useRef<Set<string>>(new Set()); // tmp ids deleted before their POST resolved
   const lastWrittenRef = useRef<string | null>(null); // last blob this tab persisted (see the storage listener)
@@ -185,6 +223,7 @@ export default function TimesheetsProvider({
   const [now, setNow] = useState(() => Date.now());
 
   const metaKey = `${META_PREFIX}${userId || 'anon'}`;
+  const hbKey = `${HB_PREFIX}${userId || 'anon'}`;
   const meId = userId;
   const isAdmin = userRole === 'admin';
 
@@ -206,11 +245,25 @@ export default function TimesheetsProvider({
       const raw = window.localStorage.getItem(metaKey);
       if (raw) {
         const m = JSON.parse(raw) as { timers?: TimerInstance[]; timer?: TimerState; suggestions?: AiSuggestion[] };
+        let hbTs: number | null = null;
+        try { const h = window.localStorage.getItem(hbKey); if (h) hbTs = Number(h) || null; } catch { /* ignore */ }
+        let restored: TimerInstance[] = [];
         if (Array.isArray(m.timers)) {
-          setTimers(m.timers.slice(0, MAX_TIMERS));
+          restored = m.timers.slice(0, MAX_TIMERS);
         } else if (m.timer && (m.timer.running || m.timer.accumulatedMs > 0)) {
           // Migrate the old single-timer shape into the new array.
-          setTimers([{ ...m.timer, id: tmpTimerId(), label: '', color: TIMER_COLORS[0] }]);
+          restored = [{ ...m.timer, id: tmpTimerId(), label: '', color: TIMER_COLORS[0] }];
+        }
+        // Don't trust a "running" timer's elapsed across an app/PC restart —
+        // pause any that were left running while SMITH was closed (see helper).
+        const { timers: reconciled, pausedCount } = reconcileLoadedTimers(restored, hbTs, Date.now());
+        setTimers(reconciled);
+        if (pausedCount > 0) {
+          setStaleTimerNotice(
+            pausedCount === 1
+              ? 'A timer was left running while SMITH was closed. We paused it and kept the time up to when you last had SMITH open — review it, then Stop & log or resume.'
+              : `${pausedCount} timers were left running while SMITH was closed. We paused them and kept the time up to when you last had SMITH open — review them, then Stop & log or resume.`,
+          );
         }
         if (m.suggestions) setSuggestions(m.suggestions);
       }
@@ -320,9 +373,28 @@ export default function TimesheetsProvider({
   const anyRunning = timers.some(t => t.running && !t.paused);
   useEffect(() => {
     if (!anyRunning) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    // Stamp a heartbeat each tick so a reload can tell "still here" from "the app
+    // was closed and this time wasn't worked" (reconcileLoadedTimers reads it).
+    const stamp = () => { try { window.localStorage.setItem(hbKey, String(Date.now())); } catch { /* quota */ } };
+    stamp();
+    const id = window.setInterval(() => { setNow(Date.now()); stamp(); }, 1000);
     return () => window.clearInterval(id);
-  }, [anyRunning]);
+  }, [anyRunning, hbKey]);
+
+  // Final heartbeat when the tab/PC closes, so the last-alive stamp is as fresh
+  // as possible (an abrupt power-off can't fire this — the 1s tick covers that).
+  useEffect(() => {
+    const onHide = () => {
+      if (!timersRef.current.some(t => t.running && !t.paused)) return;
+      try { window.localStorage.setItem(hbKey, String(Date.now())); } catch { /* quota */ }
+    };
+    window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [hbKey]);
 
   const canAddTimer = timers.length < MAX_TIMERS;
 
@@ -634,7 +706,8 @@ export default function TimesheetsProvider({
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timers, nowMs: now, canAddTimer,
-    timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
+    timerUndo, undoTimer, dismissTimerUndo, staleTimerNotice, dismissStaleTimerNotice,
+    clientBudgets, setClientBudget,
     weekStatuses, refreshWeeks: loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
@@ -643,7 +716,8 @@ export default function TimesheetsProvider({
     ready, userId, meId, isAdmin, hasReports, entries, staff, clients, activities, departments,
     defaultRatePence, dailyTargetHours, roundingMinutes, reloadSettings,
     suggestions, scanning, updateStaffRate, timers, now, canAddTimer,
-    timerUndo, undoTimer, dismissTimerUndo, clientBudgets, setClientBudget,
+    timerUndo, undoTimer, dismissTimerUndo, staleTimerNotice, dismissStaleTimerNotice,
+    clientBudgets, setClientBudget,
     weekStatuses, loadWeeks, weekStatusFor, isWeekLocked, submitWeek, withdrawWeek, reopenWeek, reviewWeek,
     startTimer, pauseTimer, resumeTimer, stopTimer, updateTimerMeta,
     startModalOpen, openStartModal, closeStartModal,
