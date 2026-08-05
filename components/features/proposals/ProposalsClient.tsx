@@ -8,6 +8,7 @@ import {
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import HistoryActions from '@/components/ui/HistoryActions';
+import { useIsAdmin } from '@/lib/useIsAdmin';
 import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import ProposalBuilder from './ProposalBuilder';
 
@@ -90,6 +91,7 @@ export default function ProposalsClient() {
 
 // ── Dashboard ────────────────────────────────────────────────────────────
 function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
+  const isAdmin = useIsAdmin();
   const [proposals, setProposals] = useState<ProposalListRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | ProposalListRow['status']>('all');
@@ -174,7 +176,7 @@ function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <HistoryActions onExport={exportCsv} exportDisabled={filtered.length === 0} />
+          <HistoryActions onExport={exportCsv} exportDisabled={filtered.length === 0} audit={{ tool: 'proposals', isAdmin }} />
           <button onClick={() => setNewOpen(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
             <Plus size={13} /> New proposal
           </button>

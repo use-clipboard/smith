@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2,
+  Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2, ScrollText,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -24,6 +24,8 @@ function TrafficLight({ size = 15 }: { size?: number }) {
 }
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import AuditHistoryModal from '@/components/audit/AuditHistoryModal';
+import { useIsAdmin } from '@/lib/useIsAdmin';
 import MtdItClientRow, { type MtdItColumnKey } from './MtdItClientRow';
 import MtdItHelpModal from './MtdItHelpModal';
 import MtdItHistoryModal from './MtdItHistoryModal';
@@ -110,6 +112,8 @@ const INITIAL_TAX_YEAR = 2026;
 const INITIAL_TAX_YEARS = [2026, 2027, 2028, 2029, 2030];
 
 export default function MtdItDashboard() {
+  const isAdmin = useIsAdmin();
+  const [auditOpen, setAuditOpen] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   // Deep-link from a client page: /mtd-it?expand={clientId}. The matching
@@ -542,7 +546,7 @@ export default function MtdItDashboard() {
           {/* Export to CSV */}
           <Tooltip label="Export view to CSV">
             <button
-              onClick={exportCsv}
+              onClick={() => { exportCsv(); fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool: 'mtd_it', action: 'exported', summary: 'Exported the MTD IT view to CSV' }) }).catch(() => {}); }}
               disabled={filtered.length === 0}
               aria-label="Export view to CSV"
               className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[var(--text-muted)]"
@@ -550,6 +554,18 @@ export default function MtdItDashboard() {
               <Download size={15} />
             </button>
           </Tooltip>
+          {isAdmin && (
+            <Tooltip label="Audit history (admin)">
+              <button
+                onClick={() => setAuditOpen(true)}
+                aria-label="Audit history"
+                className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] transition-colors"
+              >
+                <ScrollText size={15} />
+              </button>
+            </Tooltip>
+          )}
+          {isAdmin && auditOpen && <AuditHistoryModal tool="mtd_it" onClose={() => setAuditOpen(false)} />}
           <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
 
           {/* Column picker */}

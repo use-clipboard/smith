@@ -10,6 +10,7 @@ import { getQuarterDates, taxYearLabel } from '@/lib/mtdIt/quarters';
 import { renderTemplate, buildEmailHtml, formatDateUkForTemplate, formatDateTimeUkForTemplate } from '@/lib/mtdIt/emailTemplates';
 import { ensureMtdItFirmSettings } from '@/lib/mtdIt/firmSettings';
 import { createNotification } from '@/lib/notifications';
+import { logAudit } from '@/lib/audit/log';
 import { resolveNotifyRecipients, type NotifyRecipient } from '@/lib/notifyExtras';
 
 // PUBLIC endpoints (no auth — token is the access).
@@ -172,6 +173,24 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       .update({ status: 'approved', updated_at: now })
       .eq('id', quarter.id)
       .eq('status', 'sent');
+  }
+
+  // ── Audit trail (best-effort) ─────────────────────────────────────────────
+  if (client.firm_id) {
+    const signer = client.name || 'Client';
+    await logAudit({
+      firmId: client.firm_id,
+      tool: 'mtd_it',
+      action: action === 'approve' ? 'client_approved' : 'client_rejected',
+      entityId: quarter.id ?? client.id,
+      entityLabel: client.name,
+      clientId: client.id,
+      actorId: null,
+      actorName: signer,
+      summary: action === 'approve'
+        ? `Approved by ${signer}`
+        : `Changes requested: ${note ?? 'No note provided.'}`,
+    });
   }
 
   // ── Notify the preparer (email via their Gmail + in-app notification), plus

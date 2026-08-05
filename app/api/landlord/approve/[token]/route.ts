@@ -5,6 +5,7 @@ import { getRefreshedGmailClient, buildRawMessage } from '@/lib/gmail';
 import { renderTemplate, buildEmailHtml, formatDateUkForTemplate, formatDateTimeUkForTemplate } from '@/lib/mtdIt/emailTemplates';
 import { ensureLandlordFirmSettings } from '@/lib/landlord/firmSettings';
 import { createNotification } from '@/lib/notifications';
+import { logAudit } from '@/lib/audit/log';
 import { computeRentComputation, type LandlordEntityType } from '@/utils/landlordComputation';
 import { personShareRows, personShareAdjustments } from '@/utils/landlordAllocation';
 import type { LandlordProperty, PropertyOwner, LandlordIncomeTransaction, LandlordExpenseTransaction, LandlordAdjustment } from '@/types';
@@ -179,6 +180,23 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
   const out = (row as unknown as { outputs?: OutputRow }).outputs ?? {};
   const clientName = out.clients?.name ?? out.client_name ?? '';
   const who = row.person_name || clientName;
+
+  // ── Audit trail (best-effort) ────────────────────────────────────────
+  if (out.firm_id) {
+    await logAudit({
+      firmId: out.firm_id,
+      tool: 'landlord_analysis',
+      action: action === 'approve' ? 'client_approved' : 'client_rejected',
+      entityId: row.output_id,
+      entityLabel: clientName,
+      clientId: out.clients?.id,
+      actorId: null,
+      actorName: who || 'Client',
+      summary: action === 'approve'
+        ? `Approved by ${who || 'Client'}`
+        : `Changes requested: ${note ?? 'No note provided.'}`,
+    });
+  }
 
   // ── Notify the preparer (in-app + best-effort email) ─────────────────
   if (row.sent_by) {

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
 import { sendProposalEmail, renderProposalEmail } from '@/lib/email';
 import { getBaseUrl } from '@/lib/getBaseUrl';
+import { logAudit } from '@/lib/audit/log';
 
 // POST /api/proposals/[id]/send
 // Generates a public token (if missing), updates status to 'sent', recomputes
@@ -72,6 +73,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .update(updatePayload)
     .eq('id', params.id);
   if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+
+  // Only a real send flips status → 'sent'; the prepare_only path just stages
+  // the email bytes for Compose, so log the "sent" audit event only then.
+  if (!prepareOnly) {
+    await logAudit({
+      firmId: ctx.firmId,
+      tool: 'proposals',
+      action: 'sent_for_approval',
+      entityId: params.id,
+      entityLabel: proposal.prospect?.company_name ?? proposal.prospect?.contact_name ?? proposal.title,
+      actorId: ctx.userId,
+      summary: 'Sent the proposal to the prospect',
+    });
+  }
 
   // Fetch firm name + sender for the email
   const { data: firm } = await supabase.from('firms').select('name').eq('id', ctx.firmId).maybeSingle();

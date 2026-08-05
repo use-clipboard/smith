@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 const Frequency = z.enum(['one_off','monthly','quarterly','annual']);
 const LineItem = z.object({
@@ -129,7 +130,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
   const supabase = createClient();
+  // Grab the name before the row (and its prospect join) is gone.
+  const { data: existing } = await supabase
+    .from('proposals')
+    .select('title, prospect:proposal_prospects(company_name, contact_name)')
+    .eq('id', params.id)
+    .eq('firm_id', ctx.firmId)
+    .maybeSingle();
   const { error } = await supabase.from('proposals').delete().eq('id', params.id).eq('firm_id', ctx.firmId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  await logAudit({
+    firmId: ctx.firmId,
+    tool: 'proposals',
+    action: 'deleted',
+    entityId: params.id,
+    entityLabel: existing?.prospect?.[0]?.company_name ?? existing?.prospect?.[0]?.contact_name ?? existing?.title ?? null,
+    actorId: ctx.userId,
+    summary: 'Deleted a proposal',
+  });
   return NextResponse.json({ ok: true });
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 const Body = z.object({
   prospect_id: z.string().uuid(),
@@ -72,5 +73,22 @@ export async function POST(req: NextRequest) {
     .select('*')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Resolve the prospect name for the audit label (the inserted row only carries prospect_id).
+  const { data: prospect } = await supabase
+    .from('proposal_prospects')
+    .select('company_name, contact_name')
+    .eq('id', body.prospect_id)
+    .maybeSingle();
+  await logAudit({
+    firmId: ctx.firmId,
+    tool: 'proposals',
+    action: 'created',
+    entityId: data.id,
+    entityLabel: prospect?.company_name ?? prospect?.contact_name ?? data.title,
+    actorId: ctx.userId,
+    summary: 'Created a proposal',
+  });
+
   return NextResponse.json({ proposal: data });
 }
