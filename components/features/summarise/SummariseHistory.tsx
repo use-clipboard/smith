@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
+import { logAuditClient } from '@/utils/auditClient';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import type { OutOfRangeDocument } from '@/types';
 import type { GroupBy } from '@/app/(app)/summarise/page';
@@ -260,6 +263,7 @@ export default function SummariseHistory({ currentUserId, isAdmin, onNew, onOpen
     try {
       const output = await fetchOutput(id);
       await buildAndDownloadWorkbook(output);
+      void logAuditClient({ tool: 'summarise', action: 'downloaded', entityId: id, entityLabel: output.client?.name ?? output.client_name ?? null, summary: 'Downloaded the summary' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
@@ -363,6 +367,27 @@ export default function SummariseHistory({ currentUserId, isAdmin, onNew, onOpen
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', '# Docs', 'Date period', '# Files', 'Source files'];
+    const csvRows = filteredRows.map(row => {
+      const userName = row.user?.full_name ?? row.user?.email ?? 'Unknown';
+      const clientName = row.client?.name ?? row.client_name ?? '';
+      const clientRef = row.client?.client_ref ?? '';
+      const fileCount = row.source_filenames?.length ?? 0;
+      return [
+        formatDate(row.created_at),
+        userName,
+        clientName,
+        clientRef,
+        row.transaction_count ?? '',
+        formatPeriod(row.period_from, row.period_to),
+        fileCount || '',
+        (row.source_filenames ?? []).join('; '),
+      ];
+    });
+    downloadCsv(csvFilename('summarise'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Summarise" icon={FileText} iconColor="#0EA5E9" wide>
 
@@ -440,10 +465,13 @@ export default function SummariseHistory({ currentUserId, isAdmin, onNew, onOpen
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Summary
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'summarise', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Summary
+          </button>
+        </div>
       </div>
 
       {showFilters && (

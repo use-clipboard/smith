@@ -10,8 +10,11 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { exportToCsv } from '@/utils/fileUtils';
+import { logAuditClient } from '@/utils/auditClient';
 import type { TargetSoftware } from '@/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -255,6 +258,13 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
       const dateStr = new Date(output.created_at).toISOString().slice(0, 10);
       const filename = `${output.target_software}_analysis_${dateStr}.csv`;
       exportToCsv(txs, filename, output.target_software);
+      void logAuditClient({
+        tool: 'full_analysis',
+        action: 'downloaded',
+        entityId: id,
+        entityLabel: output.client?.name ?? output.client_name,
+        summary: 'Downloaded the analysis',
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
@@ -435,6 +445,24 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
 
   const hasActiveFilters = !!(software || mineOnly || dateFrom || dateTo);
 
+  // Export the current list (respects search + filters) to CSV.
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Mode', '# Tx', 'Period from', 'Period to', '# Files', 'Source files'];
+    const csvRows = filteredRows.map(r => [
+      formatDate(r.created_at),
+      r.user?.full_name ?? r.user?.email ?? '',
+      r.client?.name ?? r.client_name ?? '',
+      r.client?.client_ref ?? '',
+      SOFTWARE_LABELS[r.target_software] ?? r.target_software,
+      r.transaction_count ?? 0,
+      r.period_from ?? '',
+      r.period_to ?? '',
+      r.source_filenames?.length ?? 0,
+      (r.source_filenames ?? []).join('; '),
+    ]);
+    downloadCsv(csvFilename('full_analysis'), headers, csvRows);
+  };
+
   // ── Render ──────────────────────────────────────────────────────────────
   return (
     <ToolLayout title="Capture" icon={FileSearch} wide>
@@ -528,14 +556,17 @@ export default function FullAnalysisHistory({ currentUserId, isAdmin, onNew, onO
           )}
         </div>
 
-        {/* New Analysis CTA */}
-        <button
-          onClick={onNew}
-          className="btn-primary inline-flex items-center gap-2"
-        >
-          <Plus size={14} />
-          New Analysis
-        </button>
+        {/* Export + audit, then New Analysis CTA */}
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'full_analysis', isAdmin }} />
+          <button
+            onClick={onNew}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            <Plus size={14} />
+            New Analysis
+          </button>
+        </div>
       </div>
 
       {/* Filter panel */}

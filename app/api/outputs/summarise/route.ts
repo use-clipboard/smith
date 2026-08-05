@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 const SaveSchema = z.object({
   clientId: z.string().uuid().nullable().optional(),
@@ -56,6 +57,17 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/outputs/summarise]', error);
     return NextResponse.json({ error: 'Failed to save summary' }, { status: 500 });
   }
+
+  await logAudit({
+    firmId: ctx.firmId,
+    tool: 'summarise',
+    action: 'created',
+    entityId: data.id,
+    entityLabel: body.clientName ?? null,
+    clientId: body.clientId ?? null,
+    actorId: ctx.userId,
+    summary: 'Created a summary',
+  });
 
   return NextResponse.json({ id: data.id });
 }

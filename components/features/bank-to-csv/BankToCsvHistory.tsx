@@ -9,6 +9,9 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv as downloadCsvRows, csvFilename } from '@/utils/exportToCsv';
+import { logAuditClient } from '@/utils/auditClient';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { exportToCsv } from '@/utils/fileUtils';
 import type { BankCsvTransaction } from '@/types';
@@ -184,6 +187,7 @@ export default function BankToCsvHistory({ currentUserId, isAdmin, onNew, onOpen
       if (!res.ok) throw new Error('Failed to fetch analysis');
       const { output } = await res.json();
       downloadCsv(output);
+      void logAuditClient({ tool: 'bank_to_csv', action: 'downloaded', entityId: id, entityLabel: output.client?.name ?? output.client_name ?? null, summary: 'Downloaded the CSV' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
@@ -291,6 +295,19 @@ export default function BankToCsvHistory({ currentUserId, isAdmin, onNew, onOpen
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', '# Tx', '# Files', 'Source file'];
+    const csvRows = filteredRows.map(row => {
+      const userName = row.user?.full_name ?? row.user?.email ?? 'Unknown';
+      const clientName = row.client?.name ?? row.client_name ?? '';
+      const clientRef = row.client?.client_ref ?? '';
+      const fileCount = row.source_filenames?.length ?? 0;
+      const sourceFile = row.source_filenames?.[0] ?? '';
+      return [formatDate(row.created_at), userName, clientName, clientRef, row.transaction_count ?? '', fileCount, sourceFile];
+    });
+    downloadCsvRows(csvFilename('bank_to_csv'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Bank to CSV" icon={ArrowLeftRight} iconColor="#0891B2" wide>
 
@@ -369,10 +386,13 @@ export default function BankToCsvHistory({ currentUserId, isAdmin, onNew, onOpen
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'bank_to_csv', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New
+          </button>
+        </div>
       </div>
 
       {showFilters && (
