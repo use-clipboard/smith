@@ -988,12 +988,15 @@ export default function EmailTriagePage() {
       }
       // Task-linked / allocated / client / category filters bypass Gmail and pull
       // from our DB tables (inbox-wide); sender/time post-filter that set server-side.
+      // Gated entirely on hasDbFilter so a free-text search (which forces
+      // hasDbFilter false) sends NO DB params and takes the global Gmail q path —
+      // otherwise these pushes fire off the raw flags and re-drop the search term.
       const dbFilterParams: string[] = [];
-      if (taskLinkedOnly) dbFilterParams.push('taskLinkedOnly=true');
-      if (allocatedOnly) dbFilterParams.push('allocatedOnly=true');
-      if (clientFilter) dbFilterParams.push(`clientId=${encodeURIComponent(clientFilter.id)}`);
-      if (categoryFilter && categoryFilter !== 'untriaged') dbFilterParams.push(`category=${categoryFilter}`);
       if (hasDbFilter) {
+        if (taskLinkedOnly) dbFilterParams.push('taskLinkedOnly=true');
+        if (allocatedOnly) dbFilterParams.push('allocatedOnly=true');
+        if (clientFilter) dbFilterParams.push(`clientId=${encodeURIComponent(clientFilter.id)}`);
+        if (categoryFilter && categoryFilter !== 'untriaged') dbFilterParams.push(`category=${categoryFilter}`);
         if (senderFilter) dbFilterParams.push(`sender=${encodeURIComponent(senderFilter)}`);
         if (timeFilter !== 'all') dbFilterParams.push(`time=${timeFilter}`);
       }
