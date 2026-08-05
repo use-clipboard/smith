@@ -6,6 +6,8 @@ import { getHmrcConnection, hmrcRequest, hmrcErrorMessage, type HmrcConnection }
 import { buildFraudHeaders, resolveVendorPublicIp, type ClientFraudData } from '@/lib/hmrc/fraudHeaders';
 import { normaliseNino } from '@/lib/hmrc/mtdItServer';
 import { computeFilingUnits, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
+import { taxYearLabel } from '@/lib/mtdIt/quarters';
+import { logAudit } from '@/lib/audit/log';
 import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
 import type { MtdItQuarterType } from '@/types';
 
@@ -180,6 +182,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .update({ status: 'submitted', submitted_at: submittedIso, updated_at: submittedIso })
       .eq('id', quarter.id);
     quarterStatus = 'submitted';
+  }
+
+  // Audit the filing whenever at least one stream was actually sent to HMRC.
+  if (submitted > 0) {
+    await logAudit({
+      firmId: ctx.firmId, tool: 'mtd_it', action: 'submitted',
+      entityId: quarter.id as string, entityLabel: (client.name as string) ?? null, clientId: client.id as string,
+      actorId: ctx.userId,
+      summary: `Submitted Q${quarter.quarter} ${taxYearLabel(quarter.tax_year as number)} to HMRC — ${submitted} stream${submitted === 1 ? '' : 's'} filed${errors ? `, ${errors} error${errors === 1 ? '' : 's'}` : ''}${skipped ? `, ${skipped} skipped` : ''}`,
+    });
   }
 
   return NextResponse.json({ results, submitted, errors, skipped, quarterStatus });

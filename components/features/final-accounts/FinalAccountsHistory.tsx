@@ -14,6 +14,7 @@ import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generateReportHtml } from '@/utils/finalAccountsReport';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
+import { logAuditClient } from '@/utils/auditClient';
 import type { ReviewPoint, WorkingPaper, ReviewStatusEvent } from '@/types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -261,6 +262,13 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
     try {
       const output = await fetchOutput(id);
       await buildAndDownloadPdf(output);
+      void logAuditClient({
+        tool: 'final_accounts_review',
+        action: 'downloaded',
+        entityId: id,
+        entityLabel: output.client?.name ?? output.client_name ?? undefined,
+        summary: 'Downloaded the pack',
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {

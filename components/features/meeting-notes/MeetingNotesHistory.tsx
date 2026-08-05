@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
 import HistoryActions from '@/components/ui/HistoryActions';
 import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
+import { logAuditClient } from '@/utils/auditClient';
 import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import type { MeetingNotesSeed } from './MeetingNotesClient';
 
@@ -307,6 +308,7 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
     try {
       const output = await fetchOutput(id);
       await downloadPdf(output);
+      logAuditClient({ tool: 'meeting_notes', action: 'downloaded', entityId: id, summary: 'Downloaded the meeting notes' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {

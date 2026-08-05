@@ -14,6 +14,7 @@ import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { computePersonBreakdown } from '@/utils/landlordAllocation';
+import { logAuditClient } from '@/utils/auditClient';
 import type { LandlordEntityType } from '@/utils/landlordComputation';
 import type { LandlordPersonSettings } from '@/lib/landlord/landlordPackHtml';
 import type { LandlordApprovalStatus } from '@/app/api/landlord/approval-status/route';
@@ -413,6 +414,13 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
       const clientId = (output.client_id as string | null) ?? output.client?.id ?? null;
       const register = clientId ? await fetchRegister(clientId) : [];
       downloadWorkbook(output, register);
+      void logAuditClient({
+        tool: 'landlord_analysis',
+        action: 'downloaded',
+        entityId: id,
+        entityLabel: output.client?.name ?? output.client_name,
+        summary: 'Downloaded the pack',
+      });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {

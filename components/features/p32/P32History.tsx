@@ -12,6 +12,7 @@ import Tooltip from '@/components/ui/Tooltip';
 import HistoryActions from '@/components/ui/HistoryActions';
 import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
+import { logAuditClient } from '@/utils/auditClient';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export interface HistoryUser { id: string; full_name: string | null; email: string }
@@ -214,6 +215,7 @@ export default function P32History({ currentUserId, isAdmin, onNew, onOpen }: Pr
     setBusyId(id);
     try {
       await downloadOutputAsTxt(id);
+      void logAuditClient({ tool: 'p32_summary', action: 'downloaded', entityId: id, summary: 'Downloaded the P32 summary' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {

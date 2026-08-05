@@ -14,6 +14,7 @@ import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generateRiskReportHtml } from '@/utils/riskAssessmentReport';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
+import { logAuditClient } from '@/utils/auditClient';
 import type { RiskAssessmentReport } from '@/types';
 
 const CLIENT_TYPE_LABELS: Record<string, string> = {
@@ -199,6 +200,7 @@ export default function RiskAssessmentHistory({ currentUserId, isAdmin, onNew, o
     try {
       const output = await fetchOutput(id);
       await buildAndDownloadPdf(output);
+      void logAuditClient({ tool: 'risk_assessment', action: 'downloaded', entityId: id, entityLabel: output.client?.name ?? output.client_name ?? undefined, summary: 'Downloaded the risk assessment' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {

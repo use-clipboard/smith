@@ -13,6 +13,7 @@ import { initials, avatarColour } from '@/components/features/tasks/StepComments
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
 import HistoryActions from '@/components/ui/HistoryActions';
 import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
+import { logAuditClient } from '@/utils/auditClient';
 
 // ── Section catalog (kept in sync with PERFORMANCE_SECTIONS in /app/(app)/performance/page.tsx) ──
 const SECTION_LABELS: Record<string, string> = {
@@ -293,6 +294,7 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
     try {
       const output = await fetchOutput(id);
       await buildAndDownloadPdf(output);
+      logAuditClient({ tool: 'performance_analysis', action: 'downloaded', entityId: id, summary: 'Downloaded the performance report' });
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Download failed');
     } finally {
