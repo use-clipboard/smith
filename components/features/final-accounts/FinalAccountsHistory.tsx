@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generateReportHtml } from '@/utils/finalAccountsReport';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
@@ -373,6 +375,22 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  // Export the current list (respects search + filters) to CSV.
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Type', 'Year-end', 'Review pts', '# Files'];
+    const csvRows = filteredRows.map(r => [
+      formatDate(r.created_at),
+      r.user?.full_name ?? r.user?.email ?? '',
+      r.client?.name ?? r.client_name ?? '',
+      r.client?.client_ref ?? '',
+      formatBusinessType(r.target_software),
+      formatPeriod(r.period_from, r.period_to),
+      r.transaction_count ?? '',
+      r.source_filenames?.length ?? 0,
+    ]);
+    downloadCsv(csvFilename('accounts_reviews'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Final Accounts Review" icon={ClipboardCheck} iconColor="#7C3AED" wide>
 
@@ -451,10 +469,13 @@ export default function FinalAccountsHistory({ currentUserId, isAdmin, onNew, on
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Review
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'final_accounts_review', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Review
+          </button>
+        </div>
       </div>
 
       {showFilters && (

@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import ProposalBuilder from './ProposalBuilder';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -123,6 +125,21 @@ function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
     return { total, draft, sent, accepted, declined, acceptanceRate };
   }, [proposals]);
 
+  function exportCsv() {
+    const headers = ['Prospect', 'Company', 'Title', 'Status', 'Monthly', 'One-off', 'Created', 'Decided'];
+    const csvRows = filtered.map(p => [
+      p.prospect?.contact_name ?? '',
+      p.prospect?.company_name ?? '',
+      p.title,
+      p.status,
+      p.total_monthly > 0 ? Number(p.total_monthly).toFixed(2) : '',
+      p.total_one_off > 0 ? Number(p.total_one_off).toFixed(2) : '',
+      fmt(p.created_at),
+      p.decided_at ? fmt(p.decided_at) : '',
+    ]);
+    downloadCsv(csvFilename('proposals'), headers, csvRows);
+  }
+
   return (
     <div className="space-y-5">
       {/* Stats strip */}
@@ -156,9 +173,12 @@ function Dashboard({ onOpen }: { onOpen: (id: string) => void }) {
             </select>
           </div>
         </div>
-        <button onClick={() => setNewOpen(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
-          <Plus size={13} /> New proposal
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filtered.length === 0} />
+          <button onClick={() => setNewOpen(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
+            <Plus size={13} /> New proposal
+          </button>
+        </div>
       </div>
 
       {loading ? (

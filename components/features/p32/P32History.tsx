@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -309,6 +311,18 @@ export default function P32History({ currentUserId, isAdmin, onNew, onOpen }: Pr
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Source file'];
+    const csvRows = filteredRows.map(row => {
+      const userName = row.user?.full_name ?? row.user?.email ?? 'Unknown';
+      const clientName = row.client?.name ?? row.client_name ?? '';
+      const clientRef = row.client?.client_ref ?? '';
+      const sourceFile = row.source_filenames?.[0] ?? '';
+      return [formatDate(row.created_at), userName, clientName, clientRef, sourceFile];
+    });
+    downloadCsv(csvFilename('p32_summaries'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="P32 Summary" icon={Receipt} iconColor="#CA8A04" wide>
 
@@ -386,10 +400,13 @@ export default function P32History({ currentUserId, isAdmin, onNew, onOpen }: Pr
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Summary
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'p32_summary', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Summary
+          </button>
+        </div>
       </div>
 
       {showFilters && (

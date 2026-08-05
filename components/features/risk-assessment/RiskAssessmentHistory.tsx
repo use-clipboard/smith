@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generateRiskReportHtml } from '@/utils/riskAssessmentReport';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
@@ -324,6 +326,29 @@ export default function RiskAssessmentHistory({ currentUserId, isAdmin, onNew, o
 
   const hasActiveFilters = !!(mineOnly || riskFilter || dateFrom || dateTo);
 
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Client type', 'Overall risk level', '# Questions'];
+    const csvRows = filteredRows.map(row => {
+      const userName = row.user?.full_name ?? row.user?.email ?? 'Unknown';
+      const clientName = row.client?.name ?? row.client_name ?? '';
+      const clientRef = row.client?.client_ref ?? '';
+      const clientType = row.client?.business_type
+        ? (CLIENT_TYPE_LABELS[row.client.business_type] ?? row.client.business_type)
+        : '';
+      const risk = row.target_software ?? '';
+      return [
+        formatDate(row.created_at),
+        userName,
+        clientName,
+        clientRef,
+        clientType,
+        risk,
+        row.transaction_count ?? '',
+      ];
+    });
+    downloadCsv(csvFilename('risk_assessments'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Risk Assessment" icon={ShieldAlert} iconColor="#DC2626" wide>
 
@@ -401,10 +426,13 @@ export default function RiskAssessmentHistory({ currentUserId, isAdmin, onNew, o
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Assessment
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'risk_assessment', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Assessment
+          </button>
+        </div>
       </div>
 
       {showFilters && (

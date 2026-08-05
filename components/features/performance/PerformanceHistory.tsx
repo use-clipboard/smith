@@ -11,6 +11,8 @@ import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { generatePdfBlob, downloadBlob } from '@/utils/pdfFromHtml';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 
 // ── Section catalog (kept in sync with PERFORMANCE_SECTIONS in /app/(app)/performance/page.tsx) ──
 const SECTION_LABELS: Record<string, string> = {
@@ -402,6 +404,22 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  // Export the current list (respects search + filters) to CSV.
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Period', 'Period covered', '# Sections', '# Files'];
+    const csvRows = filteredRows.map(r => [
+      formatDate(r.created_at),
+      r.user?.full_name ?? r.user?.email ?? '',
+      r.client?.name ?? r.client_name ?? '',
+      r.client?.client_ref ?? '',
+      r.target_software ? (PERIOD_LABELS[r.target_software] ?? r.target_software) : '',
+      rowDetail[r.id]?.periodDesc ?? '',
+      r.transaction_count ?? '',
+      r.source_filenames?.length ?? 0,
+    ]);
+    downloadCsv(csvFilename('performance_reports'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Performance Analysis" icon={Gauge} iconColor="#059669" wide>
 
@@ -479,10 +497,13 @@ export default function PerformanceHistory({ currentUserId, isAdmin, onNew, onOp
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Report
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'performance_analysis', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Report
+          </button>
+        </div>
       </div>
 
       {showFilters && (

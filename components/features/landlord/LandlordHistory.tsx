@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
 import Tooltip from '@/components/ui/Tooltip';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import { initials, avatarColour } from '@/components/features/tasks/StepComments';
 import { exportLandlordWorkbook, isInRange } from '@/utils/landlordExport';
 import { computePersonBreakdown } from '@/utils/landlordAllocation';
@@ -536,6 +538,23 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
 
   const hasActiveFilters = !!(mineOnly || dateFrom || dateTo);
 
+  // Export the current list (respects search + filters) to CSV.
+  const exportCsv = () => {
+    const headers = ['Date', 'User', 'Client', 'Client ref', 'Status', '# Transactions', 'Period from', 'Period to', '# Files'];
+    const csvRows = filteredRows.map(r => [
+      formatDate(r.created_at),
+      r.user?.full_name ?? r.user?.email ?? '',
+      r.client?.name ?? r.client_name ?? '',
+      r.client?.client_ref ?? '',
+      statuses[r.id] ? STATUS_META[statuses[r.id]].label : '',
+      r.transaction_count ?? '',
+      r.period_from ?? '',
+      r.period_to ?? '',
+      r.source_filenames?.length ?? 0,
+    ]);
+    downloadCsv(csvFilename('landlord_analyses'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Landlord Analysis" icon={House} iconColor="#D97706" wide>
 
@@ -615,10 +634,13 @@ export default function LandlordHistory({ currentUserId, isAdmin, onNew, onOpen 
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Analysis
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'landlord_analysis', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Analysis
+          </button>
+        </div>
       </div>
 
       {showFilters && (

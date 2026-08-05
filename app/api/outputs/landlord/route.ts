@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 const PersonSettingsSchema = z.object({
   entityType: z.enum(['individual', 'company']).default('individual'),
@@ -104,6 +105,12 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/outputs/landlord]', error);
     return NextResponse.json({ error: 'Failed to save analysis' }, { status: 500 });
   }
+
+  await logAudit({
+    firmId: ctx.firmId, tool: 'landlord_analysis', action: 'created',
+    entityId: data.id, entityLabel: body.clientName ?? null, clientId: body.clientId ?? null,
+    actorId: ctx.userId, summary: 'Created a landlord analysis',
+  });
 
   return NextResponse.json({ id: data.id });
 }

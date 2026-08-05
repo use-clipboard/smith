@@ -13,6 +13,8 @@ import { initials, avatarColour } from '@/components/features/tasks/StepComments
 import { useModules } from '@/components/ui/ModulesProvider';
 import { useRouter } from 'next/navigation';
 import QuickTaskModal from '@/components/features/tasks/QuickTaskModal';
+import HistoryActions from '@/components/ui/HistoryActions';
+import { downloadCsv, csvFilename } from '@/utils/exportToCsv';
 import type { CreateTaskData } from '@/components/features/tasks/CreateTaskModal';
 import type { MeetingNotesSeed } from './MeetingNotesClient';
 
@@ -451,6 +453,26 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
 
   const hasActiveFilters = !!(mineOnly || originFilter || dateFrom || dateTo);
 
+  // Export the same filtered rows the table renders below. Columns mirror the
+  // visible table columns (meeting title/location live in result_data and are
+  // only loaded on row-expand, so they're intentionally omitted here).
+  const exportCsv = () => {
+    const headers = ['Saved', 'User', 'Client', 'Client Ref', 'Type', 'Meeting date', '# Actions'];
+    const csvRows = filteredRows.map(r => {
+      const origin = r.target_software ?? '';
+      return [
+        formatSavedDate(r.created_at),
+        r.user?.full_name ?? r.user?.email ?? '',
+        r.client?.name ?? r.client_name ?? '',
+        r.client?.client_ref ?? '',
+        origin ? (ORIGIN_LABELS[origin] ?? origin) : '',
+        formatMeetingDate(r.period_from),
+        r.transaction_count ?? '',
+      ];
+    });
+    downloadCsv(csvFilename('meeting_notes'), headers, csvRows);
+  };
+
   return (
     <ToolLayout title="Meeting Notes" icon={ClipboardList} iconColor="#6D28D9" wide>
 
@@ -528,10 +550,13 @@ export default function MeetingNotesHistory({ currentUserId, isAdmin, onNew, onO
           )}
         </div>
 
-        <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
-          <Plus size={14} />
-          New Meeting
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <HistoryActions onExport={exportCsv} exportDisabled={filteredRows.length === 0} audit={{ tool: 'meeting_notes', isAdmin }} />
+          <button onClick={onNew} className="btn-primary inline-flex items-center gap-2">
+            <Plus size={14} />
+            New Meeting
+          </button>
+        </div>
       </div>
 
       {showFilters && (

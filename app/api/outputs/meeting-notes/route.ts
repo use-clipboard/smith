@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 const ActionItemSchema = z.object({ action: z.string(), owner: z.string(), deadline: z.string() });
 
@@ -87,6 +88,17 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/outputs/meeting-notes]', error);
     return NextResponse.json({ error: 'Failed to save meeting notes' }, { status: 500 });
   }
+
+  await logAudit({
+    firmId: ctx.firmId,
+    tool: 'meeting_notes',
+    action: 'created',
+    entityId: data.id,
+    entityLabel: body.clientName ?? body.meetingTitle ?? null,
+    clientId: body.clientId ?? null,
+    actorId: ctx.userId,
+    summary: 'Created meeting notes',
+  });
 
   return NextResponse.json({ id: data.id });
 }

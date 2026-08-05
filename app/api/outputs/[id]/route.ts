@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { getUserContext } from '@/lib/getUserContext';
+import { logAudit } from '@/lib/audit/log';
 
 // GET /api/outputs/[id] — fetch a single output incl. result_data (for download / open)
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -35,10 +36,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const supabase = createClient();
 
-  // Fetch the row to check ownership / firm
+  // Fetch the row to check ownership / firm (+ feature + name for the audit log)
   const { data: row, error: fetchErr } = await supabase
     .from('outputs')
-    .select('id, user_id, firm_id, client_id')
+    .select('id, user_id, firm_id, client_id, feature, client_name')
     .eq('id', params.id)
     .maybeSingle();
 
@@ -59,6 +60,18 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     console.error('[DELETE /api/outputs/:id]', delErr);
     return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
   }
+
+  // Audit — keyed by the output's feature (= the tool discriminator).
+  await logAudit({
+    firmId: row.firm_id as string,
+    tool: (row.feature as string) || 'output',
+    action: 'deleted',
+    entityId: params.id,
+    entityLabel: (row.client_name as string | null) ?? null,
+    clientId: (row.client_id as string | null) ?? null,
+    actorId: ctx.userId,
+    summary: `Deleted ${(row.client_name as string | null) || 'a saved record'}`,
+  });
 
   return NextResponse.json({ ok: true });
 }
