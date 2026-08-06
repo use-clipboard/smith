@@ -8,7 +8,8 @@ import { normaliseNino } from '@/lib/hmrc/mtdItServer';
 import { computeFilingUnits, type TypeOfBusiness } from '@/lib/mtdIt/computeUpdate';
 import { taxYearLabel } from '@/lib/mtdIt/quarters';
 import { logAudit } from '@/lib/audit/log';
-import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
+import { buildSelfEmploymentCumulativeBody, buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, buildForeignPropertyByIdCumulativeBody, foreignCumulativeUsesPropertyId, cumulativePath, cumulativeApiVersion, hmrcTaxYear } from '@/lib/mtdIt/hmrcBody';
+import { ensureForeignPropertyIds } from '@/lib/mtdIt/foreignProperties';
 import type { MtdItQuarterType } from '@/types';
 
 // ── POST /api/mtd-it/quarters/[id]/submit ────────────────────────────────────
@@ -135,10 +136,44 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       payload = buildSelfEmploymentCumulativeBody({ ...unit.figures, periodStartDate, periodEndDate }, Boolean(body.useConsolidated));
     } else if (unit.typeOfBusiness === 'uk-property') {
       payload = buildUkPropertyCumulativeBody({ ...unit.figures, periodStartDate, periodEndDate }, Boolean(body.useConsolidated));
+    } else if (foreignCumulativeUsesPropertyId(quarter.tax_year as number)) {
+      // Foreign property, TY 2026-27+ (def2): keyed by HMRC propertyId. Resolve
+      // or create an HMRC propertyId for each foreign property, then file per
+      // property. The envelope is isolated in hmrcBody.ts.
+      const splits = unit.foreignProperties ?? [];
+      if (splits.length === 0) {
+        results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'No foreign property to file.' });
+        continue;
+      }
+      // Cached HMRC per-property ids (best-effort; the column may not exist yet).
+      let cachedIds = new Map<string, string | null>();
+      try {
+        const { data: idRows } = await service.from('mtd_it_properties').select('id, hmrc_property_id').in('id', splits.map(s => s.smithPropertyId));
+        cachedIds = new Map((idRows ?? []).map(r => [r.id as string, (r.hmrc_property_id as string | null) ?? null]));
+      } catch { /* column missing → resolve fresh via list/create */ }
+      const { map: idMap, errors: idErrors } = await ensureForeignPropertyIds(
+        service, conn, nino, unit.businessId, taxYearStr,
+        splits.map(s => ({ id: s.smithPropertyId, address: s.address, country: s.country, hmrcPropertyId: cachedIds.get(s.smithPropertyId) ?? null })),
+        fraudHeaders, body.testScenario || undefined,
+      );
+      if (idErrors.length > 0) {
+        results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: `Couldn't set up the foreign property at HMRC: ${idErrors[0].reason}` });
+        continue;
+      }
+      const entries = splits
+        .map(s => {
+          const propertyId = idMap.get(s.smithPropertyId);
+          return propertyId ? { propertyId, income: s.income, expensesByField: s.expensesByField, consolidatedExpenses: s.consolidatedExpenses, residentialFinanceCost: s.residentialFinanceCost, residentialFinanceCostBroughtFwd: s.residentialFinanceCostBroughtFwd } : null;
+        })
+        .filter((e): e is NonNullable<typeof e> => e !== null);
+      if (entries.length === 0) {
+        results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'No foreign property could be linked to HMRC.' });
+        continue;
+      }
+      payload = buildForeignPropertyByIdCumulativeBody(periodStartDate, periodEndDate, entries, Boolean(body.useConsolidated));
     } else {
-      // Foreign — drop any country we couldn't resolve (never file a blank code).
-      // NOTE: the foreign cumulative envelope is isolated in hmrcBody.ts and
-      // should be verified against the HMRC sandbox before live use.
+      // Foreign property, TY 2025-26 (def1): keyed by countryCode. Drop any
+      // country we couldn't resolve (never file a blank code).
       const countries = (unit.foreignCountries ?? []).filter(c => c.countryCode) as Array<{ countryCode: string; income: number; expensesByField: Record<string, number>; consolidatedExpenses: number; residentialFinanceCost: number; residentialFinanceCostBroughtFwd: number }>;
       if (countries.length === 0) {
         results.push({ name: unit.name, typeOfBusiness: unit.typeOfBusiness, status: 'skipped', reason: 'Set a valid country (e.g. "France" or "FRA") on the foreign property before filing.' });

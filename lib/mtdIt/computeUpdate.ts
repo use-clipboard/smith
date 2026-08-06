@@ -259,13 +259,27 @@ export interface ForeignCountrySplit {
   residentialFinanceCostBroughtFwd: number;
 }
 
+/** Per-property foreign split (for TY 2026-27+ def2, keyed by HMRC propertyId
+ *  resolved at submit time from `smithPropertyId`). */
+export interface ForeignPropertySplit {
+  smithPropertyId: string;   // mtd_it_properties.id
+  address: string;
+  country: string | null;
+  income: number;
+  expensesByField: Record<string, number>;
+  consolidatedExpenses: number;
+  residentialFinanceCost: number;
+  residentialFinanceCostBroughtFwd: number;
+}
+
 export interface FilingUnit {
   typeOfBusiness: TypeOfBusiness;
   businessId: string | null;
   name: string;
   figures: CumulativeResult;        // aggregated totals for this unit
   sourceIds: string[];              // the trade/property ids that compose it
-  foreignCountries?: ForeignCountrySplit[]; // foreign-property only
+  foreignCountries?: ForeignCountrySplit[];   // foreign-property, def1 (TY 2025-26)
+  foreignProperties?: ForeignPropertySplit[]; // foreign-property, def2 (TY 2026-27+)
 }
 
 interface FilingTrade { id: string; name: string; hmrcBusinessId: string | null }
@@ -394,10 +408,37 @@ export async function computeFilingUnits(
       if (anyUnresolved) figures.warnings.push('A foreign property has an unrecognised country — fix it before filing.');
     }
 
+    // Per-property splits for TY 2026-27+ (def2): HMRC keys the foreign body by
+    // propertyId, so each property files its own figures. Computed independently
+    // of the country logic above; the propertyId is resolved at submit time.
+    const foreignProperties: ForeignPropertySplit[] = [];
+    let ppIncome = 0, ppExpense = 0, ppResiFinance = 0;
+    for (const p of fg) {
+      const src: BusinessSource = { kind: 'property', id: p.id, hmrcBusinessId: businessId, typeOfBusiness: 'foreign-property', name: p.address };
+      const fig = await computeMtdItCumulative(supabase, { ...base, source: src });
+      ppIncome += fig.income; ppExpense += fig.consolidatedExpenses; ppResiFinance += fig.residentialFinanceCost;
+      foreignProperties.push({
+        smithPropertyId: p.id, address: p.address, country: p.country,
+        income: round2(fig.income), expensesByField: fig.expensesByField,
+        consolidatedExpenses: round2(fig.consolidatedExpenses),
+        residentialFinanceCost: round2(fig.residentialFinanceCost),
+        residentialFinanceCostBroughtFwd: 0,
+      });
+    }
+    // Business-level b/f rides on the first property entry (carried once).
+    if (foreignProperties.length > 0) foreignProperties[0].residentialFinanceCostBroughtFwd = foreignBroughtFwd;
+    // Unallocated foreign entries can't be assigned to a property → they'd be
+    // dropped from a def2 filing. Warn (only add once; the country branch may
+    // already have warned for its own reason).
+    if ((figures.income - ppIncome > 0.01 || figures.consolidatedExpenses - ppExpense > 0.01 || figures.residentialFinanceCost - ppResiFinance > 0.01)
+        && !figures.warnings.some(w => w.includes("aren't allocated to a property"))) {
+      figures.warnings.push("Some foreign rental entries aren't allocated to a property, so they can't be filed from 2026-27 — allocate them to a property before filing.");
+    }
+
     units.push({
       typeOfBusiness: 'foreign-property', businessId,
       name: fg.length === 1 ? fg[0].address : `Foreign property (${fg.length} properties)`,
-      figures, sourceIds: fg.map(p => p.id), foreignCountries,
+      figures, sourceIds: fg.map(p => p.id), foreignCountries, foreignProperties,
     });
   }
 
