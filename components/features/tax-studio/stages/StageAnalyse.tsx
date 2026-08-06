@@ -5,7 +5,6 @@ import { ArrowRight, Loader2, Sparkles, Beaker, CheckCircle2, Circle, PencilLine
 import { StudioCard, SectionTitle, EstimateChip } from '../primitives';
 import DocumentExtract from '../DocumentExtract';
 import ConnectedImports from '../ConnectedImports';
-import HistoryImport from '../HistoryImport';
 import { seedSuggestions, seedReviewPoints, fmtMoney } from '../data';
 import { estimateSa100 } from '../calc';
 import { analyseReturn } from '../persistence';
@@ -93,11 +92,9 @@ export default function StageAnalyse({
       {/* Read the client's documents (P60, dividend vouchers, etc.) with AI. */}
       <DocumentExtract ret={ret} patch={patch} />
 
-      {/* Real integrations: MTD IT, Accounts Studio, Landlord Analysis (+ Payroll note). */}
+      {/* Connected tools grid: MTD IT, Accounts Studio, Bookkeeping, Landlord
+          (+ Payroll/Partnership soon). Each panel can pull from any client. */}
       <ConnectedImports ret={ret} patch={patch} />
-
-      {/* Pull a saved analysis from ANY client — e.g. rental under a separate code. */}
-      <HistoryImport ret={ret} patch={patch} />
 
       {!hasFigures && (
         <StudioCard className="p-5">
