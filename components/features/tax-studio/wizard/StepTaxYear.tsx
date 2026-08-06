@@ -1,0 +1,84 @@
+'use client';
+
+import { Calendar, FileClock, Send, Hash } from 'lucide-react';
+import { taxYearOptions, fmtDateUK, deriveStatus } from '../data';
+import { StatusBadge } from '../primitives';
+import type { WizardClient } from './wizardData';
+import type { ReturnListItem } from '../persistence';
+
+/** '2025/26' → '6 April 2025 – 5 April 2026'. */
+function yearRange(label: string): string {
+  const s = parseInt(label.slice(0, 4), 10);
+  if (Number.isNaN(s)) return '';
+  return `6 April ${s} – 5 April ${s + 1}`;
+}
+
+export default function StepTaxYear({
+  taxYear, onChange, client, allReturns,
+}: {
+  taxYear: string;
+  onChange: (y: string) => void;
+  client: WizardClient | null;
+  allReturns: ReturnListItem[];
+}) {
+  const history = client
+    ? allReturns.filter(r => r.ret.clientId === client.id).sort((a, b) => (a.ret.taxYear < b.ret.taxYear ? 1 : -1))
+    : [];
+  const lastReturn = history[0];
+  const lastSubmitted = history.find(h => h.ret.approvalStatus === 'submitted');
+
+  return (
+    <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
+      <h3 className="text-[16px] font-bold text-[var(--text-primary)]">3. Tax Year</h3>
+      <p className="mt-0.5 text-[12.5px] text-[var(--text-muted)]">Choose the year you&apos;re preparing. SMITH will roll last year&apos;s data forward next.</p>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Tax year selector */}
+        <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.05] p-3.5">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Calendar size={12} /> Tax year</p>
+          <select value={taxYear} onChange={e => onChange(e.target.value)} className="input-base mt-1.5 py-1.5 text-sm font-semibold">
+            {taxYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">{yearRange(taxYear)}</p>
+        </div>
+
+        {/* Last return */}
+        <SummaryCard icon={FileClock} label="Last return">
+          {lastReturn ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-bold text-[var(--text-primary)]">{lastReturn.ret.taxYear}</span>
+              <StatusBadge status={deriveStatus(lastReturn.ret)} />
+            </div>
+          ) : <span className="text-[13px] text-[var(--text-muted)]">No prior return</span>}
+        </SummaryCard>
+
+        {/* Last submitted */}
+        <SummaryCard icon={Send} label="Last submitted">
+          <span className="text-[13px] font-bold text-[var(--text-primary)]">
+            {lastSubmitted?.ret.submittedAt ? fmtDateUK(lastSubmitted.ret.submittedAt) : '—'}
+          </span>
+        </SummaryCard>
+
+        {/* Reference */}
+        <SummaryCard icon={Hash} label="Reference">
+          <span className="text-[13px] font-bold text-[var(--text-primary)]">
+            {client?.utr_number || lastSubmitted?.ret.submissionRef || '—'}
+          </span>
+        </SummaryCard>
+      </div>
+
+      <p className="mt-4 text-[11.5px] text-[var(--text-muted)]">
+        Preparing the <span className="font-semibold text-[var(--text-secondary)]">{taxYear}</span> return{client ? ` for ${client.name}` : ''}.
+      </p>
+    </div>
+  );
+}
+
+function SummaryCard({ icon: Icon, label, children }: { icon: typeof Calendar; label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3.5">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><Icon size={12} /> {label}</p>
+      <div className="mt-1.5">{children}</div>
+    </div>
+  );
+}

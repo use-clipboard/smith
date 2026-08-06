@@ -1,0 +1,441 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import {
+  Plus, Sparkles, ArrowRight, LayoutGrid, List as ListIcon, Loader2,
+  TrendingUp, Layers, ClipboardCheck, AlertCircle, CheckCircle2, FileCheck2,
+  Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight,
+} from 'lucide-react';
+import { StudioCard, StatusBadge } from './primitives';
+import {
+  deriveStatus, stageProgress, currentFilingSeason, returnType, fmtMoney, fmtDateUK,
+  deadlineForTaxYear, STATUS_META, WORKFLOW_COLUMNS, STAGES,
+} from './data';
+import { estimateSa100 } from './calc';
+import type { ReturnListItem } from './persistence';
+import type { ReturnStatus, TaxReturn, TimelineEvent } from './types';
+
+// Bucket → which statuses it counts, colour, icon.
+const BUCKETS: { key: string; label: string; statuses: ReturnStatus[]; color: string; tone: string; icon: typeof Layers }[] = [
+  { key: 'progress', label: 'In progress',       statuses: ['not-started', 'waiting-info', 'analysing'], color: '#3b82f6', tone: 'text-blue-600 bg-blue-50', icon: Loader2 },
+  { key: 'review',   label: 'Awaiting review',   statuses: ['review'],            color: '#8b5cf6', tone: 'text-violet-600 bg-violet-50', icon: ClipboardCheck },
+  { key: 'approval', label: 'Awaiting approval', statuses: ['awaiting-approval'], color: '#f59e0b', tone: 'text-amber-600 bg-amber-50', icon: AlertCircle },
+  { key: 'ready',    label: 'Ready to file',     statuses: ['ready-to-file', 'approved'], color: '#14b8a6', tone: 'text-teal-600 bg-teal-50', icon: CheckCircle2 },
+  { key: 'filed',    label: 'Filed',             statuses: ['filed', 'amended'],  color: '#6366f1', tone: 'text-indigo-600 bg-indigo-50', icon: FileCheck2 },
+];
+
+function relTime(iso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+  return fmtDateUK(iso);
+}
+
+export default function CommandCentre({
+  items, loading, userName, onNew, onOpen,
+}: {
+  items: ReturnListItem[];
+  loading: boolean;
+  userName: string;
+  onNew: () => void;
+  onOpen: (r: TaxReturn) => void;
+}) {
+  const [view, setView] = useState<'list' | 'board'>('list');
+  const season = currentFilingSeason();
+
+  const rows = useMemo(() => items.map(it => ({ ...it, status: deriveStatus(it.ret) })), [items]);
+  const total = rows.length;
+
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const b of BUCKETS) map[b.key] = rows.filter(r => b.statuses.includes(r.status)).length;
+    return map;
+  }, [rows]);
+
+  const suggestions = useMemo(
+    () => rows.flatMap(r => r.ret.suggestions.map(s => ({ ...s, client: r.ret.clientName, ret: r.ret }))).sort((a, b) => b.estSaving - a.estSaving),
+    [rows],
+  );
+  const totalSavings = suggestions.reduce((a, s) => a + s.estSaving, 0);
+  const highImpact = suggestions.filter(s => s.estSaving >= 1000 || s.confidence >= 75).length;
+  const medImpact = suggestions.length - highImpact;
+
+  const continueWorking = rows.filter(r => !['filed', 'archived'].includes(r.status)).slice(0, 5);
+
+  const deadlines = useMemo(() =>
+    rows.filter(r => !['filed', 'archived'].includes(r.status))
+      .map(r => ({ r, date: deadlineForTaxYear(r.ret.taxYear) }))
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .slice(0, 5),
+    [rows]);
+
+  const activity = useMemo(() =>
+    rows.flatMap(r => r.ret.timeline.map(t => ({ ev: t, client: r.ret.clientName })))
+      .sort((a, b) => (a.ev.at < b.ev.at ? 1 : -1))
+      .slice(0, 6),
+    [rows]);
+
+  const briefing = useMemo(() => {
+    const out: { icon: typeof Sparkles; headline: string; sub: string; tone: string }[] = [];
+    const actionable = counts.progress + counts.ready;
+    if (actionable) out.push({ icon: Sparkles, headline: `${actionable} return${actionable > 1 ? 's' : ''} can be progressed today`, sub: 'Ready to work on', tone: 'text-[var(--accent)] bg-[var(--accent)]/10' });
+    if (counts.review) out.push({ icon: ClipboardCheck, headline: `${counts.review} return${counts.review > 1 ? 's' : ''} awaiting review`, sub: 'Needs your sign-off', tone: 'text-violet-600 bg-violet-50' });
+    if (counts.approval) out.push({ icon: Clock3, headline: `${counts.approval} awaiting client approval`, sub: 'Sent to clients', tone: 'text-amber-600 bg-amber-50' });
+    if (totalSavings > 0) out.push({ icon: PiggyBank, headline: `${fmtMoney(totalSavings)} in advisory opportunities`, sub: 'Tax planning suggestions available', tone: 'text-emerald-600 bg-emerald-50' });
+    if (out.length === 0) out.push({ icon: Sparkles, headline: 'No returns in progress yet', sub: 'Start one to see your briefing', tone: 'text-[var(--accent)] bg-[var(--accent)]/10' });
+    return out;
+  }, [counts, totalSavings]);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+
+  return (
+    <div className="space-y-5">
+      {/* Greeting */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[22px] font-extrabold tracking-tight text-[var(--text-primary)]">{greeting}{userName ? `, ${userName.split(' ')[0]}` : ''} 👋</h2>
+          <p className="mt-0.5 text-[13px] text-[var(--text-secondary)]">Here&apos;s what&apos;s happening in Tax Studio today.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)]">
+            <CalendarClock size={14} className="text-[var(--accent)]" /> Tax Season {season.taxYear}
+          </span>
+          <button onClick={onNew} className="btn-primary"><Plus size={16} /> New return</button>
+        </div>
+      </div>
+
+      {/* Buckets */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StudioCard className="flex items-center gap-3 px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Layers size={17} /></div>
+          <div>
+            <p className="text-[20px] font-extrabold leading-none text-[var(--text-primary)]">{total}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Total returns</p>
+          </div>
+        </StudioCard>
+        {BUCKETS.map(b => (
+          <StudioCard key={b.key} className="flex items-center gap-3 px-4 py-3">
+            <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${b.tone}`}><b.icon size={17} /></div>
+            <div>
+              <p className="text-[20px] font-extrabold leading-none text-[var(--text-primary)]">{counts[b.key]}
+                <span className="ml-1 text-[11px] font-semibold text-[var(--text-muted)]">{total ? `${Math.round((counts[b.key] / total) * 100)}%` : '0%'}</span>
+              </p>
+              <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{b.label}</p>
+            </div>
+          </StudioCard>
+        ))}
+      </div>
+
+      {/* Row 1: Continue working | AI briefing | Upcoming deadlines */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Continue working */}
+        <Panel title="Continue working" action="View all my returns" onAction={undefined}>
+          {loading ? <PanelLoading /> : continueWorking.length === 0 ? (
+            <PanelEmpty text="Nothing in progress." />
+          ) : (
+            <div className="space-y-1">
+              {continueWorking.map(r => {
+                const rt = returnType(r.ret.returnType);
+                const prog = stageProgress(r.ret);
+                return (
+                  <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
+                    <Avatar name={r.ret.clientName} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+                      <p className="text-[11px] text-[var(--text-muted)]">{rt.form}</p>
+                    </div>
+                    <StatusBadge status={r.status} />
+                    <div className="hidden w-20 items-center gap-1.5 sm:flex">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70"><div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${(prog / 5) * 100}%` }} /></div>
+                      <span className="text-[10px] text-[var(--text-muted)]">{Math.round((prog / 5) * 100)}%</span>
+                    </div>
+                    <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)]" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        {/* AI briefing */}
+        <Panel title="AI briefing" action="View all insights">
+          <div className="space-y-1">
+            {briefing.map((b, i) => (
+              <div key={i} className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${b.tone}`}><b.icon size={15} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12.5px] font-semibold text-[var(--text-primary)]">{b.headline}</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">{b.sub}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        {/* Upcoming deadlines */}
+        <Panel title="Upcoming deadlines" action="View calendar">
+          {deadlines.length === 0 ? <PanelEmpty text="No open deadlines." /> : (
+            <div className="space-y-1">
+              {deadlines.map(({ r, date }) => {
+                const days = Math.round((date.getTime() - Date.now()) / 86400000);
+                const rt = returnType(r.ret.returnType);
+                return (
+                  <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-black/[0.03]">
+                    <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 leading-none">
+                      <span className="text-[13px] font-extrabold text-[var(--text-primary)]">{date.getDate()}</span>
+                      <span className="text-[9px] font-semibold uppercase text-[var(--text-muted)]">{date.toLocaleString('en-GB', { month: 'short' })}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+                      <p className="text-[11px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear}</p>
+                    </div>
+                    <span className={`shrink-0 text-[11px] font-semibold ${days < 30 ? 'text-rose-600' : days < 90 ? 'text-amber-600' : 'text-[var(--text-muted)]'}`}>
+                      {days > 0 ? `${days} days` : 'due'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* Row 2: AI suggestions | Returns by status | Recent activity */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* AI suggestions */}
+        <Panel title="AI suggestions for your clients" action="View all suggestions">
+          {suggestions.length === 0 ? <PanelEmpty text="Run Analyse on a return to surface opportunities." /> : (
+            <div className="space-y-1.5">
+              {suggestions.slice(0, 4).map((s, i) => {
+                const high = s.estSaving >= 1000 || s.confidence >= 75;
+                return (
+                  <button key={i} onClick={() => onOpen(s.ret)} className="flex w-full items-center gap-2.5 rounded-xl border border-[var(--border)] bg-white/60 px-3 py-2 text-left transition-colors hover:border-[var(--accent)]/40">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Sparkles size={14} /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{s.title}</p>
+                      <p className="truncate text-[11px] text-[var(--text-muted)]">{s.client}{s.estSaving > 0 ? ` · save ~${fmtMoney(s.estSaving)}` : ''}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${high ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{high ? 'High' : 'Medium'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
+
+        {/* Returns by status donut */}
+        <Panel title="Returns by status" action="View full pipeline">
+          <div className="flex items-center gap-4">
+            <StatusDonut total={total} segments={BUCKETS.map(b => ({ label: b.label, value: counts[b.key], color: b.color }))} />
+            <div className="flex-1 space-y-1">
+              {BUCKETS.map(b => (
+                <div key={b.key} className="flex items-center gap-2 text-[11.5px]">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                  <span className="flex-1 text-[var(--text-secondary)]">{b.label}</span>
+                  <span className="font-semibold text-[var(--text-primary)]">{counts[b.key]}</span>
+                  <span className="w-9 text-right text-[var(--text-muted)]">{total ? Math.round((counts[b.key] / total) * 100) : 0}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Panel>
+
+        {/* Recent activity */}
+        <Panel title="Recent activity" action="View all activity">
+          {activity.length === 0 ? <PanelEmpty text="Activity will appear here as you work." /> : (
+            <div className="space-y-2">
+              {activity.map(({ ev, client }, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-[var(--accent)]"><ActivityIcon kind={ev.kind} /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] text-[var(--text-secondary)]"><span className="font-semibold text-[var(--text-primary)]">{client}</span> — {ev.label}</p>
+                    <p className="text-[10.5px] text-[var(--text-muted)]">{relTime(ev.at)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {/* All returns (list / board) */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[13px] font-bold text-[var(--text-primary)]">All returns</p>
+          <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-white/60 p-0.5">
+            <ToggleBtn active={view === 'list'} onClick={() => setView('list')} icon={ListIcon} />
+            <ToggleBtn active={view === 'board'} onClick={() => setView('board')} icon={LayoutGrid} />
+          </div>
+        </div>
+        {loading ? (
+          <StudioCard className="flex items-center justify-center gap-2 py-12 text-[13px] text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin" /> Loading returns…</StudioCard>
+        ) : rows.length === 0 ? (
+          <EmptyState onNew={onNew} />
+        ) : view === 'list' ? (
+          <ReturnList rows={rows} onOpen={onOpen} />
+        ) : (
+          <KanbanBoard rows={rows} onOpen={onOpen} />
+        )}
+      </div>
+
+      {/* Planning opportunities banner */}
+      <StudioCard className="overflow-hidden">
+        <div className="relative flex flex-wrap items-center justify-between gap-4 px-6 py-5" style={{ background: 'linear-gradient(135deg,#4F46E5 0%,#6366F1 50%,#7C3AED 100%)' }}>
+          <div className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 rounded-full bg-white/15 blur-2xl" />
+          <div>
+            <p className="flex items-center gap-1.5 text-[15px] font-bold text-white"><Sparkles size={16} /> Tax planning opportunities</p>
+            <p className="mt-0.5 text-[12.5px] text-white/85">Explore what-if scenarios and potential tax savings for your clients.</p>
+          </div>
+          <div className="flex items-center gap-6">
+            <BannerStat label="Total potential savings" value={fmtMoney(totalSavings)} />
+            <BannerStat label="High impact" value={String(highImpact)} />
+            <BannerStat label="Medium impact" value={String(medImpact)} />
+          </div>
+        </div>
+      </StudioCard>
+    </div>
+  );
+}
+
+// ─── Building blocks ─────────────────────────────────────────────────────────
+function Panel({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: React.ReactNode }) {
+  return (
+    <StudioCard className="flex flex-col p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[13px] font-bold text-[var(--text-primary)]">{title}</p>
+        {action && <button onClick={onAction} disabled={!onAction} className="flex items-center gap-0.5 text-[11px] font-semibold text-[var(--accent)] disabled:opacity-45">{action} <ArrowRight size={11} /></button>}
+      </div>
+      <div className="flex-1">{children}</div>
+    </StudioCard>
+  );
+}
+function PanelLoading() { return <div className="flex items-center justify-center gap-2 py-8 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Loading…</div>; }
+function PanelEmpty({ text }: { text: string }) { return <p className="py-6 text-center text-[12px] text-[var(--text-muted)]">{text}</p>; }
+
+function BannerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="text-right">
+      <p className="text-[11px] text-white/75">{label}</p>
+      <p className="text-[18px] font-extrabold text-white">{value}</p>
+    </div>
+  );
+}
+
+function ActivityIcon({ kind }: { kind: TimelineEvent['kind'] }) {
+  const map: Partial<Record<TimelineEvent['kind'], typeof Sparkles>> = {
+    created: Plus, imported: ArrowRight, analysed: Sparkles, reviewed: ClipboardCheck,
+    sent: Mail, approved: CheckCircle2, filed: FileCheck2, edited: Activity,
+  };
+  const Icon = map[kind] ?? Activity;
+  return <Icon size={12} />;
+}
+
+function StatusDonut({ segments, total }: { segments: { label: string; value: number; color: string }[]; total: number }) {
+  const r = 42, circ = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <div className="relative h-[104px] w-[104px] shrink-0">
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <circle cx="60" cy="60" r={r} fill="none" strokeWidth="14" className="stroke-slate-100" />
+        {total > 0 && segments.map(s => {
+          const len = (s.value / total) * circ;
+          const el = <circle key={s.label} cx="60" cy="60" r={r} fill="none" strokeWidth="14" stroke={s.color} strokeDasharray={`${len} ${circ - len}`} strokeDashoffset={-acc} strokeLinecap="butt" />;
+          acc += len;
+          return el;
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[19px] font-extrabold text-[var(--text-primary)]">{total}</span>
+        <span className="text-[10px] text-[var(--text-muted)]">Total</span>
+      </div>
+    </div>
+  );
+}
+
+function Avatar({ name }: { name: string }) {
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/10 text-[11px] font-bold text-[var(--accent)]">{initials}</div>;
+}
+
+function ToggleBtn({ active, onClick, icon: Icon }: { active: boolean; onClick: () => void; icon: typeof ListIcon }) {
+  return (
+    <button onClick={onClick} className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${active ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-black/5'}`}>
+      <Icon size={14} />
+    </button>
+  );
+}
+
+function ReturnList({ rows, onOpen }: { rows: (ReturnListItem & { status: ReturnStatus })[]; onOpen: (r: TaxReturn) => void }) {
+  return (
+    <StudioCard className="divide-y divide-black/5 overflow-hidden">
+      {rows.map(r => {
+        const rt = returnType(r.ret.returnType);
+        const est = estimateSa100(r.ret.income, r.ret.taxYear);
+        const Icon = rt.icon;
+        return (
+          <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-black/[0.02]">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Icon size={16} /></div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+              <p className="text-[11.5px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear} · edited {r.date}</p>
+            </div>
+            {est.totalTax > 0 && <span className="hidden text-[12px] text-[var(--text-secondary)] sm:block">{fmtMoney(est.totalTax)} tax</span>}
+            <StatusBadge status={r.status} />
+            <ArrowRight size={15} className="shrink-0 text-[var(--text-muted)]" />
+          </button>
+        );
+      })}
+    </StudioCard>
+  );
+}
+
+function KanbanBoard({ rows, onOpen }: { rows: (ReturnListItem & { status: ReturnStatus })[]; onOpen: (r: TaxReturn) => void }) {
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-2">
+      {WORKFLOW_COLUMNS.map(col => {
+        const colRows = rows.filter(r => r.status === col);
+        return (
+          <div key={col} className="w-[220px] shrink-0">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_META[col].tone}`}>{STATUS_META[col].label}</span>
+              <span className="text-[11px] font-semibold text-[var(--text-muted)]">{colRows.length}</span>
+            </div>
+            <div className="space-y-2">
+              {colRows.map(r => {
+                const rt = returnType(r.ret.returnType);
+                return (
+                  <button key={r.id} onClick={() => onOpen(r.ret)} className="w-full text-left">
+                    <StudioCard className="p-3 transition-shadow hover:shadow-[0_10px_30px_rgba(31,38,88,0.14)]">
+                      <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+                      <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear}</p>
+                      <div className="mt-2 flex items-center gap-1">
+                        {STAGES.map((s, i) => (
+                          <div key={s.id} className={`h-1 flex-1 rounded-full ${i < stageProgress(r.ret) ? 'bg-[var(--accent)]' : 'bg-slate-200'}`} />
+                        ))}
+                      </div>
+                    </StudioCard>
+                  </button>
+                );
+              })}
+              {colRows.length === 0 && <p className="px-1 text-[11px] text-[var(--text-muted)]">—</p>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <StudioCard className="flex flex-col items-center gap-3 px-8 py-12 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)]"><TrendingUp size={22} /></div>
+      <h3 className="text-[15px] font-bold text-[var(--text-primary)]">No returns yet</h3>
+      <p className="max-w-sm text-[12.5px] text-[var(--text-muted)]">Start a return and Tax Studio will guide it from setup to filing — pulling figures from across SMITH along the way.</p>
+      <button onClick={onNew} className="btn-primary"><Plus size={15} /> New return</button>
+    </StudioCard>
+  );
+}

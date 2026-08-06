@@ -140,6 +140,18 @@ export const MODULES: ModuleConfig[] = [
     group: 'accounts_compliance',
   },
   {
+    id: 'tax-studio',
+    name: 'Tax Studio',
+    description: 'An AI-first tax operating system — prepare, review, plan and file every HMRC return (SA100, CT600, SA800, SA900, CGT and more). Pulls figures live from Accounts Studio, Payroll, Capture and Landlord Analysis, surfaces tax-saving opportunities with a sandbox for what-if planning, and takes each return through a guided Setup → Analyse → Review → Approval → Submit workflow.',
+    iconName: 'Calculator',
+    route: '/tax-studio',
+    alwaysOn: false,
+    enhancedBy: ['accounts-studio', 'mtd-it', 'landlord', 'final-accounts', 'performance', 'document-vault'],
+    monthlyPricePence: 2900,
+    category: 'tool',
+    group: 'accounts_compliance',
+  },
+  {
     id: 'performance',
     name: 'Performance Analysis',
     description: 'Analyse management accounts and produce a business performance report with KPI ratios, benchmarks, and commentary. Supports yearly, quarterly, and monthly periods.',
@@ -396,7 +408,7 @@ export type PlanId = 'internal' | 'compliance' | 'practice';
 /** Compliance-tier tools (also included in Practice). */
 const COMPLIANCE_MODULE_IDS = [
   'bookkeeping', 'full-analysis', 'bank-to-csv', 'landlord', 'final-accounts',
-  'accounts-studio', 'performance', 'p32', 'risk-assessment', 'summarise', 'mtd-it',
+  'accounts-studio', 'tax-studio', 'performance', 'p32', 'risk-assessment', 'summarise', 'mtd-it',
   'ch-secretarial', 'google-drive',
 ];
 /** Tools that Practice adds on top of Compliance. */
