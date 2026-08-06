@@ -35,13 +35,32 @@ export type ReturnStatus =
   | 'archived';
 
 // ─── SA100 income model (Phase 1) ────────────────────────────────────────────
+// SA102 Employment — one per employment. Box numbers follow the HMRC SA102 form.
 export interface EmploymentSource {
   id: string;
-  employer: string;
-  pay: number;        // gross pay (P60 box 1)
-  taxDeducted: number; // PAYE tax deducted (P60 box 2)
-  benefits: number;   // P11D benefits in kind
-  expenses?: number;  // allowable employment expenses (SA102)
+  employer: string;        // box 5 (employer name)
+  payeRef?: string;        // box 4 (PAYE tax reference)
+  pay: number;             // box 1 — pay from P60/P45 (gross)
+  taxDeducted: number;     // box 2 — UK tax taken off box 1
+  tips?: number;           // box 3 — tips & other payments not on the P60
+  // Benefits from P11D (boxes 9–16)
+  benCar?: number;           // 9  — company cars and vans
+  benFuel?: number;          // 10 — fuel for company cars and vans
+  benMedical?: number;       // 11 — private medical and dental insurance
+  benVouchers?: number;      // 12 — vouchers, credit cards, excess mileage allowance
+  benAssets?: number;        // 13 — goods and other assets provided
+  benAccommodation?: number; // 14 — accommodation provided
+  benOther?: number;         // 15 — other benefits (incl. interest-free/low-interest loans)
+  benExpPayments?: number;   // 16 — expenses payments received & balancing charges
+  // Allowable expenses (boxes 17–20)
+  expTravel?: number;        // 17 — business travel and subsistence
+  expFixed?: number;         // 18 — fixed deductions for expenses (flat rate)
+  expProfessional?: number;  // 19 — professional fees and subscriptions
+  expOther?: number;         // 20 — other expenses and capital allowances
+  // Legacy aggregate fields — kept so previously-saved returns and simple
+  // imports still compute; superseded by the itemised boxes above when present.
+  benefits?: number;
+  expenses?: number;
 }
 export interface PartnershipSource {
   id: string;

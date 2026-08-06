@@ -1,14 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
+  Globe2, GraduationCap, Landmark,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full } from '../calc';
-import type { TaxReturn, Sa100Income, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -55,41 +57,206 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
   );
 }
 
-// ─── Income editor ───────────────────────────────────────────────────────────
-function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (u: (i: Sa100Income) => Sa100Income) => void }) {
+// ─── Income editor — tabbed SA-page shell ────────────────────────────────────
+type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
+type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt';
+
+const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
+  { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
+  { id: 'employment',  label: 'Employment',       code: 'SA102', icon: Briefcase },
+  { id: 'selfemp',     label: 'Self-employment',  code: 'SA103', icon: Landmark },
+  { id: 'partnership', label: 'Partnership',      code: 'SA104', icon: Users },
+  { id: 'property',    label: 'Property',         code: 'SA105', icon: Home },
+  { id: 'foreign',     label: 'Foreign',          code: 'SA106', icon: Globe2 },
+  { id: 'cgt',         label: 'Capital gains',    code: 'SA108', icon: TrendingUp },
+];
+
+function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const [page, setPage] = useState<PageId>('core');
+
+  const counts: Record<PageId, number> = {
+    core: 0,
+    employment: income.employment.length,
+    selfemp: income.selfEmployment.length,
+    partnership: (income.partnerships ?? []).length,
+    property: income.property.length,
+    foreign: income.foreign && (income.foreign.income || income.foreign.foreignTaxPaid) ? 1 : 0,
+    cgt: income.capitalGains && (income.capitalGains.residentialGains || income.capitalGains.otherGains || income.capitalGains.losses) ? 1 : 0,
+  };
+  const active = PAGES.find(p => p.id === page)!;
+
   return (
-    <StudioCard className="p-5">
-      <SectionTitle title="Income & reliefs" sub="Adjust any figure — the computation updates live." />
+    <StudioCard className="overflow-hidden">
+      <div className="px-5 pt-4">
+        <SectionTitle title="Tax return" sub="Enter figures on each SA page — the computation updates live." />
+      </div>
+      {/* Page tabs */}
+      <div className="flex gap-0.5 overflow-x-auto border-b border-black/5 px-3">
+        {PAGES.map(p => {
+          const on = p.id === page;
+          const Icon = p.icon;
+          return (
+            <button key={p.id} onClick={() => setPage(p.id)}
+              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-[12.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={14} /> {p.label}
+              {counts[p.id] > 0 && <span className={`rounded-full px-1.5 text-[10px] font-bold ${on ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'}`}>{counts[p.id]}</span>}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Employment */}
-      <Group icon={Briefcase} title="Employment"
-        onAdd={() => setIncome(i => ({ ...i, employment: [...i.employment, { id: `e${i.employment.length + 1}`, employer: '', pay: 0, taxDeducted: 0, benefits: 0 }] }))}>
-        {income.employment.map((e, idx) => (
-          <div key={e.id} className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr_0.9fr_auto] items-center gap-2">
-            <TextIn value={e.employer} placeholder="Employer" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, employer: v } : x) }))} />
-            <NumIn value={e.pay} label="Pay" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, pay: v } : x) }))} />
-            <NumIn value={e.taxDeducted} label="Tax" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, taxDeducted: v } : x) }))} />
-            <NumIn value={e.benefits} label="BIK" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, benefits: v } : x) }))} />
-            <NumIn value={e.expenses ?? 0} label="Expenses" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, expenses: v } : x) }))} />
-            <RemoveBtn onClick={() => setIncome(i => ({ ...i, employment: i.employment.filter((_, j) => j !== idx) }))} />
-          </div>
-        ))}
-      </Group>
+      <div className="p-5">
+        <div className="mb-3 flex items-baseline gap-2">
+          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">{active.label}</h4>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
+        </div>
 
-      {/* Partnership (SA104) */}
-      <Group icon={Users} title="Partnership"
-        onAdd={() => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt${(i.partnerships ?? []).length + 1}`, name: '', profit: 0 }] }))}>
-        {(income.partnerships ?? []).map((p, idx) => (
-          <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
-            <TextIn value={p.name} placeholder="Partnership" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
-            <NumIn value={p.profit} label="Profit share" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
-            <RemoveBtn onClick={() => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).filter((_, j) => j !== idx) }))} />
-          </div>
-        ))}
-      </Group>
+        {page === 'core' && <CorePage income={income} setIncome={setIncome} />}
+        {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
+        {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
+        {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
+        {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
+        {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
+        {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
+      </div>
+    </StudioCard>
+  );
+}
 
-      {/* Self-employment */}
-      <Group icon={Briefcase} title="Self-employment"
+function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <LabelledNum icon={PiggyBank} label="Dividends" value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
+      <LabelledNum label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
+      <LabelledNum label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
+      <LabelledNum label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
+      <LabelledNum label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
+      <LabelledNum label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
+      <LabelledNum label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
+      <LabelledNum label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
+        <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
+          <option value="none">None</option>
+          <option value="received">Received (£252 reducer)</option>
+          <option value="transferred">Transferred to spouse</option>
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
+        <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
+          <option value={0}>None</option>
+          <option value={1}>Plan 1</option>
+          <option value={2}>Plan 2</option>
+          <option value={4}>Plan 4 (Scotland)</option>
+          <option value={5}>Plan 5</option>
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
+        <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
+          <option value="uk">England / Wales / NI</option>
+          <option value="scotland">Scotland</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function EmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const add = () => setIncome(i => ({ ...i, employment: [...i.employment, { id: `e-${i.employment.length}-${Date.now()}`, employer: '', pay: 0, taxDeducted: 0 }] }));
+  return (
+    <div className="space-y-3">
+      {income.employment.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No employments yet — add one to enter the P60 and P11D figures.</p>
+      )}
+      {income.employment.map((e, idx) => (
+        <EmploymentCard key={e.id} e={e} idx={idx}
+          onChange={p => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, ...p } : x) }))}
+          onRemove={() => setIncome(i => ({ ...i, employment: i.employment.filter((_, j) => j !== idx) }))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add employment</button>
+    </div>
+  );
+}
+
+function EmploymentCard({ e, idx, onChange, onRemove }: {
+  e: EmploymentSource; idx: number; onChange: (p: Partial<EmploymentSource>) => void; onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <input value={e.employer} placeholder={`Employer ${idx + 1}`} onChange={ev => onChange({ employer: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(employmentTaxable(e))}</span></span>
+        <RemoveBtn onClick={onRemove} />
+      </div>
+      {open && (
+        <div className="space-y-3 border-t border-black/5 px-3 py-3">
+          <BoxSection title="Pay & tax">
+            <BoxNum box={1} label="Pay (P60/P45)" value={e.pay} onChange={v => onChange({ pay: v })} />
+            <BoxNum box={2} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
+            <BoxNum box={3} label="Tips & other pay" value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
+            <BoxText box={4} label="PAYE reference" value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} />
+          </BoxSection>
+          <BoxSection title="Benefits (P11D)">
+            <BoxNum box={9} label="Company cars & vans" value={e.benCar ?? 0} onChange={v => onChange({ benCar: v })} />
+            <BoxNum box={10} label="Fuel for cars/vans" value={e.benFuel ?? 0} onChange={v => onChange({ benFuel: v })} />
+            <BoxNum box={11} label="Medical & dental" value={e.benMedical ?? 0} onChange={v => onChange({ benMedical: v })} />
+            <BoxNum box={12} label="Vouchers & mileage" value={e.benVouchers ?? 0} onChange={v => onChange({ benVouchers: v })} />
+            <BoxNum box={13} label="Goods & assets" value={e.benAssets ?? 0} onChange={v => onChange({ benAssets: v })} />
+            <BoxNum box={14} label="Accommodation" value={e.benAccommodation ?? 0} onChange={v => onChange({ benAccommodation: v })} />
+            <BoxNum box={15} label="Other benefits & loans" value={e.benOther ?? 0} onChange={v => onChange({ benOther: v })} />
+            <BoxNum box={16} label="Expenses payments received" value={e.benExpPayments ?? 0} onChange={v => onChange({ benExpPayments: v })} />
+          </BoxSection>
+          <BoxSection title="Allowable expenses">
+            <BoxNum box={17} label="Business travel & subsistence" value={e.expTravel ?? 0} onChange={v => onChange({ expTravel: v })} />
+            <BoxNum box={18} label="Fixed deductions" value={e.expFixed ?? 0} onChange={v => onChange({ expFixed: v })} />
+            <BoxNum box={19} label="Professional fees & subs" value={e.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
+            <BoxNum box={20} label="Other expenses" value={e.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
+          </BoxSection>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BoxSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{title}</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{children}</div>
+    </div>
+  );
+}
+
+function BoxNum({ box, label, value, onChange }: { box: number; label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}
+      </label>
+      <NumIn value={value} onChange={onChange} />
+    </div>
+  );
+}
+
+function BoxText({ box, label, value, onChange }: { box: number; label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}
+      </label>
+      <TextIn value={value} onChange={onChange} />
+    </div>
+  );
+}
+
+function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <>
+      <Group icon={Landmark} title="Trades"
         onAdd={() => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s${i.selfEmployment.length + 1}`, name: '', profit: 0 }] }))}>
         {income.selfEmployment.map((s, idx) => (
           <div key={s.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_auto] items-center gap-2">
@@ -104,9 +271,32 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
       {income.selfEmployment.length > 0 && (
         <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Profit + add-backs (disallowables/depreciation) − capital allowances = taxable trade profit.</p>
       )}
+      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
+        <LabelledNum label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
+      </div>
+    </>
+  );
+}
 
-      {/* Property */}
-      <Group icon={Home} title="Property"
+function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <Group icon={Users} title="Partnerships"
+      onAdd={() => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt${(i.partnerships ?? []).length + 1}`, name: '', profit: 0 }] }))}>
+      {(income.partnerships ?? []).map((p, idx) => (
+        <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
+          <TextIn value={p.name} placeholder="Partnership" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
+          <NumIn value={p.profit} label="Profit share" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
+          <RemoveBtn onClick={() => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).filter((_, j) => j !== idx) }))} />
+        </div>
+      ))}
+    </Group>
+  );
+}
+
+function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <>
+      <Group icon={Home} title="Properties"
         onAdd={() => setIncome(i => ({ ...i, property: [...i.property, { id: `p${i.property.length + 1}`, address: '', profit: 0 }] }))}>
         {income.property.map((p, idx) => (
           <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
@@ -116,56 +306,36 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
           </div>
         ))}
       </Group>
-
-      {/* Other income + reliefs */}
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
-        <LabelledNum icon={PiggyBank} label="Dividends" value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
-        <LabelledNum label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
-        <LabelledNum label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
-        <LabelledNum label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
-        <LabelledNum label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
-        <LabelledNum label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
-        <div>
-          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
-          <select
-            value={income.marriageAllowance ?? 'none'}
-            onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))}
-            className="input-base py-1 text-[12.5px]"
-          >
-            <option value="none">None</option>
-            <option value="received">Received (£252 reducer)</option>
-            <option value="transferred">Transferred to spouse</option>
-          </select>
-        </div>
-        <LabelledNum label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
-        <LabelledNum label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
-        <div>
-          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
-          <select
-            value={income.region ?? 'uk'}
-            onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))}
-            className="input-base py-1 text-[12.5px]"
-          >
-            <option value="uk">England / Wales / NI</option>
-            <option value="scotland">Scotland</option>
-          </select>
-        </div>
-        <LabelledNum label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
-        <LabelledNum label="Foreign income" value={income.foreign?.income ?? 0} onChange={v => setForeign(setIncome, { income: v })} />
+        <LabelledNum label="Residential finance costs" value={income.financeCosts ?? 0} onChange={v => setIncome(i => ({ ...i, financeCosts: v }))} />
+      </div>
+      <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Residential mortgage interest — relieved as a 20% tax reducer, not deducted from profit.</p>
+    </>
+  );
+}
+
+function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <LabelledNum icon={Globe2} label="Foreign income" value={income.foreign?.income ?? 0} onChange={v => setForeign(setIncome, { income: v })} />
         <LabelledNum label="Foreign tax paid" value={income.foreign?.foreignTaxPaid ?? 0} onChange={v => setForeign(setIncome, { foreignTaxPaid: v })} />
       </div>
+      <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Foreign Tax Credit Relief is applied automatically, capped at the UK tax on the same income.</p>
+    </>
+  );
+}
 
-      {/* Capital gains */}
-      <div className="mt-4 border-t border-black/5 pt-4">
-        <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-secondary)]"><TrendingUp size={13} className="text-[var(--accent)]" /> Capital gains</p>
-        <div className="grid grid-cols-3 gap-2">
-          <LabelledNum label="Residential gains" value={income.capitalGains?.residentialGains ?? 0} onChange={v => setCg(setIncome, { residentialGains: v })} />
-          <LabelledNum label="Other gains" value={income.capitalGains?.otherGains ?? 0} onChange={v => setCg(setIncome, { otherGains: v })} />
-          <LabelledNum label="Losses" value={income.capitalGains?.losses ?? 0} onChange={v => setCg(setIncome, { losses: v })} />
-        </div>
-        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">18%/24% after the £3,000 annual exempt amount. Excludes BADR/Investors’ Relief.</p>
+function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-2">
+        <LabelledNum label="Residential gains" value={income.capitalGains?.residentialGains ?? 0} onChange={v => setCg(setIncome, { residentialGains: v })} />
+        <LabelledNum label="Other gains" value={income.capitalGains?.otherGains ?? 0} onChange={v => setCg(setIncome, { otherGains: v })} />
+        <LabelledNum label="Losses" value={income.capitalGains?.losses ?? 0} onChange={v => setCg(setIncome, { losses: v })} />
       </div>
-    </StudioCard>
+      <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">18%/24% after the £3,000 annual exempt amount. Excludes BADR/Investors’ Relief.</p>
+    </>
   );
 }
 

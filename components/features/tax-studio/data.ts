@@ -6,7 +6,7 @@ import type {
   TaxReturn, ReturnTypeId, StageId, StageState, ReturnStatus,
   Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint,
 } from './types';
-import { estimateSa100 } from './calc';
+import { estimateSa100, employmentBenefits } from './calc';
 
 // ─── Return types ────────────────────────────────────────────────────────────
 export const RETURN_TYPES: {
@@ -265,7 +265,7 @@ export function seedReviewPoints(income: Sa100Income): ReviewPoint[] {
       explanation: 'Confirm the dividend figure agrees to the company’s dividend vouchers and that the £500 allowance has been applied.',
     });
   }
-  if (income.employment.some(e => e.benefits > 0)) {
+  if (income.employment.some(e => employmentBenefits(e) > 0)) {
     out.push({
       id: 'p11d', area: 'Employment', severity: 'info', resolved: false,
       issue: 'Benefits in kind present',

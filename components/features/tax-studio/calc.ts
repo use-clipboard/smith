@@ -12,7 +12,25 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income } from './types';
+import type { Sa100Income, EmploymentSource } from './types';
+
+// ── SA102 employment helpers ─────────────────────────────────────────────────
+// Total P11D benefits (boxes 9–16); falls back to the legacy aggregate when no
+// itemised box is set, so old returns and simple imports still compute.
+export function employmentBenefits(e: EmploymentSource): number {
+  const d = (e.benCar || 0) + (e.benFuel || 0) + (e.benMedical || 0) + (e.benVouchers || 0)
+    + (e.benAssets || 0) + (e.benAccommodation || 0) + (e.benOther || 0) + (e.benExpPayments || 0);
+  return d > 0 ? d : (e.benefits || 0);
+}
+// Total allowable expenses (boxes 17–20); same legacy fallback.
+export function employmentExpenses(e: EmploymentSource): number {
+  const d = (e.expTravel || 0) + (e.expFixed || 0) + (e.expProfessional || 0) + (e.expOther || 0);
+  return d > 0 ? d : (e.expenses || 0);
+}
+/** Taxable employment income for one job: pay + tips + benefits − expenses (≥0). */
+export function employmentTaxable(e: EmploymentSource): number {
+  return Math.max(0, e.pay + (e.tips || 0) + employmentBenefits(e) - employmentExpenses(e));
+}
 
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
@@ -145,7 +163,7 @@ function placeInBands(amount: number, used: number, brl: number, addl: number): 
 export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa100Computation {
   const notes: string[] = [];
 
-  const employmentIncome = sum(income.employment.map(e => Math.max(0, e.pay + (e.benefits || 0) - (e.expenses || 0))));
+  const employmentIncome = sum(income.employment.map(employmentTaxable));
   const taxDeducted = sum(income.employment.map(e => e.taxDeducted));
   // Tax-adjusted trade profit: accounts profit + add-backs (disallowables /
   // depreciation) − capital allowances, floored at nil per trade.

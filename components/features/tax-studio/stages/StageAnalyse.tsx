@@ -13,7 +13,7 @@ import type { TaxReturn, Sa100Income } from '../types';
 // A realistic SA100 profile used to demonstrate the workspace end-to-end while
 // live cross-module imports are built. Clearly labelled "sample" in the UI.
 const SAMPLE_INCOME: Sa100Income = {
-  employment: [{ id: 'e1', employer: 'Marner Consulting Ltd', pay: 62000, taxDeducted: 12200, benefits: 3200 }],
+  employment: [{ id: 'e1', employer: 'Marner Consulting Ltd', pay: 62000, taxDeducted: 12200, benMedical: 1200, benCar: 2000 }],
   selfEmployment: [],
   property: [{ id: 'p1', address: '14 Bridge Road, Leeds', profit: 6400 }],
   dividends: 8000,

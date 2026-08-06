@@ -76,7 +76,9 @@ const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = '
  *  found a value (never wiping a manual figure with a zero). */
 export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extraction): Sa100Income {
   const employment = income.employment.filter(x => !x.id.startsWith(DOC_EMP));
-  e.employment.forEach((x, i) => employment.push({ id: `${DOC_EMP}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benefits: Math.round(x.benefits), expenses: Math.round(x.expenses) }));
+  // Map the AI's aggregate benefits/expenses into the itemised SA102 "other"
+  // boxes (15 & 20) so imported figures appear in the box-level editor.
+  e.employment.forEach((x, i) => employment.push({ id: `${DOC_EMP}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benOther: Math.round(x.benefits), expOther: Math.round(x.expenses) }));
 
   const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(DOC_SE));
   e.selfEmployment.forEach((x, i) => selfEmployment.push({ id: `${DOC_SE}${i}`, name: x.name || `Self-employment ${i + 1}`, profit: Math.round(x.profit) }));
