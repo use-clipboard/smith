@@ -149,6 +149,11 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
   // HMRC discover + auto-map, run from the expanded panel for this one client.
   const [hmrcBusy, setHmrcBusy] = useState(false);
   const [hmrcMsg, setHmrcMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Sandbox Gov-Test-Scenario for "List All Businesses" (Business Details v2.0).
+  // Lets sandbox testing surface property businesses the default test user lacks.
+  // Ignored by HMRC in production. Values are the exact scenario enums from the
+  // Business Details API spec.
+  const [discoverScenario, setDiscoverScenario] = useState('');
   // Filing-summary lightbox for an already-submitted quarter.
   const [summaryQuarter, setSummaryQuarter] = useState<{ id: string; label: string; quarter: 1 | 2 | 3 | 4 } | null>(null);
   const taxYearLabel = `${taxYear}/${String((taxYear + 1) % 100).padStart(2, '0')}`;
@@ -158,7 +163,7 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
       const fraudData = collectFraudData();
       const dr = await fetch('/api/mtd-it/agent/discover-businesses', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientIds: [client.id], fraudData }),
+        body: JSON.stringify({ clientIds: [client.id], fraudData, testScenario: discoverScenario || undefined }),
       });
       const dd = await dr.json().catch(() => ({}));
       if (!dr.ok) { setHmrcMsg({ kind: 'err', text: dd.error ?? 'Discovery failed.' }); return; }
@@ -453,7 +458,7 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                       <span className={`w-1.5 h-1.5 rounded-full ${setup.dot}`} />
                       {setup.label}{client.sources && client.sources.total > 0 ? ` · ${client.sources.mapped}/${client.sources.total} sources` : ''}
                     </span>
-                    {setup.key !== 'ready' && (
+                    {(setup.key !== 'ready' || discoverScenario) && (
                       <Tooltip label="Fetch this client's HMRC businesses and link them to their trades/properties. Requires the agent connection.">
                         <button
                           onClick={discoverAndMap}
@@ -461,10 +466,25 @@ export default function MtdItClientRow({ client, taxYear, fallbackType = 'calend
                           className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                         >
                           {hmrcBusy ? <Loader2 size={12} className="animate-spin" /> : setup.key === 'unmapped' ? <Check size={12} /> : <Search size={12} />}
-                          {setup.key === 'unmapped' ? 'Map remaining' : 'Discover & map'}
+                          {setup.key === 'ready' ? 'Re-discover' : setup.key === 'unmapped' ? 'Map remaining' : 'Discover & map'}
                         </button>
                       </Tooltip>
                     )}
+                    {/* Sandbox-only Gov-Test-Scenario for discovery — lets test users
+                        surface property businesses. HMRC ignores it in production. */}
+                    <Tooltip label="Sandbox only — sets HMRC's Gov-Test-Scenario so discovery returns test businesses (e.g. property). Ignored in production.">
+                      <select
+                        value={discoverScenario}
+                        onChange={e => setDiscoverScenario(e.target.value)}
+                        aria-label="Sandbox test scenario"
+                        className="text-[11px] px-1.5 py-1 border border-slate-200 rounded bg-white text-slate-500"
+                      >
+                        <option value="">Sandbox: default (SE)</option>
+                        <option value="BUSINESS_AND_PROPERTY">Sandbox: SE + UK + foreign property</option>
+                        <option value="PROPERTY">Sandbox: UK property</option>
+                        <option value="FOREIGN_PROPERTY">Sandbox: foreign property</option>
+                      </select>
+                    </Tooltip>
                   </div>
 
                   {/* Which income sources are linked to which HMRC business. */}
