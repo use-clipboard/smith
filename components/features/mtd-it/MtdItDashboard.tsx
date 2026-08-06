@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
-  Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2, ScrollText,
+  Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2, ScrollText, Info,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -411,6 +411,25 @@ export default function MtdItDashboard() {
       iconColor="#2563eb"
       wide
     >
+      {/* HMRC scope signpost — required for MTD ITSA production approval: states
+          what SMITH covers and links to HMRC's compatible-software list for the
+          functionality it doesn't (End-of-Year / Final Declaration and
+          non-mandated income sources). */}
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+        <Info size={13} className="mt-0.5 shrink-0 text-slate-400" />
+        <span>
+          SMITH supports Making Tax Digital for Income Tax <strong>quarterly updates</strong> for self-employment and UK &amp; foreign property. Final Declaration (end-of-year) and other income sources not handled here (such as employment, dividends, savings and other non-mandated income) are not currently submitted from SMITH — for those, and to compare software, see HMRC&rsquo;s{' '}
+          <a
+            href="https://www.gov.uk/guidance/find-software-thats-compatible-with-making-tax-digital-for-income-tax"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-indigo-600 underline hover:text-indigo-800"
+          >
+            compatible software for Making Tax Digital for Income Tax
+          </a>.
+        </span>
+      </div>
+
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* Search */}
