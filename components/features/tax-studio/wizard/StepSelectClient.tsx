@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Search as SearchIcon, Loader2, ChevronLeft, ChevronRight, X, Check,
+  Search as SearchIcon, Loader2, ChevronLeft, ChevronRight, X, Check, Circle,
   Mail, Phone, Download, Copy, ExternalLink, TrendingUp, MessageSquarePlus, Sparkles,
 } from 'lucide-react';
+import Tooltip from '@/components/ui/Tooltip';
 import { StatusBadge } from '../primitives';
 import {
   deriveStatus, currentFilingSeason, fmtMoney, fmtDateUK, returnType,
@@ -17,6 +18,24 @@ import type { ReturnTypeId } from '../types';
 import type { ReturnListItem } from '../persistence';
 
 const PAGE_SIZE = 10;
+
+// Client account status (matches the Clients list): active / hold / inactive.
+const ACCOUNT_STATUS: Record<string, { dot: string; label: string }> = {
+  active:   { dot: 'text-green-500 fill-green-500', label: 'Active' },
+  hold:     { dot: 'text-amber-500 fill-amber-500', label: 'On Hold' },
+  inactive: { dot: 'text-[var(--text-muted)] fill-[var(--text-muted)]', label: 'Inactive' },
+};
+
+function AccountStatusDot({ status }: { status?: string | null }) {
+  const key = (status ?? '').toLowerCase();
+  const cfg = ACCOUNT_STATUS[key];
+  if (!cfg) return null;
+  return (
+    <Tooltip label={cfg.label}>
+      <Circle size={9} className={`shrink-0 ${cfg.dot}`} aria-label={cfg.label} />
+    </Tooltip>
+  );
+}
 
 export default function StepSelectClient({
   returnTypeId, selected, onSelect, allReturns,
@@ -142,7 +161,10 @@ export default function StepSelectClient({
                           <div className="flex items-center gap-2.5">
                             <Avatar name={c.name} />
                             <div className="min-w-0">
-                              <p className="truncate font-semibold text-[var(--text-primary)]">{c.name}</p>
+                              <p className="flex items-center gap-1.5 truncate font-semibold text-[var(--text-primary)]">
+                                <AccountStatusDot status={c.status} />
+                                <span className="truncate">{c.name}</span>
+                              </p>
                               <p className="text-[11px] text-[var(--text-muted)]">{c.client_ref ?? '—'}</p>
                             </div>
                           </div>
@@ -204,7 +226,10 @@ function ClientDetail({ client, history, onClear }: { client: WizardClient; hist
         </div>
         <button onClick={onClear} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={16} /></button>
       </div>
-      <p className="mt-2 text-[12px] text-[var(--text-secondary)]">{entityLabelForBusinessType(client.business_type)} · Self Assessment</p>
+      <p className="mt-2 flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]">
+        <AccountStatusDot status={client.status} />
+        {entityLabelForBusinessType(client.business_type)} · Self Assessment
+      </p>
       <div className="mt-2 space-y-1">
         {client.contact_email && <p className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]"><Mail size={12} className="text-[var(--text-muted)]" /> {client.contact_email}</p>}
         {client.contact_number && <p className="flex items-center gap-1.5 text-[12px] text-[var(--text-secondary)]"><Phone size={12} className="text-[var(--text-muted)]" /> {client.contact_number}</p>}
