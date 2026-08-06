@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ArrowRight, Loader2, Sparkles, Beaker, CheckCircle2, Circle } from 'lucide-react';
 import { StudioCard, SectionTitle, EstimateChip } from '../primitives';
+import DocumentExtract from '../DocumentExtract';
 import ConnectedImports from '../ConnectedImports';
 import { seedSuggestions, seedReviewPoints, fmtMoney } from '../data';
 import { estimateSa100 } from '../calc';
@@ -69,6 +70,9 @@ export default function StageAnalyse({
           <Metric label="Balancing payment" value={fmtMoney(est.balancingPayment)} estimate />
         </div>
       </StudioCard>
+
+      {/* Read the client's documents (P60, dividend vouchers, etc.) with AI. */}
+      <DocumentExtract ret={ret} patch={patch} />
 
       {/* Real integrations: MTD IT, Accounts Studio, Landlord Analysis (+ Payroll note). */}
       <ConnectedImports ret={ret} patch={patch} />
