@@ -165,8 +165,9 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
 
   heading(st, 'Income');
   const emp = c.employmentIncome, trade = c.tradeProfit, prop = c.propertyProfit;
-  if (emp > 0) line(st, 'Pay from employment (incl. benefits)', gbp(emp));
+  if (emp > 0) line(st, 'Pay from employment (net of expenses)', gbp(emp));
   if (trade > 0) line(st, 'Profit from self-employment', gbp(trade));
+  if (c.partnershipProfit > 0) line(st, 'Profit from partnership', gbp(c.partnershipProfit));
   if (prop > 0) line(st, 'Profit from property', gbp(prop));
   if (c.savingsIncome > 0) line(st, 'Interest from savings', gbp(c.savingsIncome));
   if (c.dividendIncome > 0) line(st, 'Dividends', gbp(c.dividendIncome));
@@ -179,6 +180,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   for (const l of c.lines.filter(l => l.amount > 0)) line(st, `${l.label} — ${gbp(l.amount)} @ ${pct(l.rate)}`, gbp(l.tax), { indent: 6 });
   if (c.financeCostReducer > 0) line(st, 'Less finance-cost reducer (20%)', `(${gbp(c.financeCostReducer)})`, { indent: 6 });
   if (c.marriageAllowanceReducer > 0) line(st, 'Less Marriage Allowance', `(${gbp(c.marriageAllowanceReducer)})`, { indent: 6 });
+  if (c.foreignTaxCreditRelief > 0) line(st, 'Less Foreign Tax Credit Relief', `(${gbp(c.foreignTaxCreditRelief)})`, { indent: 6 });
   line(st, 'Income tax due', gbp(c.incomeTax), { bold: true, rule: true });
   if (c.class4Nic > 0) line(st, 'Class 4 National Insurance', gbp(c.class4Nic));
   if (c.studentLoan > 0) line(st, 'Student loan repayment', gbp(c.studentLoan));
@@ -198,9 +200,11 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   const i = input.income;
   if (i.employment.length) { heading(rs, 'Employment'); for (const e of i.employment) { line(rs, e.employer || 'Employment', gbp(e.pay)); line(rs, '  Tax deducted / benefits in kind', `${gbp(e.taxDeducted)} / ${gbp(e.benefits)}`, { muted: true, indent: 6 }); } }
   if (i.selfEmployment.length) { heading(rs, 'Self-employment'); for (const s of i.selfEmployment) { const adj = s.profit + (s.addBacks || 0) - (s.capitalAllowances || 0); line(rs, s.name || 'Self-employment', gbp(adj)); if ((s.addBacks || 0) || (s.capitalAllowances || 0)) line(rs, `  Accounts profit ${gbp(s.profit)}, add-backs ${gbp(s.addBacks || 0)}, capital allowances ${gbp(s.capitalAllowances || 0)}`, null, { muted: true, indent: 6 }); } }
+  if ((i.partnerships ?? []).length) { heading(rs, 'Partnership'); for (const p of (i.partnerships ?? [])) line(rs, p.name || 'Partnership', gbp(p.profit)); }
   if (i.property.length) { heading(rs, 'Property'); for (const p of i.property) line(rs, p.address || 'Property', gbp(p.profit)); }
   const others: [string, number][] = [
     ['Dividends', i.dividends], ['Savings interest', i.savingsInterest], ['Pensions income', i.pensionsIncome],
+    ['State pension', i.statePension || 0], ['Foreign income', i.foreign?.income || 0], ['Foreign tax paid', i.foreign?.foreignTaxPaid || 0],
     ['Other income', i.otherIncome], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', i.pensionContributions],
     ['Child benefit received', i.childBenefit || 0],
   ];

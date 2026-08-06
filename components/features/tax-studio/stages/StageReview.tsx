@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
-  AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp,
+  AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
@@ -65,12 +65,25 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
       <Group icon={Briefcase} title="Employment"
         onAdd={() => setIncome(i => ({ ...i, employment: [...i.employment, { id: `e${i.employment.length + 1}`, employer: '', pay: 0, taxDeducted: 0, benefits: 0 }] }))}>
         {income.employment.map((e, idx) => (
-          <div key={e.id} className="grid grid-cols-[1.6fr_1fr_1fr_1fr_auto] items-center gap-2">
+          <div key={e.id} className="grid grid-cols-[1.3fr_1fr_1fr_0.9fr_0.9fr_auto] items-center gap-2">
             <TextIn value={e.employer} placeholder="Employer" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, employer: v } : x) }))} />
             <NumIn value={e.pay} label="Pay" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, pay: v } : x) }))} />
             <NumIn value={e.taxDeducted} label="Tax" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, taxDeducted: v } : x) }))} />
             <NumIn value={e.benefits} label="BIK" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, benefits: v } : x) }))} />
+            <NumIn value={e.expenses ?? 0} label="Expenses" onChange={v => setIncome(i => ({ ...i, employment: i.employment.map((x, j) => j === idx ? { ...x, expenses: v } : x) }))} />
             <RemoveBtn onClick={() => setIncome(i => ({ ...i, employment: i.employment.filter((_, j) => j !== idx) }))} />
+          </div>
+        ))}
+      </Group>
+
+      {/* Partnership (SA104) */}
+      <Group icon={Users} title="Partnership"
+        onAdd={() => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt${(i.partnerships ?? []).length + 1}`, name: '', profit: 0 }] }))}>
+        {(income.partnerships ?? []).map((p, idx) => (
+          <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
+            <TextIn value={p.name} placeholder="Partnership" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
+            <NumIn value={p.profit} label="Profit share" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
+            <RemoveBtn onClick={() => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).filter((_, j) => j !== idx) }))} />
           </div>
         ))}
       </Group>
@@ -137,6 +150,9 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
             <option value="scotland">Scotland</option>
           </select>
         </div>
+        <LabelledNum label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
+        <LabelledNum label="Foreign income" value={income.foreign?.income ?? 0} onChange={v => setForeign(setIncome, { income: v })} />
+        <LabelledNum label="Foreign tax paid" value={income.foreign?.foreignTaxPaid ?? 0} onChange={v => setForeign(setIncome, { foreignTaxPaid: v })} />
       </div>
 
       {/* Capital gains */}
@@ -155,6 +171,10 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
 
 function setCg(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['capitalGains']>>) {
   setIncome(i => ({ ...i, capitalGains: { residentialGains: 0, otherGains: 0, losses: 0, ...i.capitalGains, ...patch } }));
+}
+
+function setForeign(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['foreign']>>) {
+  setIncome(i => ({ ...i, foreign: { income: 0, foreignTaxPaid: 0, ...i.foreign, ...patch } }));
 }
 
 function Group({ icon: Icon, title, onAdd, children }: { icon: typeof Briefcase; title: string; onAdd: () => void; children: React.ReactNode }) {
@@ -213,6 +233,9 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       )}
       {c.marriageAllowanceReducer > 0 && (
         <Row label="Less: Marriage Allowance" value={`(${fmtMoney(c.marriageAllowanceReducer)})`} />
+      )}
+      {c.foreignTaxCreditRelief > 0 && (
+        <Row label="Less: Foreign Tax Credit Relief" value={`(${fmtMoney(c.foreignTaxCreditRelief)})`} />
       )}
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}

@@ -92,6 +92,7 @@ export interface Sa100Computation {
   taxYear: string;
   employmentIncome: number;
   tradeProfit: number;
+  partnershipProfit: number;
   propertyProfit: number;
   savingsIncome: number;
   dividendIncome: number;
@@ -109,6 +110,7 @@ export interface Sa100Computation {
   incomeTaxBeforeReducers: number;
   financeCostReducer: number;
   marriageAllowanceReducer: number;
+  foreignTaxCreditRelief: number;
   incomeTax: number;         // after reducers, not below zero
 
   class4Nic: number;
@@ -143,7 +145,7 @@ function placeInBands(amount: number, used: number, brl: number, addl: number): 
 export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa100Computation {
   const notes: string[] = [];
 
-  const employmentIncome = sum(income.employment.map(e => e.pay + (e.benefits || 0)));
+  const employmentIncome = sum(income.employment.map(e => Math.max(0, e.pay + (e.benefits || 0) - (e.expenses || 0))));
   const taxDeducted = sum(income.employment.map(e => e.taxDeducted));
   // Tax-adjusted trade profit: accounts profit + add-backs (disallowables /
   // depreciation) − capital allowances, floored at nil per trade.
@@ -157,15 +159,19 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const tradeProfit = Math.max(0, netTrade);
   const tradeLossSideways = netTrade < 0 ? -netTrade : 0;
 
+  const partnershipProfit = sum((income.partnerships ?? []).map(p => Math.max(0, p.profit)));
   const propertyProfit = sum(income.property.map(p => Math.max(0, p.profit)));
   const pensionsIncome = income.pensionsIncome || 0;
+  const statePension = income.statePension || 0;
+  const foreignIncome = income.foreign?.income || 0;
+  const foreignTaxPaid = income.foreign?.foreignTaxPaid || 0;
   const otherIncome = income.otherIncome || 0;
   const savingsIncome = income.savingsInterest || 0;
   const dividendIncome = income.dividends || 0;
   const financeCosts = income.financeCosts || 0;
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + propertyProfit + pensionsIncome + otherIncome;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -269,10 +275,19 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   }
   const marriageAllowanceReducer = income.marriageAllowance === 'received' ? MARRIAGE_ALLOWANCE_REDUCER : 0;
   if (marriageAllowanceReducer > 0) notes.push('Marriage Allowance received — £252 tax reducer applied.');
-  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer);
+  // Foreign Tax Credit Relief — simplified: the lower of the foreign tax paid
+  // and UK tax on that income at the marginal rate.
+  const marginalRate = marginalBand === 'additional' ? R_ADDITIONAL : marginalBand === 'higher' ? R_HIGHER : R_BASIC;
+  let foreignTaxCreditRelief = 0;
+  if (foreignIncome > 0 && foreignTaxPaid > 0) {
+    foreignTaxCreditRelief = Math.min(foreignTaxPaid, r0(foreignIncome * marginalRate));
+    notes.push('Foreign Tax Credit Relief applied (simplified — lower of the foreign tax paid and UK tax on the foreign income).');
+  }
+  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer - foreignTaxCreditRelief);
 
-  // Class 4 NIC on trade profit. (Class 2 is not charged for 2025/26.)
-  const class4Nic = r0(Math.max(0, Math.min(tradeProfit, NIC_UPL) - NIC_LPL) * C4_MAIN + Math.max(0, tradeProfit - NIC_UPL) * C4_UPPER);
+  // Class 4 NIC on trade + partnership profit share. (Class 2 not charged 2025/26.)
+  const class4Base = tradeProfit + partnershipProfit;
+  const class4Nic = r0(Math.max(0, Math.min(class4Base, NIC_UPL) - NIC_LPL) * C4_MAIN + Math.max(0, class4Base - NIC_UPL) * C4_UPPER);
 
   // Student loan — 9% of income above the plan threshold.
   let studentLoan = 0;
@@ -321,8 +336,8 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   return {
     taxYear,
-    employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsIncome),
+    employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsIncome + statePension + foreignIncome),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered,
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),
@@ -331,6 +346,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     incomeTaxBeforeReducers: r0(incomeTaxBeforeReducers),
     financeCostReducer: r0(financeCostReducer),
     marriageAllowanceReducer,
+    foreignTaxCreditRelief,
     incomeTax: r0(incomeTax),
     class4Nic, studentLoan, hicbc,
     taxableGains: r0(taxableGains), capitalGainsTax,

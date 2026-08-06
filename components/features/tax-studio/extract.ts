@@ -5,12 +5,16 @@ import type { Sa100Income } from './types';
 
 export interface Sa100Extraction {
   documents: { fileName: string; docType: string; summary: string }[];
-  employment: { employer: string; pay: number; taxDeducted: number; benefits: number }[];
+  employment: { employer: string; pay: number; taxDeducted: number; benefits: number; expenses: number }[];
   selfEmployment: { name: string; profit: number }[];
+  partnerships: { name: string; profit: number }[];
   property: { address: string; profit: number }[];
   dividends: number;
   savingsInterest: number;
   pensionsIncome: number;
+  statePension: number;
+  foreignIncome: number;
+  foreignTaxPaid: number;
   otherIncome: number;
   giftAid: number;
   pensionContributions: number;
@@ -37,10 +41,12 @@ function normalise(raw: unknown): Sa100Extraction {
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   return {
     documents: arr(e.documents),
-    employment: arr<Sa100Extraction['employment'][number]>(e.employment).map(x => ({ employer: String(x?.employer ?? ''), pay: num(x?.pay), taxDeducted: num(x?.taxDeducted), benefits: num(x?.benefits) })),
+    employment: arr<Sa100Extraction['employment'][number]>(e.employment).map(x => ({ employer: String(x?.employer ?? ''), pay: num(x?.pay), taxDeducted: num(x?.taxDeducted), benefits: num(x?.benefits), expenses: num(x?.expenses) })),
     selfEmployment: arr<Sa100Extraction['selfEmployment'][number]>(e.selfEmployment).map(x => ({ name: String(x?.name ?? ''), profit: num(x?.profit) })),
+    partnerships: arr<Sa100Extraction['partnerships'][number]>(e.partnerships).map(x => ({ name: String(x?.name ?? ''), profit: num(x?.profit) })),
     property: arr<Sa100Extraction['property'][number]>(e.property).map(x => ({ address: String(x?.address ?? ''), profit: num(x?.profit) })),
     dividends: num(e.dividends), savingsInterest: num(e.savingsInterest), pensionsIncome: num(e.pensionsIncome),
+    statePension: num(e.statePension), foreignIncome: num(e.foreignIncome), foreignTaxPaid: num(e.foreignTaxPaid),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
   };
@@ -59,31 +65,37 @@ export async function fetchExtraction(taxYear: string, files: EncodedFile[]): Pr
 
 /** True if the extraction found anything importable. */
 export function extractionHasData(e: Sa100Extraction): boolean {
-  return e.employment.length > 0 || e.selfEmployment.length > 0 || e.property.length > 0
-    || [e.dividends, e.savingsInterest, e.pensionsIncome, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
+  return e.employment.length > 0 || e.selfEmployment.length > 0 || e.partnerships.length > 0 || e.property.length > 0
+    || [e.dividends, e.savingsInterest, e.pensionsIncome, e.statePension, e.foreignIncome, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
 }
 
-const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PROP = 'doc-prop-';
+const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = 'doc-prop-';
 
 /** Merge extracted figures into the income. Document-sourced rows carry a prefix
  *  so re-importing replaces them; scalar fields are set only when the documents
  *  found a value (never wiping a manual figure with a zero). */
 export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extraction): Sa100Income {
   const employment = income.employment.filter(x => !x.id.startsWith(DOC_EMP));
-  e.employment.forEach((x, i) => employment.push({ id: `${DOC_EMP}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benefits: Math.round(x.benefits) }));
+  e.employment.forEach((x, i) => employment.push({ id: `${DOC_EMP}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benefits: Math.round(x.benefits), expenses: Math.round(x.expenses) }));
 
   const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(DOC_SE));
   e.selfEmployment.forEach((x, i) => selfEmployment.push({ id: `${DOC_SE}${i}`, name: x.name || `Self-employment ${i + 1}`, profit: Math.round(x.profit) }));
+
+  const partnerships = (income.partnerships ?? []).filter(x => !x.id.startsWith(DOC_PT));
+  e.partnerships.forEach((x, i) => partnerships.push({ id: `${DOC_PT}${i}`, name: x.name || `Partnership ${i + 1}`, profit: Math.round(x.profit) }));
 
   const property = income.property.filter(x => !x.id.startsWith(DOC_PROP));
   e.property.forEach((x, i) => property.push({ id: `${DOC_PROP}${i}`, address: x.address || `Property ${i + 1}`, profit: Math.round(x.profit) }));
 
   const setIf = (val: number, current: number) => (val > 0 ? Math.round(val) : current);
+  const foreignHas = e.foreignIncome > 0 || e.foreignTaxPaid > 0;
   return {
-    ...income, employment, selfEmployment, property,
+    ...income, employment, selfEmployment, partnerships, property,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     pensionsIncome: setIf(e.pensionsIncome, income.pensionsIncome),
+    statePension: setIf(e.statePension, income.statePension ?? 0),
+    foreign: foreignHas ? { income: setIf(e.foreignIncome, income.foreign?.income ?? 0), foreignTaxPaid: setIf(e.foreignTaxPaid, income.foreign?.foreignTaxPaid ?? 0) } : income.foreign,
     otherIncome: setIf(e.otherIncome, income.otherIncome),
     giftAid: setIf(e.giftAid, income.giftAid),
     pensionContributions: setIf(e.pensionContributions, income.pensionContributions),

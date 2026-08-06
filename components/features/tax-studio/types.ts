@@ -41,6 +41,12 @@ export interface EmploymentSource {
   pay: number;        // gross pay (P60 box 1)
   taxDeducted: number; // PAYE tax deducted (P60 box 2)
   benefits: number;   // P11D benefits in kind
+  expenses?: number;  // allowable employment expenses (SA102)
+}
+export interface PartnershipSource {
+  id: string;
+  name: string;
+  profit: number;     // this partner's share of the partnership's taxable profit
 }
 export interface TradeSource {
   id: string;
@@ -60,10 +66,15 @@ export interface PropertySource {
 export interface Sa100Income {
   employment: EmploymentSource[];
   selfEmployment: TradeSource[];
+  partnerships?: PartnershipSource[]; // SA104 — share of partnership profit
   property: PropertySource[];
   dividends: number;
   savingsInterest: number;
-  pensionsIncome: number;      // taxable pensions / state pension received
+  pensionsIncome: number;      // taxable private pensions received
+  statePension?: number;       // state pension (paid gross, no PAYE)
+  /** SA106 — foreign income received and the foreign tax paid on it (drives
+   *  Foreign Tax Credit Relief). Simplified single bucket. */
+  foreign?: { income: number; foreignTaxPaid: number };
   otherIncome: number;
   // Reliefs / deductions
   giftAid: number;             // net gift aid donations paid

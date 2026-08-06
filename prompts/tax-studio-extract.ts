@@ -8,12 +8,16 @@ You have been given one or more of the taxpayer's documents (attached above). Id
 Common documents and what to take:
 - P60 / P45 (employment): employer name, gross pay for the year, and PAYE tax deducted.
 - P11D (benefits in kind): the total cash-equivalent of benefits for that employment.
+- Employment expense claims (P87, professional subscriptions, mileage): allowable employment expenses per employment.
 - Dividend vouchers / statements: the dividend amount(s). SUM all dividends across every voucher into one total.
 - Interest certificates / bank interest statements: taxable interest received. SUM across all accounts.
-- Pension statements: taxable pension income received; and, SEPARATELY, any personal pension CONTRIBUTIONS the taxpayer paid (relief at source, net amount).
+- Private pension statements: taxable pension income received; and, SEPARATELY, any personal pension CONTRIBUTIONS the taxpayer paid (relief at source, net amount).
+- State pension letter (DWP): the total STATE pension received in the year (report separately from private pensions).
 - Gift Aid receipts: net donations paid.
 - Property / letting statements: net rental profit per property.
 - Self-employment accounts: net trade profit per trade.
+- Partnership statement (SA104 / partnership tax return): this partner's SHARE of the partnership's taxable profit (per partnership).
+- Foreign income (SA106): foreign income received and the foreign tax paid on it — report the total foreign income and total foreign tax separately.
 - Child Benefit award notice: the total child benefit received in the year (for the HICBC).
 - SA302 / HMRC tax calculation: use only as a cross-check — do NOT double count figures already taken from source documents.
 
@@ -28,12 +32,16 @@ Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
 
 {
   "documents": [{ "fileName": string, "docType": string, "summary": string }],
-  "employment": [{ "employer": string, "pay": number, "taxDeducted": number, "benefits": number }],
+  "employment": [{ "employer": string, "pay": number, "taxDeducted": number, "benefits": number, "expenses": number }],
   "selfEmployment": [{ "name": string, "profit": number }],
+  "partnerships": [{ "name": string, "profit": number }],
   "property": [{ "address": string, "profit": number }],
   "dividends": number,
   "savingsInterest": number,
   "pensionsIncome": number,
+  "statePension": number,
+  "foreignIncome": number,
+  "foreignTaxPaid": number,
   "otherIncome": number,
   "giftAid": number,
   "pensionContributions": number,

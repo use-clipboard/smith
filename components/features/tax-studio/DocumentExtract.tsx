@@ -119,10 +119,13 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {extraction.employment.length > 0 && <Figure label={`Employment (${extraction.employment.length})`} value={fmtMoney(empTotal)} />}
                   {extraction.selfEmployment.length > 0 && <Figure label={`Self-employment (${extraction.selfEmployment.length})`} value={fmtMoney(extraction.selfEmployment.reduce((a, s) => a + s.profit, 0))} />}
+                  {extraction.partnerships.length > 0 && <Figure label={`Partnership (${extraction.partnerships.length})`} value={fmtMoney(extraction.partnerships.reduce((a, p) => a + p.profit, 0))} />}
                   {extraction.property.length > 0 && <Figure label={`Property (${extraction.property.length})`} value={fmtMoney(extraction.property.reduce((a, p) => a + p.profit, 0))} />}
                   {extraction.dividends > 0 && <Figure label="Dividends" value={fmtMoney(extraction.dividends)} />}
                   {extraction.savingsInterest > 0 && <Figure label="Savings interest" value={fmtMoney(extraction.savingsInterest)} />}
                   {extraction.pensionsIncome > 0 && <Figure label="Pensions income" value={fmtMoney(extraction.pensionsIncome)} />}
+                  {extraction.statePension > 0 && <Figure label="State pension" value={fmtMoney(extraction.statePension)} />}
+                  {extraction.foreignIncome > 0 && <Figure label="Foreign income" value={fmtMoney(extraction.foreignIncome)} />}
                   {extraction.pensionContributions > 0 && <Figure label="Pension contrib." value={fmtMoney(extraction.pensionContributions)} />}
                   {extraction.giftAid > 0 && <Figure label="Gift Aid" value={fmtMoney(extraction.giftAid)} />}
                   {extraction.childBenefit > 0 && <Figure label="Child benefit" value={fmtMoney(extraction.childBenefit)} />}
