@@ -147,6 +147,14 @@ export default function MtdItSubmitModal({
 
   const submittable = (preview ?? []).filter(s => s.businessId);
   const alreadyFiled = quarterStatus === 'submitted';
+  // Which of THIS period's sources have already been filed at HMRC — derived
+  // from the submission history (business id + period end), so re-opening the
+  // modal after filing clearly reads as "done" even when the quarter status
+  // hasn't flipped and `results` has been reset.
+  const filedKeys = new Set((history ?? []).filter(h => h.ok).map(h => `${h.business_id}|${h.period_to}`));
+  const sourceFiled = (s: PreviewSource) => !!s.businessId && filedKeys.has(`${s.businessId}|${s.periodEndDate}`);
+  const anyAlreadyFiled = submittable.some(sourceFiled);
+  const lastFiledAt = (history ?? []).filter(h => h.ok).map(h => h.submitted_at).sort().at(-1) ?? null;
 
   // Consolidated reporting is only permitted while the client's combined income
   // across all sources stays below the threshold. Echo it here at submit time as
@@ -189,8 +197,13 @@ export default function MtdItSubmitModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {alreadyFiled && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 inline-flex items-center gap-2"><CheckCircle2 size={14} /> This quarter has already been filed with HMRC. Re-submitting will amend the cumulative figures.</div>
+          {!done && (alreadyFiled || anyAlreadyFiled) && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 flex items-start gap-2">
+              <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
+              <span>
+                <strong>Already filed with HMRC.</strong>{lastFiledAt ? ` Last submitted ${new Date(lastFiledAt).toLocaleString('en-GB')}.` : ''} These are cumulative year-to-date figures — submitting again <strong>amends</strong> what HMRC holds, it does not create a duplicate.
+              </span>
+            </div>
           )}
           {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
 
@@ -214,7 +227,10 @@ export default function MtdItSubmitModal({
                   <div key={i} className={`rounded-lg border p-3 ${unmapped ? 'border-gray-200 bg-gray-50' : 'border-indigo-100 bg-indigo-50/30'}`}>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-slate-800 inline-flex items-center gap-1.5"><Building2 size={13} className="text-slate-400" /> {s.name}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-slate-500">{TYPE_LABEL[s.typeOfBusiness]}</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        {sourceFiled(s) && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"><CheckCircle2 size={10} /> Filed</span>}
+                        <span className="text-[10px] uppercase tracking-wide text-slate-500">{TYPE_LABEL[s.typeOfBusiness]}</span>
+                      </span>
                     </div>
                     <div className="mt-1.5 flex items-center gap-4 text-xs text-slate-600 flex-wrap">
                       <span>Income <strong className="tabular-nums">{gbp(s.income)}</strong></span>
@@ -384,13 +400,13 @@ export default function MtdItSubmitModal({
             </div>
             <div className="flex items-center gap-2">
               <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
-              <Tooltip label={blockers.length > 0 ? blockers[0] : 'File these figures with HMRC'}>
+              <Tooltip label={blockers.length > 0 ? blockers[0] : anyAlreadyFiled ? 'Already filed — re-submitting amends the cumulative figures at HMRC' : 'File these figures with HMRC'}>
                 <button
                   onClick={() => void submit()}
                   disabled={submitting || submittable.length === 0 || blockers.length > 0}
                   className="btn-primary inline-flex items-center gap-1.5 text-sm disabled:opacity-50"
                 >
-                  {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} Submit {submittable.length ? `(${submittable.length})` : ''}
+                  {submitting ? <Loader2 size={13} className="animate-spin" /> : <Landmark size={13} />} {anyAlreadyFiled ? 'Re-submit (amend)' : 'Submit'} {submittable.length ? `(${submittable.length})` : ''}
                 </button>
               </Tooltip>
             </div>
