@@ -14,6 +14,31 @@
 
 import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal } from './types';
 
+// ── SA107 trusts & estates helper ────────────────────────────────────────────
+/** Split trust/estate income by UK treatment. Discretionary trust income is
+ *  received net and grossed up at 45% (a fully-creditable tax credit); estate /
+ *  interest-in-possession income is reported gross by type with the tax paid.
+ *  Amounts are unrounded — round at the call site. */
+export function trustTotals(income: Sa100Income): {
+  nonSavings: number; savings: number; dividend: number; taxCredit: number;
+} {
+  let nonSavings = 0, savings = 0, dividend = 0, taxCredit = 0;
+  for (const t of income.trusts ?? []) {
+    if (t.kind === 'discretionary') {
+      const gross = (t.amount || 0) / 0.55; // 45% trust rate
+      nonSavings += gross;
+      taxCredit += gross - (t.amount || 0);
+    } else {
+      const amt = t.amount || 0;
+      if (t.incomeType === 'savings') savings += amt;
+      else if (t.incomeType === 'dividend') dividend += amt;
+      else nonSavings += amt;
+      taxCredit += t.taxPaid || 0;
+    }
+  }
+  return { nonSavings, savings, dividend, taxCredit };
+}
+
 // ── SA104 partnership helper ─────────────────────────────────────────────────
 /** This partner's taxable share of the partnership trade profit: share +
  *  basis-period adjustments − brought-forward loss, floored at nil. */
@@ -295,19 +320,20 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const pensionsIncome = income.pensionsIncome || 0;
   const statePension = income.statePension || 0;
   const ft = foreignTotals(income);
+  const tr = trustTotals(income);
   const foreignIncome = ft.other;              // foreign non-savings/non-dividend → NSND
   const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = income.otherIncome || 0;
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
-  const savingsIncome = (income.savingsInterest || 0) + ft.interest + partnershipSavings;
-  const dividendIncome = (income.dividends || 0) + ft.dividends + partnershipDividends;
+  const savingsIncome = (income.savingsInterest || 0) + ft.interest + partnershipSavings + tr.savings;
+  const dividendIncome = (income.dividends || 0) + ft.dividends + partnershipDividends + tr.dividend;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome + chargeableEventGains;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome + chargeableEventGains + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -489,7 +515,9 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const chargeableEventCredit = income.additional?.chargeableEventUkPolicy ? r0(chargeableEventGains * R_BASIC) : 0;
   if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit);
+  const trustCredit = r0(tr.taxCredit);
+  if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not
@@ -504,7 +532,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsIncome + statePension + foreignIncome),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsIncome + statePension + foreignIncome + chargeableEventGains + tr.nonSavings),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered,
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),

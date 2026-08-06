@@ -143,6 +143,19 @@ export interface PropertySource {
   profit: number;
 }
 
+// SA107 Trusts & estates — income received from a trust, settlement or estate.
+export interface TrustEstateSource {
+  id: string;
+  name: string;
+  /** 'discretionary' = net received with an automatic 45% tax credit; 'estate' =
+   *  income from an estate / interest-in-possession trust reported gross by type
+   *  with the tax already paid. */
+  kind: 'discretionary' | 'estate';
+  incomeType: 'nonSavings' | 'savings' | 'dividend'; // routing (estate kind only)
+  amount: number;   // net received (discretionary) or gross income (estate)
+  taxPaid: number;  // tax already paid (estate kind; computed for discretionary)
+}
+
 // SA106 Foreign — one foreign income source, routed to the right UK rate.
 export interface ForeignSource {
   id: string;
@@ -212,6 +225,8 @@ export interface Sa100Income {
   childBenefit?: number;
   /** Brought-forward trade losses set against this year's trade profit. */
   tradeLossBroughtForward?: number;
+  /** SA107 — income from trusts, settlements and estates. */
+  trusts?: TrustEstateSource[];
   /** SA101 Additional information — life-insurance chargeable event gains and
    *  the venture-capital / other reliefs that reduce the income-tax liability. */
   additional?: {

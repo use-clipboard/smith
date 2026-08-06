@@ -202,6 +202,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   if (i.selfEmployment.length) { heading(rs, 'Self-employment'); for (const s of i.selfEmployment) { const net = tradeNetProfit(s); const adj = tradeAdjustedProfit(s); line(rs, s.name || 'Self-employment', gbp(adj)); if (adj !== net) line(rs, `  Net profit ${gbp(net)}, then tax adjustments`, null, { muted: true, indent: 6 }); } }
   if ((i.partnerships ?? []).length) { heading(rs, 'Partnership'); for (const p of (i.partnerships ?? [])) line(rs, p.name || 'Partnership', gbp(partnershipTaxableProfit(p))); }
   if (i.property.length) { heading(rs, 'Property'); for (const p of i.property) line(rs, p.address || 'Property', gbp(propertyTaxable(p))); }
+  if ((i.trusts ?? []).length) { heading(rs, 'Trusts & estates'); for (const t of (i.trusts ?? [])) line(rs, t.name || 'Trust/estate', gbp(t.kind === 'discretionary' ? (t.amount || 0) / 0.55 : (t.amount || 0))); }
   const fT = foreignTotals(i);
   const others: [string, number][] = [
     ['Dividends', i.dividends], ['Savings interest', i.savingsInterest], ['Pensions income', i.pensionsIncome],

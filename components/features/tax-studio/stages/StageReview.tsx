@@ -5,12 +5,12 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText,
+  Globe2, GraduationCap, Landmark, FileText, Scale,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -59,7 +59,7 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'additional';
+type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'additional';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
@@ -69,6 +69,7 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'property',    label: 'Property',         code: 'SA105', icon: Home },
   { id: 'foreign',     label: 'Foreign',          code: 'SA106', icon: Globe2 },
   { id: 'cgt',         label: 'Capital gains',    code: 'SA108', icon: TrendingUp },
+  { id: 'trusts',      label: 'Trusts',           code: 'SA107', icon: Scale },
   { id: 'additional',  label: 'Additional info',  code: 'SA101', icon: FileText },
 ];
 
@@ -85,6 +86,7 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
       || (income.foreign && ((income.foreign.income || 0) || (income.foreign.foreignTaxPaid || 0)) ? 1 : 0),
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
+    trusts: (income.trusts ?? []).length,
     additional: income.additional && [
       income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
       income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
@@ -125,6 +127,7 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
         {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
         {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
         {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
+        {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
         {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
@@ -545,6 +548,59 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
         <LabelledNum label="Losses brought forward" value={cg.lossesBroughtForward ?? 0} onChange={v => patchCg({ lossesBroughtForward: v })} />
       </div>
       <p className="text-[10.5px] text-[var(--text-muted)]">£3,000 annual exempt amount. Standard gains 18%/24% (band-dependent); BADR / Investors’ Relief gains 14%.</p>
+    </div>
+  );
+}
+
+function TrustsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const list = income.trusts ?? [];
+  const add = () => setIncome(i => ({ ...i, trusts: [...(i.trusts ?? []), { id: `tr-${(i.trusts ?? []).length}-${Date.now()}`, name: '', kind: 'discretionary', incomeType: 'nonSavings', amount: 0, taxPaid: 0 }] }));
+  return (
+    <div className="space-y-3">
+      {list.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No trust or estate income yet — add a source to enter the SA107 figures.</p>
+      )}
+      {list.map((t, idx) => (
+        <TrustCard key={t.id} t={t} idx={idx}
+          onChange={u => setIncome(i => ({ ...i, trusts: (i.trusts ?? []).map((x, j) => j === idx ? { ...x, ...u } : x) }))}
+          onRemove={() => setIncome(i => ({ ...i, trusts: (i.trusts ?? []).filter((_, j) => j !== idx) }))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add trust / estate</button>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Discretionary trust income is entered net and grossed up at the 45% trust rate (the tax credit is set against your liability). Estate / interest-in-possession income is entered gross by type with the tax already paid.</p>
+    </div>
+  );
+}
+
+function TrustCard({ t, idx, onChange, onRemove }: {
+  t: TrustEstateSource; idx: number; onChange: (u: Partial<TrustEstateSource>) => void; onRemove: () => void;
+}) {
+  const gross = t.kind === 'discretionary' ? (t.amount || 0) / 0.55 : (t.amount || 0);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <input value={t.name} placeholder={`Trust / estate ${idx + 1}`} onChange={ev => onChange({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Gross <span className="font-bold text-[var(--text-primary)]">{fmtMoney(gross)}</span></span>
+        <RemoveBtn onClick={onRemove} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Kind</label>
+          <select value={t.kind} onChange={e => onChange({ kind: e.target.value as TrustEstateSource['kind'] })} className="input-base py-1 text-[12.5px]">
+            <option value="discretionary">Discretionary (45% credit)</option>
+            <option value="estate">Estate / IIP</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Income type</label>
+          <select value={t.incomeType} onChange={e => onChange({ incomeType: e.target.value as TrustEstateSource['incomeType'] })} disabled={t.kind === 'discretionary'} className="input-base py-1 text-[12.5px] disabled:opacity-50">
+            <option value="nonSavings">Non-savings</option>
+            <option value="savings">Savings</option>
+            <option value="dividend">Dividend</option>
+          </select>
+        </div>
+        <LabelledNum label={t.kind === 'discretionary' ? 'Net received' : 'Gross income'} value={t.amount} onChange={v => onChange({ amount: v })} />
+        <LabelledNum label={t.kind === 'discretionary' ? 'Tax credit (auto)' : 'Tax paid'} value={t.kind === 'discretionary' ? Math.round(gross - (t.amount || 0)) : (t.taxPaid ?? 0)} onChange={v => onChange({ taxPaid: v })} />
+      </div>
     </div>
   );
 }
