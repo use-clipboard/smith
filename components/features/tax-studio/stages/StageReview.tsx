@@ -551,8 +551,8 @@ function ForeignCard({ s, idx, onChange, onRemove }: {
             <option value="other">Other</option>
           </select>
         </div>
-        <LabelledNum label="Income (£)" value={s.income} onChange={v => onChange({ income: v })} />
-        <LabelledNum label="Foreign tax (£)" value={s.foreignTaxPaid} onChange={v => onChange({ foreignTaxPaid: v })} />
+        <LabelledNum box={FOREIGN_PAGES[s.category]} label="Income (£)" value={s.income} onChange={v => onChange({ income: v })} />
+        <LabelledNum box={FOREIGN_PAGES[s.category]} label="Foreign tax (£)" value={s.foreignTaxPaid} onChange={v => onChange({ foreignTaxPaid: v })} />
         <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
           <input type="checkbox" checked={s.claimFtcr !== false} onChange={e => onChange({ claimFtcr: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Claim FTCR
         </label>
@@ -560,6 +560,19 @@ function ForeignCard({ s, idx, onChange, onRemove }: {
     </div>
   );
 }
+
+// SA108 proceeds/cost boxes per asset section (residential, other, listed, unlisted).
+const CGT_BOXES: Record<CgtDisposal['assetType'], { proceeds: number; cost: number; gains: number }> = {
+  residential: { proceeds: 4, cost: 5, gains: 6 },
+  other: { proceeds: 15, cost: 16, gains: 17 },
+  listed: { proceeds: 24, cost: 25, gains: 26 },
+  unlisted: { proceeds: 32, cost: 33, gains: 34 },
+};
+
+// SA106 page/section the income sits on, by category.
+const FOREIGN_PAGES: Record<ForeignSource['category'], string> = {
+  interest: 'F2', dividends: 'F2', pension: 'F2', property: 'F4', other: 'F3',
+};
 
 function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const cg = income.capitalGains ?? {};
@@ -572,8 +585,8 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
       {disposals.length === 0 && (
         <div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <LabelledNum label="Residential gains" value={cg.residentialGains ?? 0} onChange={v => patchCg({ residentialGains: v })} />
-            <LabelledNum label="Other gains" value={cg.otherGains ?? 0} onChange={v => patchCg({ otherGains: v })} />
+            <LabelledNum box={6} label="Residential gains" value={cg.residentialGains ?? 0} onChange={v => patchCg({ residentialGains: v })} />
+            <LabelledNum box={17} label="Other gains" value={cg.otherGains ?? 0} onChange={v => patchCg({ otherGains: v })} />
             <LabelledNum label="Losses (in-year)" value={cg.losses ?? 0} onChange={v => patchCg({ losses: v })} />
           </div>
           <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Quick summary — or add itemised disposals below (they take precedence).</p>
@@ -586,7 +599,7 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
       ))}
       <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add disposal</button>
       <div className="mt-2 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
-        <LabelledNum label="Losses brought forward" value={cg.lossesBroughtForward ?? 0} onChange={v => patchCg({ lossesBroughtForward: v })} />
+        <LabelledNum box={47} label="Losses brought forward" value={cg.lossesBroughtForward ?? 0} onChange={v => patchCg({ lossesBroughtForward: v })} />
       </div>
       <p className="text-[10.5px] text-[var(--text-muted)]">£3,000 annual exempt amount. Standard gains 18%/24% (band-dependent); BADR / Investors’ Relief gains 14%.</p>
     </div>
@@ -715,6 +728,7 @@ function DisposalCard({ d, idx, onChange, onRemove }: {
   d: CgtDisposal; idx: number; onChange: (u: Partial<CgtDisposal>) => void; onRemove: () => void;
 }) {
   const { gain, loss } = disposalGainLoss(d);
+  const b = CGT_BOXES[d.assetType];
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
       <div className="mb-2 flex items-center gap-2">
@@ -732,8 +746,8 @@ function DisposalCard({ d, idx, onChange, onRemove }: {
             <option value="other">Other assets</option>
           </select>
         </div>
-        <LabelledNum label="Proceeds" value={d.proceeds} onChange={v => onChange({ proceeds: v })} />
-        <LabelledNum label="Allowable cost" value={d.cost} onChange={v => onChange({ cost: v })} />
+        <LabelledNum box={b.proceeds} label="Proceeds" value={d.proceeds} onChange={v => onChange({ proceeds: v })} />
+        <LabelledNum box={b.cost} label="Allowable cost" value={d.cost} onChange={v => onChange({ cost: v })} />
         <LabelledNum label="Reliefs (PRR/lettings)" value={d.reliefs ?? 0} onChange={v => onChange({ reliefs: v })} />
         <div>
           <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Special relief</label>
