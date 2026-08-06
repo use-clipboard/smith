@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource } from './types';
 
 // ── SA102 employment helpers ─────────────────────────────────────────────────
 // Total P11D benefits (boxes 9–16); falls back to the legacy aggregate when no
@@ -30,6 +30,38 @@ export function employmentExpenses(e: EmploymentSource): number {
 /** Taxable employment income for one job: pay + tips + benefits − expenses (≥0). */
 export function employmentTaxable(e: EmploymentSource): number {
   return Math.max(0, e.pay + (e.tips || 0) + employmentBenefits(e) - employmentExpenses(e));
+}
+
+// ── SA103F self-employment helpers ───────────────────────────────────────────
+const TRADE_EXP_KEYS = [
+  'expCostOfGoods', 'expSubcontractors', 'expWages', 'expCarVanTravel', 'expPremises',
+  'expRepairs', 'expOffice', 'expAdvertising', 'expInterest', 'expBankCharges',
+  'expBadDebts', 'expProfessional', 'expDepreciation', 'expOtherCosts',
+] as const;
+
+/** Total of the itemised expense boxes (17–30). */
+export function tradeExpensesTotal(t: TradeSource): number {
+  return TRADE_EXP_KEYS.reduce((a, k) => a + (t[k] || 0), 0);
+}
+/** True once any income/expense box is used — then net profit is derived. */
+export function tradeItemised(t: TradeSource): boolean {
+  return (t.turnover || 0) > 0 || (t.otherBusinessIncome || 0) > 0 || tradeExpensesTotal(t) > 0;
+}
+/** Accounts net profit: derived from turnover − expenses when itemised, else the
+ *  imported/entered accounts profit. */
+export function tradeNetProfit(t: TradeSource): number {
+  return tradeItemised(t) ? (t.turnover || 0) + (t.otherBusinessIncome || 0) - tradeExpensesTotal(t) : (t.profit || 0);
+}
+export function tradeCapitalAllowances(t: TradeSource): number {
+  return (t.aia || 0) + (t.capitalAllowances || 0);
+}
+export function tradeAddBacks(t: TradeSource): number {
+  return (t.addBacks || 0) + (t.goodsOwnUse || 0) + (t.balancingCharges || 0);
+}
+/** Tax-adjusted trade profit (signed — a loss stays negative so it can net
+ *  against other trades / be relieved sideways). */
+export function tradeAdjustedProfit(t: TradeSource): number {
+  return tradeNetProfit(t) + tradeAddBacks(t) - tradeCapitalAllowances(t);
 }
 
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
@@ -165,14 +197,13 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   const employmentIncome = sum(income.employment.map(employmentTaxable));
   const taxDeducted = sum(income.employment.map(e => e.taxDeducted));
-  // Tax-adjusted trade profit: accounts profit + add-backs (disallowables /
-  // depreciation) − capital allowances, floored at nil per trade.
-  const adjustedTrade = (s: { profit: number; addBacks?: number; capitalAllowances?: number }) =>
-    s.profit + (s.addBacks || 0) - (s.capitalAllowances || 0);
-  if (income.selfEmployment.some(s => (s.addBacks || 0) !== 0 || (s.capitalAllowances || 0) !== 0)) notes.push('Trade profit is tax-adjusted (add-backs less capital allowances).');
+  // Tax-adjusted trade profit: net profit (derived from turnover − expenses when
+  // itemised) + add-backs (disallowables, goods for own use, balancing charges)
+  // − capital allowances (AIA + WDA). See tradeAdjustedProfit.
+  if (income.selfEmployment.some(s => tradeAddBacks(s) !== 0 || tradeCapitalAllowances(s) !== 0)) notes.push('Trade profit is tax-adjusted (add-backs less capital allowances).');
   // Net all trades, then apply brought-forward trade losses; a remaining net
   // loss is relieved sideways against other income (in-year s.64).
-  const netTrade = sum(income.selfEmployment.map(adjustedTrade)) - (income.tradeLossBroughtForward || 0);
+  const netTrade = sum(income.selfEmployment.map(tradeAdjustedProfit)) - (income.tradeLossBroughtForward || 0);
   if ((income.tradeLossBroughtForward || 0) > 0) notes.push('Brought-forward trade losses set against trade profit.');
   const tradeProfit = Math.max(0, netTrade);
   const tradeLossSideways = netTrade < 0 ? -netTrade : 0;
@@ -340,7 +371,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   }
 
   const totalDue = r0(incomeTax) + class4Nic + studentLoan + hicbc + capitalGainsTax;
-  const taxDeductedAtSource = r0(taxDeducted);
+  // Tax already paid at source: PAYE on employment + CIS deductions on trades.
+  const cisDeducted = sum(income.selfEmployment.map(t => t.cisDeductions || 0));
+  if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not

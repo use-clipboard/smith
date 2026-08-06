@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -254,27 +254,79 @@ function BoxText({ box, label, value, onChange }: { box: number; label: string; 
 }
 
 function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const add = () => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s-${i.selfEmployment.length}-${Date.now()}`, name: '', profit: 0 }] }));
   return (
-    <>
-      <Group icon={Landmark} title="Trades"
-        onAdd={() => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s${i.selfEmployment.length + 1}`, name: '', profit: 0 }] }))}>
-        {income.selfEmployment.map((s, idx) => (
-          <div key={s.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_auto] items-center gap-2">
-            <TextIn value={s.name} placeholder="Trade" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
-            <NumIn value={s.profit} label="Profit" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
-            <NumIn value={s.addBacks ?? 0} label="Add-backs" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, addBacks: v } : x) }))} />
-            <NumIn value={s.capitalAllowances ?? 0} label="Cap. allow." onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, capitalAllowances: v } : x) }))} />
-            <RemoveBtn onClick={() => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.filter((_, j) => j !== idx) }))} />
-          </div>
-        ))}
-      </Group>
-      {income.selfEmployment.length > 0 && (
-        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Profit + add-backs (disallowables/depreciation) − capital allowances = taxable trade profit.</p>
+    <div className="space-y-3">
+      {income.selfEmployment.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No trades yet — add one to enter the SA103 figures.</p>
       )}
-      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
+      {income.selfEmployment.map((s, idx) => (
+        <TradeCard key={s.id} t={s} idx={idx}
+          onChange={p => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, ...p } : x) }))}
+          onRemove={() => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.filter((_, j) => j !== idx) }))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add trade</button>
+      <div className="mt-2 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
         <LabelledNum label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
       </div>
-    </>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Brought-forward losses set against this year’s trade profit; an unrelieved in-year loss is relieved sideways against other income.</p>
+    </div>
+  );
+}
+
+function TradeCard({ t, idx, onChange, onRemove }: {
+  t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <input value={t.name} placeholder={`Trade ${idx + 1}`} onChange={ev => onChange({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Adjusted <span className="font-bold text-[var(--text-primary)]">{fmtMoney(tradeAdjustedProfit(t))}</span></span>
+        <RemoveBtn onClick={onRemove} />
+      </div>
+      {open && (
+        <div className="space-y-3 border-t border-black/5 px-3 py-3">
+          <BoxSection title="Business details">
+            <BoxText box={2} label="Description" value={t.description ?? ''} onChange={v => onChange({ description: v })} />
+            <BoxText box={8} label="Period start (dd-mm-yyyy)" value={t.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
+            <BoxText box={9} label="Period end (dd-mm-yyyy)" value={t.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
+          </BoxSection>
+          <BoxSection title="Business income">
+            <BoxNum box={15} label="Turnover" value={t.turnover ?? 0} onChange={v => onChange({ turnover: v })} />
+            <BoxNum box={16} label="Other business income" value={t.otherBusinessIncome ?? 0} onChange={v => onChange({ otherBusinessIncome: v })} />
+          </BoxSection>
+          <BoxSection title="Allowable expenses">
+            <BoxNum box={17} label="Cost of goods" value={t.expCostOfGoods ?? 0} onChange={v => onChange({ expCostOfGoods: v })} />
+            <BoxNum box={18} label="Subcontractors (CIS)" value={t.expSubcontractors ?? 0} onChange={v => onChange({ expSubcontractors: v })} />
+            <BoxNum box={19} label="Wages & staff" value={t.expWages ?? 0} onChange={v => onChange({ expWages: v })} />
+            <BoxNum box={20} label="Car, van & travel" value={t.expCarVanTravel ?? 0} onChange={v => onChange({ expCarVanTravel: v })} />
+            <BoxNum box={21} label="Rent, rates, power, insurance" value={t.expPremises ?? 0} onChange={v => onChange({ expPremises: v })} />
+            <BoxNum box={22} label="Repairs & renewals" value={t.expRepairs ?? 0} onChange={v => onChange({ expRepairs: v })} />
+            <BoxNum box={23} label="Phone & office costs" value={t.expOffice ?? 0} onChange={v => onChange({ expOffice: v })} />
+            <BoxNum box={24} label="Advertising & entertainment" value={t.expAdvertising ?? 0} onChange={v => onChange({ expAdvertising: v })} />
+            <BoxNum box={25} label="Interest on loans" value={t.expInterest ?? 0} onChange={v => onChange({ expInterest: v })} />
+            <BoxNum box={26} label="Bank & finance charges" value={t.expBankCharges ?? 0} onChange={v => onChange({ expBankCharges: v })} />
+            <BoxNum box={27} label="Irrecoverable debts" value={t.expBadDebts ?? 0} onChange={v => onChange({ expBadDebts: v })} />
+            <BoxNum box={28} label="Accountancy & professional" value={t.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
+            <BoxNum box={29} label="Depreciation & loss on assets" value={t.expDepreciation ?? 0} onChange={v => onChange({ expDepreciation: v })} />
+            <BoxNum box={30} label="Other expenses" value={t.expOtherCosts ?? 0} onChange={v => onChange({ expOtherCosts: v })} />
+          </BoxSection>
+          <BoxSection title="Tax adjustments">
+            <LabelledNum label="Disallowable expenses" value={t.addBacks ?? 0} onChange={v => onChange({ addBacks: v })} />
+            <LabelledNum label="Goods for own use" value={t.goodsOwnUse ?? 0} onChange={v => onChange({ goodsOwnUse: v })} />
+            <LabelledNum label="Balancing charges" value={t.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
+          </BoxSection>
+          <BoxSection title="Capital allowances & CIS">
+            <LabelledNum label="Annual investment allowance" value={t.aia ?? 0} onChange={v => onChange({ aia: v })} />
+            <LabelledNum label="Other capital allowances" value={t.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
+            <LabelledNum label="CIS tax deducted" value={t.cisDeductions ?? 0} onChange={v => onChange({ cisDeductions: v })} />
+          </BoxSection>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Net profit {fmtMoney(tradeNetProfit(t))} + add-backs − capital allowances = adjusted profit. CIS tax is credited against the liability.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

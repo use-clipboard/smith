@@ -67,14 +67,41 @@ export interface PartnershipSource {
   name: string;
   profit: number;     // this partner's share of the partnership's taxable profit
 }
+// SA103F Self-employment (full). Box numbers follow the HMRC SA103F form.
 export interface TradeSource {
   id: string;
-  name: string;
-  profit: number;     // accounts net profit / (loss)
-  /** Tax adjustments: disallowables + depreciation added back. */
-  addBacks?: number;
-  /** Capital allowances (incl. AIA) deducted to reach the taxable profit. */
-  capitalAllowances?: number;
+  name: string;              // box 1 (business name)
+  description?: string;      // box 2 (description of business)
+  periodStart?: string;      // box 8 (accounting period start, dd-mm-yyyy)
+  periodEnd?: string;        // box 9 (accounting period end, dd-mm-yyyy)
+  // Business income
+  turnover?: number;           // box 15 — turnover
+  otherBusinessIncome?: number; // box 16 — any other business income
+  // Allowable business expenses (boxes 17–30)
+  expCostOfGoods?: number;    // 17 — cost of goods bought for resale
+  expSubcontractors?: number; // 18 — CIS payments to subcontractors
+  expWages?: number;          // 19 — wages, salaries & other staff costs
+  expCarVanTravel?: number;   // 20 — car, van & travel expenses
+  expPremises?: number;       // 21 — rent, rates, power & insurance
+  expRepairs?: number;        // 22 — repairs & renewals
+  expOffice?: number;         // 23 — phone, stationery & other office costs
+  expAdvertising?: number;    // 24 — advertising & business entertainment
+  expInterest?: number;       // 25 — interest on bank & other loans
+  expBankCharges?: number;    // 26 — bank, credit card & other financial charges
+  expBadDebts?: number;       // 27 — irrecoverable debts written off
+  expProfessional?: number;   // 28 — accountancy, legal & other professional fees
+  expDepreciation?: number;   // 29 — depreciation & loss/(profit) on sale of assets
+  expOtherCosts?: number;     // 30 — other business expenses
+  // Tax adjustments
+  goodsOwnUse?: number;       // goods/services for own use (added back)
+  balancingCharges?: number;  // balancing charges (added back)
+  aia?: number;               // annual investment allowance (deducted)
+  cisDeductions?: number;     // CIS tax already deducted at source
+  // Core / legacy — accounts net profit (fallback when not itemised), plus the
+  // disallowables add-back and total other capital allowances.
+  profit: number;             // accounts net profit / (loss)
+  addBacks?: number;          // total disallowable expenses added back
+  capitalAllowances?: number; // other capital allowances (WDA etc.)
 }
 export interface PropertySource {
   id: string;
