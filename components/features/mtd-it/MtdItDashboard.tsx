@@ -6,7 +6,7 @@ import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
   Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2, ScrollText, Info,
-  UserCheck,
+  UserCheck, ExternalLink,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -448,26 +448,43 @@ export default function MtdItDashboard() {
       wide
     >
       {/* HMRC scope signpost — required for MTD ITSA production approval: states
-          what SMITH covers and links to HMRC's compatible-software list for the
+          what SMITH covers and points to HMRC's compatible-software list for the
           functionality it doesn't (End-of-Year / Final Declaration and
-          non-mandated income sources). */}
-      <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-        <Info size={13} className="mt-0.5 shrink-0 text-slate-400" />
-        <span>
-          SMITH supports Making Tax Digital for Income Tax <strong>quarterly updates</strong> for self-employment and UK &amp; foreign property. Final Declaration (end-of-year) and other income sources not handled here (such as employment, dividends, savings and other non-mandated income) are not currently submitted from SMITH — for those, and to compare software, see HMRC&rsquo;s{' '}
-          <a
-            href="https://www.gov.uk/guidance/find-software-thats-compatible-with-making-tax-digital-for-income-tax"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-indigo-600 underline hover:text-indigo-800"
-          >
-            compatible software for Making Tax Digital for Income Tax
-          </a>.
-        </span>
-      </div>
-
+          non-mandated income sources). Collapsed to a subtle info icon whose full
+          text shows in the standard dark-pill tooltip on hover, with the HMRC
+          compatible-software list kept as a small visible link beside it (the
+          tooltip itself is non-interactive, so the link can't live inside it). */}
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
+        <Tooltip
+          side="bottom"
+          bubbleClassName="font-normal leading-relaxed text-left py-2"
+          label={
+            <span className="block">
+              SMITH supports Making Tax Digital for Income Tax <strong>quarterly updates</strong> for
+              self-employment and UK &amp; foreign property. Final Declaration (end-of-year) and other
+              income sources not handled here (such as employment, dividends, savings and other
+              non-mandated income) are not currently submitted from SMITH. For those, and to compare
+              software, see HMRC&rsquo;s compatible-software list (linked alongside).
+            </span>
+          }
+        >
+          <span
+            tabIndex={0}
+            aria-label="What SMITH files for Making Tax Digital for Income Tax"
+            className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)] cursor-help transition-colors"
+          >
+            <Info size={15} />
+          </span>
+        </Tooltip>
+        <a
+          href="https://www.gov.uk/guidance/find-software-thats-compatible-with-making-tax-digital-for-income-tax"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-0.5 text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline underline-offset-2 transition-colors"
+        >
+          HMRC-compatible software <ExternalLink size={11} className="shrink-0" />
+        </a>
         {/* Search */}
         <div className="relative flex-1 min-w-[220px] max-w-[320px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -774,7 +791,10 @@ export default function MtdItDashboard() {
       </div>
 
       {/* ── Quarter status donuts ────────────────────────────────────────── */}
-      <MtdItQuarterStats clients={clients} taxYear={taxYear} />
+      {/* Charts follow the same filtered set as the table — search, client
+          status, HMRC status, threshold and Ready-to-file all narrow the donuts
+          and the client count, so the summary always matches what's listed. */}
+      <MtdItQuarterStats clients={filtered} taxYear={taxYear} />
 
       {/* ── Threshold notice ─────────────────────────────────────────────── */}
       {flaggedCount > 0 && thresholdFilter === 'all' && (
