@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
-  AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight,
+  AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
@@ -125,8 +125,23 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
           </select>
         </div>
       </div>
+
+      {/* Capital gains */}
+      <div className="mt-4 border-t border-black/5 pt-4">
+        <p className="mb-1.5 flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-secondary)]"><TrendingUp size={13} className="text-[var(--accent)]" /> Capital gains</p>
+        <div className="grid grid-cols-3 gap-2">
+          <LabelledNum label="Residential gains" value={income.capitalGains?.residentialGains ?? 0} onChange={v => setCg(setIncome, { residentialGains: v })} />
+          <LabelledNum label="Other gains" value={income.capitalGains?.otherGains ?? 0} onChange={v => setCg(setIncome, { otherGains: v })} />
+          <LabelledNum label="Losses" value={income.capitalGains?.losses ?? 0} onChange={v => setCg(setIncome, { losses: v })} />
+        </div>
+        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">18%/24% after the £3,000 annual exempt amount. Excludes BADR/Investors’ Relief.</p>
+      </div>
     </StudioCard>
   );
+}
+
+function setCg(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['capitalGains']>>) {
+  setIncome(i => ({ ...i, capitalGains: { residentialGains: 0, otherGains: 0, losses: 0, ...i.capitalGains, ...patch } }));
 }
 
 function Group({ icon: Icon, title, onAdd, children }: { icon: typeof Briefcase; title: string; onAdd: () => void; children: React.ReactNode }) {
@@ -189,6 +204,7 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}
       {c.studentLoan > 0 && <Row label="Student loan" value={fmtMoney(c.studentLoan)} />}
+      {c.capitalGainsTax > 0 && <Row label={`Capital gains tax (on ${fmtMoney(c.taxableGains)})`} value={fmtMoney(c.capitalGainsTax)} />}
       <Row label="Total liability" value={fmtMoney(c.totalDue)} bold />
       <Row label="Tax deducted at source" value={`(${fmtMoney(c.taxDeductedAtSource)})`} />
       <div className="mt-2 rounded-xl bg-[var(--accent)]/5 px-3 py-2.5">

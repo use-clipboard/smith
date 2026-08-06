@@ -36,6 +36,11 @@ const FINANCE_RELIEF = 0.20;
 const MARRIAGE_ALLOWANCE_TRANSFER = 1260; // PA reduction for the transferor
 const MARRIAGE_ALLOWANCE_REDUCER = 252;   // ~10% of PA @ 20% for the recipient
 
+// Capital gains — 2025/26 main rates (residential & other assets both 18%/24%).
+const CGT_ANNUAL_EXEMPT = 3000;
+const CGT_LOWER = 0.18;
+const CGT_HIGHER = 0.24;
+
 const SL_THRESHOLDS: Record<1 | 2 | 4 | 5, number> = { 1: 26065, 2: 28470, 4: 32745, 5: 25000 };
 const SL_RATE = 0.09;
 
@@ -93,7 +98,9 @@ export interface Sa100Computation {
 
   class4Nic: number;
   studentLoan: number;
-  totalDue: number;          // incomeTax + class4Nic + studentLoan
+  taxableGains: number;      // after losses + annual exempt amount
+  capitalGainsTax: number;
+  totalDue: number;          // incomeTax + class4Nic + studentLoan + CGT
 
   taxDeductedAtSource: number;
   balancingPayment: number;
@@ -236,7 +243,22 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     studentLoan = Math.floor(Math.max(0, totalIncome - threshold) * SL_RATE);
   }
 
-  const totalDue = r0(incomeTax) + class4Nic + studentLoan;
+  // Capital gains tax — gains stack above income; the unused basic-rate band
+  // (extended by reliefs) is taxed at the lower rate, the rest at the higher.
+  const cg = income.capitalGains;
+  let taxableGains = 0, capitalGainsTax = 0;
+  if (cg) {
+    const gains = Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0) - (cg.losses || 0));
+    taxableGains = Math.max(0, gains - CGT_ANNUAL_EXEMPT);
+    if (taxableGains > 0) {
+      const bandRemaining = Math.max(0, brl - taxableIncome);
+      const lower = Math.min(taxableGains, bandRemaining);
+      capitalGainsTax = r0(lower * CGT_LOWER + (taxableGains - lower) * CGT_HIGHER);
+      notes.push('Capital gains taxed at 18%/24% after the £3,000 annual exempt amount.');
+    }
+  }
+
+  const totalDue = r0(incomeTax) + class4Nic + studentLoan + capitalGainsTax;
   const taxDeductedAtSource = r0(taxDeducted);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
@@ -246,7 +268,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const poaApplies = relevantAmount >= 1000 && taxDeductedAtSource < 0.8 * (r0(incomeTax) + class4Nic);
   const paymentOnAccount = poaApplies ? r0(relevantAmount / 2) : 0;
 
-  notes.push('Excludes capital gains, HICBC, marriage-allowance transfers and Scottish/Welsh rates — review before filing.');
+  notes.push('Capital gains use main rates (18%/24%) + the annual exempt amount; excludes BADR/Investors’ Relief, HICBC, top-slicing and Scottish/Welsh rates — review before filing.');
 
   return {
     taxYear,
@@ -262,6 +284,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     marriageAllowanceReducer,
     incomeTax: r0(incomeTax),
     class4Nic, studentLoan,
+    taxableGains: r0(taxableGains), capitalGainsTax,
     totalDue,
     taxDeductedAtSource,
     balancingPayment,

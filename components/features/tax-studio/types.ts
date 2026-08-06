@@ -75,6 +75,13 @@ export interface Sa100Income {
   /** Marriage Allowance: 'received' gives a ~£252 reducer; 'transferred'
    *  reduces this person's personal allowance by £1,260. */
   marriageAllowance?: 'none' | 'received' | 'transferred';
+  /** Capital gains (SA108). 2025/26 main rates 18%/24% apply to both
+   *  residential and other assets, so they're pooled here. */
+  capitalGains?: {
+    residentialGains: number;
+    otherGains: number;
+    losses: number; // current-year + brought-forward allowable losses
+  };
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────

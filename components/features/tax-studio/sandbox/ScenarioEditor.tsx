@@ -55,7 +55,7 @@ export default function ScenarioEditor({
                 <p className="font-semibold text-[var(--text-primary)]">{category === 'capital' ? 'Capital gains' : 'Business structure'} modelling</p>
                 <p className="mt-0.5 text-[var(--text-muted)]">
                   {category === 'capital'
-                    ? 'CGT disposals aren’t modelled in the SA100 estimate yet. Full capital-gains scenarios arrive with the filing-grade computation.'
+                    ? 'Capital gains are computed in the Review stage (18%/24% after the £3,000 annual exempt amount). Sandbox scenarios don’t vary CGT yet — model disposals in Review.'
                     : 'Incorporation / salary-vs-dividend structural modelling arrives in a later increment. For now, use the Investments and Pensions levers to approximate the effect.'}
                 </p>
               </div>
