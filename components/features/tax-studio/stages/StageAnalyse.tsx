@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Loader2, Sparkles, Beaker, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowRight, Loader2, Sparkles, Beaker, CheckCircle2, Circle, PencilLine } from 'lucide-react';
 import { StudioCard, SectionTitle, EstimateChip } from '../primitives';
 import DocumentExtract from '../DocumentExtract';
 import ConnectedImports from '../ConnectedImports';
+import HistoryImport from '../HistoryImport';
 import { seedSuggestions, seedReviewPoints, fmtMoney } from '../data';
 import { estimateSa100 } from '../calc';
 import { analyseReturn } from '../persistence';
@@ -95,12 +96,20 @@ export default function StageAnalyse({
       {/* Real integrations: MTD IT, Accounts Studio, Landlord Analysis (+ Payroll note). */}
       <ConnectedImports ret={ret} patch={patch} />
 
+      {/* Pull a saved analysis from ANY client — e.g. rental under a separate code. */}
+      <HistoryImport ret={ret} patch={patch} />
+
       {!hasFigures && (
         <StudioCard className="p-5">
-          <SectionTitle title="No figures yet" sub="Pull the year's figures from MTD IT above, or connect Accounts Studio, Payroll and Landlord Analysis (arriving next). To try the full workflow now, load a sample profile — you can edit every figure in the next step." />
-          <button onClick={loadSample} className="btn-secondary">
-            <Beaker size={14} /> Load sample figures (demo)
-          </button>
+          <SectionTitle title="No figures yet" sub="Upload the client's documents above and SMITH will read them, or pull from a connected module. If there's nothing to import — say just dividends and a pension — key the figures in yourself. You can edit everything on the next step." />
+          <div className="flex flex-wrap gap-2">
+            <button onClick={advance} className="btn-primary">
+              <PencilLine size={14} /> Enter figures manually <ArrowRight size={14} />
+            </button>
+            <button onClick={loadSample} className="btn-secondary">
+              <Beaker size={14} /> Load sample figures (demo)
+            </button>
+          </div>
         </StudioCard>
       )}
 

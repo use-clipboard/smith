@@ -172,3 +172,63 @@ export function mergeBookkeepingIntoIncome(income: Sa100Income, s: BookkeepingSu
   selfEmployment.push({ id: `${BK_PREFIX}0`, name: 'Trade (Bookkeeping)', profit: Math.round(s.netProfit) });
   return { ...income, selfEmployment };
 }
+
+// ─── Cross-client imports ────────────────────────────────────────────────────
+// Pull a saved analysis from ANOTHER client's history — e.g. a rental portfolio
+// held under a dedicated rental client code that doesn't match the SA100 client.
+//
+// Cross-client rows live in their own id namespace (`xc-…-<sourceClientId>-`) so
+// they never collide with the return's own imports and stay idempotent per
+// source: re-importing the same client's analysis replaces only its own rows.
+// The source client is stamped onto each row label for traceability.
+
+const XC = 'xc-';
+
+export interface SourceRef {
+  clientId: string;
+  /** Human label stamped onto imported rows, e.g. "Smith Rentals (RENT001)". */
+  label: string;
+}
+
+/** Cross-client Landlord Analysis → UK property. */
+export function mergeCrossLandlord(income: Sa100Income, s: LandlordSummary, src: SourceRef): Sa100Income {
+  const pfx = `${XC}ll-${src.clientId}-`;
+  const property = income.property.filter(p => !p.id.startsWith(pfx));
+  property.push({ id: `${pfx}0`, address: `UK property — ${src.label}`, profit: Math.round(s.taxableProfit) });
+  return { ...income, property, financeCosts: Math.round(s.financeCosts) };
+}
+
+/** Cross-client MTD IT → self-employment / UK & foreign property. */
+export function mergeCrossMtd(income: Sa100Income, summary: MtdItAnnualSummary, sel: MtdImportSelection, src: SourceRef): Sa100Income {
+  const sePfx = `${XC}mtd-se-${src.clientId}-`;
+  const ukPfx = `${XC}mtd-uk-${src.clientId}-`;
+  const fpPfx = `${XC}mtd-fp-${src.clientId}-`;
+  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(sePfx));
+  const property = income.property.filter(p => !p.id.startsWith(ukPfx) && !p.id.startsWith(fpPfx));
+  if (sel.soleTrader) {
+    summary.selfEmployment.forEach((t, i) => selfEmployment.push({ id: `${sePfx}${i}`, name: `${t.label || `Self-employment ${i + 1}`} — ${src.label}`, profit: Math.round(t.profit) }));
+  }
+  if (sel.ukProperty && summary.ukProperty) {
+    property.push({ id: `${ukPfx}0`, address: `UK property — ${src.label}`, profit: Math.round(summary.ukProperty.profit) });
+  }
+  if (sel.foreignProperty && summary.foreignProperty) {
+    property.push({ id: `${fpPfx}0`, address: `Foreign property — ${src.label}`, profit: Math.round(summary.foreignProperty.profit) });
+  }
+  return { ...income, selfEmployment, property };
+}
+
+/** Cross-client Accounts Studio net profit → self-employment. */
+export function mergeCrossAccounts(income: Sa100Income, s: AccountsStudioSummary, src: SourceRef): Sa100Income {
+  const pfx = `${XC}as-${src.clientId}-`;
+  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(pfx));
+  selfEmployment.push({ id: `${pfx}0`, name: `Trade — ${src.label}`, profit: Math.round(s.netProfit) });
+  return { ...income, selfEmployment };
+}
+
+/** Cross-client Bookkeeping net profit → self-employment. */
+export function mergeCrossBookkeeping(income: Sa100Income, s: BookkeepingSummary, src: SourceRef): Sa100Income {
+  const pfx = `${XC}bk-${src.clientId}-`;
+  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(pfx));
+  selfEmployment.push({ id: `${pfx}0`, name: `Trade — ${src.label}`, profit: Math.round(s.netProfit) });
+  return { ...income, selfEmployment };
+}
