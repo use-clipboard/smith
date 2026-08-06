@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Sparkles, ArrowRight, LayoutGrid, List as ListIcon, Loader2,
   TrendingUp, Layers, ClipboardCheck, AlertCircle, CheckCircle2, FileCheck2,
-  Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight, X,
+  Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight, X, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { StudioCard, StatusBadge } from './primitives';
 import {
@@ -37,16 +37,19 @@ function relTime(iso: string): string {
 }
 
 export default function CommandCentre({
-  items, loading, userName, onNew, onOpen,
+  items, loading, userName, onNew, onOpen, onDelete,
 }: {
   items: ReturnListItem[];
   loading: boolean;
   userName: string;
   onNew: () => void;
   onOpen: (r: TaxReturn) => void;
+  onDelete?: (id: string) => Promise<void>;
 }) {
   const [view, setView] = useState<'list' | 'board'>('list');
   const [bucketView, setBucketView] = useState<BucketView | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const season = currentFilingSeason();
 
   const rows = useMemo(() => items.map(it => ({ ...it, status: deriveStatus(it.ret) })), [items]);
@@ -258,7 +261,8 @@ export default function CommandCentre({
         ) : rows.length === 0 ? (
           <EmptyState onNew={onNew} />
         ) : view === 'list' ? (
-          <ReturnList rows={rows} onOpen={onOpen} />
+          <ReturnList rows={rows} onOpen={onOpen}
+            onAskDelete={onDelete ? item => setConfirmDelete({ id: item.id, label: `${item.ret.clientName} — ${returnType(item.ret.returnType).form} ${item.ret.taxYear}` }) : undefined} />
         ) : (
           <KanbanBoard rows={rows} onOpen={onOpen} />
         )}
@@ -284,6 +288,17 @@ export default function CommandCentre({
         bucket={bucketView}
         onClose={() => setBucketView(null)}
         onOpen={r => { setBucketView(null); onOpen(r); }}
+      />
+
+      <ConfirmDeleteModal
+        target={confirmDelete}
+        deleting={deleting}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={async () => {
+          if (!confirmDelete || !onDelete) return;
+          setDeleting(true);
+          try { await onDelete(confirmDelete.id); } finally { setDeleting(false); setConfirmDelete(null); }
+        }}
       />
     </div>
   );
@@ -427,7 +442,7 @@ function ToggleBtn({ active, onClick, icon: Icon }: { active: boolean; onClick: 
   );
 }
 
-function ReturnList({ rows, onOpen }: { rows: (ReturnListItem & { status: ReturnStatus })[]; onOpen: (r: TaxReturn) => void }) {
+function ReturnList({ rows, onOpen, onAskDelete }: { rows: (ReturnListItem & { status: ReturnStatus })[]; onOpen: (r: TaxReturn) => void; onAskDelete?: (item: ReturnListItem & { status: ReturnStatus }) => void }) {
   return (
     <StudioCard className="divide-y divide-black/5 overflow-hidden">
       {rows.map(r => {
@@ -435,19 +450,61 @@ function ReturnList({ rows, onOpen }: { rows: (ReturnListItem & { status: Return
         const est = estimateSa100(r.ret.income, r.ret.taxYear);
         const Icon = rt.icon;
         return (
-          <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-black/[0.02]">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Icon size={16} /></div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
-              <p className="text-[11.5px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear} · edited {r.date}</p>
-            </div>
+          <div key={r.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-black/[0.02]">
+            <button onClick={() => onOpen(r.ret)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><Icon size={16} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+                <p className="text-[11.5px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear} · edited {r.date}</p>
+              </div>
+            </button>
             {est.totalTax > 0 && <span className="hidden text-[12px] text-[var(--text-secondary)] sm:block">{fmtMoney(est.totalTax)} tax</span>}
             <StatusBadge status={r.status} />
-            <ArrowRight size={15} className="shrink-0 text-[var(--text-muted)]" />
-          </button>
+            {onAskDelete && (
+              <button
+                onClick={() => onAskDelete(r)}
+                aria-label="Delete return"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 focus:opacity-100 group-hover:opacity-100"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+            <button onClick={() => onOpen(r.ret)} aria-label="Open return" className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><ArrowRight size={15} /></button>
+          </div>
         );
       })}
     </StudioCard>
+  );
+}
+
+function ConfirmDeleteModal({ target, deleting, onCancel, onConfirm }: { target: { id: string; label: string } | null; deleting: boolean; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    if (!target) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !deleting) onCancel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [target, deleting, onCancel]);
+
+  if (!target) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => !deleting && onCancel()}>
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
+      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-[22px] border border-white/60 bg-white/95 p-5 shadow-[0_24px_80px_rgba(31,38,88,0.28)] backdrop-blur-xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600"><AlertTriangle size={18} /></div>
+          <div className="min-w-0">
+            <p className="text-[15px] font-bold text-[var(--text-primary)]">Delete this return?</p>
+            <p className="mt-1 text-[12.5px] text-[var(--text-secondary)]">Permanently delete <span className="font-semibold text-[var(--text-primary)]">{target.label}</span>. This can’t be undone.</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onCancel} disabled={deleting} className="btn-secondary bg-white">Cancel</button>
+          <button onClick={onConfirm} disabled={deleting} className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[13px] font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50">
+            {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

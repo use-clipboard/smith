@@ -20,7 +20,7 @@ import StageReview from './stages/StageReview';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
 import { STAGES, ALL_STAGES, deriveStatus } from './data';
-import { listReturns, createReturn, saveReturn, type ReturnListItem } from './persistence';
+import { listReturns, createReturn, saveReturn, deleteReturn, type ReturnListItem } from './persistence';
 import type { TaxReturn, StageId } from './types';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -117,7 +117,8 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
     }
     return (
       <ToolLayout title="Tax Studio" description="Your practice-wide tax command centre." icon={Calculator} iconColor={ACCENT} wide>
-        <CommandCentre items={items} loading={loading} userName={userName} onNew={() => setView('new')} onOpen={openReturn} />
+        <CommandCentre items={items} loading={loading} userName={userName} onNew={() => setView('new')} onOpen={openReturn}
+          onDelete={async id => { await deleteReturn(id); await refresh(); }} />
       </ToolLayout>
     );
   }
