@@ -12,6 +12,7 @@ export interface ReturnDto {
   data: TaxReturn;
   updatedAt: string;
   mine: boolean;
+  clientLinked?: boolean;
 }
 
 export interface ReturnListItem {
@@ -20,6 +21,8 @@ export interface ReturnListItem {
   /** dd-mm-yyyy HH:mm */
   date: string;
   mine: boolean;
+  /** False when the client record has been deleted (return is orphaned). */
+  clientLinked: boolean;
 }
 
 function fmt(iso: string): string {
@@ -29,7 +32,7 @@ function fmt(iso: string): string {
 }
 
 function toItem(dto: ReturnDto): ReturnListItem {
-  return { id: dto.id, ret: { ...dto.data, id: dto.id }, date: fmt(dto.updatedAt), mine: dto.mine };
+  return { id: dto.id, ret: { ...dto.data, id: dto.id }, date: fmt(dto.updatedAt), mine: dto.mine, clientLinked: dto.clientLinked !== false };
 }
 
 async function readJson<T>(r: Response, fallback: string): Promise<T> {

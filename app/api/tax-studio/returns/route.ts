@@ -32,7 +32,7 @@ export async function GET() {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('tax_studio_returns')
-    .select('id, data, created_by, updated_at')
+    .select('id, data, created_by, updated_at, client_id')
     .eq('firm_id', ctx.firmId)
     .order('updated_at', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -42,6 +42,10 @@ export async function GET() {
     data: { ...(row.data as Record<string, unknown>), id: row.id },
     updatedAt: row.updated_at as string,
     mine: row.created_by === ctx.userId,
+    // The FK column is set NULL when the client is deleted (the return row
+    // survives). The denormalised data.clientId stays stale, so this is the
+    // authoritative "is the client still linked?" signal.
+    clientLinked: row.client_id !== null,
   }));
   return NextResponse.json({ returns });
 }

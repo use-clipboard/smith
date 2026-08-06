@@ -50,10 +50,17 @@ export default function CommandCentre({
   const [bucketView, setBucketView] = useState<BucketView | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showOrphaned, setShowOrphaned] = useState(false);
   const season = currentFilingSeason();
 
-  const rows = useMemo(() => items.map(it => ({ ...it, status: deriveStatus(it.ret) })), [items]);
+  const allRows = useMemo(() => items.map(it => ({ ...it, status: deriveStatus(it.ret) })), [items]);
+  // Returns whose client was deleted are dropped from every active view and
+  // surfaced separately (see the "deleted client" panel below).
+  const rows = useMemo(() => allRows.filter(r => r.clientLinked), [allRows]);
+  const orphanedRows = useMemo(() => allRows.filter(r => !r.clientLinked), [allRows]);
   const total = rows.length;
+
+  const askDelete = (item: RowWithStatus) => setConfirmDelete({ id: item.id, label: `${item.ret.clientName} — ${returnType(item.ret.returnType).form} ${item.ret.taxYear}` });
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -261,10 +268,46 @@ export default function CommandCentre({
         ) : rows.length === 0 ? (
           <EmptyState onNew={onNew} />
         ) : view === 'list' ? (
-          <ReturnList rows={rows} onOpen={onOpen}
-            onAskDelete={onDelete ? item => setConfirmDelete({ id: item.id, label: `${item.ret.clientName} — ${returnType(item.ret.returnType).form} ${item.ret.taxYear}` }) : undefined} />
+          <ReturnList rows={rows} onOpen={onOpen} onAskDelete={onDelete ? askDelete : undefined} />
         ) : (
           <KanbanBoard rows={rows} onOpen={onOpen} />
+        )}
+
+        {/* Returns whose client was deleted — off the dashboard, still reachable. */}
+        {orphanedRows.length > 0 && (
+          <div className="mt-3">
+            <button onClick={() => setShowOrphaned(v => !v)} className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]">
+              <ChevronRight size={13} className={`transition-transform ${showOrphaned ? 'rotate-90' : ''}`} />
+              {orphanedRows.length} return{orphanedRows.length === 1 ? '' : 's'} with a deleted client
+            </button>
+            {showOrphaned && (
+              <StudioCard className="mt-2 divide-y divide-black/5 overflow-hidden">
+                {orphanedRows.map(r => {
+                  const rt = returnType(r.ret.returnType);
+                  const Icon = rt.icon;
+                  return (
+                    <div key={r.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-black/[0.02]">
+                      <button onClick={() => onOpen(r.ret)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><Icon size={16} /></div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-semibold text-[var(--text-secondary)]">{r.ret.clientName}</p>
+                          <p className="text-[11.5px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear} · edited {r.date}</p>
+                        </div>
+                      </button>
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">Client deleted</span>
+                      <StatusBadge status={r.status} />
+                      {onDelete && (
+                        <button onClick={() => askDelete(r)} aria-label="Delete return"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100">
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </StudioCard>
+            )}
+          </div>
         )}
       </div>
 
