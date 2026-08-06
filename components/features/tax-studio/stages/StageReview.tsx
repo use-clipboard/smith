@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -74,6 +74,26 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'additional',  label: 'Additional info',  code: 'SA101', icon: FileText },
 ];
 
+/** The headline figure a page contributes to income — shown in the page header. */
+function pageValue(id: PageId, income: Sa100Income): { value: number; label: string } | null {
+  const sum = <T,>(arr: T[], f: (x: T) => number) => arr.reduce((a, x) => a + f(x), 0);
+  switch (id) {
+    case 'employment': return { value: sum(income.employment, employmentTaxable), label: 'Employment income' };
+    case 'selfemp': return { value: sum(income.selfEmployment, tradeAdjustedProfit), label: 'Adjusted trade profit' };
+    case 'partnership': return { value: sum(income.partnerships ?? [], partnershipTaxableProfit), label: 'Partnership profit' };
+    case 'property': return { value: sum(income.property, propertyTaxable), label: 'Property profit' };
+    case 'foreign': { const f = foreignTotals(income); return { value: f.interest + f.dividends + f.other, label: 'Foreign income' }; }
+    case 'cgt': {
+      const cg = income.capitalGains; if (!cg) return { value: 0, label: 'Gains' };
+      const d = cg.disposals ?? [];
+      const g = d.length ? sum(d, x => disposalGainLoss(x).gain) : Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0));
+      return { value: g, label: 'Gains before AEA' };
+    }
+    case 'trusts': { const t = trustTotals(income); return { value: t.nonSavings + t.savings + t.dividend, label: 'Trust / estate income' }; }
+    default: return null; // core / residence / additional — no single headline
+  }
+}
+
 function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const [page, setPage] = useState<PageId>('core');
 
@@ -101,16 +121,20 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
       <div className="px-5 pt-4">
         <SectionTitle title="Tax return" sub="Enter figures on each SA page — the computation updates live." />
       </div>
-      {/* Page tabs */}
-      <div className="flex gap-0.5 overflow-x-auto border-b border-black/5 px-3">
+      {/* Page tabs — wrapping pills so all SA pages are visible; a dot marks pages
+          that already hold data. */}
+      <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 pb-3">
         {PAGES.map(p => {
           const on = p.id === page;
+          const has = counts[p.id] > 0;
           const Icon = p.icon;
           return (
             <button key={p.id} onClick={() => setPage(p.id)}
-              className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 py-2 text-[12.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-              <Icon size={14} /> {p.label}
-              {counts[p.id] > 0 && <span className={`rounded-full px-1.5 text-[10px] font-bold ${on ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'}`}>{counts[p.id]}</span>}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={13} className="shrink-0" />
+              {p.label}
+              <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{p.code}</span>
+              {has && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? 'bg-[var(--accent)]' : 'bg-emerald-500'}`} />}
             </button>
           );
         })}
@@ -120,6 +144,9 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
         <div className="mb-3 flex items-baseline gap-2">
           <h4 className="text-[14px] font-bold text-[var(--text-primary)]">{active.label}</h4>
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
+          {(() => { const pv = pageValue(active.id, income); return pv && pv.value > 0
+            ? <span className="ml-auto text-[12px] text-[var(--text-muted)]">{pv.label} <span className="font-bold text-[var(--text-primary)]">{fmtMoney(pv.value)}</span></span>
+            : null; })()}
         </div>
 
         {page === 'core' && <CorePage income={income} setIncome={setIncome} />}
