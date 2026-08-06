@@ -10,7 +10,7 @@ import {
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, disposalGainLoss } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal, ForeignSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -80,7 +80,8 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
     selfemp: income.selfEmployment.length,
     partnership: (income.partnerships ?? []).length,
     property: income.property.length,
-    foreign: income.foreign && (income.foreign.income || income.foreign.foreignTaxPaid) ? 1 : 0,
+    foreign: income.foreign?.sources?.length
+      || (income.foreign && ((income.foreign.income || 0) || (income.foreign.foreignTaxPaid || 0)) ? 1 : 0),
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
   };
@@ -411,14 +412,61 @@ function PropertyCard({ p, idx, onChange, onRemove }: {
 }
 
 function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const f = income.foreign ?? {};
+  const sources = f.sources ?? [];
+  const patchForeign = (u: Partial<NonNullable<Sa100Income['foreign']>>) => setIncome(i => ({ ...i, foreign: { ...i.foreign, ...u } }));
+  const setSources = (s: ForeignSource[]) => patchForeign({ sources: s });
+  const add = () => setSources([...sources, { id: `f-${sources.length}-${Date.now()}`, country: '', category: 'interest', income: 0, foreignTaxPaid: 0, claimFtcr: true }]);
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <LabelledNum icon={Globe2} label="Foreign income" value={income.foreign?.income ?? 0} onChange={v => setForeign(setIncome, { income: v })} />
-        <LabelledNum label="Foreign tax paid" value={income.foreign?.foreignTaxPaid ?? 0} onChange={v => setForeign(setIncome, { foreignTaxPaid: v })} />
+    <div className="space-y-3">
+      {sources.length === 0 && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <LabelledNum icon={Globe2} label="Foreign income" value={f.income ?? 0} onChange={v => patchForeign({ income: v })} />
+            <LabelledNum label="Foreign tax paid" value={f.foreignTaxPaid ?? 0} onChange={v => patchForeign({ foreignTaxPaid: v })} />
+          </div>
+          <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Quick summary (taxed as other income) — or add itemised sources below (they take precedence).</p>
+        </div>
+      )}
+      {sources.map((s, idx) => (
+        <ForeignCard key={s.id} s={s} idx={idx}
+          onChange={u => setSources(sources.map((x, j) => j === idx ? { ...x, ...u } : x))}
+          onRemove={() => setSources(sources.filter((_, j) => j !== idx))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add foreign source</button>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Interest is taxed at savings rates, dividends at dividend rates, the rest as other income. Foreign Tax Credit Relief is applied automatically, capped at the UK tax on the same income.</p>
+    </div>
+  );
+}
+
+function ForeignCard({ s, idx, onChange, onRemove }: {
+  s: ForeignSource; idx: number; onChange: (u: Partial<ForeignSource>) => void; onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <input value={s.country ?? ''} placeholder={`Country ${idx + 1}`} onChange={ev => onChange({ country: ev.target.value })} className="input-base w-44 py-1 text-[12.5px] font-semibold" />
+        <div className="flex-1" />
+        <RemoveBtn onClick={onRemove} />
       </div>
-      <p className="mt-2 text-[10.5px] text-[var(--text-muted)]">Foreign Tax Credit Relief is applied automatically, capped at the UK tax on the same income.</p>
-    </>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Type</label>
+          <select value={s.category} onChange={e => onChange({ category: e.target.value as ForeignSource['category'] })} className="input-base py-1 text-[12.5px]">
+            <option value="interest">Interest</option>
+            <option value="dividends">Dividends</option>
+            <option value="pension">Pension</option>
+            <option value="property">Property</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <LabelledNum label="Income (£)" value={s.income} onChange={v => onChange({ income: v })} />
+        <LabelledNum label="Foreign tax (£)" value={s.foreignTaxPaid} onChange={v => onChange({ foreignTaxPaid: v })} />
+        <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
+          <input type="checkbox" checked={s.claimFtcr !== false} onChange={e => onChange({ claimFtcr: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Claim FTCR
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -489,10 +537,6 @@ function DisposalCard({ d, idx, onChange, onRemove }: {
       </div>
     </div>
   );
-}
-
-function setForeign(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['foreign']>>) {
-  setIncome(i => ({ ...i, foreign: { income: 0, foreignTaxPaid: 0, ...i.foreign, ...patch } }));
 }
 
 function Group({ icon: Icon, title, onAdd, children }: { icon: typeof Briefcase; title: string; onAdd: () => void; children: React.ReactNode }) {

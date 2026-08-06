@@ -14,6 +14,29 @@
 
 import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal } from './types';
 
+// ── SA106 foreign helpers ────────────────────────────────────────────────────
+/** Split foreign income by how it's taxed in the UK: interest → savings rates,
+ *  dividends → dividend rates, everything else → non-savings. `taxClaimed` /
+ *  `incomeClaimed` cover only sources claiming Foreign Tax Credit Relief.
+ *  Falls back to the single income/foreignTaxPaid bucket when not itemised. */
+export function foreignTotals(income: Sa100Income): {
+  interest: number; dividends: number; other: number; taxClaimed: number; incomeClaimed: number;
+} {
+  const sources = income.foreign?.sources ?? [];
+  if (!sources.length) {
+    const inc = income.foreign?.income || 0, tax = income.foreign?.foreignTaxPaid || 0;
+    return { interest: 0, dividends: 0, other: inc, taxClaimed: tax, incomeClaimed: inc };
+  }
+  let interest = 0, dividends = 0, other = 0, taxClaimed = 0, incomeClaimed = 0;
+  for (const f of sources) {
+    if (f.category === 'interest') interest += f.income;
+    else if (f.category === 'dividends') dividends += f.income;
+    else other += f.income;
+    if (f.claimFtcr !== false) { taxClaimed += f.foreignTaxPaid; incomeClaimed += f.income; }
+  }
+  return { interest, dividends, other, taxClaimed, incomeClaimed };
+}
+
 // ── SA102 employment helpers ─────────────────────────────────────────────────
 // Total P11D benefits (boxes 9–16); falls back to the legacy aggregate when no
 // itemised box is set, so old returns and simple imports still compute.
@@ -244,11 +267,12 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const propertyProfit = sum(income.property.map(propertyTaxable));
   const pensionsIncome = income.pensionsIncome || 0;
   const statePension = income.statePension || 0;
-  const foreignIncome = income.foreign?.income || 0;
-  const foreignTaxPaid = income.foreign?.foreignTaxPaid || 0;
+  const ft = foreignTotals(income);
+  const foreignIncome = ft.other;              // foreign non-savings/non-dividend → NSND
+  const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = income.otherIncome || 0;
-  const savingsIncome = income.savingsInterest || 0;
-  const dividendIncome = income.dividends || 0;
+  const savingsIncome = (income.savingsInterest || 0) + ft.interest;
+  const dividendIncome = (income.dividends || 0) + ft.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
@@ -363,8 +387,8 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   // and UK tax on that income at the marginal rate.
   const marginalRate = marginalBand === 'additional' ? R_ADDITIONAL : marginalBand === 'higher' ? R_HIGHER : R_BASIC;
   let foreignTaxCreditRelief = 0;
-  if (foreignIncome > 0 && foreignTaxPaid > 0) {
-    foreignTaxCreditRelief = Math.min(foreignTaxPaid, r0(foreignIncome * marginalRate));
+  if (ft.incomeClaimed > 0 && foreignTaxPaid > 0) {
+    foreignTaxCreditRelief = Math.min(foreignTaxPaid, r0(ft.incomeClaimed * marginalRate));
     notes.push('Foreign Tax Credit Relief applied (simplified — lower of the foreign tax paid and UK tax on the foreign income).');
   }
   const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer - foreignTaxCreditRelief);

@@ -132,6 +132,16 @@ export interface PropertySource {
   profit: number;
 }
 
+// SA106 Foreign — one foreign income source, routed to the right UK rate.
+export interface ForeignSource {
+  id: string;
+  country?: string;
+  category: 'interest' | 'dividends' | 'pension' | 'property' | 'other';
+  income: number;         // amount received, in GBP
+  foreignTaxPaid: number; // foreign tax paid on it, in GBP
+  claimFtcr?: boolean;    // claim Foreign Tax Credit Relief (default true)
+}
+
 // SA108 Capital gains — one itemised disposal.
 export interface CgtDisposal {
   id: string;
@@ -152,9 +162,13 @@ export interface Sa100Income {
   savingsInterest: number;
   pensionsIncome: number;      // taxable private pensions received
   statePension?: number;       // state pension (paid gross, no PAYE)
-  /** SA106 — foreign income received and the foreign tax paid on it (drives
-   *  Foreign Tax Credit Relief). Simplified single bucket. */
-  foreign?: { income: number; foreignTaxPaid: number };
+  /** SA106 — foreign income. Itemised `sources` (each routed to the right rate)
+   *  take precedence; the single income/foreignTaxPaid bucket is a fallback. */
+  foreign?: {
+    sources?: ForeignSource[];
+    income?: number;
+    foreignTaxPaid?: number;
+  };
   otherIncome: number;
   // Reliefs / deductions
   giftAid: number;             // net gift aid donations paid
