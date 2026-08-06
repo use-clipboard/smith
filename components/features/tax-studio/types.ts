@@ -201,6 +201,17 @@ export interface Sa100Income {
   childBenefit?: number;
   /** Brought-forward trade losses set against this year's trade profit. */
   tradeLossBroughtForward?: number;
+  /** SA101 Additional information — life-insurance chargeable event gains and
+   *  the venture-capital / other reliefs that reduce the income-tax liability. */
+  additional?: {
+    chargeableEventGains?: number;    // life-insurance gains (added to income)
+    chargeableEventUkPolicy?: boolean;// UK policy → 20% basic-rate treated as paid
+    eisSubscriptions?: number;        // EIS — 30% income-tax reducer
+    seisSubscriptions?: number;       // SEIS — 50% reducer
+    vctSubscriptions?: number;        // VCT — 30% reducer
+    citrInvestment?: number;          // Community Investment Tax Relief — 5% reducer
+    maintenancePayments?: number;     // maintenance relief — 10%, capped
+  };
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark,
+  Globe2, GraduationCap, Landmark, FileText,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
@@ -59,7 +59,7 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt';
+type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'additional';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
@@ -69,6 +69,7 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'property',    label: 'Property',         code: 'SA105', icon: Home },
   { id: 'foreign',     label: 'Foreign',          code: 'SA106', icon: Globe2 },
   { id: 'cgt',         label: 'Capital gains',    code: 'SA108', icon: TrendingUp },
+  { id: 'additional',  label: 'Additional info',  code: 'SA101', icon: FileText },
 ];
 
 function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
@@ -84,6 +85,10 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
       || (income.foreign && ((income.foreign.income || 0) || (income.foreign.foreignTaxPaid || 0)) ? 1 : 0),
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
+    additional: income.additional && [
+      income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
+      income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
+    ].some(v => (v || 0) > 0) ? 1 : 0,
   };
   const active = PAGES.find(p => p.id === page)!;
 
@@ -120,6 +125,7 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
         {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
         {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
         {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
+        {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -502,6 +508,36 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
   );
 }
 
+function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const a = income.additional ?? {};
+  const patchA = (u: Partial<NonNullable<Sa100Income['additional']>>) => setIncome(i => ({ ...i, additional: { ...i.additional, ...u } }));
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Life insurance gains</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum label="Chargeable event gains" value={a.chargeableEventGains ?? 0} onChange={v => patchA({ chargeableEventGains: v })} />
+          <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
+            <input type="checkbox" checked={a.chargeableEventUkPolicy ?? false} onChange={e => patchA({ chargeableEventUkPolicy: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> UK policy (basic rate treated as paid)
+          </label>
+        </div>
+        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Top-slicing relief isn’t modelled — review before filing.</p>
+      </div>
+      <div className="border-t border-black/5 pt-4">
+        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Venture capital & other reliefs</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum label="EIS subscriptions (30%)" value={a.eisSubscriptions ?? 0} onChange={v => patchA({ eisSubscriptions: v })} />
+          <LabelledNum label="SEIS subscriptions (50%)" value={a.seisSubscriptions ?? 0} onChange={v => patchA({ seisSubscriptions: v })} />
+          <LabelledNum label="VCT subscriptions (30%)" value={a.vctSubscriptions ?? 0} onChange={v => patchA({ vctSubscriptions: v })} />
+          <LabelledNum label="CITR investment (5%)" value={a.citrInvestment ?? 0} onChange={v => patchA({ citrInvestment: v })} />
+          <LabelledNum label="Maintenance payments (10%)" value={a.maintenancePayments ?? 0} onChange={v => patchA({ maintenancePayments: v })} />
+        </div>
+        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Subscriptions give an income-tax reducer (EIS/VCT 30%, SEIS 50%, CITR 5%). Maintenance relief is 10%, capped at £401.</p>
+      </div>
+    </div>
+  );
+}
+
 function DisposalCard({ d, idx, onChange, onRemove }: {
   d: CgtDisposal; idx: number; onChange: (u: Partial<CgtDisposal>) => void; onRemove: () => void;
 }) {
@@ -598,6 +634,9 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       )}
       {c.foreignTaxCreditRelief > 0 && (
         <Row label="Less: Foreign Tax Credit Relief" value={`(${fmtMoney(c.foreignTaxCreditRelief)})`} />
+      )}
+      {c.additionalReliefs > 0 && (
+        <Row label="Less: reliefs (EIS/SEIS/VCT/other)" value={`(${fmtMoney(c.additionalReliefs)})`} />
       )}
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}

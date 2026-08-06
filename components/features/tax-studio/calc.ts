@@ -118,6 +118,17 @@ export function disposalGainLoss(d: CgtDisposal): { gain: number; loss: number }
   return { gain: 0, loss: -raw };
 }
 
+// ── SA101 additional-information helper ──────────────────────────────────────
+/** Total SA101 income-tax reducers: EIS/SEIS/VCT/CITR subscriptions + capped
+ *  maintenance relief. Unrounded — round at the call site. */
+export function additionalReliefs(income: Sa100Income): number {
+  const a = income.additional;
+  if (!a) return 0;
+  return (a.eisSubscriptions || 0) * EIS_RATE + (a.seisSubscriptions || 0) * SEIS_RATE
+    + (a.vctSubscriptions || 0) * VCT_RATE + (a.citrInvestment || 0) * CITR_RATE
+    + Math.min(a.maintenancePayments || 0, MAINTENANCE_CAP) * MAINTENANCE_RATE;
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -145,6 +156,9 @@ const CGT_ANNUAL_EXEMPT = 3000;
 const CGT_LOWER = 0.18;
 const CGT_HIGHER = 0.24;
 const CGT_BADR = 0.14; // Business Asset Disposal Relief / Investors' Relief (2025/26)
+// SA101 venture-capital / other relief rates
+const EIS_RATE = 0.30, SEIS_RATE = 0.50, VCT_RATE = 0.30, CITR_RATE = 0.05;
+const MAINTENANCE_CAP = 4010, MAINTENANCE_RATE = 0.10;
 
 // Scottish rates 2025/26 — NSND income only, as band WIDTHS of taxable income
 // (post personal allowance). The basic band widens by grossed reliefs.
@@ -216,6 +230,7 @@ export interface Sa100Computation {
   financeCostReducer: number;
   marriageAllowanceReducer: number;
   foreignTaxCreditRelief: number;
+  additionalReliefs: number;
   incomeTax: number;         // after reducers, not below zero
 
   class4Nic: number;
@@ -271,6 +286,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const foreignIncome = ft.other;              // foreign non-savings/non-dividend → NSND
   const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = income.otherIncome || 0;
+  const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
   const savingsIncome = (income.savingsInterest || 0) + ft.interest;
   const dividendIncome = (income.dividends || 0) + ft.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
@@ -279,7 +295,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome + chargeableEventGains;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -391,7 +407,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     foreignTaxCreditRelief = Math.min(foreignTaxPaid, r0(ft.incomeClaimed * marginalRate));
     notes.push('Foreign Tax Credit Relief applied (simplified — lower of the foreign tax paid and UK tax on the foreign income).');
   }
-  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer - foreignTaxCreditRelief);
+  // SA101 venture-capital & other reliefs (EIS/SEIS/VCT/CITR/maintenance).
+  const additionalReducers = r0(additionalReliefs(income));
+  if (additionalReducers > 0) notes.push('Venture-capital / other reliefs (EIS, SEIS, VCT, etc.) applied as income-tax reducers.');
+  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer - foreignTaxCreditRelief - additionalReducers);
 
   // Class 4 NIC on trade + partnership profit share. (Class 2 not charged 2025/26.)
   const class4Base = tradeProfit + partnershipProfit;
@@ -452,11 +471,13 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   const totalDue = r0(incomeTax) + class4Nic + studentLoan + hicbc + capitalGainsTax;
   // Tax already paid at source: PAYE on employment + CIS on trades + tax taken
-  // off property income.
+  // off property income + basic-rate credit on UK life-insurance gains.
   const cisDeducted = sum(income.selfEmployment.map(t => t.cisDeductions || 0));
   const propertyTaxTaken = sum(income.property.map(p => p.taxTaken || 0));
+  const chargeableEventCredit = income.additional?.chargeableEventUkPolicy ? r0(chargeableEventGains * R_BASIC) : 0;
   if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken);
+  if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + chargeableEventCredit);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not
@@ -481,6 +502,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     financeCostReducer: r0(financeCostReducer),
     marriageAllowanceReducer,
     foreignTaxCreditRelief,
+    additionalReliefs: additionalReducers,
     incomeTax: r0(incomeTax),
     class4Nic, studentLoan, hicbc,
     taxableGains: r0(taxableGains), capitalGainsTax,
