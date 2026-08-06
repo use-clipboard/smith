@@ -4,9 +4,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Calculator, ArrowLeft, PanelRightClose, PanelRightOpen,
   Loader2, Check, CloudOff, Sparkles, ShieldCheck, MessagesSquare,
-  ClipboardList, Beaker,
+  ClipboardList, Beaker, Undo2, Redo2,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
+import Tooltip from '@/components/ui/Tooltip';
 import { canAccessTaxStudio } from '@/lib/tax-studio/access';
 import CommandCentre from './CommandCentre';
 import NewReturnWizard from './wizard/NewReturnWizard';
@@ -40,6 +41,12 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
   const lastSaved = useRef<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Undo/redo history (whole-return snapshots) + a re-render tick for the buttons.
+  const history = useRef<TaxReturn[]>([]);
+  const histIndex = useRef(0);
+  const isTimeTravel = useRef(false);
+  const [histTick, setHistTick] = useState(0);
+
   const refresh = useCallback(async () => {
     setLoading(true);
     try { setItems(await listReturns()); } catch { /* surfaced elsewhere */ } finally { setLoading(false); }
@@ -63,6 +70,52 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [ret]);
 
+  // Debounced history commit — coalesces a burst of edits into one undo step.
+  useEffect(() => {
+    if (!ret) return;
+    if (isTimeTravel.current) { isTimeTravel.current = false; return; }
+    const t = setTimeout(() => {
+      const top = history.current[histIndex.current];
+      if (top && JSON.stringify(top) === JSON.stringify(ret)) return;
+      history.current = history.current.slice(0, histIndex.current + 1);
+      history.current.push(ret);
+      if (history.current.length > 60) history.current.shift();
+      histIndex.current = history.current.length - 1;
+      setHistTick(v => v + 1);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [ret]);
+
+  const undo = useCallback(() => {
+    if (histIndex.current <= 0) return;
+    histIndex.current -= 1;
+    isTimeTravel.current = true;
+    setRet(history.current[histIndex.current]);
+    setHistTick(v => v + 1);
+  }, []);
+  const redo = useCallback(() => {
+    if (histIndex.current >= history.current.length - 1) return;
+    histIndex.current += 1;
+    isTimeTravel.current = true;
+    setRet(history.current[histIndex.current]);
+    setHistTick(v => v + 1);
+  }, []);
+
+  // Keyboard shortcuts — but let native undo work inside text fields.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'z' && k !== 'y') return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+      else if (k === 'z') { e.preventDefault(); undo(); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
   if (!allowed) return <ComingSoon />;
 
   function patch(updater: (r: TaxReturn) => TaxReturn) {
@@ -72,6 +125,10 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
   function openReturn(r: TaxReturn) {
     lastSaved.current = JSON.stringify({ ...r, status: deriveStatus(r) });
     setSaveState('idle');
+    history.current = [r];
+    histIndex.current = 0;
+    isTimeTravel.current = true; // don't re-push the opened state
+    setHistTick(v => v + 1);
     setWorkspace('return');
     setRet(r);
     const active = ALL_STAGES.find(s => r.stageStatus[s] === 'active')
@@ -126,6 +183,9 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
   // ── Return workspace ────────────────────────────────────────────────────────
   const stageMeta = STAGES.find(s => s.id === stage)!;
   const live = { ...ret, status: deriveStatus(ret) };
+  void histTick; // re-read history refs on each history change
+  const canUndo = histIndex.current > 0;
+  const canRedo = histIndex.current < history.current.length - 1;
 
   return (
     <ToolLayout
@@ -136,6 +196,14 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
       wide
       headerRight={
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5">
+            <Tooltip label="Undo (Ctrl+Z)">
+              <button onClick={undo} disabled={!canUndo} aria-label="Undo" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40"><Undo2 size={14} /></button>
+            </Tooltip>
+            <Tooltip label="Redo (Ctrl+Shift+Z)">
+              <button onClick={redo} disabled={!canRedo} aria-label="Redo" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40"><Redo2 size={14} /></button>
+            </Tooltip>
+          </div>
           <SaveIndicator state={saveState} />
           <button onClick={() => setAssistantOpen(v => !v)} className="btn-secondary">
             {assistantOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} Assistant
