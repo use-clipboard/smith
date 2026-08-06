@@ -147,6 +147,83 @@ export function buildForeignPropertyCumulativeBody(
   };
 }
 
+// ── Foreign property — TY 2026-27+ (def2, keyed by propertyId) ───────────────
+// HMRC changed the foreign-property cumulative body between tax years:
+//   • def1 (TY 2025-26)        → each foreignProperty[] item keyed by `countryCode`
+//   • def2 (TY 2026-27 onward) → each foreignProperty[] item keyed by `propertyId`
+// (a per-property UUID assigned by HMRC, obtained from the foreign-property
+// "details" list/create endpoints). The wrapper (`foreignProperty`), income
+// (`rentIncome.rentAmount`) and expense field names are identical; only the item
+// key differs. Confirmed against the Property Business API v6.0 OAS
+// (foreign_property_cumulative_summary_create_and_amend/def1|def2).
+
+/** From which of our int tax years HMRC keys foreign property by propertyId. */
+export const FOREIGN_PROPERTY_ID_FROM_TAX_YEAR = 2026;
+
+/** True when the foreign cumulative body must be keyed by propertyId (def2). */
+export function foreignCumulativeUsesPropertyId(taxYearInt: number): boolean {
+  return taxYearInt >= FOREIGN_PROPERTY_ID_FROM_TAX_YEAR;
+}
+
+/** One entry per HMRC foreign property (def2 = TY 2026-27+). Same figures as the
+ *  country entry, but keyed by the HMRC `propertyId` instead of a country code. */
+export interface ForeignPropertyIdEntry {
+  propertyId: string;
+  income: number;
+  expensesByField: Record<string, number>;
+  consolidatedExpenses: number;
+  residentialFinanceCost: number;
+  residentialFinanceCostBroughtFwd: number;
+}
+
+export interface ForeignPropertyByIdCumulativeBody {
+  fromDate: string;
+  toDate: string;
+  foreignProperty: Array<{
+    propertyId: string;
+    income: { rentIncome: { rentAmount: number } };
+    expenses: Record<string, number>;
+  }>;
+}
+
+/** Shared foreign expense assembly (identical field names for def1 and def2). */
+function foreignExpenses(
+  e: { expensesByField: Record<string, number>; consolidatedExpenses: number; residentialFinanceCost: number; residentialFinanceCostBroughtFwd: number },
+  useConsolidated: boolean,
+): Record<string, number> {
+  const expenses: Record<string, number> = useConsolidated
+    ? { consolidatedExpenses: round2(e.consolidatedExpenses) }
+    : Object.fromEntries(
+        Object.entries(e.expensesByField)
+          .filter(([, v]) => typeof v === 'number' && v !== 0)
+          .map(([k, v]) => [k, round2(v as number)]),
+      );
+  if (e.residentialFinanceCost > 0) expenses.residentialFinancialCost = round2(e.residentialFinanceCost);
+  if (e.residentialFinanceCostBroughtFwd > 0) expenses.broughtFwdResidentialFinancialCost = round2(e.residentialFinanceCostBroughtFwd);
+  return expenses;
+}
+
+/**
+ * Build the Foreign Property Cumulative Period Summary body for TY 2026-27+
+ * (def2), keyed by HMRC propertyId. Takes one entry per foreign property.
+ */
+export function buildForeignPropertyByIdCumulativeBody(
+  fromDate: string,
+  toDate: string,
+  properties: ForeignPropertyIdEntry[],
+  useConsolidated: boolean,
+): ForeignPropertyByIdCumulativeBody {
+  return {
+    fromDate,
+    toDate,
+    foreignProperty: properties.map(p => ({
+      propertyId: p.propertyId,
+      income: { rentIncome: { rentAmount: round2(p.income) } },
+      expenses: foreignExpenses(p, useConsolidated),
+    })),
+  };
+}
+
 /** HMRC path for a cumulative period summary PUT, by business type. */
 export function cumulativePath(nino: string, businessId: string, typeOfBusiness: CumulativeResult['typeOfBusiness'], hmrcTaxYear: string): string {
   if (typeOfBusiness === 'self-employment') {

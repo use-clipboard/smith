@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { isResidentialFinanceCost, isNonResidentialFinanceCost, financeCategoryImpliedUse } from '../financeCosts';
-import { buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody } from '../hmrcBody';
+import { buildUkPropertyCumulativeBody, buildForeignPropertyCumulativeBody, buildForeignPropertyByIdCumulativeBody, foreignCumulativeUsesPropertyId } from '../hmrcBody';
 import { landlordCategoryToMtd, LANDLORD_FINANCE_COST_CATEGORY, LANDLORD_NON_RESIDENTIAL_FINANCE_COST_CATEGORY } from '../landlordCategoryMap';
 import type { CumulativeResult } from '../computeUpdate';
 
@@ -92,6 +92,40 @@ check('Foreign: residential finance + broughtFwd (different field name)', () => 
   assert.equal(exp.broughtFwdResidentialFinancialCost, 50);       // foreign spelling
   assert.equal('residentialFinancialCostsCarriedForward' in exp, false); // NOT the UK spelling
   assert.equal(exp.premisesRunningCosts, 100);
+});
+
+// ── 3b. Foreign body — TY 2026-27+ def2 (keyed by propertyId) ────────────────
+check('foreignCumulativeUsesPropertyId gates on tax year 2026-27+', () => {
+  assert.equal(foreignCumulativeUsesPropertyId(2025), false); // 2025-26 → def1 (countryCode)
+  assert.equal(foreignCumulativeUsesPropertyId(2026), true);  // 2026-27 → def2 (propertyId)
+  assert.equal(foreignCumulativeUsesPropertyId(2027), true);
+});
+
+check('def2 body: keyed by propertyId, NOT countryCode; same income/expense shape', () => {
+  const body = buildForeignPropertyByIdCumulativeBody('2026-04-06', '2026-07-05', [{
+    propertyId: '8e8b8450-dc1b-4360-8109-7067337b42cb', income: 800,
+    expensesByField: { premisesRunningCosts: 100 }, consolidatedExpenses: 100,
+    residentialFinanceCost: 300, residentialFinanceCostBroughtFwd: 50,
+  }], false);
+  const item = body.foreignProperty[0];
+  assert.equal(item.propertyId, '8e8b8450-dc1b-4360-8109-7067337b42cb');
+  assert.equal('countryCode' in item, false);                     // def2 has NO countryCode
+  assert.equal(item.income.rentIncome.rentAmount, 800);           // same income nesting as def1
+  assert.equal(item.expenses.residentialFinancialCost, 300);
+  assert.equal(item.expenses.broughtFwdResidentialFinancialCost, 50);
+  assert.equal(item.expenses.premisesRunningCosts, 100);
+  assert.equal(body.fromDate, '2026-04-06');
+  assert.equal(body.toDate, '2026-07-05');
+});
+
+check('def2 body: consolidated expenses mode', () => {
+  const body = buildForeignPropertyByIdCumulativeBody('2026-04-06', '2026-07-05', [{
+    propertyId: 'p1', income: 500, expensesByField: { premisesRunningCosts: 100 },
+    consolidatedExpenses: 250, residentialFinanceCost: 0, residentialFinanceCostBroughtFwd: 0,
+  }], true);
+  const exp = body.foreignProperty[0].expenses;
+  assert.equal(exp.consolidatedExpenses, 250);
+  assert.equal('premisesRunningCosts' in exp, false); // itemised fields omitted when consolidated
 });
 
 // ── 4. Landlord → MTD category mapping (the feed) ─────────────────────────────
