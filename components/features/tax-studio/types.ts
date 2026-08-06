@@ -62,10 +62,21 @@ export interface EmploymentSource {
   benefits?: number;
   expenses?: number;
 }
+// SA104 Partnership — this partner's share of the partnership's income.
 export interface PartnershipSource {
   id: string;
   name: string;
-  profit: number;     // this partner's share of the partnership's taxable profit
+  utr?: string;                 // partnership UTR
+  periodStart?: string;         // basis period start (dd-mm-yyyy)
+  periodEnd?: string;           // basis period end (dd-mm-yyyy)
+  profit: number;               // share of the partnership's taxable trade profit
+  adjustments?: number;         // basis-period / overlap adjustments (+/−)
+  lossBroughtForward?: number;  // share of loss brought forward, used this year
+  taxTaken?: number;            // share of CIS / tax deducted at source
+  class4Exempt?: boolean;       // partner exempt from Class 4 NIC
+  // Share of the partnership's other income (SA104F), routed to the right rate
+  savingsInterest?: number;     // share of savings interest
+  dividends?: number;           // share of dividends
 }
 // SA103F Self-employment (full). Box numbers follow the HMRC SA103F form.
 export interface TradeSource {

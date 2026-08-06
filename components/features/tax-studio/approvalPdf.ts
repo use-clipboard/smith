@@ -7,7 +7,7 @@
 
 import type { Sa100Income } from './types';
 import type { Sa100Computation } from './calc';
-import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, foreignTotals } from './calc';
+import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals } from './calc';
 import { returnType } from './data';
 
 export interface SummaryLine { label: string; value: string; }
@@ -200,7 +200,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   const i = input.income;
   if (i.employment.length) { heading(rs, 'Employment'); for (const e of i.employment) { line(rs, e.employer || 'Employment', gbp(e.pay + (e.tips || 0))); line(rs, '  Tax deducted / benefits / expenses', `${gbp(e.taxDeducted)} / ${gbp(employmentBenefits(e))} / ${gbp(employmentExpenses(e))}`, { muted: true, indent: 6 }); } }
   if (i.selfEmployment.length) { heading(rs, 'Self-employment'); for (const s of i.selfEmployment) { const net = tradeNetProfit(s); const adj = tradeAdjustedProfit(s); line(rs, s.name || 'Self-employment', gbp(adj)); if (adj !== net) line(rs, `  Net profit ${gbp(net)}, then tax adjustments`, null, { muted: true, indent: 6 }); } }
-  if ((i.partnerships ?? []).length) { heading(rs, 'Partnership'); for (const p of (i.partnerships ?? [])) line(rs, p.name || 'Partnership', gbp(p.profit)); }
+  if ((i.partnerships ?? []).length) { heading(rs, 'Partnership'); for (const p of (i.partnerships ?? [])) line(rs, p.name || 'Partnership', gbp(partnershipTaxableProfit(p))); }
   if (i.property.length) { heading(rs, 'Property'); for (const p of i.property) line(rs, p.address || 'Property', gbp(propertyTaxable(p))); }
   const fT = foreignTotals(i);
   const others: [string, number][] = [

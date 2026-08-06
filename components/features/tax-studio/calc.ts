@@ -12,7 +12,14 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal } from './types';
+
+// ── SA104 partnership helper ─────────────────────────────────────────────────
+/** This partner's taxable share of the partnership trade profit: share +
+ *  basis-period adjustments − brought-forward loss, floored at nil. */
+export function partnershipTaxableProfit(p: PartnershipSource): number {
+  return Math.max(0, (p.profit || 0) + (p.adjustments || 0) - (p.lossBroughtForward || 0));
+}
 
 // ── SA106 foreign helpers ────────────────────────────────────────────────────
 /** Split foreign income by how it's taxed in the UK: interest → savings rates,
@@ -278,7 +285,12 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const tradeProfit = Math.max(0, netTrade);
   const tradeLossSideways = netTrade < 0 ? -netTrade : 0;
 
-  const partnershipProfit = sum((income.partnerships ?? []).map(p => Math.max(0, p.profit)));
+  const partnerships = income.partnerships ?? [];
+  const partnershipProfit = sum(partnerships.map(partnershipTaxableProfit));
+  const partnershipClass4 = sum(partnerships.filter(p => !p.class4Exempt).map(partnershipTaxableProfit));
+  const partnershipSavings = sum(partnerships.map(p => p.savingsInterest || 0));
+  const partnershipDividends = sum(partnerships.map(p => p.dividends || 0));
+  const partnershipTaxTaken = sum(partnerships.map(p => p.taxTaken || 0));
   const propertyProfit = sum(income.property.map(propertyTaxable));
   const pensionsIncome = income.pensionsIncome || 0;
   const statePension = income.statePension || 0;
@@ -287,8 +299,8 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = income.otherIncome || 0;
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
-  const savingsIncome = (income.savingsInterest || 0) + ft.interest;
-  const dividendIncome = (income.dividends || 0) + ft.dividends;
+  const savingsIncome = (income.savingsInterest || 0) + ft.interest + partnershipSavings;
+  const dividendIncome = (income.dividends || 0) + ft.dividends + partnershipDividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
@@ -413,7 +425,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer - foreignTaxCreditRelief - additionalReducers);
 
   // Class 4 NIC on trade + partnership profit share. (Class 2 not charged 2025/26.)
-  const class4Base = tradeProfit + partnershipProfit;
+  const class4Base = tradeProfit + partnershipClass4;
   const class4Nic = r0(Math.max(0, Math.min(class4Base, NIC_UPL) - NIC_LPL) * C4_MAIN + Math.max(0, class4Base - NIC_UPL) * C4_UPPER);
 
   // Student loan — 9% of income above the plan threshold.
@@ -477,7 +489,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const chargeableEventCredit = income.additional?.chargeableEventUkPolicy ? r0(chargeableEventGains * R_BASIC) : 0;
   if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + chargeableEventCredit);
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not

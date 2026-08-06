@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, disposalGainLoss } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal, ForeignSource, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -250,11 +250,11 @@ function BoxNum({ box, label, value, onChange }: { box: number; label: string; v
   );
 }
 
-function BoxText({ box, label, value, onChange }: { box: number; label: string; value: string; onChange: (v: string) => void }) {
+function BoxText({ box, label, value, onChange }: { box?: number; label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}
+        {box ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
       </label>
       <TextIn value={value} onChange={onChange} />
     </div>
@@ -339,17 +339,58 @@ function TradeCard({ t, idx, onChange, onRemove }: {
 }
 
 function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const list = income.partnerships ?? [];
+  const add = () => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt-${(i.partnerships ?? []).length}-${Date.now()}`, name: '', profit: 0 }] }));
   return (
-    <Group icon={Users} title="Partnerships"
-      onAdd={() => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt${(i.partnerships ?? []).length + 1}`, name: '', profit: 0 }] }))}>
-      {(income.partnerships ?? []).map((p, idx) => (
-        <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
-          <TextIn value={p.name} placeholder="Partnership" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
-          <NumIn value={p.profit} label="Profit share" onChange={v => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
-          <RemoveBtn onClick={() => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).filter((_, j) => j !== idx) }))} />
-        </div>
+    <div className="space-y-3">
+      {list.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No partnerships yet — add one to enter the SA104 figures.</p>
+      )}
+      {list.map((p, idx) => (
+        <PartnershipCard key={p.id} p={p} idx={idx}
+          onChange={u => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).map((x, j) => j === idx ? { ...x, ...u } : x) }))}
+          onRemove={() => setIncome(i => ({ ...i, partnerships: (i.partnerships ?? []).filter((_, j) => j !== idx) }))} />
       ))}
-    </Group>
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add partnership</button>
+    </div>
+  );
+}
+
+function PartnershipCard({ p, idx, onChange, onRemove }: {
+  p: PartnershipSource; idx: number; onChange: (u: Partial<PartnershipSource>) => void; onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <input value={p.name} placeholder={`Partnership ${idx + 1}`} onChange={ev => onChange({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(partnershipTaxableProfit(p))}</span></span>
+        <RemoveBtn onClick={onRemove} />
+      </div>
+      {open && (
+        <div className="space-y-3 border-t border-black/5 px-3 py-3">
+          <BoxSection title="Partnership details">
+            <BoxText label="Partnership UTR" value={p.utr ?? ''} onChange={v => onChange({ utr: v })} />
+            <BoxText label="Period start (dd-mm-yyyy)" value={p.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
+            <BoxText label="Period end (dd-mm-yyyy)" value={p.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
+          </BoxSection>
+          <BoxSection title="Share of profit">
+            <LabelledNum label="Taxable profit share" value={p.profit} onChange={v => onChange({ profit: v })} />
+            <LabelledNum label="Basis-period adjustment" value={p.adjustments ?? 0} onChange={v => onChange({ adjustments: v })} />
+            <LabelledNum label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
+          </BoxSection>
+          <BoxSection title="Other income & tax">
+            <LabelledNum label="Share of savings interest" value={p.savingsInterest ?? 0} onChange={v => onChange({ savingsInterest: v })} />
+            <LabelledNum label="Share of dividends" value={p.dividends ?? 0} onChange={v => onChange({ dividends: v })} />
+            <LabelledNum label="Tax deducted at source" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
+            <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
+              <input type="checkbox" checked={p.class4Exempt ?? false} onChange={e => onChange({ class4Exempt: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Exempt from Class 4 NIC
+            </label>
+          </BoxSection>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -571,19 +612,6 @@ function DisposalCard({ d, idx, onChange, onRemove }: {
           </select>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Group({ icon: Icon, title, onAdd, children }: { icon: typeof Briefcase; title: string; onAdd: () => void; children: React.ReactNode }) {
-  const hasRows = Array.isArray(children) ? children.length > 0 : !!children;
-  return (
-    <div className="mt-3">
-      <div className="mb-1.5 flex items-center justify-between">
-        <p className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-secondary)]"><Icon size={13} className="text-[var(--accent)]" /> {title}</p>
-        <button onClick={onAdd} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)] hover:underline"><Plus size={12} /> Add</button>
-      </div>
-      {hasRows ? <div className="space-y-1.5">{children}</div> : <p className="text-[11.5px] text-[var(--text-muted)]">None</p>}
     </div>
   );
 }
