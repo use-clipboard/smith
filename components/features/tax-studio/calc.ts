@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource } from './types';
 
 // ── SA102 employment helpers ─────────────────────────────────────────────────
 // Total P11D benefits (boxes 9–16); falls back to the legacy aggregate when no
@@ -62,6 +62,29 @@ export function tradeAddBacks(t: TradeSource): number {
  *  against other trades / be relieved sideways). */
 export function tradeAdjustedProfit(t: TradeSource): number {
   return tradeNetProfit(t) + tradeAddBacks(t) - tradeCapitalAllowances(t);
+}
+
+// ── SA105 property helpers ───────────────────────────────────────────────────
+const PROP_EXP_KEYS = ['expPremises', 'expRepairs', 'expLoanInterest', 'expProfessional', 'expServices', 'expOther'] as const;
+
+export function propertyExpensesTotal(p: PropertySource): number {
+  return PROP_EXP_KEYS.reduce((a, k) => a + (p[k] || 0), 0);
+}
+export function propertyItemised(p: PropertySource): boolean {
+  return (p.rents || 0) > 0 || (p.premiums || 0) > 0 || propertyExpensesTotal(p) > 0;
+}
+/** Net rental profit before tax adjustments — derived from rents − expenses when
+ *  itemised, else the imported/entered accounts profit. */
+export function propertyNetProfit(p: PropertySource): number {
+  return propertyItemised(p) ? (p.rents || 0) + (p.premiums || 0) - propertyExpensesTotal(p) : (p.profit || 0);
+}
+/** Taxable property profit for one property: net profit + adjustments − reliefs
+ *  − brought-forward loss, floored at nil (property losses carry forward, they
+ *  are not relieved sideways). */
+export function propertyTaxable(p: PropertySource): number {
+  const adjusted = propertyNetProfit(p) + (p.privateUse || 0) + (p.balancingCharges || 0)
+    - (p.aia || 0) - (p.capitalAllowances || 0) - (p.domesticItems || 0) - (p.rentARoom || 0);
+  return Math.max(0, adjusted - (p.lossBroughtForward || 0));
 }
 
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
@@ -209,7 +232,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const tradeLossSideways = netTrade < 0 ? -netTrade : 0;
 
   const partnershipProfit = sum((income.partnerships ?? []).map(p => Math.max(0, p.profit)));
-  const propertyProfit = sum(income.property.map(p => Math.max(0, p.profit)));
+  const propertyProfit = sum(income.property.map(propertyTaxable));
   const pensionsIncome = income.pensionsIncome || 0;
   const statePension = income.statePension || 0;
   const foreignIncome = income.foreign?.income || 0;
@@ -217,7 +240,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const otherIncome = income.otherIncome || 0;
   const savingsIncome = income.savingsInterest || 0;
   const dividendIncome = income.dividends || 0;
-  const financeCosts = income.financeCosts || 0;
+  // Residential finance costs: per-property (SA105 box 44) when itemised, else
+  // the legacy income-level figure (e.g. from an older Landlord import).
+  const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
+  const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
   let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome;
@@ -371,10 +397,12 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   }
 
   const totalDue = r0(incomeTax) + class4Nic + studentLoan + hicbc + capitalGainsTax;
-  // Tax already paid at source: PAYE on employment + CIS deductions on trades.
+  // Tax already paid at source: PAYE on employment + CIS on trades + tax taken
+  // off property income.
   const cisDeducted = sum(income.selfEmployment.map(t => t.cisDeductions || 0));
+  const propertyTaxTaken = sum(income.property.map(p => p.taxTaken || 0));
   if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted);
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not

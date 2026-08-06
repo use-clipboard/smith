@@ -103,9 +103,32 @@ export interface TradeSource {
   addBacks?: number;          // total disallowable expenses added back
   capitalAllowances?: number; // other capital allowances (WDA etc.)
 }
+// SA105 UK property. Box numbers follow the HMRC SA105 form (2025/26 — the
+// furnished-holiday-lettings regime was abolished from 6 April 2025).
 export interface PropertySource {
   id: string;
   address: string;
+  // Income
+  rents?: number;        // box 20 — total rents & other income from property
+  taxTaken?: number;     // box 21 — tax taken off any income in box 20
+  premiums?: number;     // box 22 — premiums for the grant of a lease
+  // Allowable expenses (boxes 24–29)
+  expPremises?: number;    // 24 — rent, rates, insurance, ground rents
+  expRepairs?: number;     // 25 — property repairs & maintenance
+  expLoanInterest?: number;// 26 — non-residential loan interest & finance costs
+  expProfessional?: number;// 27 — legal, management & professional fees
+  expServices?: number;    // 28 — costs of services, incl. wages
+  expOther?: number;       // 29 — other allowable property expenses
+  // Tax adjustments
+  privateUse?: number;         // 36 — private use adjustment (add back)
+  balancingCharges?: number;   // 37 — balancing charges (add back)
+  aia?: number;                // 38 — annual investment allowance (deduct)
+  capitalAllowances?: number;  // other property capital allowances (deduct)
+  domesticItems?: number;      // 40 — replacement of domestic items relief (deduct)
+  residentialFinanceCosts?: number; // 44 — residential finance costs → 20% reducer
+  rentARoom?: number;          // Rent a Room relief claimed (deduct)
+  lossBroughtForward?: number; // 43 — loss brought forward used this year
+  // Legacy — accounts net profit fallback (used when boxes aren't itemised).
   profit: number;
 }
 

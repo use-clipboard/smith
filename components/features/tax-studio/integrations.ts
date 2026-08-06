@@ -141,8 +141,8 @@ export interface SourceRef {
 export function mergeCrossLandlord(income: Sa100Income, s: LandlordSummary, src: SourceRef): Sa100Income {
   const pfx = `${XC}ll-${src.clientId}-`;
   const property = income.property.filter(p => !p.id.startsWith(pfx));
-  property.push({ id: `${pfx}0`, address: `UK property — ${src.label}`, profit: Math.round(s.taxableProfit) });
-  return { ...income, property, financeCosts: Math.round(s.financeCosts) };
+  property.push({ id: `${pfx}0`, address: `UK property — ${src.label}`, profit: Math.round(s.taxableProfit), residentialFinanceCosts: Math.round(s.financeCosts) });
+  return { ...income, property };
 }
 
 /** Cross-client MTD IT → self-employment / UK & foreign property. */

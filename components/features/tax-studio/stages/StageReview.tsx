@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -346,23 +346,66 @@ function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome
 }
 
 function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const add = () => setIncome(i => ({ ...i, property: [...i.property, { id: `p-${i.property.length}-${Date.now()}`, address: '', profit: 0 }] }));
   return (
-    <>
-      <Group icon={Home} title="Properties"
-        onAdd={() => setIncome(i => ({ ...i, property: [...i.property, { id: `p${i.property.length + 1}`, address: '', profit: 0 }] }))}>
-        {income.property.map((p, idx) => (
-          <div key={p.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
-            <TextIn value={p.address} placeholder="Property address" onChange={v => setIncome(i => ({ ...i, property: i.property.map((x, j) => j === idx ? { ...x, address: v } : x) }))} />
-            <NumIn value={p.profit} label="Profit" onChange={v => setIncome(i => ({ ...i, property: i.property.map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
-            <RemoveBtn onClick={() => setIncome(i => ({ ...i, property: i.property.filter((_, j) => j !== idx) }))} />
-          </div>
-        ))}
-      </Group>
-      <div className="mt-4 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
-        <LabelledNum label="Residential finance costs" value={income.financeCosts ?? 0} onChange={v => setIncome(i => ({ ...i, financeCosts: v }))} />
+    <div className="space-y-3">
+      {income.property.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No properties yet — add one to enter the SA105 figures.</p>
+      )}
+      {income.property.map((p, idx) => (
+        <PropertyCard key={p.id} p={p} idx={idx}
+          onChange={u => setIncome(i => ({ ...i, property: i.property.map((x, j) => j === idx ? { ...x, ...u } : x) }))}
+          onRemove={() => setIncome(i => ({ ...i, property: i.property.filter((_, j) => j !== idx) }))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add property</button>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Furnished holiday lettings ended on 5 April 2025, so 2025/26 uses the single UK-property section. Residential finance costs are relieved as a 20% reducer, not deducted.</p>
+    </div>
+  );
+}
+
+function PropertyCard({ p, idx, onChange, onRemove }: {
+  p: PropertySource; idx: number; onChange: (u: Partial<PropertySource>) => void; onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <input value={p.address} placeholder={`Property ${idx + 1}`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span></span>
+        <RemoveBtn onClick={onRemove} />
       </div>
-      <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Residential mortgage interest — relieved as a 20% tax reducer, not deducted from profit.</p>
-    </>
+      {open && (
+        <div className="space-y-3 border-t border-black/5 px-3 py-3">
+          <BoxSection title="Income">
+            <BoxNum box={20} label="Rents & other income" value={p.rents ?? 0} onChange={v => onChange({ rents: v })} />
+            <BoxNum box={21} label="Tax taken off" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
+            <BoxNum box={22} label="Lease premiums" value={p.premiums ?? 0} onChange={v => onChange({ premiums: v })} />
+          </BoxSection>
+          <BoxSection title="Allowable expenses">
+            <BoxNum box={24} label="Rent, rates, insurance" value={p.expPremises ?? 0} onChange={v => onChange({ expPremises: v })} />
+            <BoxNum box={25} label="Repairs & maintenance" value={p.expRepairs ?? 0} onChange={v => onChange({ expRepairs: v })} />
+            <BoxNum box={26} label="Non-resi. loan interest" value={p.expLoanInterest ?? 0} onChange={v => onChange({ expLoanInterest: v })} />
+            <BoxNum box={27} label="Legal & professional" value={p.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
+            <BoxNum box={28} label="Cost of services" value={p.expServices ?? 0} onChange={v => onChange({ expServices: v })} />
+            <BoxNum box={29} label="Other expenses" value={p.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
+          </BoxSection>
+          <BoxSection title="Adjustments & reliefs">
+            <BoxNum box={36} label="Private use adjustment" value={p.privateUse ?? 0} onChange={v => onChange({ privateUse: v })} />
+            <BoxNum box={37} label="Balancing charges" value={p.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
+            <BoxNum box={38} label="Annual investment allowance" value={p.aia ?? 0} onChange={v => onChange({ aia: v })} />
+            <LabelledNum label="Other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
+            <BoxNum box={40} label="Replacing domestic items" value={p.domesticItems ?? 0} onChange={v => onChange({ domesticItems: v })} />
+            <LabelledNum label="Rent a Room relief" value={p.rentARoom ?? 0} onChange={v => onChange({ rentARoom: v })} />
+          </BoxSection>
+          <BoxSection title="Finance costs & losses">
+            <BoxNum box={44} label="Residential finance costs" value={p.residentialFinanceCosts ?? 0} onChange={v => onChange({ residentialFinanceCosts: v })} />
+            <BoxNum box={43} label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
+          </BoxSection>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Net profit {fmtMoney(propertyNetProfit(p))} + adjustments − reliefs − loss b/fwd = taxable. Residential finance costs give a separate 20% reducer.</p>
+        </div>
+      )}
+    </div>
   );
 }
 
