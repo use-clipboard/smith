@@ -45,7 +45,11 @@ export interface EmploymentSource {
 export interface TradeSource {
   id: string;
   name: string;
-  profit: number;     // net profit / (loss)
+  profit: number;     // accounts net profit / (loss)
+  /** Tax adjustments: disallowables + depreciation added back. */
+  addBacks?: number;
+  /** Capital allowances (incl. AIA) deducted to reach the taxable profit. */
+  capitalAllowances?: number;
 }
 export interface PropertySource {
   id: string;
@@ -68,6 +72,9 @@ export interface Sa100Income {
   /** Residential finance costs (mortgage interest) — relieved as a 20% tax
    *  reducer for individuals, not deducted. Optional; defaults to 0. */
   financeCosts?: number;
+  /** Marriage Allowance: 'received' gives a ~£252 reducer; 'transferred'
+   *  reduces this person's personal allowance by £1,260. */
+  marriageAllowance?: 'none' | 'received' | 'transferred';
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────

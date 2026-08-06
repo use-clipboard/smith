@@ -159,7 +159,7 @@ function LiveHmrcCard({ ret, patch, approved }: { ret: TaxReturn; patch: Patch; 
         {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700">{error}</p>}
 
         <p className="mt-3 text-[10.5px] text-[var(--text-muted)]">
-          Reuses your HMRC Income Tax (MTD) connection. Requires the client to be signed up for MTD for Income Tax with a valid NINO, and their quarterly &amp; annual updates already submitted. The API version should be verified against the HMRC sandbox before production use.
+          Reuses your HMRC Income Tax (MTD) connection. Requires the client to be signed up for MTD for Income Tax with a valid NINO, and their quarterly &amp; annual updates already submitted. Uses Individual Calculations API v8.0 (intent-to-finalise → final declaration); confirm the calculation response fields against the HMRC sandbox before a live filing.
         </p>
       </div>
     </StudioCard>

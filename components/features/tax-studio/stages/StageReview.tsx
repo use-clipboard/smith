@@ -79,13 +79,18 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
       <Group icon={Briefcase} title="Self-employment"
         onAdd={() => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s${i.selfEmployment.length + 1}`, name: '', profit: 0 }] }))}>
         {income.selfEmployment.map((s, idx) => (
-          <div key={s.id} className="grid grid-cols-[2fr_1fr_auto] items-center gap-2">
+          <div key={s.id} className="grid grid-cols-[1.5fr_1fr_1fr_1fr_auto] items-center gap-2">
             <TextIn value={s.name} placeholder="Trade" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, name: v } : x) }))} />
             <NumIn value={s.profit} label="Profit" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, profit: v } : x) }))} />
+            <NumIn value={s.addBacks ?? 0} label="Add-backs" onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, addBacks: v } : x) }))} />
+            <NumIn value={s.capitalAllowances ?? 0} label="Cap. allow." onChange={v => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.map((x, j) => j === idx ? { ...x, capitalAllowances: v } : x) }))} />
             <RemoveBtn onClick={() => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.filter((_, j) => j !== idx) }))} />
           </div>
         ))}
       </Group>
+      {income.selfEmployment.length > 0 && (
+        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Profit + add-backs (disallowables/depreciation) − capital allowances = taxable trade profit.</p>
+      )}
 
       {/* Property */}
       <Group icon={Home} title="Property"
@@ -107,6 +112,18 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
         <LabelledNum label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
         <LabelledNum label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
         <LabelledNum label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
+          <select
+            value={income.marriageAllowance ?? 'none'}
+            onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))}
+            className="input-base py-1 text-[12.5px]"
+          >
+            <option value="none">None</option>
+            <option value="received">Received (£252 reducer)</option>
+            <option value="transferred">Transferred to spouse</option>
+          </select>
+        </div>
       </div>
     </StudioCard>
   );
@@ -165,6 +182,9 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       </div>
       {c.financeCostReducer > 0 && (
         <Row label="Less: finance-cost reducer (20%)" value={`(${fmtMoney(c.financeCostReducer)})`} />
+      )}
+      {c.marriageAllowanceReducer > 0 && (
+        <Row label="Less: Marriage Allowance" value={`(${fmtMoney(c.marriageAllowanceReducer)})`} />
       )}
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}

@@ -33,6 +33,8 @@ const C4_MAIN = 0.06, C4_UPPER = 0.02;
 const C1_MAIN = 0.08, C1_UPPER = 0.02; // employee Class 1 (planning only)
 
 const FINANCE_RELIEF = 0.20;
+const MARRIAGE_ALLOWANCE_TRANSFER = 1260; // PA reduction for the transferor
+const MARRIAGE_ALLOWANCE_REDUCER = 252;   // ~10% of PA @ 20% for the recipient
 
 const SL_THRESHOLDS: Record<1 | 2 | 4 | 5, number> = { 1: 26065, 2: 28470, 4: 32745, 5: 25000 };
 const SL_RATE = 0.09;
@@ -86,6 +88,7 @@ export interface Sa100Computation {
   lines: TaxLine[];
   incomeTaxBeforeReducers: number;
   financeCostReducer: number;
+  marriageAllowanceReducer: number;
   incomeTax: number;         // after reducers, not below zero
 
   class4Nic: number;
@@ -119,8 +122,13 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   const employmentIncome = sum(income.employment.map(e => e.pay + (e.benefits || 0)));
   const taxDeducted = sum(income.employment.map(e => e.taxDeducted));
-  const tradeProfit = sum(income.selfEmployment.map(s => Math.max(0, s.profit)));
-  if (income.selfEmployment.some(s => s.profit < 0)) notes.push('Trade losses are not yet modelled — enter the loss relief manually.');
+  // Tax-adjusted trade profit: accounts profit + add-backs (disallowables /
+  // depreciation) − capital allowances, floored at nil per trade.
+  const adjustedTrade = (s: { profit: number; addBacks?: number; capitalAllowances?: number }) =>
+    s.profit + (s.addBacks || 0) - (s.capitalAllowances || 0);
+  const tradeProfit = sum(income.selfEmployment.map(s => Math.max(0, adjustedTrade(s))));
+  if (income.selfEmployment.some(s => adjustedTrade(s) < 0)) notes.push('Trade losses are not yet modelled — enter the loss relief manually.');
+  if (income.selfEmployment.some(s => (s.addBacks || 0) !== 0 || (s.capitalAllowances || 0) !== 0)) notes.push('Trade profit is tax-adjusted (add-backs less capital allowances).');
   const propertyProfit = sum(income.property.map(p => Math.max(0, p.profit)));
   const pensionsIncome = income.pensionsIncome || 0;
   const otherIncome = income.otherIncome || 0;
@@ -144,6 +152,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     personalAllowance = Math.max(0, PA - Math.floor((adjustedNetIncome - PA_TAPER_THRESHOLD) / 2));
     paTapered = true;
     notes.push('Personal allowance restricted by the £100,000 income taper.');
+  }
+  if (income.marriageAllowance === 'transferred') {
+    personalAllowance = Math.max(0, personalAllowance - MARRIAGE_ALLOWANCE_TRANSFER);
+    notes.push('Personal allowance reduced by a Marriage Allowance transfer to a spouse/civil partner.');
   }
 
   // Allocate PA: non-savings → savings → dividends.
@@ -210,7 +222,9 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     financeCostReducer = Math.max(0, base) * FINANCE_RELIEF;
     if (base > 0) notes.push('Residential finance costs relieved as a 20% tax reducer.');
   }
-  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer);
+  const marriageAllowanceReducer = income.marriageAllowance === 'received' ? MARRIAGE_ALLOWANCE_REDUCER : 0;
+  if (marriageAllowanceReducer > 0) notes.push('Marriage Allowance received — £252 tax reducer applied.');
+  const incomeTax = Math.max(0, incomeTaxBeforeReducers - financeCostReducer - marriageAllowanceReducer);
 
   // Class 4 NIC on trade profit. (Class 2 is not charged for 2025/26.)
   const class4Nic = r0(Math.max(0, Math.min(tradeProfit, NIC_UPL) - NIC_LPL) * C4_MAIN + Math.max(0, tradeProfit - NIC_UPL) * C4_UPPER);
@@ -245,6 +259,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     lines,
     incomeTaxBeforeReducers: r0(incomeTaxBeforeReducers),
     financeCostReducer: r0(financeCostReducer),
+    marriageAllowanceReducer,
     incomeTax: r0(incomeTax),
     class4Nic, studentLoan,
     totalDue,

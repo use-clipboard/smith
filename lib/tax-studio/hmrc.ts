@@ -8,13 +8,22 @@
 //   2. retrieve that calculation
 //   3. submit the final declaration (crystallise)
 //
-// NOTE: HMRC pins the Individual Calculations API version in the Accept header.
-// Confirm ITSA_CALC_VERSION against the HMRC sandbox before production use — the
-// endpoints and body are otherwise stable.
+// Endpoints match Individual Calculations (MTD) API v8.0 (developer.service.hmrc.gov.uk):
+//   trigger:           POST .../self-assessment/{taxYear}/trigger/{calculationType}
+//                      (calculationType 'intent-to-finalise' for the final-declaration journey)
+//   retrieve:          GET  .../self-assessment/{taxYear}/{calculationId}
+//   final declaration: POST .../self-assessment/{taxYear}/{calculationId}/final-declaration
+// HMRC pins the version in the Accept header. Override with HMRC_ITSA_CALC_VERSION
+// if HMRC ships a newer version. The retrieve response shape should still be
+// confirmed against the sandbox (see docs/tax-studio-hmrc-sandbox.md).
 
 import { hmrcRequest, hmrcErrorMessage, type HmrcConnection } from '@/lib/hmrc/api';
 
-export const ITSA_CALC_VERSION = '7.0';
+export const ITSA_CALC_VERSION = process.env.HMRC_ITSA_CALC_VERSION || '8.0';
+
+// The final-declaration journey triggers an 'intent-to-finalise' calculation,
+// which the customer reviews, then confirms via the final-declaration endpoint.
+const TRIGGER_CALC_TYPE = 'intent-to-finalise';
 
 /** '2025/26' → '2025-26' (the ITSA API tax-year format). */
 export function itsaTaxYear(label: string): string {
@@ -43,24 +52,27 @@ export interface CalcSummary {
  *  Individual Calculations response is deeply nested and version-dependent, so
  *  we probe the common locations and surface whatever is present. */
 export function summariseCalculation(json: unknown): CalcSummary {
-  const j = json as Record<string, unknown> | null;
-  const calc = (j?.calculation ?? {}) as Record<string, unknown>;
-  const taxCalc = (calc.taxCalculation ?? {}) as Record<string, unknown>;
-  const incomeTax = (taxCalc.incomeTax ?? {}) as Record<string, unknown>;
-  const nics = (taxCalc.nics ?? {}) as Record<string, unknown>;
-  const class4 = (nics.class4Nics ?? {}) as Record<string, unknown>;
+  const j = (json ?? {}) as Record<string, unknown>;
+  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? v as Record<string, unknown> : {});
+  // The taxCalculation block sits under `calculation`, `outputs`, or top-level
+  // depending on the API version — probe all so the summary is version-tolerant.
+  const calc = obj(j.calculation);
+  const outputs = obj(j.outputs);
+  const taxCalc = obj(calc.taxCalculation ?? outputs.taxCalculation ?? j.taxCalculation);
+  const incomeTax = obj(taxCalc.incomeTax);
+  const class4 = obj(obj(taxCalc.nics).class4Nics);
   const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
   return {
-    calculationId: (j?.calculationId as string) ?? ((j?.metadata as Record<string, unknown>)?.calculationId as string) ?? null,
-    totalIncomeTaxAndNicsDue: num(taxCalc.totalIncomeTaxAndNicsDue) ?? num(taxCalc.totalIncomeTaxNicsCharged),
-    incomeTaxDue: num(incomeTax.totalIncomeTaxDueAfterTaxReductions) ?? num(incomeTax.incomeTaxCharged),
-    class4NicDue: num(class4.totalIncomeTaxAndNicsDue) ?? num(class4.class4NicsAmount) ?? num(class4.totalClass4Charge),
+    calculationId: (j.calculationId as string) ?? (obj(j.metadata).calculationId as string) ?? null,
+    totalIncomeTaxAndNicsDue: num(taxCalc.totalIncomeTaxAndNicsDue) ?? num(taxCalc.totalIncomeTaxAndNicsAndCgtDue) ?? num(taxCalc.totalIncomeTaxNicsCharged),
+    incomeTaxDue: num(incomeTax.totalIncomeTaxDueAfterTaxReductions) ?? num(incomeTax.incomeTaxDueAfterReliefs) ?? num(incomeTax.incomeTaxCharged),
+    class4NicDue: num(class4.class4NicsAmount) ?? num(class4.totalClass4Charge) ?? num(class4.totalIncomeTaxAndNicsDue),
     totalTaxable: num(taxCalc.totalTaxableIncome),
   };
 }
 
 export async function triggerFinalCalculation(c: Common): Promise<{ ok: boolean; status: number; calculationId: string | null; error?: string }> {
-  const r = await hmrcRequest(c.conn, `/individuals/calculations/${c.nino}/self-assessment/${c.taxYear}?finalDeclaration=true`, {
+  const r = await hmrcRequest(c.conn, `/individuals/calculations/${c.nino}/self-assessment/${c.taxYear}/trigger/${TRIGGER_CALC_TYPE}`, {
     method: 'POST', version: ITSA_CALC_VERSION, fraudHeaders: c.fraudHeaders, testScenario: c.testScenario,
   });
   if (r.status >= 200 && r.status < 300) {
