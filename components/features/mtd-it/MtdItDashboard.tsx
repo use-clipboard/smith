@@ -6,6 +6,7 @@ import {
   CalendarCheck, Plus, Search, ChevronDown, Loader2, Upload, Filter,
   AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Download, SlidersHorizontal,
   Users as UsersIcon, ShieldCheck, HelpCircle, X, History, CheckCircle2, ScrollText, Info,
+  UserCheck,
 } from 'lucide-react';
 
 // Inline traffic-light SVG used as the status-filter icon. Three vertically
@@ -39,8 +40,24 @@ import type { MtdItClientRow as Row } from '@/types';
 
 type StatusFilter = 'all' | 'not_discovered' | 'unmapped' | 'ready';
 type ThresholdFilter = 'all' | 'flagged' | 'unflagged';
+type LifecycleStatus = 'active' | 'hold' | 'inactive';
 type SortKey = 'name' | 'client_ref' | 'status' | 'utr_number' | 'national_insurance_number' | 'date_of_birth' | 'address' | 'contact_email';
 type SortDir = 'asc' | 'desc';
+
+// Client lifecycle status (from the client record), distinct from HMRC-setup
+// status. The default deliberately HIDES inactive clients — an accountant's
+// day-to-day list is their live book, and inactive clients are just noise until
+// specifically wanted. Toggle any of the three on/off in the pill.
+const LIFECYCLE_OPTIONS: Array<{ value: LifecycleStatus; label: string }> = [
+  { value: 'active',   label: 'Active'   },
+  { value: 'hold',     label: 'On hold'  },
+  { value: 'inactive', label: 'Inactive' },
+];
+const DEFAULT_LIFECYCLE: LifecycleStatus[] = ['active', 'hold'];
+const isDefaultLifecycle = (s: Set<LifecycleStatus>) =>
+  s.size === DEFAULT_LIFECYCLE.length && DEFAULT_LIFECYCLE.every(v => s.has(v));
+const lifecycleSummary = (s: Set<LifecycleStatus>) =>
+  LIFECYCLE_OPTIONS.filter(o => s.has(o.value)).map(o => o.label).join(', ') || 'None';
 
 const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
   { value: 'all',            label: 'All HMRC statuses' },
@@ -143,6 +160,9 @@ export default function MtdItDashboard() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [thresholdFilter, setThresholdFilter] = useState<ThresholdFilter>('all');
+  // Which client lifecycle statuses to show. Defaults to active + on hold
+  // (inactive hidden) — see DEFAULT_LIFECYCLE.
+  const [lifecycle, setLifecycle] = useState<Set<LifecycleStatus>>(() => new Set(DEFAULT_LIFECYCLE));
   // "Ready to file" = quarters the client has approved but that haven't been
   // filed with HMRC yet. The agent reviews + submits these.
   const [readyToFileOnly, setReadyToFileOnly] = useState(false);
@@ -169,9 +189,11 @@ export default function MtdItDashboard() {
   // ── Toolbar pill popovers ──────────────────────────────────────────────
   const [statusPopOpen,    setStatusPopOpen]    = useState(false);
   const [thresholdPopOpen, setThresholdPopOpen] = useState(false);
+  const [lifecyclePopOpen, setLifecyclePopOpen] = useState(false);
   const [colPickerOpen,    setColPickerOpen]    = useState(false);
   const statusPopRef    = useRef<HTMLDivElement>(null);
   const thresholdPopRef = useRef<HTMLDivElement>(null);
+  const lifecyclePopRef = useRef<HTMLDivElement>(null);
   const colPickerRef    = useRef<HTMLDivElement>(null);
 
   // ── Column visibility (persisted) ──────────────────────────────────────
@@ -276,6 +298,7 @@ export default function MtdItDashboard() {
       if (actionsRef.current    && !actionsRef.current.contains(t))    setActionsOpen(false);
       if (statusPopRef.current  && !statusPopRef.current.contains(t))  setStatusPopOpen(false);
       if (thresholdPopRef.current && !thresholdPopRef.current.contains(t)) setThresholdPopOpen(false);
+      if (lifecyclePopRef.current && !lifecyclePopRef.current.contains(t)) setLifecyclePopOpen(false);
       if (colPickerRef.current  && !colPickerRef.current.contains(t))  setColPickerOpen(false);
     }
     document.addEventListener('mousedown', onClick);
@@ -289,6 +312,7 @@ export default function MtdItDashboard() {
         const hay = `${c.name} ${c.client_ref ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (!lifecycle.has(c.status ?? 'active')) return false;
       if (statusFilter !== 'all' && hmrcStatusKey(c) !== statusFilter) return false;
       if (thresholdFilter !== 'all') {
         const t = evaluateThreshold(c.mtd_it_prior_year_income, taxYear);
@@ -306,7 +330,19 @@ export default function MtdItDashboard() {
       const bv = sortKey === 'status' ? String(HMRC_STATUS_ORDER[hmrcStatusKey(b)]) : (b as Record<SortKey, string | null>)[sortKey];
       return compareValues(av, bv, sortDir);
     });
-  }, [clients, search, statusFilter, thresholdFilter, readyToFileOnly, taxYear, sortKey, sortDir]);
+  }, [clients, search, statusFilter, thresholdFilter, lifecycle, readyToFileOnly, taxYear, sortKey, sortDir]);
+
+  // Toggle one lifecycle status on/off. Never allow an empty set (that would
+  // hide every client) — the last remaining status stays on.
+  const toggleLifecycle = (v: LifecycleStatus) =>
+    setLifecycle(prev => {
+      const next = new Set(prev);
+      if (next.has(v)) next.delete(v); else next.add(v);
+      if (next.size === 0) next.add(v);
+      return next;
+    });
+  const resetLifecycle = () => setLifecycle(new Set(DEFAULT_LIFECYCLE));
+  const lifecycleFiltered = !isDefaultLifecycle(lifecycle);
 
   const flaggedCount = useMemo(
     () => clients.filter(c => evaluateThreshold(c.mtd_it_prior_year_income, taxYear).belowThreshold).length,
@@ -487,6 +523,16 @@ export default function MtdItDashboard() {
             ><X size={11} /></button>
           </span>
         )}
+        {lifecycleFiltered && (
+          <span className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs font-medium bg-[var(--accent-light)] text-[var(--accent)] border border-[var(--accent)]/30">
+            Clients: {lifecycleSummary(lifecycle)}
+            <button
+              onClick={resetLifecycle}
+              aria-label="Reset client status filter to default"
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--accent)]/20"
+            ><X size={11} /></button>
+          </span>
+        )}
         {(statusFilter !== 'all' && thresholdFilter !== 'all') && (
           <button
             onClick={() => { setStatusFilter('all'); setThresholdFilter('all'); }}
@@ -504,7 +550,7 @@ export default function MtdItDashboard() {
           <div className="relative" ref={statusPopRef}>
             <Tooltip label={statusFilter === 'all' ? 'Filter by HMRC status' : `HMRC status: ${HMRC_STATUS_LABEL[statusFilter] ?? statusFilter}`}>
               <button
-                onClick={() => { setStatusPopOpen(o => !o); setThresholdPopOpen(false); setColPickerOpen(false); }}
+                onClick={() => { setStatusPopOpen(o => !o); setThresholdPopOpen(false); setLifecyclePopOpen(false); setColPickerOpen(false); }}
                 aria-label="Filter by HMRC status"
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${statusFilter !== 'all' || statusPopOpen ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
               >
@@ -529,11 +575,52 @@ export default function MtdItDashboard() {
           </div>
           <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
 
+          {/* Client status (lifecycle) filter — active / on hold / inactive.
+              Defaults to active + on hold; inactive hidden until turned on. */}
+          <div className="relative" ref={lifecyclePopRef}>
+            <Tooltip label={`Client status: ${lifecycleSummary(lifecycle)}`}>
+              <button
+                onClick={() => { setLifecyclePopOpen(o => !o); setStatusPopOpen(false); setThresholdPopOpen(false); setColPickerOpen(false); }}
+                aria-label="Filter by client status"
+                className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${lifecycleFiltered || lifecyclePopOpen ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+              >
+                <UserCheck size={15} />
+              </button>
+            </Tooltip>
+            {lifecyclePopOpen && (
+              <div className="absolute left-0 top-full mt-2 z-20 glass-solid border border-[var(--border)] rounded-xl shadow-dropdown p-2 w-52">
+                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide px-2 mb-1">Client status</p>
+                {LIFECYCLE_OPTIONS.map(o => {
+                  const on = lifecycle.has(o.value);
+                  return (
+                    <button
+                      key={o.value}
+                      onClick={() => toggleLifecycle(o.value)}
+                      role="menuitemcheckbox"
+                      aria-checked={on}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${on ? 'text-[var(--accent)]' : 'text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
+                    >
+                      <span className={`inline-flex items-center justify-center w-4 h-4 rounded border text-[10px] leading-none ${on ? 'bg-[var(--accent)] border-[var(--accent)] text-white' : 'border-[var(--border)] text-transparent'}`}>✓</span>
+                      {o.label}
+                    </button>
+                  );
+                })}
+                {lifecycleFiltered && (
+                  <button
+                    onClick={resetLifecycle}
+                    className="w-full mt-1 px-2.5 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:bg-[var(--bg-nav-hover)] text-left"
+                  >Reset to default</button>
+                )}
+              </div>
+            )}
+          </div>
+          <span aria-hidden className="w-px h-4 bg-[var(--border)]" />
+
           {/* Threshold ("All clients") filter */}
           <div className="relative" ref={thresholdPopRef}>
             <Tooltip label={thresholdFilter === 'all' ? 'All clients' : thresholdFilter === 'flagged' ? `Below ${taxYearLabel(taxYear)} threshold` : `Above ${taxYearLabel(taxYear)} threshold`}>
               <button
-                onClick={() => { setThresholdPopOpen(o => !o); setStatusPopOpen(false); setColPickerOpen(false); }}
+                onClick={() => { setThresholdPopOpen(o => !o); setStatusPopOpen(false); setLifecyclePopOpen(false); setColPickerOpen(false); }}
                 aria-label="Filter by MTD threshold"
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${thresholdFilter !== 'all' || thresholdPopOpen ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
               >
@@ -591,7 +678,7 @@ export default function MtdItDashboard() {
           <div className="relative" ref={colPickerRef}>
             <Tooltip label="Show / hide columns">
               <button
-                onClick={() => { setColPickerOpen(o => !o); setStatusPopOpen(false); setThresholdPopOpen(false); }}
+                onClick={() => { setColPickerOpen(o => !o); setStatusPopOpen(false); setThresholdPopOpen(false); setLifecyclePopOpen(false); }}
                 aria-label="Show / hide columns"
                 className={`inline-flex items-center justify-center w-7 h-7 rounded-full transition-colors ${colPickerOpen ? 'bg-[var(--accent-light)] text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-nav-hover)]'}`}
               >
