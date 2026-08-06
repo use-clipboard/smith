@@ -1,10 +1,13 @@
 # Tax Studio — HMRC MTD ITSA sandbox verification runbook
 
 The live SA100 filing uses the HMRC **Individual Calculations (MTD) API v8.0** final-declaration
-journey. The code paths match the published v8.0 spec, but **the retrieve-calculation response
-shape has not been confirmed against a live sandbox response** — that's the main thing this runbook
-verifies. Once you capture a real retrieve response, share it and the field mapping in
-`summariseCalculation` (`lib/tax-studio/hmrc.ts`) can be locked exactly.
+journey. The code paths match the published v8.0 spec. `summariseCalculation`
+(`lib/tax-studio/hmrc.ts`) reads HMRC's figures by **deep-searching the response for its canonical
+field names** (`totalIncomeTaxAndNicsDue`, `totalClass4Charge`, `totalTaxableIncome`,
+`incomeTaxDueAfterTaxReductions`), so it tolerates the exact nesting/version. This runbook is
+therefore a **confirmation** — running it against a sandbox test user proves the end-to-end flow and
+that HMRC's figures surface correctly. If any figure shows as "—", capture the retrieve response
+(step 4.2) and share the `taxCalculation` block so the field list can be extended.
 
 ## The flow the code implements
 1. **Trigger** — `POST /individuals/calculations/{nino}/self-assessment/{taxYear}/trigger/intent-to-finalise` → returns a `calculationId`.

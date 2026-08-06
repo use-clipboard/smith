@@ -48,26 +48,49 @@ export interface CalcSummary {
   totalTaxable: number | null;
 }
 
-/** Best-effort extraction of headline figures from a retrieved calculation. The
- *  Individual Calculations response is deeply nested and version-dependent, so
- *  we probe the common locations and surface whatever is present. */
+// The Individual Calculations retrieve response is large and deeply nested
+// (calculation.taxCalculation.{incomeTax,nics,...}), and the nesting shifts a
+// little between API versions. Rather than pin one fragile path, we deep-search
+// the response tree for HMRC's canonical, distinctive field names. These names
+// are unique in the schema (per-source objects use `taxableIncome`, only the
+// summary uses `totalTaxableIncome`, etc.), so the first depth-first hit is the
+// summary figure — resilient to nesting/version changes.
+
+/** First numeric value found for `key` anywhere in the object tree. */
+function deepNumber(node: unknown, key: string): number | null {
+  if (!node || typeof node !== 'object') return null;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj[key] === 'number') return obj[key] as number;
+  for (const v of Object.values(obj)) {
+    const found = deepNumber(v, key);
+    if (found != null) return found;
+  }
+  return null;
+}
+function deepString(node: unknown, key: string): string | null {
+  if (!node || typeof node !== 'object') return null;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj[key] === 'string') return obj[key] as string;
+  for (const v of Object.values(obj)) {
+    const found = deepString(v, key);
+    if (found != null) return found;
+  }
+  return null;
+}
+/** First candidate key (in priority order) that resolves to a number. */
+function firstNumber(root: unknown, keys: string[]): number | null {
+  for (const k of keys) { const n = deepNumber(root, k); if (n != null) return n; }
+  return null;
+}
+
 export function summariseCalculation(json: unknown): CalcSummary {
-  const j = (json ?? {}) as Record<string, unknown>;
-  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? v as Record<string, unknown> : {});
-  // The taxCalculation block sits under `calculation`, `outputs`, or top-level
-  // depending on the API version — probe all so the summary is version-tolerant.
-  const calc = obj(j.calculation);
-  const outputs = obj(j.outputs);
-  const taxCalc = obj(calc.taxCalculation ?? outputs.taxCalculation ?? j.taxCalculation);
-  const incomeTax = obj(taxCalc.incomeTax);
-  const class4 = obj(obj(taxCalc.nics).class4Nics);
-  const num = (v: unknown): number | null => (typeof v === 'number' ? v : null);
+  const root = json ?? {};
   return {
-    calculationId: (j.calculationId as string) ?? (obj(j.metadata).calculationId as string) ?? null,
-    totalIncomeTaxAndNicsDue: num(taxCalc.totalIncomeTaxAndNicsDue) ?? num(taxCalc.totalIncomeTaxAndNicsAndCgtDue) ?? num(taxCalc.totalIncomeTaxNicsCharged),
-    incomeTaxDue: num(incomeTax.totalIncomeTaxDueAfterTaxReductions) ?? num(incomeTax.incomeTaxDueAfterReliefs) ?? num(incomeTax.incomeTaxCharged),
-    class4NicDue: num(class4.class4NicsAmount) ?? num(class4.totalClass4Charge) ?? num(class4.totalIncomeTaxAndNicsDue),
-    totalTaxable: num(taxCalc.totalTaxableIncome),
+    calculationId: deepString(root, 'calculationId'),
+    totalIncomeTaxAndNicsDue: firstNumber(root, ['totalIncomeTaxAndNicsDue', 'totalIncomeTaxAndNicsAndCgtDue', 'totalIncomeTaxNicsCharged']),
+    incomeTaxDue: firstNumber(root, ['incomeTaxDueAfterTaxReductions', 'totalIncomeTaxDueAfterTaxReductions', 'incomeTaxDueAfterReliefs', 'incomeTaxCharged']),
+    class4NicDue: firstNumber(root, ['totalClass4Charge', 'class4NicsAmount']),
+    totalTaxable: firstNumber(root, ['totalTaxableIncome']),
   };
 }
 
