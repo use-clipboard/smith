@@ -319,7 +319,7 @@ function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setInc
       ))}
       <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add trade</button>
       <div className="mt-2 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
-        <LabelledNum label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
+        <LabelledNum box={78} label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
       </div>
       <p className="text-[10.5px] text-[var(--text-muted)]">Brought-forward losses set against this year’s trade profit; an unrelieved in-year loss is relieved sideways against other income.</p>
     </div>
@@ -366,14 +366,14 @@ function TradeCard({ t, idx, onChange, onRemove }: {
             <BoxNum box={30} label="Other expenses" value={t.expOtherCosts ?? 0} onChange={v => onChange({ expOtherCosts: v })} />
           </BoxSection>
           <BoxSection title="Tax adjustments">
-            <LabelledNum label="Disallowable expenses" value={t.addBacks ?? 0} onChange={v => onChange({ addBacks: v })} />
-            <LabelledNum label="Goods for own use" value={t.goodsOwnUse ?? 0} onChange={v => onChange({ goodsOwnUse: v })} />
-            <LabelledNum label="Balancing charges" value={t.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
+            <LabelledNum box={45} label="Disallowable expenses" value={t.addBacks ?? 0} onChange={v => onChange({ addBacks: v })} />
+            <LabelledNum box={44} label="Goods for own use" value={t.goodsOwnUse ?? 0} onChange={v => onChange({ goodsOwnUse: v })} />
+            <LabelledNum box={60} label="Balancing charges" value={t.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
           </BoxSection>
           <BoxSection title="Capital allowances & CIS">
-            <LabelledNum label="Annual investment allowance" value={t.aia ?? 0} onChange={v => onChange({ aia: v })} />
-            <LabelledNum label="Other capital allowances" value={t.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
-            <LabelledNum label="CIS tax deducted" value={t.cisDeductions ?? 0} onChange={v => onChange({ cisDeductions: v })} />
+            <LabelledNum box={49} label="Annual investment allowance" value={t.aia ?? 0} onChange={v => onChange({ aia: v })} />
+            <LabelledNum box={50} label="Other capital allowances" value={t.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
+            <LabelledNum box={81} label="CIS tax deducted" value={t.cisDeductions ?? 0} onChange={v => onChange({ cisDeductions: v })} />
           </BoxSection>
           <p className="text-[10.5px] text-[var(--text-muted)]">Net profit {fmtMoney(tradeNetProfit(t))} + add-backs − capital allowances = adjusted profit. CIS tax is credited against the liability.</p>
         </div>
@@ -415,21 +415,21 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
       {open && (
         <div className="space-y-3 border-t border-black/5 px-3 py-3">
           <BoxSection title="Partnership details">
-            <BoxText label="Partnership UTR" value={p.utr ?? ''} onChange={v => onChange({ utr: v })} />
-            <BoxText label="Period start (dd-mm-yyyy)" value={p.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
-            <BoxText label="Period end (dd-mm-yyyy)" value={p.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
+            <BoxText box={1} label="Partnership UTR" value={p.utr ?? ''} onChange={v => onChange({ utr: v })} />
+            <BoxText box={6} label="Period start (dd-mm-yyyy)" value={p.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
+            <BoxText box={7} label="Period end (dd-mm-yyyy)" value={p.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
           </BoxSection>
           <BoxSection title="Share of profit">
-            <LabelledNum label="Taxable profit share" value={p.profit} onChange={v => onChange({ profit: v })} />
-            <LabelledNum label="Basis-period adjustment" value={p.adjustments ?? 0} onChange={v => onChange({ adjustments: v })} />
-            <LabelledNum label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
+            <LabelledNum box={8} label="Taxable profit share" value={p.profit} onChange={v => onChange({ profit: v })} />
+            <LabelledNum box={10} label="Basis-period adjustment" value={p.adjustments ?? 0} onChange={v => onChange({ adjustments: v })} />
+            <LabelledNum box={18} label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
           </BoxSection>
           <BoxSection title="Other income & tax">
-            <LabelledNum label="Share of savings interest" value={p.savingsInterest ?? 0} onChange={v => onChange({ savingsInterest: v })} />
-            <LabelledNum label="Share of dividends" value={p.dividends ?? 0} onChange={v => onChange({ dividends: v })} />
-            <LabelledNum label="Tax deducted at source" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
+            <LabelledNum box={26} label="Share of savings interest" value={p.savingsInterest ?? 0} onChange={v => onChange({ savingsInterest: v })} />
+            <LabelledNum box={30} label="Share of dividends" value={p.dividends ?? 0} onChange={v => onChange({ dividends: v })} />
+            <LabelledNum box={24} label="Tax deducted at source" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
             <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
-              <input type="checkbox" checked={p.class4Exempt ?? false} onChange={e => onChange({ class4Exempt: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Exempt from Class 4 NIC
+              <input type="checkbox" checked={p.class4Exempt ?? false} onChange={e => onChange({ class4Exempt: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Exempt from Class 4 NIC (box 4)
             </label>
           </BoxSection>
         </div>
@@ -487,9 +487,9 @@ function PropertyCard({ p, idx, onChange, onRemove }: {
             <BoxNum box={36} label="Private use adjustment" value={p.privateUse ?? 0} onChange={v => onChange({ privateUse: v })} />
             <BoxNum box={37} label="Balancing charges" value={p.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
             <BoxNum box={38} label="Annual investment allowance" value={p.aia ?? 0} onChange={v => onChange({ aia: v })} />
-            <LabelledNum label="Other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
+            <LabelledNum box={39} label="Other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
             <BoxNum box={40} label="Replacing domestic items" value={p.domesticItems ?? 0} onChange={v => onChange({ domesticItems: v })} />
-            <LabelledNum label="Rent a Room relief" value={p.rentARoom ?? 0} onChange={v => onChange({ rentARoom: v })} />
+            <LabelledNum box={37} label="Rent a Room relief" value={p.rentARoom ?? 0} onChange={v => onChange({ rentARoom: v })} />
           </BoxSection>
           <BoxSection title="Finance costs & losses">
             <BoxNum box={44} label="Residential finance costs" value={p.residentialFinanceCosts ?? 0} onChange={v => onChange({ residentialFinanceCosts: v })} />
@@ -689,7 +689,7 @@ function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome:
       <div>
         <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Life insurance gains</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum label="Chargeable event gains" value={a.chargeableEventGains ?? 0} onChange={v => patchA({ chargeableEventGains: v })} />
+          <LabelledNum box={4} label="Chargeable event gains" value={a.chargeableEventGains ?? 0} onChange={v => patchA({ chargeableEventGains: v })} />
           <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
             <input type="checkbox" checked={a.chargeableEventUkPolicy ?? false} onChange={e => patchA({ chargeableEventUkPolicy: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> UK policy (basic rate treated as paid)
           </label>
@@ -699,11 +699,11 @@ function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome:
       <div className="border-t border-black/5 pt-4">
         <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Venture capital & other reliefs</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum label="EIS subscriptions (30%)" value={a.eisSubscriptions ?? 0} onChange={v => patchA({ eisSubscriptions: v })} />
-          <LabelledNum label="SEIS subscriptions (50%)" value={a.seisSubscriptions ?? 0} onChange={v => patchA({ seisSubscriptions: v })} />
-          <LabelledNum label="VCT subscriptions (30%)" value={a.vctSubscriptions ?? 0} onChange={v => patchA({ vctSubscriptions: v })} />
-          <LabelledNum label="CITR investment (5%)" value={a.citrInvestment ?? 0} onChange={v => patchA({ citrInvestment: v })} />
-          <LabelledNum label="Maintenance payments (10%)" value={a.maintenancePayments ?? 0} onChange={v => patchA({ maintenancePayments: v })} />
+          <LabelledNum box={2} label="EIS subscriptions (30%)" value={a.eisSubscriptions ?? 0} onChange={v => patchA({ eisSubscriptions: v })} />
+          <LabelledNum box={10} label="SEIS subscriptions (50%)" value={a.seisSubscriptions ?? 0} onChange={v => patchA({ seisSubscriptions: v })} />
+          <LabelledNum box={1} label="VCT subscriptions (30%)" value={a.vctSubscriptions ?? 0} onChange={v => patchA({ vctSubscriptions: v })} />
+          <LabelledNum box={3} label="CITR investment (5%)" value={a.citrInvestment ?? 0} onChange={v => patchA({ citrInvestment: v })} />
+          <LabelledNum box={6} label="Maintenance payments (10%)" value={a.maintenancePayments ?? 0} onChange={v => patchA({ maintenancePayments: v })} />
         </div>
         <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Subscriptions give an income-tax reducer (EIS/VCT 30%, SEIS 50%, CITR 5%). Maintenance relief is 10%, capped at £401.</p>
       </div>
