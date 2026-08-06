@@ -19,6 +19,9 @@ import type { TaxReturn, Sa100Income } from './types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
+// A selectable sub-part of a source (e.g. MTD IT's sole-trader / UK / foreign).
+interface ToolPart { key: string; label: string; profit: number; }
+
 // A tool that can be read for the return's client — or any other client — and
 // imported into the SA100. Each adapter binds a source reader + merge so the
 // panel below stays generic.
@@ -30,7 +33,10 @@ interface ToolAdapter<S> {
   hasData: (s: S) => boolean;
   headline: (s: S) => string;
   note?: (s: S) => string | undefined;
-  merge: (income: Sa100Income, s: S, src: SourceRef) => Sa100Income;
+  /** Optional selectable sub-parts — when present the panel shows a checkbox per
+   *  part and passes the chosen keys to `merge`. */
+  parts?: (s: S) => ToolPart[];
+  merge: (income: Sa100Income, s: S, src: SourceRef, selected?: Set<string>) => Sa100Income;
   timelineLabel: (sourceLabel: string) => string;
 }
 
@@ -45,7 +51,18 @@ function mtdHeadline(s: MtdItAnnualSummary): string {
 const MTD: ToolAdapter<MtdItAnnualSummary> = {
   name: 'MTD IT', target: 'Sole trader & property', icon: CalendarCheck,
   fetch: fetchMtdItSummary, hasData: summaryHasData, headline: mtdHeadline, note: s => s.note,
-  merge: (i, s, src) => mergeCrossMtd(i, s, { soleTrader: s.selfEmployment.length > 0, ukProperty: !!s.ukProperty, foreignProperty: !!s.foreignProperty }, src),
+  parts: s => {
+    const out: ToolPart[] = [];
+    if (s.selfEmployment.length) out.push({ key: 'se', label: s.selfEmployment.length === 1 ? (s.selfEmployment[0].label || 'Sole trader') : `Sole trader (${s.selfEmployment.length} trades)`, profit: s.selfEmployment.reduce((a, t) => a + t.profit, 0) });
+    if (s.ukProperty) out.push({ key: 'uk', label: s.ukProperty.label || 'UK property', profit: s.ukProperty.profit });
+    if (s.foreignProperty) out.push({ key: 'foreign', label: s.foreignProperty.label || 'Foreign property', profit: s.foreignProperty.profit });
+    return out;
+  },
+  merge: (i, s, src, selected) => mergeCrossMtd(i, s, {
+    soleTrader: selected ? selected.has('se') : s.selfEmployment.length > 0,
+    ukProperty: selected ? selected.has('uk') : !!s.ukProperty,
+    foreignProperty: selected ? selected.has('foreign') : !!s.foreignProperty,
+  }, src),
   timelineLabel: l => `Imported MTD IT figures from ${l}`,
 };
 
@@ -102,6 +119,7 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
   const [error, setError] = useState('');
   const [imported, setImported] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const load = useCallback(async (clientId: string) => {
     if (!clientId) { setError('No client linked to this return.'); setSummary(null); return; }
@@ -113,25 +131,36 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
 
   useEffect(() => { void load(src.clientId); }, [load, src.clientId]);
 
+  // When a source's parts change, default to selecting them all.
+  useEffect(() => {
+    if (summary && adapter.parts) setSelected(new Set(adapter.parts(summary).map(p => p.key)));
+  }, [summary, adapter]);
+
   function pick(clientId: string, name: string, ref: string) {
     setSrc({ clientId, name, ref, own: clientId === ret.clientId });
     setSearching(false); setImported(false);
   }
 
+  const has = summary ? adapter.hasData(summary) : false;
+  const note = summary && adapter.note ? adapter.note(summary) : undefined;
+  const parts = summary && has && adapter.parts ? adapter.parts(summary) : null;
+  const nothingChosen = !!parts && selected.size === 0;
+  const Icon = adapter.icon;
+
   function doImport() {
-    if (!summary || !adapter.hasData(summary)) return;
+    if (!summary || !adapter.hasData(summary) || nothingChosen) return;
     const label = `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
     patch(r => ({
       ...r,
-      income: adapter.merge(r.income, summary, { clientId: src.clientId, label }),
+      income: adapter.merge(r.income, summary, { clientId: src.clientId, label }, parts ? selected : undefined),
       timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label) }],
     }));
     setImported(true); setTimeout(() => setImported(false), 2500);
   }
 
-  const has = summary ? adapter.hasData(summary) : false;
-  const note = summary && adapter.note ? adapter.note(summary) : undefined;
-  const Icon = adapter.icon;
+  function toggle(key: string) {
+    setSelected(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  }
 
   return (
     <StudioCard className="flex flex-col p-4">
@@ -169,6 +198,20 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
           <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading…</div>
         ) : error ? (
           <p className="py-2 text-[12px] text-rose-600">{error}</p>
+        ) : has && summary && parts ? (
+          <div className="space-y-1.5">
+            {parts.map(p => {
+              const on = selected.has(p.key);
+              return (
+                <label key={p.key} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 transition-colors ${on ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.04]' : 'border-[var(--border)] bg-white/60'}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggle(p.key)} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">{p.label}</span>
+                  <span className="shrink-0 text-[12px] font-bold text-[var(--text-primary)]">{fmtMoney(p.profit)}</span>
+                </label>
+              );
+            })}
+            {note && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> {note}</p>}
+          </div>
         ) : has && summary ? (
           <div>
             <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{adapter.headline(summary)}</p>
@@ -182,7 +225,7 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
       </div>
 
       <div className="mt-2 flex justify-end">
-        <button onClick={doImport} disabled={!has} className="btn-primary disabled:opacity-40">
+        <button onClick={doImport} disabled={!has || nothingChosen} className="btn-primary disabled:opacity-40">
           {imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Imported' : 'Import'}
         </button>
       </div>
