@@ -2,22 +2,23 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Search as SearchIcon, Loader2, ChevronLeft, ChevronRight, X, Check, Circle,
+  Search as SearchIcon, Loader2, ArrowUp, ArrowDown, ArrowUpDown, X, Check, Circle,
   Mail, Phone, Download, Copy, ExternalLink, TrendingUp, MessageSquarePlus, Sparkles,
 } from 'lucide-react';
 import Tooltip from '@/components/ui/Tooltip';
+import { exportToCsv } from '@/utils/fileUtils';
 import { StatusBadge } from '../primitives';
 import {
-  deriveStatus, currentFilingSeason, fmtMoney, fmtDateUK, returnType,
+  deriveStatus, currentFilingSeason, fmtMoney, fmtDateUK, returnType, STATUS_META,
 } from '../data';
 import { estimateSa100 } from '../calc';
 import {
   businessTypesForReturn, entityLabelForBusinessType, type WizardClient,
 } from './wizardData';
-import type { ReturnTypeId } from '../types';
+import type { ReturnTypeId, ReturnStatus } from '../types';
 import type { ReturnListItem } from '../persistence';
 
-const PAGE_SIZE = 10;
+type SortKey = 'name' | 'account' | 'return' | 'lastReturn';
 
 // Client account status (matches the Clients list): active / hold / inactive.
 const ACCOUNT_STATUS: Record<string, { dot: string; label: string }> = {
@@ -25,6 +26,12 @@ const ACCOUNT_STATUS: Record<string, { dot: string; label: string }> = {
   hold:     { dot: 'text-amber-500 fill-amber-500', label: 'On Hold' },
   inactive: { dot: 'text-[var(--text-muted)] fill-[var(--text-muted)]', label: 'Inactive' },
 };
+const ACCOUNT_RANK: Record<string, number> = { active: 0, hold: 1, inactive: 2 };
+const STATUS_ORDER = Object.keys(STATUS_META) as ReturnStatus[];
+
+function accountLabel(status?: string | null): string {
+  return ACCOUNT_STATUS[(status ?? '').toLowerCase()]?.label ?? '—';
+}
 
 function AccountStatusDot({ status }: { status?: string | null }) {
   const key = (status ?? '').toLowerCase();
@@ -34,6 +41,16 @@ function AccountStatusDot({ status }: { status?: string | null }) {
     <Tooltip label={cfg.label}>
       <Circle size={9} className={`shrink-0 ${cfg.dot}`} aria-label={cfg.label} />
     </Tooltip>
+  );
+}
+
+function AccountStatusCell({ status }: { status?: string | null }) {
+  const cfg = ACCOUNT_STATUS[(status ?? '').toLowerCase()];
+  if (!cfg) return <span className="text-[var(--text-muted)]">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[var(--text-secondary)]">
+      <Circle size={9} className={`shrink-0 ${cfg.dot}`} /> {cfg.label}
+    </span>
   );
 }
 
@@ -49,8 +66,9 @@ export default function StepSelectClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [page, setPage] = useState(1);
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [returnFilter, setReturnFilter] = useState('all');
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
 
   const season = currentFilingSeason();
   const rt = returnType(returnTypeId);
@@ -81,120 +99,153 @@ export default function StepSelectClient({
   }, [allReturns]);
 
   const eligibleTypes = businessTypesForReturn(returnTypeId);
-  const filtered = useMemo(() => {
+
+  // Eligible clients, enriched with their latest return status, then
+  // search-filtered, status-filtered and sorted for display.
+  const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return clients.filter(c => {
-      if (eligibleTypes.length && !eligibleTypes.includes((c.business_type ?? '').toLowerCase())) return false;
-      if (q && !(`${c.name} ${c.client_ref ?? ''}`.toLowerCase().includes(q))) return false;
-      if (statusFilter !== 'all') {
-        const latest = returnsByClient.get(c.id)?.[0];
-        const st = latest ? deriveStatus(latest.ret) : 'not-started';
-        if (statusFilter === 'not-started' && st !== 'not-started') return false;
-        if (statusFilter === 'in-progress' && !['analysing', 'review', 'waiting-info'].includes(st)) return false;
-        if (statusFilter === 'filed' && st !== 'filed') return false;
+    const enriched = clients
+      .filter(c => !eligibleTypes.length || eligibleTypes.includes((c.business_type ?? '').toLowerCase()))
+      .map(c => {
+        const history = returnsByClient.get(c.id) ?? [];
+        const latest = history[0];
+        const rst: ReturnStatus = latest ? deriveStatus(latest.ret) : 'not-started';
+        return { c, history, latest, rst };
+      })
+      .filter(({ c, rst }) => {
+        if (q && !`${c.name} ${c.client_ref ?? ''}`.toLowerCase().includes(q)) return false;
+        if (accountFilter !== 'all' && (c.status ?? '').toLowerCase() !== accountFilter) return false;
+        if (returnFilter === 'not-started' && rst !== 'not-started') return false;
+        if (returnFilter === 'in-progress' && !['waiting-info', 'analysing', 'review', 'awaiting-approval', 'approved', 'ready-to-file'].includes(rst)) return false;
+        if (returnFilter === 'filed' && !['filed', 'amended'].includes(rst)) return false;
+        return true;
+      });
+
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const sortVal = (r: typeof enriched[number]): string | number => {
+      switch (sort.key) {
+        case 'account': return ACCOUNT_RANK[(r.c.status ?? '').toLowerCase()] ?? 99;
+        case 'return': return STATUS_ORDER.indexOf(r.rst);
+        case 'lastReturn': return r.latest ? r.latest.ret.taxYear : '';
+        case 'name': default: return r.c.name.toLowerCase();
       }
-      return true;
+    };
+    return enriched.sort((a, b) => {
+      const va = sortVal(a), vb = sortVal(b);
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return a.c.name.toLowerCase() < b.c.name.toLowerCase() ? -1 : 1; // stable tiebreak by name
     });
-  }, [clients, eligibleTypes, search, statusFilter, returnsByClient]);
+  }, [clients, eligibleTypes, search, accountFilter, returnFilter, sort, returnsByClient]);
 
-  useEffect(() => { setPage(1); }, [search, statusFilter, returnTypeId]);
+  function toggleSort(key: SortKey) {
+    setSort(s => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  function exportCsv() {
+    if (rows.length === 0) return;
+    exportToCsv(
+      rows.map(({ c, latest, rst }) => ({
+        Client: c.name,
+        Ref: c.client_ref ?? '',
+        'Account status': accountLabel(c.status),
+        Type: entityLabelForBusinessType(c.business_type),
+        Email: c.contact_email ?? '',
+        'Return status': STATUS_META[rst].label,
+        'Last return': latest ? latest.ret.taxYear : '',
+        'Tax year': season.taxYear,
+        'Filing deadline': fmtDateUK(season.deadline),
+      })),
+      `sa100-clients-${season.taxYear.replace('/', '-')}.csv`,
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
       {/* Table */}
       <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[220px] flex-1">
+          <div className="relative min-w-[200px] flex-1">
             <SearchIcon size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search individuals or sole traders…" className="input-base py-1.5 pl-9 text-sm" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-base w-auto py-1.5 text-sm">
-            <option value="all">All statuses</option>
+          <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} className="input-base w-auto py-1.5 text-sm" aria-label="Filter by account status">
+            <option value="all">All account statuses</option>
+            <option value="active">Active</option>
+            <option value="hold">On Hold</option>
+            <option value="inactive">Inactive</option>
+          </select>
+          <select value={returnFilter} onChange={e => setReturnFilter(e.target.value)} className="input-base w-auto py-1.5 text-sm" aria-label="Filter by return status">
+            <option value="all">All return statuses</option>
             <option value="not-started">Not started</option>
             <option value="in-progress">In progress</option>
             <option value="filed">Filed</option>
           </select>
+          <Tooltip label="Export this list to CSV">
+            <button onClick={exportCsv} disabled={rows.length === 0} className="btn-secondary shrink-0 disabled:opacity-40" aria-label="Export list to CSV">
+              <Download size={15} /> Export
+            </button>
+          </Tooltip>
         </div>
 
         <p className="mt-3 text-[11.5px] text-[var(--text-muted)]">
-          {loading ? 'Loading…' : `Showing ${filtered.length} eligible client${filtered.length === 1 ? '' : 's'} for ${rt.form}`}
+          {loading ? 'Loading…' : `Showing ${rows.length} eligible client${rows.length === 1 ? '' : 's'} for ${rt.form}`}
         </p>
 
         {error ? (
           <p className="py-8 text-center text-[13px] text-rose-600">{error}</p>
         ) : loading ? (
           <div className="flex items-center justify-center gap-2 py-12 text-[13px] text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin" /> Loading clients…</div>
-        ) : filtered.length === 0 ? (
+        ) : rows.length === 0 ? (
           <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">No eligible clients found. {eligibleTypes.length ? `${rt.form} needs a ${eligibleTypes.join(' / ')} client.` : ''}</p>
         ) : (
-          <>
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-black/5 text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                    <th className="py-2 pr-2"></th>
-                    <th className="py-2 pr-3">Client</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Last return</th>
-                    <th className="py-2 pr-3">Tax year</th>
-                    <th className="py-2 pr-3">Next deadline</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRows.map(c => {
-                    const history = returnsByClient.get(c.id) ?? [];
-                    const latest = history[0];
-                    const status = latest ? deriveStatus(latest.ret) : 'not-started';
-                    const isSel = selected?.id === c.id;
-                    return (
-                      <tr key={c.id} onClick={() => onSelect(c)}
-                        className={`cursor-pointer border-b border-black/5 text-[12.5px] transition-colors ${isSel ? 'bg-[var(--accent)]/[0.06]' : 'hover:bg-black/[0.02]'}`}>
-                        <td className="py-2.5 pr-2">
-                          <span className={`flex h-4 w-4 items-center justify-center rounded border ${isSel ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-slate-300'}`}>
-                            {isSel && <Check size={11} />}
-                          </span>
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar name={c.name} />
-                            <div className="min-w-0">
-                              <p className="flex items-center gap-1.5 truncate font-semibold text-[var(--text-primary)]">
-                                <AccountStatusDot status={c.status} />
-                                <span className="truncate">{c.name}</span>
-                              </p>
-                              <p className="text-[11px] text-[var(--text-muted)]">{c.client_ref ?? '—'}</p>
-                            </div>
+          <div className="mt-2 max-h-[460px] overflow-auto rounded-lg border border-black/5">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                  <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur"></th>
+                  <SortableTh label="Client" sortKey="name" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Account" sortKey="account" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Return" sortKey="return" sort={sort} onSort={toggleSort} />
+                  <SortableTh label="Last return" sortKey="lastReturn" sort={sort} onSort={toggleSort} />
+                  <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Tax year</th>
+                  <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">Next deadline</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ c, latest, rst }) => {
+                  const isSel = selected?.id === c.id;
+                  return (
+                    <tr key={c.id} onClick={() => onSelect(c)}
+                      className={`cursor-pointer border-b border-black/5 text-[12.5px] transition-colors ${isSel ? 'bg-[var(--accent)]/[0.06]' : 'hover:bg-black/[0.02]'}`}>
+                      <td className="px-3 py-2.5">
+                        <span className={`flex h-4 w-4 items-center justify-center rounded border ${isSel ? 'border-[var(--accent)] bg-[var(--accent)] text-white' : 'border-slate-300'}`}>
+                          {isSel && <Check size={11} />}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={c.name} />
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-[var(--text-primary)]">{c.name}</p>
+                            <p className="text-[11px] text-[var(--text-muted)]">{c.client_ref ?? '—'}</p>
                           </div>
-                        </td>
-                        <td className="py-2.5 pr-3"><StatusBadge status={status} /></td>
-                        <td className="py-2.5 pr-3 text-[var(--text-secondary)]">{latest ? latest.ret.taxYear : '—'}</td>
-                        <td className="py-2.5 pr-3 text-[var(--text-secondary)]">{season.taxYear}</td>
-                        <td className="py-2.5 pr-3">
-                          <p className="text-[var(--text-secondary)]">{fmtDateUK(season.deadline)}</p>
-                          <p className={`text-[10.5px] ${season.daysToDeadline < 60 ? 'text-rose-600' : 'text-[var(--text-muted)]'}`}>in {season.daysToDeadline} days</p>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            <div className="mt-3 flex items-center justify-between">
-              <p className="text-[11.5px] text-[var(--text-muted)]">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
-              </p>
-              <div className="flex items-center gap-1">
-                <PageBtn disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft size={14} /></PageBtn>
-                <span className="px-2 text-[12px] font-semibold text-[var(--text-secondary)]">{page} / {totalPages}</span>
-                <PageBtn disabled={page === totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight size={14} /></PageBtn>
-              </div>
-            </div>
-          </>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-[12px]"><AccountStatusCell status={c.status} /></td>
+                      <td className="px-3 py-2.5"><StatusBadge status={rst} /></td>
+                      <td className="px-3 py-2.5 text-[var(--text-secondary)]">{latest ? latest.ret.taxYear : '—'}</td>
+                      <td className="px-3 py-2.5 text-[var(--text-secondary)]">{season.taxYear}</td>
+                      <td className="px-3 py-2.5">
+                        <p className="text-[var(--text-secondary)]">{fmtDateUK(season.deadline)}</p>
+                        <p className={`text-[10.5px] ${season.daysToDeadline < 60 ? 'text-rose-600' : 'text-[var(--text-muted)]'}`}>in {season.daysToDeadline} days</p>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -295,10 +346,27 @@ function Avatar({ name, lg }: { name: string; lg?: boolean }) {
   );
 }
 
-function PageBtn({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+function SortableTh({
+  label, sortKey, sort, onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: 'asc' | 'desc' };
+  onSort: (k: SortKey) => void;
+}) {
+  const active = sort.key === sortKey;
   return (
-    <button onClick={onClick} disabled={disabled} className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40">
-      {children}
-    </button>
+    <th className="sticky top-0 z-10 border-b border-black/5 bg-white/95 px-3 py-2 backdrop-blur">
+      <button
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${label}${active ? (sort.dir === 'asc' ? ', ascending' : ', descending') : ''}`}
+        className="group inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-[var(--text-secondary)]"
+      >
+        {label}
+        {active
+          ? (sort.dir === 'asc' ? <ArrowUp size={12} className="text-[var(--accent)]" /> : <ArrowDown size={12} className="text-[var(--accent)]" />)
+          : <ArrowUpDown size={12} className="opacity-0 transition-opacity group-hover:opacity-40" />}
+      </button>
+    </th>
   );
 }
