@@ -82,6 +82,15 @@ export interface Sa100Income {
     otherGains: number;
     losses: number; // current-year + brought-forward allowable losses
   };
+  /** Tax residence for the rate bands: 'scotland' uses Scottish rates on
+   *  non-savings/non-dividend income (savings & dividends stay UK rates).
+   *  Wales currently mirrors UK rates. Defaults to 'uk'. */
+  region?: 'uk' | 'scotland';
+  /** Child benefit received in the year — drives the High Income Child Benefit
+   *  Charge (clawed back between £60k and £80k adjusted net income). */
+  childBenefit?: number;
+  /** Brought-forward trade losses set against this year's trade profit. */
+  tradeLossBroughtForward?: number;
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────

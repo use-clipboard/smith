@@ -41,6 +41,21 @@ const CGT_ANNUAL_EXEMPT = 3000;
 const CGT_LOWER = 0.18;
 const CGT_HIGHER = 0.24;
 
+// Scottish rates 2025/26 — NSND income only, as band WIDTHS of taxable income
+// (post personal allowance). The basic band widens by grossed reliefs.
+const SCOT_BANDS: { key: string; width: number; rate: number }[] = [
+  { key: 'starter',      width: 2827,     rate: 0.19 },
+  { key: 'basic',        width: 12094,    rate: 0.20 },
+  { key: 'intermediate', width: 16171,    rate: 0.21 },
+  { key: 'higher',       width: 31338,    rate: 0.42 },
+  { key: 'advanced',     width: 50140,    rate: 0.45 },
+  { key: 'top',          width: Infinity, rate: 0.48 },
+];
+
+// High Income Child Benefit Charge — 2025/26 clawback £60k → £80k (1% per £200).
+const HICBC_THRESHOLD = 60000;
+const HICBC_STEP = 200;
+
 const SL_THRESHOLDS: Record<1 | 2 | 4 | 5, number> = { 1: 26065, 2: 28470, 4: 32745, 5: 25000 };
 const SL_RATE = 0.09;
 
@@ -98,9 +113,10 @@ export interface Sa100Computation {
 
   class4Nic: number;
   studentLoan: number;
+  hicbc: number;             // High Income Child Benefit Charge
   taxableGains: number;      // after losses + annual exempt amount
   capitalGainsTax: number;
-  totalDue: number;          // incomeTax + class4Nic + studentLoan + CGT
+  totalDue: number;          // incomeTax + class4Nic + studentLoan + HICBC + CGT
 
   taxDeductedAtSource: number;
   balancingPayment: number;
@@ -133,17 +149,28 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   // depreciation) − capital allowances, floored at nil per trade.
   const adjustedTrade = (s: { profit: number; addBacks?: number; capitalAllowances?: number }) =>
     s.profit + (s.addBacks || 0) - (s.capitalAllowances || 0);
-  const tradeProfit = sum(income.selfEmployment.map(s => Math.max(0, adjustedTrade(s))));
-  if (income.selfEmployment.some(s => adjustedTrade(s) < 0)) notes.push('Trade losses are not yet modelled — enter the loss relief manually.');
   if (income.selfEmployment.some(s => (s.addBacks || 0) !== 0 || (s.capitalAllowances || 0) !== 0)) notes.push('Trade profit is tax-adjusted (add-backs less capital allowances).');
+  // Net all trades, then apply brought-forward trade losses; a remaining net
+  // loss is relieved sideways against other income (in-year s.64).
+  const netTrade = sum(income.selfEmployment.map(adjustedTrade)) - (income.tradeLossBroughtForward || 0);
+  if ((income.tradeLossBroughtForward || 0) > 0) notes.push('Brought-forward trade losses set against trade profit.');
+  const tradeProfit = Math.max(0, netTrade);
+  const tradeLossSideways = netTrade < 0 ? -netTrade : 0;
+
   const propertyProfit = sum(income.property.map(p => Math.max(0, p.profit)));
   const pensionsIncome = income.pensionsIncome || 0;
   const otherIncome = income.otherIncome || 0;
   const savingsIncome = income.savingsInterest || 0;
   const dividendIncome = income.dividends || 0;
   const financeCosts = income.financeCosts || 0;
+  const region = income.region ?? 'uk';
 
-  const nsnd = employmentIncome + tradeProfit + propertyProfit + pensionsIncome + otherIncome;
+  let nsnd = employmentIncome + tradeProfit + propertyProfit + pensionsIncome + otherIncome;
+  if (tradeLossSideways > 0) {
+    const relief = Math.min(tradeLossSideways, nsnd);
+    nsnd -= relief;
+    notes.push('Current-year trade loss set sideways against other income (s.64).');
+  }
   const totalIncome = nsnd + savingsIncome + dividendIncome;
 
   // Band extension + adjusted net income (for PA taper) via grossed reliefs.
@@ -181,8 +208,19 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const lines: TaxLine[] = [];
   let used = 0;
 
-  // Non-savings, non-dividend.
-  {
+  // Non-savings, non-dividend. Scottish taxpayers use the Scottish bands here;
+  // savings & dividends below still use UK rates/thresholds.
+  if (region === 'scotland') {
+    let rem = taxableNonSavings;
+    SCOT_BANDS.forEach((b, i) => {
+      if (rem <= 0) return;
+      const width = i === 1 ? b.width + grossGiftAid + grossPension : b.width; // reliefs widen the basic band
+      const amt = Math.min(rem, width);
+      if (amt > 0) lines.push({ label: `Income (${b.key})`, band: b.rate >= 0.42 ? (b.rate >= 0.48 ? 'additional' : 'higher') : 'basic', amount: amt, rate: b.rate, tax: amt * b.rate });
+      rem -= amt;
+    });
+    used += taxableNonSavings;
+  } else {
     const p = placeInBands(taxableNonSavings, used, brl, addl);
     if (p.basic > 0) lines.push({ label: 'Income (basic)', band: 'basic', amount: p.basic, rate: R_BASIC, tax: p.basic * R_BASIC });
     if (p.higher > 0) lines.push({ label: 'Income (higher)', band: 'higher', amount: p.higher, rate: R_HIGHER, tax: p.higher * R_HIGHER });
@@ -243,6 +281,16 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     studentLoan = Math.floor(Math.max(0, totalIncome - threshold) * SL_RATE);
   }
 
+  // High Income Child Benefit Charge — 1% of child benefit for every £200 of
+  // adjusted net income over £60,000, full clawback by £80,000.
+  let hicbc = 0;
+  const childBenefit = income.childBenefit || 0;
+  if (childBenefit > 0 && adjustedNetIncome > HICBC_THRESHOLD) {
+    const pct = Math.min(1, Math.floor((adjustedNetIncome - HICBC_THRESHOLD) / HICBC_STEP) * 0.01);
+    hicbc = r0(childBenefit * pct);
+    if (hicbc > 0) notes.push('High Income Child Benefit Charge applies.');
+  }
+
   // Capital gains tax — gains stack above income; the unused basic-rate band
   // (extended by reliefs) is taxed at the lower rate, the rest at the higher.
   const cg = income.capitalGains;
@@ -258,7 +306,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     }
   }
 
-  const totalDue = r0(incomeTax) + class4Nic + studentLoan + capitalGainsTax;
+  const totalDue = r0(incomeTax) + class4Nic + studentLoan + hicbc + capitalGainsTax;
   const taxDeductedAtSource = r0(taxDeducted);
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
@@ -268,7 +316,8 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const poaApplies = relevantAmount >= 1000 && taxDeductedAtSource < 0.8 * (r0(incomeTax) + class4Nic);
   const paymentOnAccount = poaApplies ? r0(relevantAmount / 2) : 0;
 
-  notes.push('Capital gains use main rates (18%/24%) + the annual exempt amount; excludes BADR/Investors’ Relief, HICBC, top-slicing and Scottish/Welsh rates — review before filing.');
+  if (region === 'scotland') notes.push('Scottish rates applied to earned income; savings & dividends use UK rates.');
+  notes.push('Excludes BADR/Investors’ Relief, top-slicing relief and averaging — review before filing.');
 
   return {
     taxYear,
@@ -283,7 +332,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     financeCostReducer: r0(financeCostReducer),
     marriageAllowanceReducer,
     incomeTax: r0(incomeTax),
-    class4Nic, studentLoan,
+    class4Nic, studentLoan, hicbc,
     taxableGains: r0(taxableGains), capitalGainsTax,
     totalDue,
     taxDeductedAtSource,

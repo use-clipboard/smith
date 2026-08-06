@@ -124,6 +124,19 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: (
             <option value="transferred">Transferred to spouse</option>
           </select>
         </div>
+        <LabelledNum label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+        <LabelledNum label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
+          <select
+            value={income.region ?? 'uk'}
+            onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))}
+            className="input-base py-1 text-[12.5px]"
+          >
+            <option value="uk">England / Wales / NI</option>
+            <option value="scotland">Scotland</option>
+          </select>
+        </div>
       </div>
 
       {/* Capital gains */}
@@ -204,6 +217,7 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}
       {c.studentLoan > 0 && <Row label="Student loan" value={fmtMoney(c.studentLoan)} />}
+      {c.hicbc > 0 && <Row label="High Income Child Benefit Charge" value={fmtMoney(c.hicbc)} />}
       {c.capitalGainsTax > 0 && <Row label={`Capital gains tax (on ${fmtMoney(c.taxableGains)})`} value={fmtMoney(c.capitalGainsTax)} />}
       <Row label="Total liability" value={fmtMoney(c.totalDue)} bold />
       <Row label="Tax deducted at source" value={`(${fmtMoney(c.taxDeductedAtSource)})`} />
