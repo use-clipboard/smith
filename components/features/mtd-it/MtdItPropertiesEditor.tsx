@@ -5,6 +5,7 @@ import { Plus, Trash2, House, Globe2, Loader2, AlertTriangle, Users } from 'luci
 import Tooltip from '@/components/ui/Tooltip';
 import PropertyUseTypeSelect, { type PropertyUseType } from '@/components/ui/PropertyUseTypeSelect';
 import { currencyOptionsIncluding } from '@/lib/mtdIt/currencyCodes';
+import { COUNTRY_OPTIONS, canonicalCountryName } from '@/lib/mtdIt/countryCodes';
 import MtdItPropertyCoOwnersModal from './MtdItPropertyCoOwnersModal';
 import type { MtdItProperty } from '@/types';
 
@@ -138,12 +139,15 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
           />
           {p.property_type === 'foreign' && (
             <>
-              <input
-                defaultValue={p.country ?? ''}
-                placeholder="Country"
-                onBlur={e => { if ((e.target.value || null) !== p.country) void patchProperty(p.id, { country: e.target.value || null }); }}
-                className="w-24 px-1.5 py-0.5 text-xs bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
-              />
+              <select
+                value={canonicalCountryName(p.country)}
+                aria-label="Country"
+                onChange={e => { const v = e.target.value || null; if (v !== p.country) void patchProperty(p.id, { country: v }); }}
+                className="w-32 px-1.5 py-0.5 text-xs bg-transparent border border-transparent rounded hover:border-gray-200 focus:outline-none focus:border-gray-300"
+              >
+                <option value="">Country…</option>
+                {COUNTRY_OPTIONS.map(o => <option key={o.code} value={o.name}>{o.name}</option>)}
+              </select>
               <Tooltip label="Currency — used to pull the right HMRC exchange rate">
                 <select
                   value={p.currency}
@@ -227,12 +231,15 @@ export default function MtdItPropertiesEditor({ clientId, filter, onChange }: Pr
           <PropertyUseTypeSelect value={draftUseType} onChange={setDraftUseType} />
           {adding === 'foreign' && (
             <>
-              <input
+              <select
                 value={draftCountry}
+                aria-label="Country"
                 onChange={e => setDraftCountry(e.target.value)}
-                placeholder="Country"
-                className="w-24 px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
-              />
+                className="w-32 px-1.5 py-0.5 text-xs bg-white border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
+              >
+                <option value="">Country…</option>
+                {COUNTRY_OPTIONS.map(o => <option key={o.code} value={o.name}>{o.name}</option>)}
+              </select>
               <select
                 value={draftCurrency === 'GBP' ? 'EUR' : draftCurrency}
                 onChange={e => setDraftCurrency(e.target.value)}

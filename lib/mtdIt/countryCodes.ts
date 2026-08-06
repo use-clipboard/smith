@@ -105,3 +105,17 @@ export function resolveCountryCode(input: string | null | undefined): string | n
   if (!input) return null;
   return ALPHA3[norm(input)] ?? null;
 }
+
+/** Countries offered in the foreign-property picker: the alpha-3 code plus the
+ *  primary display name, sorted by name. Backed by the same COUNTRIES table, so
+ *  every option is guaranteed to resolve. Extend COUNTRIES to add more. */
+export const COUNTRY_OPTIONS: { code: string; name: string }[] = COUNTRIES
+  .map(([code, , firstName]) => ({ code, name: firstName }))
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+/** The canonical display name for whatever the user previously stored (name or
+ *  code), or '' if it can't be resolved — used to pre-select the dropdown. */
+export function canonicalCountryName(input: string | null | undefined): string {
+  const code = resolveCountryCode(input);
+  return code ? (COUNTRY_OPTIONS.find(o => o.code === code)?.name ?? '') : '';
+}

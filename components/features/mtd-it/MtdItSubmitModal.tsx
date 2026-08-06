@@ -237,7 +237,6 @@ export default function MtdItSubmitModal({
               )}
               {preview.map((s, i) => {
                 const unmapped = !s.businessId;
-                const foreign = s.typeOfBusiness === 'foreign-property';
                 return (
                   <div key={i} className={`rounded-lg border p-3 ${unmapped ? 'border-gray-200 bg-gray-50' : 'border-indigo-100 bg-indigo-50/30'}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -261,7 +260,9 @@ export default function MtdItSubmitModal({
                       <span className="text-slate-400">{uk(s.periodStartDate)}–{uk(s.periodEndDate)} · {s.rowCount} rows</span>
                     </div>
                     {unmapped && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Not linked to an HMRC business — map it on the HMRC setup screen.</p>}
-                    {foreign && !unmapped && <p className="text-[11px] text-amber-700 mt-1 inline-flex items-center gap-1"><AlertTriangle size={10} /> Set a valid country on this property — it keys the HMRC filing.</p>}
+                    {/* A missing/unresolvable foreign country surfaces as a real
+                        per-source warning from the compute layer (s.warnings) —
+                        no blanket reminder, which fired even when the country was fine. */}
                     {s.warnings.map((w, j) => <p key={j} className="text-[11px] text-amber-700 mt-1 inline-flex items-start gap-1"><AlertTriangle size={10} className="mt-0.5" /> {w}</p>)}
                   </div>
                 );
