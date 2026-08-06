@@ -77,6 +77,11 @@ export default function MtdItSubmitModal({
   const [obligations, setObligations] = useState<ObligationItem[] | null>(null);
   const [obligLoading, setObligLoading] = useState(false);
   const [obligErr, setObligErr] = useState('');
+  // Whether a filing happened this session. We defer the parent refresh
+  // (onSubmitted) until the modal is CLOSED, because it re-fetches entries in the
+  // parent whose loading gate unmounts this modal — which would otherwise wipe
+  // the success panel the moment it appears.
+  const [submittedOccurred, setSubmittedOccurred] = useState(false);
 
   async function checkObligations() {
     setObligLoading(true); setObligErr('');
@@ -139,10 +144,20 @@ export default function MtdItSubmitModal({
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setError(d.error ?? 'Submission failed.'); return; }
-      setResults(d.results as SubmitResult[]);
+      const res = d.results as SubmitResult[];
+      setResults(res);
       void loadHistory();
-      if (d.quarterStatus === 'submitted') onSubmitted();
+      // Remember a filing happened; the parent refresh is deferred to close time
+      // (see submittedOccurred) so it can't unmount this success panel.
+      if (res.some(x => x.status === 'submitted')) setSubmittedOccurred(true);
     } finally { setSubmitting(false); }
+  }
+
+  // Close the modal, refreshing the parent only now (after the user has seen the
+  // outcome) if anything was filed.
+  function closeAndRefresh() {
+    if (submittedOccurred) onSubmitted();
+    onClose();
   }
 
   const submittable = (preview ?? []).filter(s => s.businessId);
@@ -193,7 +208,7 @@ export default function MtdItSubmitModal({
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <h2 className="text-sm font-semibold text-gray-900 inline-flex items-center gap-2"><Landmark size={15} className="text-indigo-600" /> Submit to HMRC — quarterly update</h2>
-          <button onClick={onClose} aria-label="Close" className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-700"><X size={14} /></button>
+          <button onClick={closeAndRefresh} aria-label="Close" className="w-7 h-7 rounded hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-700"><X size={14} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -383,7 +398,7 @@ export default function MtdItSubmitModal({
             {outcome !== 'success' && (
               <button onClick={() => { setResults(null); setError(''); }} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Try again</button>
             )}
-            <button onClick={onClose} className="btn-primary text-sm">Done</button>
+            <button onClick={closeAndRefresh} className="btn-primary text-sm">Done</button>
           </div>
         ) : (
           <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-3">
@@ -399,7 +414,7 @@ export default function MtdItSubmitModal({
               </Tooltip>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={onClose} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
+              <button onClick={closeAndRefresh} className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700">Close</button>
               <Tooltip label={blockers.length > 0 ? blockers[0] : anyAlreadyFiled ? 'Already filed — re-submitting amends the cumulative figures at HMRC' : 'File these figures with HMRC'}>
                 <button
                   onClick={() => void submit()}
