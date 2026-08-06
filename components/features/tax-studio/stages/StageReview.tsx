@@ -8,6 +8,7 @@ import {
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
+import AssistantPanel from '../AssistantPanel';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
@@ -15,43 +16,50 @@ import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySou
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
 export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; patch: Patch; advance: () => void }) {
+  const [page, setPage] = useState<PageId>('core');
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
+  const counts = pageCounts(ret.income);
 
   function setIncome(u: (i: Sa100Income) => Sa100Income) {
     patch(r => ({ ...r, income: u(r.income) }));
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-      {/* Left — editor + review points */}
-      <div className="space-y-4">
-        <IncomeEditor income={ret.income} setIncome={setIncome} />
-
-        <StudioCard className="p-5">
-          <SectionTitle title="Review points" sub={openPoints ? `${openPoints} to resolve before approval` : 'Everything checks out'} />
-          {ret.reviewPoints.length === 0 ? (
-            <p className="text-[12.5px] text-[var(--text-muted)]">No review points raised. Run the analysis or adjust figures to re-check.</p>
-          ) : (
-            <div className="space-y-2">
-              {ret.reviewPoints.map(p => (
-                <ReviewPointRow key={p.id} point={p}
-                  onToggle={() => patch(r => ({ ...r, reviewPoints: r.reviewPoints.map(x => x.id === p.id ? { ...x, resolved: !x.resolved } : x) }))} />
-              ))}
-            </div>
-          )}
-        </StudioCard>
-
-        <SuggestionsCard ret={ret} patch={patch} />
+    <div className="space-y-4">
+      {/* Contents rail + section panel */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[224px_minmax(0,1fr)]">
+        <ContentsRail counts={counts} active={page} onSelect={setPage} />
+        <SectionPanel page={page} income={ret.income} setIncome={setIncome} />
       </div>
 
-      {/* Right — live computation */}
-      <div className="space-y-4">
+      {/* Computation + AI assistant */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ComputationCard ret={ret} />
-        <div className="flex justify-end">
-          <button onClick={advance} className="btn-primary">
-            Send for approval <ArrowRight size={15} />
-          </button>
-        </div>
+        <div className="h-[460px]"><AssistantPanel ret={ret} stage="review" /></div>
+      </div>
+
+      {/* Review points */}
+      <StudioCard className="p-5">
+        <SectionTitle title="Review points" sub={openPoints ? `${openPoints} to resolve before approval` : 'Everything checks out'} />
+        {ret.reviewPoints.length === 0 ? (
+          <p className="text-[12.5px] text-[var(--text-muted)]">No review points raised. Run the analysis or adjust figures to re-check.</p>
+        ) : (
+          <div className="space-y-2">
+            {ret.reviewPoints.map(p => (
+              <ReviewPointRow key={p.id} point={p}
+                onToggle={() => patch(r => ({ ...r, reviewPoints: r.reviewPoints.map(x => x.id === p.id ? { ...x, resolved: !x.resolved } : x) }))} />
+            ))}
+          </div>
+        )}
+      </StudioCard>
+
+      <SuggestionsCard ret={ret} patch={patch} />
+
+      {/* Send for approval */}
+      <div className="flex justify-end">
+        <button onClick={advance} className="btn-primary">
+          Send for approval <ArrowRight size={15} />
+        </button>
       </div>
     </div>
   );
@@ -94,10 +102,8 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
   }
 }
 
-function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const [page, setPage] = useState<PageId>('core');
-
-  const counts: Record<PageId, number> = {
+function pageCounts(income: Sa100Income): Record<PageId, number> {
+  return {
     core: 0,
     employment: income.employment.length,
     selfemp: income.selfEmployment.length,
@@ -114,52 +120,57 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
       income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
     ].some(v => (v || 0) > 0) ? 1 : 0,
   };
-  const active = PAGES.find(p => p.id === page)!;
+}
 
+/** Left contents rail — a clickable table of contents for the SA pages, with a
+ *  bracketed entry count next to any page that holds data. */
+function ContentsRail({ counts, active, onSelect }: { counts: Record<PageId, number>; active: PageId; onSelect: (id: PageId) => void }) {
   return (
-    <StudioCard className="overflow-hidden">
-      <div className="px-5 pt-4">
-        <SectionTitle title="Tax return" sub="Enter figures on each SA page — the computation updates live." />
-      </div>
-      {/* Page tabs — wrapping pills so all SA pages are visible; a dot marks pages
-          that already hold data. */}
-      <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 pb-3">
+    <StudioCard className="h-fit p-2 lg:sticky lg:top-4">
+      <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Sections</p>
+      <nav className="space-y-0.5">
         {PAGES.map(p => {
-          const on = p.id === page;
-          const has = counts[p.id] > 0;
+          const on = p.id === active;
+          const n = counts[p.id];
           const Icon = p.icon;
           return (
-            <button key={p.id} onClick={() => setPage(p.id)}
-              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
-              <Icon size={13} className="shrink-0" />
-              {p.label}
+            <button key={p.id} onClick={() => onSelect(p.id)}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${on ? 'bg-[var(--accent)]/10 font-bold text-[var(--accent)]' : 'font-semibold text-[var(--accent)]/90 hover:bg-[var(--accent)]/[0.06]'}`}>
+              <Icon size={14} className="shrink-0 opacity-80" />
+              <span className="flex-1 truncate">{p.label}{n > 0 && <span className="font-bold"> ({n})</span>}</span>
               <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{p.code}</span>
-              {has && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${on ? 'bg-[var(--accent)]' : 'bg-emerald-500'}`} />}
             </button>
           );
         })}
+      </nav>
+    </StudioCard>
+  );
+}
+
+/** The wide panel showing the selected section's fields. */
+function SectionPanel({ page, income, setIncome }: { page: PageId; income: Sa100Income; setIncome: SetIncome }) {
+  const active = PAGES.find(p => p.id === page)!;
+  const pv = pageValue(page, income);
+  return (
+    <StudioCard className="p-5">
+      <div className="mb-3 flex items-baseline gap-2 border-b border-black/5 pb-3">
+        <h4 className="text-[15px] font-bold text-[var(--text-primary)]">{active.label}</h4>
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
+        {pv && pv.value > 0 && (
+          <span className="ml-auto text-[12px] text-[var(--text-muted)]">{pv.label} <span className="font-bold text-[var(--text-primary)]">{fmtMoney(pv.value)}</span></span>
+        )}
       </div>
 
-      <div className="p-5">
-        <div className="mb-3 flex items-baseline gap-2">
-          <h4 className="text-[14px] font-bold text-[var(--text-primary)]">{active.label}</h4>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
-          {(() => { const pv = pageValue(active.id, income); return pv && pv.value > 0
-            ? <span className="ml-auto text-[12px] text-[var(--text-muted)]">{pv.label} <span className="font-bold text-[var(--text-primary)]">{fmtMoney(pv.value)}</span></span>
-            : null; })()}
-        </div>
-
-        {page === 'core' && <CorePage income={income} setIncome={setIncome} />}
-        {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
-        {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
-        {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
-        {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
-        {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
-        {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
-        {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
-        {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
-        {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
-      </div>
+      {page === 'core' && <CorePage income={income} setIncome={setIncome} />}
+      {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
+      {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
+      {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
+      {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
+      {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
+      {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
+      {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
+      {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
+      {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
     </StudioCard>
   );
 }
@@ -167,14 +178,14 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
 function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <LabelledNum icon={PiggyBank} label="Dividends" value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
-      <LabelledNum label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
-      <LabelledNum label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
-      <LabelledNum label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
-      <LabelledNum label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
-      <LabelledNum label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
-      <LabelledNum label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
-      <LabelledNum label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+      <LabelledNum icon={PiggyBank} box={4} label="Dividends" value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
+      <LabelledNum box={2} label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
+      <LabelledNum box={11} label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
+      <LabelledNum box={8} label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
+      <LabelledNum box={17} label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
+      <LabelledNum box="TR4.5" label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
+      <LabelledNum box="TR4.1" label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
+      <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
       <div>
         <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
         <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
@@ -743,10 +754,14 @@ function TextIn({ value, placeholder, onChange }: { value: string; placeholder?:
 function NumIn({ value, label, onChange }: { value: number; label?: string; onChange: (v: number) => void }) {
   return <input type="number" value={value === 0 ? '' : value} placeholder={label} onChange={e => onChange(Number(e.target.value) || 0)} className="input-base py-1 text-right text-[12.5px]" />;
 }
-function LabelledNum({ icon: Icon, label, value, onChange }: { icon?: typeof PiggyBank; label: string; value: number; onChange: (v: number) => void }) {
+function LabelledNum({ icon: Icon, box, label, value, onChange }: { icon?: typeof PiggyBank; box?: number | string; label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div>
-      <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">{Icon && <Icon size={11} />} {label}</label>
+      <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {Icon && <Icon size={11} />}
+        {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+        {label}
+      </label>
       <NumIn value={value} onChange={onChange} />
     </div>
   );
