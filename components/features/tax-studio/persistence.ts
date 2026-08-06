@@ -3,7 +3,7 @@
 // Thin wrappers over /api/tax-studio/returns so the UI never calls fetch()
 // directly. Returns are stored server-side (Supabase, jsonb `data` column).
 
-import type { TaxReturn } from './types';
+import type { TaxReturn, ReviewPoint, TaxSuggestion } from './types';
 
 const BASE = '/api/tax-studio/returns';
 
@@ -74,6 +74,15 @@ export async function saveReturn(ret: TaxReturn): Promise<void> {
 export async function deleteReturn(id: string): Promise<void> {
   const r = await fetch(`${BASE}/${id}`, { method: 'DELETE' });
   await readJson(r, 'Delete failed.');
+}
+
+/** AI review of the return's figures — genuine review points + opportunities. */
+export async function analyseReturn(ret: TaxReturn): Promise<{ reviewPoints: ReviewPoint[]; suggestions: TaxSuggestion[] }> {
+  const r = await fetch('/api/tax-studio/analyse', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ income: ret.income, taxYear: ret.taxYear, entity: ret.entityLabel, context: ret.context ?? '' }),
+  });
+  return readJson<{ reviewPoints: ReviewPoint[]; suggestions: TaxSuggestion[] }>(r, 'Analysis failed.');
 }
 
 // ── HMRC ITSA final declaration ──────────────────────────────────────────────

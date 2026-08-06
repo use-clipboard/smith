@@ -7,6 +7,7 @@ import DocumentExtract from '../DocumentExtract';
 import ConnectedImports from '../ConnectedImports';
 import { seedSuggestions, seedReviewPoints, fmtMoney } from '../data';
 import { estimateSa100 } from '../calc';
+import { analyseReturn } from '../persistence';
 import type { TaxReturn, Sa100Income } from '../types';
 
 // A realistic SA100 profile used to demonstrate the workspace end-to-end while
@@ -39,18 +40,35 @@ export default function StageAnalyse({
     patch(r => ({ ...r, income: SAMPLE_INCOME }));
   }
 
-  function runAnalysis() {
+  async function runAnalysis() {
     setRunning(true);
-    setTimeout(() => {
+    const stamp = () => ({ id: `t-${Date.now()}`, at: new Date().toISOString(), kind: 'analysed' as const, label: 'SMITH analysed the return' });
+    try {
+      const res = await analyseReturn(ret);
+      // Carry over any review points the user already resolved / opportunities
+      // already sent to the sandbox, matched by text, so a re-run doesn't reset them.
+      patch(r => {
+        const resolved = new Set(r.reviewPoints.filter(p => p.resolved).map(p => p.issue));
+        const applied = new Set(r.suggestions.filter(s => s.appliedToSandbox).map(s => s.title));
+        return {
+          ...r,
+          reviewPoints: res.reviewPoints.map(p => ({ ...p, resolved: resolved.has(p.issue) })),
+          suggestions: res.suggestions.map(s => ({ ...s, appliedToSandbox: applied.has(s.title) })),
+          timeline: [...r.timeline, stamp()],
+        };
+      });
+    } catch {
+      // AI unavailable — fall back to the heuristic checks so the flow completes.
       patch(r => ({
         ...r,
         suggestions: r.suggestions.length ? r.suggestions : seedSuggestions(r.income),
         reviewPoints: r.reviewPoints.length ? r.reviewPoints : seedReviewPoints(r.income),
-        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'analysed', label: 'SMITH analysed the return' }],
+        timeline: [...r.timeline, stamp()],
       }));
+    } finally {
       setRunning(false);
       advance();
-    }, 900);
+    }
   }
 
   return (
