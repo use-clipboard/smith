@@ -1,10 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Sparkles, ArrowRight, LayoutGrid, List as ListIcon, Loader2,
   TrendingUp, Layers, ClipboardCheck, AlertCircle, CheckCircle2, FileCheck2,
-  Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight,
+  Clock3, CalendarClock, Mail, PiggyBank, Activity, ChevronRight, X,
 } from 'lucide-react';
 import { StudioCard, StatusBadge } from './primitives';
 import {
@@ -23,6 +23,9 @@ const BUCKETS: { key: string; label: string; statuses: ReturnStatus[]; color: st
   { key: 'ready',    label: 'Ready to file',     statuses: ['ready-to-file', 'approved'], color: '#14b8a6', tone: 'text-teal-600 bg-teal-50', icon: CheckCircle2 },
   { key: 'filed',    label: 'Filed',             statuses: ['filed', 'amended'],  color: '#6366f1', tone: 'text-indigo-600 bg-indigo-50', icon: FileCheck2 },
 ];
+
+type RowWithStatus = ReturnListItem & { status: ReturnStatus };
+interface BucketView { label: string; tint: string; icon: typeof Layers; rows: RowWithStatus[] }
 
 function relTime(iso: string): string {
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -43,6 +46,7 @@ export default function CommandCentre({
   onOpen: (r: TaxReturn) => void;
 }) {
   const [view, setView] = useState<'list' | 'board'>('list');
+  const [bucketView, setBucketView] = useState<BucketView | null>(null);
   const season = currentFilingSeason();
 
   const rows = useMemo(() => items.map(it => ({ ...it, status: deriveStatus(it.ret) })), [items]);
@@ -88,44 +92,23 @@ export default function CommandCentre({
     return out;
   }, [counts, totalSavings]);
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-
   return (
     <div className="space-y-5">
-      {/* Greeting */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-[22px] font-extrabold tracking-tight text-[var(--text-primary)]">{greeting}{userName ? `, ${userName.split(' ')[0]}` : ''} 👋</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--text-secondary)]">Here&apos;s what&apos;s happening in Tax Studio today.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)]">
-            <CalendarClock size={14} className="text-[var(--accent)]" /> Tax Season {season.taxYear}
-          </span>
-          <button onClick={onNew} className="btn-primary"><Plus size={16} /> New return</button>
-        </div>
+      {/* Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--text-secondary)]">
+          <CalendarClock size={14} className="text-[var(--accent)]" /> Tax Season {season.taxYear}
+        </span>
+        <button onClick={onNew} className="btn-primary"><Plus size={16} /> New return</button>
       </div>
 
       {/* Buckets */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StudioCard className="flex items-center gap-3 px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600"><Layers size={17} /></div>
-          <div>
-            <p className="text-[20px] font-extrabold leading-none text-[var(--text-primary)]">{total}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Total returns</p>
-          </div>
-        </StudioCard>
+        <BucketCard label="Total returns" value={total} icon={Layers} tint="#64748B"
+          onClick={() => setBucketView({ label: 'All returns', tint: '#64748B', icon: Layers, rows })} />
         {BUCKETS.map(b => (
-          <StudioCard key={b.key} className="flex items-center gap-3 px-4 py-3">
-            <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${b.tone}`}><b.icon size={17} /></div>
-            <div>
-              <p className="text-[20px] font-extrabold leading-none text-[var(--text-primary)]">{counts[b.key]}
-                <span className="ml-1 text-[11px] font-semibold text-[var(--text-muted)]">{total ? `${Math.round((counts[b.key] / total) * 100)}%` : '0%'}</span>
-              </p>
-              <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{b.label}</p>
-            </div>
-          </StudioCard>
+          <BucketCard key={b.key} label={b.label} value={counts[b.key]} pct={total ? Math.round((counts[b.key] / total) * 100) : 0} icon={b.icon} tint={b.color}
+            onClick={() => setBucketView({ label: b.label, tint: b.color, icon: b.icon, rows: rows.filter(r => b.statuses.includes(r.status)) })} />
         ))}
       </div>
 
@@ -296,11 +279,87 @@ export default function CommandCentre({
           </div>
         </div>
       </StudioCard>
+
+      <BucketLightbox
+        bucket={bucketView}
+        onClose={() => setBucketView(null)}
+        onOpen={r => { setBucketView(null); onOpen(r); }}
+      />
     </div>
   );
 }
 
 // ─── Building blocks ─────────────────────────────────────────────────────────
+function BucketLightbox({ bucket, onClose, onOpen }: { bucket: BucketView | null; onClose: () => void; onOpen: (r: TaxReturn) => void }) {
+  useEffect(() => {
+    if (!bucket) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [bucket, onClose]);
+
+  if (!bucket) return null;
+  const Icon = bucket.icon;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
+      <div
+        className="relative z-10 flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-[22px] border border-white/60 bg-white/90 shadow-[0_24px_80px_rgba(31,38,88,0.28)] backdrop-blur-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b border-black/5 px-5 py-3.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: `${bucket.tint}1f`, color: bucket.tint }}><Icon size={18} /></div>
+          <div className="flex-1">
+            <p className="text-[14px] font-bold text-[var(--text-primary)]">{bucket.label}</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">{bucket.rows.length} return{bucket.rows.length === 1 ? '' : 's'}</p>
+          </div>
+          <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-black/5"><X size={16} /></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {bucket.rows.length === 0 ? (
+            <p className="py-10 text-center text-[13px] text-[var(--text-muted)]">No returns in this status.</p>
+          ) : (
+            bucket.rows.map(r => {
+              const rt = returnType(r.ret.returnType);
+              const RIcon = rt.icon;
+              return (
+                <button key={r.id} onClick={() => onOpen(r.ret)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-black/[0.03]">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/10 text-[var(--accent)]"><RIcon size={16} /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold text-[var(--text-primary)]">{r.ret.clientName}</p>
+                    <p className="text-[11.5px] text-[var(--text-muted)]">{rt.form} · {r.ret.taxYear} · edited {r.date}</p>
+                  </div>
+                  <StatusBadge status={r.status} />
+                  <ChevronRight size={15} className="shrink-0 text-[var(--text-muted)]" />
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BucketCard({ label, value, pct, icon: Icon, tint, onClick }: { label: string; value: number | string; pct?: number; icon: typeof Layers; tint: string; onClick?: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="group relative w-full overflow-hidden rounded-[20px] border border-white/60 bg-white/70 p-4 text-left shadow-[0_8px_32px_rgba(31,38,88,0.08)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(31,38,88,0.14)]">
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-40 blur-2xl transition-opacity group-hover:opacity-70" style={{ background: tint }} />
+      <div className="relative flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
+          <p className="mt-1.5 text-[24px] font-bold leading-none text-[var(--text-primary)]">
+            {value}{pct != null && <span className="ml-1 text-[12px] font-semibold text-[var(--text-muted)]">{pct}%</span>}
+          </p>
+        </div>
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: `${tint}1f`, color: tint }}>
+          <Icon size={18} />
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function Panel({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: React.ReactNode }) {
   return (
     <StudioCard className="flex flex-col p-4">
