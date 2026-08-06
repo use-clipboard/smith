@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, disposalGainLoss } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -81,7 +81,8 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
     partnership: (income.partnerships ?? []).length,
     property: income.property.length,
     foreign: income.foreign && (income.foreign.income || income.foreign.foreignTaxPaid) ? 1 : 0,
-    cgt: income.capitalGains && (income.capitalGains.residentialGains || income.capitalGains.otherGains || income.capitalGains.losses) ? 1 : 0,
+    cgt: income.capitalGains?.disposals?.length
+      || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
   };
   const active = PAGES.find(p => p.id === page)!;
 
@@ -422,20 +423,72 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
 }
 
 function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const cg = income.capitalGains ?? {};
+  const disposals = cg.disposals ?? [];
+  const patchCg = (u: Partial<NonNullable<Sa100Income['capitalGains']>>) => setIncome(i => ({ ...i, capitalGains: { ...i.capitalGains, ...u } }));
+  const setDisposals = (d: CgtDisposal[]) => patchCg({ disposals: d });
+  const add = () => setDisposals([...disposals, { id: `cg-${disposals.length}-${Date.now()}`, description: '', assetType: 'residential', proceeds: 0, cost: 0, relief: 'none' }]);
   return (
-    <>
-      <div className="grid grid-cols-3 gap-2">
-        <LabelledNum label="Residential gains" value={income.capitalGains?.residentialGains ?? 0} onChange={v => setCg(setIncome, { residentialGains: v })} />
-        <LabelledNum label="Other gains" value={income.capitalGains?.otherGains ?? 0} onChange={v => setCg(setIncome, { otherGains: v })} />
-        <LabelledNum label="Losses" value={income.capitalGains?.losses ?? 0} onChange={v => setCg(setIncome, { losses: v })} />
+    <div className="space-y-3">
+      {disposals.length === 0 && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <LabelledNum label="Residential gains" value={cg.residentialGains ?? 0} onChange={v => patchCg({ residentialGains: v })} />
+            <LabelledNum label="Other gains" value={cg.otherGains ?? 0} onChange={v => patchCg({ otherGains: v })} />
+            <LabelledNum label="Losses (in-year)" value={cg.losses ?? 0} onChange={v => patchCg({ losses: v })} />
+          </div>
+          <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Quick summary — or add itemised disposals below (they take precedence).</p>
+        </div>
+      )}
+      {disposals.map((d, idx) => (
+        <DisposalCard key={d.id} d={d} idx={idx}
+          onChange={u => setDisposals(disposals.map((x, j) => j === idx ? { ...x, ...u } : x))}
+          onRemove={() => setDisposals(disposals.filter((_, j) => j !== idx))} />
+      ))}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add disposal</button>
+      <div className="mt-2 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
+        <LabelledNum label="Losses brought forward" value={cg.lossesBroughtForward ?? 0} onChange={v => patchCg({ lossesBroughtForward: v })} />
       </div>
-      <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">18%/24% after the £3,000 annual exempt amount. Excludes BADR/Investors’ Relief.</p>
-    </>
+      <p className="text-[10.5px] text-[var(--text-muted)]">£3,000 annual exempt amount. Standard gains 18%/24% (band-dependent); BADR / Investors’ Relief gains 14%.</p>
+    </div>
   );
 }
 
-function setCg(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['capitalGains']>>) {
-  setIncome(i => ({ ...i, capitalGains: { residentialGains: 0, otherGains: 0, losses: 0, ...i.capitalGains, ...patch } }));
+function DisposalCard({ d, idx, onChange, onRemove }: {
+  d: CgtDisposal; idx: number; onChange: (u: Partial<CgtDisposal>) => void; onRemove: () => void;
+}) {
+  const { gain, loss } = disposalGainLoss(d);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <input value={d.description} placeholder={`Disposal ${idx + 1}`} onChange={ev => onChange({ description: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">{loss > 0 ? <span className="font-bold text-rose-600">Loss {fmtMoney(loss)}</span> : <>Gain <span className="font-bold text-[var(--text-primary)]">{fmtMoney(gain)}</span></>}</span>
+        <RemoveBtn onClick={onRemove} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Asset type</label>
+          <select value={d.assetType} onChange={e => onChange({ assetType: e.target.value as CgtDisposal['assetType'] })} className="input-base py-1 text-[12.5px]">
+            <option value="residential">Residential property</option>
+            <option value="listed">Listed shares</option>
+            <option value="unlisted">Unlisted shares</option>
+            <option value="other">Other assets</option>
+          </select>
+        </div>
+        <LabelledNum label="Proceeds" value={d.proceeds} onChange={v => onChange({ proceeds: v })} />
+        <LabelledNum label="Allowable cost" value={d.cost} onChange={v => onChange({ cost: v })} />
+        <LabelledNum label="Reliefs (PRR/lettings)" value={d.reliefs ?? 0} onChange={v => onChange({ reliefs: v })} />
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Special relief</label>
+          <select value={d.relief ?? 'none'} onChange={e => onChange({ relief: e.target.value as CgtDisposal['relief'] })} className="input-base py-1 text-[12.5px]">
+            <option value="none">None (18%/24%)</option>
+            <option value="badr">BADR (14%)</option>
+            <option value="investors">Investors’ Relief (14%)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function setForeign(setIncome: (u: (i: Sa100Income) => Sa100Income) => void, patch: Partial<NonNullable<Sa100Income['foreign']>>) {

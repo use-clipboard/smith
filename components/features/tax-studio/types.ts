@@ -132,6 +132,17 @@ export interface PropertySource {
   profit: number;
 }
 
+// SA108 Capital gains — one itemised disposal.
+export interface CgtDisposal {
+  id: string;
+  description: string;
+  assetType: 'residential' | 'listed' | 'unlisted' | 'other';
+  proceeds: number;      // disposal proceeds
+  cost: number;          // allowable cost (acquisition + incidental + improvements)
+  reliefs?: number;      // gain-reducing reliefs (PRR, lettings, etc.)
+  relief?: 'none' | 'badr' | 'investors'; // special 14% rate reliefs
+}
+
 export interface Sa100Income {
   employment: EmploymentSource[];
   selfEmployment: TradeSource[];
@@ -155,12 +166,17 @@ export interface Sa100Income {
   /** Marriage Allowance: 'received' gives a ~£252 reducer; 'transferred'
    *  reduces this person's personal allowance by £1,260. */
   marriageAllowance?: 'none' | 'received' | 'transferred';
-  /** Capital gains (SA108). 2025/26 main rates 18%/24% apply to both
-   *  residential and other assets, so they're pooled here. */
+  /** Capital gains (SA108). 2025/26 main rates are 18%/24% for both residential
+   *  and other assets; BADR / Investors' Relief gains are 14%. Itemised
+   *  `disposals` take precedence; the residential/other/losses summary is a
+   *  quick-entry fallback when there are no disposals. */
   capitalGains?: {
-    residentialGains: number;
-    otherGains: number;
-    losses: number; // current-year + brought-forward allowable losses
+    disposals?: CgtDisposal[];
+    lossesBroughtForward?: number;
+    // Quick-summary fallback (used only when disposals is empty)
+    residentialGains?: number;
+    otherGains?: number;
+    losses?: number; // current-year allowable losses
   };
   /** Tax residence for the rate bands: 'scotland' uses Scottish rates on
    *  non-savings/non-dividend income (savings & dividends stay UK rates).

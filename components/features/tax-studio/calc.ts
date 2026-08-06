@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, CgtDisposal } from './types';
 
 // ── SA102 employment helpers ─────────────────────────────────────────────────
 // Total P11D benefits (boxes 9–16); falls back to the legacy aggregate when no
@@ -87,6 +87,14 @@ export function propertyTaxable(p: PropertySource): number {
   return Math.max(0, adjusted - (p.lossBroughtForward || 0));
 }
 
+// ── SA108 capital-gains helpers ──────────────────────────────────────────────
+/** Chargeable gain (after reliefs) and allowable loss for one disposal. */
+export function disposalGainLoss(d: CgtDisposal): { gain: number; loss: number } {
+  const raw = (d.proceeds || 0) - (d.cost || 0);
+  if (raw > 0) return { gain: Math.max(0, raw - (d.reliefs || 0)), loss: 0 };
+  return { gain: 0, loss: -raw };
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -113,6 +121,7 @@ const MARRIAGE_ALLOWANCE_REDUCER = 252;   // ~10% of PA @ 20% for the recipient
 const CGT_ANNUAL_EXEMPT = 3000;
 const CGT_LOWER = 0.18;
 const CGT_HIGHER = 0.24;
+const CGT_BADR = 0.14; // Business Asset Disposal Relief / Investors' Relief (2025/26)
 
 // Scottish rates 2025/26 — NSND income only, as band WIDTHS of taxable income
 // (post personal allowance). The basic band widens by grossed reliefs.
@@ -386,13 +395,34 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const cg = income.capitalGains;
   let taxableGains = 0, capitalGainsTax = 0;
   if (cg) {
-    const gains = Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0) - (cg.losses || 0));
-    taxableGains = Math.max(0, gains - CGT_ANNUAL_EXEMPT);
+    // Split gains into standard-rate (18/24) and BADR/Investors' Relief (14),
+    // and gather in-year losses. Itemised disposals take precedence.
+    let normalGains = 0, badrGains = 0, inYearLosses = 0;
+    const disposals = cg.disposals ?? [];
+    if (disposals.length) {
+      for (const d of disposals) {
+        const { gain, loss } = disposalGainLoss(d);
+        inYearLosses += loss;
+        if (gain > 0) { if (d.relief === 'badr' || d.relief === 'investors') badrGains += gain; else normalGains += gain; }
+      }
+    } else {
+      normalGains = Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0));
+      inYearLosses = cg.losses || 0;
+    }
+    // Set losses (in-year + brought-forward) and the annual exempt amount against
+    // the higher-taxed standard-rate gains first, then BADR gains.
+    let deduction = inYearLosses + (cg.lossesBroughtForward || 0) + CGT_ANNUAL_EXEMPT;
+    const normAfter = Math.max(0, normalGains - deduction);
+    deduction = Math.max(0, deduction - normalGains);
+    const badrAfter = Math.max(0, badrGains - deduction);
+    taxableGains = normAfter + badrAfter;
     if (taxableGains > 0) {
       const bandRemaining = Math.max(0, brl - taxableIncome);
-      const lower = Math.min(taxableGains, bandRemaining);
-      capitalGainsTax = r0(lower * CGT_LOWER + (taxableGains - lower) * CGT_HIGHER);
-      notes.push('Capital gains taxed at 18%/24% after the £3,000 annual exempt amount.');
+      const lower = Math.min(normAfter, bandRemaining);
+      capitalGainsTax = r0(lower * CGT_LOWER + (normAfter - lower) * CGT_HIGHER + badrAfter * CGT_BADR);
+      notes.push(badrAfter > 0
+        ? 'Capital gains: 18%/24% on standard gains, 14% on BADR/Investors’ Relief gains, after the £3,000 exemption.'
+        : 'Capital gains taxed at 18%/24% after the £3,000 annual exempt amount.');
     }
   }
 
