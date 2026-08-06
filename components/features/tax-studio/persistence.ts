@@ -76,6 +76,38 @@ export async function deleteReturn(id: string): Promise<void> {
   await readJson(r, 'Delete failed.');
 }
 
+// ── Client approval ──────────────────────────────────────────────────────────
+export interface SendApprovalInput {
+  recipientEmail: string;
+  coverNote?: string | null;
+  pdfBase64?: string | null;
+  summaryLines?: { label: string; value: string }[] | null;
+  prepareOnly?: boolean;
+}
+export interface SendApprovalResult {
+  ok: boolean; approvalUrl: string; senderEmail?: string; subject?: string; htmlBody?: string; attachmentFilename?: string;
+}
+
+export async function sendForApproval(returnId: string, input: SendApprovalInput): Promise<SendApprovalResult> {
+  const r = await fetch(`${BASE}/${returnId}/send-approval`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient_email: input.recipientEmail,
+      cover_note: input.coverNote ?? null,
+      pdf_base64: input.pdfBase64 ?? null,
+      summary_lines: input.summaryLines ?? null,
+      prepare_only: input.prepareOnly ?? false,
+    }),
+  });
+  return readJson<SendApprovalResult>(r, 'Could not send for approval.');
+}
+
+/** Flip status to 'sent' after the email is really sent from the compose window. */
+export async function markApprovalSent(returnId: string): Promise<void> {
+  const r = await fetch(`${BASE}/${returnId}/mark-approval-sent`, { method: 'POST' });
+  await readJson(r, 'Could not update status.');
+}
+
 /** AI review of the return's figures — genuine review points + opportunities. */
 export async function analyseReturn(ret: TaxReturn): Promise<{ reviewPoints: ReviewPoint[]; suggestions: TaxSuggestion[] }> {
   const r = await fetch('/api/tax-studio/analyse', {

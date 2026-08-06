@@ -53,6 +53,11 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/mtd-it/approve/') ||
     request.nextUrl.pathname.startsWith('/api/mtd-it/approve/');
 
+  // Public-by-token Tax Studio (SA100) client approval page + its API.
+  const isPublicTaxStudioApprove =
+    request.nextUrl.pathname.startsWith('/tax-studio/approve/') ||
+    request.nextUrl.pathname.startsWith('/api/tax-studio/approve/');
+
   // Vercel cron endpoints. Vercel's scheduler can't carry a Supabase session,
   // so the middleware would otherwise 307 every tick to /login and the cron
   // would never run. Each cron handler verifies its own Bearer CRON_SECRET
@@ -80,7 +85,7 @@ export async function middleware(request: NextRequest) {
       (p) => request.nextUrl.pathname === p || request.nextUrl.pathname.startsWith(p + '/')
     );
 
-  if (!user && !isAuthRoute && !isPublicAuthApi && !isPublicProposal && !isPublicMtdItApprove && !isCronRoute && !isMarketing) {
+  if (!user && !isAuthRoute && !isPublicAuthApi && !isPublicProposal && !isPublicMtdItApprove && !isPublicTaxStudioApprove && !isCronRoute && !isMarketing) {
     const dest = request.nextUrl.pathname + request.nextUrl.search;
     const url = request.nextUrl.clone();
     url.pathname = '/login';
