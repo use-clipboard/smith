@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { fmtMoney } from '../data';
@@ -59,7 +59,7 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'additional';
+type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
@@ -70,6 +70,7 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'foreign',     label: 'Foreign',          code: 'SA106', icon: Globe2 },
   { id: 'cgt',         label: 'Capital gains',    code: 'SA108', icon: TrendingUp },
   { id: 'trusts',      label: 'Trusts',           code: 'SA107', icon: Scale },
+  { id: 'residence',   label: 'Residence',        code: 'SA109', icon: MapPin },
   { id: 'additional',  label: 'Additional info',  code: 'SA101', icon: FileText },
 ];
 
@@ -87,6 +88,7 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
     trusts: (income.trusts ?? []).length,
+    residence: income.residence && (income.residence.remittanceBasis || (income.residence.status && income.residence.status !== 'resident') || income.residence.domicile === 'non-uk' || (income.residence.daysInUk || 0) > 0) ? 1 : 0,
     additional: income.additional && [
       income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
       income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
@@ -128,6 +130,7 @@ function IncomeEditor({ income, setIncome }: { income: Sa100Income; setIncome: S
         {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
         {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
         {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
+        {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
         {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
@@ -548,6 +551,41 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
         <LabelledNum label="Losses brought forward" value={cg.lossesBroughtForward ?? 0} onChange={v => patchCg({ lossesBroughtForward: v })} />
       </div>
       <p className="text-[10.5px] text-[var(--text-muted)]">£3,000 annual exempt amount. Standard gains 18%/24% (band-dependent); BADR / Investors’ Relief gains 14%.</p>
+    </div>
+  );
+}
+
+function ResidencePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const r = income.residence ?? {};
+  const patchR = (u: Partial<NonNullable<Sa100Income['residence']>>) => setIncome(i => ({ ...i, residence: { ...i.residence, ...u } }));
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Residence status</label>
+          <select value={r.status ?? 'resident'} onChange={e => patchR({ status: e.target.value as NonNullable<Sa100Income['residence']>['status'] })} className="input-base py-1 text-[12.5px]">
+            <option value="resident">UK resident</option>
+            <option value="non-resident">Non-resident</option>
+            <option value="split-year">Split year</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Domicile</label>
+          <select value={r.domicile ?? 'uk'} onChange={e => patchR({ domicile: e.target.value as NonNullable<Sa100Income['residence']>['domicile'] })} className="input-base py-1 text-[12.5px]">
+            <option value="uk">UK domiciled</option>
+            <option value="non-uk">Non-UK domiciled</option>
+          </select>
+        </div>
+        <LabelledNum label="Days spent in the UK" value={r.daysInUk ?? 0} onChange={v => patchR({ daysInUk: v })} />
+        {r.status === 'split-year' && (
+          <BoxText label="Split-year date (dd-mm-yyyy)" value={r.splitYearDate ?? ''} onChange={v => patchR({ splitYearDate: v })} />
+        )}
+      </div>
+      <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[var(--text-secondary)]">
+        <input type="checkbox" checked={r.remittanceBasis ?? false} onChange={e => patchR({ remittanceBasis: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" />
+        Claim the remittance basis
+      </label>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Claiming the remittance basis withdraws the personal allowance and the £3,000 CGT annual exempt amount. The remittance basis was replaced by the FIG regime from 6 April 2025 — transitional rules may apply. Split-year / non-resident income apportionment isn’t modelled here.</p>
     </div>
   );
 }

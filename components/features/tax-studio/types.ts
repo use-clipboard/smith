@@ -227,6 +227,15 @@ export interface Sa100Income {
   tradeLossBroughtForward?: number;
   /** SA107 — income from trusts, settlements and estates. */
   trusts?: TrustEstateSource[];
+  /** SA109 — residence, domicile & remittance basis. Claiming the remittance
+   *  basis withdraws the personal allowance and the CGT annual exempt amount. */
+  residence?: {
+    status?: 'resident' | 'non-resident' | 'split-year';
+    splitYearDate?: string;   // date of arrival / departure (dd-mm-yyyy)
+    domicile?: 'uk' | 'non-uk';
+    remittanceBasis?: boolean;
+    daysInUk?: number;
+  };
   /** SA101 Additional information — life-insurance chargeable event gains and
    *  the venture-capital / other reliefs that reduce the income-tax liability. */
   additional?: {

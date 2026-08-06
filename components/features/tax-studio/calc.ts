@@ -359,6 +359,14 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     personalAllowance = Math.max(0, personalAllowance - MARRIAGE_ALLOWANCE_TRANSFER);
     notes.push('Personal allowance reduced by a Marriage Allowance transfer to a spouse/civil partner.');
   }
+  const remittanceBasis = !!income.residence?.remittanceBasis;
+  if (remittanceBasis) {
+    personalAllowance = 0;
+    notes.push('Remittance basis claimed — personal allowance and CGT annual exempt amount withdrawn (the remittance basis was replaced by the FIG regime from 6 April 2025; transitional rules may apply).');
+  }
+  if (income.residence && income.residence.status && income.residence.status !== 'resident') {
+    notes.push('Non-resident / split-year status noted — income apportionment and residence reliefs are not modelled here; review before filing.');
+  }
 
   // Allocate PA: non-savings → savings → dividends.
   const paNsnd = Math.min(nsnd, personalAllowance);
@@ -491,8 +499,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
       inYearLosses = cg.losses || 0;
     }
     // Set losses (in-year + brought-forward) and the annual exempt amount against
-    // the higher-taxed standard-rate gains first, then BADR gains.
-    let deduction = inYearLosses + (cg.lossesBroughtForward || 0) + CGT_ANNUAL_EXEMPT;
+    // the higher-taxed standard-rate gains first, then BADR gains. The AEA is
+    // withdrawn when the remittance basis is claimed.
+    const aea = remittanceBasis ? 0 : CGT_ANNUAL_EXEMPT;
+    let deduction = inYearLosses + (cg.lossesBroughtForward || 0) + aea;
     const normAfter = Math.max(0, normalGains - deduction);
     deduction = Math.max(0, deduction - normalGains);
     const badrAfter = Math.max(0, badrGains - deduction);
