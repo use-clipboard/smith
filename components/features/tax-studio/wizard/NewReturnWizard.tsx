@@ -13,7 +13,7 @@ import {
   type RollKey, type WizardClient,
 } from './wizardData';
 import {
-  buildReturn, currentFilingSeason, seedConnectedSources, returnType, emptyIncome,
+  buildReturn, currentFilingSeason, seedConnectedSources, returnType, emptyIncome, fmtDateUK,
 } from '../data';
 import { listReturns, type ReturnListItem } from '../persistence';
 import type { ReturnTypeId, TaxReturn } from '../types';
@@ -91,6 +91,11 @@ export default function NewReturnWizard({
       const base = buildReturn({
         clientId: client.id, clientRef: client.client_ref, clientName: client.name,
         returnType: returnTypeId, taxYear, utr: client.utr_number ?? null,
+        taxpayer: {
+          address: client.address ?? '',
+          dateOfBirth: client.date_of_birth ? fmtDateUK(new Date(client.date_of_birth)) : '',
+          nino: client.national_insurance_number ?? '',
+        },
       });
       const now = new Date().toISOString();
       const built: TaxReturn = {

@@ -19,6 +19,8 @@ export interface Sa100PackInput {
   clientName: string;
   clientRef: string | null;
   utr?: string | null;
+  taxpayer?: { address?: string; dateOfBirth?: string; nino?: string };
+  amended?: boolean;
   taxYear: string;              // '2025/26'
   returnTypeId: string;
   entityLabel: string;
@@ -143,6 +145,14 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   text(input.taxYear, pageW - margin - 16, y + 40, { bold: true, size: 15, align: 'right' });
   text('Self Assessment', pageW - margin - 16, y + 56, { size: 9, color: COLOR.textMuted, align: 'right' });
   y += 82;
+
+  // Taxpayer details (from the client record) + amendment marker.
+  const tp = input.taxpayer;
+  const idLine = [tp?.dateOfBirth ? `Date of birth: ${tp.dateOfBirth}` : '', tp?.nino ? `NINO: ${tp.nino}` : ''].filter(Boolean).join('      ');
+  if (idLine) { text(idLine, margin, y, { size: 9, color: COLOR.textMuted }); y += 13; }
+  if (tp?.address) { text(clip(`Address: ${tp.address.replace(/\s*\n\s*/g, ', ')}`, contentW, 9), margin, y, { size: 9, color: COLOR.textMuted }); y += 13; }
+  if (input.amended) { text('AMENDED RETURN', margin, y, { bold: true, size: 9, color: COLOR.brandInk }); y += 13; }
+  if (idLine || tp?.address || input.amended) y += 8;
 
   kpiRow(y, [
     { label: 'Total income', value: gbp(c.totalIncome) },

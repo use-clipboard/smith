@@ -154,6 +154,7 @@ export interface NewReturnInput {
   returnType: ReturnTypeId;
   taxYear: string;
   utr?: string | null;
+  taxpayer?: { address?: string; dateOfBirth?: string; nino?: string };
   amended?: boolean;
   late?: boolean;
   context?: string;
@@ -169,6 +170,7 @@ export function buildReturn(input: NewReturnInput): TaxReturn {
     returnType: input.returnType,
     taxYear: input.taxYear,
     utr: input.utr ?? null,
+    taxpayer: input.taxpayer,
     entityLabel: rt.entityLabel,
     preparedBy: '',
     amended: input.amended ?? false,

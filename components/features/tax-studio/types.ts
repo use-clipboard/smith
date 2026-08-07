@@ -313,6 +313,9 @@ export interface TaxReturn {
   /** Tax year label, e.g. '2025/26'. */
   taxYear: string;
   utr?: string | null;
+  /** Taxpayer personal details for the return — pulled from the client record,
+   *  editable in Setup, and used on the tax return itself. */
+  taxpayer?: { address?: string; dateOfBirth?: string; nino?: string };
   /** Human label for the entity, e.g. 'Individual', 'Limited company'. */
   entityLabel: string;
   preparedBy: string;

@@ -44,6 +44,7 @@ export default function SendApprovalModal({ ret, onClose, onSent }: { ret: TaxRe
   function buildInput() {
     return {
       clientName: ret.clientName, clientRef: ret.clientRef, utr: ret.utr,
+      taxpayer: ret.taxpayer, amended: ret.amended,
       taxYear: ret.taxYear, returnTypeId: ret.returnType, entityLabel: ret.entityLabel,
       preparedBy: ret.preparedBy, income: ret.income,
     };

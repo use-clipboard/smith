@@ -19,6 +19,7 @@ export interface WizardClient {
   utr_number?: string | null;
   national_insurance_number?: string | null;
   date_of_birth?: string | null;
+  address?: string | null;
 }
 
 // ── Per-return-type info panel (mockup step 1, right rail) ────────────────────

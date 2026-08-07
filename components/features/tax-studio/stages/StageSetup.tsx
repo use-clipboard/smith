@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Loader2, Link2, Calendar, FileText } from 'lucide-react';
+import { ArrowRight, Loader2, Link2, Calendar, FileText, RefreshCw, MapPin } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
-import { returnType, taxYearOptions, seedConnectedSources } from '../data';
+import { returnType, taxYearOptions, seedConnectedSources, fmtDateUK } from '../data';
 import type { TaxReturn } from '../types';
 
 export default function StageSetup({
@@ -14,8 +14,35 @@ export default function StageSetup({
   advance: () => void;
 }) {
   const [pulling, setPulling] = useState(false);
+  const [pullingClient, setPullingClient] = useState(false);
   const rt = returnType(ret.returnType);
   const connected = ret.connected.length > 0;
+
+  const patchTaxpayer = (u: Partial<NonNullable<TaxReturn['taxpayer']>>) =>
+    patch(r => ({ ...r, taxpayer: { ...r.taxpayer, ...u } }));
+
+  // Pull the taxpayer's details from the linked client record.
+  async function pullFromClient() {
+    if (!ret.clientId) return;
+    setPullingClient(true);
+    try {
+      const res = await fetch(`/api/clients/${ret.clientId}`, { cache: 'no-store' });
+      if (res.ok) {
+        const { client } = await res.json();
+        patch(r => ({
+          ...r,
+          utr: client.utr_number ?? r.utr ?? null,
+          taxpayer: {
+            address: client.address ?? '',
+            dateOfBirth: client.date_of_birth ? fmtDateUK(new Date(client.date_of_birth)) : '',
+            nino: client.national_insurance_number ?? '',
+          },
+        }));
+      }
+    } finally {
+      setPullingClient(false);
+    }
+  }
 
   function pullData() {
     setPulling(true);
@@ -33,7 +60,14 @@ export default function StageSetup({
   return (
     <div className="space-y-4">
       <StudioCard className="p-5">
-        <SectionTitle title="Confirm the return" sub="Tax Studio adapts the workspace to the return type you choose." />
+        <div className="flex items-start justify-between gap-4">
+          <SectionTitle title="Confirm the return" sub="Tax Studio adapts the workspace to the return type you choose. Personal details flow onto the return." />
+          {ret.clientId && (
+            <button onClick={pullFromClient} disabled={pullingClient} className="btn-secondary shrink-0">
+              {pullingClient ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Pull from client
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field icon={FileText} label="Return type" value={`${rt.form} · ${rt.label}`} />
           <div>
@@ -56,6 +90,52 @@ export default function StageSetup({
             />
           </div>
         </div>
+
+        {/* Taxpayer details (pulled from the client record, editable) */}
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Date of birth</label>
+            <input
+              value={ret.taxpayer?.dateOfBirth ?? ''}
+              onChange={e => patchTaxpayer({ dateOfBirth: e.target.value })}
+              placeholder="dd-mm-yyyy"
+              className="input-base py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">National Insurance no.</label>
+            <input
+              value={ret.taxpayer?.nino ?? ''}
+              onChange={e => patchTaxpayer({ nino: e.target.value.toUpperCase() })}
+              placeholder="e.g. AB123456C"
+              className="input-base py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Amendment</label>
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-white/60 px-3 py-1.5 text-sm text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={ret.amended ?? false}
+                onChange={e => patch(r => ({ ...r, amended: e.target.checked }))}
+                className="h-4 w-4 rounded border-slate-300 text-[var(--accent)]"
+              />
+              This is an amended return
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><MapPin size={12} /> Address</label>
+          <textarea
+            value={ret.taxpayer?.address ?? ''}
+            onChange={e => patchTaxpayer({ address: e.target.value })}
+            rows={2}
+            placeholder="Client's address"
+            className="input-base resize-none py-2 text-sm"
+          />
+        </div>
+
         <div className="mt-4">
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Relevant context (optional)</label>
           <textarea
