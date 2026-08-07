@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
@@ -241,8 +242,9 @@ function DividendModal({ income, setIncome, onClose }: { income: Sa100Income; se
   const upd = (idx: number, u: Partial<DividendItem>) => setItems(items.map((x, j) => j === idx ? { ...x, ...u } : x));
   const del = (idx: number) => setItems(items.filter((_, j) => j !== idx));
   const total = items.reduce((a, d) => a + (d.amount || 0), 0);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
           <p className="text-[15px] font-bold text-[var(--text-primary)]">Dividends from UK companies</p>
@@ -288,7 +290,8 @@ function DividendModal({ income, setIncome, onClose }: { income: Sa100Income; se
           <button onClick={onClose} className="btn-primary"><Check size={14} /> Save</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
