@@ -5,14 +5,14 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2,
 } from 'lucide-react';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -28,7 +28,7 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
   return (
     <div className="space-y-4">
       {/* Section tabs + panel */}
-      <SectionPanel page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} />
+      <SectionPanel ret={ret} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} />
 
       {/* Live computation (the AI assistant is docked on the right of the workspace) */}
       <ComputationCard ret={ret} />
@@ -122,8 +122,8 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
  *  above the selected section's fields. */
-function SectionPanel({ page, setPage, counts, income, setIncome }: {
-  page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome;
+function SectionPanel({ ret, page, setPage, counts, income, setIncome }: {
+  ret: TaxReturn; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome;
 }) {
   const active = PAGES.find(p => p.id === page)!;
   const pv = pageValue(page, income);
@@ -155,7 +155,7 @@ function SectionPanel({ page, setPage, counts, income, setIncome }: {
         )}
       </div>
 
-      {page === 'core' && <CorePage income={income} setIncome={setIncome} />}
+      {page === 'core' && <CorePage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
       {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
@@ -186,7 +186,26 @@ const SAVINGS_COLS: BreakdownColumn<SavingsItem>[] = [
   { key: 'description', label: 'Description', kind: 'text' },
   { key: 'amount', label: 'Amount', kind: 'number', total: true },
 ];
+const LINE_COLS: BreakdownColumn<LineItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'amount', label: 'Amount', kind: 'number', total: true },
+];
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+/** A description + amount itemised field (used across pensions & other income). */
+function LineField({ box, label, title, items, onChange, fallbackTotal }: {
+  box: number | string; label: string; title: string; items: LineItem[] | undefined;
+  onChange: (items: LineItem[]) => void; fallbackTotal?: number;
+}) {
+  return (
+    <BreakdownField<LineItem>
+      box={box} label={label} title={title}
+      items={items ?? []} columns={LINE_COLS}
+      blank={() => ({ id: rid('ln'), amount: 0 })}
+      onChange={onChange} rowTotal={x => x.amount || 0} fallbackTotal={fallbackTotal}
+    />
+  );
+}
 
 /** Collapsible sub-section grouping the SA100 main-return boxes by form page. */
 function CoreSection({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
@@ -202,7 +221,7 @@ function CoreSection({ title, defaultOpen, children }: { title: string; defaultO
   );
 }
 
-function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
   return (
     <div className="space-y-3">
       <CoreSection title="Interest & dividends" defaultOpen>
@@ -232,11 +251,32 @@ function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIn
         </div>
       </CoreSection>
 
-      <CoreSection title="Pensions, other income & reliefs" defaultOpen>
+      <CoreSection title="UK pensions & benefits">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={11} label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
-          <LabelledNum box={8} label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
-          <LabelledNum box={17} label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
+          <LineField box={8} label="State Pension" title="State Pension" items={income.statePensionItems} fallbackTotal={income.statePension ?? 0} onChange={items => setIncome(i => ({ ...i, statePensionItems: items }))} />
+          <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
+          <LineField box={10} label="Tax taken off box 9" title="Tax taken off State Pension lump sum" items={income.statePensionLumpSumTaxItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumTaxItems: items }))} />
+          <LineField box={11} label="Pensions (other than State Pension)" title="Pensions (other than State Pension)" items={income.pensionsIncomeItems} fallbackTotal={income.pensionsIncome} onChange={items => setIncome(i => ({ ...i, pensionsIncomeItems: items }))} />
+          <LineField box={12} label="Tax taken off box 11" title="Tax taken off pensions" items={income.pensionsIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, pensionsIncomeTaxItems: items }))} />
+          <LabelledNum box={13} label="Incapacity Benefit & ESA" value={income.incapacityBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefit: v }))} />
+          <LabelledNum box={14} label="Tax taken off box 13" value={income.incapacityBenefitTax ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefitTax: v }))} />
+          <LabelledNum box={15} label="Jobseeker's Allowance" value={income.jobseekersAllowance ?? 0} onChange={v => setIncome(i => ({ ...i, jobseekersAllowance: v }))} />
+          <LabelledNum box={16} label="Other pensions & benefits" value={income.otherPensionsBenefits ?? 0} onChange={v => setIncome(i => ({ ...i, otherPensionsBenefits: v }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Other UK income">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LineField box={17} label="Other taxable income" title="Other taxable income" items={income.otherIncomeItems} fallbackTotal={income.otherIncome} onChange={items => setIncome(i => ({ ...i, otherIncomeItems: items }))} />
+          <LineField box={18} label="Total allowable expenses" title="Allowable expenses" items={income.otherIncomeExpensesItems} onChange={items => setIncome(i => ({ ...i, otherIncomeExpensesItems: items }))} />
+          <LineField box={19} label="Any tax taken off box 17" title="Tax taken off other income" items={income.otherIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, otherIncomeTaxItems: items }))} />
+          <LineField box={20} label="Benefit from pre-owned assets" title="Benefit from pre-owned assets" items={income.preOwnedAssetsItems} onChange={items => setIncome(i => ({ ...i, preOwnedAssetsItems: items }))} />
+        </div>
+        <OtherIncomeDescription ret={ret} income={income} setIncome={setIncome} />
+      </CoreSection>
+
+      <CoreSection title="Tax reliefs & other information">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledNum box="TR4.5" label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
           <LabelledNum box="TR4.1" label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
           <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
@@ -267,6 +307,53 @@ function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIn
           </div>
         </div>
       </CoreSection>
+    </div>
+  );
+}
+
+// SA100 box 21 — free-text description of the other income, with an AI-suggest.
+function OtherIncomeDescription({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const box17 = income.otherIncomeItems?.length ? income.otherIncomeItems.reduce((a, x) => a + (x.amount || 0), 0) : (income.otherIncome || 0);
+  const box20 = (income.preOwnedAssetsItems ?? []).reduce((a, x) => a + (x.amount || 0), 0);
+
+  async function suggest() {
+    setBusy(true); setErr('');
+    try {
+      const res = await fetch('/api/tax-studio/assistant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context: { clientName: ret.clientName, returnForm: 'SA100', returnLabel: 'Personal Tax', taxYear: ret.taxYear, entity: ret.entityLabel, stage: 'review', context: ret.context ?? '' },
+          messages: [{ role: 'user', content: `Write a concise description for SA100 box 21 (the description of the "other UK income" reported in boxes 17 and 20). Other taxable income (box 17): ${fmtMoney(box17)}. Benefit from pre-owned assets (box 20): ${fmtMoney(box20)}. Reply with ONLY the short description text — no preamble, no quotes.` }],
+        }),
+      });
+      const d = await res.json();
+      if (res.ok && d.reply) setIncome(i => ({ ...i, otherIncomeDescription: String(d.reply).trim() }));
+      else setErr(d.error || 'Could not suggest a description.');
+    } catch {
+      setErr('Could not suggest a description.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-black/5 pt-4">
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+          <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">21</span> Description of income in boxes 17 &amp; 20
+        </label>
+        <button onClick={suggest} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 px-2 py-1 text-[11px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/5 disabled:opacity-50">
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI suggest
+        </button>
+      </div>
+      <textarea
+        value={income.otherIncomeDescription ?? ''}
+        onChange={e => setIncome(i => ({ ...i, otherIncomeDescription: e.target.value }))}
+        rows={2} placeholder="Describe the source of the other income…"
+        className="input-base resize-none py-2 text-[12.5px]" />
+      {err && <p className="mt-1 text-[11px] text-rose-600">{err}</p>}
     </div>
   );
 }

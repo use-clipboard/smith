@@ -175,6 +175,14 @@ export interface SavingsItem {
   amount: number;
 }
 
+// A generic itemised income/expense line (description + amount) used by the
+// pensions & other-income breakdowns.
+export interface LineItem {
+  id: string;
+  description?: string;
+  amount: number;
+}
+
 // A taxed-interest line (SA100 box 1) — received net, with tax deducted.
 export interface TaxedInterestItem {
   id: string;
@@ -221,8 +229,18 @@ export interface Sa100Income {
   otherDividends?: number;                  // box 5 — other dividends
   foreignDividendsMain?: number;            // box 6 — foreign dividends (≤ £500, on the main return)
   foreignDividendsTax?: number;             // box 7 — tax taken off foreign dividends
-  pensionsIncome: number;      // taxable private pensions received
-  statePension?: number;       // state pension (paid gross, no PAYE)
+  // ── UK pensions & benefits (SA100 TR3, boxes 8–16) ──
+  statePension?: number;                    // box 8 — state pension (scalar fallback)
+  statePensionItems?: LineItem[];           // box 8 breakdown
+  statePensionLumpSumItems?: LineItem[];    // box 9 — state pension lump sum
+  statePensionLumpSumTaxItems?: LineItem[]; // box 10 — tax taken off box 9
+  pensionsIncome: number;                   // box 11 — pensions (other than State Pension), scalar fallback
+  pensionsIncomeItems?: LineItem[];         // box 11 breakdown
+  pensionsIncomeTaxItems?: LineItem[];      // box 12 — tax taken off box 11
+  incapacityBenefit?: number;               // box 13 — taxable Incapacity Benefit & ESA
+  incapacityBenefitTax?: number;            // box 14 — tax taken off box 13
+  jobseekersAllowance?: number;             // box 15 — Jobseeker's Allowance
+  otherPensionsBenefits?: number;           // box 16 — total of any other pensions & benefits
   /** SA106 — foreign income. Itemised `sources` (each routed to the right rate)
    *  take precedence; the single income/foreignTaxPaid bucket is a fallback. */
   foreign?: {
@@ -230,7 +248,13 @@ export interface Sa100Income {
     income?: number;
     foreignTaxPaid?: number;
   };
-  otherIncome: number;
+  // ── Other UK income (SA100 TR3, boxes 17–21) ──
+  otherIncome: number;                      // box 17 — other taxable income (scalar fallback)
+  otherIncomeItems?: LineItem[];            // box 17 breakdown
+  otherIncomeExpensesItems?: LineItem[];    // box 18 — total allowable expenses
+  otherIncomeTaxItems?: LineItem[];         // box 19 — any tax taken off box 17
+  preOwnedAssetsItems?: LineItem[];         // box 20 — benefit from pre-owned assets
+  otherIncomeDescription?: string;          // box 21 — description of income in boxes 17 & 20
   // Reliefs / deductions
   giftAid: number;             // net gift aid donations paid
   pensionContributions: number; // personal contributions (relief at source, net)

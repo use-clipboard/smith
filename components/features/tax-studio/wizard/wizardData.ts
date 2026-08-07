@@ -194,8 +194,21 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   }
   if (selected.pension) out.pensionContributions = prior.pensionContributions;
   if (selected.giftAid) out.giftAid = prior.giftAid;
-  if (selected.other) out.otherIncome = prior.otherIncome;
+  if (selected.other) {
+    out.otherIncome = prior.otherIncome;
+    out.otherIncomeItems = prior.otherIncomeItems?.map(x => ({ ...x }));
+    out.preOwnedAssetsItems = prior.preOwnedAssetsItems?.map(x => ({ ...x }));
+    out.otherIncomeDescription = prior.otherIncomeDescription;
+  }
+  // Pensions & benefits carry over as a recurring income structure.
   out.pensionsIncome = prior.pensionsIncome;
+  out.pensionsIncomeItems = prior.pensionsIncomeItems?.map(x => ({ ...x }));
+  out.statePension = prior.statePension;
+  out.statePensionItems = prior.statePensionItems?.map(x => ({ ...x }));
+  out.statePensionLumpSumItems = prior.statePensionLumpSumItems?.map(x => ({ ...x }));
+  out.incapacityBenefit = prior.incapacityBenefit;
+  out.jobseekersAllowance = prior.jobseekersAllowance;
+  out.otherPensionsBenefits = prior.otherPensionsBenefits;
   out.studentLoanPlan = prior.studentLoanPlan;
   return out;
 }

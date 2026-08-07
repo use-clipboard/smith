@@ -7,7 +7,7 @@
 
 import type { Sa100Income } from './types';
 import type { Sa100Computation } from './calc';
-import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross } from './calc';
+import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet } from './calc';
 import { returnType } from './data';
 
 export interface SummaryLine { label: string; value: string; }
@@ -217,9 +217,9 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   const others: [string, number][] = [
     ['Dividends', dividendsTotal(i) + (i.otherDividends || 0) + (i.foreignDividendsMain || 0)],
     ['Savings interest', savingsInterestTotal(i) + taxedInterestGross(i) + (i.untaxedForeignInterest || 0)],
-    ['Pensions income', i.pensionsIncome],
-    ['State pension', i.statePension || 0], ['Foreign income', fT.interest + fT.dividends + fT.other], ['Foreign tax paid', fT.taxClaimed],
-    ['Other income', i.otherIncome], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', i.pensionContributions],
+    ['Pensions & benefits', pensionsBenefitsTotal(i)],
+    ['Foreign income', fT.interest + fT.dividends + fT.other], ['Foreign tax paid', fT.taxClaimed],
+    ['Other UK income', otherIncomeNet(i)], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', i.pensionContributions],
     ['Child benefit received', i.childBenefit || 0],
   ];
   const nonZero = others.filter(([, v]) => v > 0);

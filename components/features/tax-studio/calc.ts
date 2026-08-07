@@ -68,6 +68,35 @@ export function taxedInterestTaxCredit(income: Sa100Income): number {
   return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.tax || 0), 0);
 }
 
+// ── Generic itemised line helpers (pensions & other income) ──────────────────
+const sumLines = (items?: { amount: number }[]) => (items ?? []).reduce((a, x) => a + (x.amount || 0), 0);
+/** Itemised sum when present, else the scalar fallback. */
+function lineTotal(items: { amount: number }[] | undefined, scalar = 0): number {
+  return items && items.length ? sumLines(items) : scalar;
+}
+
+/** Taxable UK pensions & benefits (boxes 8, 9, 11, 13, 15, 16). */
+export function pensionsBenefitsTotal(income: Sa100Income): number {
+  return lineTotal(income.statePensionItems, income.statePension || 0)
+    + sumLines(income.statePensionLumpSumItems)
+    + lineTotal(income.pensionsIncomeItems, income.pensionsIncome || 0)
+    + (income.incapacityBenefit || 0)
+    + (income.jobseekersAllowance || 0)
+    + (income.otherPensionsBenefits || 0);
+}
+/** Tax deducted at source on pensions & benefits (boxes 10, 12, 14). */
+export function pensionsBenefitsTaxCredit(income: Sa100Income): number {
+  return sumLines(income.statePensionLumpSumTaxItems) + sumLines(income.pensionsIncomeTaxItems) + (income.incapacityBenefitTax || 0);
+}
+/** Net other UK income: box 17 − box 18 expenses + box 20 pre-owned assets. */
+export function otherIncomeNet(income: Sa100Income): number {
+  return lineTotal(income.otherIncomeItems, income.otherIncome || 0) - sumLines(income.otherIncomeExpensesItems) + sumLines(income.preOwnedAssetsItems);
+}
+/** Tax deducted at source on other UK income (box 19). */
+export function otherIncomeTaxCredit(income: Sa100Income): number {
+  return sumLines(income.otherIncomeTaxItems);
+}
+
 // ── SA106 foreign helpers ────────────────────────────────────────────────────
 /** Split foreign income by how it's taxed in the UK: interest → savings rates,
  *  dividends → dividend rates, everything else → non-savings. `taxClaimed` /
@@ -339,13 +368,12 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const partnershipDividends = sum(partnerships.map(p => p.dividends || 0));
   const partnershipTaxTaken = sum(partnerships.map(p => p.taxTaken || 0));
   const propertyProfit = sum(income.property.map(propertyTaxable));
-  const pensionsIncome = income.pensionsIncome || 0;
-  const statePension = income.statePension || 0;
+  const pensionsBenefits = pensionsBenefitsTotal(income); // boxes 8, 9, 11, 13, 15, 16
   const ft = foreignTotals(income);
   const tr = trustTotals(income);
   const foreignIncome = ft.other;              // foreign non-savings/non-dividend → NSND
   const foreignTaxPaid = ft.taxClaimed;
-  const otherIncome = income.otherIncome || 0;
+  const otherIncome = otherIncomeNet(income);  // box 17 − 18 + 20
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
   const dividendIncome = dividendsTotal(income) + (income.otherDividends || 0) + (income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
@@ -355,7 +383,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsIncome + statePension + otherIncome + foreignIncome + chargeableEventGains + tr.nonSavings;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -549,7 +577,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + (income.foreignDividendsTax || 0));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + (income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not
@@ -564,7 +592,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsIncome + statePension + foreignIncome + chargeableEventGains + tr.nonSavings),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + tr.nonSavings),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered,
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),
