@@ -41,9 +41,17 @@ export async function GET(req: NextRequest) {
   try {
     const result = await computeBalances(supabase, book.id as string, { from, to, excludeTypes: ['YET'] });
     let turnover = 0, totalExpenses = 0;
+    const lines: { label: string; amount: number; section: 'income' | 'expense' }[] = [];
     for (const a of result.accounts) {
-      if (a.account_type === 'income') turnover += a.credit_total - a.debit_total;
-      else if (a.account_type === 'expense') totalExpenses += a.debit_total - a.credit_total;
+      if (a.account_type === 'income') {
+        const amt = a.credit_total - a.debit_total;
+        turnover += amt;
+        if (Math.round(amt) !== 0) lines.push({ label: a.name, amount: Math.round(amt), section: 'income' });
+      } else if (a.account_type === 'expense') {
+        const amt = a.debit_total - a.credit_total;
+        totalExpenses += amt;
+        if (Math.round(amt) !== 0) lines.push({ label: a.name, amount: Math.round(amt), section: 'expense' });
+      }
     }
     const netProfit = Math.round(result.net_profit);
     const found = turnover !== 0 || totalExpenses !== 0;
@@ -54,6 +62,7 @@ export async function GET(req: NextRequest) {
       turnover: Math.round(turnover),
       totalExpenses: Math.round(totalExpenses),
       netProfit,
+      lines,
       note: found ? 'Accounts profit from the ledger — apply tax adjustments (disallowables, capital allowances) before finalising.' : undefined,
     });
   } catch (err) {

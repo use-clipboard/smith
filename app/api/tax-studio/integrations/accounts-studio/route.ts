@@ -60,6 +60,25 @@ export async function GET(req: NextRequest) {
 
     const entityType = (d.entityType as string) ?? '';
     const isPartnership = entityType === 'partnership' || entityType === 'llp';
+    // Flatten the P&L statement groups into income / expense lines for itemising
+    // into SA103F boxes. Turnover → income; cost of sales + expenses → expense.
+    type Group = { lines?: { label?: unknown; current?: unknown }[] };
+    const flatten = (groups: unknown, section: 'income' | 'expense') => {
+      const out: { label: string; amount: number; section: 'income' | 'expense' }[] = [];
+      for (const g of (Array.isArray(groups) ? groups : []) as Group[]) {
+        for (const ln of g.lines ?? []) {
+          const amount = Math.round(Number(ln.current ?? 0));
+          const label = String(ln.label ?? '').trim();
+          if (label && amount !== 0) out.push({ label, amount, section });
+        }
+      }
+      return out;
+    };
+    const lines = [
+      ...flatten(pl.turnover, 'income'),
+      ...flatten(pl.costOfSales, 'expense'),
+      ...flatten(pl.expenses, 'expense'),
+    ];
     return NextResponse.json({
       found: true,
       periodStart: (d.periodStart as string) ?? '',
@@ -68,6 +87,7 @@ export async function GET(req: NextRequest) {
       isPartnership,
       netProfit: Math.round(Number(pl.netProfit ?? 0)),
       turnover: Math.round(Number(pl.turnoverTotal ?? 0)),
+      lines,
       note: isPartnership
         ? 'Whole-firm profit — apply this partner’s profit share before finalising.'
         : 'Accounts profit — add back disallowables and apply capital allowances for the tax-adjusted figure.',

@@ -5,7 +5,10 @@
 // sees the normalised shape, so a source changing its internals never touches
 // the import components.
 
-import type { Sa100Income } from './types';
+import type { Sa100Income, TradeSource } from './types';
+
+/** One line of a source P&L (an income or expense account/statement line). */
+export interface PlLine { label: string; amount: number; section: 'income' | 'expense'; }
 
 export interface MtdSource {
   label: string;
@@ -58,6 +61,8 @@ export interface AccountsStudioSummary {
   isPartnership: boolean;
   netProfit: number;
   turnover: number;
+  /** Line-level P&L for itemising into SA103F boxes (when available). */
+  lines?: PlLine[];
   note?: string;
 }
 
@@ -106,6 +111,8 @@ export interface BookkeepingSummary {
   turnover: number;
   totalExpenses: number;
   netProfit: number;
+  /** Line-level P&L for itemising into SA103F boxes (when available). */
+  lines?: PlLine[];
   note?: string;
 }
 
@@ -177,5 +184,73 @@ export function mergeCrossBookkeeping(income: Sa100Income, s: BookkeepingSummary
   const pfx = `${XC}bk-${src.clientId}-`;
   const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(pfx));
   selfEmployment.push({ id: `${pfx}0`, name: `Trade — ${src.label}`, profit: Math.round(s.netProfit) });
+  return { ...income, selfEmployment };
+}
+
+// ─── Itemised trade import (P&L lines → SA103F boxes 15–30) ───────────────────
+// The AI maps each source P&L line to an SA103F box; the user reviews/edits the
+// allocation before it lands. Falls back to the single net-profit path when a
+// source has no line detail.
+
+/** An SA103F income/expense box that a P&L line can be allocated to. */
+export interface Sa103Box { box: string; field: keyof TradeSource; label: string; section: 'income' | 'expense'; }
+
+/** SA103F turnover / other income (15–16) and allowable expense boxes (17–30). */
+export const SA103_BOX_CATALOG: Sa103Box[] = [
+  { box: '15', field: 'turnover', label: 'Turnover', section: 'income' },
+  { box: '16', field: 'otherBusinessIncome', label: 'Any other business income', section: 'income' },
+  { box: '17', field: 'expCostOfGoods', label: 'Cost of goods bought for resale', section: 'expense' },
+  { box: '18', field: 'expSubcontractors', label: 'Construction industry subcontractors', section: 'expense' },
+  { box: '19', field: 'expWages', label: 'Wages, salaries and other staff costs', section: 'expense' },
+  { box: '20', field: 'expCarVanTravel', label: 'Car, van and travel expenses', section: 'expense' },
+  { box: '21', field: 'expPremises', label: 'Rent, rates, power and insurance', section: 'expense' },
+  { box: '22', field: 'expRepairs', label: 'Repairs and renewals', section: 'expense' },
+  { box: '23', field: 'expOffice', label: 'Phone, fax, stationery and office costs', section: 'expense' },
+  { box: '24', field: 'expAdvertising', label: 'Advertising and business entertainment', section: 'expense' },
+  { box: '25', field: 'expInterest', label: 'Interest on bank and other loans', section: 'expense' },
+  { box: '26', field: 'expBankCharges', label: 'Bank, credit card and financial charges', section: 'expense' },
+  { box: '27', field: 'expBadDebts', label: 'Irrecoverable debts written off', section: 'expense' },
+  { box: '28', field: 'expProfessional', label: 'Accountancy, legal and professional fees', section: 'expense' },
+  { box: '29', field: 'expDepreciation', label: 'Depreciation and loss on sale of assets', section: 'expense' },
+  { box: '30', field: 'expOtherCosts', label: 'Other business expenses', section: 'expense' },
+];
+
+/** One reviewed allocation of a source P&L line to an SA103F box. */
+export interface BoxAllocation { label: string; amount: number; box: string; }
+
+/** Ask the server to map source P&L lines to SA103F boxes (AI). Falls back to a
+ *  turnover/other-costs split on any failure so the import still proceeds. */
+export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocation[]> {
+  const fallback = (): BoxAllocation[] => lines.map(l => ({ label: l.label, amount: Math.round(l.amount), box: l.section === 'income' ? '15' : '30' }));
+  try {
+    const r = await fetch('/api/tax-studio/integrations/map-trade-boxes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines }),
+    });
+    if (!r.ok) return fallback();
+    const d = await r.json().catch(() => null) as { allocations?: BoxAllocation[] } | null;
+    const valid = new Set(SA103_BOX_CATALOG.map(b => b.box));
+    const out = (d?.allocations ?? []).filter(a => a && valid.has(a.box)).map(a => ({ label: String(a.label ?? ''), amount: Math.round(Number(a.amount) || 0), box: a.box }));
+    return out.length ? out : fallback();
+  } catch { return fallback(); }
+}
+
+/** Build an itemised SA103F trade from reviewed box allocations. */
+export function buildItemisedTrade(id: string, name: string, allocations: BoxAllocation[]): TradeSource {
+  const trade: TradeSource = { id, name, profit: 0 };
+  const nums = trade as unknown as Record<string, number>;
+  const byBox = new Map(SA103_BOX_CATALOG.map(b => [b.box, b.field as string]));
+  for (const a of allocations) {
+    const field = byBox.get(a.box);
+    if (!field) continue;
+    nums[field] = (nums[field] || 0) + Math.round(a.amount);
+  }
+  return trade;
+}
+
+/** Merge an itemised trade under a source prefix (idempotent per source). */
+export function mergeItemisedTrade(income: Sa100Income, trade: TradeSource, src: SourceRef, kind: 'as' | 'bk'): Sa100Income {
+  const pfx = `${XC}${kind}-${src.clientId}-`;
+  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(pfx));
+  selfEmployment.push({ ...trade, id: `${pfx}0` });
   return { ...income, selfEmployment };
 }

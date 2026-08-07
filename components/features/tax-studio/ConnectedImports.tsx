@@ -4,17 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Link2, CalendarCheck, Calculator, BookOpen, House, Receipt, Users,
-  Loader2, Download, Check, Info, RefreshCw, Search,
+  Loader2, Download, Check, Info, RefreshCw, Search, Sparkles,
 } from 'lucide-react';
 import { StudioCard } from './primitives';
 import { fmtMoney } from './data';
 import {
   fetchMtdItSummary, fetchAccountsStudioSummary, fetchLandlordSummary, fetchBookkeepingSummary,
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
+  buildItemisedTrade, mergeItemisedTrade,
   summaryHasData,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
-  type SourceRef,
+  type SourceRef, type PlLine, type BoxAllocation,
 } from './integrations';
+import TradeImportReview from './TradeImportReview';
 import type { TaxReturn, Sa100Income } from './types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -37,6 +39,11 @@ interface ToolAdapter<S> {
    *  part and passes the chosen keys to `merge`. */
   parts?: (s: S) => ToolPart[];
   merge: (income: Sa100Income, s: S, src: SourceRef, selected?: Set<string>) => Sa100Income;
+  /** When present and lines exist, Import opens the AI itemise-and-review flow
+   *  (P&L lines → SA103F boxes) instead of the single net-profit merge. */
+  getLines?: (s: S) => PlLine[] | undefined;
+  itemiseKind?: 'as' | 'bk';
+  expectedNet?: (s: S) => number;
   timelineLabel: (sourceLabel: string) => string;
 }
 
@@ -69,13 +76,17 @@ const MTD: ToolAdapter<MtdItAnnualSummary> = {
 const ACCOUNTS: ToolAdapter<AccountsStudioSummary> = {
   name: 'Accounts Studio', target: 'Trade profit', icon: Calculator,
   fetch: fetchAccountsStudioSummary, hasData: s => s.found && !!s.netProfit, headline: s => `${fmtMoney(s.netProfit)} net profit`, note: s => s.note,
-  merge: mergeCrossAccounts, timelineLabel: l => `Imported trade profit from ${l} (Accounts Studio)`,
+  merge: mergeCrossAccounts,
+  getLines: s => s.lines, itemiseKind: 'as', expectedNet: s => s.netProfit,
+  timelineLabel: l => `Imported itemised trade from ${l} (Accounts Studio)`,
 };
 
 const BOOKKEEPING: ToolAdapter<BookkeepingSummary> = {
   name: 'Bookkeeping', target: 'Trade profit', icon: BookOpen,
   fetch: fetchBookkeepingSummary, hasData: s => s.found && !!s.netProfit, headline: s => `${fmtMoney(s.netProfit)} net profit`, note: s => s.note,
-  merge: mergeCrossBookkeeping, timelineLabel: l => `Imported trade profit from ${l} (Bookkeeping)`,
+  merge: mergeCrossBookkeeping,
+  getLines: s => s.lines, itemiseKind: 'bk', expectedNet: s => s.netProfit,
+  timelineLabel: l => `Imported itemised trade from ${l} (Bookkeeping)`,
 };
 
 const LANDLORD: ToolAdapter<LandlordSummary> = {
@@ -120,6 +131,7 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
   const [imported, setImported] = useState(false);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [reviewing, setReviewing] = useState<PlLine[] | null>(null);
 
   const load = useCallback(async (clientId: string) => {
     if (!clientId) { setError('No client linked to this return.'); setSummary(null); return; }
@@ -147,15 +159,32 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
   const nothingChosen = !!parts && selected.size === 0;
   const Icon = adapter.icon;
 
+  const importLabel = () => `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
+  const itemisable = summary && adapter.getLines ? (adapter.getLines(summary) ?? []) : [];
+  const canItemise = !!adapter.itemiseKind && itemisable.length > 0;
+
   function doImport() {
     if (!summary || !adapter.hasData(summary) || nothingChosen) return;
-    const label = `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
+    if (canItemise) { setReviewing(itemisable); return; }
+    const label = importLabel();
     patch(r => ({
       ...r,
       income: adapter.merge(r.income, summary, { clientId: src.clientId, label }, parts ? selected : undefined),
       timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label) }],
     }));
     setImported(true); setTimeout(() => setImported(false), 2500);
+  }
+
+  function confirmItemised(allocations: BoxAllocation[]) {
+    if (!adapter.itemiseKind) return;
+    const label = importLabel();
+    const trade = buildItemisedTrade('tmp', `Trade — ${label}`, allocations);
+    patch(r => ({
+      ...r,
+      income: mergeItemisedTrade(r.income, trade, { clientId: src.clientId, label }, adapter.itemiseKind!),
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label) }],
+    }));
+    setReviewing(null); setImported(true); setTimeout(() => setImported(false), 2500);
   }
 
   function toggle(key: string) {
@@ -226,9 +255,19 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
 
       <div className="mt-2 flex justify-end">
         <button onClick={doImport} disabled={!has || nothingChosen} className="btn-primary disabled:opacity-40">
-          {imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Imported' : 'Import'}
+          {imported ? <Check size={15} /> : canItemise ? <Sparkles size={15} /> : <Download size={15} />} {imported ? 'Imported' : canItemise ? 'Itemise & import' : 'Import'}
         </button>
       </div>
+
+      {reviewing && summary && (
+        <TradeImportReview
+          lines={reviewing}
+          sourceLabel={importLabel()}
+          expectedNet={adapter.expectedNet?.(summary)}
+          onConfirm={confirmItemised}
+          onClose={() => setReviewing(null)}
+        />
+      )}
     </StudioCard>
   );
 }
