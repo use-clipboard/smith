@@ -75,6 +75,14 @@ export function lineTotal(items: { amount: number }[] | undefined, scalar = 0): 
   return items && items.length ? sumLines(items) : scalar;
 }
 
+/** Pension band-extension (TR4 boxes 1–4): relief-at-source (box 1) is grossed
+ *  up at 20%; retirement-annuity / employer / overseas payments (boxes 2–4)
+ *  extend the band by the amount paid. */
+export function pensionBandExtension(income: Sa100Income): number {
+  const box1 = lineTotal(income.pensionContributionsItems, income.pensionContributions || 0);
+  return box1 * 1.25 + sumLines(income.pensionRetirementAnnuityItems) + sumLines(income.pensionEmployerSchemeItems) + sumLines(income.pensionOverseasItems);
+}
+
 /** Taxable UK pensions & benefits (boxes 8, 9, 11, 13, 15, 16). */
 export function pensionsBenefitsTotal(income: Sa100Income): number {
   return lineTotal(income.statePensionItems, income.statePension || 0)
@@ -393,7 +401,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   // Band extension + adjusted net income (for PA taper) via grossed reliefs.
   const grossGiftAid = (income.giftAid || 0) * 1.25;
-  const grossPension = (income.pensionContributions || 0) * 1.25;
+  const grossPension = pensionBandExtension(income);
   const brl = BASIC_RATE_LIMIT + grossGiftAid + grossPension;
   const addl = ADDITIONAL_THRESHOLD + grossGiftAid + grossPension;
 

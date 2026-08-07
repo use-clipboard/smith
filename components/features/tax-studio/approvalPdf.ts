@@ -219,7 +219,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
     ['Savings interest', savingsInterestTotal(i) + taxedInterestGross(i) + (i.untaxedForeignInterest || 0)],
     ['Pensions & benefits', pensionsBenefitsTotal(i)],
     ['Foreign income', fT.interest + fT.dividends + fT.other], ['Foreign tax paid', fT.taxClaimed],
-    ['Other UK income', otherIncomeNet(i)], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', i.pensionContributions],
+    ['Other UK income', otherIncomeNet(i)], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', lineTotal(i.pensionContributionsItems, i.pensionContributions)],
     ['Child benefit received', i.childBenefit || 0],
   ];
   const nonZero = others.filter(([, v]) => v > 0);

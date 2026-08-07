@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { ReturnTypeId, Sa100Income } from '../types';
 import { emptyIncome } from '../data';
-import { dividendsTotal, savingsInterestTotal } from '../calc';
+import { dividendsTotal, savingsInterestTotal, lineTotal } from '../calc';
 
 // A trimmed client shape from GET /api/clients (only the fields the wizard uses).
 export interface WizardClient {
@@ -139,7 +139,7 @@ export function categoryHasData(key: RollKey, income: Sa100Income): boolean {
     case 'dividends': return dividendsTotal(income) > 0;
     case 'savings': return savingsInterestTotal(income) > 0;
     case 'capitalGains': return false; // not modelled in SA100 income yet
-    case 'pension': return (income.pensionContributions || 0) > 0;
+    case 'pension': return lineTotal(income.pensionContributionsItems, income.pensionContributions) > 0;
     case 'giftAid': return (income.giftAid || 0) > 0;
     case 'other': return (income.otherIncome || 0) > 0;
   }
@@ -155,7 +155,7 @@ export function categoryValueLabel(key: RollKey, income: Sa100Income, fmt: (n: n
     case 'dividends': return fmt(dividendsTotal(income));
     case 'savings': return fmt(savingsInterestTotal(income));
     case 'capitalGains': return '£0';
-    case 'pension': return fmt(income.pensionContributions || 0);
+    case 'pension': return fmt(lineTotal(income.pensionContributionsItems, income.pensionContributions));
     case 'giftAid': return fmt(income.giftAid || 0);
     case 'other': return fmt(income.otherIncome || 0);
   }
@@ -195,7 +195,14 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
     out.taxedInterestItems = prior.taxedInterestItems?.map(t => ({ ...t }));
     out.untaxedForeignInterest = prior.untaxedForeignInterest;
   }
-  if (selected.pension) out.pensionContributions = prior.pensionContributions;
+  if (selected.pension) {
+    out.pensionContributions = prior.pensionContributions;
+    out.pensionContributionsItems = prior.pensionContributionsItems?.map(x => ({ ...x }));
+    out.pensionOneOff = prior.pensionOneOff;
+    out.pensionRetirementAnnuityItems = prior.pensionRetirementAnnuityItems?.map(x => ({ ...x }));
+    out.pensionEmployerSchemeItems = prior.pensionEmployerSchemeItems?.map(x => ({ ...x }));
+    out.pensionOverseasItems = prior.pensionOverseasItems?.map(x => ({ ...x }));
+  }
   if (selected.giftAid) out.giftAid = prior.giftAid;
   if (selected.other) {
     out.otherIncome = prior.otherIncome;

@@ -275,19 +275,25 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         <OtherIncomeDescription ret={ret} income={income} setIncome={setIncome} />
       </CoreSection>
 
-      <CoreSection title="Tax reliefs & other information">
+      <CoreSection title="Pension payments">
+        <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Paying into registered pension schemes and overseas pension schemes</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box="TR4.5" label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
-          <LabelledNum box="TR4.1" label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
-          <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
-            <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
-              <option value="none">None</option>
-              <option value="received">Received (£252 reducer)</option>
-              <option value="transferred">Transferred to spouse</option>
-            </select>
-          </div>
+          <LineField box={1} label="Payments & basic rate tax" title="Payments to registered pension schemes (relief at source)" items={income.pensionContributionsItems} fallbackTotal={income.pensionContributions} onChange={items => setIncome(i => ({ ...i, pensionContributionsItems: items }))} />
+          <LabelledNum box="1.1" label="One-off payments in box 1" value={income.pensionOneOff ?? 0} onChange={v => setIncome(i => ({ ...i, pensionOneOff: v }))} />
+          <LineField box={2} label="Payments to a retirement annuity" title="Payments to a retirement annuity" items={income.pensionRetirementAnnuityItems} onChange={items => setIncome(i => ({ ...i, pensionRetirementAnnuityItems: items }))} />
+          <LineField box={3} label="Payments to your employer's scheme" title="Payments to your employer's scheme" items={income.pensionEmployerSchemeItems} onChange={items => setIncome(i => ({ ...i, pensionEmployerSchemeItems: items }))} />
+          <LineField box={4} label="Payments to an overseas scheme" title="Payments to an overseas pension scheme" items={income.pensionOverseasItems} onChange={items => setIncome(i => ({ ...i, pensionOverseasItems: items }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Charitable giving">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum box={5} label="Gift Aid payments (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Blind allowance & student loan">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
             <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
@@ -303,6 +309,25 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
             <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
               <option value="uk">England / Wales / NI</option>
               <option value="scotland">Scotland</option>
+            </select>
+          </div>
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Child benefit">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Marriage allowance">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
+            <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
+              <option value="none">None</option>
+              <option value="received">Received (£252 reducer)</option>
+              <option value="transferred">Transferred to spouse</option>
             </select>
           </div>
         </div>

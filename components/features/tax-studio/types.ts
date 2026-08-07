@@ -258,9 +258,15 @@ export interface Sa100Income {
   otherIncomeTaxItems?: LineItem[];         // box 19 — any tax taken off box 17
   preOwnedAssetsItems?: LineItem[];         // box 20 — benefit from pre-owned assets
   otherIncomeDescription?: string;          // box 21 — description of income in boxes 17 & 20
+  // ── Tax reliefs (SA100 TR4) — pension payments (boxes 1, 1.1, 2, 3, 4) ──
+  pensionContributions: number;             // box 1 — payments to registered schemes (relief at source, net)
+  pensionContributionsItems?: LineItem[];   // box 1 breakdown
+  pensionOneOff?: number;                   // box 1.1 — total of any one-off payments in box 1
+  pensionRetirementAnnuityItems?: LineItem[]; // box 2 — payments to a retirement annuity
+  pensionEmployerSchemeItems?: LineItem[];  // box 3 — payments to your employer's scheme
+  pensionOverseasItems?: LineItem[];        // box 4 — payments to an overseas pension scheme
   // Reliefs / deductions
   giftAid: number;             // net gift aid donations paid
-  pensionContributions: number; // personal contributions (relief at source, net)
   studentLoanPlan: 0 | 1 | 2 | 4 | 5; // 0 = none
   /** Residential finance costs (mortgage interest) — relieved as a 20% tax
    *  reducer for individuals, not deducted. Optional; defaults to 0. */
