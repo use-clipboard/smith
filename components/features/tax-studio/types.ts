@@ -36,14 +36,27 @@ export type ReturnStatus =
   | 'archived';
 
 // ─── SA100 income model (Phase 1) ────────────────────────────────────────────
-// SA102 Employment — one per employment. Box numbers follow the HMRC SA102 form.
+// SA102 Employment — one per employment. Box numbers follow the Capium
+// Employment layout (Details / Income / Benefit / Expenses tabs).
 export interface EmploymentSource {
   id: string;
-  employer: string;        // box 5 (employer name)
-  payeRef?: string;        // box 4 (PAYE tax reference)
-  pay: number;             // box 1 — pay from P60/P45 (gross)
-  taxDeducted: number;     // box 2 — UK tax taken off box 1
-  tips?: number;           // box 3 — tips & other payments not on the P60
+  // ── Employment Details (boxes 1–5.5) ──
+  employer: string;        // box 1 — employer's name
+  payeRef?: string;        // box 2 — employer's PAYE tax reference (NNN/XXXXXX)
+  isDirector?: boolean;    // box 3 — is the employee a company director?
+  directorCeasedDate?: string; // box 4 — date ceased being a director (YYYY-MM-DD)
+  isCloseCompany?: boolean;    // box 5 — is this a close company?
+  closeCompanyName?: string;   // box 5.1
+  closeCompanyReg?: string;    // box 5.2 — registration number
+  closeCompanyDividends?: number; // box 5.3 — dividends received from this close company (memo)
+  closeCompanyShareholding?: number; // box 5.4 — percentage shareholding
+  teachersLoanOffPayroll?: boolean;  // box 5.5 — Teachers' Loans scheme / off-payroll working
+  // ── Employment Income (boxes 6–8 + Class 1 NIC) ──
+  pay: number;             // box 6 — pay from this employment before tax (gross)
+  payrolledBenefitsStudentLoan?: number; // box 6.1 — payrolled benefits in box 6 affecting SL
+  taxDeducted: number;     // box 7 — UK tax taken off box 6
+  tips?: number;           // box 8 — tips & other payments not on the P60
+  class1Nic?: number;      // Class 1 NIC (memo — already deducted via payroll)
   // Benefits from P11D (boxes 9–16)
   benCar?: number;           // 9  — company cars and vans
   benFuel?: number;          // 10 — fuel for company cars and vans

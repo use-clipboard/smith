@@ -591,10 +591,14 @@ function EmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome:
   );
 }
 
+const EMPLOYMENT_TABS = ['Details', 'Income', 'Benefit', 'Expenses'] as const;
+type EmploymentTab = typeof EMPLOYMENT_TABS[number];
+
 function EmploymentCard({ e, idx, onChange, onRemove }: {
   e: EmploymentSource; idx: number; onChange: (p: Partial<EmploymentSource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState<EmploymentTab>('Details');
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -604,29 +608,70 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
-        <div className="space-y-3 border-t border-black/5 px-3 py-3">
-          <BoxSection title="Pay & tax">
-            <BoxNum box={1} label="Pay (P60/P45)" value={e.pay} onChange={v => onChange({ pay: v })} />
-            <BoxNum box={2} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
-            <BoxNum box={3} label="Tips & other pay" value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
-            <BoxText box={4} label="PAYE reference" value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} />
-          </BoxSection>
-          <BoxSection title="Benefits (P11D)">
-            <BoxNum box={9} label="Company cars & vans" value={e.benCar ?? 0} onChange={v => onChange({ benCar: v })} />
-            <BoxNum box={10} label="Fuel for cars/vans" value={e.benFuel ?? 0} onChange={v => onChange({ benFuel: v })} />
-            <BoxNum box={11} label="Medical & dental" value={e.benMedical ?? 0} onChange={v => onChange({ benMedical: v })} />
-            <BoxNum box={12} label="Vouchers & mileage" value={e.benVouchers ?? 0} onChange={v => onChange({ benVouchers: v })} />
-            <BoxNum box={13} label="Goods & assets" value={e.benAssets ?? 0} onChange={v => onChange({ benAssets: v })} />
-            <BoxNum box={14} label="Accommodation" value={e.benAccommodation ?? 0} onChange={v => onChange({ benAccommodation: v })} />
-            <BoxNum box={15} label="Other benefits & loans" value={e.benOther ?? 0} onChange={v => onChange({ benOther: v })} />
-            <BoxNum box={16} label="Expenses payments received" value={e.benExpPayments ?? 0} onChange={v => onChange({ benExpPayments: v })} />
-          </BoxSection>
-          <BoxSection title="Allowable expenses">
-            <BoxNum box={17} label="Business travel & subsistence" value={e.expTravel ?? 0} onChange={v => onChange({ expTravel: v })} />
-            <BoxNum box={18} label="Fixed deductions" value={e.expFixed ?? 0} onChange={v => onChange({ expFixed: v })} />
-            <BoxNum box={19} label="Professional fees & subs" value={e.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
-            <BoxNum box={20} label="Other expenses" value={e.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
-          </BoxSection>
+        <div className="border-t border-black/5">
+          {/* Capium sub-tabs: Employment Details / Income / Benefit / Expenses */}
+          <div className="flex flex-wrap gap-1 px-3 pt-2.5">
+            {EMPLOYMENT_TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${tab === t ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-3 px-3 py-3">
+            {tab === 'Details' && (
+              <>
+                <BoxSection title="Employment details">
+                  <BoxText box={1} label="Employer's name" value={e.employer} onChange={v => onChange({ employer: v })} />
+                  <BoxText box={2} label="Employer's PAYE reference (NNN/XXXXXX)" value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} placeholder="068/AZ77194" />
+                  <BoxYesNo box={3} label="Is the employee a company director?" value={!!e.isDirector} onChange={v => onChange({ isDirector: v })} />
+                  <BoxDate box={4} label="Date ceased being a director" value={e.directorCeasedDate ?? ''} onChange={v => onChange({ directorCeasedDate: v })} />
+                  <BoxYesNo box={5} label="Is this a close company?" value={!!e.isCloseCompany} onChange={v => onChange({ isCloseCompany: v })} />
+                </BoxSection>
+                {e.isCloseCompany && (
+                  <BoxSection title="Close company">
+                    <BoxText box="5.1" label="Name of this close company" value={e.closeCompanyName ?? ''} onChange={v => onChange({ closeCompanyName: v })} />
+                    <BoxText box="5.2" label="Registration number" value={e.closeCompanyReg ?? ''} onChange={v => onChange({ closeCompanyReg: v })} />
+                    <BoxNum box="5.3" label="Dividends received from this close company" value={e.closeCompanyDividends ?? 0} onChange={v => onChange({ closeCompanyDividends: v })} />
+                    <BoxNum box="5.4" label="Percentage shareholding" value={e.closeCompanyShareholding ?? 0} onChange={v => onChange({ closeCompanyShareholding: v })} />
+                  </BoxSection>
+                )}
+                <BoxSection title="Other">
+                  <BoxCheck box="5.5" label="Teachers' Loans scheme / off-payroll working engagements" checked={!!e.teachersLoanOffPayroll} onChange={v => onChange({ teachersLoanOffPayroll: v })} />
+                </BoxSection>
+                {e.closeCompanyDividends ? <p className="text-[11px] text-[var(--text-muted)]">Box 5.3 is a declaration — enter the dividends themselves in the Interest &amp; dividends section so they're taxed once.</p> : null}
+              </>
+            )}
+            {tab === 'Income' && (
+              <BoxSection title="Employment income">
+                <BoxNum box={6} label="Pay before tax was taken off" value={e.pay} onChange={v => onChange({ pay: v })} />
+                <BoxNum box="6.1" label="Payrolled benefits in box 6 affecting student loan" value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
+                <BoxNum box={7} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
+                <BoxNum box={8} label="Tips & other payments not on P60" value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
+                <BoxNum label="Class 1 NIC" value={e.class1Nic ?? 0} onChange={v => onChange({ class1Nic: v })} />
+              </BoxSection>
+            )}
+            {tab === 'Benefit' && (
+              <BoxSection title="Employment benefits (P11D)">
+                <BoxNum box={9} label="Company cars and vans" value={e.benCar ?? 0} onChange={v => onChange({ benCar: v })} />
+                <BoxNum box={10} label="Fuel for company cars and vans" value={e.benFuel ?? 0} onChange={v => onChange({ benFuel: v })} />
+                <BoxNum box={11} label="Private medical and dental insurance" value={e.benMedical ?? 0} onChange={v => onChange({ benMedical: v })} />
+                <BoxNum box={12} label="Vouchers, credit cards & excess mileage" value={e.benVouchers ?? 0} onChange={v => onChange({ benVouchers: v })} />
+                <BoxNum box={13} label="Goods and other assets provided" value={e.benAssets ?? 0} onChange={v => onChange({ benAssets: v })} />
+                <BoxNum box={14} label="Accommodation provided by employer" value={e.benAccommodation ?? 0} onChange={v => onChange({ benAccommodation: v })} />
+                <BoxNum box={15} label="Other benefits" value={e.benOther ?? 0} onChange={v => onChange({ benOther: v })} />
+                <BoxNum box={16} label="Expenses payments received & balancing charges" value={e.benExpPayments ?? 0} onChange={v => onChange({ benExpPayments: v })} />
+              </BoxSection>
+            )}
+            {tab === 'Expenses' && (
+              <BoxSection title="Employment expenses">
+                <BoxNum box={17} label="Business travel and subsistence expenses" value={e.expTravel ?? 0} onChange={v => onChange({ expTravel: v })} />
+                <BoxNum box={18} label="Fixed deductions for expenses" value={e.expFixed ?? 0} onChange={v => onChange({ expFixed: v })} />
+                <BoxNum box={19} label="Professional fees and subscriptions" value={e.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
+                <BoxNum box={20} label="Other expenses and capital allowances" value={e.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
+              </BoxSection>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -642,25 +687,66 @@ function BoxSection({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-function BoxNum({ box, label, value, onChange }: { box: number; label: string; value: number; onChange: (v: number) => void }) {
+function BoxNum({ box, label, value, onChange }: { box?: number | string; label: string; value: number; onChange: (v: number) => void }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
       </label>
       <NumIn value={value} onChange={onChange} />
     </div>
   );
 }
 
-function BoxText({ box, label, value, onChange }: { box?: number; label: string; value: string; onChange: (v: string) => void }) {
+function BoxText({ box, label, value, onChange, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
       </label>
-      <TextIn value={value} onChange={onChange} />
+      <TextIn value={value} onChange={onChange} placeholder={placeholder} />
     </div>
+  );
+}
+
+// SA102 box date (YYYY-MM-DD) with a box chip, matching BoxNum/BoxText.
+function BoxDate({ box, label, value, onChange }: { box?: number | string; label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+      </label>
+      <input type="date" value={value} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
+    </div>
+  );
+}
+
+// Yes / No radio pair used by the SA102 Employment Details tab.
+function BoxYesNo({ box, label, value, onChange }: { box?: number | string; label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+      </label>
+      <div className="flex gap-3 py-1 text-[12px]">
+        {[['Yes', true], ['No', false]].map(([lbl, val]) => (
+          <label key={lbl as string} className="flex cursor-pointer items-center gap-1.5">
+            <input type="radio" checked={value === val} onChange={() => onChange(val as boolean)} className="h-3.5 w-3.5 accent-[var(--accent)]" />
+            {lbl as string}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Checkbox styled to sit in the BoxSection grid.
+function BoxCheck({ box, label, checked, onChange }: { box?: number | string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
+      {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+    </label>
   );
 }
 
