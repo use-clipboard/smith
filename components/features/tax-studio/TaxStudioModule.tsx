@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Calculator, ArrowLeft, PanelRightClose, PanelRightOpen,
-  Loader2, Check, CloudOff, Sparkles, ShieldCheck, MessagesSquare,
-  ClipboardList, Beaker, Undo2, Redo2,
+  Calculator, ArrowLeft, Sparkles, ShieldCheck, MessagesSquare,
+  ClipboardList, Beaker,
 } from 'lucide-react';
 import ToolLayout from '@/components/ui/ToolLayout';
-import Tooltip from '@/components/ui/Tooltip';
+import { WorkspaceControls, type SaveState } from './WorkspaceControls';
 import { canAccessTaxStudio } from '@/lib/tax-studio/access';
 import CommandCentre from './CommandCentre';
 import NewReturnWizard from './wizard/NewReturnWizard';
@@ -24,7 +23,6 @@ import { STAGES, ALL_STAGES, deriveStatus } from './data';
 import { listReturns, createReturn, saveReturn, deleteReturn, type ReturnListItem } from './persistence';
 import type { TaxReturn, StageId } from './types';
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 const ACCENT = '#6366F1';
 
 export default function TaxStudioModule({ userEmail, userName }: { userEmail: string | null; userName: string }) {
@@ -186,6 +184,7 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
   void histTick; // re-read history refs on each history change
   const canUndo = histIndex.current > 0;
   const canRedo = histIndex.current < history.current.length - 1;
+  const controls = { canUndo, canRedo, onUndo: undo, onRedo: redo, saveState, onToggleAssistant: () => setAssistantOpen(v => !v) };
 
   return (
     <ToolLayout
@@ -194,22 +193,6 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
       icon={Calculator}
       iconColor={ACCENT}
       wide
-      headerRight={
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5">
-            <Tooltip label="Undo (Ctrl+Z)">
-              <button onClick={undo} disabled={!canUndo} aria-label="Undo" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40"><Undo2 size={14} /></button>
-            </Tooltip>
-            <Tooltip label="Redo (Ctrl+Shift+Z)">
-              <button onClick={redo} disabled={!canRedo} aria-label="Redo" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-[var(--text-secondary)] transition-colors hover:bg-black/[0.03] disabled:opacity-40"><Redo2 size={14} /></button>
-            </Tooltip>
-          </div>
-          <SaveIndicator state={saveState} />
-          <button onClick={() => setAssistantOpen(v => !v)} className="btn-secondary">
-            {assistantOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} Assistant
-          </button>
-        </div>
-      }
     >
       <button onClick={closeReturn} className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
         <ArrowLeft size={13} /> Back to command centre
@@ -225,7 +208,7 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
 
       {workspace === 'sandbox' ? (
         <div className="mt-4">
-          <SandboxView ret={ret} patch={patch} onBack={() => setWorkspace('return')} assistantOpen={assistantOpen} />
+          <SandboxView ret={ret} patch={patch} onBack={() => setWorkspace('return')} assistantOpen={assistantOpen} controls={controls} />
         </div>
       ) : (
         <>
@@ -240,10 +223,16 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
             <Stepper ret={live} current={stage} onSelect={setStage} />
           </div>
 
-          {/* Stage title */}
-          <div className="mb-4 flex items-baseline gap-2">
-            <h3 className="text-[17px] font-bold text-[var(--text-primary)]">{stageMeta.label}</h3>
-            <p className="text-[13px] text-[var(--text-muted)]">{stageMeta.blurb}</p>
+          {/* Stage title + working controls (undo/redo · save · assistant) */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <h3 className="text-[17px] font-bold text-[var(--text-primary)]">{stageMeta.label}</h3>
+              <p className="text-[13px] text-[var(--text-muted)]">{stageMeta.blurb}</p>
+            </div>
+            <WorkspaceControls
+              canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo}
+              saveState={saveState} assistantOpen={assistantOpen} onToggleAssistant={() => setAssistantOpen(v => !v)}
+            />
           </div>
 
           {/* Stage + assistant */}
@@ -273,17 +262,6 @@ function WorkspaceTab({ active, onClick, icon: Icon, label }: { active: boolean;
       <Icon size={14} /> {label}
     </button>
   );
-}
-
-function SaveIndicator({ state }: { state: SaveState }) {
-  if (state === 'idle') return null;
-  const map: Record<Exclude<SaveState, 'idle'>, { icon: React.ReactNode; text: string; cls: string }> = {
-    saving: { icon: <Loader2 size={12} className="animate-spin" />, text: 'Saving…', cls: 'text-[var(--text-muted)]' },
-    saved:  { icon: <Check size={12} />, text: 'Saved', cls: 'text-emerald-600' },
-    error:  { icon: <CloudOff size={12} />, text: 'Not saved', cls: 'text-red-600' },
-  };
-  const m = map[state];
-  return <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${m.cls}`}>{m.icon}{m.text}</span>;
 }
 
 function ComingSoon() {

@@ -25,11 +25,8 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
 
   return (
     <div className="space-y-4">
-      {/* Contents rail + section panel */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[224px_minmax(0,1fr)]">
-        <ContentsRail counts={counts} active={page} onSelect={setPage} />
-        <SectionPanel page={page} income={ret.income} setIncome={setIncome} />
-      </div>
+      {/* Section tabs + panel */}
+      <SectionPanel page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} />
 
       {/* Live computation (the AI assistant is docked on the right of the workspace) */}
       <ComputationCard ret={ret} />
@@ -118,37 +115,33 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
   };
 }
 
-/** Left contents rail — a clickable table of contents for the SA pages, with a
- *  bracketed entry count next to any page that holds data. */
-function ContentsRail({ counts, active, onSelect }: { counts: Record<PageId, number>; active: PageId; onSelect: (id: PageId) => void }) {
+/** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
+ *  above the selected section's fields. */
+function SectionPanel({ page, setPage, counts, income, setIncome }: {
+  page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome;
+}) {
+  const active = PAGES.find(p => p.id === page)!;
+  const pv = pageValue(page, income);
   return (
-    <StudioCard className="h-fit p-2 lg:sticky lg:top-4">
-      <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Sections</p>
-      <nav className="space-y-0.5">
+    <StudioCard className="overflow-hidden">
+      {/* Section tabs */}
+      <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 py-3">
         {PAGES.map(p => {
-          const on = p.id === active;
+          const on = p.id === page;
           const n = counts[p.id];
           const Icon = p.icon;
           return (
-            <button key={p.id} onClick={() => onSelect(p.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${on ? 'bg-[var(--accent)]/10 font-bold text-[var(--accent)]' : 'font-semibold text-[var(--accent)]/90 hover:bg-[var(--accent)]/[0.06]'}`}>
-              <Icon size={14} className="shrink-0 opacity-80" />
-              <span className="flex-1 truncate">{p.label}{n > 0 && <span className="font-bold"> ({n})</span>}</span>
+            <button key={p.id} onClick={() => setPage(p.id)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={13} className="shrink-0" />
+              {p.label}{n > 0 && <span className="font-bold"> ({n})</span>}
               <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{p.code}</span>
             </button>
           );
         })}
-      </nav>
-    </StudioCard>
-  );
-}
+      </div>
 
-/** The wide panel showing the selected section's fields. */
-function SectionPanel({ page, income, setIncome }: { page: PageId; income: Sa100Income; setIncome: SetIncome }) {
-  const active = PAGES.find(p => p.id === page)!;
-  const pv = pageValue(page, income);
-  return (
-    <StudioCard className="p-5">
+      <div className="p-5">
       <div className="mb-3 flex items-baseline gap-2 border-b border-black/5 pb-3">
         <h4 className="text-[15px] font-bold text-[var(--text-primary)]">{active.label}</h4>
         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
@@ -167,6 +160,7 @@ function SectionPanel({ page, income, setIncome }: { page: PageId; income: Sa100
       {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
       {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
+      </div>
     </StudioCard>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import AssistantPanel from '../AssistantPanel';
+import { WorkspaceControls, type SaveState } from '../WorkspaceControls';
 import ComparisonTable from './ComparisonTable';
 import ScenarioEditor, { type EditCategory } from './ScenarioEditor';
 import { returnType, fmtMoney } from '../data';
@@ -32,12 +33,16 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ];
 
 export default function SandboxView({
-  ret, patch, onBack, assistantOpen = true,
+  ret, patch, onBack, assistantOpen = true, controls,
 }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
   onBack: () => void;
   assistantOpen?: boolean;
+  controls?: {
+    canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void;
+    saveState: SaveState; onToggleAssistant: () => void;
+  };
 }) {
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedId, setSelectedId] = useState<string | null>(ret.scenarios[0]?.id ?? null);
@@ -98,18 +103,34 @@ export default function SandboxView({
           </div>
           <p className="text-[13px] text-[var(--text-secondary)]">Model different scenarios and see the potential tax impact before making decisions.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {controls && (
+            <WorkspaceControls
+              canUndo={controls.canUndo} canRedo={controls.canRedo} onUndo={controls.onUndo} onRedo={controls.onRedo}
+              saveState={controls.saveState} assistantOpen={assistantOpen} onToggleAssistant={controls.onToggleAssistant}
+            />
+          )}
           <button onClick={() => setTab('overview')} className="btn-secondary bg-white"><GitCompare size={14} /> Compare</button>
           <button onClick={newBlank} className="btn-primary"><Plus size={15} /> Create scenario</button>
         </div>
       </div>
 
-      {/* Contents rail + content + docked assistant */}
-      <div className="flex gap-4">
-        <div className="hidden w-[210px] shrink-0 lg:block">
-          <SandboxRail active={tab} onSelect={setTab} />
-        </div>
+      {/* Section tabs */}
+      <div className="flex flex-wrap gap-1.5 border-b border-black/5">
+        {TABS.map(t => {
+          const on = t.id === tab;
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+              <Icon size={13} className="shrink-0" /> {t.label}
+            </button>
+          );
+        })}
+      </div>
 
+      {/* Content + docked assistant */}
+      <div className="flex gap-4">
         <div className="min-w-0 flex-1">
           {tab === 'overview' ? (
             <Overview
@@ -142,27 +163,6 @@ export default function SandboxView({
         )}
       </div>
     </div>
-  );
-}
-
-function SandboxRail({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
-  return (
-    <StudioCard className="h-fit p-2 lg:sticky lg:top-4">
-      <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Sections</p>
-      <nav className="space-y-0.5">
-        {TABS.map(t => {
-          const on = t.id === active;
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => onSelect(t.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${on ? 'bg-[var(--accent)]/10 font-bold text-[var(--accent)]' : 'font-semibold text-[var(--accent)]/90 hover:bg-[var(--accent)]/[0.06]'}`}>
-              <Icon size={14} className="shrink-0 opacity-80" />
-              <span className="flex-1 truncate">{t.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-    </StudioCard>
   );
 }
 
