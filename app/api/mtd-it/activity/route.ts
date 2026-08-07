@@ -13,6 +13,9 @@ export interface ActivityEvent {
   client: string | null;
   clientRef: string | null;
   actor: string | null;
+  /** Extra free-text detail for the event, e.g. the client's change-request
+   *  wording on a 'client_changes_requested' event. */
+  note?: string | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -77,7 +80,7 @@ export async function GET() {
   // 3) Approval lifecycle
   try {
     const { data } = await svc.from('mtd_it_quarter_approvals')
-      .select('sent_at, approved_at, changes_requested_at, recipient_email, sender:users!mtd_it_quarter_approvals_sent_by_fkey(full_name, email), mtd_it_quarters!inner(quarter, clients!inner(name, client_ref, firm_id))')
+      .select('sent_at, approved_at, changes_requested_at, changes_note, recipient_email, sender:users!mtd_it_quarter_approvals_sent_by_fkey(full_name, email), mtd_it_quarters!inner(quarter, clients!inner(name, client_ref, firm_id))')
       .eq('mtd_it_quarters.clients.firm_id', ctx.firmId).order('sent_at', { ascending: false }).limit(200);
     for (const a of data ?? []) {
       const q = (Array.isArray(a.mtd_it_quarters) ? a.mtd_it_quarters[0] : a.mtd_it_quarters) as { quarter?: number; clients?: unknown } | null;
@@ -85,7 +88,7 @@ export async function GET() {
       const qlabel = q?.quarter ? ` · Q${q.quarter}` : '';
       if (a.sent_at) events.push({ at: a.sent_at as string, kind: 'sent_for_approval', label: `Sent for client approval${qlabel}${a.recipient_email ? ` (${a.recipient_email})` : ''}`, client, clientRef, actor: uname(a.sender) });
       if (a.approved_at) events.push({ at: a.approved_at as string, kind: 'client_approved', label: `Client approved${qlabel}`, client, clientRef, actor: 'Client' });
-      if (a.changes_requested_at) events.push({ at: a.changes_requested_at as string, kind: 'client_changes_requested', label: `Client requested changes${qlabel}`, client, clientRef, actor: 'Client' });
+      if (a.changes_requested_at) events.push({ at: a.changes_requested_at as string, kind: 'client_changes_requested', label: `Client requested changes${qlabel}`, client, clientRef, actor: 'Client', note: (a.changes_note as string | null) ?? null });
     }
   } catch { /* non-critical */ }
 

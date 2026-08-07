@@ -17,6 +17,8 @@ interface ActivityEvent {
   client: string | null;
   clientRef: string | null;
   actor: string | null;
+  /** Free-text detail, e.g. the client's change-request wording. */
+  note?: string | null;
 }
 
 const ICON: Record<string, { Icon: LucideIcon; cls: string }> = {
@@ -52,15 +54,15 @@ export default function MtdItHistoryModal({ onClose }: { onClose: () => void }) 
     const q = search.trim().toLowerCase();
     return (events ?? []).filter(e => {
       if (category !== 'all' && CATEGORY_OF[e.kind] !== category) return false;
-      if (q && !`${e.client ?? ''} ${e.clientRef ?? ''} ${e.label} ${e.actor ?? ''}`.toLowerCase().includes(q)) return false;
+      if (q && !`${e.client ?? ''} ${e.clientRef ?? ''} ${e.label} ${e.actor ?? ''} ${e.note ?? ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
   }, [events, search, category]);
 
   function exportCsv() {
-    const header = ['Date', 'Client', 'Code', 'Activity', 'By', 'Type'];
+    const header = ['Date', 'Client', 'Code', 'Activity', 'By', 'Type', 'Detail'];
     const rows = filtered.map(e => [
-      new Date(e.at).toLocaleString('en-GB'), e.client ?? '', e.clientRef ?? '', e.label, e.actor ?? '', e.kind,
+      new Date(e.at).toLocaleString('en-GB'), e.client ?? '', e.clientRef ?? '', e.label, e.actor ?? '', e.kind, e.note ?? '',
     ]);
     const csv = [header, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -133,6 +135,12 @@ export default function MtdItHistoryModal({ onClose }: { onClose: () => void }) 
                         <span className="text-[11px] text-slate-400 whitespace-nowrap tabular-nums">{new Date(e.at).toLocaleString('en-GB')}</span>
                       </div>
                       {e.actor && <p className="text-[11px] text-slate-400 mt-0.5">{e.actor}</p>}
+                      {/* The client's actual change-request wording, when present. */}
+                      {e.note?.trim() && (
+                        <p className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 whitespace-pre-wrap break-words">
+                          {e.note.trim()}
+                        </p>
+                      )}
                     </div>
                   </li>
                 );
