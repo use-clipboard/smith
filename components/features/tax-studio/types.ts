@@ -92,17 +92,32 @@ export interface PartnershipSource {
   savingsInterest?: number;     // share of savings interest
   dividends?: number;           // share of dividends
 }
-// SA103F Self-employment (full). Box numbers follow the HMRC SA103F form.
+// SA103F Self-employment (full). Box numbers follow the Capium Self Employment
+// (full) layout: Business details / Business Expenses / Net profit(loss) /
+// Losses, CIS / Balance Sheet. Blue "total" boxes are computed (see calc.ts).
 export interface TradeSource {
   id: string;
-  name: string;              // box 1 (business name)
-  description?: string;      // box 2 (description of business)
-  periodStart?: string;      // box 8 (accounting period start, dd-mm-yyyy)
-  periodEnd?: string;        // box 9 (accounting period end, dd-mm-yyyy)
-  // Business income
-  turnover?: number;           // box 15 — turnover
-  otherBusinessIncome?: number; // box 16 — any other business income
-  // Allowable business expenses (boxes 17–30)
+  // ── Business details (boxes 1–10) ──
+  name: string;              // box 1 — business name
+  description?: string;      // box 2 — description of business
+  addressLine?: string;      // box 3 — first line of business address
+  postcode?: string;         // box 4 — postcode of business address
+  detailsChanged?: boolean;  // box 5 — name/address details changed in last 12 months
+  startedInYear?: boolean;   // box 6Q — did this business start after 5 April?
+  dateStarted?: string;      // box 6 — date business started (YYYY-MM-DD)
+  ceasedInYear?: boolean;    // box 7Q — did this business cease in the tax year?
+  dateCeased?: string;       // box 7 — date business ceased (YYYY-MM-DD)
+  periodStart?: string;      // box 8 — start of accounting period (YYYY-MM-DD)
+  periodEnd?: string;        // box 9 — end of accounting period (YYYY-MM-DD)
+  traditionalAccounting?: boolean; // box 10 — traditional accounting (not cash basis)
+  // ── Other information (boxes 13–14) ──
+  specialArrangements?: boolean;   // box 13 — do special arrangements apply?
+  priorYearProfitDetails?: boolean; // box 14 — profit details provided last year?
+  // ── Business income (boxes 15–16.1) ──
+  turnover?: number;            // box 15 — turnover
+  otherBusinessIncome?: number; // box 16 — any other business income not in box 15
+  tradingIncomeAllowance?: number; // box 16.1 — trading income allowance
+  // ── Allowable business expenses (boxes 17–30; total 31 computed) ──
   expCostOfGoods?: number;    // 17 — cost of goods bought for resale
   expSubcontractors?: number; // 18 — CIS payments to subcontractors
   expWages?: number;          // 19 — wages, salaries & other staff costs
@@ -117,16 +132,77 @@ export interface TradeSource {
   expProfessional?: number;   // 28 — accountancy, legal & other professional fees
   expDepreciation?: number;   // 29 — depreciation & loss/(profit) on sale of assets
   expOtherCosts?: number;     // 30 — other business expenses
-  // Tax adjustments
-  goodsOwnUse?: number;       // goods/services for own use (added back)
-  balancingCharges?: number;  // balancing charges (added back)
-  aia?: number;               // annual investment allowance (deducted)
-  cisDeductions?: number;     // CIS tax already deducted at source
+  // ── Disallowable expenses (boxes 32–45; total 46 computed) ──
+  disCostOfGoods?: number;    // 32
+  disSubcontractors?: number; // 33
+  disWages?: number;          // 34
+  disCarVanTravel?: number;   // 35
+  disPremises?: number;       // 36
+  disRepairs?: number;        // 37
+  disOffice?: number;         // 38
+  disAdvertising?: number;    // 39
+  disInterest?: number;       // 40
+  disBankCharges?: number;    // 41
+  disBadDebts?: number;       // 42
+  disProfessional?: number;   // 43
+  disDepreciation?: number;   // 44
+  disOtherCosts?: number;     // 45
+  // ── Capital allowances (boxes 49–56; total 57 computed) + balancing charge 59 ──
+  aia?: number;               // 49 — annual investment allowance
+  ca18?: number;              // 50 — capital allowances at 18% (main pool WDA)
+  ca6?: number;               // 51 — capital allowances at 6% (special rate)
+  zeroEmissionGoods?: number; // 52 — zero-emission goods vehicle allowance
+  zeroEmissionCar?: number;   // 52.1 — zero-emission car allowance
+  sba?: number;               // 53 — structures and buildings allowance
+  sbaFreeport?: number;       // 53.1 — freeport / investment zone SBA
+  electricChargepoint?: number; // 54 — electric charge-point allowance
+  enhancedCapitalAllowances?: number; // 55 — 100% and other enhanced allowances
+  allowancesOnSale?: number;  // 56 — allowances on sale / cessation of business use
+  balancingCharges?: number;  // 59 — balancing charge on disposals (added back)
+  // ── Calculating taxable profit or loss (boxes 60–76.1) ──
+  goodsOwnUse?: number;       // 60 — goods & services for own use (addition)
+  incomeReceiptsElsewhere?: number; // 62 — income/receipts taxable elsewhere (deduction)
+  basisAdjustment?: number;   // 68 — adjustment for short/long accounting period
+  changeOfPracticeAdjustment?: number; // 71 — adjustment for change of accounting practice
+  averagingAdjustment?: number; // 72 — averaging adjustment
+  transitionProfitSpread?: number; // 73.3 — spread of transition profit arising this year
+  transitionLossBfwd?: number; // 73.4 — loss b/fwd set against transition profit spread
+  lossBroughtForward?: number; // 74 — loss brought forward from earlier years
+  unusedLossCarriedForward?: number; // 74.1 — unused loss to carry forward
+  otherBusinessIncome75?: number; // 75 — any other business income (adjustment stage)
+  figClaim?: number;          // 76.1 — amount claimed under the FIG regime
+  // ── Losses (boxes 77.1–79; adjusted loss 77 & carried forward 80 computed) ──
+  adjustmentLossFig?: number; // 77.1 — adjustment to losses under the FIG regime
+  lossSetOffOtherIncome?: number; // 78 — loss set off against other income
+  lossCarriedBack?: number;   // 79 — loss carried back
+  // ── CIS & tax taken off (boxes 81–82) ──
+  cisDeductions?: number;     // 81 — CIS deductions on payments from contractors
+  otherTaxTaken?: number;     // 82 — other tax taken off trading income
+  // ── Balance sheet (boxes 83–99; totals 90/94/96/99 computed) ──
+  bsEquipment?: number;       // 83 — equipment, machinery and vehicles
+  bsOtherFixedAssets?: number; // 84
+  bsStock?: number;           // 85 — stock and work in progress
+  bsDebtors?: number;         // 86 — trade debtors
+  bsBank?: number;            // 87 — bank / building society balances
+  bsCash?: number;            // 88 — cash in hand
+  bsOtherCurrentAssets?: number; // 89 — other current assets and prepayments
+  bsCreditors?: number;       // 91 — creditors
+  bsLoans?: number;           // 92 — loans and overdrafts
+  bsOtherLiabilities?: number; // 93 — other liabilities and accruals
+  caBalanceStart?: number;    // 95 — capital account balance at start of period
+  caCapitalIntroduced?: number; // 97 — capital introduced
+  caDrawings?: number;        // 98 — drawings
+  // ── NIC & other information (boxes 100–103) ──
+  class2Voluntary?: boolean;  // 100 — choose to pay Class 2 NIC voluntarily
+  class4Exempt?: boolean;     // 101 — exempt from Class 4 NIC
+  class4Adjustment?: number;  // 102 — adjustment to profit chargeable to Class 4 NIC
+  willingPayClass2FullYear?: boolean; // full-year self-employed & willing to pay Class 2
+  otherInformation?: string;  // 103 — any other information
   // Core / legacy — accounts net profit (fallback when not itemised), plus the
   // disallowables add-back and total other capital allowances.
   profit: number;             // accounts net profit / (loss)
-  addBacks?: number;          // total disallowable expenses added back
-  capitalAllowances?: number; // other capital allowances (WDA etc.)
+  addBacks?: number;          // legacy total disallowable expenses added back
+  capitalAllowances?: number; // legacy other capital allowances (WDA etc.)
 }
 // SA105 UK property. Box numbers follow the HMRC SA105 form (2025/26 — the
 // furnished-holiday-lettings regime was abolished from 6 April 2025).

@@ -11,7 +11,7 @@ import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -750,6 +750,18 @@ function BoxCheck({ box, label, checked, onChange }: { box?: number | string; la
   );
 }
 
+// Read-only, auto-calculated box (blue chip) — mirrors Capium's computed fields.
+function BoxCalc({ box, label, value }: { box?: number | string; label: string; value: number }) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-sky-100 px-1 text-[9px] font-bold text-sky-600">{box}</span> : null} {label}
+      </label>
+      <div className="input-base flex items-center justify-end rounded-md bg-sky-50/70 py-1 text-right text-[12.5px] font-semibold text-sky-700">{fmtMoney(value)}</div>
+    </div>
+  );
+}
+
 function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const add = () => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s-${i.selfEmployment.length}-${Date.now()}`, name: '', profit: 0 }] }));
   return (
@@ -763,64 +775,233 @@ function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setInc
           onRemove={() => setIncome(i => ({ ...i, selfEmployment: i.selfEmployment.filter((_, j) => j !== idx) }))} />
       ))}
       <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add trade</button>
-      <div className="mt-2 grid grid-cols-2 gap-3 border-t border-black/5 pt-4 sm:grid-cols-3">
-        <LabelledNum box={78} label="Trade loss b/fwd" value={income.tradeLossBroughtForward ?? 0} onChange={v => setIncome(i => ({ ...i, tradeLossBroughtForward: v }))} />
-      </div>
-      <p className="text-[10.5px] text-[var(--text-muted)]">Brought-forward losses set against this year’s trade profit; an unrelieved in-year loss is relieved sideways against other income.</p>
     </div>
   );
 }
+
+const TRADE_TABS = ['Business details', 'Business Expenses', 'Net profit(loss)', 'Losses, CIS', 'Balance Sheet'] as const;
+type TradeTab = typeof TRADE_TABS[number];
+const TRADE_SUBTABS: Record<TradeTab, string[]> = {
+  'Business details': ['Business Details', 'Other information', 'Business Income'],
+  'Business Expenses': ['Total Expenses', 'Disallowable Expenses'],
+  'Net profit(loss)': ['Net profit or loss', 'Capital allowance', 'Taxable profit or loss'],
+  'Losses, CIS': ['Losses', 'CIS'],
+  'Balance Sheet': ['Assets', 'Liabilities', 'NIC & other Info'],
+};
 
 function TradeCard({ t, idx, onChange, onRemove }: {
   t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState<TradeTab>('Business details');
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: TradeTab) => { setTab(tt); setSub(0); };
+  const subName = TRADE_SUBTABS[tab][sub];
+  const set = (p: Partial<TradeSource>) => onChange(p);
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        <input value={t.name} placeholder={`Trade ${idx + 1}`} onChange={ev => onChange({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
-        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Adjusted <span className="font-bold text-[var(--text-primary)]">{fmtMoney(tradeAdjustedProfit(t))}</span></span>
+        <input value={t.name} placeholder={`Trade ${idx + 1}`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(tradeTaxableProfit(t))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
-        <div className="space-y-3 border-t border-black/5 px-3 py-3">
-          <BoxSection title="Business details">
-            <BoxText box={2} label="Description" value={t.description ?? ''} onChange={v => onChange({ description: v })} />
-            <BoxText box={8} label="Period start (dd-mm-yyyy)" value={t.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
-            <BoxText box={9} label="Period end (dd-mm-yyyy)" value={t.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
-          </BoxSection>
-          <BoxSection title="Business income">
-            <BoxNum box={15} label="Turnover" value={t.turnover ?? 0} onChange={v => onChange({ turnover: v })} />
-            <BoxNum box={16} label="Other business income" value={t.otherBusinessIncome ?? 0} onChange={v => onChange({ otherBusinessIncome: v })} />
-          </BoxSection>
-          <BoxSection title="Allowable expenses">
-            <BoxNum box={17} label="Cost of goods" value={t.expCostOfGoods ?? 0} onChange={v => onChange({ expCostOfGoods: v })} />
-            <BoxNum box={18} label="Subcontractors (CIS)" value={t.expSubcontractors ?? 0} onChange={v => onChange({ expSubcontractors: v })} />
-            <BoxNum box={19} label="Wages & staff" value={t.expWages ?? 0} onChange={v => onChange({ expWages: v })} />
-            <BoxNum box={20} label="Car, van & travel" value={t.expCarVanTravel ?? 0} onChange={v => onChange({ expCarVanTravel: v })} />
-            <BoxNum box={21} label="Rent, rates, power, insurance" value={t.expPremises ?? 0} onChange={v => onChange({ expPremises: v })} />
-            <BoxNum box={22} label="Repairs & renewals" value={t.expRepairs ?? 0} onChange={v => onChange({ expRepairs: v })} />
-            <BoxNum box={23} label="Phone & office costs" value={t.expOffice ?? 0} onChange={v => onChange({ expOffice: v })} />
-            <BoxNum box={24} label="Advertising & entertainment" value={t.expAdvertising ?? 0} onChange={v => onChange({ expAdvertising: v })} />
-            <BoxNum box={25} label="Interest on loans" value={t.expInterest ?? 0} onChange={v => onChange({ expInterest: v })} />
-            <BoxNum box={26} label="Bank & finance charges" value={t.expBankCharges ?? 0} onChange={v => onChange({ expBankCharges: v })} />
-            <BoxNum box={27} label="Irrecoverable debts" value={t.expBadDebts ?? 0} onChange={v => onChange({ expBadDebts: v })} />
-            <BoxNum box={28} label="Accountancy & professional" value={t.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
-            <BoxNum box={29} label="Depreciation & loss on assets" value={t.expDepreciation ?? 0} onChange={v => onChange({ expDepreciation: v })} />
-            <BoxNum box={30} label="Other expenses" value={t.expOtherCosts ?? 0} onChange={v => onChange({ expOtherCosts: v })} />
-          </BoxSection>
-          <BoxSection title="Tax adjustments">
-            <LabelledNum box={45} label="Disallowable expenses" value={t.addBacks ?? 0} onChange={v => onChange({ addBacks: v })} />
-            <LabelledNum box={44} label="Goods for own use" value={t.goodsOwnUse ?? 0} onChange={v => onChange({ goodsOwnUse: v })} />
-            <LabelledNum box={60} label="Balancing charges" value={t.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
-          </BoxSection>
-          <BoxSection title="Capital allowances & CIS">
-            <LabelledNum box={49} label="Annual investment allowance" value={t.aia ?? 0} onChange={v => onChange({ aia: v })} />
-            <LabelledNum box={50} label="Other capital allowances" value={t.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
-            <LabelledNum box={81} label="CIS tax deducted" value={t.cisDeductions ?? 0} onChange={v => onChange({ cisDeductions: v })} />
-          </BoxSection>
-          <p className="text-[10.5px] text-[var(--text-muted)]">Net profit {fmtMoney(tradeNetProfit(t))} + add-backs − capital allowances = adjusted profit. CIS tax is credited against the liability.</p>
+        <div className="border-t border-black/5">
+          {/* Capium top tabs */}
+          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
+            {TRADE_TABS.map(tt => (
+              <button key={tt} onClick={() => setTop(tt)}
+                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${tab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {tt}
+              </button>
+            ))}
+          </div>
+          {/* Capium sub-tabs */}
+          <div className="flex flex-wrap gap-1 px-3 pt-2.5">
+            {TRADE_SUBTABS[tab].map((st, i) => (
+              <button key={st} onClick={() => setSub(i)}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {st}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-3 px-3 py-3">
+            {/* ── Business details ── */}
+            {subName === 'Business Details' && (
+              <BoxSection title="Business details">
+                <BoxText box={1} label="Business name" value={t.name} onChange={v => set({ name: v })} />
+                <BoxText box={2} label="Description of business" value={t.description ?? ''} onChange={v => set({ description: v })} />
+                <BoxText box={3} label="First line of business address" value={t.addressLine ?? ''} onChange={v => set({ addressLine: v })} />
+                <BoxText box={4} label="Postcode of business address" value={t.postcode ?? ''} onChange={v => set({ postcode: v })} />
+                <BoxCheck box={5} label="Name/address details changed in last 12 months" checked={!!t.detailsChanged} onChange={v => set({ detailsChanged: v })} />
+                <BoxYesNo box="6Q" label="Did this business start in the tax year?" value={!!t.startedInYear} onChange={v => set({ startedInYear: v })} />
+                <BoxDate box={6} label="Date business started" value={t.dateStarted ?? ''} onChange={v => set({ dateStarted: v })} />
+                <BoxYesNo box="7Q" label="Did this business cease in the tax year?" value={!!t.ceasedInYear} onChange={v => set({ ceasedInYear: v })} />
+                <BoxDate box={7} label="Date business ceased" value={t.dateCeased ?? ''} onChange={v => set({ dateCeased: v })} />
+                <BoxDate box={8} label="Start of accounting period" value={t.periodStart ?? ''} onChange={v => set({ periodStart: v })} />
+                <BoxDate box={9} label="End of accounting period" value={t.periodEnd ?? ''} onChange={v => set({ periodEnd: v })} />
+                <BoxCheck box={10} label="Used traditional accounting (not cash basis)" checked={!!t.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Other information' && (
+              <BoxSection title="Other information">
+                <BoxCheck box={13} label="Do special arrangements apply?" checked={!!t.specialArrangements} onChange={v => set({ specialArrangements: v })} />
+                <BoxCheck box={14} label="Profit details provided on last year's return?" checked={!!t.priorYearProfitDetails} onChange={v => set({ priorYearProfitDetails: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Business Income' && (
+              <BoxSection title="Business income">
+                <BoxNum box={15} label="Turnover" value={t.turnover ?? 0} onChange={v => set({ turnover: v })} />
+                <BoxNum box={16} label="Any other business income not in box 15" value={t.otherBusinessIncome ?? 0} onChange={v => set({ otherBusinessIncome: v })} />
+                <BoxNum box="16.1" label="Trading income allowance" value={t.tradingIncomeAllowance ?? 0} onChange={v => set({ tradingIncomeAllowance: v })} />
+              </BoxSection>
+            )}
+            {/* ── Business Expenses ── */}
+            {subName === 'Total Expenses' && (
+              <BoxSection title="Business expenses">
+                <BoxNum box={17} label="Cost of goods bought for resale or goods used" value={t.expCostOfGoods ?? 0} onChange={v => set({ expCostOfGoods: v })} />
+                <BoxNum box={18} label="Construction industry — payments to subcontractors" value={t.expSubcontractors ?? 0} onChange={v => set({ expSubcontractors: v })} />
+                <BoxNum box={19} label="Wages, salaries and other staff costs" value={t.expWages ?? 0} onChange={v => set({ expWages: v })} />
+                <BoxNum box={20} label="Car, van and travel expenses" value={t.expCarVanTravel ?? 0} onChange={v => set({ expCarVanTravel: v })} />
+                <BoxNum box={21} label="Rent, rates, power and insurance costs" value={t.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
+                <BoxNum box={22} label="Repairs and renewals of property and equipment" value={t.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
+                <BoxNum box={23} label="Phone, fax, stationery and other office costs" value={t.expOffice ?? 0} onChange={v => set({ expOffice: v })} />
+                <BoxNum box={24} label="Advertising and business entertainment costs" value={t.expAdvertising ?? 0} onChange={v => set({ expAdvertising: v })} />
+                <BoxNum box={25} label="Interest on bank and other loans" value={t.expInterest ?? 0} onChange={v => set({ expInterest: v })} />
+                <BoxNum box={26} label="Bank, credit card and other financial charges" value={t.expBankCharges ?? 0} onChange={v => set({ expBankCharges: v })} />
+                <BoxNum box={27} label="Irrecoverable debts written off" value={t.expBadDebts ?? 0} onChange={v => set({ expBadDebts: v })} />
+                <BoxNum box={28} label="Accountancy, legal and other professional fees" value={t.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
+                <BoxNum box={29} label="Depreciation and loss/profit on sale of assets" value={t.expDepreciation ?? 0} onChange={v => set({ expDepreciation: v })} />
+                <BoxNum box={30} label="Other business expense" value={t.expOtherCosts ?? 0} onChange={v => set({ expOtherCosts: v })} />
+                <BoxCalc box={31} label="Total expenses" value={tradeExpensesTotal(t)} />
+              </BoxSection>
+            )}
+            {subName === 'Disallowable Expenses' && (
+              <BoxSection title="Disallowable expenses">
+                <BoxNum box={32} label="Cost of goods (disallowable)" value={t.disCostOfGoods ?? 0} onChange={v => set({ disCostOfGoods: v })} />
+                <BoxNum box={33} label="Subcontractors (disallowable)" value={t.disSubcontractors ?? 0} onChange={v => set({ disSubcontractors: v })} />
+                <BoxNum box={34} label="Wages & staff (disallowable)" value={t.disWages ?? 0} onChange={v => set({ disWages: v })} />
+                <BoxNum box={35} label="Car, van & travel (disallowable)" value={t.disCarVanTravel ?? 0} onChange={v => set({ disCarVanTravel: v })} />
+                <BoxNum box={36} label="Rent, rates, power, insurance (disallowable)" value={t.disPremises ?? 0} onChange={v => set({ disPremises: v })} />
+                <BoxNum box={37} label="Repairs & renewals (disallowable)" value={t.disRepairs ?? 0} onChange={v => set({ disRepairs: v })} />
+                <BoxNum box={38} label="Phone & office (disallowable)" value={t.disOffice ?? 0} onChange={v => set({ disOffice: v })} />
+                <BoxNum box={39} label="Advertising & entertainment (disallowable)" value={t.disAdvertising ?? 0} onChange={v => set({ disAdvertising: v })} />
+                <BoxNum box={40} label="Interest on loans (disallowable)" value={t.disInterest ?? 0} onChange={v => set({ disInterest: v })} />
+                <BoxNum box={41} label="Bank & finance charges (disallowable)" value={t.disBankCharges ?? 0} onChange={v => set({ disBankCharges: v })} />
+                <BoxNum box={42} label="Irrecoverable debts (disallowable)" value={t.disBadDebts ?? 0} onChange={v => set({ disBadDebts: v })} />
+                <BoxNum box={43} label="Accountancy & professional (disallowable)" value={t.disProfessional ?? 0} onChange={v => set({ disProfessional: v })} />
+                <BoxNum box={44} label="Depreciation (disallowable)" value={t.disDepreciation ?? 0} onChange={v => set({ disDepreciation: v })} />
+                <BoxNum box={45} label="Other business expense (disallowable)" value={t.disOtherCosts ?? 0} onChange={v => set({ disOtherCosts: v })} />
+                <BoxCalc box={46} label="Total disallowable expenses" value={tradeDisallowableTotal(t)} />
+              </BoxSection>
+            )}
+            {/* ── Net profit(loss) ── */}
+            {subName === 'Net profit or loss' && (
+              <BoxSection title="Net profit or loss">
+                <BoxCalc box={47} label="Net profit" value={Math.max(0, tradeNetProfit(t))} />
+                <BoxCalc box={48} label="Or net loss" value={Math.max(0, -tradeNetProfit(t))} />
+              </BoxSection>
+            )}
+            {subName === 'Capital allowance' && (
+              <BoxSection title="Capital allowances">
+                <BoxNum box={49} label="Annual Investment Allowance" value={t.aia ?? 0} onChange={v => set({ aia: v })} />
+                <BoxNum box={50} label="Capital allowances at 18% on equipment" value={t.ca18 ?? 0} onChange={v => set({ ca18: v })} />
+                <BoxNum box={51} label="Capital allowances at 6% on equipment" value={t.ca6 ?? 0} onChange={v => set({ ca6: v })} />
+                <BoxNum box={52} label="Zero-emission goods vehicle allowance" value={t.zeroEmissionGoods ?? 0} onChange={v => set({ zeroEmissionGoods: v })} />
+                <BoxNum box="52.1" label="Zero-emission car allowance" value={t.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
+                <BoxNum box={53} label="Structures and Buildings Allowance" value={t.sba ?? 0} onChange={v => set({ sba: v })} />
+                <BoxNum box="53.1" label="Freeport / Investment Zone SBA" value={t.sbaFreeport ?? 0} onChange={v => set({ sbaFreeport: v })} />
+                <BoxNum box={54} label="Electric charge-point allowance" value={t.electricChargepoint ?? 0} onChange={v => set({ electricChargepoint: v })} />
+                <BoxNum box={55} label="100% and other enhanced capital allowances" value={t.enhancedCapitalAllowances ?? 0} onChange={v => set({ enhancedCapitalAllowances: v })} />
+                <BoxNum box={56} label="Allowances on sale or cessation of business use" value={t.allowancesOnSale ?? 0} onChange={v => set({ allowancesOnSale: v })} />
+                <BoxCalc box={57} label="Total capital allowances" value={tradeCapitalAllowancesTotal(t)} />
+                <BoxNum box={59} label="Balancing charge on disposals" value={t.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Taxable profit or loss' && (
+              <BoxSection title="Calculating your taxable profit or loss">
+                <BoxNum box={60} label="Goods and services for your own use" value={t.goodsOwnUse ?? 0} onChange={v => set({ goodsOwnUse: v })} />
+                <BoxCalc box={61} label="Total additions to net profit" value={tradeAdditions(t)} />
+                <BoxNum box={62} label="Income/receipts taxable elsewhere" value={t.incomeReceiptsElsewhere ?? 0} onChange={v => set({ incomeReceiptsElsewhere: v })} />
+                <BoxCalc box={63} label="Total deductions from net profit" value={tradeDeductions(t)} />
+                <BoxCalc box={64} label="Net business profit for tax purposes" value={Math.max(0, tradeProfitForTax(t))} />
+                <BoxCalc box={65} label="Net business loss for tax purposes" value={Math.max(0, -tradeProfitForTax(t))} />
+                <BoxNum box={68} label="Adjustment for short/long accounting period" value={t.basisAdjustment ?? 0} onChange={v => set({ basisAdjustment: v })} />
+                <BoxNum box={71} label="Adjustment for change of accounting practice" value={t.changeOfPracticeAdjustment ?? 0} onChange={v => set({ changeOfPracticeAdjustment: v })} />
+                <BoxNum box={72} label="Averaging adjustment" value={t.averagingAdjustment ?? 0} onChange={v => set({ averagingAdjustment: v })} />
+                <BoxCalc box={73} label="Adjusted profit" value={Math.max(0, tradeAdjustedProfit(t))} />
+                <BoxNum box="73.3" label="Spread of transition profit arising this year" value={t.transitionProfitSpread ?? 0} onChange={v => set({ transitionProfitSpread: v })} />
+                <BoxNum box="73.4" label="Loss b/fwd set against transition profit spread" value={t.transitionLossBfwd ?? 0} onChange={v => set({ transitionLossBfwd: v })} />
+                <BoxNum box={74} label="Loss brought forward from earlier years" value={t.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
+                <BoxNum box="74.1" label="Unused loss to carry forward to next year" value={t.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
+                <BoxNum box={75} label="Any other business income" value={t.otherBusinessIncome75 ?? 0} onChange={v => set({ otherBusinessIncome75: v })} />
+                <BoxCalc box={76} label="Total taxable profits" value={tradeTaxableProfit(t)} />
+                <BoxNum box="76.1" label="Amount claimed under the FIG regime" value={t.figClaim ?? 0} onChange={v => set({ figClaim: v })} />
+              </BoxSection>
+            )}
+            {/* ── Losses, CIS ── */}
+            {subName === 'Losses' && (
+              <BoxSection title="Losses">
+                <BoxCalc box={77} label="Adjusted loss" value={tradeAdjustedLoss(t)} />
+                <BoxNum box="77.1" label="Adjustment to losses under the FIG regime" value={t.adjustmentLossFig ?? 0} onChange={v => set({ adjustmentLossFig: v })} />
+                <BoxNum box={78} label="Loss set off against other income" value={t.lossSetOffOtherIncome ?? 0} onChange={v => set({ lossSetOffOtherIncome: v })} />
+                <BoxNum box={79} label="Loss carried back" value={t.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} />
+                <BoxCalc box={80} label="Loss carried forward" value={tradeLossCarriedForward(t)} />
+              </BoxSection>
+            )}
+            {subName === 'CIS' && (
+              <BoxSection title="CIS deductions and tax taken off">
+                <BoxNum box={81} label="CIS deductions on payments from contractors" value={t.cisDeductions ?? 0} onChange={v => set({ cisDeductions: v })} />
+                <BoxNum box={82} label="Other tax taken off trading income" value={t.otherTaxTaken ?? 0} onChange={v => set({ otherTaxTaken: v })} />
+              </BoxSection>
+            )}
+            {/* ── Balance Sheet ── */}
+            {subName === 'Assets' && (
+              <BoxSection title="Assets">
+                <BoxNum box={83} label="Equipment, machinery and vehicles" value={t.bsEquipment ?? 0} onChange={v => set({ bsEquipment: v })} />
+                <BoxNum box={84} label="Other fixed assets" value={t.bsOtherFixedAssets ?? 0} onChange={v => set({ bsOtherFixedAssets: v })} />
+                <BoxNum box={85} label="Stock and work in progress" value={t.bsStock ?? 0} onChange={v => set({ bsStock: v })} />
+                <BoxNum box={86} label="Trade debtors" value={t.bsDebtors ?? 0} onChange={v => set({ bsDebtors: v })} />
+                <BoxNum box={87} label="Bank/building society balances" value={t.bsBank ?? 0} onChange={v => set({ bsBank: v })} />
+                <BoxNum box={88} label="Cash in hand" value={t.bsCash ?? 0} onChange={v => set({ bsCash: v })} />
+                <BoxNum box={89} label="Other current assets and prepayments" value={t.bsOtherCurrentAssets ?? 0} onChange={v => set({ bsOtherCurrentAssets: v })} />
+                <BoxCalc box={90} label="Total assets" value={tradeTotalAssets(t)} />
+              </BoxSection>
+            )}
+            {subName === 'Liabilities' && (
+              <>
+                <BoxSection title="Liabilities">
+                  <BoxNum box={91} label="Creditors" value={t.bsCreditors ?? 0} onChange={v => set({ bsCreditors: v })} />
+                  <BoxNum box={92} label="Loans and overdrafts" value={t.bsLoans ?? 0} onChange={v => set({ bsLoans: v })} />
+                  <BoxNum box={93} label="Other liabilities and accruals" value={t.bsOtherLiabilities ?? 0} onChange={v => set({ bsOtherLiabilities: v })} />
+                  <BoxCalc box={94} label="Net business assets" value={tradeNetBusinessAssets(t)} />
+                </BoxSection>
+                <BoxSection title="Capital account">
+                  <BoxNum box={95} label="Balance at start of period" value={t.caBalanceStart ?? 0} onChange={v => set({ caBalanceStart: v })} />
+                  <BoxCalc box={96} label="Net profit or loss (box 47 or 48)" value={tradeNetProfit(t)} />
+                  <BoxNum box={97} label="Capital introduced" value={t.caCapitalIntroduced ?? 0} onChange={v => set({ caCapitalIntroduced: v })} />
+                  <BoxNum box={98} label="Drawings" value={t.caDrawings ?? 0} onChange={v => set({ caDrawings: v })} />
+                  <BoxCalc box={99} label="Balance at end of period" value={tradeCapitalAccountEnd(t)} />
+                </BoxSection>
+              </>
+            )}
+            {subName === 'NIC & other Info' && (
+              <>
+                <BoxSection title="NIC">
+                  <BoxCheck box={100} label="Choose to pay Class 2 NIC voluntarily" checked={!!t.class2Voluntary} onChange={v => set({ class2Voluntary: v })} />
+                  <BoxCheck box={101} label="Exempt from paying Class 4 NIC" checked={!!t.class4Exempt} onChange={v => set({ class4Exempt: v })} />
+                  <BoxNum box={102} label="Adjustment to profit chargeable to Class 4 NIC" value={t.class4Adjustment ?? 0} onChange={v => set({ class4Adjustment: v })} />
+                  <BoxYesNo label="Self-employed all year & willing to pay Class 2 for the full year?" value={!!t.willingPayClass2FullYear} onChange={v => set({ willingPayClass2FullYear: v })} />
+                </BoxSection>
+                <BoxSection title="Any other information">
+                  <div className="col-span-full">
+                    <textarea value={t.otherInformation ?? ''} rows={3} onChange={e => set({ otherInformation: e.target.value })} placeholder="Box 103 — any other information" className="input-base resize-none py-2 text-[12.5px]" />
+                  </div>
+                </BoxSection>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
