@@ -11,6 +11,7 @@ import MtdItStreamSection, { type EditorEntry } from './MtdItStreamSection';
 import MtdItSourceViewerModal from './MtdItSourceViewerModal';
 import MtdItPnLModal from './MtdItPnLModal';
 import MtdItSendApprovalModal from './MtdItSendApprovalModal';
+import MtdItApprovalTimeline from './MtdItApprovalTimeline';
 import MtdItSaveToRecordsModal from './MtdItSaveToRecordsModal';
 import MtdItSubmitModal from './MtdItSubmitModal';
 import { fromIso } from '@/components/features/bookkeeping/input/DateInput';
@@ -166,6 +167,7 @@ export default function MtdItReviewPhase({
     recipient_email: string | null;
     approved_at: string | null;
     changes_requested_at: string | null;
+    changes_note: string | null;
     expires_at: string | null;
     edited_since_approved_at: string | null;
     reminders_paused: boolean;
@@ -911,6 +913,15 @@ export default function MtdItReviewPhase({
         />
       )}
 
+      {/* Full approval history — every send round, who sent it, approvals, and
+          the client's change requests (with their exact wording), visible to
+          the whole team rather than just whoever emailed the return. Self-hides
+          until the first send. Refetches when refreshTick bumps (e.g. after a
+          new approval email goes out). */}
+      {(view === 'send' || view === 'save') && (
+        <MtdItApprovalTimeline quarterId={quarterId} reloadKey={refreshTick} />
+      )}
+
       {/* Send view — read-only preview of the approval email + status panel.
           The Compose Email button in the sticky bar opens the in-app compose
           window with subject/body/recipient/PDF pre-filled. */}
@@ -1258,6 +1269,7 @@ function ApprovalStatusBanner({
     recipient_email: string | null;
     approved_at: string | null;
     changes_requested_at: string | null;
+    changes_note: string | null;
     edited_since_approved_at: string | null;
     reminders_paused: boolean;
     reminder_count: number;
@@ -1304,6 +1316,14 @@ function ApprovalStatusBanner({
       <IconEl size={14} className="shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0">
         <div>{headline}</div>
+        {/* The client's actual change request — shown to every team member, not
+            just whoever emailed the return. Full history is in the timeline
+            below; this is the current, unresolved one. */}
+        {info.changes_requested_at && info.changes_note?.trim() && (
+          <div className="mt-1 rounded-md bg-white/60 border border-amber-200 px-2 py-1.5 text-amber-900 whitespace-pre-wrap break-words">
+            {info.changes_note.trim()}
+          </div>
+        )}
         <div className="opacity-80 mt-0.5">
           Sent by <strong>{sentBy}</strong>
           {info.recipient_email && <> to <strong>{info.recipient_email}</strong></>}
