@@ -27,6 +27,7 @@ export type ReturnStatus =
   | 'waiting-info'
   | 'analysing'
   | 'review'
+  | 'ready-to-send'
   | 'awaiting-approval'
   | 'approved'
   | 'ready-to-file'

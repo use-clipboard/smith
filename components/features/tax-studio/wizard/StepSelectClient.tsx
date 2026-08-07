@@ -116,7 +116,7 @@ export default function StepSelectClient({
         if (q && !`${c.name} ${c.client_ref ?? ''}`.toLowerCase().includes(q)) return false;
         if (accountFilter !== 'all' && (c.status ?? '').toLowerCase() !== accountFilter) return false;
         if (returnFilter === 'not-started' && rst !== 'not-started') return false;
-        if (returnFilter === 'in-progress' && !['waiting-info', 'analysing', 'review', 'awaiting-approval', 'approved', 'ready-to-file'].includes(rst)) return false;
+        if (returnFilter === 'in-progress' && !['waiting-info', 'analysing', 'review', 'ready-to-send', 'awaiting-approval', 'approved', 'ready-to-file'].includes(rst)) return false;
         if (returnFilter === 'filed' && !['filed', 'amended'].includes(rst)) return false;
         return true;
       });

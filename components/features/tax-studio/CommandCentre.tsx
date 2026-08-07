@@ -19,7 +19,7 @@ import type { ReturnStatus, TaxReturn, TimelineEvent } from './types';
 const BUCKETS: { key: string; label: string; statuses: ReturnStatus[]; color: string; tone: string; icon: typeof Layers }[] = [
   { key: 'progress', label: 'In progress',       statuses: ['not-started', 'waiting-info', 'analysing'], color: '#3b82f6', tone: 'text-blue-600 bg-blue-50', icon: Loader2 },
   { key: 'review',   label: 'Awaiting review',   statuses: ['review'],            color: '#8b5cf6', tone: 'text-violet-600 bg-violet-50', icon: ClipboardCheck },
-  { key: 'approval', label: 'Awaiting approval', statuses: ['awaiting-approval'], color: '#f59e0b', tone: 'text-amber-600 bg-amber-50', icon: AlertCircle },
+  { key: 'approval', label: 'Awaiting approval', statuses: ['ready-to-send', 'awaiting-approval'], color: '#f59e0b', tone: 'text-amber-600 bg-amber-50', icon: AlertCircle },
   { key: 'ready',    label: 'Ready to file',     statuses: ['ready-to-file', 'approved'], color: '#14b8a6', tone: 'text-teal-600 bg-teal-50', icon: CheckCircle2 },
   { key: 'filed',    label: 'Filed',             statuses: ['filed', 'amended'],  color: '#6366f1', tone: 'text-indigo-600 bg-indigo-50', icon: FileCheck2 },
 ];

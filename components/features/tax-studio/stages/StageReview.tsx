@@ -52,10 +52,10 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
       {/* Readiness snapshot — a health check just before sending for approval */}
       <HealthScoreCard ret={ret} />
 
-      {/* Send for approval */}
+      {/* Continue to the Client Approval stage (the actual send happens there) */}
       <div className="flex justify-end">
         <button onClick={advance} className="btn-primary">
-          Send for approval <ArrowRight size={15} />
+          Continue to approval <ArrowRight size={15} />
         </button>
       </div>
     </div>

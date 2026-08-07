@@ -49,6 +49,7 @@ export const STATUS_META: Record<ReturnStatus, { label: string; tone: string }> 
   'waiting-info':      { label: 'Waiting information', tone: 'bg-amber-100 text-amber-700' },
   'analysing':         { label: 'Analysing',          tone: 'bg-sky-100 text-sky-700' },
   'review':            { label: 'Review required',    tone: 'bg-indigo-100 text-indigo-700' },
+  'ready-to-send':     { label: 'Ready to send',      tone: 'bg-purple-100 text-purple-700' },
   'awaiting-approval': { label: 'Awaiting approval',  tone: 'bg-violet-100 text-violet-700' },
   'approved':          { label: 'Approved',           tone: 'bg-teal-100 text-teal-700' },
   'ready-to-file':     { label: 'Ready to file',      tone: 'bg-cyan-100 text-cyan-700' },
@@ -59,16 +60,19 @@ export const STATUS_META: Record<ReturnStatus, { label: string; tone: string }> 
 
 /** Kanban column order. */
 export const WORKFLOW_COLUMNS: ReturnStatus[] = [
-  'not-started', 'waiting-info', 'analysing', 'review', 'awaiting-approval', 'approved', 'ready-to-file', 'filed',
+  'not-started', 'waiting-info', 'analysing', 'review', 'ready-to-send', 'awaiting-approval', 'approved', 'ready-to-file', 'filed',
 ];
 
-/** Derive the headline status from the approval lifecycle + stage progress. */
+/** Derive the headline status from the approval lifecycle + stage progress.
+ *  The approval lifecycle takes precedence: a return only becomes "ready to file"
+ *  once the client has approved it. Completing Review means it's reviewed and
+ *  "ready to send" for approval — not filed, and not yet with the client. */
 export function deriveStatus(r: TaxReturn): ReturnStatus {
   if (r.approvalStatus === 'submitted') return r.amended ? 'amended' : 'filed';
-  if (r.approvalStatus === 'approved') return 'approved';
-  if (r.approvalStatus === 'sent') return 'awaiting-approval';
+  if (r.approvalStatus === 'approved') return 'ready-to-file';   // client approved → ready to file with HMRC
+  if (r.approvalStatus === 'sent') return 'awaiting-approval';   // sent to the client, awaiting their approval
   const done = (s: StageId) => r.stageStatus[s] === 'complete';
-  if (done('review')) return 'ready-to-file';
+  if (done('review')) return 'ready-to-send';                    // reviewed, ready to send for approval
   if (r.stageStatus.review === 'active' || done('analyse')) return 'review';
   if (r.stageStatus.analyse === 'active') return 'analysing';
   if (done('setup')) return 'waiting-info';
