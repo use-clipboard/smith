@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -245,6 +245,80 @@ export function tradeTotalLiabilities(t: TradeSource): number {
 export function tradeNetBusinessAssets(t: TradeSource): number { return tradeTotalAssets(t) - tradeTotalLiabilities(t); }
 export function tradeCapitalAccountEnd(t: TradeSource): number {
   return (t.caBalanceStart || 0) + tradeNetProfit(t) + (t.caCapitalIntroduced || 0) - (t.caDrawings || 0);
+}
+
+// ── Capital allowances calculator (main + special-rate pools, AIA, FYA, WDA) ──
+const AIA_LIMIT = 1_000_000;   // Annual Investment Allowance (2025/26)
+const WDA_MAIN = 0.18;         // main pool writing-down allowance
+const WDA_SPECIAL = 0.06;      // special-rate pool writing-down allowance
+const SMALL_POOLS = 1000;      // small-pools write-off threshold
+
+export interface CapitalAllowancesResult {
+  aia: number;                 // box 49 — Annual Investment Allowance
+  wdaMain: number;             // box 50 — 18% main pool WDA
+  wdaSpecial: number;          // box 51 — 6% special-rate WDA
+  fya: number;                 // box 55 — 100% first-year / enhanced allowances
+  balancingAllowance: number;  // box 56 — allowances on sale / cessation
+  balancingCharge: number;     // box 59 — balancing charge on disposals
+  total: number;               // box 57 — total capital allowances
+  mainPoolCfwd: number;        // TWDV carried forward — main pool
+  specialPoolCfwd: number;     // TWDV carried forward — special-rate pool
+  // Workings (for the calculator display)
+  mainPoolBeforeWda: number;
+  specialPoolBeforeWda: number;
+  aiaCapped: boolean;
+  mainSmallPool: boolean;
+  specialSmallPool: boolean;
+}
+
+/** Run the capital-allowances computation for one trade's pool state. Pooled
+ *  additions/disposals feed the 18%/6% pools; AIA and FYA additions are 100%.
+ *  Business-use % restricts AIA/FYA claims (sole traders). Small pools (≤£1,000)
+ *  are written off; a pool driven negative by disposals is a balancing charge. */
+export function computeCapitalAllowances(state: CapitalAllowancesState | undefined): CapitalAllowancesResult {
+  const s = state ?? {};
+  const adds = s.additions ?? [];
+  const disp = s.disposals ?? [];
+  const bus = (pct?: number) => Math.max(0, Math.min(100, pct ?? 100)) / 100;
+
+  // AIA — 100% up to £1m of qualifying spend; business-use restricts the claim.
+  const aiaGross = adds.filter(a => a.treatment === 'aia').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  const aiaCapped = aiaGross > AIA_LIMIT;
+  const aiaScale = aiaCapped && aiaGross > 0 ? AIA_LIMIT / aiaGross : 1;
+  const aia = r0(adds.filter(a => a.treatment === 'aia').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct) * aiaScale, 0));
+
+  // FYA — 100% first-year (e.g. zero-emission), business-use restricted.
+  const fya = r0(adds.filter(a => a.treatment === 'fya').reduce((t, a) => t + Math.max(0, a.cost || 0) * bus(a.businessUsePct), 0));
+
+  // Pool movements. (Private use on pooled additions is not separately pooled
+  // here — use AIA/FYA for private-use assets; noted in the UI.)
+  const mainAdds = adds.filter(a => a.treatment === 'main').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  const specialAdds = adds.filter(a => a.treatment === 'special').reduce((t, a) => t + Math.max(0, a.cost || 0), 0);
+  const mainDisp = disp.filter(d => d.pool === 'main').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
+  const specialDisp = disp.filter(d => d.pool === 'special').reduce((t, d) => t + Math.max(0, d.proceeds || 0), 0);
+
+  let mainPool = (s.mainPoolBfwd || 0) + mainAdds - mainDisp;
+  let specialPool = (s.specialPoolBfwd || 0) + specialAdds - specialDisp;
+
+  let balancingCharge = 0;
+  if (mainPool < 0) { balancingCharge += -mainPool; mainPool = 0; }
+  if (specialPool < 0) { balancingCharge += -specialPool; specialPool = 0; }
+
+  const mainSmallPool = mainPool > 0 && mainPool <= SMALL_POOLS;
+  const specialSmallPool = specialPool > 0 && specialPool <= SMALL_POOLS;
+  const wdaMain = r0(mainSmallPool ? mainPool : mainPool * WDA_MAIN);
+  const wdaSpecial = r0(specialSmallPool ? specialPool : specialPool * WDA_SPECIAL);
+
+  const mainPoolCfwd = r0(mainPool - wdaMain);
+  const specialPoolCfwd = r0(specialPool - wdaSpecial);
+  const balancingAllowance = 0; // cessation balancing allowances not modelled here
+
+  const total = aia + fya + wdaMain + wdaSpecial + balancingAllowance;
+  return {
+    aia, wdaMain, wdaSpecial, fya, balancingAllowance, balancingCharge: r0(balancingCharge), total,
+    mainPoolCfwd, specialPoolCfwd, mainPoolBeforeWda: r0(mainPool), specialPoolBeforeWda: r0(specialPool),
+    aiaCapped, mainSmallPool, specialSmallPool,
+  };
 }
 // Legacy aliases kept for callers that used the pre-itemised names.
 export function tradeCapitalAllowances(t: TradeSource): number { return tradeCapitalAllowancesTotal(t); }

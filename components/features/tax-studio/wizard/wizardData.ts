@@ -6,7 +6,26 @@ import {
 } from 'lucide-react';
 import type { ReturnTypeId, Sa100Income } from '../types';
 import { emptyIncome } from '../data';
-import { dividendsTotal, savingsInterestTotal, lineTotal } from '../calc';
+import { dividendsTotal, savingsInterestTotal, lineTotal, computeCapitalAllowances } from '../calc';
+import type { TradeSource } from '../types';
+
+/** Roll one trade forward: last year's closing capital-allowance pools become
+ *  this year's brought-forward, and this year's WDA on them is computed up front
+ *  (additions/disposals start empty). Other figures copy as a template. */
+function rollTradeForward(s: TradeSource): TradeSource {
+  const bfMain = s.capitalAllowancesCalc?.mainPoolCfwd ?? 0;
+  const bfSpecial = s.capitalAllowancesCalc?.specialPoolCfwd ?? 0;
+  const base = { ...s, aia: 0, ca18: 0, ca6: 0, enhancedCapitalAllowances: 0, allowancesOnSale: 0, balancingCharges: 0 };
+  if (!bfMain && !bfSpecial) return { ...base, capitalAllowancesCalc: undefined };
+  const caState = { mainPoolBfwd: bfMain, specialPoolBfwd: bfSpecial, additions: [], disposals: [] };
+  const r = computeCapitalAllowances(caState);
+  return {
+    ...base,
+    aia: r.aia, ca18: r.wdaMain, ca6: r.wdaSpecial,
+    enhancedCapitalAllowances: r.fya, allowancesOnSale: r.balancingAllowance, balancingCharges: r.balancingCharge,
+    capitalAllowancesCalc: { ...caState, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd },
+  };
+}
 
 // A trimmed client shape from GET /api/clients (only the fields the wizard uses).
 export interface WizardClient {
@@ -177,7 +196,7 @@ export function categoryNote(key: RollKey, income: Sa100Income): { text: string;
 export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, boolean>): Sa100Income {
   const out = emptyIncome();
   if (selected.employment) out.employment = prior.employment.map(e => ({ ...e }));
-  if (selected.selfEmployment) out.selfEmployment = prior.selfEmployment.map(s => ({ ...s }));
+  if (selected.selfEmployment) out.selfEmployment = prior.selfEmployment.map(rollTradeForward);
   if (selected.property) out.property = prior.property.map(p => ({ ...p }));
   if (selected.dividends) {
     out.dividends = prior.dividends;

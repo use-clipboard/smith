@@ -159,6 +159,10 @@ export interface TradeSource {
   enhancedCapitalAllowances?: number; // 55 — 100% and other enhanced allowances
   allowancesOnSale?: number;  // 56 — allowances on sale / cessation of business use
   balancingCharges?: number;  // 59 — balancing charge on disposals (added back)
+  /** Optional working state for the Capital Allowances Calculator — pools, this
+   *  year's additions/disposals, and the closing TWDV carried forward. When the
+   *  calculator is applied it writes boxes 49/50/51/55/56/59 from these. */
+  capitalAllowancesCalc?: CapitalAllowancesState;
   // ── Calculating taxable profit or loss (boxes 60–76.1) ──
   goodsOwnUse?: number;       // 60 — goods & services for own use (addition)
   incomeReceiptsElsewhere?: number; // 62 — income/receipts taxable elsewhere (deduction)
@@ -203,6 +207,35 @@ export interface TradeSource {
   profit: number;             // accounts net profit / (loss)
   addBacks?: number;          // legacy total disallowable expenses added back
   capitalAllowances?: number; // legacy other capital allowances (WDA etc.)
+}
+
+/** An asset bought in the year, and how it's relieved. */
+export interface CapexAddition {
+  id: string;
+  description?: string;
+  cost: number;
+  /** aia = 100% Annual Investment Allowance; fya = 100% first-year (e.g.
+   *  zero-emission); main = 18% main pool; special = 6% special-rate pool. */
+  treatment: 'aia' | 'fya' | 'main' | 'special';
+  /** Business-use % (sole traders) — restricts this asset's allowance. Default 100. */
+  businessUsePct?: number;
+}
+/** An asset sold/scrapped in the year — proceeds come off its pool. */
+export interface CapexDisposal {
+  id: string;
+  description?: string;
+  pool: 'main' | 'special';
+  proceeds: number;
+}
+/** Working state for the Capital Allowances Calculator. Closing pool balances
+ *  (`*Cfwd`) are stored so next year's return rolls them in as `*Bfwd`. */
+export interface CapitalAllowancesState {
+  mainPoolBfwd?: number;      // TWDV brought forward — main pool
+  specialPoolBfwd?: number;   // TWDV brought forward — special-rate pool
+  additions?: CapexAddition[];
+  disposals?: CapexDisposal[];
+  mainPoolCfwd?: number;      // TWDV carried forward — main pool (computed on apply)
+  specialPoolCfwd?: number;   // TWDV carried forward — special-rate pool (computed on apply)
 }
 // SA105 UK property. Box numbers follow the HMRC SA105 form (2025/26 — the
 // furnished-holiday-lettings regime was abolished from 6 April 2025).

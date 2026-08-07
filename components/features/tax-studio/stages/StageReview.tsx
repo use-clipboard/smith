@@ -5,9 +5,10 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator,
 } from 'lucide-react';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
+import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
@@ -795,6 +796,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<TradeTab>('Business details');
   const [sub, setSub] = useState(0);
+  const [caOpen, setCaOpen] = useState(false);
   const setTop = (tt: TradeTab) => { setTab(tt); setSub(0); };
   const subName = TRADE_SUBTABS[tab][sub];
   const set = (p: Partial<TradeSource>) => onChange(p);
@@ -904,6 +906,26 @@ function TradeCard({ t, idx, onChange, onRemove }: {
               </BoxSection>
             )}
             {subName === 'Capital allowance' && (
+              <>
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] px-3 py-2">
+                <p className="text-[11.5px] text-[var(--text-secondary)]">Work out AIA, pool WDAs and balancing charges — closing balances carry to next year.</p>
+                <button onClick={() => setCaOpen(true)} className="btn-primary shrink-0 py-1 text-[12px]"><Calculator size={14} /> Capital Allowances Calculator</button>
+              </div>
+              {caOpen && (
+                <CapitalAllowancesCalculator
+                  state={t.capitalAllowancesCalc}
+                  onClose={() => setCaOpen(false)}
+                  onApply={(caState, res) => {
+                    set({
+                      capitalAllowancesCalc: caState,
+                      aia: res.aia, ca18: res.wdaMain, ca6: res.wdaSpecial,
+                      enhancedCapitalAllowances: res.fya, allowancesOnSale: res.balancingAllowance,
+                      balancingCharges: res.balancingCharge,
+                    });
+                    setCaOpen(false);
+                  }}
+                />
+              )}
               <BoxSection title="Capital allowances">
                 <BoxNum box={49} label="Annual Investment Allowance" value={t.aia ?? 0} onChange={v => set({ aia: v })} />
                 <BoxNum box={50} label="Capital allowances at 18% on equipment" value={t.ca18 ?? 0} onChange={v => set({ ca18: v })} />
@@ -918,6 +940,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
                 <BoxCalc box={57} label="Total capital allowances" value={tradeCapitalAllowancesTotal(t)} />
                 <BoxNum box={59} label="Balancing charge on disposals" value={t.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
               </BoxSection>
+              </>
             )}
             {subName === 'Taxable profit or loss' && (
               <BoxSection title="Calculating your taxable profit or loss">
