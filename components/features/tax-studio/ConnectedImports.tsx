@@ -4,18 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Link2, CalendarCheck, Calculator, BookOpen, House, Receipt, Users,
-  Loader2, Download, Check, Info, RefreshCw, Search, Sparkles,
+  Loader2, Download, Check, Info, RefreshCw, Search, Sparkles, FileUp,
 } from 'lucide-react';
 import { StudioCard } from './primitives';
 import { fmtMoney } from './data';
 import {
   fetchMtdItSummary, fetchAccountsStudioSummary, fetchLandlordSummary, fetchBookkeepingSummary,
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
-  buildItemisedTrade, mergeItemisedTrade,
+  buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles,
   summaryHasData,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
   type SourceRef, type PlLine, type BoxAllocation,
 } from './integrations';
+import { encodeFile } from './extract';
 import TradeImportReview from './TradeImportReview';
 import type { TaxReturn, Sa100Income } from './types';
 
@@ -111,6 +112,7 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
         <ToolImportPanel adapter={MTD} ret={ret} patch={patch} />
         <ToolImportPanel adapter={ACCOUNTS} ret={ret} patch={patch} />
         <ToolImportPanel adapter={BOOKKEEPING} ret={ret} patch={patch} />
+        <UploadAccountsCard ret={ret} patch={patch} />
         <ToolImportPanel adapter={LANDLORD} ret={ret} patch={patch} />
         <ComingSoonPanel icon={Receipt} name="Payroll" target="Employment income"
           note="Per-employee pay isn’t stored yet — P32 only records employer-level PAYE/NIC. Enter employment income in Review & Adjust for now." />
@@ -311,6 +313,82 @@ function InlineClientSearch({ onPick }: { onPick: (id: string, name: string, ref
         ))}
       </div>
     </div>
+  );
+}
+
+// Upload a set of accounts / trial balance for a sole trader, extract its P&L
+// lines and run them through the same AI itemise-and-review flow as the
+// connected tools — so it fills SA103F boxes 15–30 + disallowables with no
+// manual entry, for clients whose books aren't in Bookkeeping/Accounts Studio.
+function UploadAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [reviewing, setReviewing] = useState<PlLine[] | null>(null);
+  const [srcLabel, setSrcLabel] = useState('');
+  const [imported, setImported] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function onFiles(list: FileList | null) {
+    if (!list || !list.length) return;
+    setBusy(true); setError('');
+    try {
+      const files = await Promise.all([...list].map(encodeFile));
+      const lines = await fetchTradePlFromFiles(files);
+      if (!lines.length) { setError('No profit & loss lines found in that file.'); return; }
+      setSrcLabel(list.length === 1 ? list[0].name : `${list.length} files`);
+      setReviewing(lines);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read the accounts.');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  function confirmItemised(allocations: BoxAllocation[]) {
+    const trade = buildItemisedTrade(`upl-${ret.income.selfEmployment.length}-${srcLabel}`, `Trade — ${srcLabel}`, allocations);
+    patch(r => ({
+      ...r,
+      income: { ...r.income, selfEmployment: [...r.income.selfEmployment, trade] },
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported itemised trade from uploaded accounts (${srcLabel})` }],
+    }));
+    setReviewing(null);
+    setImported(true); setTimeout(() => setImported(false), 2500);
+  }
+
+  return (
+    <StudioCard className="flex flex-col p-4">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><FileUp size={18} /></div>
+        <div>
+          <p className="text-[13px] font-bold text-[var(--text-primary)]">Upload accounts / TB</p>
+          <p className="text-[11px] text-[var(--text-muted)]">Trade profit</p>
+        </div>
+      </div>
+
+      <div className="mt-3 min-h-[48px] flex-1">
+        {busy ? (
+          <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading the accounts…</div>
+        ) : error ? (
+          <p className="py-2 text-[12px] text-rose-600">{error}</p>
+        ) : (
+          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]">
+            <Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> For clients not in Bookkeeping or Accounts Studio — upload a set of accounts or a trial balance and SMITH itemises it into the SA103F boxes.
+          </p>
+        )}
+      </div>
+
+      <input ref={inputRef} type="file" accept=".pdf,.csv,.txt,image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
+      <div className="mt-2 flex justify-end">
+        <button onClick={() => inputRef.current?.click()} disabled={busy} className="btn-primary disabled:opacity-40">
+          {imported ? <Check size={15} /> : <FileUp size={15} />} {imported ? 'Imported' : 'Upload & itemise'}
+        </button>
+      </div>
+
+      {reviewing && (
+        <TradeImportReview lines={reviewing} sourceLabel={srcLabel} onConfirm={confirmItemised} onClose={() => setReviewing(null)} />
+      )}
+    </StudioCard>
   );
 }
 

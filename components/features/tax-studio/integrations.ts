@@ -265,3 +265,22 @@ export function mergeItemisedTrade(income: Sa100Income, trade: TradeSource, src:
   selfEmployment.push({ ...trade, id: `${pfx}0` });
   return { ...income, selfEmployment };
 }
+
+// ─── Uploaded accounts / trial balance → itemised trade ──────────────────────
+/** An encoded upload (PDF/image as base64, CSV/text as text) — matches the
+ *  extract routes' file shape. */
+export interface UploadFile { name: string; mimeType: string; base64?: string; text?: string; }
+
+/** Read an uploaded set of accounts / trial balance into P&L lines (AI). These
+ *  then flow into the same itemise-and-review modal as the connected tools. */
+export async function fetchTradePlFromFiles(files: UploadFile[]): Promise<PlLine[]> {
+  const r = await fetch('/api/tax-studio/integrations/extract-trade-pl', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error((d as { error?: string }).error ?? 'Could not read the accounts.');
+  }
+  const d = await r.json() as { lines?: PlLine[] };
+  return (d.lines ?? []).filter(l => l && l.label && l.amount);
+}
