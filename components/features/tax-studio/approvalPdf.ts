@@ -184,6 +184,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   if (c.otherIncome > 0) line(st, 'Pensions and other income', gbp(c.otherIncome));
   line(st, 'Total income received', gbp(c.totalIncome), { bold: true, rule: true });
   line(st, `Personal allowance${c.paTapered ? ' (tapered)' : ''}`, `(${gbp(c.personalAllowance)})`);
+  if (c.charityAssetGiftsDeduction > 0) line(st, 'Less gifts of shares / land to charity', `(${gbp(c.charityAssetGiftsDeduction)})`);
   line(st, 'Total taxable income', gbp(c.taxableIncome), { bold: true, rule: true });
 
   heading(st, 'Income tax');

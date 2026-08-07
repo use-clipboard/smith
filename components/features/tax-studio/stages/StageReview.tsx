@@ -1195,6 +1195,7 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       </div>
       <Row label="Total income" value={fmtMoney(c.totalIncome)} />
       <Row label={`Personal allowance${c.paTapered ? ' (tapered)' : ''}`} value={`(${fmtMoney(c.personalAllowance)})`} />
+      {c.charityAssetGiftsDeduction > 0 && <Row label="Less: gifts of shares / land to charity" value={`(${fmtMoney(c.charityAssetGiftsDeduction)})`} />}
       <Row label="Taxable income" value={fmtMoney(c.taxableIncome)} bold />
       <div className="my-2 space-y-1 border-y border-black/5 py-2">
         {c.lines.filter(l => l.amount > 0).map((l, i) => (

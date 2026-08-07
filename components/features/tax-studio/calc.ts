@@ -331,6 +331,7 @@ export interface Sa100Computation {
 
   personalAllowance: number;
   paTapered: boolean;
+  charityAssetGiftsDeduction: number; // gifts of shares/land to charity (boxes 9–10)
   taxableNonSavings: number;
   taxableSavings: number;
   taxableDividends: number;
@@ -422,10 +423,14 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   // Band extension + adjusted net income (for PA taper) via grossed reliefs.
   const grossGiftAid = giftAidNet(income) * 1.25;
   const grossPension = pensionBandExtension(income);
+  // Gifts of shares/land to charity (boxes 9–10) are a deduction from total
+  // income — relieved at the taxpayer's marginal rate, applied below alongside
+  // the personal allowance (non-savings → savings → dividends). They also reduce
+  // adjusted net income for the PA taper, but do NOT extend the rate bands.
   const assetGifts = charityAssetGifts(income);
-  if (assetGifts > 0) notes.push('Gifts of shares / land to charity relieved as a deduction from income (modelled via band extension — review before filing).');
-  const brl = BASIC_RATE_LIMIT + grossGiftAid + grossPension + assetGifts;
-  const addl = ADDITIONAL_THRESHOLD + grossGiftAid + grossPension + assetGifts;
+  if (assetGifts > 0) notes.push('Gifts of qualifying shares / land to charity deducted from income (relief at the marginal rate).');
+  const brl = BASIC_RATE_LIMIT + grossGiftAid + grossPension;
+  const addl = ADDITIONAL_THRESHOLD + grossGiftAid + grossPension;
 
   const adjustedNetIncome = totalIncome - grossGiftAid - grossPension - assetGifts;
   let personalAllowance = PA;
@@ -456,13 +461,15 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     notes.push('Non-resident / split-year status noted — income apportionment and residence reliefs are not modelled here; review before filing.');
   }
 
-  // Allocate PA: non-savings → savings → dividends.
-  const paNsnd = Math.min(nsnd, personalAllowance);
-  const paSavings = Math.min(savingsIncome, personalAllowance - paNsnd);
-  const paDiv = Math.min(dividendIncome, personalAllowance - paNsnd - paSavings);
-  const taxableNonSavings = Math.max(0, nsnd - paNsnd);
-  const taxableSavings = Math.max(0, savingsIncome - paSavings);
-  const taxableDividends = Math.max(0, dividendIncome - paDiv);
+  // Allocate the personal allowance + any charity asset-gift deduction:
+  // non-savings → savings → dividends.
+  const incomeDeduction = personalAllowance + assetGifts;
+  const dedNsnd = Math.min(nsnd, incomeDeduction);
+  const dedSavings = Math.min(savingsIncome, incomeDeduction - dedNsnd);
+  const dedDiv = Math.min(dividendIncome, incomeDeduction - dedNsnd - dedSavings);
+  const taxableNonSavings = Math.max(0, nsnd - dedNsnd);
+  const taxableSavings = Math.max(0, savingsIncome - dedSavings);
+  const taxableDividends = Math.max(0, dividendIncome - dedDiv);
   const taxableIncome = taxableNonSavings + taxableSavings + taxableDividends;
 
   // Top marginal band → PSA size.
@@ -648,7 +655,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
     savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + tr.nonSavings),
     totalIncome: r0(totalIncome),
-    personalAllowance: r0(personalAllowance), paTapered,
+    personalAllowance: r0(personalAllowance), paTapered, charityAssetGiftsDeduction: r0(assetGifts),
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),
     taxableIncome: r0(taxableIncome),
     lines,
