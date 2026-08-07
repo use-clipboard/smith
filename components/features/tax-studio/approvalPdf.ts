@@ -7,7 +7,7 @@
 
 import type { Sa100Income } from './types';
 import type { Sa100Computation } from './calc';
-import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet } from './calc';
+import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet, lineTotal } from './calc';
 import { returnType } from './data';
 
 export interface SummaryLine { label: string; value: string; }
@@ -215,7 +215,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   if ((i.trusts ?? []).length) { heading(rs, 'Trusts & estates'); for (const t of (i.trusts ?? [])) line(rs, t.name || 'Trust/estate', gbp(t.kind === 'discretionary' ? (t.amount || 0) / 0.55 : (t.amount || 0))); }
   const fT = foreignTotals(i);
   const others: [string, number][] = [
-    ['Dividends', dividendsTotal(i) + (i.otherDividends || 0) + (i.foreignDividendsMain || 0)],
+    ['Dividends', dividendsTotal(i) + lineTotal(i.otherDividendsItems, i.otherDividends || 0) + lineTotal(i.foreignDividendsItems, i.foreignDividendsMain || 0)],
     ['Savings interest', savingsInterestTotal(i) + taxedInterestGross(i) + (i.untaxedForeignInterest || 0)],
     ['Pensions & benefits', pensionsBenefitsTotal(i)],
     ['Foreign income', fT.interest + fT.dividends + fT.other], ['Foreign tax paid', fT.taxClaimed],

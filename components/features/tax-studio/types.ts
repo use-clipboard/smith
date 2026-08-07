@@ -226,9 +226,12 @@ export interface Sa100Income {
   /** Itemised dividend breakdown; when present it drives the dividends total and
    *  is carried over on roll-forward. The `dividends` scalar is the fallback. */
   dividendItems?: DividendItem[];
-  otherDividends?: number;                  // box 5 — other dividends
+  otherDividends?: number;                  // box 5 — other dividends (scalar fallback)
+  otherDividendsItems?: LineItem[];         // box 5 breakdown
   foreignDividendsMain?: number;            // box 6 — foreign dividends (≤ £500, on the main return)
+  foreignDividendsItems?: LineItem[];       // box 6 breakdown
   foreignDividendsTax?: number;             // box 7 — tax taken off foreign dividends
+  foreignDividendsTaxItems?: LineItem[];    // box 7 breakdown
   // ── UK pensions & benefits (SA100 TR3, boxes 8–16) ──
   statePension?: number;                    // box 8 — state pension (scalar fallback)
   statePensionItems?: LineItem[];           // box 8 breakdown

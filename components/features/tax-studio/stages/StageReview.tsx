@@ -245,9 +245,9 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
             blank={() => ({ id: rid('dv'), company: '', amount: 0 })}
             onChange={items => setIncome(i => ({ ...i, dividendItems: items }))}
             rowTotal={d => d.amount || 0} fallbackTotal={income.dividends} />
-          <LabelledNum box={5} label="Other dividends" value={income.otherDividends ?? 0} onChange={v => setIncome(i => ({ ...i, otherDividends: v }))} />
-          <LabelledNum box={6} label="Foreign dividends (≤ £500)" value={income.foreignDividendsMain ?? 0} onChange={v => setIncome(i => ({ ...i, foreignDividendsMain: v }))} />
-          <LabelledNum box={7} label="Tax off foreign dividends" value={income.foreignDividendsTax ?? 0} onChange={v => setIncome(i => ({ ...i, foreignDividendsTax: v }))} />
+          <LineField box={5} label="Other dividends" title="Other dividends" items={income.otherDividendsItems} fallbackTotal={income.otherDividends ?? 0} onChange={items => setIncome(i => ({ ...i, otherDividendsItems: items }))} />
+          <LineField box={6} label="Foreign dividends (≤ £500)" title="Foreign dividends (≤ £500)" items={income.foreignDividendsItems} fallbackTotal={income.foreignDividendsMain ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsItems: items }))} />
+          <LineField box={7} label="Tax off foreign dividends" title="Tax taken off foreign dividends" items={income.foreignDividendsTaxItems} fallbackTotal={income.foreignDividendsTax ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsTaxItems: items }))} />
         </div>
       </CoreSection>
 

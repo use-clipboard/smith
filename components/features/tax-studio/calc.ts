@@ -71,7 +71,7 @@ export function taxedInterestTaxCredit(income: Sa100Income): number {
 // ── Generic itemised line helpers (pensions & other income) ──────────────────
 const sumLines = (items?: { amount: number }[]) => (items ?? []).reduce((a, x) => a + (x.amount || 0), 0);
 /** Itemised sum when present, else the scalar fallback. */
-function lineTotal(items: { amount: number }[] | undefined, scalar = 0): number {
+export function lineTotal(items: { amount: number }[] | undefined, scalar = 0): number {
   return items && items.length ? sumLines(items) : scalar;
 }
 
@@ -376,7 +376,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const otherIncome = otherIncomeNet(income);  // box 17 − 18 + 20
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
-  const dividendIncome = dividendsTotal(income) + (income.otherDividends || 0) + (income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
+  const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
@@ -577,7 +577,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + (income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not

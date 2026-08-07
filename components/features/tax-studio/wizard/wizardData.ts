@@ -183,8 +183,11 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
     out.dividends = prior.dividends;
     out.dividendItems = prior.dividendItems?.map(d => ({ ...d }));
     out.otherDividends = prior.otherDividends;
+    out.otherDividendsItems = prior.otherDividendsItems?.map(x => ({ ...x }));
     out.foreignDividendsMain = prior.foreignDividendsMain;
+    out.foreignDividendsItems = prior.foreignDividendsItems?.map(x => ({ ...x }));
     out.foreignDividendsTax = prior.foreignDividendsTax;
+    out.foreignDividendsTaxItems = prior.foreignDividendsTaxItems?.map(x => ({ ...x }));
   }
   if (selected.savings) {
     out.savingsInterest = prior.savingsInterest;
