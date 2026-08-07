@@ -12,7 +12,7 @@ import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -798,6 +798,14 @@ function TradeCard({ t, idx, onChange, onRemove }: {
   const [sub, setSub] = useState(0);
   const [caOpen, setCaOpen] = useState(false);
   const setTop = (tt: TradeTab) => { setTab(tt); setSub(0); };
+  // Have the capital-allowance boxes been hand-edited away from what the
+  // calculator last computed from the pools? (Only relevant once used.)
+  const caRes = t.capitalAllowancesCalc ? computeCapitalAllowances(t.capitalAllowancesCalc) : null;
+  const caDiverged = !!caRes && (
+    (t.aia ?? 0) !== caRes.aia || (t.ca18 ?? 0) !== caRes.wdaMain || (t.ca6 ?? 0) !== caRes.wdaSpecial ||
+    (t.enhancedCapitalAllowances ?? 0) !== caRes.fya || (t.allowancesOnSale ?? 0) !== caRes.balancingAllowance ||
+    (t.balancingCharges ?? 0) !== caRes.balancingCharge
+  );
   const subName = TRADE_SUBTABS[tab][sub];
   const set = (p: Partial<TradeSource>) => onChange(p);
   return (
@@ -907,10 +915,16 @@ function TradeCard({ t, idx, onChange, onRemove }: {
             )}
             {subName === 'Capital allowance' && (
               <>
-              <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] px-3 py-2">
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] px-3 py-2">
                 <p className="text-[11.5px] text-[var(--text-secondary)]">Work out AIA, pool WDAs and balancing charges — closing balances carry to next year.</p>
-                <button onClick={() => setCaOpen(true)} className="btn-primary shrink-0 py-1 text-[12px]"><Calculator size={14} /> Capital Allowances Calculator</button>
+                <button onClick={() => setCaOpen(true)} className="btn-primary shrink-0 py-1 text-[12px]"><Calculator size={14} /> {caRes ? 'Reopen calculator' : 'Capital Allowances Calculator'}</button>
               </div>
+              {caDiverged && (
+                <div className="mb-3 flex items-start gap-1.5 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <span>These boxes have been edited since the calculator was last run, so the carried-forward pool balances may be out of date. Reopen the calculator and Apply to recompute the pools before rolling this trade forward.</span>
+                </div>
+              )}
               {caOpen && (
                 <CapitalAllowancesCalculator
                   state={t.capitalAllowancesCalc}
