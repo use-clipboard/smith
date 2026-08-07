@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { ReturnTypeId, Sa100Income } from '../types';
 import { emptyIncome } from '../data';
-import { dividendsTotal } from '../calc';
+import { dividendsTotal, savingsInterestTotal } from '../calc';
 
 // A trimmed client shape from GET /api/clients (only the fields the wizard uses).
 export interface WizardClient {
@@ -137,7 +137,7 @@ export function categoryHasData(key: RollKey, income: Sa100Income): boolean {
     case 'selfEmployment': return income.selfEmployment.length > 0;
     case 'property': return income.property.length > 0;
     case 'dividends': return dividendsTotal(income) > 0;
-    case 'savings': return (income.savingsInterest || 0) > 0;
+    case 'savings': return savingsInterestTotal(income) > 0;
     case 'capitalGains': return false; // not modelled in SA100 income yet
     case 'pension': return (income.pensionContributions || 0) > 0;
     case 'giftAid': return (income.giftAid || 0) > 0;
@@ -153,7 +153,7 @@ export function categoryValueLabel(key: RollKey, income: Sa100Income, fmt: (n: n
     case 'selfEmployment': return income.selfEmployment.length ? fmt(income.selfEmployment.reduce((a, s) => a + s.profit, 0)) : '£0';
     case 'property': return income.property.length ? fmt(income.property.reduce((a, p) => a + p.profit, 0)) : '£0';
     case 'dividends': return fmt(dividendsTotal(income));
-    case 'savings': return fmt(income.savingsInterest || 0);
+    case 'savings': return fmt(savingsInterestTotal(income));
     case 'capitalGains': return '£0';
     case 'pension': return fmt(income.pensionContributions || 0);
     case 'giftAid': return fmt(income.giftAid || 0);
@@ -179,8 +179,19 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   if (selected.employment) out.employment = prior.employment.map(e => ({ ...e }));
   if (selected.selfEmployment) out.selfEmployment = prior.selfEmployment.map(s => ({ ...s }));
   if (selected.property) out.property = prior.property.map(p => ({ ...p }));
-  if (selected.dividends) { out.dividends = prior.dividends; out.dividendItems = prior.dividendItems?.map(d => ({ ...d })); }
-  if (selected.savings) out.savingsInterest = prior.savingsInterest;
+  if (selected.dividends) {
+    out.dividends = prior.dividends;
+    out.dividendItems = prior.dividendItems?.map(d => ({ ...d }));
+    out.otherDividends = prior.otherDividends;
+    out.foreignDividendsMain = prior.foreignDividendsMain;
+    out.foreignDividendsTax = prior.foreignDividendsTax;
+  }
+  if (selected.savings) {
+    out.savingsInterest = prior.savingsInterest;
+    out.savingsInterestItems = prior.savingsInterestItems?.map(s => ({ ...s }));
+    out.taxedInterestItems = prior.taxedInterestItems?.map(t => ({ ...t }));
+    out.untaxedForeignInterest = prior.untaxedForeignInterest;
+  }
   if (selected.pension) out.pensionContributions = prior.pensionContributions;
   if (selected.giftAid) out.giftAid = prior.giftAid;
   if (selected.other) out.otherIncome = prior.otherIncome;

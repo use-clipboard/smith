@@ -53,6 +53,21 @@ export function dividendsTotal(income: Sa100Income): number {
   return income.dividends || 0;
 }
 
+/** Untaxed UK interest (box 2) — itemised sum when present, else the scalar. */
+export function savingsInterestTotal(income: Sa100Income): number {
+  const items = income.savingsInterestItems;
+  if (items && items.length) return items.reduce((a, s) => a + (s.amount || 0), 0);
+  return income.savingsInterest || 0;
+}
+/** Taxed UK interest (box 1) grossed up: net + tax across the breakdown. */
+export function taxedInterestGross(income: Sa100Income): number {
+  return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0) + (t.tax || 0), 0);
+}
+/** Tax deducted at source on taxed UK interest (box 1). */
+export function taxedInterestTaxCredit(income: Sa100Income): number {
+  return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.tax || 0), 0);
+}
+
 // ── SA106 foreign helpers ────────────────────────────────────────────────────
 /** Split foreign income by how it's taxed in the UK: interest → savings rates,
  *  dividends → dividend rates, everything else → non-savings. `taxClaimed` /
@@ -332,8 +347,8 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = income.otherIncome || 0;
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
-  const savingsIncome = (income.savingsInterest || 0) + ft.interest + partnershipSavings + tr.savings;
-  const dividendIncome = dividendsTotal(income) + ft.dividends + partnershipDividends + tr.dividend;
+  const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
+  const dividendIncome = dividendsTotal(income) + (income.otherDividends || 0) + (income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
@@ -534,7 +549,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit);
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + (income.foreignDividendsTax || 0));
   const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not

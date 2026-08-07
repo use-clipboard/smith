@@ -168,6 +168,21 @@ export interface DividendItem {
   amount: number;
 }
 
+// A savings-interest line (untaxed UK interest — SA100 box 2).
+export interface SavingsItem {
+  id: string;
+  description?: string;
+  amount: number;
+}
+
+// A taxed-interest line (SA100 box 1) — received net, with tax deducted.
+export interface TaxedInterestItem {
+  id: string;
+  description?: string;
+  net: number;
+  tax: number;
+}
+
 // SA106 Foreign — one foreign income source, routed to the right UK rate.
 export interface ForeignSource {
   id: string;
@@ -194,11 +209,18 @@ export interface Sa100Income {
   selfEmployment: TradeSource[];
   partnerships?: PartnershipSource[]; // SA104 — share of partnership profit
   property: PropertySource[];
-  dividends: number;
+  // ── Interest & dividends (SA100 TR3, boxes 1–7) ──
+  taxedInterestItems?: TaxedInterestItem[]; // box 1 — taxed UK interest (net + tax)
+  savingsInterest: number;                  // box 2 — untaxed UK interest (scalar fallback)
+  savingsInterestItems?: SavingsItem[];     // box 2 breakdown
+  untaxedForeignInterest?: number;          // box 3 — untaxed foreign interest (≤ £2,000)
+  dividends: number;                        // box 4 — dividends from UK companies (scalar fallback)
   /** Itemised dividend breakdown; when present it drives the dividends total and
    *  is carried over on roll-forward. The `dividends` scalar is the fallback. */
   dividendItems?: DividendItem[];
-  savingsInterest: number;
+  otherDividends?: number;                  // box 5 — other dividends
+  foreignDividendsMain?: number;            // box 6 — foreign dividends (≤ £500, on the main return)
+  foreignDividendsTax?: number;             // box 7 — tax taken off foreign dividends
   pensionsIncome: number;      // taxable private pensions received
   statePension?: number;       // state pension (paid gross, no PAYE)
   /** SA106 — foreign income. Itemised `sources` (each routed to the right rate)

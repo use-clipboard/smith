@@ -1,18 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, X, Check,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
 } from 'lucide-react';
+import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals, dividendsTotal } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -170,128 +170,104 @@ function SectionPanel({ page, setPage, counts, income, setIncome }: {
   );
 }
 
+const DIVIDEND_COLS: BreakdownColumn<DividendItem>[] = [
+  { key: 'company', label: 'Company name', kind: 'text' },
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'shares', label: 'No. of shares', kind: 'number' },
+  { key: 'paymentDate', label: 'Payment date', kind: 'text' },
+  { key: 'amount', label: 'Dividend', kind: 'number', total: true },
+];
+const TAXED_INT_COLS: BreakdownColumn<TaxedInterestItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'net', label: 'Net', kind: 'number', total: true },
+  { key: 'tax', label: 'Tax', kind: 'number', total: true },
+];
+const SAVINGS_COLS: BreakdownColumn<SavingsItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'amount', label: 'Amount', kind: 'number', total: true },
+];
+const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+/** Collapsible sub-section grouping the SA100 main-return boxes by form page. */
+function CoreSection({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <button onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
+        <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{title}</span>
+      </button>
+      {open && <div className="border-t border-black/5 p-4">{children}</div>}
+    </div>
+  );
+}
+
 function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <DividendField income={income} setIncome={setIncome} />
-      <LabelledNum box={2} label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
-      <LabelledNum box={11} label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
-      <LabelledNum box={8} label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
-      <LabelledNum box={17} label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
-      <LabelledNum box="TR4.5" label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
-      <LabelledNum box="TR4.1" label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
-      <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
-      <div>
-        <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
-        <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
-          <option value="none">None</option>
-          <option value="received">Received (£252 reducer)</option>
-          <option value="transferred">Transferred to spouse</option>
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
-        <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
-          <option value={0}>None</option>
-          <option value={1}>Plan 1</option>
-          <option value={2}>Plan 2</option>
-          <option value={4}>Plan 4 (Scotland)</option>
-          <option value={5}>Plan 5</option>
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
-        <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
-          <option value="uk">England / Wales / NI</option>
-          <option value="scotland">Scotland</option>
-        </select>
-      </div>
-    </div>
-  );
-}
+    <div className="space-y-3">
+      <CoreSection title="Interest & dividends" defaultOpen>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <BreakdownField<TaxedInterestItem>
+            box={1} label="Taxed UK interest" title="Taxed UK interest etc."
+            items={income.taxedInterestItems ?? []} columns={TAXED_INT_COLS}
+            blank={() => ({ id: rid('ti'), net: 0, tax: 0 })}
+            onChange={items => setIncome(i => ({ ...i, taxedInterestItems: items }))}
+            rowTotal={t => (t.net || 0) + (t.tax || 0)} />
+          <BreakdownField<SavingsItem>
+            box={2} label="Untaxed UK interest" title="Untaxed UK interest etc."
+            items={income.savingsInterestItems ?? []} columns={SAVINGS_COLS}
+            blank={() => ({ id: rid('si'), amount: 0 })}
+            onChange={items => setIncome(i => ({ ...i, savingsInterestItems: items }))}
+            rowTotal={s => s.amount || 0} fallbackTotal={income.savingsInterest} />
+          <LabelledNum box={3} label="Untaxed foreign interest" value={income.untaxedForeignInterest ?? 0} onChange={v => setIncome(i => ({ ...i, untaxedForeignInterest: v }))} />
+          <BreakdownField<DividendItem>
+            box={4} label="Dividends" title="Dividends from UK companies"
+            items={income.dividendItems ?? []} columns={DIVIDEND_COLS}
+            blank={() => ({ id: rid('dv'), company: '', amount: 0 })}
+            onChange={items => setIncome(i => ({ ...i, dividendItems: items }))}
+            rowTotal={d => d.amount || 0} fallbackTotal={income.dividends} />
+          <LabelledNum box={5} label="Other dividends" value={income.otherDividends ?? 0} onChange={v => setIncome(i => ({ ...i, otherDividends: v }))} />
+          <LabelledNum box={6} label="Foreign dividends (≤ £500)" value={income.foreignDividendsMain ?? 0} onChange={v => setIncome(i => ({ ...i, foreignDividendsMain: v }))} />
+          <LabelledNum box={7} label="Tax off foreign dividends" value={income.foreignDividendsTax ?? 0} onChange={v => setIncome(i => ({ ...i, foreignDividendsTax: v }))} />
+        </div>
+      </CoreSection>
 
-// Dividends — a scalar with an itemised breakdown behind a modal. The header
-// shows the entry count; the total feeds the computation.
-function DividendField({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const [open, setOpen] = useState(false);
-  const items = income.dividendItems ?? [];
-  return (
-    <div>
-      <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">4</span>
-        <PiggyBank size={11} /> Dividends{items.length > 0 && <span className="font-bold text-[var(--text-secondary)]"> ({items.length})</span>}
-        <button onClick={() => setOpen(true)} className="ml-auto flex h-4 w-4 items-center justify-center rounded bg-[var(--accent)]/10 text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20" aria-label="Itemise dividends"><Plus size={11} /></button>
-      </label>
-      {items.length > 0 ? (
-        <button onClick={() => setOpen(true)} className="input-base flex w-full items-center justify-between py-1 text-[12.5px]">
-          <span className="text-[var(--text-muted)]">{items.length} entr{items.length === 1 ? 'y' : 'ies'}</span>
-          <span className="font-semibold text-[var(--text-primary)]">{fmtMoney(dividendsTotal(income))}</span>
-        </button>
-      ) : (
-        <NumIn value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
-      )}
-      {open && <DividendModal income={income} setIncome={setIncome} onClose={() => setOpen(false)} />}
+      <CoreSection title="Pensions, other income & reliefs" defaultOpen>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum box={11} label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
+          <LabelledNum box={8} label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
+          <LabelledNum box={17} label="Other income" value={income.otherIncome} onChange={v => setIncome(i => ({ ...i, otherIncome: v }))} />
+          <LabelledNum box="TR4.5" label="Gift Aid (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
+          <LabelledNum box="TR4.1" label="Pension contrib. (net)" value={income.pensionContributions} onChange={v => setIncome(i => ({ ...i, pensionContributions: v }))} />
+          <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
+            <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
+              <option value="none">None</option>
+              <option value="received">Received (£252 reducer)</option>
+              <option value="transferred">Transferred to spouse</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
+            <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
+              <option value={0}>None</option>
+              <option value={1}>Plan 1</option>
+              <option value={2}>Plan 2</option>
+              <option value={4}>Plan 4 (Scotland)</option>
+              <option value={5}>Plan 5</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
+            <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
+              <option value="uk">England / Wales / NI</option>
+              <option value="scotland">Scotland</option>
+            </select>
+          </div>
+        </div>
+      </CoreSection>
     </div>
-  );
-}
-
-function DividendModal({ income, setIncome, onClose }: { income: Sa100Income; setIncome: SetIncome; onClose: () => void }) {
-  const items = income.dividendItems ?? [];
-  const setItems = (next: DividendItem[]) => setIncome(i => ({ ...i, dividendItems: next }));
-  const add = () => setItems([...items, { id: `dv-${items.length}-${Date.now()}`, company: '', amount: 0 }]);
-  const upd = (idx: number, u: Partial<DividendItem>) => setItems(items.map((x, j) => j === idx ? { ...x, ...u } : x));
-  const del = (idx: number) => setItems(items.filter((_, j) => j !== idx));
-  const total = items.reduce((a, d) => a + (d.amount || 0), 0);
-  if (typeof document === 'undefined') return null;
-  return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
-          <p className="text-[15px] font-bold text-[var(--text-primary)]">Dividends from UK companies</p>
-          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-auto px-5 py-4">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-black/5 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                <th className="pb-2 pr-2">Company name</th>
-                <th className="pb-2 pr-2">Description</th>
-                <th className="pb-2 pr-2">No. of shares</th>
-                <th className="pb-2 pr-2">Payment date</th>
-                <th className="pb-2 pr-2 text-right">Dividend</th>
-                <th className="pb-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr><td colSpan={6} className="py-6 text-center text-[12px] text-[var(--text-muted)]">No dividends yet — add an entry.</td></tr>
-              ) : items.map((d, idx) => (
-                <tr key={d.id} className="border-b border-black/5">
-                  <td className="py-1.5 pr-2"><input value={d.company} onChange={e => upd(idx, { company: e.target.value })} placeholder="Company" className="input-base py-1 text-[12px]" /></td>
-                  <td className="py-1.5 pr-2"><input value={d.description ?? ''} onChange={e => upd(idx, { description: e.target.value })} placeholder="Description" className="input-base py-1 text-[12px]" /></td>
-                  <td className="py-1.5 pr-2"><input type="number" value={d.shares || ''} onChange={e => upd(idx, { shares: Number(e.target.value) || 0 })} placeholder="0" className="input-base py-1 text-right text-[12px]" /></td>
-                  <td className="py-1.5 pr-2"><input value={d.paymentDate ?? ''} onChange={e => upd(idx, { paymentDate: e.target.value })} placeholder="dd-mm-yyyy" className="input-base py-1 text-[12px]" /></td>
-                  <td className="py-1.5 pr-2"><input type="number" value={d.amount || ''} onChange={e => upd(idx, { amount: Number(e.target.value) || 0 })} placeholder="0.00" className="input-base py-1 text-right text-[12px]" /></td>
-                  <td className="py-1.5"><RemoveBtn onClick={() => del(idx)} /></td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={4} className="pt-3 text-right text-[12px] font-semibold text-[var(--text-muted)]">Total</td>
-                <td className="pt-3 pr-2 text-right text-[13px] font-bold text-[var(--text-primary)]">{fmtMoney(total)}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-black/5 px-5 py-3">
-          <button onClick={add} className="btn-secondary"><Plus size={14} /> Add entry</button>
-          <button onClick={onClose} className="btn-primary"><Check size={14} /> Save</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }
 
