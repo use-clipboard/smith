@@ -115,45 +115,49 @@ export default function SandboxView({
         </div>
       </div>
 
-      {/* Section tabs */}
-      <div className="flex flex-wrap gap-1.5 border-b border-black/5">
-        {TABS.map(t => {
-          const on = t.id === tab;
-          const Icon = t.icon;
-          return (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
-              <Icon size={13} className="shrink-0" /> {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Content + docked assistant */}
+      {/* Panel: tabs + content, with the assistant docked alongside */}
       <div className="flex gap-4">
         <div className="min-w-0 flex-1">
-          {tab === 'overview' ? (
-            <Overview
-              ret={ret} scenarios={all} selectedId={selectedId} onSelect={setSelectedId}
-              onAdd={newBlank} onQuick={quick} onDelete={deleteScenario} onDuplicate={duplicateScenario}
-              onEdit={id => { setSelectedId(id); setTab('income'); }}
-              promoteId={promoteId} setPromoteId={setPromoteId} onPromote={promote}
-            />
-          ) : tab === 'summary' ? (
-            <SummaryTab ret={ret} scenarios={all} />
-          ) : (
-            selected ? (
-              <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
-                onChange={income => updateScenario(selected.id, income)} />
-            ) : (
-              <StudioCard className="flex flex-col items-center gap-2 px-8 py-12 text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>
-                <p className="text-[14px] font-bold text-[var(--text-primary)]">Select a scenario to edit</p>
-                <p className="max-w-sm text-[12.5px] text-[var(--text-muted)]">The Current Plan mirrors the live return and can’t be edited here. Create a scenario, then adjust its figures.</p>
-                <button onClick={newBlank} className="btn-primary mt-1"><Plus size={15} /> Create scenario</button>
-              </StudioCard>
-            )
-          )}
+          <StudioCard className="overflow-hidden">
+            {/* Section tabs */}
+            <div className="flex flex-wrap gap-1.5 border-b border-black/5 px-4 py-3">
+              {TABS.map(t => {
+                const on = t.id === tab;
+                const Icon = t.icon;
+                return (
+                  <button key={t.id} onClick={() => setTab(t.id)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+                    <Icon size={13} className="shrink-0" /> {t.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="p-5">
+              {tab === 'overview' ? (
+                <Overview
+                  ret={ret} scenarios={all} selectedId={selectedId} onSelect={setSelectedId}
+                  onAdd={newBlank} onQuick={quick} onDelete={deleteScenario} onDuplicate={duplicateScenario}
+                  onEdit={id => { setSelectedId(id); setTab('income'); }}
+                  promoteId={promoteId} setPromoteId={setPromoteId} onPromote={promote}
+                />
+              ) : tab === 'summary' ? (
+                <SummaryTab ret={ret} scenarios={all} />
+              ) : (
+                selected ? (
+                  <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
+                    onChange={income => updateScenario(selected.id, income)} />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 px-8 py-12 text-center">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>
+                    <p className="text-[14px] font-bold text-[var(--text-primary)]">Select a scenario to edit</p>
+                    <p className="max-w-sm text-[12.5px] text-[var(--text-muted)]">The Current Plan mirrors the live return and can’t be edited here. Create a scenario, then adjust its figures.</p>
+                    <button onClick={newBlank} className="btn-primary mt-1"><Plus size={15} /> Create scenario</button>
+                  </div>
+                )
+              )}
+            </div>
+          </StudioCard>
         </div>
 
         {assistantOpen && (
@@ -164,6 +168,12 @@ export default function SandboxView({
       </div>
     </div>
   );
+}
+
+/** Lighter sub-card used inside the panel (matches the return workflow's inner
+ *  cards) so we don't nest heavy glass StudioCards. */
+function SubCard({ className = '', children }: { className?: string; children: React.ReactNode }) {
+  return <div className={`rounded-xl border border-[var(--border)] bg-white/60 ${className}`}>{children}</div>;
 }
 
 // ─── Overview tab ────────────────────────────────────────────────────────────
@@ -182,8 +192,8 @@ function Overview({
 
   return (
     <div className="space-y-4">
-        <StudioCard className="p-5">
-          <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="mb-3 flex items-center justify-between border-b border-black/5 pb-3">
             <div>
               <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Scenario comparison</h3>
               <p className="text-[12px] text-[var(--text-muted)]">Compare your scenarios side by side.</p>
@@ -191,11 +201,11 @@ function Overview({
             <span className="rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-[12px] font-semibold text-[var(--text-secondary)]">Tax year {ret.taxYear}</span>
           </div>
           <ComparisonTable scenarios={scenarios} taxYear={ret.taxYear} selectedId={selectedId} onSelect={onSelect} onAdd={onAdd} />
-        </StudioCard>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* My scenarios */}
-          <StudioCard className="p-4">
+          <SubCard className="p-4">
             <p className="text-[13px] font-bold text-[var(--text-primary)]">My scenarios</p>
             <p className="mb-2 text-[11.5px] text-[var(--text-muted)]">Manage and run your planning scenarios.</p>
             <div className="space-y-1.5">
@@ -223,10 +233,10 @@ function Overview({
               })}
             </div>
             <button onClick={onAdd} className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-[var(--accent)]/40 py-1.5 text-[11.5px] font-semibold text-[var(--accent)] hover:bg-[var(--accent)]/5"><Plus size={13} /> Create new scenario</button>
-          </StudioCard>
+          </SubCard>
 
           {/* Quick actions */}
-          <StudioCard className="p-4">
+          <SubCard className="p-4">
             <p className="text-[13px] font-bold text-[var(--text-primary)]">Quick actions</p>
             <p className="mb-2 text-[11.5px] text-[var(--text-muted)]">What would you like to model?</p>
             <div className="grid grid-cols-1 gap-1.5">
@@ -240,11 +250,11 @@ function Overview({
                 </button>
               ))}
             </div>
-          </StudioCard>
+          </SubCard>
 
           {/* Assumptions + insights */}
           <div className="space-y-4">
-            <StudioCard className="p-4">
+            <SubCard className="p-4">
               <p className="text-[13px] font-bold text-[var(--text-primary)]">Key assumptions</p>
               <p className="mb-2 text-[11.5px] text-[var(--text-muted)]">Current plan assumptions.</p>
               <div className="space-y-1">
@@ -256,8 +266,8 @@ function Overview({
                   </div>
                 ))}
               </div>
-            </StudioCard>
-            <StudioCard className="p-4">
+            </SubCard>
+            <SubCard className="p-4">
               <p className="flex items-center gap-1.5 text-[13px] font-bold text-[var(--text-primary)]"><TrendingUp size={14} className="text-[var(--accent)]" /> Planning insights</p>
               <div className="mt-2 space-y-2">
                 {planningInsights(ret).map((ins, i) => (
@@ -266,12 +276,12 @@ function Overview({
                   </div>
                 ))}
               </div>
-            </StudioCard>
+            </SubCard>
           </div>
         </div>
 
         {/* Promote banner */}
-        <StudioCard className="p-4">
+        <SubCard className="p-4">
           {promoteScenario ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[12.5px] text-[var(--text-secondary)]">Promote <span className="font-bold text-[var(--text-primary)]">{promoteScenario.name}</span> to the live return? This overwrites the current figures.</p>
@@ -288,7 +298,7 @@ function Overview({
               </button>
             </div>
           )}
-        </StudioCard>
+        </SubCard>
     </div>
   );
 }
@@ -300,17 +310,17 @@ function SummaryTab({ ret, scenarios }: { ret: TaxReturn; scenarios: Scenario[] 
     .sort((a, b) => b.saving - a.saving)[0];
   return (
     <div className="space-y-4">
-      <StudioCard className="p-5">
+      <div>
         <h3 className="mb-3 text-[15px] font-bold text-[var(--text-primary)]">Summary</h3>
         <ComparisonTable scenarios={scenarios} taxYear={ret.taxYear} selectedId={null} onSelect={() => {}} onAdd={() => {}} />
-      </StudioCard>
+      </div>
       {best && best.saving > 0 && (
-        <StudioCard className="p-5">
+        <SubCard className="p-4">
           <p className="flex items-center gap-1.5 text-[13px] font-bold text-[var(--text-primary)]"><Sparkles size={14} className="text-[var(--accent)]" /> Recommendation</p>
           <p className="mt-1 text-[12.5px] text-[var(--text-secondary)]">
             Of the scenarios modelled, <span className="font-bold">{best.s.name}</span> is the most tax-efficient — an estimated saving of {fmtMoney(best.saving)} in total tax &amp; NIC. Promote it from the Overview tab to apply it to the live return.
           </p>
-        </StudioCard>
+        </SubCard>
       )}
     </div>
   );

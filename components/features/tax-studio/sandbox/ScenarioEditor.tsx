@@ -25,7 +25,7 @@ export default function ScenarioEditor({
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-      <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
+      <div className="rounded-xl border border-[var(--border)] bg-white/60 p-4">
         <h3 className="text-[15px] font-bold text-[var(--text-primary)]">Editing “{scenario.name}”</h3>
         <p className="mt-0.5 text-[12.5px] text-[var(--text-muted)]">Adjust the figures below — the impact updates live.</p>
 
@@ -65,7 +65,7 @@ export default function ScenarioEditor({
       </div>
 
       {/* Live impact */}
-      <div className="rounded-2xl bg-white/[0.78] p-5 backdrop-blur-md">
+      <div className="rounded-xl border border-[var(--border)] bg-white/60 p-4">
         <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Live impact</p>
         <div className="mt-3 space-y-1">
           <Line label="Total income" value={fmtMoney(cur.totalIncome)} />
