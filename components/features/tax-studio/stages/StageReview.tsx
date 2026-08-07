@@ -102,7 +102,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
 
 function pageCounts(income: Sa100Income): Record<PageId, number> {
   return {
-    core: 0,
+    core: coreSectionCounts(income).total,
     employment: income.employment.length,
     selfemp: income.selfEmployment.length,
     partnership: (income.partnerships ?? []).length,
@@ -118,6 +118,49 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
       income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
     ].some(v => (v || 0) > 0) ? 1 : 0,
   };
+}
+
+/** Per-CoreSection populated-entry counts (breakdown items, or a set scalar = 1).
+ *  Drives the (N) badge on each accordion title and the Income & reliefs tab. */
+function coreSectionCounts(i: Sa100Income) {
+  const len = (a?: unknown[]) => a?.length ?? 0;
+  const fc = (a: unknown[] | undefined, scalar = 0) => (a && a.length ? a.length : (scalar ? 1 : 0));
+  const interest =
+    len(i.taxedInterestItems)
+    + fc(i.savingsInterestItems, i.savingsInterest)
+    + (i.untaxedForeignInterest ? 1 : 0)
+    + fc(i.dividendItems, i.dividends)
+    + fc(i.otherDividendsItems, i.otherDividends)
+    + fc(i.foreignDividendsItems, i.foreignDividendsMain)
+    + fc(i.foreignDividendsTaxItems, i.foreignDividendsTax);
+  const pensions =
+    fc(i.statePensionItems, i.statePension)
+    + len(i.statePensionLumpSumItems)
+    + len(i.statePensionLumpSumTaxItems)
+    + fc(i.pensionsIncomeItems, i.pensionsIncome)
+    + len(i.pensionsIncomeTaxItems)
+    + (i.incapacityBenefit ? 1 : 0)
+    + (i.incapacityBenefitTax ? 1 : 0)
+    + (i.jobseekersAllowance ? 1 : 0)
+    + (i.otherPensionsBenefits ? 1 : 0);
+  const other =
+    fc(i.otherIncomeItems, i.otherIncome)
+    + len(i.otherIncomeExpensesItems)
+    + len(i.otherIncomeTaxItems)
+    + len(i.preOwnedAssetsItems)
+    + (i.otherIncomeDescription ? 1 : 0);
+  const pensionPayments =
+    fc(i.pensionContributionsItems, i.pensionContributions)
+    + (i.pensionOneOff ? 1 : 0)
+    + len(i.pensionRetirementAnnuityItems)
+    + len(i.pensionEmployerSchemeItems)
+    + len(i.pensionOverseasItems);
+  const charitable = i.giftAid ? 1 : 0;
+  const blindStudent = i.studentLoanPlan ? 1 : 0;
+  const childBenefit = i.childBenefit ? 1 : 0;
+  const marriage = i.marriageAllowance && i.marriageAllowance !== 'none' ? 1 : 0;
+  const total = interest + pensions + other + pensionPayments + charitable + blindStudent + childBenefit + marriage;
+  return { interest, pensions, other, pensionPayments, charitable, blindStudent, childBenefit, marriage, total };
 }
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
@@ -208,13 +251,13 @@ function LineField({ box, label, title, items, onChange, fallbackTotal }: {
 }
 
 /** Collapsible sub-section grouping the SA100 main-return boxes by form page. */
-function CoreSection({ title, defaultOpen, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+function CoreSection({ title, count, defaultOpen, children }: { title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <button onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? 'rotate-90' : ''}`} />
-        <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{title}</span>
+        <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{title}{count != null && count > 0 && <span className="text-[var(--accent)]"> ({count})</span>}</span>
       </button>
       {open && <div className="border-t border-black/5 p-4">{children}</div>}
     </div>
@@ -222,9 +265,10 @@ function CoreSection({ title, defaultOpen, children }: { title: string; defaultO
 }
 
 function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const c = coreSectionCounts(income);
   return (
     <div className="space-y-3">
-      <CoreSection title="Interest & dividends" defaultOpen>
+      <CoreSection title="Interest & dividends" count={c.interest} defaultOpen>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <BreakdownField<TaxedInterestItem>
             box={1} label="Taxed UK interest" title="Taxed UK interest etc."
@@ -251,7 +295,7 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         </div>
       </CoreSection>
 
-      <CoreSection title="UK pensions & benefits">
+      <CoreSection title="UK pensions & benefits" count={c.pensions}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={8} label="State Pension" title="State Pension" items={income.statePensionItems} fallbackTotal={income.statePension ?? 0} onChange={items => setIncome(i => ({ ...i, statePensionItems: items }))} />
           <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
@@ -265,7 +309,7 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         </div>
       </CoreSection>
 
-      <CoreSection title="Other UK income">
+      <CoreSection title="Other UK income" count={c.other}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={17} label="Other taxable income" title="Other taxable income" items={income.otherIncomeItems} fallbackTotal={income.otherIncome} onChange={items => setIncome(i => ({ ...i, otherIncomeItems: items }))} />
           <LineField box={18} label="Total allowable expenses" title="Allowable expenses" items={income.otherIncomeExpensesItems} onChange={items => setIncome(i => ({ ...i, otherIncomeExpensesItems: items }))} />
@@ -275,7 +319,7 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         <OtherIncomeDescription ret={ret} income={income} setIncome={setIncome} />
       </CoreSection>
 
-      <CoreSection title="Pension payments">
+      <CoreSection title="Pension payments" count={c.pensionPayments}>
         <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Paying into registered pension schemes and overseas pension schemes</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={1} label="Payments & basic rate tax" title="Payments to registered pension schemes (relief at source)" items={income.pensionContributionsItems} fallbackTotal={income.pensionContributions} onChange={items => setIncome(i => ({ ...i, pensionContributionsItems: items }))} />
@@ -286,13 +330,13 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         </div>
       </CoreSection>
 
-      <CoreSection title="Charitable giving">
+      <CoreSection title="Charitable giving" count={c.charitable}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledNum box={5} label="Gift Aid payments (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
         </div>
       </CoreSection>
 
-      <CoreSection title="Blind allowance & student loan">
+      <CoreSection title="Blind allowance & student loan" count={c.blindStudent}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
@@ -314,13 +358,13 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         </div>
       </CoreSection>
 
-      <CoreSection title="Child benefit">
+      <CoreSection title="Child benefit" count={c.childBenefit}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
         </div>
       </CoreSection>
 
-      <CoreSection title="Marriage allowance">
+      <CoreSection title="Marriage allowance" count={c.marriage}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
