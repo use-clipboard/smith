@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   ArrowLeft, Plus, GitCompare, Sparkles, Pencil, Trash2, Copy, ArrowUpRight,
   Info, TrendingUp, Check, X,
+  LayoutGrid, Wallet, PiggyBank, LineChart, Home, Briefcase, SlidersHorizontal, FileText,
 } from 'lucide-react';
 import { StudioCard } from '../primitives';
 import AssistantPanel from '../AssistantPanel';
@@ -17,24 +19,25 @@ import {
 import type { TaxReturn, Sa100Income, Scenario } from '../types';
 
 type Tab = 'overview' | EditCategory | 'summary';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'income', label: 'Income & Deductions' },
-  { id: 'capital', label: 'Capital Gains' },
-  { id: 'pensions', label: 'Pensions' },
-  { id: 'investments', label: 'Investments' },
-  { id: 'property', label: 'Property' },
-  { id: 'business', label: 'Business' },
-  { id: 'other', label: 'Other Adjustments' },
-  { id: 'summary', label: 'Summary' },
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutGrid },
+  { id: 'income', label: 'Income & Deductions', icon: Wallet },
+  { id: 'capital', label: 'Capital Gains', icon: TrendingUp },
+  { id: 'pensions', label: 'Pensions', icon: PiggyBank },
+  { id: 'investments', label: 'Investments', icon: LineChart },
+  { id: 'property', label: 'Property', icon: Home },
+  { id: 'business', label: 'Business', icon: Briefcase },
+  { id: 'other', label: 'Other Adjustments', icon: SlidersHorizontal },
+  { id: 'summary', label: 'Summary', icon: FileText },
 ];
 
 export default function SandboxView({
-  ret, patch, onBack,
+  ret, patch, onBack, assistantOpen = true,
 }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
   onBack: () => void;
+  assistantOpen?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedId, setSelectedId] = useState<string | null>(ret.scenarios[0]?.id ?? null);
@@ -101,42 +104,65 @@ export default function SandboxView({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 overflow-x-auto border-b border-black/5">
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`whitespace-nowrap border-b-2 px-3 py-2 text-[13px] font-semibold transition-colors ${
-              tab === t.id ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Contents rail + content + docked assistant */}
+      <div className="flex gap-4">
+        <div className="hidden w-[210px] shrink-0 lg:block">
+          <SandboxRail active={tab} onSelect={setTab} />
+        </div>
 
-      {/* Body */}
-      {tab === 'overview' ? (
-        <Overview
-          ret={ret} scenarios={all} selectedId={selectedId} onSelect={setSelectedId}
-          onAdd={newBlank} onQuick={quick} onDelete={deleteScenario} onDuplicate={duplicateScenario}
-          onEdit={id => { setSelectedId(id); setTab('income'); }}
-          promoteId={promoteId} setPromoteId={setPromoteId} onPromote={promote}
-        />
-      ) : tab === 'summary' ? (
-        <SummaryTab ret={ret} scenarios={all} />
-      ) : (
-        selected ? (
-          <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
-            onChange={income => updateScenario(selected.id, income)} />
-        ) : (
-          <StudioCard className="flex flex-col items-center gap-2 px-8 py-12 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>
-            <p className="text-[14px] font-bold text-[var(--text-primary)]">Select a scenario to edit</p>
-            <p className="max-w-sm text-[12.5px] text-[var(--text-muted)]">The Current Plan mirrors the live return and can’t be edited here. Create a scenario, then adjust its figures.</p>
-            <button onClick={newBlank} className="btn-primary mt-1"><Plus size={15} /> Create scenario</button>
-          </StudioCard>
-        )
-      )}
+        <div className="min-w-0 flex-1">
+          {tab === 'overview' ? (
+            <Overview
+              ret={ret} scenarios={all} selectedId={selectedId} onSelect={setSelectedId}
+              onAdd={newBlank} onQuick={quick} onDelete={deleteScenario} onDuplicate={duplicateScenario}
+              onEdit={id => { setSelectedId(id); setTab('income'); }}
+              promoteId={promoteId} setPromoteId={setPromoteId} onPromote={promote}
+            />
+          ) : tab === 'summary' ? (
+            <SummaryTab ret={ret} scenarios={all} />
+          ) : (
+            selected ? (
+              <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
+                onChange={income => updateScenario(selected.id, income)} />
+            ) : (
+              <StudioCard className="flex flex-col items-center gap-2 px-8 py-12 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>
+                <p className="text-[14px] font-bold text-[var(--text-primary)]">Select a scenario to edit</p>
+                <p className="max-w-sm text-[12.5px] text-[var(--text-muted)]">The Current Plan mirrors the live return and can’t be edited here. Create a scenario, then adjust its figures.</p>
+                <button onClick={newBlank} className="btn-primary mt-1"><Plus size={15} /> Create scenario</button>
+              </StudioCard>
+            )
+          )}
+        </div>
+
+        {assistantOpen && (
+          <div className="hidden w-[340px] shrink-0 xl:block" style={{ height: 'calc(100vh - 240px)' }}>
+            <AssistantPanel ret={ret} stage="review" />
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function SandboxRail({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
+  return (
+    <StudioCard className="h-fit p-2 lg:sticky lg:top-4">
+      <p className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Sections</p>
+      <nav className="space-y-0.5">
+        {TABS.map(t => {
+          const on = t.id === active;
+          const Icon = t.icon;
+          return (
+            <button key={t.id} onClick={() => onSelect(t.id)}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${on ? 'bg-[var(--accent)]/10 font-bold text-[var(--accent)]' : 'font-semibold text-[var(--accent)]/90 hover:bg-[var(--accent)]/[0.06]'}`}>
+              <Icon size={14} className="shrink-0 opacity-80" />
+              <span className="flex-1 truncate">{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </StudioCard>
   );
 }
 
@@ -155,8 +181,7 @@ function Overview({
   const selectable = selectedId && selectedId !== 'current' ? selectedId : null;
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="space-y-4">
+    <div className="space-y-4">
         <StudioCard className="p-5">
           <div className="mb-3 flex items-center justify-between">
             <div>
@@ -264,12 +289,6 @@ function Overview({
             </div>
           )}
         </StudioCard>
-      </div>
-
-      {/* Assistant */}
-      <div className="hidden xl:block" style={{ height: 'calc(100vh - 260px)' }}>
-        <AssistantPanel ret={ret} stage="review" />
-      </div>
     </div>
   );
 }

@@ -225,7 +225,7 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
 
       {workspace === 'sandbox' ? (
         <div className="mt-4">
-          <SandboxView ret={ret} patch={patch} onBack={() => setWorkspace('return')} />
+          <SandboxView ret={ret} patch={patch} onBack={() => setWorkspace('return')} assistantOpen={assistantOpen} />
         </div>
       ) : (
         <>
@@ -255,7 +255,7 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>
-            {assistantOpen && stage !== 'review' && (
+            {assistantOpen && (
               <div className="hidden w-[340px] shrink-0 xl:block" style={{ height: 'calc(100vh - 240px)' }}>
                 <AssistantPanel ret={ret} stage={stage} />
               </div>

@@ -8,7 +8,6 @@ import {
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
-import AssistantPanel from '../AssistantPanel';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
@@ -32,11 +31,8 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
         <SectionPanel page={page} income={ret.income} setIncome={setIncome} />
       </div>
 
-      {/* Computation + AI assistant */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ComputationCard ret={ret} />
-        <div className="h-[460px]"><AssistantPanel ret={ret} stage="review" /></div>
-      </div>
+      {/* Live computation (the AI assistant is docked on the right of the workspace) */}
+      <ComputationCard ret={ret} />
 
       {/* Review points */}
       <StudioCard className="p-5">
