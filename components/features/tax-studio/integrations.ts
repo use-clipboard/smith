@@ -192,36 +192,39 @@ export function mergeCrossBookkeeping(income: Sa100Income, s: BookkeepingSummary
 // allocation before it lands. Falls back to the single net-profit path when a
 // source has no line detail.
 
-/** An SA103F income/expense box that a P&L line can be allocated to. */
-export interface Sa103Box { box: string; field: keyof TradeSource; label: string; section: 'income' | 'expense'; }
+/** An SA103F income/expense box that a P&L line can be allocated to. `disField`
+ *  is the matching disallowable box (32–45) for an expense box (17–30). */
+export interface Sa103Box { box: string; field: keyof TradeSource; label: string; section: 'income' | 'expense'; disField?: keyof TradeSource; }
 
-/** SA103F turnover / other income (15–16) and allowable expense boxes (17–30). */
+/** SA103F turnover / other income (15–16) and allowable expense boxes (17–30),
+ *  each expense box carrying its disallowable counterpart (32–45). */
 export const SA103_BOX_CATALOG: Sa103Box[] = [
   { box: '15', field: 'turnover', label: 'Turnover', section: 'income' },
   { box: '16', field: 'otherBusinessIncome', label: 'Any other business income', section: 'income' },
-  { box: '17', field: 'expCostOfGoods', label: 'Cost of goods bought for resale', section: 'expense' },
-  { box: '18', field: 'expSubcontractors', label: 'Construction industry subcontractors', section: 'expense' },
-  { box: '19', field: 'expWages', label: 'Wages, salaries and other staff costs', section: 'expense' },
-  { box: '20', field: 'expCarVanTravel', label: 'Car, van and travel expenses', section: 'expense' },
-  { box: '21', field: 'expPremises', label: 'Rent, rates, power and insurance', section: 'expense' },
-  { box: '22', field: 'expRepairs', label: 'Repairs and renewals', section: 'expense' },
-  { box: '23', field: 'expOffice', label: 'Phone, fax, stationery and office costs', section: 'expense' },
-  { box: '24', field: 'expAdvertising', label: 'Advertising and business entertainment', section: 'expense' },
-  { box: '25', field: 'expInterest', label: 'Interest on bank and other loans', section: 'expense' },
-  { box: '26', field: 'expBankCharges', label: 'Bank, credit card and financial charges', section: 'expense' },
-  { box: '27', field: 'expBadDebts', label: 'Irrecoverable debts written off', section: 'expense' },
-  { box: '28', field: 'expProfessional', label: 'Accountancy, legal and professional fees', section: 'expense' },
-  { box: '29', field: 'expDepreciation', label: 'Depreciation and loss on sale of assets', section: 'expense' },
-  { box: '30', field: 'expOtherCosts', label: 'Other business expenses', section: 'expense' },
+  { box: '17', field: 'expCostOfGoods', label: 'Cost of goods bought for resale', section: 'expense', disField: 'disCostOfGoods' },
+  { box: '18', field: 'expSubcontractors', label: 'Construction industry subcontractors', section: 'expense', disField: 'disSubcontractors' },
+  { box: '19', field: 'expWages', label: 'Wages, salaries and other staff costs', section: 'expense', disField: 'disWages' },
+  { box: '20', field: 'expCarVanTravel', label: 'Car, van and travel expenses', section: 'expense', disField: 'disCarVanTravel' },
+  { box: '21', field: 'expPremises', label: 'Rent, rates, power and insurance', section: 'expense', disField: 'disPremises' },
+  { box: '22', field: 'expRepairs', label: 'Repairs and renewals', section: 'expense', disField: 'disRepairs' },
+  { box: '23', field: 'expOffice', label: 'Phone, fax, stationery and office costs', section: 'expense', disField: 'disOffice' },
+  { box: '24', field: 'expAdvertising', label: 'Advertising and business entertainment', section: 'expense', disField: 'disAdvertising' },
+  { box: '25', field: 'expInterest', label: 'Interest on bank and other loans', section: 'expense', disField: 'disInterest' },
+  { box: '26', field: 'expBankCharges', label: 'Bank, credit card and financial charges', section: 'expense', disField: 'disBankCharges' },
+  { box: '27', field: 'expBadDebts', label: 'Irrecoverable debts written off', section: 'expense', disField: 'disBadDebts' },
+  { box: '28', field: 'expProfessional', label: 'Accountancy, legal and professional fees', section: 'expense', disField: 'disProfessional' },
+  { box: '29', field: 'expDepreciation', label: 'Depreciation and loss on sale of assets', section: 'expense', disField: 'disDepreciation' },
+  { box: '30', field: 'expOtherCosts', label: 'Other business expenses', section: 'expense', disField: 'disOtherCosts' },
 ];
 
-/** One reviewed allocation of a source P&L line to an SA103F box. */
-export interface BoxAllocation { label: string; amount: number; box: string; }
+/** One reviewed allocation of a source P&L line to an SA103F box, with the
+ *  portion the AI judged disallowable for tax (added back in boxes 32–45). */
+export interface BoxAllocation { label: string; amount: number; box: string; disallowable: number; }
 
 /** Ask the server to map source P&L lines to SA103F boxes (AI). Falls back to a
  *  turnover/other-costs split on any failure so the import still proceeds. */
 export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocation[]> {
-  const fallback = (): BoxAllocation[] => lines.map(l => ({ label: l.label, amount: Math.round(l.amount), box: l.section === 'income' ? '15' : '30' }));
+  const fallback = (): BoxAllocation[] => lines.map(l => ({ label: l.label, amount: Math.round(l.amount), box: l.section === 'income' ? '15' : '30', disallowable: 0 }));
   try {
     const r = await fetch('/api/tax-studio/integrations/map-trade-boxes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lines }),
@@ -229,20 +232,28 @@ export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocati
     if (!r.ok) return fallback();
     const d = await r.json().catch(() => null) as { allocations?: BoxAllocation[] } | null;
     const valid = new Set(SA103_BOX_CATALOG.map(b => b.box));
-    const out = (d?.allocations ?? []).filter(a => a && valid.has(a.box)).map(a => ({ label: String(a.label ?? ''), amount: Math.round(Number(a.amount) || 0), box: a.box }));
+    const out = (d?.allocations ?? []).filter(a => a && valid.has(a.box)).map(a => {
+      const amount = Math.round(Number(a.amount) || 0);
+      const dis = Math.min(amount, Math.max(0, Math.round(Number(a.disallowable) || 0)));
+      return { label: String(a.label ?? ''), amount, box: a.box, disallowable: dis };
+    });
     return out.length ? out : fallback();
   } catch { return fallback(); }
 }
 
-/** Build an itemised SA103F trade from reviewed box allocations. */
+/** Build an itemised SA103F trade from reviewed box allocations — fills the
+ *  income/expense boxes (15–30) and adds back the disallowable portions (32–45). */
 export function buildItemisedTrade(id: string, name: string, allocations: BoxAllocation[]): TradeSource {
   const trade: TradeSource = { id, name, profit: 0 };
   const nums = trade as unknown as Record<string, number>;
-  const byBox = new Map(SA103_BOX_CATALOG.map(b => [b.box, b.field as string]));
+  const byBox = new Map(SA103_BOX_CATALOG.map(b => [b.box, b]));
   for (const a of allocations) {
-    const field = byBox.get(a.box);
-    if (!field) continue;
-    nums[field] = (nums[field] || 0) + Math.round(a.amount);
+    const cat = byBox.get(a.box);
+    if (!cat) continue;
+    nums[cat.field as string] = (nums[cat.field as string] || 0) + Math.round(a.amount);
+    if (cat.disField && a.disallowable > 0) {
+      nums[cat.disField as string] = (nums[cat.disField as string] || 0) + Math.round(a.disallowable);
+    }
   }
   return trade;
 }

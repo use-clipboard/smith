@@ -36,18 +36,27 @@ export async function POST(req: NextRequest) {
     const boxList = SA103_BOX_CATALOG.map(b => `  ${b.box} — ${b.label} (${b.section})`).join('\n');
     const lineList = lines.map((l, i) => `  [${i}] "${l.label}" — £${l.amount} (${l.section})`).join('\n');
 
-    const system = `You are a UK tax assistant mapping a business's profit & loss lines to the boxes on HMRC form SA103F (Self-employment, full).
+    const system = `You are a UK tax assistant mapping a business's profit & loss lines to the boxes on HMRC form SA103F (Self-employment, full), and flagging the part of each expense that is DISALLOWABLE for tax.
 
 The SA103F income and expense boxes are:
 ${boxList}
 
-Rules:
+Mapping rules:
 - Map EVERY line to exactly one box that matches its nature.
 - Income lines must map to an income box (15 or 16); expense lines to an expense box (17–30).
 - Turnover / sales / fees → box 15. Grants, other trading income → box 16.
 - If an expense line does not clearly fit boxes 17–29, use box 30 (Other business expenses).
 - Keep the amount exactly as given. Do NOT invent, split or merge lines.
-- Reply with ONLY a JSON object: {"allocations":[{"index":<line index>,"box":"<box number>"}]}. No prose.`;
+
+Disallowable rules (the amount of that line NOT allowable for tax, added back):
+- Depreciation, amortisation and loss/(profit) on sale of assets: 100% disallowable.
+- Business/client entertaining (not staff entertaining within limits): 100% disallowable.
+- Non-business/private use, fines and penalties, political donations, most non-trade legal fees: disallowable.
+- Everything ordinary and wholly business (materials, wages, rent, motor, phone, bank charges, accountancy, etc.): 0.
+- 'disallowable' must be between 0 and the line amount. Income lines: 0.
+- When unsure, use 0 (do not over-disallow).
+
+Reply with ONLY a JSON object: {"allocations":[{"index":<line index>,"box":"<box number>","disallowable":<number>}]}. No prose.`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -68,25 +77,27 @@ Rules:
     const text = textBlock && textBlock.type === 'text' ? textBlock.text : '';
     const match = text.match(/\{[\s\S]*\}/);
     const validBoxes = new Set(SA103_BOX_CATALOG.map(b => b.box));
-    let allocations: { label: string; amount: number; box: string }[] = [];
+    type Alloc = { label: string; amount: number; box: string; disallowable: number };
+    let allocations: Alloc[] = [];
     if (match) {
       try {
-        const raw = JSON.parse(match[0]) as { allocations?: { index?: number; box?: string }[] };
+        const raw = JSON.parse(match[0]) as { allocations?: { index?: number; box?: string; disallowable?: number }[] };
         allocations = (raw.allocations ?? [])
           .map(a => {
             const line = typeof a.index === 'number' ? lines[a.index] : undefined;
             const box = String(a.box ?? '');
             if (!line || !validBoxes.has(box)) return null;
-            return { label: line.label, amount: line.amount, box };
+            const dis = Math.min(Math.abs(line.amount), Math.max(0, Math.round(Number(a.disallowable) || 0)));
+            return { label: line.label, amount: line.amount, box, disallowable: line.section === 'income' ? 0 : dis };
           })
-          .filter((a): a is { label: string; amount: number; box: string } => a !== null);
+          .filter((a): a is Alloc => a !== null);
       } catch { /* fall through to fallback below */ }
     }
     // Fallback: any line the model missed keeps a sensible default so no figure is lost.
     if (allocations.length !== lines.length) {
       const seen = new Set(allocations.map(a => a.label + '|' + a.amount));
       for (const l of lines) {
-        if (!seen.has(l.label + '|' + l.amount)) allocations.push({ label: l.label, amount: l.amount, box: l.section === 'income' ? '15' : '30' });
+        if (!seen.has(l.label + '|' + l.amount)) allocations.push({ label: l.label, amount: l.amount, box: l.section === 'income' ? '15' : '30', disallowable: 0 });
       }
     }
 

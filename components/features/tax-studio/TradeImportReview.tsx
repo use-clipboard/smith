@@ -26,12 +26,16 @@ export default function TradeImportReview({ lines, sourceLabel, expectedNet, onC
   }, [lines]);
 
   const boxOf = (box: string) => SA103_BOX_CATALOG.find(b => b.box === box);
-  const incomeTotal = useMemo(() => allocs.filter(a => boxOf(a.box)?.section === 'income').reduce((s, a) => s + a.amount, 0), [allocs]);
-  const expenseTotal = useMemo(() => allocs.filter(a => boxOf(a.box)?.section === 'expense').reduce((s, a) => s + a.amount, 0), [allocs]);
+  const isIncome = (box: string) => boxOf(box)?.section === 'income';
+  const incomeTotal = useMemo(() => allocs.filter(a => isIncome(a.box)).reduce((s, a) => s + a.amount, 0), [allocs]);
+  const expenseTotal = useMemo(() => allocs.filter(a => !isIncome(a.box)).reduce((s, a) => s + a.amount, 0), [allocs]);
+  const disallowableTotal = useMemo(() => allocs.reduce((s, a) => s + (isIncome(a.box) ? 0 : a.disallowable || 0), 0), [allocs]);
   const net = incomeTotal - expenseTotal;
+  const adjustedProfit = net + disallowableTotal;
   const netMismatch = expectedNet != null && Math.abs(net - expectedNet) > 1;
 
-  const setBox = (idx: number, box: string) => setAllocs(a => a.map((x, j) => j === idx ? { ...x, box } : x));
+  const setBox = (idx: number, box: string) => setAllocs(a => a.map((x, j) => j === idx ? { ...x, box, disallowable: isIncome(box) ? 0 : x.disallowable } : x));
+  const setDis = (idx: number, v: number) => setAllocs(a => a.map((x, j) => j === idx ? { ...x, disallowable: Math.max(0, Math.min(x.amount, v || 0)) } : x));
 
   if (typeof document === 'undefined') return null;
   return createPortal(
@@ -54,7 +58,8 @@ export default function TradeImportReview({ lines, sourceLabel, expectedNet, onC
                 <tr className="border-b border-black/5 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                   <th className="pb-2 pr-2">P&L line</th>
                   <th className="pb-2 pr-2 text-right">Amount</th>
-                  <th className="pb-2">SA103F box</th>
+                  <th className="pb-2 pr-2">SA103F box</th>
+                  <th className="pb-2 text-right">Disallowable</th>
                 </tr>
               </thead>
               <tbody>
@@ -62,7 +67,7 @@ export default function TradeImportReview({ lines, sourceLabel, expectedNet, onC
                   <tr key={idx} className="border-b border-black/5">
                     <td className="py-1.5 pr-2 text-[12.5px] text-[var(--text-primary)]">{a.label}</td>
                     <td className="py-1.5 pr-2 text-right text-[12.5px] font-semibold text-[var(--text-primary)]">{fmtMoney(a.amount)}</td>
-                    <td className="py-1.5">
+                    <td className="py-1.5 pr-2">
                       <select value={a.box} onChange={e => setBox(idx, e.target.value)} className="input-base py-1 text-[12px]">
                         <optgroup label="Income">
                           {SA103_BOX_CATALOG.filter(b => b.section === 'income').map(b => <option key={b.box} value={b.box}>{b.box} — {b.label}</option>)}
@@ -71,6 +76,15 @@ export default function TradeImportReview({ lines, sourceLabel, expectedNet, onC
                           {SA103_BOX_CATALOG.filter(b => b.section === 'expense').map(b => <option key={b.box} value={b.box}>{b.box} — {b.label}</option>)}
                         </optgroup>
                       </select>
+                    </td>
+                    <td className="py-1.5 text-right">
+                      {isIncome(a.box) ? (
+                        <span className="text-[12px] text-[var(--text-muted)]">—</span>
+                      ) : (
+                        <input type="number" value={a.disallowable === 0 ? '' : a.disallowable} placeholder="0"
+                          onChange={e => setDis(idx, Number(e.target.value))}
+                          className={`input-base w-24 py-1 text-right text-[12px] ${a.disallowable > 0 ? 'font-semibold text-amber-700' : ''}`} />
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -84,8 +98,11 @@ export default function TradeImportReview({ lines, sourceLabel, expectedNet, onC
             <span className="text-[var(--text-muted)]">Turnover / income <span className="font-bold text-[var(--text-primary)]">{fmtMoney(incomeTotal)}</span></span>
             <span className="text-[var(--text-muted)]">Expenses <span className="font-bold text-[var(--text-primary)]">{fmtMoney(expenseTotal)}</span></span>
             <span className="text-[var(--text-muted)]">Net profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(net)}</span></span>
-            {netMismatch && <span className="text-[11px] font-semibold text-amber-700">Differs from the source net profit ({fmtMoney(expectedNet!)}) — check the mapping.</span>}
+            {disallowableTotal > 0 && <span className="text-[var(--text-muted)]">+ Disallowed <span className="font-bold text-amber-700">{fmtMoney(disallowableTotal)}</span></span>}
+            <span className="text-[var(--text-muted)]">Tax-adjusted profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(adjustedProfit)}</span></span>
+            {netMismatch && <span className="text-[11px] font-semibold text-amber-700">Net differs from the source ({fmtMoney(expectedNet!)}) — check the mapping.</span>}
           </div>
+          <p className="mb-2 text-[10.5px] text-[var(--text-muted)]">Disallowables (depreciation, entertaining) are added back automatically — adjust any figure above. Capital allowances are a separate claim; add them in the trade's Capital allowance tab.</p>
           <div className="flex items-center justify-end gap-2">
             <button onClick={onClose} className="btn-secondary">Cancel</button>
             <button onClick={() => onConfirm(allocs)} disabled={loading} className="btn-primary disabled:opacity-40"><Check size={14} /> Import itemised</button>
