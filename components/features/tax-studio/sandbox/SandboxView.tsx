@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ArrowLeft, Plus, GitCompare, Sparkles, Pencil, Trash2, Copy, ArrowUpRight,
+  Plus, GitCompare, Sparkles, Pencil, Trash2, Copy, ArrowUpRight,
   Info, TrendingUp, Check, X,
   LayoutGrid, Wallet, PiggyBank, LineChart, Home, Briefcase, SlidersHorizontal, FileText,
 } from 'lucide-react';
@@ -33,11 +33,10 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ];
 
 export default function SandboxView({
-  ret, patch, onBack, assistantOpen = true, controls,
+  ret, patch, assistantOpen = true, controls,
 }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
-  onBack: () => void;
   assistantOpen?: boolean;
   controls?: {
     canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void;
@@ -94,9 +93,6 @@ export default function SandboxView({
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <button onClick={onBack} className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">
-            <ArrowLeft size={13} /> Back to return
-          </button>
           <div className="flex items-center gap-2">
             <h2 className="text-[20px] font-extrabold tracking-tight text-[var(--text-primary)]">Sandbox – {ret.clientName}</h2>
             <span className="rounded-full bg-[var(--accent)]/10 px-2.5 py-0.5 text-[11px] font-bold text-[var(--accent)]">{rt.form} · {rt.label}</span>

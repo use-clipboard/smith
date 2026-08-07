@@ -8,6 +8,7 @@ import {
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
+import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
@@ -47,6 +48,9 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
       </StudioCard>
 
       <SuggestionsCard ret={ret} patch={patch} />
+
+      {/* Readiness snapshot — a health check just before sending for approval */}
+      <HealthScoreCard ret={ret} />
 
       {/* Send for approval */}
       <div className="flex justify-end">

@@ -12,7 +12,7 @@ import CommandCentre from './CommandCentre';
 import NewReturnWizard from './wizard/NewReturnWizard';
 import Stepper from './Stepper';
 import AssistantPanel from './AssistantPanel';
-import { ReturnHeader, HealthScoreCard, NextBestActionCard } from './widgets';
+import { ReturnHeader } from './widgets';
 import SandboxView from './sandbox/SandboxView';
 import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
@@ -208,16 +208,10 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
 
       {workspace === 'sandbox' ? (
         <div className="mt-4">
-          <SandboxView ret={ret} patch={patch} onBack={() => setWorkspace('return')} assistantOpen={assistantOpen} controls={controls} />
+          <SandboxView ret={ret} patch={patch} assistantOpen={assistantOpen} controls={controls} />
         </div>
       ) : (
         <>
-          {/* Always-on: health score + next best action */}
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <HealthScoreCard ret={live} />
-            <NextBestActionCard ret={live} onGo={setStage} />
-          </div>
-
           {/* Stepper */}
           <div className="mb-4 mt-4 rounded-[18px] border border-white/60 bg-white/60 px-3 py-2 backdrop-blur-md">
             <Stepper ret={live} current={stage} onSelect={setStage} />
