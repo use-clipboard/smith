@@ -265,9 +265,25 @@ export interface Sa100Income {
   pensionRetirementAnnuityItems?: LineItem[]; // box 2 — payments to a retirement annuity
   pensionEmployerSchemeItems?: LineItem[];  // box 3 — payments to your employer's scheme
   pensionOverseasItems?: LineItem[];        // box 4 — payments to an overseas pension scheme
-  // Reliefs / deductions
-  giftAid: number;             // net gift aid donations paid
-  studentLoanPlan: 0 | 1 | 2 | 4 | 5; // 0 = none
+  // ── Charitable giving (SA100 TR4, page 4, boxes 5–10) ──
+  giftAid: number;             // box 5 — Gift Aid payments made in the year (net); scalar fallback
+  giftAidItems?: LineItem[];        // box 5 breakdown
+  giftAidOneOffItems?: LineItem[];  // box 6 — one-off payments included in box 5
+  giftAidCarryBackItems?: LineItem[]; // box 7 — payments to be treated as paid in the previous year
+  giftAidFutureItems?: LineItem[];  // box 8 — payments to be treated as paid in this year
+  giftAidSharesItems?: LineItem[];  // box 9 — qualifying shares / securities gifted to charity
+  giftAidLandItems?: LineItem[];    // box 10 — qualifying land & buildings gifted to charity
+  // ── Blind Person's Allowance (TR4 boxes 13–16) ──
+  registeredBlind?: boolean;        // box 13
+  blindAuthority?: string;          // box 14 — local authority / register name
+  blindSpouseSurplusClaim?: boolean;    // box 15 — claim spouse's surplus allowance
+  blindSpouseSurplusSurrender?: boolean; // box 16 — allow spouse to claim your surplus allowance
+  // ── Student Loan repayments (TR4 boxes 1–3 + plan types) ──
+  studentLoanPlan: 0 | 1 | 2 | 4 | 5; // 0 = none — plan type
+  studentLoanRepaymentBegan?: boolean; // box 1 — repayments began before end of tax year
+  studentLoanDeducted?: number;     // box 2 — repayments deducted by employer
+  postgradLoan?: boolean;           // has a Postgraduate Loan
+  postgradLoanDeducted?: number;    // box 3 — postgraduate loan repayments deducted
   /** Residential finance costs (mortgage interest) — relieved as a 20% tax
    *  reducer for individuals, not deducted. Optional; defaults to 0. */
   financeCosts?: number;
@@ -292,7 +308,49 @@ export interface Sa100Income {
   region?: 'uk' | 'scotland';
   /** Child benefit received in the year — drives the High Income Child Benefit
    *  Charge (clawed back between £60k and £80k adjusted net income). */
-  childBenefit?: number;
+  childBenefit?: number;                    // TR5 box 1 — total amount received in the year
+  childBenefitChildren?: number;            // box 2 — number of children claimed for
+  childBenefitStopDate?: string;            // box 3 — date stopped claiming (YYYY-MM-DD)
+  /** Winter Fuel Payment / Pension Age Winter Heating Payment received — drives
+   *  the high-income WFP/PAWHP charge from 2025/26 (recovered where adjusted net
+   *  income exceeds £35,000). */
+  winterFuelPayment?: number;
+  // ── Marriage Allowance detail (TR5) — spouse / civil partner ──
+  spouseFirstName?: string;                 // box 1
+  spouseLastName?: string;                  // box 2
+  spouseNino?: string;                      // box 3
+  spouseDob?: string;                       // box 4 — YYYY-MM-DD
+  marriageDate?: string;                    // box 5 — date of marriage / civil partnership (YYYY-MM-DD)
+  // ── Finishing your tax return (SA100 TR6, pages 6–7) ──
+  // Tax refunded or set off
+  taxRefundedOrSetOff?: number;             // box 1 — tax refunded or set off by HMRC / Jobcentre Plus
+  noPayeCollectCurrentYear?: boolean;       // box 2 — do not collect current-year tax through the PAYE code
+  noPayeCollectNextYear?: boolean;          // box 3 — do not collect next-year tax through the PAYE code
+  // If you have paid too much tax — repayment / nominee bank details
+  repayBankName?: string;                   // box 4
+  repayAccountHolder?: string;              // box 5 — account holder (or nominee)
+  repaySortCode?: string;                   // box 6
+  repayAccountNumber?: string;              // box 7
+  repayBuildingSocRef?: string;             // box 8
+  repayNoUkAccount?: boolean;               // box 9 — no UK bank/building society account
+  repayNomineeNameEntered?: boolean;        // box 10 — nominee name entered in box 5
+  repayNomineeIsAdviser?: boolean;          // box 11 — nominee is your tax adviser
+  repayNomineeAddress?: string;             // box 12 — nominee's address
+  repayNomineePostcode?: string;            // box 13 — nominee's postcode
+  // Your tax adviser
+  adviserName?: string;                     // box 15
+  adviserPhone?: string;                    // box 16
+  adviserAddress?: string;                  // box 17 — first line of address incl. postcode
+  adviserReference?: string;                // box 18 — reference your adviser uses for you
+  adviserOtherInfo?: string;                // box 19 — any other information
+  // Signing your form
+  provisionalFigures?: boolean;             // box 20 — return contains provisional figures
+  separateSupplementaryPages?: boolean;     // box 21 — separate supplementary pages attached
+  dateSigned?: string;                      // date signed (YYYY-MM-DD)
+  signingCapacity?: string;                 // box 23 — capacity in which signing (e.g. executor)
+  signedForPersonName?: string;             // box 24 — name of the person signed for
+  signatoryName?: string;                   // box 25 — if boxes 23 & 24 used, the signatory's name
+  signatoryAddress?: string;                // box 26 — signatory's address
   /** Brought-forward trade losses set against this year's trade profit. */
   tradeLossBroughtForward?: number;
   /** SA107 — income from trusts, settlements and estates. */

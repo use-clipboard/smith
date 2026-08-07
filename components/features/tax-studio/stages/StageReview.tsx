@@ -155,12 +155,67 @@ function coreSectionCounts(i: Sa100Income) {
     + len(i.pensionRetirementAnnuityItems)
     + len(i.pensionEmployerSchemeItems)
     + len(i.pensionOverseasItems);
-  const charitable = i.giftAid ? 1 : 0;
-  const blindStudent = i.studentLoanPlan ? 1 : 0;
-  const childBenefit = i.childBenefit ? 1 : 0;
-  const marriage = i.marriageAllowance && i.marriageAllowance !== 'none' ? 1 : 0;
-  const total = interest + pensions + other + pensionPayments + charitable + blindStudent + childBenefit + marriage;
-  return { interest, pensions, other, pensionPayments, charitable, blindStudent, childBenefit, marriage, total };
+  const charitable =
+    fc(i.giftAidItems, i.giftAid)
+    + len(i.giftAidOneOffItems)
+    + len(i.giftAidCarryBackItems)
+    + len(i.giftAidFutureItems)
+    + len(i.giftAidSharesItems)
+    + len(i.giftAidLandItems);
+  const blindStudent =
+    (i.registeredBlind ? 1 : 0)
+    + (i.blindAuthority ? 1 : 0)
+    + (i.blindSpouseSurplusClaim ? 1 : 0)
+    + (i.blindSpouseSurplusSurrender ? 1 : 0)
+    + (i.studentLoanRepaymentBegan ? 1 : 0)
+    + (i.studentLoanDeducted ? 1 : 0)
+    + (i.postgradLoan ? 1 : 0)
+    + (i.postgradLoanDeducted ? 1 : 0)
+    + (i.studentLoanPlan ? 1 : 0)
+    + (i.region && i.region !== 'uk' ? 1 : 0);
+  const childBenefit =
+    (i.childBenefit ? 1 : 0)
+    + (i.childBenefitChildren ? 1 : 0)
+    + (i.childBenefitStopDate ? 1 : 0)
+    + (i.winterFuelPayment ? 1 : 0);
+  const marriage =
+    (i.marriageAllowance && i.marriageAllowance !== 'none' ? 1 : 0)
+    + (i.spouseFirstName ? 1 : 0)
+    + (i.spouseLastName ? 1 : 0)
+    + (i.spouseNino ? 1 : 0)
+    + (i.spouseDob ? 1 : 0)
+    + (i.marriageDate ? 1 : 0);
+  const taxRefunded =
+    (i.taxRefundedOrSetOff ? 1 : 0)
+    + (i.noPayeCollectCurrentYear ? 1 : 0)
+    + (i.noPayeCollectNextYear ? 1 : 0);
+  const repayment =
+    (i.repayBankName ? 1 : 0)
+    + (i.repayAccountHolder ? 1 : 0)
+    + (i.repaySortCode ? 1 : 0)
+    + (i.repayAccountNumber ? 1 : 0)
+    + (i.repayBuildingSocRef ? 1 : 0)
+    + (i.repayNoUkAccount ? 1 : 0)
+    + (i.repayNomineeNameEntered ? 1 : 0)
+    + (i.repayNomineeIsAdviser ? 1 : 0)
+    + (i.repayNomineeAddress ? 1 : 0)
+    + (i.repayNomineePostcode ? 1 : 0);
+  const adviser =
+    (i.adviserName ? 1 : 0)
+    + (i.adviserPhone ? 1 : 0)
+    + (i.adviserAddress ? 1 : 0)
+    + (i.adviserReference ? 1 : 0)
+    + (i.adviserOtherInfo ? 1 : 0);
+  const signing =
+    (i.provisionalFigures ? 1 : 0)
+    + (i.separateSupplementaryPages ? 1 : 0)
+    + (i.dateSigned ? 1 : 0)
+    + (i.signingCapacity ? 1 : 0)
+    + (i.signedForPersonName ? 1 : 0)
+    + (i.signatoryName ? 1 : 0)
+    + (i.signatoryAddress ? 1 : 0);
+  const total = interest + pensions + other + pensionPayments + charitable + blindStudent + childBenefit + marriage + taxRefunded + repayment + adviser + signing;
+  return { interest, pensions, other, pensionPayments, charitable, blindStudent, childBenefit, marriage, taxRefunded, repayment, adviser, signing, total };
 }
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
@@ -331,15 +386,32 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
       </CoreSection>
 
       <CoreSection title="Charitable giving" count={c.charitable}>
+        <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Gift Aid payments and gifts of assets to charity</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={5} label="Gift Aid payments (net)" value={income.giftAid} onChange={v => setIncome(i => ({ ...i, giftAid: v }))} />
+          <LineField box={5} label="Gift Aid payments in the year" title="Gift Aid payments made in the year to 5 April" items={income.giftAidItems} fallbackTotal={income.giftAid} onChange={items => setIncome(i => ({ ...i, giftAidItems: items }))} />
+          <LineField box={6} label="One-off payments in box 5" title="Total of any 'one-off' payments in box 5" items={income.giftAidOneOffItems} onChange={items => setIncome(i => ({ ...i, giftAidOneOffItems: items }))} />
+          <LineField box={7} label="Carried back to previous year" title="Payments to be carried back to the previous tax year" items={income.giftAidCarryBackItems} onChange={items => setIncome(i => ({ ...i, giftAidCarryBackItems: items }))} />
+          <LineField box={8} label="Future payments treated in this year" title="Future payments to be treated as paid in this year" items={income.giftAidFutureItems} onChange={items => setIncome(i => ({ ...i, giftAidFutureItems: items }))} />
+          <LineField box={9} label="Shares/securities gifted to charity" title="Value of qualifying shares or securities gifted to charity" items={income.giftAidSharesItems} onChange={items => setIncome(i => ({ ...i, giftAidSharesItems: items }))} />
+          <LineField box={10} label="Land & buildings gifted to charity" title="Value of qualifying land and buildings gifted to charity" items={income.giftAidLandItems} onChange={items => setIncome(i => ({ ...i, giftAidLandItems: items }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Blind allowance & student loan" count={c.blindStudent}>
+        <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Blind Person's Allowance</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <CheckField box={13} label="Registered blind" checked={!!income.registeredBlind} onChange={v => setIncome(i => ({ ...i, registeredBlind: v }))} />
+          <LabelledText box={14} label="Local authority / register name" value={income.blindAuthority ?? ''} onChange={v => setIncome(i => ({ ...i, blindAuthority: v }))} />
+          <CheckField box={15} label="Claim spouse's surplus allowance" checked={!!income.blindSpouseSurplusClaim} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusClaim: v }))} />
+          <CheckField box={16} label="Allow spouse to claim your surplus" checked={!!income.blindSpouseSurplusSurrender} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusSurrender: v }))} />
+        </div>
+        <p className="mb-2 mt-4 flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)]"><GraduationCap size={12} /> Student Loan repayments</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <CheckField box={1} label="Repayments began before end of tax year" checked={!!income.studentLoanRepaymentBegan} onChange={v => setIncome(i => ({ ...i, studentLoanRepaymentBegan: v }))} />
+          <LabelledNum box={2} label="Repayments deducted by employer" value={income.studentLoanDeducted ?? 0} onChange={v => setIncome(i => ({ ...i, studentLoanDeducted: v }))} />
+          <LabelledNum box={3} label="Postgraduate Loan deducted by employer" value={income.postgradLoanDeducted ?? 0} onChange={v => setIncome(i => ({ ...i, postgradLoanDeducted: v }))} />
           <div>
-            <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]"><GraduationCap size={11} /> Student loan plan</label>
+            <BoxLabel label="Student Loan Plan type" />
             <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
               <option value={0}>None</option>
               <option value={1}>Plan 1</option>
@@ -349,7 +421,14 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Tax region</label>
+            <BoxLabel label="Postgraduate Loan" />
+            <select value={income.postgradLoan ? 'yes' : 'no'} onChange={e => setIncome(i => ({ ...i, postgradLoan: e.target.value === 'yes' }))} className="input-base py-1 text-[12.5px]">
+              <option value="no">None</option>
+              <option value="yes">Has a Postgraduate Loan</option>
+            </select>
+          </div>
+          <div>
+            <BoxLabel label="Tax region" />
             <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
               <option value="uk">England / Wales / NI</option>
               <option value="scotland">Scotland</option>
@@ -359,22 +438,90 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
       </CoreSection>
 
       <CoreSection title="Child benefit" count={c.childBenefit}>
+        <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">High Income Child Benefit Charge</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box="TR5.3" label="Child benefit received" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+          <LabelledNum box={1} label="Total amount received in the year" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+          <LabelledNum box={2} label="Number of children claimed for" value={income.childBenefitChildren ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefitChildren: v }))} />
+          <LabelledDate box={3} label="Date you stopped claiming" value={income.childBenefitStopDate ?? ''} onChange={v => setIncome(i => ({ ...i, childBenefitStopDate: v }))} />
+        </div>
+        <p className="mb-2 mt-4 text-[11px] font-semibold text-[var(--accent)]">Winter Fuel Payment (WFP) / PAWHP charge</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum box={1} label="Total WFP / PAWHP received in the year" value={income.winterFuelPayment ?? 0} onChange={v => setIncome(i => ({ ...i, winterFuelPayment: v }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Marriage allowance" count={c.marriage}>
+        <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Your spouse or civil partner</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Marriage Allowance</label>
-            <select value={income.marriageAllowance ?? 'none'} onChange={e => setIncome(i => ({ ...i, marriageAllowance: e.target.value as 'none' | 'received' | 'transferred' }))} className="input-base py-1 text-[12.5px]">
-              <option value="none">None</option>
-              <option value="received">Received (£252 reducer)</option>
-              <option value="transferred">Transferred to spouse</option>
-            </select>
-          </div>
+          <LabelledText box={1} label="First name" value={income.spouseFirstName ?? ''} onChange={v => setIncome(i => ({ ...i, spouseFirstName: v }))} />
+          <LabelledText box={2} label="Last name" value={income.spouseLastName ?? ''} onChange={v => setIncome(i => ({ ...i, spouseLastName: v }))} />
+          <LabelledText box={3} label="National Insurance number" value={income.spouseNino ?? ''} onChange={v => setIncome(i => ({ ...i, spouseNino: v }))} placeholder="e.g. AA123456B" />
+          <LabelledDate box={4} label="Date of birth" value={income.spouseDob ?? ''} onChange={v => setIncome(i => ({ ...i, spouseDob: v }))} />
+          <LabelledDate box={5} label="Date of marriage / civil partnership" value={income.marriageDate ?? ''} onChange={v => setIncome(i => ({ ...i, marriageDate: v }))} />
+          <CheckField box={6} label="Marriage Allowance transferred IN (£252 reducer)" checked={income.marriageAllowance === 'received'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'received' : 'none' }))} />
+          <CheckField box={7} label="Marriage Allowance transferred OUT" checked={income.marriageAllowance === 'transferred'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'transferred' : 'none' }))} />
         </div>
+      </CoreSection>
+
+      <CoreSection title="Tax refunded or set off" count={c.taxRefunded}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledNum box={1} label="Tax refunded or set off by HMRC / Jobcentre Plus" value={income.taxRefundedOrSetOff ?? 0} onChange={v => setIncome(i => ({ ...i, taxRefundedOrSetOff: v }))} />
+        </div>
+        <p className="mb-2 mt-4 text-[11px] font-semibold text-[var(--accent)]">If you have not paid enough tax</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <CheckField box={2} label="Do not collect current-year tax through my PAYE code" checked={!!income.noPayeCollectCurrentYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectCurrentYear: v }))} />
+          <CheckField box={3} label="Do not collect next-year tax through my PAYE code" checked={!!income.noPayeCollectNextYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectNextYear: v }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Paid too much tax — repayment details" count={c.repayment}>
+        <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Bank / building society for any repayment</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledText box={4} label="Name of bank or building society" value={income.repayBankName ?? ''} onChange={v => setIncome(i => ({ ...i, repayBankName: v }))} />
+          <LabelledText box={5} label="Account holder (or nominee)" value={income.repayAccountHolder ?? ''} onChange={v => setIncome(i => ({ ...i, repayAccountHolder: v }))} />
+          <LabelledText box={6} label="Branch sort code" value={income.repaySortCode ?? ''} onChange={v => setIncome(i => ({ ...i, repaySortCode: v }))} placeholder="00-00-00" />
+          <LabelledText box={7} label="Account number" value={income.repayAccountNumber ?? ''} onChange={v => setIncome(i => ({ ...i, repayAccountNumber: v }))} />
+          <LabelledText box={8} label="Building society reference" value={income.repayBuildingSocRef ?? ''} onChange={v => setIncome(i => ({ ...i, repayBuildingSocRef: v }))} />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <CheckField box={9} label="No UK bank / building society account" checked={!!income.repayNoUkAccount} onChange={v => setIncome(i => ({ ...i, repayNoUkAccount: v }))} />
+          <CheckField box={10} label="Nominee name entered in box 5" checked={!!income.repayNomineeNameEntered} onChange={v => setIncome(i => ({ ...i, repayNomineeNameEntered: v }))} />
+          <CheckField box={11} label="Nominee is my tax adviser" checked={!!income.repayNomineeIsAdviser} onChange={v => setIncome(i => ({ ...i, repayNomineeIsAdviser: v }))} />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <LabelledArea box={12} label="Nominee's address" value={income.repayNomineeAddress ?? ''} onChange={v => setIncome(i => ({ ...i, repayNomineeAddress: v }))} />
+          <LabelledText box={13} label="Nominee's postcode" value={income.repayNomineePostcode ?? ''} onChange={v => setIncome(i => ({ ...i, repayNomineePostcode: v }))} />
+        </div>
+        <p className="mt-3 text-[11px] text-[var(--text-muted)]">Box 14 (signature to authorise the nominee) is not needed when filing online.</p>
+      </CoreSection>
+
+      <CoreSection title="Your tax adviser" count={c.adviser}>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledText box={15} label="Tax adviser name (person, firm, company)" value={income.adviserName ?? ''} onChange={v => setIncome(i => ({ ...i, adviserName: v }))} />
+          <LabelledText box={16} label="Their phone number" value={income.adviserPhone ?? ''} onChange={v => setIncome(i => ({ ...i, adviserPhone: v }))} />
+          <LabelledText box={18} label="Reference your adviser uses for you" value={income.adviserReference ?? ''} onChange={v => setIncome(i => ({ ...i, adviserReference: v }))} />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <LabelledArea box={17} label="First line of their address incl. postcode" value={income.adviserAddress ?? ''} onChange={v => setIncome(i => ({ ...i, adviserAddress: v }))} />
+          <LabelledArea box={19} label="Any other information" value={income.adviserOtherInfo ?? ''} onChange={v => setIncome(i => ({ ...i, adviserOtherInfo: v }))} />
+        </div>
+      </CoreSection>
+
+      <CoreSection title="Signing your form" count={c.signing}>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <CheckField box={20} label="Return contains provisional figures" checked={!!income.provisionalFigures} onChange={v => setIncome(i => ({ ...i, provisionalFigures: v }))} />
+          <CheckField box={21} label="Separate supplementary pages attached" checked={!!income.separateSupplementaryPages} onChange={v => setIncome(i => ({ ...i, separateSupplementaryPages: v }))} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <LabelledDate label="Date signed" value={income.dateSigned ?? ''} onChange={v => setIncome(i => ({ ...i, dateSigned: v }))} />
+          <LabelledText box={23} label="Capacity in which signing (e.g. executor)" value={income.signingCapacity ?? ''} onChange={v => setIncome(i => ({ ...i, signingCapacity: v }))} />
+          <LabelledText box={24} label="Name of the person you have signed for" value={income.signedForPersonName ?? ''} onChange={v => setIncome(i => ({ ...i, signedForPersonName: v }))} />
+          <LabelledText box={25} label="If boxes 23 & 24 used, enter your name" value={income.signatoryName ?? ''} onChange={v => setIncome(i => ({ ...i, signatoryName: v }))} />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <LabelledArea box={26} label="Your address" value={income.signatoryAddress ?? ''} onChange={v => setIncome(i => ({ ...i, signatoryAddress: v }))} />
+        </div>
+        <p className="mt-3 text-[11px] text-[var(--text-muted)]">Box 22 (signature) is not needed when filing online.</p>
       </CoreSection>
     </div>
   );
@@ -995,6 +1142,47 @@ function LabelledNum({ icon: Icon, box, label, value, onChange }: { icon?: typeo
 function RemoveBtn({ onClick }: { onClick: () => void }) {
   return <button onClick={onClick} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>;
 }
+function BoxLabel({ box, label }: { box?: number | string; label: string }) {
+  return (
+    <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+      {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+      {label}
+    </label>
+  );
+}
+function LabelledText({ box, label, value, onChange, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <BoxLabel box={box} label={label} />
+      <input type="text" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
+    </div>
+  );
+}
+function LabelledDate({ box, label, value, onChange }: { box?: number | string; label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <BoxLabel box={box} label={label} />
+      <input type="date" value={value} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
+    </div>
+  );
+}
+function LabelledArea({ box, label, value, onChange, rows = 3, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string }) {
+  return (
+    <div>
+      <BoxLabel box={box} label={label} />
+      <textarea value={value} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base resize-none py-2 text-[12.5px]" />
+    </div>
+  );
+}
+function CheckField({ box, label, checked, onChange }: { box?: number | string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
+      {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+      {label}
+    </label>
+  );
+}
 
 // ─── Computation ─────────────────────────────────────────────────────────────
 function ComputationCard({ ret }: { ret: TaxReturn }) {
@@ -1031,7 +1219,7 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
       <Row label="Income tax" value={fmtMoney(c.incomeTax)} bold />
       {c.class4Nic > 0 && <Row label="Class 4 NIC" value={fmtMoney(c.class4Nic)} />}
       {c.studentLoan > 0 && <Row label="Student loan" value={fmtMoney(c.studentLoan)} />}
-      {c.hicbc > 0 && <Row label="High Income Child Benefit Charge" value={fmtMoney(c.hicbc)} />}
+      {c.hicbc > 0 && <Row label="High income charge (Child Benefit / WFP)" value={fmtMoney(c.hicbc)} />}
       {c.capitalGainsTax > 0 && <Row label={`Capital gains tax (on ${fmtMoney(c.taxableGains)})`} value={fmtMoney(c.capitalGainsTax)} />}
       <Row label="Total liability" value={fmtMoney(c.totalDue)} bold />
       <Row label="Tax deducted at source" value={`(${fmtMoney(c.taxDeductedAtSource)})`} />

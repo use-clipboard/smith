@@ -140,7 +140,7 @@ export function categoryHasData(key: RollKey, income: Sa100Income): boolean {
     case 'savings': return savingsInterestTotal(income) > 0;
     case 'capitalGains': return false; // not modelled in SA100 income yet
     case 'pension': return lineTotal(income.pensionContributionsItems, income.pensionContributions) > 0;
-    case 'giftAid': return (income.giftAid || 0) > 0;
+    case 'giftAid': return lineTotal(income.giftAidItems, income.giftAid) > 0;
     case 'other': return (income.otherIncome || 0) > 0;
   }
 }
@@ -156,7 +156,7 @@ export function categoryValueLabel(key: RollKey, income: Sa100Income, fmt: (n: n
     case 'savings': return fmt(savingsInterestTotal(income));
     case 'capitalGains': return '£0';
     case 'pension': return fmt(lineTotal(income.pensionContributionsItems, income.pensionContributions));
-    case 'giftAid': return fmt(income.giftAid || 0);
+    case 'giftAid': return fmt(lineTotal(income.giftAidItems, income.giftAid));
     case 'other': return fmt(income.otherIncome || 0);
   }
 }
@@ -203,7 +203,15 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
     out.pensionEmployerSchemeItems = prior.pensionEmployerSchemeItems?.map(x => ({ ...x }));
     out.pensionOverseasItems = prior.pensionOverseasItems?.map(x => ({ ...x }));
   }
-  if (selected.giftAid) out.giftAid = prior.giftAid;
+  if (selected.giftAid) {
+    out.giftAid = prior.giftAid;
+    out.giftAidItems = prior.giftAidItems?.map(x => ({ ...x }));
+    out.giftAidOneOffItems = prior.giftAidOneOffItems?.map(x => ({ ...x }));
+    out.giftAidCarryBackItems = prior.giftAidCarryBackItems?.map(x => ({ ...x }));
+    out.giftAidFutureItems = prior.giftAidFutureItems?.map(x => ({ ...x }));
+    out.giftAidSharesItems = prior.giftAidSharesItems?.map(x => ({ ...x }));
+    out.giftAidLandItems = prior.giftAidLandItems?.map(x => ({ ...x }));
+  }
   if (selected.other) {
     out.otherIncome = prior.otherIncome;
     out.otherIncomeItems = prior.otherIncomeItems?.map(x => ({ ...x }));
@@ -220,6 +228,33 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   out.jobseekersAllowance = prior.jobseekersAllowance;
   out.otherPensionsBenefits = prior.otherPensionsBenefits;
   out.studentLoanPlan = prior.studentLoanPlan;
+  out.postgradLoan = prior.postgradLoan;
+  // Standing personal details carry over regardless of category selection.
+  out.registeredBlind = prior.registeredBlind;
+  out.blindAuthority = prior.blindAuthority;
+  out.blindSpouseSurplusClaim = prior.blindSpouseSurplusClaim;
+  out.blindSpouseSurplusSurrender = prior.blindSpouseSurplusSurrender;
+  out.marriageAllowance = prior.marriageAllowance;
+  out.spouseFirstName = prior.spouseFirstName;
+  out.spouseLastName = prior.spouseLastName;
+  out.spouseNino = prior.spouseNino;
+  out.spouseDob = prior.spouseDob;
+  out.marriageDate = prior.marriageDate;
+  // Finishing your tax return — repayment & adviser details are standing.
+  out.repayBankName = prior.repayBankName;
+  out.repayAccountHolder = prior.repayAccountHolder;
+  out.repaySortCode = prior.repaySortCode;
+  out.repayAccountNumber = prior.repayAccountNumber;
+  out.repayBuildingSocRef = prior.repayBuildingSocRef;
+  out.repayNoUkAccount = prior.repayNoUkAccount;
+  out.repayNomineeNameEntered = prior.repayNomineeNameEntered;
+  out.repayNomineeIsAdviser = prior.repayNomineeIsAdviser;
+  out.repayNomineeAddress = prior.repayNomineeAddress;
+  out.repayNomineePostcode = prior.repayNomineePostcode;
+  out.adviserName = prior.adviserName;
+  out.adviserPhone = prior.adviserPhone;
+  out.adviserAddress = prior.adviserAddress;
+  out.adviserReference = prior.adviserReference;
   return out;
 }
 

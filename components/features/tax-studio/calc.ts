@@ -83,6 +83,22 @@ export function pensionBandExtension(income: Sa100Income): number {
   return box1 * 1.25 + sumLines(income.pensionRetirementAnnuityItems) + sumLines(income.pensionEmployerSchemeItems) + sumLines(income.pensionOverseasItems);
 }
 
+/** Net Gift Aid for band extension (TR4 boxes 5, 7, 8): payments in the year
+ *  (box 5), less any carried back to the previous year (box 7), plus any
+ *  brought back into this year (box 8). Box 6 is a memo subset of box 5. */
+export function giftAidNet(income: Sa100Income): number {
+  const box5 = lineTotal(income.giftAidItems, income.giftAid || 0);
+  const carryBack = sumLines(income.giftAidCarryBackItems);
+  const future = sumLines(income.giftAidFutureItems);
+  return Math.max(0, box5 - carryBack + future);
+}
+/** Gifts of qualifying shares/securities (box 9) and land/buildings (box 10) to
+ *  charity — relieved as a deduction from total income (modelled as band
+ *  extension + a reduction in adjusted net income). */
+export function charityAssetGifts(income: Sa100Income): number {
+  return sumLines(income.giftAidSharesItems) + sumLines(income.giftAidLandItems);
+}
+
 /** Taxable UK pensions & benefits (boxes 8, 9, 11, 13, 15, 16). */
 export function pensionsBenefitsTotal(income: Sa100Income): number {
   return lineTotal(income.statePensionItems, income.statePension || 0)
@@ -268,6 +284,10 @@ const HICBC_STEP = 200;
 
 const SL_THRESHOLDS: Record<1 | 2 | 4 | 5, number> = { 1: 26065, 2: 28470, 4: 32745, 5: 25000 };
 const SL_RATE = 0.09;
+const PGL_THRESHOLD = 21000; // Postgraduate Loan repayment threshold
+const PGL_RATE = 0.06;
+const BLIND_PERSONS_ALLOWANCE = 3130; // 2025/26 — added to the personal allowance
+const WFP_CHARGE_THRESHOLD = 35000;   // Winter Fuel Payment / PAWHP full recovery above this ANI
 
 type Band = 'basic' | 'higher' | 'additional';
 
@@ -400,12 +420,14 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const totalIncome = nsnd + savingsIncome + dividendIncome;
 
   // Band extension + adjusted net income (for PA taper) via grossed reliefs.
-  const grossGiftAid = (income.giftAid || 0) * 1.25;
+  const grossGiftAid = giftAidNet(income) * 1.25;
   const grossPension = pensionBandExtension(income);
-  const brl = BASIC_RATE_LIMIT + grossGiftAid + grossPension;
-  const addl = ADDITIONAL_THRESHOLD + grossGiftAid + grossPension;
+  const assetGifts = charityAssetGifts(income);
+  if (assetGifts > 0) notes.push('Gifts of shares / land to charity relieved as a deduction from income (modelled via band extension — review before filing).');
+  const brl = BASIC_RATE_LIMIT + grossGiftAid + grossPension + assetGifts;
+  const addl = ADDITIONAL_THRESHOLD + grossGiftAid + grossPension + assetGifts;
 
-  const adjustedNetIncome = totalIncome - grossGiftAid - grossPension;
+  const adjustedNetIncome = totalIncome - grossGiftAid - grossPension - assetGifts;
   let personalAllowance = PA;
   let paTapered = false;
   if (adjustedNetIncome > PA_TAPER_THRESHOLD) {
@@ -416,6 +438,14 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (income.marriageAllowance === 'transferred') {
     personalAllowance = Math.max(0, personalAllowance - MARRIAGE_ALLOWANCE_TRANSFER);
     notes.push('Personal allowance reduced by a Marriage Allowance transfer to a spouse/civil partner.');
+  }
+  if (income.registeredBlind) {
+    personalAllowance += BLIND_PERSONS_ALLOWANCE;
+    notes.push('Blind Person’s Allowance added to the personal allowance.');
+  }
+  if (income.blindSpouseSurplusClaim) {
+    personalAllowance += BLIND_PERSONS_ALLOWANCE;
+    notes.push('Spouse’s surplus Blind Person’s Allowance claimed.');
   }
   const remittanceBasis = !!income.residence?.remittanceBasis;
   if (remittanceBasis) {
@@ -520,11 +550,17 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const class4Base = tradeProfit + partnershipClass4;
   const class4Nic = r0(Math.max(0, Math.min(class4Base, NIC_UPL) - NIC_LPL) * C4_MAIN + Math.max(0, class4Base - NIC_UPL) * C4_UPPER);
 
-  // Student loan — 9% of income above the plan threshold.
+  // Student loan — 9% over the plan threshold, less any deducted by an employer,
+  // plus a Postgraduate Loan (6% over £21,000) less its employer deductions.
   let studentLoan = 0;
   if (income.studentLoanPlan) {
     const threshold = SL_THRESHOLDS[income.studentLoanPlan];
     studentLoan = Math.floor(Math.max(0, totalIncome - threshold) * SL_RATE);
+  }
+  studentLoan = Math.max(0, studentLoan - (income.studentLoanDeducted || 0));
+  if (income.postgradLoan) {
+    const pgl = Math.floor(Math.max(0, totalIncome - PGL_THRESHOLD) * PGL_RATE);
+    studentLoan += Math.max(0, pgl - (income.postgradLoanDeducted || 0));
   }
 
   // High Income Child Benefit Charge — 1% of child benefit for every £200 of
@@ -535,6 +571,13 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     const pct = Math.min(1, Math.floor((adjustedNetIncome - HICBC_THRESHOLD) / HICBC_STEP) * 0.01);
     hicbc = r0(childBenefit * pct);
     if (hicbc > 0) notes.push('High Income Child Benefit Charge applies.');
+  }
+  // Winter Fuel Payment / PAWHP high-income charge (2025/26) — fully recovered
+  // where adjusted net income exceeds £35,000. Reported with the HICBC line.
+  const winterFuel = income.winterFuelPayment || 0;
+  if (winterFuel > 0 && adjustedNetIncome > WFP_CHARGE_THRESHOLD) {
+    hicbc += r0(winterFuel);
+    notes.push('Winter Fuel Payment / PAWHP recovered via the high-income charge (adjusted net income over £35,000).');
   }
 
   // Capital gains tax — gains stack above income; the unused basic-rate band
@@ -586,7 +629,10 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
   const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
-  const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource);
+  // Tax already refunded / set off in-year (TR6 box 1) is added back to what's due.
+  const taxRefundedOrSetOff = income.taxRefundedOrSetOff || 0;
+  if (taxRefundedOrSetOff > 0) notes.push('Tax refunded or set off in-year (box 1) added back to the balancing payment.');
+  const balancingPayment = Math.max(0, totalDue - taxDeductedAtSource + taxRefundedOrSetOff);
 
   // Payments on account — on the income tax + Class 4 "relevant amount" (not
   // student loan / CGT); due unless < £1,000 or ≥80% collected at source.

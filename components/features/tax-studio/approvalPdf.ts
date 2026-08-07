@@ -7,7 +7,7 @@
 
 import type { Sa100Income } from './types';
 import type { Sa100Computation } from './calc';
-import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet, lineTotal } from './calc';
+import { computeSa100Full, employmentBenefits, employmentExpenses, tradeNetProfit, tradeAdjustedProfit, propertyTaxable, partnershipTaxableProfit, foreignTotals, dividendsTotal, savingsInterestTotal, taxedInterestGross, pensionsBenefitsTotal, otherIncomeNet, lineTotal, giftAidNet } from './calc';
 import { returnType } from './data';
 
 export interface SummaryLine { label: string; value: string; }
@@ -194,7 +194,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
   line(st, 'Income tax due', gbp(c.incomeTax), { bold: true, rule: true });
   if (c.class4Nic > 0) line(st, 'Class 4 National Insurance', gbp(c.class4Nic));
   if (c.studentLoan > 0) line(st, 'Student loan repayment', gbp(c.studentLoan));
-  if (c.hicbc > 0) line(st, 'High Income Child Benefit Charge', gbp(c.hicbc));
+  if (c.hicbc > 0) line(st, 'High income charge (Child Benefit / WFP)', gbp(c.hicbc));
   if (c.capitalGainsTax > 0) line(st, `Capital gains tax (on ${gbp(c.taxableGains)})`, gbp(c.capitalGainsTax));
   line(st, 'Total income tax and NICs due', gbp(c.totalDue), { bold: true, rule: true });
   if (c.taxDeductedAtSource > 0) line(st, 'Less tax deducted at source', `(${gbp(c.taxDeductedAtSource)})`);
@@ -219,7 +219,7 @@ export async function renderSa100ApprovalPdf(input: Sa100PackInput): Promise<Blo
     ['Savings interest', savingsInterestTotal(i) + taxedInterestGross(i) + (i.untaxedForeignInterest || 0)],
     ['Pensions & benefits', pensionsBenefitsTotal(i)],
     ['Foreign income', fT.interest + fT.dividends + fT.other], ['Foreign tax paid', fT.taxClaimed],
-    ['Other UK income', otherIncomeNet(i)], ['Gift Aid (net)', i.giftAid], ['Personal pension contributions (net)', lineTotal(i.pensionContributionsItems, i.pensionContributions)],
+    ['Other UK income', otherIncomeNet(i)], ['Gift Aid (net)', giftAidNet(i)], ['Personal pension contributions (net)', lineTotal(i.pensionContributionsItems, i.pensionContributions)],
     ['Child benefit received', i.childBenefit || 0],
   ];
   const nonZero = others.filter(([, v]) => v > 0);
