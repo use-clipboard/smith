@@ -46,6 +46,13 @@ export function partnershipTaxableProfit(p: PartnershipSource): number {
   return Math.max(0, (p.profit || 0) + (p.adjustments || 0) - (p.lossBroughtForward || 0));
 }
 
+/** Dividends total — sum of the itemised breakdown when present, else the scalar. */
+export function dividendsTotal(income: Sa100Income): number {
+  const items = income.dividendItems;
+  if (items && items.length) return items.reduce((a, d) => a + (d.amount || 0), 0);
+  return income.dividends || 0;
+}
+
 // ── SA106 foreign helpers ────────────────────────────────────────────────────
 /** Split foreign income by how it's taxed in the UK: interest → savings rates,
  *  dividends → dividend rates, everything else → non-savings. `taxClaimed` /
@@ -326,7 +333,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const otherIncome = income.otherIncome || 0;
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
   const savingsIncome = (income.savingsInterest || 0) + ft.interest + partnershipSavings + tr.savings;
-  const dividendIncome = (income.dividends || 0) + ft.dividends + partnershipDividends + tr.dividend;
+  const dividendIncome = dividendsTotal(income) + ft.dividends + partnershipDividends + tr.dividend;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));

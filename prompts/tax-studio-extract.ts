@@ -9,7 +9,7 @@ Common documents and what to take:
 - P60 / P45 (employment): employer name, gross pay for the year, and PAYE tax deducted.
 - P11D (benefits in kind): the total cash-equivalent of benefits for that employment.
 - Employment expense claims (P87, professional subscriptions, mileage): allowable employment expenses per employment.
-- Dividend vouchers / statements: the dividend amount(s). SUM all dividends across every voucher into one total.
+- Dividend vouchers / statements: list EACH dividend SEPARATELY in "dividendList" — one entry per voucher/company with the company name, an optional description, and the amount. Also put the grand total in "dividends".
 - Interest certificates / bank interest statements: taxable interest received. SUM across all accounts.
 - Private pension statements: taxable pension income received; and, SEPARATELY, any personal pension CONTRIBUTIONS the taxpayer paid (relief at source, net amount).
 - State pension letter (DWP): the total STATE pension received in the year (report separately from private pensions).
@@ -37,6 +37,7 @@ Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
   "partnerships": [{ "name": string, "profit": number }],
   "property": [{ "address": string, "profit": number }],
   "dividends": number,
+  "dividendList": [{ "company": string, "description": string, "amount": number }],
   "savingsInterest": number,
   "pensionsIncome": number,
   "statePension": number,

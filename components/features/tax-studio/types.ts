@@ -157,6 +157,17 @@ export interface TrustEstateSource {
   taxPaid: number;  // tax already paid (estate kind; computed for discretionary)
 }
 
+// One itemised dividend (UK company distribution) — the breakdown behind the
+// Dividends total on the SA100.
+export interface DividendItem {
+  id: string;
+  company: string;
+  description?: string;
+  shares?: number;
+  paymentDate?: string; // dd-mm-yyyy
+  amount: number;
+}
+
 // SA106 Foreign — one foreign income source, routed to the right UK rate.
 export interface ForeignSource {
   id: string;
@@ -184,6 +195,9 @@ export interface Sa100Income {
   partnerships?: PartnershipSource[]; // SA104 — share of partnership profit
   property: PropertySource[];
   dividends: number;
+  /** Itemised dividend breakdown; when present it drives the dividends total and
+   *  is carried over on roll-forward. The `dividends` scalar is the fallback. */
+  dividendItems?: DividendItem[];
   savingsInterest: number;
   pensionsIncome: number;      // taxable private pensions received
   statePension?: number;       // state pension (paid gross, no PAYE)

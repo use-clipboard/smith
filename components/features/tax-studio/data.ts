@@ -6,7 +6,7 @@ import type {
   TaxReturn, ReturnTypeId, StageId, StageState, ReturnStatus,
   Sa100Income, ConnectedSource, TaxSuggestion, ReviewPoint,
 } from './types';
-import { estimateSa100, employmentBenefits } from './calc';
+import { estimateSa100, employmentBenefits, dividendsTotal } from './calc';
 
 // ─── Return types ────────────────────────────────────────────────────────────
 export const RETURN_TYPES: {
@@ -264,7 +264,7 @@ export function seedReviewPoints(income: Sa100Income): ReviewPoint[] {
       suggestedFix: 'Consider a pension contribution to restore the personal allowance.',
     });
   }
-  if ((income.dividends || 0) > 500) {
+  if (dividendsTotal(income) > 500) {
     out.push({
       id: 'div-check', area: 'Dividends', severity: 'minor', resolved: false,
       issue: 'Dividends exceed the £500 allowance',
@@ -303,7 +303,7 @@ export function seedSuggestions(income: Sa100Income): TaxSuggestion[] {
       legislation: 's.188–194 FA 2004', appliedToSandbox: false,
     });
   }
-  if ((income.dividends || 0) > 500) {
+  if (dividendsTotal(income) > 500) {
     out.push({
       id: 'spouse-dividends', title: 'Transfer dividend-bearing shares to spouse', category: 'Remuneration',
       estSaving: 900, confidence: 62,

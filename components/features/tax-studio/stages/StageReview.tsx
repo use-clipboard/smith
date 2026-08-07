@@ -5,13 +5,13 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, X, Check,
 } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals, dividendsTotal } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -172,7 +172,7 @@ function SectionPanel({ page, setPage, counts, income, setIncome }: {
 function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      <LabelledNum icon={PiggyBank} box={4} label="Dividends" value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
+      <DividendField income={income} setIncome={setIncome} />
       <LabelledNum box={2} label="Savings interest" value={income.savingsInterest} onChange={v => setIncome(i => ({ ...i, savingsInterest: v }))} />
       <LabelledNum box={11} label="Pensions income" value={income.pensionsIncome} onChange={v => setIncome(i => ({ ...i, pensionsIncome: v }))} />
       <LabelledNum box={8} label="State pension" value={income.statePension ?? 0} onChange={v => setIncome(i => ({ ...i, statePension: v }))} />
@@ -204,6 +204,89 @@ function CorePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIn
           <option value="uk">England / Wales / NI</option>
           <option value="scotland">Scotland</option>
         </select>
+      </div>
+    </div>
+  );
+}
+
+// Dividends — a scalar with an itemised breakdown behind a modal. The header
+// shows the entry count; the total feeds the computation.
+function DividendField({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const [open, setOpen] = useState(false);
+  const items = income.dividendItems ?? [];
+  return (
+    <div>
+      <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">4</span>
+        <PiggyBank size={11} /> Dividends{items.length > 0 && <span className="font-bold text-[var(--text-secondary)]"> ({items.length})</span>}
+        <button onClick={() => setOpen(true)} className="ml-auto flex h-4 w-4 items-center justify-center rounded bg-[var(--accent)]/10 text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20" aria-label="Itemise dividends"><Plus size={11} /></button>
+      </label>
+      {items.length > 0 ? (
+        <button onClick={() => setOpen(true)} className="input-base flex w-full items-center justify-between py-1 text-[12.5px]">
+          <span className="text-[var(--text-muted)]">{items.length} entr{items.length === 1 ? 'y' : 'ies'}</span>
+          <span className="font-semibold text-[var(--text-primary)]">{fmtMoney(dividendsTotal(income))}</span>
+        </button>
+      ) : (
+        <NumIn value={income.dividends} onChange={v => setIncome(i => ({ ...i, dividends: v }))} />
+      )}
+      {open && <DividendModal income={income} setIncome={setIncome} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function DividendModal({ income, setIncome, onClose }: { income: Sa100Income; setIncome: SetIncome; onClose: () => void }) {
+  const items = income.dividendItems ?? [];
+  const setItems = (next: DividendItem[]) => setIncome(i => ({ ...i, dividendItems: next }));
+  const add = () => setItems([...items, { id: `dv-${items.length}-${Date.now()}`, company: '', amount: 0 }]);
+  const upd = (idx: number, u: Partial<DividendItem>) => setItems(items.map((x, j) => j === idx ? { ...x, ...u } : x));
+  const del = (idx: number) => setItems(items.filter((_, j) => j !== idx));
+  const total = items.reduce((a, d) => a + (d.amount || 0), 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
+          <p className="text-[15px] font-bold text-[var(--text-primary)]">Dividends from UK companies</p>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-auto px-5 py-4">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-black/5 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                <th className="pb-2 pr-2">Company name</th>
+                <th className="pb-2 pr-2">Description</th>
+                <th className="pb-2 pr-2">No. of shares</th>
+                <th className="pb-2 pr-2">Payment date</th>
+                <th className="pb-2 pr-2 text-right">Dividend</th>
+                <th className="pb-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 ? (
+                <tr><td colSpan={6} className="py-6 text-center text-[12px] text-[var(--text-muted)]">No dividends yet — add an entry.</td></tr>
+              ) : items.map((d, idx) => (
+                <tr key={d.id} className="border-b border-black/5">
+                  <td className="py-1.5 pr-2"><input value={d.company} onChange={e => upd(idx, { company: e.target.value })} placeholder="Company" className="input-base py-1 text-[12px]" /></td>
+                  <td className="py-1.5 pr-2"><input value={d.description ?? ''} onChange={e => upd(idx, { description: e.target.value })} placeholder="Description" className="input-base py-1 text-[12px]" /></td>
+                  <td className="py-1.5 pr-2"><input type="number" value={d.shares || ''} onChange={e => upd(idx, { shares: Number(e.target.value) || 0 })} placeholder="0" className="input-base py-1 text-right text-[12px]" /></td>
+                  <td className="py-1.5 pr-2"><input value={d.paymentDate ?? ''} onChange={e => upd(idx, { paymentDate: e.target.value })} placeholder="dd-mm-yyyy" className="input-base py-1 text-[12px]" /></td>
+                  <td className="py-1.5 pr-2"><input type="number" value={d.amount || ''} onChange={e => upd(idx, { amount: Number(e.target.value) || 0 })} placeholder="0.00" className="input-base py-1 text-right text-[12px]" /></td>
+                  <td className="py-1.5"><RemoveBtn onClick={() => del(idx)} /></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} className="pt-3 text-right text-[12px] font-semibold text-[var(--text-muted)]">Total</td>
+                <td className="pt-3 pr-2 text-right text-[13px] font-bold text-[var(--text-primary)]">{fmtMoney(total)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="flex items-center justify-between border-t border-black/5 px-5 py-3">
+          <button onClick={add} className="btn-secondary"><Plus size={14} /> Add entry</button>
+          <button onClick={onClose} className="btn-primary"><Check size={14} /> Save</button>
+        </div>
       </div>
     </div>
   );

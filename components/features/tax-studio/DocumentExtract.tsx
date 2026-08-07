@@ -121,7 +121,7 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
                   {extraction.selfEmployment.length > 0 && <Figure label={`Self-employment (${extraction.selfEmployment.length})`} value={fmtMoney(extraction.selfEmployment.reduce((a, s) => a + s.profit, 0))} />}
                   {extraction.partnerships.length > 0 && <Figure label={`Partnership (${extraction.partnerships.length})`} value={fmtMoney(extraction.partnerships.reduce((a, p) => a + p.profit, 0))} />}
                   {extraction.property.length > 0 && <Figure label={`Property (${extraction.property.length})`} value={fmtMoney(extraction.property.reduce((a, p) => a + p.profit, 0))} />}
-                  {extraction.dividends > 0 && <Figure label="Dividends" value={fmtMoney(extraction.dividends)} />}
+                  {extraction.dividends > 0 && <Figure label={extraction.dividendList.length > 1 ? `Dividends (${extraction.dividendList.length})` : 'Dividends'} value={fmtMoney(extraction.dividends)} />}
                   {extraction.savingsInterest > 0 && <Figure label="Savings interest" value={fmtMoney(extraction.savingsInterest)} />}
                   {extraction.pensionsIncome > 0 && <Figure label="Pensions income" value={fmtMoney(extraction.pensionsIncome)} />}
                   {extraction.statePension > 0 && <Figure label="State pension" value={fmtMoney(extraction.statePension)} />}

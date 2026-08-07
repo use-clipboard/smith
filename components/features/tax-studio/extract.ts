@@ -10,6 +10,8 @@ export interface Sa100Extraction {
   partnerships: { name: string; profit: number }[];
   property: { address: string; profit: number }[];
   dividends: number;
+  /** Each dividend listed separately (one per voucher/company). */
+  dividendList: { company: string; description?: string; amount: number }[];
   savingsInterest: number;
   pensionsIncome: number;
   statePension: number;
@@ -45,6 +47,7 @@ function normalise(raw: unknown): Sa100Extraction {
     selfEmployment: arr<Sa100Extraction['selfEmployment'][number]>(e.selfEmployment).map(x => ({ name: String(x?.name ?? ''), profit: num(x?.profit) })),
     partnerships: arr<Sa100Extraction['partnerships'][number]>(e.partnerships).map(x => ({ name: String(x?.name ?? ''), profit: num(x?.profit) })),
     property: arr<Sa100Extraction['property'][number]>(e.property).map(x => ({ address: String(x?.address ?? ''), profit: num(x?.profit) })),
+    dividendList: arr<Sa100Extraction['dividendList'][number]>(e.dividendList).map(x => ({ company: String(x?.company ?? ''), description: x?.description != null ? String(x.description) : undefined, amount: num(x?.amount) })).filter(x => x.amount > 0),
     dividends: num(e.dividends), savingsInterest: num(e.savingsInterest), pensionsIncome: num(e.pensionsIncome),
     statePension: num(e.statePension), foreignIncome: num(e.foreignIncome), foreignTaxPaid: num(e.foreignTaxPaid),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
@@ -69,7 +72,7 @@ export function extractionHasData(e: Sa100Extraction): boolean {
     || [e.dividends, e.savingsInterest, e.pensionsIncome, e.statePension, e.foreignIncome, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
 }
 
-const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = 'doc-prop-';
+const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = 'doc-prop-', DOC_DV = 'doc-dv-';
 
 /** Merge extracted figures into the income. Document-sourced rows carry a prefix
  *  so re-importing replaces them; scalar fields are set only when the documents
@@ -89,10 +92,17 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
   const property = income.property.filter(x => !x.id.startsWith(DOC_PROP));
   e.property.forEach((x, i) => property.push({ id: `${DOC_PROP}${i}`, address: x.address || `Property ${i + 1}`, profit: Math.round(x.profit) }));
 
+  // Each extracted dividend becomes its own itemised entry (keeps manual ones).
+  let dividendItems = income.dividendItems;
+  if (e.dividendList.length) {
+    const manual = (income.dividendItems ?? []).filter(x => !x.id.startsWith(DOC_DV));
+    dividendItems = [...manual, ...e.dividendList.map((x, i) => ({ id: `${DOC_DV}${i}`, company: x.company || `Dividend ${i + 1}`, description: x.description, amount: Math.round(x.amount) }))];
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? Math.round(val) : current);
   const foreignHas = e.foreignIncome > 0 || e.foreignTaxPaid > 0;
   return {
-    ...income, employment, selfEmployment, partnerships, property,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     pensionsIncome: setIf(e.pensionsIncome, income.pensionsIncome),
