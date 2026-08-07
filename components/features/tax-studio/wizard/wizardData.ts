@@ -6,16 +6,27 @@ import {
 } from 'lucide-react';
 import type { ReturnTypeId, Sa100Income } from '../types';
 import { emptyIncome } from '../data';
-import { dividendsTotal, savingsInterestTotal, lineTotal, computeCapitalAllowances } from '../calc';
+import { dividendsTotal, savingsInterestTotal, lineTotal, computeCapitalAllowances, tradeLossCarriedForward } from '../calc';
 import type { TradeSource } from '../types';
 
-/** Roll one trade forward: last year's closing capital-allowance pools become
- *  this year's brought-forward, and this year's WDA on them is computed up front
- *  (additions/disposals start empty). Other figures copy as a template. */
+/** Roll one trade forward:
+ *  - last year's closing capital-allowance pools become this year's brought-forward
+ *    (and this year's WDA on them is computed up front),
+ *  - last year's loss to carry forward (box 80) becomes this year's loss brought
+ *    forward (box 74), with the year-specific loss fields reset,
+ *  - other figures copy as a template. */
 function rollTradeForward(s: TradeSource): TradeSource {
+  const lossBf = tradeLossCarriedForward(s);
   const bfMain = s.capitalAllowancesCalc?.mainPoolCfwd ?? 0;
   const bfSpecial = s.capitalAllowancesCalc?.specialPoolCfwd ?? 0;
-  const base = { ...s, aia: 0, ca18: 0, ca6: 0, enhancedCapitalAllowances: 0, allowancesOnSale: 0, balancingCharges: 0 };
+  const base: TradeSource = {
+    ...s,
+    aia: 0, ca18: 0, ca6: 0, enhancedCapitalAllowances: 0, allowancesOnSale: 0, balancingCharges: 0,
+    // Loss carry-forward: last year's box 80 → this year's box 74; reset year-specific loss fields.
+    lossBroughtForward: lossBf > 0 ? lossBf : undefined,
+    lossSetOffOtherIncome: undefined, lossCarriedBack: undefined,
+    adjustmentLossFig: undefined, unusedLossCarriedForward: undefined,
+  };
   if (!bfMain && !bfSpecial) return { ...base, capitalAllowancesCalc: undefined };
   const caState = { mainPoolBfwd: bfMain, specialPoolBfwd: bfSpecial, additions: [], disposals: [] };
   const r = computeCapitalAllowances(caState);
@@ -185,6 +196,13 @@ export function categoryNote(key: RollKey, income: Sa100Income): { text: string;
   const has = categoryHasData(key, income);
   switch (key) {
     case 'personal': return { text: 'No changes detected', review: false };
+    case 'selfEmployment': {
+      const loss = income.selfEmployment.reduce((a, t) => a + tradeLossCarriedForward(t), 0);
+      if (loss > 0) return { text: `£${Math.round(loss).toLocaleString('en-GB')} loss carried forward`, review: true };
+      const pools = income.selfEmployment.reduce((a, t) => a + (t.capitalAllowancesCalc?.mainPoolCfwd ?? 0) + (t.capitalAllowancesCalc?.specialPoolCfwd ?? 0), 0);
+      if (pools > 0) return { text: 'Capital allowance pools carry forward', review: false };
+      return has ? { text: 'Similar to last year', review: false } : { text: 'None last year', review: false };
+    }
     case 'property': return has ? { text: 'Confirm tenancy & finance costs', review: true } : { text: 'None last year', review: false };
     case 'capitalGains': return { text: 'No disposals last year', review: false };
     case 'giftAid': return has ? { text: 'Consider increasing', review: false } : { text: 'None last year', review: false };

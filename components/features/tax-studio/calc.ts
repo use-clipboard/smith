@@ -231,9 +231,12 @@ export function tradeTaxableProfit(t: TradeSource): number {
 export function tradeAdjustedLoss(t: TradeSource): number {
   return Math.max(0, -tradeAdjustedProfit(t)) + (t.adjustmentLossFig || 0);
 }
-/** Loss carried forward (box 80): adjusted loss less amounts set sideways / back. */
+/** Loss carried forward (box 80): any brought-forward loss not absorbed by this
+ *  year's profit, plus this year's adjusted loss less amounts set sideways / back. */
 export function tradeLossCarriedForward(t: TradeSource): number {
-  return Math.max(0, tradeAdjustedLoss(t) - (t.lossSetOffOtherIncome || 0) - (t.lossCarriedBack || 0));
+  const unusedBroughtForward = Math.max(0, (t.lossBroughtForward || 0) - Math.max(0, tradeAdjustedProfit(t)));
+  const thisYear = Math.max(0, tradeAdjustedLoss(t) - (t.lossSetOffOtherIncome || 0) - (t.lossCarriedBack || 0));
+  return unusedBroughtForward + thisYear;
 }
 // ── SA103F balance sheet (display only — not part of the tax computation) ──
 export function tradeTotalAssets(t: TradeSource): number {

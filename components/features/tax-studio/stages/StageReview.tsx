@@ -965,6 +965,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
             )}
             {/* ── Losses, CIS ── */}
             {subName === 'Losses' && (
+              <>
               <BoxSection title="Losses">
                 <BoxCalc box={77} label="Adjusted loss" value={tradeAdjustedLoss(t)} />
                 <BoxNum box="77.1" label="Adjustment to losses under the FIG regime" value={t.adjustmentLossFig ?? 0} onChange={v => set({ adjustmentLossFig: v })} />
@@ -972,6 +973,10 @@ function TradeCard({ t, idx, onChange, onRemove }: {
                 <BoxNum box={79} label="Loss carried back" value={t.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} />
                 <BoxCalc box={80} label="Loss carried forward" value={tradeLossCarriedForward(t)} />
               </BoxSection>
+              {(t.lossBroughtForward ?? 0) > 0 && (
+                <p className="mt-2 text-[11px] text-[var(--text-secondary)]">Loss brought forward from earlier years (box 74): <span className="font-semibold">{fmtMoney(t.lossBroughtForward ?? 0)}</span> — set against this year's profit on the Net profit tab. Box 80 (incl. any unused b/fwd) carries to next year automatically.</p>
+              )}
+              </>
             )}
             {subName === 'CIS' && (
               <BoxSection title="CIS deductions and tax taken off">
