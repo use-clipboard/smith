@@ -74,29 +74,34 @@ export function extractionHasData(e: Sa100Extraction): boolean {
 
 const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = 'doc-prop-', DOC_DV = 'doc-dv-';
 
-/** Merge extracted figures into the income. Document-sourced rows carry a prefix
- *  so re-importing replaces them; scalar fields are set only when the documents
+/** Merge extracted figures into the income. Each scan is its own BATCH, keyed by
+ *  `batchId`: re-importing the same scan replaces only that batch's rows (so a
+ *  double-click can't duplicate), while a separate scan ADDS its rows without
+ *  touching earlier scans or hand-typed rows — so scanning a forgotten P60 later
+ *  is additive, never destructive. Scalar fields are set only when the documents
  *  found a value (never wiping a manual figure with a zero). */
-export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extraction): Sa100Income {
-  const employment = income.employment.filter(x => !x.id.startsWith(DOC_EMP));
+export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extraction, batchId: string): Sa100Income {
+  const empPfx = `${DOC_EMP}${batchId}-`, sePfx = `${DOC_SE}${batchId}-`, ptPfx = `${DOC_PT}${batchId}-`, propPfx = `${DOC_PROP}${batchId}-`, dvPfx = `${DOC_DV}${batchId}-`;
+
+  const employment = income.employment.filter(x => !x.id.startsWith(empPfx));
   // Map the AI's aggregate benefits/expenses into the itemised SA102 "other"
   // boxes (15 & 20) so imported figures appear in the box-level editor.
-  e.employment.forEach((x, i) => employment.push({ id: `${DOC_EMP}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benOther: Math.round(x.benefits), expOther: Math.round(x.expenses) }));
+  e.employment.forEach((x, i) => employment.push({ id: `${empPfx}${i}`, employer: x.employer || `Employment ${i + 1}`, pay: Math.round(x.pay), taxDeducted: Math.round(x.taxDeducted), benOther: Math.round(x.benefits), expOther: Math.round(x.expenses) }));
 
-  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(DOC_SE));
-  e.selfEmployment.forEach((x, i) => selfEmployment.push({ id: `${DOC_SE}${i}`, name: x.name || `Self-employment ${i + 1}`, profit: Math.round(x.profit) }));
+  const selfEmployment = income.selfEmployment.filter(x => !x.id.startsWith(sePfx));
+  e.selfEmployment.forEach((x, i) => selfEmployment.push({ id: `${sePfx}${i}`, name: x.name || `Self-employment ${i + 1}`, profit: Math.round(x.profit) }));
 
-  const partnerships = (income.partnerships ?? []).filter(x => !x.id.startsWith(DOC_PT));
-  e.partnerships.forEach((x, i) => partnerships.push({ id: `${DOC_PT}${i}`, name: x.name || `Partnership ${i + 1}`, profit: Math.round(x.profit) }));
+  const partnerships = (income.partnerships ?? []).filter(x => !x.id.startsWith(ptPfx));
+  e.partnerships.forEach((x, i) => partnerships.push({ id: `${ptPfx}${i}`, name: x.name || `Partnership ${i + 1}`, profit: Math.round(x.profit) }));
 
-  const property = income.property.filter(x => !x.id.startsWith(DOC_PROP));
-  e.property.forEach((x, i) => property.push({ id: `${DOC_PROP}${i}`, address: x.address || `Property ${i + 1}`, profit: Math.round(x.profit) }));
+  const property = income.property.filter(x => !x.id.startsWith(propPfx));
+  e.property.forEach((x, i) => property.push({ id: `${propPfx}${i}`, address: x.address || `Property ${i + 1}`, profit: Math.round(x.profit) }));
 
-  // Each extracted dividend becomes its own itemised entry (keeps manual ones).
+  // Each extracted dividend becomes its own itemised entry (keeps manual + prior-scan ones).
   let dividendItems = income.dividendItems;
   if (e.dividendList.length) {
-    const manual = (income.dividendItems ?? []).filter(x => !x.id.startsWith(DOC_DV));
-    dividendItems = [...manual, ...e.dividendList.map((x, i) => ({ id: `${DOC_DV}${i}`, company: x.company || `Dividend ${i + 1}`, description: x.description, amount: Math.round(x.amount) }))];
+    const kept = (income.dividendItems ?? []).filter(x => !x.id.startsWith(dvPfx));
+    dividendItems = [...kept, ...e.dividendList.map((x, i) => ({ id: `${dvPfx}${i}`, company: x.company || `Dividend ${i + 1}`, description: x.description, amount: Math.round(x.amount) }))];
   }
 
   const setIf = (val: number, current: number) => (val > 0 ? Math.round(val) : current);

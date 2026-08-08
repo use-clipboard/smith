@@ -16,6 +16,10 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
   const [files, setFiles] = useState<File[]>([]);
   const [scanning, setScanning] = useState(false);
   const [extraction, setExtraction] = useState<Sa100Extraction | null>(null);
+  // A unique id for this scan, so importing it adds a new batch rather than
+  // overwriting rows from an earlier scan; a re-import of the SAME scan is
+  // idempotent (replaces only its own batch).
+  const [batchId, setBatchId] = useState('');
   const [error, setError] = useState('');
   const [imported, setImported] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -32,7 +36,9 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
     setScanning(true); setError(''); setExtraction(null);
     try {
       const encoded = await Promise.all(files.map(encodeFile));
-      setExtraction(await fetchExtraction(ret.taxYear, encoded));
+      const result = await fetchExtraction(ret.taxYear, encoded);
+      setBatchId(`${Date.now()}-${Math.floor(Math.random() * 1e4)}`);
+      setExtraction(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read the documents.');
     } finally {
@@ -45,7 +51,7 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
     const count = extraction.documents.length || files.length;
     patch(r => ({
       ...r,
-      income: mergeExtractionIntoIncome(r.income, extraction),
+      income: mergeExtractionIntoIncome(r.income, extraction, batchId),
       timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Extracted figures from ${count} document${count === 1 ? '' : 's'}` }],
     }));
     setImported(true); setTimeout(() => setImported(false), 2500);
@@ -141,7 +147,7 @@ export default function DocumentExtract({ ret, patch }: { ret: TaxReturn; patch:
                 )}
 
                 <div className="mt-3 flex items-center justify-between">
-                  <p className="text-[11px] text-[var(--text-muted)]">Review then import — you can edit every figure in the next step.</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Added to what’s already here — earlier scans and typed figures are kept. Edit everything in the next step.</p>
                   <button onClick={doImport} className="btn-primary">{imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Imported' : 'Import figures'}</button>
                 </div>
               </>
