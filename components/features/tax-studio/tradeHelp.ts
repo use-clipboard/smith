@@ -125,3 +125,22 @@ export const CH = {
   taxRefundedOrSetOff: 'Tax already refunded to you, or set off, by HMRC or Jobcentre Plus during the year — added back so your final position is right.',
   noPayeCollect: 'Tick to stop HMRC collecting the tax you owe through next year’s PAYE tax code (you’ll pay it directly instead).',
 } as const;
+
+// ── Employment (SA102) ───────────────────────────────────────────────────────
+// Plain-English hints for the technical / easily-confused employment boxes only —
+// the obvious ones (Pay before tax, UK tax taken off) are left without a hint.
+export const EMP = {
+  payeRef: 'Your employer’s PAYE reference — 3 digits, a slash, then their office code (e.g. 068/AZ77194). It’s on your P60 or P45. Leave blank if you don’t have it.',
+  director: 'Answer Yes if you were a director of the company at any point in the year — HMRC treats directors’ pay slightly differently.',
+  closeCompany: 'A close company is one controlled by 5 or fewer shareholders (or its directors) — most owner-managed limited companies. Tick if this employer is one.',
+  closeCompanyDividends: 'A declaration only — enter the dividend cash itself in the Interest & dividends section so it’s taxed once, not here.',
+  closeCompanyShareholding: 'The percentage of the company’s shares you held — used only for HMRC’s records, not the tax calculation.',
+  teachersLoanOffPayroll: 'Tick only if you repaid a Teachers’ Loan under that scheme, or the engagement was inside off-payroll working (IR35) rules.',
+  payrolledBenefitsStudentLoan: 'The part of box 6 that is payrolled benefits-in-kind — separated out because it counts towards student-loan repayments.',
+  tips: 'Tips, gratuities and other taxable payments from the job that were NOT already included on your P60.',
+  class1Nic: 'Class 1 National Insurance already deducted from your pay — from your P60. Informational; it doesn’t change your income-tax bill.',
+  benExpPayments: 'Expenses your employer paid or reimbursed that count as taxable, plus any balancing charges — the total from section N of your P11D.',
+  expFixed: 'Flat-rate (fixed) job expenses agreed with HMRC for your occupation — e.g. tools or uniform upkeep — claimed without keeping receipts.',
+  expProfessional: 'Fees and annual subscriptions to professional bodies on HMRC’s approved (List 3) — only these qualify for relief.',
+  expOther: 'Other allowable employment expenses, including capital allowances for equipment you must buy to do your job.',
+} as const;

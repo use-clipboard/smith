@@ -16,7 +16,7 @@ import { ReturnHeader } from './widgets';
 import SandboxView from './sandbox/SandboxView';
 import StageSetup from './stages/StageSetup';
 import StageAnalyse from './stages/StageAnalyse';
-import StageReview from './stages/StageReview';
+import StageReview, { ReviewSearch, type PageId, type Reveal } from './stages/StageReview';
 import StageApproval from './stages/StageApproval';
 import StageSubmit from './stages/StageSubmit';
 import { STAGES, ALL_STAGES, deriveStatus } from './data';
@@ -35,6 +35,14 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [workspace, setWorkspace] = useState<'return' | 'sandbox'>('return');
+  // Review & Adjust "jump to" navigation — lifted here so the search can sit in
+  // the working-controls row (next to undo/redo) while it drives the review panel.
+  const [reviewPage, setReviewPage] = useState<PageId>('core');
+  const [reviewReveal, setReviewReveal] = useState<Reveal | null>(null);
+  const goToReview = (e: { page: string; section?: string }) => {
+    setReviewPage(e.page as PageId);
+    setReviewReveal(r => ({ page: e.page as PageId, section: e.section, nonce: (r?.nonce ?? 0) + 1 }));
+  };
 
   const lastSaved = useRef<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -223,10 +231,13 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
               <h3 className="text-[17px] font-bold text-[var(--text-primary)]">{stageMeta.label}</h3>
               <p className="text-[13px] text-[var(--text-muted)]">{stageMeta.blurb}</p>
             </div>
-            <WorkspaceControls
-              canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo}
-              saveState={saveState} assistantOpen={assistantOpen} onToggleAssistant={() => setAssistantOpen(v => !v)}
-            />
+            <div className="flex items-center gap-2">
+              {stage === 'review' && <ReviewSearch onGo={goToReview} />}
+              <WorkspaceControls
+                canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo}
+                saveState={saveState} assistantOpen={assistantOpen} onToggleAssistant={() => setAssistantOpen(v => !v)}
+              />
+            </div>
           </div>
 
           {/* Stage + assistant */}
@@ -234,7 +245,7 @@ export default function TaxStudioModule({ userEmail, userName }: { userEmail: st
             <div className="min-w-0 flex-1">
               {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} />}
               {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
-              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} />}
+              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} />}
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>

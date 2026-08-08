@@ -12,7 +12,7 @@ import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
-import { H, CH } from '../tradeHelp';
+import { H, CH, EMP } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
@@ -25,9 +25,7 @@ type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 export type Reveal = { page: PageId; section?: string; nonce: number };
 const RevealContext = createContext<Reveal | null>(null);
 
-export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; patch: Patch; advance: () => void }) {
-  const [page, setPage] = useState<PageId>('core');
-  const [reveal, setReveal] = useState<Reveal | null>(null);
+export default function StageReview({ ret, patch, advance, page, setPage, reveal }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null }) {
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
   const counts = pageCounts(ret.income);
 
@@ -35,15 +33,8 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
     patch(r => ({ ...r, income: u(r.income) }));
   }
 
-  function goTo(entry: SearchEntry) {
-    setPage(entry.page as PageId);
-    setReveal({ page: entry.page as PageId, section: entry.section, nonce: (reveal?.nonce ?? 0) + 1 });
-  }
-
   return (
     <div className="space-y-4">
-      <ReviewSearch onGo={goTo} />
-
       {/* Section tabs + panel */}
       <SectionPanel ret={ret} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
 
@@ -81,7 +72,9 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
 }
 
 // ─── "Jump to" search — find a section, field or box number ──────────────────
-function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
+// Compact search that lives inline in the working-controls row (next to
+// undo/redo). Focusing it expands the input; the results drop below, right-aligned.
+export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -98,8 +91,8 @@ function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
   return (
     <div ref={wrapRef} className="relative">
-      <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white/70 px-3 py-2">
-        <Search size={15} className="shrink-0 text-[var(--text-muted)]" />
+      <div className="flex h-8 w-52 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 transition-colors focus-within:border-[var(--accent)]">
+        <Search size={13} className="shrink-0 text-[var(--text-muted)]" />
         <input
           value={q}
           onChange={e => { setQ(e.target.value); setOpen(true); setActive(0); }}
@@ -111,13 +104,14 @@ function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
             else if (e.key === 'Enter') { e.preventDefault(); pick(results[active]); }
             else if (e.key === 'Escape') setOpen(false);
           }}
-          placeholder="Jump to a section, field or box number…"
-          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-muted)]"
+          placeholder="Jump to…"
+          aria-label="Jump to a section, field or box number"
+          className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-[var(--text-muted)]"
         />
-        {q && <button onClick={() => { setQ(''); setOpen(false); }} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><X size={14} /></button>}
+        {q && <button onClick={() => { setQ(''); setOpen(false); }} aria-label="Clear search" className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><X size={13} /></button>}
       </div>
       {open && results.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
+        <div className="absolute right-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
           {results.map((e, i) => (
             <button key={`${e.label}-${i}`} onMouseEnter={() => setActive(i)} onClick={() => pick(e)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${i === active ? 'bg-[var(--accent)]/[0.07]' : 'hover:bg-black/[0.02]'}`}>
@@ -131,7 +125,7 @@ function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
         </div>
       )}
       {open && q && results.length === 0 && (
-        <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-xl">No matches — try a box number, field name or section.</div>
+        <div className="absolute right-0 top-full z-40 mt-1 w-72 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-xl">No matches — try a box number, field name or section.</div>
       )}
     </div>
   );
@@ -139,7 +133,7 @@ function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
@@ -712,21 +706,21 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
               <>
                 <BoxSection title="Employment details">
                   <BoxText box={1} label="Employer's name" value={e.employer} onChange={v => onChange({ employer: v })} />
-                  <BoxText box={2} label="Employer's PAYE reference (NNN/XXXXXX)" value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} placeholder="068/AZ77194" />
-                  <BoxYesNo box={3} label="Is the employee a company director?" value={!!e.isDirector} onChange={v => onChange({ isDirector: v })} />
+                  <BoxText box={2} label="Employer's PAYE reference (NNN/XXXXXX)" help={EMP.payeRef} value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} placeholder="068/AZ77194" />
+                  <BoxYesNo box={3} label="Is the employee a company director?" help={EMP.director} value={!!e.isDirector} onChange={v => onChange({ isDirector: v })} />
                   <BoxDate box={4} label="Date ceased being a director" value={e.directorCeasedDate ?? ''} onChange={v => onChange({ directorCeasedDate: v })} />
-                  <BoxYesNo box={5} label="Is this a close company?" value={!!e.isCloseCompany} onChange={v => onChange({ isCloseCompany: v })} />
+                  <BoxYesNo box={5} label="Is this a close company?" help={EMP.closeCompany} value={!!e.isCloseCompany} onChange={v => onChange({ isCloseCompany: v })} />
                 </BoxSection>
                 {e.isCloseCompany && (
                   <BoxSection title="Close company">
                     <BoxText box="5.1" label="Name of this close company" value={e.closeCompanyName ?? ''} onChange={v => onChange({ closeCompanyName: v })} />
                     <BoxText box="5.2" label="Registration number" value={e.closeCompanyReg ?? ''} onChange={v => onChange({ closeCompanyReg: v })} />
-                    <BoxNum box="5.3" label="Dividends received from this close company" value={e.closeCompanyDividends ?? 0} onChange={v => onChange({ closeCompanyDividends: v })} />
-                    <BoxNum box="5.4" label="Percentage shareholding" value={e.closeCompanyShareholding ?? 0} onChange={v => onChange({ closeCompanyShareholding: v })} />
+                    <BoxNum box="5.3" label="Dividends received from this close company" help={EMP.closeCompanyDividends} value={e.closeCompanyDividends ?? 0} onChange={v => onChange({ closeCompanyDividends: v })} />
+                    <BoxNum box="5.4" label="Percentage shareholding" help={EMP.closeCompanyShareholding} value={e.closeCompanyShareholding ?? 0} onChange={v => onChange({ closeCompanyShareholding: v })} />
                   </BoxSection>
                 )}
                 <BoxSection title="Other">
-                  <BoxCheck box="5.5" label="Teachers' Loans scheme / off-payroll working engagements" checked={!!e.teachersLoanOffPayroll} onChange={v => onChange({ teachersLoanOffPayroll: v })} />
+                  <BoxCheck box="5.5" label="Teachers' Loans scheme / off-payroll working engagements" help={EMP.teachersLoanOffPayroll} checked={!!e.teachersLoanOffPayroll} onChange={v => onChange({ teachersLoanOffPayroll: v })} />
                 </BoxSection>
                 {e.closeCompanyDividends ? <p className="text-[11px] text-[var(--text-muted)]">Box 5.3 is a declaration — enter the dividends themselves in the Interest &amp; dividends section so they're taxed once.</p> : null}
               </>
@@ -734,10 +728,10 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
             {tab === 'Income' && (
               <BoxSection title="Employment income">
                 <BoxNum box={6} label="Pay before tax was taken off" value={e.pay} onChange={v => onChange({ pay: v })} />
-                <BoxNum box="6.1" label="Payrolled benefits in box 6 affecting student loan" value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
+                <BoxNum box="6.1" label="Payrolled benefits in box 6 affecting student loan" help={EMP.payrolledBenefitsStudentLoan} value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
                 <BoxNum box={7} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
-                <BoxNum box={8} label="Tips & other payments not on P60" value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
-                <BoxNum label="Class 1 NIC" value={e.class1Nic ?? 0} onChange={v => onChange({ class1Nic: v })} />
+                <BoxNum box={8} label="Tips & other payments not on P60" help={EMP.tips} value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
+                <BoxNum label="Class 1 NIC" help={EMP.class1Nic} value={e.class1Nic ?? 0} onChange={v => onChange({ class1Nic: v })} />
               </BoxSection>
             )}
             {tab === 'Benefit' && (
@@ -749,15 +743,15 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
                 <BoxNum box={13} label="Goods and other assets provided" value={e.benAssets ?? 0} onChange={v => onChange({ benAssets: v })} />
                 <BoxNum box={14} label="Accommodation provided by employer" value={e.benAccommodation ?? 0} onChange={v => onChange({ benAccommodation: v })} />
                 <BoxNum box={15} label="Other benefits" value={e.benOther ?? 0} onChange={v => onChange({ benOther: v })} />
-                <BoxNum box={16} label="Expenses payments received & balancing charges" value={e.benExpPayments ?? 0} onChange={v => onChange({ benExpPayments: v })} />
+                <BoxNum box={16} label="Expenses payments received & balancing charges" help={EMP.benExpPayments} value={e.benExpPayments ?? 0} onChange={v => onChange({ benExpPayments: v })} />
               </BoxSection>
             )}
             {tab === 'Expenses' && (
               <BoxSection title="Employment expenses">
                 <BoxNum box={17} label="Business travel and subsistence expenses" value={e.expTravel ?? 0} onChange={v => onChange({ expTravel: v })} />
-                <BoxNum box={18} label="Fixed deductions for expenses" value={e.expFixed ?? 0} onChange={v => onChange({ expFixed: v })} />
-                <BoxNum box={19} label="Professional fees and subscriptions" value={e.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
-                <BoxNum box={20} label="Other expenses and capital allowances" value={e.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
+                <BoxNum box={18} label="Fixed deductions for expenses" help={EMP.expFixed} value={e.expFixed ?? 0} onChange={v => onChange({ expFixed: v })} />
+                <BoxNum box={19} label="Professional fees and subscriptions" help={EMP.expProfessional} value={e.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
+                <BoxNum box={20} label="Other expenses and capital allowances" help={EMP.expOther} value={e.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
               </BoxSection>
             )}
           </div>
