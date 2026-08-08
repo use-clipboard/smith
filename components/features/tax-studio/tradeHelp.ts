@@ -198,7 +198,7 @@ export const PH = {
 export const PROP = {
   propertyCount: 'The number of UK properties you received rental income from in the year. SMITH guesses this from the properties added below — change it if it’s wrong.',
   ceased: 'Tick if you stopped receiving UK property income during the year (e.g. you sold or stopped letting all your properties).',
-  letJointly: 'Tick if any property is let jointly with someone else (e.g. a spouse). Enter only YOUR share of the income and expenses.',
+  letJointly: 'Tick if any property is let jointly with someone else (e.g. a spouse). Enter only YOUR share of the income and expenses. SMITH ticks this automatically when a Landlord-linked property has additional owners.',
   claimRentARoom: 'Tick if you’re claiming Rent a Room relief — rent from a lodger in your own home is tax-free up to £7,500 (£3,750 if shared).',
   incomeAllowance: 'The £1,000 property income allowance — claim it INSTEAD of your actual expenses when expenses are under £1,000. You cannot claim both.',
   traditionalAccounting: 'Tick if you use traditional (accruals) accounting — income when it’s due and costs when incurred. Leave unticked for the cash basis (when money changes hands).',

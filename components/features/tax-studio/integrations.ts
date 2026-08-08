@@ -89,6 +89,9 @@ export interface LandlordSummary {
   taxableProfit: number;
   financeCosts: number;
   financeReducer: number;
+  /** The client owns a property jointly (additional owners or ownership < 100%) —
+   *  used to smart-guess the SA105 "let jointly" box (box 3). */
+  jointlyOwned?: boolean;
   note?: string;
 }
 
@@ -145,12 +148,13 @@ export interface SourceRef {
   label: string;
 }
 
-/** Cross-client Landlord Analysis → UK property. */
+/** Cross-client Landlord Analysis → UK property. When the Landlord tool flags the
+ *  property as jointly owned, smart-guess the SA105 "let jointly" box (box 3). */
 export function mergeCrossLandlord(income: Sa100Income, s: LandlordSummary, src: SourceRef): Sa100Income {
   const pfx = `${XC}ll-${src.clientId}-`;
   const property = income.property.filter(p => !p.id.startsWith(pfx));
   property.push({ id: `${pfx}0`, address: `UK property — ${src.label}`, profit: Math.round(s.taxableProfit), residentialFinanceCosts: Math.round(s.financeCosts) });
-  return { ...income, property };
+  return { ...income, property, propertyLetJointly: s.jointlyOwned ? true : income.propertyLetJointly };
 }
 
 /** Cross-client MTD IT → self-employment / UK & foreign property. */

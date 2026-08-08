@@ -85,6 +85,26 @@ export async function GET(req: NextRequest) {
     },
   );
 
+  // Joint-ownership signal for the SA105 "let jointly" smart guess: the client
+  // has a property with additional owners, or a primary share below 100%.
+  let jointlyOwned = false;
+  const { data: owners } = await supabase
+    .from('property_owners')
+    .select('id, mtd_it_properties!inner(client_id)')
+    .eq('mtd_it_properties.client_id', clientId)
+    .limit(1);
+  if ((owners ?? []).length > 0) {
+    jointlyOwned = true;
+  } else {
+    const { data: partial } = await supabase
+      .from('mtd_it_properties')
+      .select('id')
+      .eq('client_id', clientId)
+      .lt('ownership_pct', 100)
+      .limit(1);
+    if ((partial ?? []).length > 0) jointlyOwned = true;
+  }
+
   return NextResponse.json({
     found: true,
     dateFrom: rd.dateFrom ?? '',
@@ -95,6 +115,7 @@ export async function GET(req: NextRequest) {
     taxableProfit: Math.round(comp.taxableProfit),
     financeCosts: Math.round(comp.financeCosts),
     financeReducer: Math.round(comp.financeReducer),
+    jointlyOwned,
     note,
   });
 }
