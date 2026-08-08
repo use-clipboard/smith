@@ -97,6 +97,11 @@ export interface PartnershipSource {
 // Losses, CIS / Balance Sheet. Blue "total" boxes are computed (see calc.ts).
 export interface TradeSource {
   id: string;
+  /** Which SA103 form this trade is presented as. 'short' (SA103S) is a slimmer
+   *  view of the same data, allowed when turnover < the VAT threshold; 'full'
+   *  (SA103F) is required above it. Undefined = 'full' (back-compat). */
+  form?: 'full' | 'short';
+  fosterCarer?: boolean;     // SA103S box 4 — foster / shared-lives carer
   // ── Business details (boxes 1–10) ──
   name: string;              // box 1 — business name
   description?: string;      // box 2 — description of business

@@ -6,6 +6,7 @@
 // the import components.
 
 import type { Sa100Income, TradeSource } from './types';
+import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToShort } from './tradeForm';
 
 /** One line of a source P&L (an income or expense account/statement line). */
 export interface PlLine { label: string; amount: number; section: 'income' | 'expense'; }
@@ -241,21 +242,25 @@ export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocati
   } catch { return fallback(); }
 }
 
-/** Build an itemised SA103F trade from reviewed box allocations — fills the
- *  income/expense boxes (15–30) and adds back the disallowable portions (32–45). */
+/** Build an itemised trade from reviewed box allocations — fills the income /
+ *  expense boxes (15–30) and the disallowable portions (32–45). Picks the full
+ *  or short form by turnover: at/above the VAT threshold it stays full; below it
+ *  is folded to the short form (allowable-only, combined boxes). */
 export function buildItemisedTrade(id: string, name: string, allocations: BoxAllocation[]): TradeSource {
-  const trade: TradeSource = { id, name, profit: 0 };
+  const trade: TradeSource = { id, name, profit: 0, form: 'full' };
   const nums = trade as unknown as Record<string, number>;
   const byBox = new Map(SA103_BOX_CATALOG.map(b => [b.box, b]));
+  let turnover = 0;
   for (const a of allocations) {
     const cat = byBox.get(a.box);
     if (!cat) continue;
+    if (cat.section === 'income') turnover += Math.round(a.amount);
     nums[cat.field as string] = (nums[cat.field as string] || 0) + Math.round(a.amount);
     if (cat.disField && a.disallowable > 0) {
       nums[cat.disField as string] = (nums[cat.disField as string] || 0) + Math.round(a.disallowable);
     }
   }
-  return trade;
+  return turnover >= SA103_SHORT_TURNOVER_LIMIT ? trade : migrateTradeToShort(trade);
 }
 
 /** Merge an itemised trade under a source prefix (idempotent per source). */

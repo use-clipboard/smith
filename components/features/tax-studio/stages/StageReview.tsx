@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check,
 } from 'lucide-react';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
+import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
@@ -764,7 +766,7 @@ function BoxCalc({ box, label, value }: { box?: number | string; label: string; 
 }
 
 function SelfEmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const add = () => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s-${i.selfEmployment.length}-${Date.now()}`, name: '', profit: 0 }] }));
+  const add = () => setIncome(i => ({ ...i, selfEmployment: [...i.selfEmployment, { id: `s-${i.selfEmployment.length}-${Date.now()}`, name: '', profit: 0, form: 'short' }] }));
   return (
     <div className="space-y-3">
       {income.selfEmployment.length === 0 && (
@@ -790,14 +792,35 @@ const TRADE_SUBTABS: Record<TradeTab, string[]> = {
   'Balance Sheet': ['Assets', 'Liabilities', 'NIC & other Info'],
 };
 
+// SA103S (short) — fewer tabs, no Balance Sheet, single-page Expenses & Losses.
+const SHORT_TRADE_TABS = ['Business details', 'Business Expenses', 'Net profit(loss)', 'Losses, CIS'] as const;
+const SHORT_TRADE_SUBTABS: Record<string, string[]> = {
+  'Business details': ['Business Details', 'Business Income'],
+  'Business Expenses': ['Allowable Expenses'],
+  'Net profit(loss)': ['Net profit or loss', 'Tax allowances', 'Taxable profits', 'Total taxable profits'],
+  'Losses, CIS': ['Losses, CIS'],
+};
+
 function TradeCard({ t, idx, onChange, onRemove }: {
   t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const [tab, setTab] = useState<TradeTab>('Business details');
+  const [tab, setTab] = useState<string>('Business details');
   const [sub, setSub] = useState(0);
   const [caOpen, setCaOpen] = useState(false);
-  const setTop = (tt: TradeTab) => { setTab(tt); setSub(0); };
+  const [migratePrompt, setMigratePrompt] = useState(false);
+  const [shortConfirm, setShortConfirm] = useState(false);
+  const isShort = t.form === 'short';
+  const TABS: readonly string[] = isShort ? SHORT_TRADE_TABS : TRADE_TABS;
+  const SUBTABS: Record<string, string[]> = isShort ? SHORT_TRADE_SUBTABS : TRADE_SUBTABS;
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  // Over-threshold guard: prompt once when a short trade's turnover crosses the limit.
+  const overThreshold = isShort && (t.turnover || 0) >= SA103_SHORT_TURNOVER_LIMIT;
+  const prevOver = useRef(false);
+  useEffect(() => {
+    if (overThreshold && !prevOver.current) setMigratePrompt(true);
+    prevOver.current = overThreshold;
+  }, [overThreshold]);
   // Have the capital-allowance boxes been hand-edited away from what the
   // calculator last computed from the pools? (Only relevant once used.)
   const caRes = t.capitalAllowancesCalc ? computeCapitalAllowances(t.capitalAllowancesCalc) : null;
@@ -806,37 +829,53 @@ function TradeCard({ t, idx, onChange, onRemove }: {
     (t.enhancedCapitalAllowances ?? 0) !== caRes.fya || (t.allowancesOnSale ?? 0) !== caRes.balancingAllowance ||
     (t.balancingCharges ?? 0) !== caRes.balancingCharge
   );
-  const subName = TRADE_SUBTABS[tab][sub];
+  const activeTab = TABS.includes(tab) ? tab : TABS[0];
+  const subList = SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
   const set = (p: Partial<TradeSource>) => onChange(p);
+  const switchForm = (form: 'full' | 'short') => { onChange(form === 'full' ? migrateTradeToFull(t) : migrateTradeToShort(t)); setMigratePrompt(false); setSub(0); };
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={t.name} placeholder={`Trade ${idx + 1}`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        {/* SA103 full / short toggle */}
+        <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--border)] text-[10.5px] font-semibold">
+          <button onClick={() => { if (isShort) switchForm('full'); }} className={`px-2 py-0.5 ${!isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Full</button>
+          <button onClick={() => { if (!isShort) setShortConfirm(true); }} className={`px-2 py-0.5 ${isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Short</button>
+        </div>
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(tradeTaxableProfit(t))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
+      {migratePrompt && (
+        <MigrateToFullModal turnover={t.turnover || 0} onConfirm={() => switchForm('full')} onKeep={() => setMigratePrompt(false)} />
+      )}
+      {shortConfirm && (
+        <MigrateToShortModal onConfirm={() => { switchForm('short'); setShortConfirm(false); }} onCancel={() => setShortConfirm(false)} />
+      )}
       {open && (
         <div className="border-t border-black/5">
           {/* Capium top tabs */}
           <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
-            {TRADE_TABS.map(tt => (
+            {TABS.map(tt => (
               <button key={tt} onClick={() => setTop(tt)}
-                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${tab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
                 {tt}
               </button>
             ))}
           </div>
           {/* Capium sub-tabs */}
-          <div className="flex flex-wrap gap-1 px-3 pt-2.5">
-            {TRADE_SUBTABS[tab].map((st, i) => (
+          {subList.length > 1 && <div className="flex flex-wrap gap-1 px-3 pt-2.5">
+            {subList.map((st, i) => (
               <button key={st} onClick={() => setSub(i)}
                 className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
                 {st}
               </button>
             ))}
-          </div>
+          </div>}
           <div className="space-y-3 px-3 py-3">
+            {isShort && <TradeShortBody t={t} set={set} subName={subName} caDiverged={caDiverged} onOpenCa={() => setCaOpen(true)} />}
+            {!isShort && (<>
             {/* ── Business details ── */}
             {subName === 'Business Details' && (
               <BoxSection title="Business details">
@@ -924,21 +963,6 @@ function TradeCard({ t, idx, onChange, onRemove }: {
                   <AlertTriangle size={13} className="mt-0.5 shrink-0" />
                   <span>These boxes have been edited since the calculator was last run, so the carried-forward pool balances may be out of date. Reopen the calculator and Apply to recompute the pools before rolling this trade forward.</span>
                 </div>
-              )}
-              {caOpen && (
-                <CapitalAllowancesCalculator
-                  state={t.capitalAllowancesCalc}
-                  onClose={() => setCaOpen(false)}
-                  onApply={(caState, res) => {
-                    set({
-                      capitalAllowancesCalc: caState,
-                      aia: res.aia, ca18: res.wdaMain, ca6: res.wdaSpecial,
-                      enhancedCapitalAllowances: res.fya, allowancesOnSale: res.balancingAllowance,
-                      balancingCharges: res.balancingCharge,
-                    });
-                    setCaOpen(false);
-                  }}
-                />
               )}
               <BoxSection title="Capital allowances">
                 <BoxNum box={49} label="Annual Investment Allowance" value={t.aia ?? 0} onChange={v => set({ aia: v })} />
@@ -1043,10 +1067,174 @@ function TradeCard({ t, idx, onChange, onRemove }: {
                 </BoxSection>
               </>
             )}
+            </>)}
           </div>
         </div>
       )}
+      {caOpen && (
+        <CapitalAllowancesCalculator
+          state={t.capitalAllowancesCalc}
+          onClose={() => setCaOpen(false)}
+          onApply={(caState, res) => {
+            set({
+              capitalAllowancesCalc: caState,
+              aia: res.aia, ca18: res.wdaMain, ca6: res.wdaSpecial,
+              enhancedCapitalAllowances: res.fya, allowancesOnSale: res.balancingAllowance,
+              balancingCharges: res.balancingCharge,
+            });
+            setCaOpen(false);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// SA103S (short) body — the slimmer Capium layout over the same trade data.
+function TradeShortBody({ t, set, subName, caDiverged, onOpenCa }: {
+  t: TradeSource; set: (p: Partial<TradeSource>) => void; subName: string; caDiverged: boolean; onOpenCa: () => void;
+}) {
+  const overThreshold = (t.turnover || 0) >= SA103_SHORT_TURNOVER_LIMIT;
+  return (
+    <>
+      {subName === 'Business Details' && (
+        <BoxSection title="Business details">
+          <BoxText box={1} label="Description of business" value={t.description ?? ''} onChange={v => set({ description: v })} />
+          <BoxText box={2} label="Postcode of your business address" value={t.postcode ?? ''} onChange={v => set({ postcode: v })} />
+          <BoxCheck box={3} label="Name/address details changed in last 12 months" checked={!!t.detailsChanged} onChange={v => set({ detailsChanged: v })} />
+          <BoxCheck box={4} label="If you are a foster carer" checked={!!t.fosterCarer} onChange={v => set({ fosterCarer: v })} />
+          <BoxYesNo box="5Q" label="Did this business start in the tax year?" value={!!t.startedInYear} onChange={v => set({ startedInYear: v })} />
+          <BoxDate box={5} label="Date business started" value={t.dateStarted ?? ''} onChange={v => set({ dateStarted: v })} />
+          <BoxYesNo box="6Q" label="Did this business cease in the tax year?" value={!!t.ceasedInYear} onChange={v => set({ ceasedInYear: v })} />
+          <BoxDate box={6} label="Date business ceased" value={t.dateCeased ?? ''} onChange={v => set({ dateCeased: v })} />
+          <BoxDate box={7} label="Accounts made up to" value={t.periodEnd ?? ''} onChange={v => set({ periodEnd: v })} />
+          <BoxCheck box={8} label="Used traditional accounting (not cash basis)" checked={!!t.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
+        </BoxSection>
+      )}
+      {subName === 'Business Income' && (
+        <>
+          <BoxSection title="Business income">
+            <BoxNum box={9} label="Turnover" value={t.turnover ?? 0} onChange={v => set({ turnover: v })} />
+            <BoxNum box={10} label="Any other business income not included in box 9" value={t.otherBusinessIncome ?? 0} onChange={v => set({ otherBusinessIncome: v })} />
+            <BoxNum box="10.1" label="Trading income allowance" value={t.tradingIncomeAllowance ?? 0} onChange={v => set({ tradingIncomeAllowance: v })} />
+          </BoxSection>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Short form: use it when turnover is under {fmtMoney(SA103_SHORT_TURNOVER_LIMIT)}.</p>
+          {overThreshold && (
+            <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>Turnover is {fmtMoney(t.turnover || 0)} — at or above {fmtMoney(SA103_SHORT_TURNOVER_LIMIT)} the full Self-employment pages are required. Use the <span className="font-semibold">Full</span> toggle above to switch (all entries are kept).</span>
+            </div>
+          )}
+        </>
+      )}
+      {subName === 'Allowable Expenses' && (
+        <BoxSection title="Allowable expenses">
+          <BoxNum box={11} label="Cost of goods bought for resale or goods used" value={t.expCostOfGoods ?? 0} onChange={v => set({ expCostOfGoods: v })} />
+          <BoxNum box={12} label="Car, van and travel expenses" value={t.expCarVanTravel ?? 0} onChange={v => set({ expCarVanTravel: v })} />
+          <BoxNum box={13} label="Wages, salaries and other staff costs" value={t.expWages ?? 0} onChange={v => set({ expWages: v })} />
+          <BoxNum box={14} label="Rent, rates, power and insurance costs" value={t.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
+          <BoxNum box={15} label="Repairs and renewals of property and equipment" value={t.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
+          <BoxNum box={16} label="Accountancy, legal and other professional fees" value={t.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
+          <BoxNum box={17} label="Interest and bank, credit card etc. financial charges" value={t.expInterest ?? 0} onChange={v => set({ expInterest: v })} />
+          <BoxNum box={18} label="Phone, fax, stationery and other office costs" value={t.expOffice ?? 0} onChange={v => set({ expOffice: v })} />
+          <BoxNum box={19} label="Other allowable business expenses" value={t.expOtherCosts ?? 0} onChange={v => set({ expOtherCosts: v })} />
+          <BoxCalc box={20} label="Total allowable expenses" value={tradeExpensesTotal(t)} />
+        </BoxSection>
+      )}
+      {subName === 'Net profit or loss' && (
+        <BoxSection title="Net profit or loss">
+          <BoxCalc box={21} label="Net profit" value={Math.max(0, tradeNetProfit(t))} />
+          <BoxCalc box={22} label="Or net loss" value={Math.max(0, -tradeNetProfit(t))} />
+        </BoxSection>
+      )}
+      {subName === 'Tax allowances' && (
+        <>
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] px-3 py-2">
+            <p className="text-[11.5px] text-[var(--text-secondary)]">Work out AIA, pool WDAs and balancing charges — closing balances carry to next year.</p>
+            <button onClick={onOpenCa} className="btn-primary shrink-0 py-1 text-[12px]"><Calculator size={14} /> {t.capitalAllowancesCalc ? 'Reopen calculator' : 'Capital Allowances Calculator'}</button>
+          </div>
+          {caDiverged && (
+            <div className="mb-3 flex items-start gap-1.5 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>These boxes have been edited since the calculator was last run — reopen and Apply to recompute the pools before rolling forward.</span>
+            </div>
+          )}
+          <BoxSection title="Tax allowances for vehicles and equipment (capital allowances)">
+            <BoxNum box={23} label="Annual Investment Allowance" value={t.aia ?? 0} onChange={v => set({ aia: v })} />
+            <BoxNum box={24} label="Allowance for small balance of unrelieved expenditure" value={t.ca18 ?? 0} onChange={v => set({ ca18: v })} />
+            <BoxNum box="24.1" label="Zero-emission car allowance" value={t.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
+            <BoxNum box={25} label="Other capital allowances" value={t.ca6 ?? 0} onChange={v => set({ ca6: v })} />
+            <BoxNum box="25.1" label="Structures and Buildings Allowance" value={t.sba ?? 0} onChange={v => set({ sba: v })} />
+            <BoxNum box="25.2" label="Freeport / Investment Zone SBA" value={t.sbaFreeport ?? 0} onChange={v => set({ sbaFreeport: v })} />
+            <BoxNum box={26} label="Total balancing charges" value={t.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
+          </BoxSection>
+        </>
+      )}
+      {subName === 'Taxable profits' && (
+        <BoxSection title="Calculating your taxable profits">
+          <BoxNum box={27} label="Goods and/or services for your own use" value={t.goodsOwnUse ?? 0} onChange={v => set({ goodsOwnUse: v })} />
+          <BoxCalc box={28} label="Net business profit for tax purposes" value={Math.max(0, tradeProfitForTax(t))} />
+          <BoxNum box={29} label="Loss brought forward" value={t.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
+          <BoxNum box="29.1" label="Unused losses to carry forward to next year" value={t.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
+          <BoxNum box={30} label="Any other business income not in box 9 or 10" value={t.otherBusinessIncome75 ?? 0} onChange={v => set({ otherBusinessIncome75: v })} />
+        </BoxSection>
+      )}
+      {subName === 'Total taxable profits' && (
+        <BoxSection title="Total taxable profits or net business loss">
+          <BoxCalc box={31} label="Total taxable profits" value={tradeTaxableProfit(t)} />
+          <BoxCalc box={32} label="Net business loss for tax purposes" value={tradeAdjustedLoss(t)} />
+        </BoxSection>
+      )}
+      {subName === 'Losses, CIS' && (
+        <>
+          <BoxSection title="Losses, Class 2 & 4 NICs, CIS deductions">
+            <BoxNum box={33} label="Loss set off against other income" value={t.lossSetOffOtherIncome ?? 0} onChange={v => set({ lossSetOffOtherIncome: v })} />
+            <BoxNum box={34} label="Loss carried back" value={t.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} />
+            <BoxCalc box={35} label="Loss carried forward" value={tradeLossCarriedForward(t)} />
+            <BoxCheck box={36} label="Choose to pay Class 2 NIC voluntarily" checked={!!t.class2Voluntary} onChange={v => set({ class2Voluntary: v })} />
+            <BoxCheck box={37} label="Exempt from paying Class 4 NIC" checked={!!t.class4Exempt} onChange={v => set({ class4Exempt: v })} />
+            <BoxNum box={38} label="Total CIS deductions taken from payments by contractors" value={t.cisDeductions ?? 0} onChange={v => set({ cisDeductions: v })} />
+            <BoxYesNo label="Self-employed all year & willing to pay Class 2 for the full year?" value={!!t.willingPayClass2FullYear} onChange={v => set({ willingPayClass2FullYear: v })} />
+          </BoxSection>
+        </>
+      )}
+    </>
+  );
+}
+
+// Prompt to move a short trade up to the full form (lossless).
+function MigrateToFullModal({ turnover, onConfirm, onKeep }: { turnover: number; onConfirm: () => void; onKeep: () => void }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onKeep}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <p className="flex items-center gap-1.5 text-[15px] font-bold text-[var(--text-primary)]"><AlertTriangle size={16} className="text-amber-500" /> Full Self-employment pages required</p>
+        <p className="mt-2 text-[12.5px] text-[var(--text-secondary)]">Turnover of {fmtMoney(turnover)} is at or above the {fmtMoney(SA103_SHORT_TURNOVER_LIMIT)} threshold, so this trade must use the full (SA103F) pages. Would you like SMITH to switch it to the full version now? Everything you've entered is kept.</p>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onKeep} className="btn-secondary">Keep short for now</button>
+          <button onClick={onConfirm} className="btn-primary"><Check size={14} /> Switch to full</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// Confirm moving a full trade down to short (drops detail).
+function MigrateToShortModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <p className="flex items-center gap-1.5 text-[15px] font-bold text-[var(--text-primary)]"><AlertTriangle size={16} className="text-amber-500" /> Switch to the short form?</p>
+        <p className="mt-2 text-[12.5px] text-[var(--text-secondary)]">The short (SA103S) form holds less detail. Disallowable-expense itemisation, the balance sheet, and the separate subcontractor / advertising / bad-debt / depreciation and bank-charge boxes will be folded into the short boxes or dropped, and the expenses shown net of disallowables. Turnover, allowances and losses are kept.</p>
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="btn-secondary">Cancel</button>
+          <button onClick={onConfirm} className="btn-primary"><Check size={14} /> Switch to short</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
