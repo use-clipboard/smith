@@ -6,8 +6,9 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText,
 } from 'lucide-react';
+import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
@@ -38,7 +39,7 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
   return (
     <div className="space-y-4">
       {/* Section tabs + panel */}
-      <SectionPanel ret={ret} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
+      <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
 
       {/* Live computation (the AI assistant is docked on the right of the workspace) */}
       <ComputationCard ret={ret} />
@@ -290,11 +291,12 @@ function coreSectionCounts(i: Sa100Income) {
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
  *  above the selected section's fields. */
-function SectionPanel({ ret, page, setPage, counts, income, setIncome, reveal }: {
-  ret: TaxReturn; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null;
+function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, reveal }: {
+  ret: TaxReturn; patch: Patch; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null;
 }) {
   const active = PAGES.find(p => p.id === page)!;
   const pv = pageValue(page, income);
+  const [scanOpen, setScanOpen] = useState(false);
   return (
     <StudioCard className="overflow-hidden">
       {/* Section tabs */}
@@ -315,13 +317,19 @@ function SectionPanel({ ret, page, setPage, counts, income, setIncome, reveal }:
       </div>
 
       <div className="p-5">
-      <div className="mb-3 flex items-baseline gap-2 border-b border-black/5 pb-3">
+      <div className="mb-3 flex items-center gap-2 border-b border-black/5 pb-3">
         <h4 className="text-[15px] font-bold text-[var(--text-primary)]">{active.label}</h4>
         <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">{active.code}</span>
         {pv && pv.value > 0 && (
           <span className="ml-auto text-[12px] text-[var(--text-muted)]">{pv.label} <span className="font-bold text-[var(--text-primary)]">{fmtMoney(pv.value)}</span></span>
         )}
+        <Tooltip label="Scan a P60, dividend voucher, etc. — figures are added to this return">
+          <button onClick={() => setScanOpen(true)} className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.06] ${pv && pv.value > 0 ? '' : 'ml-auto'}`}>
+            <ScanText size={13} /> Scan a document
+          </button>
+        </Tooltip>
       </div>
+      {scanOpen && <ScanDocumentsModal ret={ret} patch={patch} onClose={() => setScanOpen(false)} />}
 
       {page === 'core' && <CorePage ret={ret} income={income} setIncome={setIncome} reveal={reveal} />}
       {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
@@ -335,6 +343,28 @@ function SectionPanel({ ret, page, setPage, counts, income, setIncome, reveal }:
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
+  );
+}
+
+// Scan documents without leaving Review & Adjust — reuses the Analyse-step
+// extractor. Imported figures are ADDED to the return (the merge is batch-keyed),
+// so scanning a forgotten P60 here never overwrites what's already entered.
+function ScanDocumentsModal({ ret, patch, onClose }: { ret: TaxReturn; patch: Patch; onClose: () => void }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-auto bg-black/45 p-4 py-10" onClick={onClose}>
+      <div className="w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[14px] font-bold text-white">Scan a document</p>
+          <button onClick={onClose} className="rounded-lg bg-white/15 p-1.5 text-white transition-colors hover:bg-white/25" aria-label="Close"><X size={16} /></button>
+        </div>
+        <DocumentExtract ret={ret} patch={patch} />
+        <div className="mt-2 flex justify-end">
+          <button onClick={onClose} className="rounded-lg bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-white/25">Done</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
