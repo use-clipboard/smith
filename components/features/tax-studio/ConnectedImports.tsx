@@ -12,7 +12,7 @@ import {
   fetchMtdItSummary, fetchAccountsStudioSummary, fetchLandlordSummary, fetchBookkeepingSummary,
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
   buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles, dmyToIso,
-  summaryHasData,
+  summaryHasData, netFromPlLines, buildPartnershipFromNet, mergeImportedPartnership, appendUploadedPartnership,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
   type SourceRef, type PlLine, type BoxAllocation, type TradePeriod,
 } from './integrations';
@@ -108,7 +108,7 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
           <Link2 size={15} className="text-[var(--accent)]" /> Pull figures from connected tools
         </p>
         <p className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
-          Reads this client by default — hit <span className="font-semibold">Change</span> on any tool to pull from another client (e.g. a rental portfolio held under a separate code).
+          Reads this client by default — hit <span className="font-semibold">Change</span> on any tool to pull from another client. A client can have several trades or partnerships: link each business’s own client code, or upload each set of accounts — every import adds a separate entry.
         </p>
       </div>
 
@@ -118,10 +118,12 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
         <ToolImportPanel adapter={BOOKKEEPING} ret={ret} patch={patch} />
         <UploadAccountsCard ret={ret} patch={patch} />
         <ToolImportPanel adapter={LANDLORD} ret={ret} patch={patch} />
+        <PartnershipAccountsCard ret={ret} patch={patch} />
+        <UploadPartnershipCard ret={ret} patch={patch} />
         <ComingSoonPanel icon={Receipt} name="Payroll" target="Employment income"
           note="Per-employee pay isn’t stored yet — P32 only records employer-level PAYE/NIC. Enter employment income in Review & Adjust for now." />
-        <ComingSoonPanel icon={Users} name="Partnership tax return" target="Partnership share"
-          note="Once the partnership (SA800) return is built, each partner’s profit share will import here. Add partnership income manually in Review & Adjust for now." />
+        <ComingSoonPanel icon={Users} name="Partnership tax return (SA800)" target="Direct partner-share link"
+          note="Accounts Studio and uploads already feed each partner’s share below. A direct SA800 link (auto profit-share allocation) will follow once the partnership return is built." />
       </div>
     </div>
   );
@@ -394,6 +396,187 @@ function UploadAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
       {reviewing && (
         <TradeImportReview lines={reviewing} sourceLabel={srcLabel} onConfirm={confirmItemised} onClose={() => setReviewing(null)} />
       )}
+    </StudioCard>
+  );
+}
+
+// A partner's profit-share input + the resulting share figure — SA104 records
+// the partner's SHARE of the partnership's net profit.
+function ShareInput({ share, setShare, netProfit }: { share: number; setShare: (n: number) => void; netProfit: number }) {
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-1.5">
+      <span className="text-[11px] font-medium text-[var(--text-muted)]">Your profit share</span>
+      <input type="number" min={0} max={100} value={share || ''} onChange={e => setShare(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} className="input-base w-16 py-0.5 text-right text-[12px]" />
+      <span className="text-[11px] text-[var(--text-muted)]">%</span>
+      <span className="ml-auto text-[11px] text-[var(--text-muted)]">share <span className="font-bold text-[var(--text-primary)]">{fmtMoney(Math.round(netProfit * (share || 0) / 100))}</span></span>
+    </div>
+  );
+}
+
+// Pull a partnership's accounts (Accounts Studio) for this client — or a
+// partnership held under its own client code — and add the partner's SHARE as an
+// SA104 entry. Idempotent per source client, so linking a second partnership
+// client adds a second partnership.
+function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+  const [src, setSrc] = useState<{ clientId: string; name: string; ref: string; own: boolean }>({
+    clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
+  });
+  const [summary, setSummary] = useState<AccountsStudioSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [share, setShare] = useState(100);
+  const [imported, setImported] = useState(false);
+
+  const load = useCallback(async (clientId: string) => {
+    if (!clientId) { setError('No client linked to this return.'); setSummary(null); return; }
+    setLoading(true); setError('');
+    try { setSummary(await fetchAccountsStudioSummary(clientId, ret.taxYear)); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not read Accounts Studio.'); }
+    finally { setLoading(false); }
+  }, [ret.taxYear]);
+  useEffect(() => { void load(src.clientId); }, [load, src.clientId]);
+
+  function pick(clientId: string, name: string, ref: string) {
+    setSrc({ clientId, name, ref, own: clientId === ret.clientId }); setSearching(false); setImported(false);
+  }
+
+  const has = !!summary && summary.found && !!summary.netProfit;
+  const label = () => `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
+
+  function doImport() {
+    if (!has || !summary) return;
+    const lbl = label();
+    const partnership = buildPartnershipFromNet('tmp', `Partnership — ${lbl}`, summary.netProfit, share, { start: dmyToIso(summary.periodStart), end: dmyToIso(summary.periodEnd) });
+    patch(r => ({
+      ...r,
+      income: mergeImportedPartnership(r.income, partnership, { clientId: src.clientId, label: lbl }, 'as'),
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from ${lbl} (Accounts Studio)` }],
+    }));
+    setImported(true); setTimeout(() => setImported(false), 2500);
+  }
+
+  return (
+    <StudioCard className="flex flex-col p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Users size={18} /></div>
+          <div>
+            <p className="text-[13px] font-bold text-[var(--text-primary)]">Partnership from Accounts Studio</p>
+            <p className="text-[11px] text-[var(--text-muted)]">Partnership share (SA104)</p>
+          </div>
+        </div>
+        <button onClick={() => load(src.clientId)} disabled={loading} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)] disabled:opacity-40" aria-label="Refresh Accounts Studio">
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-black/[0.02] px-2.5 py-1.5">
+        <div className="min-w-0">
+          <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">{src.name || '—'}{src.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {src.ref}</span> : null}</p>
+          <p className="text-[9.5px] uppercase tracking-wide text-[var(--text-muted)]">{src.own ? 'This return’s client' : 'Another client'}</p>
+        </div>
+        <button onClick={() => setSearching(s => !s)} className="shrink-0 text-[11.5px] font-semibold text-[var(--accent)] hover:underline">{searching ? 'Close' : 'Change'}</button>
+      </div>
+      {searching && <InlineClientSearch onPick={pick} />}
+
+      <div className="mt-3 min-h-[48px] flex-1">
+        {loading ? (
+          <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading…</div>
+        ) : error ? (
+          <p className="py-2 text-[12px] text-rose-600">{error}</p>
+        ) : has && summary ? (
+          <div>
+            <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{fmtMoney(summary.netProfit)} net profit</p>
+            {!summary.isPartnership && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> These accounts aren’t flagged as a partnership — double-check the source before adding as a partnership share.</p>}
+            <ShareInput share={share} setShare={setShare} netProfit={summary.netProfit} />
+          </div>
+        ) : (
+          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]"><Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> No saved Accounts Studio run for {src.own ? 'this client' : 'that client'} in {ret.taxYear}.</p>
+        )}
+      </div>
+
+      <div className="mt-2 flex justify-end">
+        <button onClick={doImport} disabled={!has} className="btn-primary disabled:opacity-40">{imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Added' : 'Add partnership'}</button>
+      </div>
+    </StudioCard>
+  );
+}
+
+// Upload a partnership's accounts / trial balance, read its net profit and add
+// the partner's share as a new SA104 partnership. Each upload appends a new one.
+function UploadPartnershipCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [share, setShare] = useState(100);
+  const [net, setNet] = useState<number | null>(null);
+  const [period, setPeriod] = useState<TradePeriod | undefined>();
+  const [srcLabel, setSrcLabel] = useState('');
+  const [imported, setImported] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function onFiles(list: FileList | null) {
+    if (!list || !list.length) return;
+    setBusy(true); setError(''); setNet(null);
+    try {
+      const files = await Promise.all([...list].map(encodeFile));
+      const { lines, period } = await fetchTradePlFromFiles(files);
+      if (!lines.length) { setError('No profit & loss lines found in that file.'); return; }
+      setNet(Math.round(netFromPlLines(lines)));
+      setPeriod(period);
+      setSrcLabel(list.length === 1 ? list[0].name : `${list.length} files`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read the accounts.');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  function addPartnership() {
+    if (net == null) return;
+    const partnership = buildPartnershipFromNet(`upl-pt-${(ret.income.partnerships ?? []).length}-${srcLabel}`, `Partnership — ${srcLabel}`, net, share, period);
+    patch(r => ({
+      ...r,
+      income: appendUploadedPartnership(r.income, partnership),
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from uploaded accounts (${srcLabel})` }],
+    }));
+    setNet(null); setImported(true); setTimeout(() => setImported(false), 2500);
+  }
+
+  return (
+    <StudioCard className="flex flex-col p-4">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><FileUp size={18} /></div>
+        <div>
+          <p className="text-[13px] font-bold text-[var(--text-primary)]">Upload partnership accounts / TB</p>
+          <p className="text-[11px] text-[var(--text-muted)]">Partnership share (SA104)</p>
+        </div>
+      </div>
+
+      <div className="mt-3 min-h-[48px] flex-1">
+        {busy ? (
+          <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading the accounts…</div>
+        ) : error ? (
+          <p className="py-2 text-[12px] text-rose-600">{error}</p>
+        ) : net != null ? (
+          <div>
+            <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{fmtMoney(net)} net profit <span className="text-[11px] font-medium text-[var(--text-muted)]">— {srcLabel}</span></p>
+            <ShareInput share={share} setShare={setShare} netProfit={net} />
+          </div>
+        ) : (
+          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]"><Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> Upload a partnership’s accounts or trial balance — SMITH reads the net profit and adds your share to the SA104. Upload again to add another partnership.</p>
+        )}
+      </div>
+
+      <input ref={inputRef} type="file" accept=".pdf,.csv,.txt,image/*" multiple className="hidden" onChange={e => onFiles(e.target.files)} />
+      <div className="mt-2 flex justify-end gap-2">
+        {net != null ? (
+          <button onClick={addPartnership} className="btn-primary">{imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Added' : 'Add partnership'}</button>
+        ) : (
+          <button onClick={() => inputRef.current?.click()} disabled={busy} className="btn-primary disabled:opacity-40">{imported ? <Check size={15} /> : <FileUp size={15} />} {imported ? 'Added' : 'Upload'}</button>
+        )}
+      </div>
     </StudioCard>
   );
 }

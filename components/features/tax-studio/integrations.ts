@@ -5,7 +5,7 @@
 // sees the normalised shape, so a source changing its internals never touches
 // the import components.
 
-import type { Sa100Income, TradeSource } from './types';
+import type { Sa100Income, TradeSource, PartnershipSource } from './types';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToShort } from './tradeForm';
 
 /** One line of a source P&L (an income or expense account/statement line). */
@@ -304,4 +304,42 @@ export async function fetchTradePlFromFiles(files: UploadFile[]): Promise<{ line
     lines: (d.lines ?? []).filter(l => l && l.label && l.amount),
     period: { start: dmyToIso(d.periodStart), end: dmyToIso(d.periodEnd) },
   };
+}
+
+// ─── Partnership (SA104) imports ─────────────────────────────────────────────
+// Unlike a sole trade, SA104 records the partner's SHARE of a figure the
+// partnership already computed (on its SA800) — there are no expense boxes to
+// itemise. So a partnership import is just: net profit × the partner's share
+// → box 8. Each source client contributes at most one partnership (idempotent,
+// so re-reading updates it); uploads always append, so a client with several
+// partnerships is handled by linking each partnership's client or uploading each
+// set of accounts.
+
+/** Net profit implied by a set of P&L lines (income − expenses). */
+export function netFromPlLines(lines: PlLine[]): number {
+  return lines.reduce((a, l) => a + (l.section === 'income' ? l.amount : -l.amount), 0);
+}
+
+/** Build a partnership source from a single net-profit figure and the partner's
+ *  profit share (%). Defaults to the short SA104S form (trade profit only). */
+export function buildPartnershipFromNet(id: string, name: string, netProfit: number, sharePct: number, period?: TradePeriod): PartnershipSource {
+  const share = Math.max(0, Math.min(100, sharePct || 0));
+  const p: PartnershipSource = { id, name, form: 'short', profit: Math.round(netProfit * share / 100) };
+  if (period?.start) p.periodStart = period.start;
+  if (period?.end) p.periodEnd = period.end;
+  return p;
+}
+
+/** Merge a connected-tool partnership import (idempotent per source client, so
+ *  pulling from a second partnership client adds a second partnership row). */
+export function mergeImportedPartnership(income: Sa100Income, partnership: PartnershipSource, src: SourceRef, kind: 'as' | 'bk'): Sa100Income {
+  const pfx = `${XC}p${kind}-${src.clientId}-`;
+  const partnerships = (income.partnerships ?? []).filter(x => !x.id.startsWith(pfx));
+  partnerships.push({ ...partnership, id: `${pfx}0` });
+  return { ...income, partnerships };
+}
+
+/** Append an uploaded-accounts partnership (each upload is a new partnership). */
+export function appendUploadedPartnership(income: Sa100Income, partnership: PartnershipSource): Sa100Income {
+  return { ...income, partnerships: [...(income.partnerships ?? []), partnership] };
 }
