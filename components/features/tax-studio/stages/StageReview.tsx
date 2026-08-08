@@ -11,6 +11,7 @@ import {
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
+import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
 import { H, CH, EMP, PH } from '../tradeHelp';
@@ -18,8 +19,8 @@ import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -1363,6 +1364,7 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
   const [tab, setTab] = useState<string>('Partnership details');
   const [sub, setSub] = useState(0);
   const [shortConfirm, setShortConfirm] = useState(false);
+  const [stmtOpen, setStmtOpen] = useState(false);
   const isShort = p.form === 'short';
   const TABS: readonly string[] = isShort ? PARTNERSHIP_SHORT_TABS : PARTNERSHIP_TABS;
   const SUBTABS: Record<string, string[]> = isShort ? PARTNERSHIP_SHORT_SUBTABS : PARTNERSHIP_SUBTABS;
@@ -1372,11 +1374,18 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
   const subList = SUBTABS[activeTab] ?? [];
   const subName = subList[sub] ?? subList[0];
   const switchForm = (form: 'full' | 'short') => { onChange(form === 'full' ? migratePartnershipToFull(p) : migratePartnershipToShort(p)); setSub(0); setTab(form === 'short' ? 'Partnership detail and profit' : 'Partnership details'); };
+  const applyStatement = (stmt: PartnershipStatement) => { onChange({ statement: stmt, profit: statementTaxpayerShare(stmt) }); setStmtOpen(false); };
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.name} placeholder={`Partnership ${idx + 1} — name`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        {/* Partnership Statement — allocate partner shares */}
+        <Tooltip label="Partnership Statement — split the profit between partners">
+          <button onClick={() => setStmtOpen(true)} className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition-colors ${p.statement ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+            <Users size={12} /> {p.statement ? `${p.statement.partners.length} partners` : 'Allocate'}
+          </button>
+        </Tooltip>
         {/* SA104 full / short toggle */}
         <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--border)] text-[10.5px] font-semibold">
           <button onClick={() => { if (isShort) switchForm('full'); }} className={`px-2 py-0.5 ${!isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Full</button>
@@ -1388,6 +1397,9 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
       {shortConfirm && (
         <PartnershipToShortModal requiresFull={partnershipRequiresFull(p)}
           onConfirm={() => { switchForm('short'); setShortConfirm(false); }} onCancel={() => setShortConfirm(false)} />
+      )}
+      {stmtOpen && (
+        <PartnershipStatementModal source={p} onApply={applyStatement} onClose={() => setStmtOpen(false)} />
       )}
       {open && (
         <div className="border-t border-black/5">
@@ -1624,6 +1636,103 @@ function PartnershipToShortModal({ requiresFull, onConfirm, onCancel }: { requir
     document.body,
   );
 }
+
+// Partnership Statement allocator — enter the partnership's total profit once and
+// split it between the partners; applying sets this return's box 8 to the
+// taxpayer partner's share and records the full split.
+function PartnershipStatementModal({ source, onApply, onClose }: { source: PartnershipSource; onApply: (s: PartnershipStatement) => void; onClose: () => void }) {
+  const seed: PartnershipStatement = source.statement ?? {
+    profit: source.profit || 0,
+    partners: [{ id: `pa-0-${idOf(source)}`, name: source.name || 'This partner', sharePct: 100, isTaxpayer: true }],
+  };
+  const [profit, setProfit] = useState(seed.profit);
+  const [partners, setPartners] = useState<PartnerAllocation[]>(seed.partners);
+
+  const total = partners.reduce((a, p) => a + (Number(p.sharePct) || 0), 0);
+  const taxpayer = partners.find(p => p.isTaxpayer);
+  const taxpayerShare = taxpayer ? partnerAllocatedShare(profit, taxpayer.sharePct) : 0;
+  const sharesOk = Math.abs(total - 100) < 0.01;
+
+  const upd = (id: string, u: Partial<PartnerAllocation>) => setPartners(ps => ps.map(p => p.id === id ? { ...p, ...u } : p));
+  const setTaxpayer = (id: string) => setPartners(ps => ps.map(p => ({ ...p, isTaxpayer: p.id === id })));
+  const add = () => setPartners(ps => [...ps, { id: `pa-${ps.length}-${Math.round(profit)}-${ps.length}`, name: '', sharePct: 0 }]);
+  const del = (id: string) => setPartners(ps => ps.filter(p => p.id !== id));
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
+          <div>
+            <p className="text-[15px] font-bold text-[var(--text-primary)]">Partnership Statement</p>
+            <p className="text-[11.5px] text-[var(--text-muted)]">Split the partnership’s profit between the partners — the taxpayer’s share fills box 8.</p>
+          </div>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-5 py-4">
+          <div className="mb-4 max-w-xs">
+            <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">Partnership total trade profit (100%)</label>
+            <NumIn value={profit} onChange={setProfit} />
+          </div>
+
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-black/5 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                <th className="pb-2 pr-2">Partner</th>
+                <th className="pb-2 pr-2 text-right">Share %</th>
+                <th className="pb-2 pr-2 text-right">Allocated</th>
+                <th className="pb-2 pr-2 text-center">This return</th>
+                <th className="pb-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {partners.map(pt => (
+                <tr key={pt.id} className="border-b border-black/5">
+                  <td className="py-1.5 pr-2">
+                    <input value={pt.name} placeholder="Partner name" onChange={e => upd(pt.id, { name: e.target.value })} className="input-base w-full py-1 text-[12px]" />
+                  </td>
+                  <td className="py-1.5 pr-2">
+                    <input type="number" min={0} max={100} value={pt.sharePct || ''} onChange={e => upd(pt.id, { sharePct: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="input-base w-20 py-1 text-right text-[12px]" />
+                  </td>
+                  <td className="py-1.5 pr-2 text-right text-[12.5px] font-semibold text-[var(--text-primary)]">{fmtMoney(partnerAllocatedShare(profit, pt.sharePct))}</td>
+                  <td className="py-1.5 pr-2 text-center">
+                    <input type="radio" name="tp" checked={!!pt.isTaxpayer} onChange={() => setTaxpayer(pt.id)} className="h-3.5 w-3.5 accent-[var(--accent)]" />
+                  </td>
+                  <td className="py-1.5"><button onClick={() => del(pt.id)} disabled={partners.length <= 1} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500 disabled:opacity-30"><Trash2 size={13} /></button></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td className="pt-3 pr-2 text-[12px] font-semibold text-[var(--text-muted)]">Total</td>
+                <td className={`pt-3 pr-2 text-right text-[12.5px] font-bold ${sharesOk ? 'text-emerald-600' : 'text-rose-500'}`}>{total}%</td>
+                <td className="pt-3 pr-2 text-right text-[12.5px] font-bold text-[var(--text-primary)]">{fmtMoney(partners.reduce((a, p) => a + partnerAllocatedShare(profit, p.sharePct), 0))}</td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <button onClick={add} className="btn-secondary mt-3"><Plus size={14} /> Add partner</button>
+
+          {!sharesOk && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">Shares add up to {total}% — they should total 100% before allocating.</p>}
+          {!taxpayer && <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">Mark which partner is this return’s taxpayer to fill box 8.</p>}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-black/5 px-5 py-3">
+          <p className="text-[12px] text-[var(--text-muted)]">This return’s share (box 8): <span className="font-bold text-[var(--text-primary)]">{fmtMoney(taxpayerShare)}</span></p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="btn-secondary">Cancel</button>
+            <button onClick={() => onApply({ profit, partners })} disabled={!taxpayer} className="btn-primary disabled:opacity-40"><Check size={14} /> Apply to this return</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function idOf(p: PartnershipSource): string { return p.id.replace(/[^a-z0-9]/gi, '').slice(-6) || '0'; }
 
 function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const add = () => setIncome(i => ({ ...i, property: [...i.property, { id: `p-${i.property.length}-${Date.now()}`, address: '', profit: 0 }] }));

@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -128,6 +128,21 @@ export function partnershipTaxTakenTotal(p: PartnershipSource): number {
 /** This partner's total taxable trade/professional profit (box 20). */
 export function partnershipTaxableProfit(p: PartnershipSource): number {
   return partnershipTotalTaxableProfit(p);
+}
+
+// ── Partnership Statement (partner-share allocator) ──────────────────────────
+/** Sum of the partners' share percentages (should reach 100). */
+export function statementSharesTotal(stmt: PartnershipStatement): number {
+  return stmt.partners.reduce((a, p) => a + (Number(p.sharePct) || 0), 0);
+}
+/** A partner's allocated £ share of the partnership profit. */
+export function partnerAllocatedShare(profit: number, sharePct: number): number {
+  return Math.round((profit || 0) * (Math.max(0, Math.min(100, sharePct || 0)) / 100));
+}
+/** The taxpayer partner's allocated £ share — this partner's SA104 box 8. */
+export function statementTaxpayerShare(stmt: PartnershipStatement): number {
+  const me = stmt.partners.find(p => p.isTaxpayer);
+  return me ? partnerAllocatedShare(stmt.profit, me.sharePct) : 0;
 }
 
 /** Dividends total — sum of the itemised breakdown when present, else the scalar. */

@@ -77,6 +77,22 @@ export interface EmploymentSource {
   expenses?: number;
 }
 // SA104 Partnership — this partner's share of the partnership's income.
+// One partner's slice in a Partnership Statement (name + profit share %).
+export interface PartnerAllocation {
+  id: string;
+  name: string;
+  sharePct: number;      // 0–100
+  isTaxpayer?: boolean;  // the partner whose SA104 this is — receives box 8
+}
+
+// A lightweight Partnership Statement: the partnership's total trade profit and
+// how it is split between the partners. Applying it sets this return's box 8 to
+// the taxpayer partner's share, and records the full split for the accountant.
+export interface PartnershipStatement {
+  profit: number;               // partnership's total taxable trade profit (100%)
+  partners: PartnerAllocation[];
+}
+
 // SA104 Partnership. Box numbers follow the Capium Partnership (full) layout:
 // Partnership details / Trading, NICs & Untaxed income / UK, Foreign Incomes &
 // Offshore funds / Partnership's taxed income. Blue "total" boxes are computed
@@ -86,6 +102,9 @@ export interface PartnershipSource {
   name: string;
   /** Which SA104 form this is presented as. Undefined = 'full' (back-compat). */
   form?: 'full' | 'short';
+  /** Optional Partnership Statement — the whole-partnership profit and how it's
+   *  split between partners. When present, box 8 is the taxpayer partner's share. */
+  statement?: PartnershipStatement;
 
   // ── Partnership details (boxes 1–4) ──
   utr?: string;                    // box 1 — partnership reference number (required)
