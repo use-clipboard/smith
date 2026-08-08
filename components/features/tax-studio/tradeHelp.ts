@@ -70,3 +70,58 @@ export const H = {
   class4Adjustment: 'An adjustment to the profit on which Class 4 NIC is charged (e.g. for certain reliefs or losses).',
   willingClass2: 'Confirms you were self-employed for the whole tax year and are willing to pay Class 2 NIC for the full year.',
 } as const;
+
+// ── SA100 core page ("Income & reliefs") ─────────────────────────────────────
+export const CH = {
+  // Interest & dividends
+  taxedInterest: 'UK interest already taxed at source (rare now) — enter the net amount received and the tax taken off. Most bank/building-society interest is paid untaxed (use the box below).',
+  untaxedInterest: 'UK interest received without tax taken off — e.g. bank, building-society and NS&I interest. Enter the gross amount. The Personal Savings Allowance (£1,000/£500) is applied for you.',
+  untaxedForeignInterest: 'Interest from overseas up to £2,000 that you’re reporting here without the full Foreign pages. Above £2,000 use the Foreign (SA106) section.',
+  dividends: 'Dividends from UK companies and unit trusts — enter the cash amount received. The £500 dividend allowance is applied for you.',
+  otherDividends: 'Other dividend-type income not from ordinary UK shares — e.g. authorised unit trusts, open-ended investment companies, stock dividends.',
+  foreignDividends: 'Dividends from overseas companies up to £2,000 reported here without the full Foreign pages. Above £2,000 use the Foreign (SA106) section.',
+  foreignDividendsTax: 'Foreign tax already taken off those foreign dividends — may be claimable as Foreign Tax Credit Relief.',
+  // Pensions & benefits
+  statePension: 'The total State Pension you were ENTITLED to for the year (not necessarily what was paid) — from your DWP letter. It’s paid without tax taken off.',
+  statePensionLumpSum: 'A one-off State Pension lump sum from deferring your State Pension — taxed at your highest existing rate, not added to your other income.',
+  pensionsIncome: 'Pensions other than the State Pension — workplace, personal and annuity income (the taxable amount on your P60/statement).',
+  incapacityBenefit: 'Taxable Incapacity Benefit or contribution-based Employment and Support Allowance received in the year.',
+  jobseekersAllowance: 'Taxable Jobseeker’s Allowance received in the year.',
+  otherPensionsBenefits: 'Other taxable state benefits not covered above (e.g. Carer’s Allowance, Bereavement Allowance).',
+  // Other UK income
+  otherIncome: 'Casual or miscellaneous taxable income that doesn’t belong elsewhere — e.g. freelance one-offs, commission, or income from a hobby.',
+  otherIncomeDescription: 'A short description of what the other income in boxes 17 and 20 is. Use the AI suggestion or type your own.',
+  preOwnedAssets: 'The Pre-Owned Assets charge — an income-tax charge where you still benefit from an asset you previously gave away.',
+  // Pension payments (reliefs)
+  pensionContributions: 'Personal pension contributions paid NET (after 20% relief at source) — the provider adds basic-rate relief and we extend your basic-rate band for higher-rate relief.',
+  pensionOneOff: 'The part of the box above that was a one-off (not regular) payment — helps HMRC set your PAYE code correctly.',
+  pensionRetirementAnnuity: 'Payments to a retirement annuity contract (pre-1988 style) paid gross — relief is given by extending your basic-rate band.',
+  pensionEmployerScheme: 'Contributions to your employer’s scheme where relief was NOT already given through payroll.',
+  pensionOverseas: 'Contributions to a qualifying overseas pension scheme eligible for UK relief (e.g. migrant member relief).',
+  // Charitable giving
+  giftAid: 'Total Gift Aid donations paid in the year (the amount you actually gave). Charities reclaim 20% and your basic-rate band is extended for higher-rate relief. Only include gifts where you made a valid Gift Aid declaration.',
+  giftAidOneOff: 'The part of the Gift Aid total above that was one-off (not regular) — informational, for HMRC’s records.',
+  giftAidCarryBack: 'Gift Aid paid THIS year that you elect to treat as paid in the PREVIOUS tax year (to get relief a year earlier).',
+  giftAidFuture: 'Gift Aid paid AFTER the tax year end that you elect to treat as paid in THIS year.',
+  giftAidShares: 'The value of qualifying shares or securities given to charity — relieved as a deduction from your income at your marginal rate.',
+  giftAidLand: 'The value of qualifying land or buildings given to charity — relieved as a deduction from your income at your marginal rate.',
+  // Blind / student loan
+  registeredBlind: 'Tick if you are registered blind / severely sight-impaired — this adds the Blind Person’s Allowance to your tax-free amount.',
+  blindAuthority: 'The local authority or register you’re certified blind with (needed to claim the allowance).',
+  spouseSurplusClaim: 'Tick to claim your spouse’s or civil partner’s UNUSED Blind Person’s Allowance.',
+  spouseSurplusSurrender: 'Tick to give YOUR unused Blind Person’s Allowance to your spouse or civil partner.',
+  studentLoanPlan: 'Your student-loan plan type — it sets the income threshold above which 9% repayments are due. Check your plan (1/2/4/5) on your loan statement.',
+  studentLoanDeducted: 'Student-loan repayments already deducted by your employer through payroll this year — credited so you’re not charged twice.',
+  postgradLoan: 'Tick if you have a Postgraduate Loan — repaid at 6% above £21,000, on top of any Plan 1/2/4/5 loan.',
+  region: 'Your tax region. Scotland uses different income-tax bands on earnings; savings and dividends stay on UK rates.',
+  // Child benefit / WFP
+  childBenefit: 'The total Child Benefit you (or your partner) received in the year — drives the High Income Child Benefit Charge if adjusted net income is over £60,000.',
+  childBenefitChildren: 'The number of children you claimed Child Benefit for — used for the charge calculation.',
+  childBenefitStopDate: 'If you stopped claiming Child Benefit during the year, the date it stopped.',
+  winterFuelPayment: 'Winter Fuel Payment / Pension Age Winter Heating Payment received — recovered through a charge if your adjusted net income is over £35,000 (2025/26).',
+  // Marriage allowance
+  marriageAllowance: 'Transferred IN = you receive 10% of a spouse’s personal allowance (a £252 tax reduction). Transferred OUT = you give 10% of yours to a spouse. Only one applies.',
+  // Finishing your tax return
+  taxRefundedOrSetOff: 'Tax already refunded to you, or set off, by HMRC or Jobcentre Plus during the year — added back so your final position is right.',
+  noPayeCollect: 'Tick to stop HMRC collecting the tax you owe through next year’s PAYE tax code (you’ll pay it directly instead).',
+} as const;

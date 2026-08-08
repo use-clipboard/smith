@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
-import Tooltip from '@/components/ui/Tooltip';
+import HelpDot from '../FieldHelp';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
-import { H } from '../tradeHelp';
+import { H, CH } from '../tradeHelp';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
@@ -296,13 +296,13 @@ const LINE_COLS: BreakdownColumn<LineItem>[] = [
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
 /** A description + amount itemised field (used across pensions & other income). */
-function LineField({ box, label, title, items, onChange, fallbackTotal }: {
+function LineField({ box, label, title, items, onChange, fallbackTotal, help }: {
   box: number | string; label: string; title: string; items: LineItem[] | undefined;
-  onChange: (items: LineItem[]) => void; fallbackTotal?: number;
+  onChange: (items: LineItem[]) => void; fallbackTotal?: number; help?: string;
 }) {
   return (
     <BreakdownField<LineItem>
-      box={box} label={label} title={title}
+      box={box} label={label} title={title} help={help}
       items={items ?? []} columns={LINE_COLS}
       blank={() => ({ id: rid('ln'), amount: 0 })}
       onChange={onChange} rowTotal={x => x.amount || 0} fallbackTotal={fallbackTotal}
@@ -331,50 +331,50 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
       <CoreSection title="Interest & dividends" count={c.interest} defaultOpen>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <BreakdownField<TaxedInterestItem>
-            box={1} label="Taxed UK interest" title="Taxed UK interest etc."
+            box={1} label="Taxed UK interest" title="Taxed UK interest etc." help={CH.taxedInterest}
             items={income.taxedInterestItems ?? []} columns={TAXED_INT_COLS}
             blank={() => ({ id: rid('ti'), net: 0, tax: 0 })}
             onChange={items => setIncome(i => ({ ...i, taxedInterestItems: items }))}
             rowTotal={t => (t.net || 0) + (t.tax || 0)} />
           <BreakdownField<SavingsItem>
-            box={2} label="Untaxed UK interest" title="Untaxed UK interest etc."
+            box={2} label="Untaxed UK interest" title="Untaxed UK interest etc." help={CH.untaxedInterest}
             items={income.savingsInterestItems ?? []} columns={SAVINGS_COLS}
             blank={() => ({ id: rid('si'), amount: 0 })}
             onChange={items => setIncome(i => ({ ...i, savingsInterestItems: items }))}
             rowTotal={s => s.amount || 0} fallbackTotal={income.savingsInterest} />
-          <LabelledNum box={3} label="Untaxed foreign interest" value={income.untaxedForeignInterest ?? 0} onChange={v => setIncome(i => ({ ...i, untaxedForeignInterest: v }))} />
+          <LabelledNum box={3} label="Untaxed foreign interest" help={CH.untaxedForeignInterest} value={income.untaxedForeignInterest ?? 0} onChange={v => setIncome(i => ({ ...i, untaxedForeignInterest: v }))} />
           <BreakdownField<DividendItem>
-            box={4} label="Dividends" title="Dividends from UK companies"
+            box={4} label="Dividends" title="Dividends from UK companies" help={CH.dividends}
             items={income.dividendItems ?? []} columns={DIVIDEND_COLS}
             blank={() => ({ id: rid('dv'), company: '', amount: 0 })}
             onChange={items => setIncome(i => ({ ...i, dividendItems: items }))}
             rowTotal={d => d.amount || 0} fallbackTotal={income.dividends} />
-          <LineField box={5} label="Other dividends" title="Other dividends" items={income.otherDividendsItems} fallbackTotal={income.otherDividends ?? 0} onChange={items => setIncome(i => ({ ...i, otherDividendsItems: items }))} />
-          <LineField box={6} label="Foreign dividends (≤ £500)" title="Foreign dividends (≤ £500)" items={income.foreignDividendsItems} fallbackTotal={income.foreignDividendsMain ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsItems: items }))} />
-          <LineField box={7} label="Tax off foreign dividends" title="Tax taken off foreign dividends" items={income.foreignDividendsTaxItems} fallbackTotal={income.foreignDividendsTax ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsTaxItems: items }))} />
+          <LineField box={5} label="Other dividends" title="Other dividends" help={CH.otherDividends} items={income.otherDividendsItems} fallbackTotal={income.otherDividends ?? 0} onChange={items => setIncome(i => ({ ...i, otherDividendsItems: items }))} />
+          <LineField box={6} label="Foreign dividends (≤ £500)" title="Foreign dividends (≤ £500)" help={CH.foreignDividends} items={income.foreignDividendsItems} fallbackTotal={income.foreignDividendsMain ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsItems: items }))} />
+          <LineField box={7} label="Tax off foreign dividends" title="Tax taken off foreign dividends" help={CH.foreignDividendsTax} items={income.foreignDividendsTaxItems} fallbackTotal={income.foreignDividendsTax ?? 0} onChange={items => setIncome(i => ({ ...i, foreignDividendsTaxItems: items }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="UK pensions & benefits" count={c.pensions}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LineField box={8} label="State Pension" title="State Pension" items={income.statePensionItems} fallbackTotal={income.statePension ?? 0} onChange={items => setIncome(i => ({ ...i, statePensionItems: items }))} />
-          <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
+          <LineField box={8} label="State Pension" title="State Pension" help={CH.statePension} items={income.statePensionItems} fallbackTotal={income.statePension ?? 0} onChange={items => setIncome(i => ({ ...i, statePensionItems: items }))} />
+          <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" help={CH.statePensionLumpSum} items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
           <LineField box={10} label="Tax taken off box 9" title="Tax taken off State Pension lump sum" items={income.statePensionLumpSumTaxItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumTaxItems: items }))} />
-          <LineField box={11} label="Pensions (other than State Pension)" title="Pensions (other than State Pension)" items={income.pensionsIncomeItems} fallbackTotal={income.pensionsIncome} onChange={items => setIncome(i => ({ ...i, pensionsIncomeItems: items }))} />
+          <LineField box={11} label="Pensions (other than State Pension)" title="Pensions (other than State Pension)" help={CH.pensionsIncome} items={income.pensionsIncomeItems} fallbackTotal={income.pensionsIncome} onChange={items => setIncome(i => ({ ...i, pensionsIncomeItems: items }))} />
           <LineField box={12} label="Tax taken off box 11" title="Tax taken off pensions" items={income.pensionsIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, pensionsIncomeTaxItems: items }))} />
-          <LabelledNum box={13} label="Incapacity Benefit & ESA" value={income.incapacityBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefit: v }))} />
+          <LabelledNum box={13} label="Incapacity Benefit & ESA" help={CH.incapacityBenefit} value={income.incapacityBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefit: v }))} />
           <LabelledNum box={14} label="Tax taken off box 13" value={income.incapacityBenefitTax ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefitTax: v }))} />
-          <LabelledNum box={15} label="Jobseeker's Allowance" value={income.jobseekersAllowance ?? 0} onChange={v => setIncome(i => ({ ...i, jobseekersAllowance: v }))} />
-          <LabelledNum box={16} label="Other pensions & benefits" value={income.otherPensionsBenefits ?? 0} onChange={v => setIncome(i => ({ ...i, otherPensionsBenefits: v }))} />
+          <LabelledNum box={15} label="Jobseeker's Allowance" help={CH.jobseekersAllowance} value={income.jobseekersAllowance ?? 0} onChange={v => setIncome(i => ({ ...i, jobseekersAllowance: v }))} />
+          <LabelledNum box={16} label="Other pensions & benefits" help={CH.otherPensionsBenefits} value={income.otherPensionsBenefits ?? 0} onChange={v => setIncome(i => ({ ...i, otherPensionsBenefits: v }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Other UK income" count={c.other}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LineField box={17} label="Other taxable income" title="Other taxable income" items={income.otherIncomeItems} fallbackTotal={income.otherIncome} onChange={items => setIncome(i => ({ ...i, otherIncomeItems: items }))} />
+          <LineField box={17} label="Other taxable income" title="Other taxable income" help={CH.otherIncome} items={income.otherIncomeItems} fallbackTotal={income.otherIncome} onChange={items => setIncome(i => ({ ...i, otherIncomeItems: items }))} />
           <LineField box={18} label="Total allowable expenses" title="Allowable expenses" items={income.otherIncomeExpensesItems} onChange={items => setIncome(i => ({ ...i, otherIncomeExpensesItems: items }))} />
           <LineField box={19} label="Any tax taken off box 17" title="Tax taken off other income" items={income.otherIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, otherIncomeTaxItems: items }))} />
-          <LineField box={20} label="Benefit from pre-owned assets" title="Benefit from pre-owned assets" items={income.preOwnedAssetsItems} onChange={items => setIncome(i => ({ ...i, preOwnedAssetsItems: items }))} />
+          <LineField box={20} label="Benefit from pre-owned assets" title="Benefit from pre-owned assets" help={CH.preOwnedAssets} items={income.preOwnedAssetsItems} onChange={items => setIncome(i => ({ ...i, preOwnedAssetsItems: items }))} />
         </div>
         <OtherIncomeDescription ret={ret} income={income} setIncome={setIncome} />
       </CoreSection>
@@ -382,41 +382,41 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
       <CoreSection title="Pension payments" count={c.pensionPayments}>
         <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Paying into registered pension schemes and overseas pension schemes</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LineField box={1} label="Payments & basic rate tax" title="Payments to registered pension schemes (relief at source)" items={income.pensionContributionsItems} fallbackTotal={income.pensionContributions} onChange={items => setIncome(i => ({ ...i, pensionContributionsItems: items }))} />
-          <LabelledNum box="1.1" label="One-off payments in box 1" value={income.pensionOneOff ?? 0} onChange={v => setIncome(i => ({ ...i, pensionOneOff: v }))} />
-          <LineField box={2} label="Payments to a retirement annuity" title="Payments to a retirement annuity" items={income.pensionRetirementAnnuityItems} onChange={items => setIncome(i => ({ ...i, pensionRetirementAnnuityItems: items }))} />
-          <LineField box={3} label="Payments to your employer's scheme" title="Payments to your employer's scheme" items={income.pensionEmployerSchemeItems} onChange={items => setIncome(i => ({ ...i, pensionEmployerSchemeItems: items }))} />
-          <LineField box={4} label="Payments to an overseas scheme" title="Payments to an overseas pension scheme" items={income.pensionOverseasItems} onChange={items => setIncome(i => ({ ...i, pensionOverseasItems: items }))} />
+          <LineField box={1} label="Payments & basic rate tax" title="Payments to registered pension schemes (relief at source)" help={CH.pensionContributions} items={income.pensionContributionsItems} fallbackTotal={income.pensionContributions} onChange={items => setIncome(i => ({ ...i, pensionContributionsItems: items }))} />
+          <LabelledNum box="1.1" label="One-off payments in box 1" help={CH.pensionOneOff} value={income.pensionOneOff ?? 0} onChange={v => setIncome(i => ({ ...i, pensionOneOff: v }))} />
+          <LineField box={2} label="Payments to a retirement annuity" title="Payments to a retirement annuity" help={CH.pensionRetirementAnnuity} items={income.pensionRetirementAnnuityItems} onChange={items => setIncome(i => ({ ...i, pensionRetirementAnnuityItems: items }))} />
+          <LineField box={3} label="Payments to your employer's scheme" title="Payments to your employer's scheme" help={CH.pensionEmployerScheme} items={income.pensionEmployerSchemeItems} onChange={items => setIncome(i => ({ ...i, pensionEmployerSchemeItems: items }))} />
+          <LineField box={4} label="Payments to an overseas scheme" title="Payments to an overseas pension scheme" help={CH.pensionOverseas} items={income.pensionOverseasItems} onChange={items => setIncome(i => ({ ...i, pensionOverseasItems: items }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Charitable giving" count={c.charitable}>
         <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Gift Aid payments and gifts of assets to charity</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LineField box={5} label="Gift Aid payments in the year" title="Gift Aid payments made in the year to 5 April" items={income.giftAidItems} fallbackTotal={income.giftAid} onChange={items => setIncome(i => ({ ...i, giftAidItems: items }))} />
-          <LineField box={6} label="One-off payments in box 5" title="Total of any 'one-off' payments in box 5" items={income.giftAidOneOffItems} onChange={items => setIncome(i => ({ ...i, giftAidOneOffItems: items }))} />
-          <LineField box={7} label="Carried back to previous year" title="Payments to be carried back to the previous tax year" items={income.giftAidCarryBackItems} onChange={items => setIncome(i => ({ ...i, giftAidCarryBackItems: items }))} />
-          <LineField box={8} label="Future payments treated in this year" title="Future payments to be treated as paid in this year" items={income.giftAidFutureItems} onChange={items => setIncome(i => ({ ...i, giftAidFutureItems: items }))} />
-          <LineField box={9} label="Shares/securities gifted to charity" title="Value of qualifying shares or securities gifted to charity" items={income.giftAidSharesItems} onChange={items => setIncome(i => ({ ...i, giftAidSharesItems: items }))} />
-          <LineField box={10} label="Land & buildings gifted to charity" title="Value of qualifying land and buildings gifted to charity" items={income.giftAidLandItems} onChange={items => setIncome(i => ({ ...i, giftAidLandItems: items }))} />
+          <LineField box={5} label="Gift Aid payments in the year" title="Gift Aid payments made in the year to 5 April" help={CH.giftAid} items={income.giftAidItems} fallbackTotal={income.giftAid} onChange={items => setIncome(i => ({ ...i, giftAidItems: items }))} />
+          <LineField box={6} label="One-off payments in box 5" title="Total of any 'one-off' payments in box 5" help={CH.giftAidOneOff} items={income.giftAidOneOffItems} onChange={items => setIncome(i => ({ ...i, giftAidOneOffItems: items }))} />
+          <LineField box={7} label="Carried back to previous year" title="Payments to be carried back to the previous tax year" help={CH.giftAidCarryBack} items={income.giftAidCarryBackItems} onChange={items => setIncome(i => ({ ...i, giftAidCarryBackItems: items }))} />
+          <LineField box={8} label="Future payments treated in this year" title="Future payments to be treated as paid in this year" help={CH.giftAidFuture} items={income.giftAidFutureItems} onChange={items => setIncome(i => ({ ...i, giftAidFutureItems: items }))} />
+          <LineField box={9} label="Shares/securities gifted to charity" title="Value of qualifying shares or securities gifted to charity" help={CH.giftAidShares} items={income.giftAidSharesItems} onChange={items => setIncome(i => ({ ...i, giftAidSharesItems: items }))} />
+          <LineField box={10} label="Land & buildings gifted to charity" title="Value of qualifying land and buildings gifted to charity" help={CH.giftAidLand} items={income.giftAidLandItems} onChange={items => setIncome(i => ({ ...i, giftAidLandItems: items }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Blind allowance & student loan" count={c.blindStudent}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Blind Person's Allowance</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <CheckField box={13} label="Registered blind" checked={!!income.registeredBlind} onChange={v => setIncome(i => ({ ...i, registeredBlind: v }))} />
-          <LabelledText box={14} label="Local authority / register name" value={income.blindAuthority ?? ''} onChange={v => setIncome(i => ({ ...i, blindAuthority: v }))} />
-          <CheckField box={15} label="Claim spouse's surplus allowance" checked={!!income.blindSpouseSurplusClaim} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusClaim: v }))} />
-          <CheckField box={16} label="Allow spouse to claim your surplus" checked={!!income.blindSpouseSurplusSurrender} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusSurrender: v }))} />
+          <CheckField box={13} label="Registered blind" help={CH.registeredBlind} checked={!!income.registeredBlind} onChange={v => setIncome(i => ({ ...i, registeredBlind: v }))} />
+          <LabelledText box={14} label="Local authority / register name" help={CH.blindAuthority} value={income.blindAuthority ?? ''} onChange={v => setIncome(i => ({ ...i, blindAuthority: v }))} />
+          <CheckField box={15} label="Claim spouse's surplus allowance" help={CH.spouseSurplusClaim} checked={!!income.blindSpouseSurplusClaim} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusClaim: v }))} />
+          <CheckField box={16} label="Allow spouse to claim your surplus" help={CH.spouseSurplusSurrender} checked={!!income.blindSpouseSurplusSurrender} onChange={v => setIncome(i => ({ ...i, blindSpouseSurplusSurrender: v }))} />
         </div>
         <p className="mb-2 mt-4 flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)]"><GraduationCap size={12} /> Student Loan repayments</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <CheckField box={1} label="Repayments began before end of tax year" checked={!!income.studentLoanRepaymentBegan} onChange={v => setIncome(i => ({ ...i, studentLoanRepaymentBegan: v }))} />
-          <LabelledNum box={2} label="Repayments deducted by employer" value={income.studentLoanDeducted ?? 0} onChange={v => setIncome(i => ({ ...i, studentLoanDeducted: v }))} />
+          <LabelledNum box={2} label="Repayments deducted by employer" help={CH.studentLoanDeducted} value={income.studentLoanDeducted ?? 0} onChange={v => setIncome(i => ({ ...i, studentLoanDeducted: v }))} />
           <LabelledNum box={3} label="Postgraduate Loan deducted by employer" value={income.postgradLoanDeducted ?? 0} onChange={v => setIncome(i => ({ ...i, postgradLoanDeducted: v }))} />
           <div>
-            <BoxLabel label="Student Loan Plan type" />
+            <BoxLabel label="Student Loan Plan type" help={CH.studentLoanPlan} />
             <select value={income.studentLoanPlan} onChange={e => setIncome(i => ({ ...i, studentLoanPlan: Number(e.target.value) as Sa100Income['studentLoanPlan'] }))} className="input-base py-1 text-[12.5px]">
               <option value={0}>None</option>
               <option value={1}>Plan 1</option>
@@ -426,14 +426,14 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
             </select>
           </div>
           <div>
-            <BoxLabel label="Postgraduate Loan" />
+            <BoxLabel label="Postgraduate Loan" help={CH.postgradLoan} />
             <select value={income.postgradLoan ? 'yes' : 'no'} onChange={e => setIncome(i => ({ ...i, postgradLoan: e.target.value === 'yes' }))} className="input-base py-1 text-[12.5px]">
               <option value="no">None</option>
               <option value="yes">Has a Postgraduate Loan</option>
             </select>
           </div>
           <div>
-            <BoxLabel label="Tax region" />
+            <BoxLabel label="Tax region" help={CH.region} />
             <select value={income.region ?? 'uk'} onChange={e => setIncome(i => ({ ...i, region: e.target.value as 'uk' | 'scotland' }))} className="input-base py-1 text-[12.5px]">
               <option value="uk">England / Wales / NI</option>
               <option value="scotland">Scotland</option>
@@ -445,13 +445,13 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
       <CoreSection title="Child benefit" count={c.childBenefit}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">High Income Child Benefit Charge</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={1} label="Total amount received in the year" value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
-          <LabelledNum box={2} label="Number of children claimed for" value={income.childBenefitChildren ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefitChildren: v }))} />
-          <LabelledDate box={3} label="Date you stopped claiming" value={income.childBenefitStopDate ?? ''} onChange={v => setIncome(i => ({ ...i, childBenefitStopDate: v }))} />
+          <LabelledNum box={1} label="Total amount received in the year" help={CH.childBenefit} value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
+          <LabelledNum box={2} label="Number of children claimed for" help={CH.childBenefitChildren} value={income.childBenefitChildren ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefitChildren: v }))} />
+          <LabelledDate box={3} label="Date you stopped claiming" help={CH.childBenefitStopDate} value={income.childBenefitStopDate ?? ''} onChange={v => setIncome(i => ({ ...i, childBenefitStopDate: v }))} />
         </div>
         <p className="mb-2 mt-4 text-[11px] font-semibold text-[var(--accent)]">Winter Fuel Payment (WFP) / PAWHP charge</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={1} label="Total WFP / PAWHP received in the year" value={income.winterFuelPayment ?? 0} onChange={v => setIncome(i => ({ ...i, winterFuelPayment: v }))} />
+          <LabelledNum box={1} label="Total WFP / PAWHP received in the year" help={CH.winterFuelPayment} value={income.winterFuelPayment ?? 0} onChange={v => setIncome(i => ({ ...i, winterFuelPayment: v }))} />
         </div>
       </CoreSection>
 
@@ -463,19 +463,19 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
           <LabelledText box={3} label="National Insurance number" value={income.spouseNino ?? ''} onChange={v => setIncome(i => ({ ...i, spouseNino: v }))} placeholder="e.g. AA123456B" />
           <LabelledDate box={4} label="Date of birth" value={income.spouseDob ?? ''} onChange={v => setIncome(i => ({ ...i, spouseDob: v }))} />
           <LabelledDate box={5} label="Date of marriage / civil partnership" value={income.marriageDate ?? ''} onChange={v => setIncome(i => ({ ...i, marriageDate: v }))} />
-          <CheckField box={6} label="Marriage Allowance transferred IN (£252 reducer)" checked={income.marriageAllowance === 'received'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'received' : 'none' }))} />
-          <CheckField box={7} label="Marriage Allowance transferred OUT" checked={income.marriageAllowance === 'transferred'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'transferred' : 'none' }))} />
+          <CheckField box={6} label="Marriage Allowance transferred IN (£252 reducer)" help={CH.marriageAllowance} checked={income.marriageAllowance === 'received'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'received' : 'none' }))} />
+          <CheckField box={7} label="Marriage Allowance transferred OUT" help={CH.marriageAllowance} checked={income.marriageAllowance === 'transferred'} onChange={v => setIncome(i => ({ ...i, marriageAllowance: v ? 'transferred' : 'none' }))} />
         </div>
       </CoreSection>
 
       <CoreSection title="Tax refunded or set off" count={c.taxRefunded}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={1} label="Tax refunded or set off by HMRC / Jobcentre Plus" value={income.taxRefundedOrSetOff ?? 0} onChange={v => setIncome(i => ({ ...i, taxRefundedOrSetOff: v }))} />
+          <LabelledNum box={1} label="Tax refunded or set off by HMRC / Jobcentre Plus" help={CH.taxRefundedOrSetOff} value={income.taxRefundedOrSetOff ?? 0} onChange={v => setIncome(i => ({ ...i, taxRefundedOrSetOff: v }))} />
         </div>
         <p className="mb-2 mt-4 text-[11px] font-semibold text-[var(--accent)]">If you have not paid enough tax</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <CheckField box={2} label="Do not collect current-year tax through my PAYE code" checked={!!income.noPayeCollectCurrentYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectCurrentYear: v }))} />
-          <CheckField box={3} label="Do not collect next-year tax through my PAYE code" checked={!!income.noPayeCollectNextYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectNextYear: v }))} />
+          <CheckField box={2} label="Do not collect current-year tax through my PAYE code" help={CH.noPayeCollect} checked={!!income.noPayeCollectCurrentYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectCurrentYear: v }))} />
+          <CheckField box={3} label="Do not collect next-year tax through my PAYE code" help={CH.noPayeCollect} checked={!!income.noPayeCollectNextYear} onChange={v => setIncome(i => ({ ...i, noPayeCollectNextYear: v }))} />
         </div>
       </CoreSection>
 
@@ -689,17 +689,6 @@ function BoxSection({ title, children }: { title: string; children: React.ReactN
       <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">{title}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{children}</div>
     </div>
-  );
-}
-
-// Subtle ⓘ that shows plain-English guidance on hover (standard SMITH tooltip).
-function HelpDot({ help, label }: { help: string; label: string }) {
-  return (
-    <Tooltip label={help} side="top" bubbleClassName="font-normal leading-snug">
-      <button type="button" tabIndex={-1} aria-label={`What to enter for ${label}`} className="text-slate-400 transition-colors hover:text-[var(--accent)]">
-        <Info size={11} />
-      </button>
-    </Tooltip>
   );
 }
 
@@ -1638,13 +1627,13 @@ function TextIn({ value, placeholder, onChange }: { value: string; placeholder?:
 function NumIn({ value, label, onChange }: { value: number; label?: string; onChange: (v: number) => void }) {
   return <input type="number" value={value === 0 ? '' : value} placeholder={label} onChange={e => onChange(Number(e.target.value) || 0)} className="input-base py-1 text-right text-[12.5px]" />;
 }
-function LabelledNum({ icon: Icon, box, label, value, onChange }: { icon?: typeof PiggyBank; box?: number | string; label: string; value: number; onChange: (v: number) => void }) {
+function LabelledNum({ icon: Icon, box, label, value, onChange, help }: { icon?: typeof PiggyBank; box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string }) {
   return (
     <div>
       <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {Icon && <Icon size={11} />}
         {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
-        {label}
+        {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <NumIn value={value} onChange={onChange} />
     </div>
@@ -1653,44 +1642,44 @@ function LabelledNum({ icon: Icon, box, label, value, onChange }: { icon?: typeo
 function RemoveBtn({ onClick }: { onClick: () => void }) {
   return <button onClick={onClick} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button>;
 }
-function BoxLabel({ box, label }: { box?: number | string; label: string }) {
+function BoxLabel({ box, label, help }: { box?: number | string; label: string; help?: string }) {
   return (
     <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
       {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
-      {label}
+      {label}{help && <HelpDot help={help} label={label} />}
     </label>
   );
 }
-function LabelledText({ box, label, value, onChange, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function LabelledText({ box, label, value, onChange, placeholder, help }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string; help?: string }) {
   return (
     <div>
-      <BoxLabel box={box} label={label} />
+      <BoxLabel box={box} label={label} help={help} />
       <input type="text" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
     </div>
   );
 }
-function LabelledDate({ box, label, value, onChange }: { box?: number | string; label: string; value: string; onChange: (v: string) => void }) {
+function LabelledDate({ box, label, value, onChange, help }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; help?: string }) {
   return (
     <div>
-      <BoxLabel box={box} label={label} />
+      <BoxLabel box={box} label={label} help={help} />
       <input type="date" value={value} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
     </div>
   );
 }
-function LabelledArea({ box, label, value, onChange, rows = 3, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string }) {
+function LabelledArea({ box, label, value, onChange, rows = 3, placeholder, help }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; help?: string }) {
   return (
     <div>
-      <BoxLabel box={box} label={label} />
+      <BoxLabel box={box} label={label} help={help} />
       <textarea value={value} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base resize-none py-2 text-[12.5px]" />
     </div>
   );
 }
-function CheckField({ box, label, checked, onChange }: { box?: number | string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function CheckField({ box, label, checked, onChange, help }: { box?: number | string; label: string; checked: boolean; onChange: (v: boolean) => void; help?: string }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
       {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
-      {label}
+      {label}{help && <span onClick={e => e.preventDefault()}><HelpDot help={help} label={label} /></span>}
     </label>
   );
 }
