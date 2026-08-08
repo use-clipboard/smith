@@ -193,9 +193,10 @@ export interface PartnershipSource {
 
   // ── Tax paid and deductions (boxes 77–80) ──
   incomeTaxTaken?: number;         // box 77 — share of income tax taken off partnership income
-  cisDeductions?: number;          // box 78 — share of CIS deductions
-  taxTakenTradingIncome?: number;  // box 79 — share of tax taken off trading income
+  cisDeductions?: number;          // box 78 (full) / box 30 (short) — share of CIS deductions
+  taxTakenTradingIncome?: number;  // box 79 (full) / box 31 (short) — share of tax off trading income
   // box 80 — total tax taken off (computed)
+  otherInformation?: string;       // SA104S box 32 — other information (short form only)
 
   // ── Legacy fields (older imports) — folded into the computed helpers ──
   adjustments?: number;            // legacy basis-period adjustment (→ box 9/10)

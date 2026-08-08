@@ -189,4 +189,6 @@ export const PH = {
   cisDeductions: 'Your share of tax deducted from the partnership’s payments under the Construction Industry Scheme (CIS) — credited against your bill.',
   taxTakenTradingIncome: 'Your share of any other tax already taken off the partnership’s trading income at source.',
   totalTaxTaken: 'Your total share of tax already taken off (boxes 77 to 79). Computed for you and credited against your bill.',
+  taxedInterestShort: 'Your share of the partnership’s interest and other income that already had tax taken off at source — the tax is credited against your bill.',
+  otherInformation: 'Any additional notes for HMRC about this partnership (e.g. an explanation of an entry or a claim). Free text — leave blank if nothing applies.',
 } as const;

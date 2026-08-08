@@ -12,6 +12,7 @@ import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
+import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
 import { H, CH, EMP, PH } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
@@ -1321,7 +1322,7 @@ function MigrateToShortModal({ onConfirm, onCancel }: { onConfirm: () => void; o
 
 function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const list = income.partnerships ?? [];
-  const add = () => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt-${(i.partnerships ?? []).length}-${Date.now()}`, name: '', profit: 0, form: 'full' }] }));
+  const add = () => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt-${(i.partnerships ?? []).length}-${Date.now()}`, name: '', profit: 0, form: 'short' }] }));
   return (
     <div className="space-y-3">
       {list.length === 0 && (
@@ -1347,30 +1348,52 @@ const PARTNERSHIP_SUBTABS: Record<PartnershipTab, string[]> = {
   "Partnership's taxed income": ['Total untaxed income', 'Taxed income', 'Tax paid and deductions'],
 };
 
+// SA104S (short) — 2 tabs, a subset of the same data. Shares the Partnership
+// details and profit boxes 8–12; the tail reuses different box numbers.
+const PARTNERSHIP_SHORT_TABS = ['Partnership detail and profit', 'Trading or professional losses'] as const;
+const PARTNERSHIP_SHORT_SUBTABS: Record<string, string[]> = {
+  'Partnership detail and profit': ['Partnership details', 'Trading or professional profit', 'Trading or professional profit (continue)'],
+  'Trading or professional losses': ['Trading or professional losses', 'NICs & taxed interest', 'Tax paid and deductions'],
+};
+
 function PartnershipCard({ p, idx, onChange, onRemove }: {
   p: PartnershipSource; idx: number; onChange: (u: Partial<PartnershipSource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<string>('Partnership details');
   const [sub, setSub] = useState(0);
+  const [shortConfirm, setShortConfirm] = useState(false);
+  const isShort = p.form === 'short';
+  const TABS: readonly string[] = isShort ? PARTNERSHIP_SHORT_TABS : PARTNERSHIP_TABS;
+  const SUBTABS: Record<string, string[]> = isShort ? PARTNERSHIP_SHORT_SUBTABS : PARTNERSHIP_SUBTABS;
   const set = (u: Partial<PartnershipSource>) => onChange(u);
   const setTop = (tt: string) => { setTab(tt); setSub(0); };
-  const activeTab = (PARTNERSHIP_TABS as readonly string[]).includes(tab) ? tab : PARTNERSHIP_TABS[0];
-  const subList = PARTNERSHIP_SUBTABS[activeTab as PartnershipTab] ?? [];
+  const activeTab = TABS.includes(tab) ? tab : TABS[0];
+  const subList = SUBTABS[activeTab] ?? [];
   const subName = subList[sub] ?? subList[0];
+  const switchForm = (form: 'full' | 'short') => { onChange(form === 'full' ? migratePartnershipToFull(p) : migratePartnershipToShort(p)); setSub(0); setTab(form === 'short' ? 'Partnership detail and profit' : 'Partnership details'); };
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.name} placeholder={`Partnership ${idx + 1} — name`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        {/* SA104 full / short toggle */}
+        <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--border)] text-[10.5px] font-semibold">
+          <button onClick={() => { if (isShort) switchForm('full'); }} className={`px-2 py-0.5 ${!isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Full</button>
+          <button onClick={() => { if (!isShort) setShortConfirm(true); }} className={`px-2 py-0.5 ${isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Short</button>
+        </div>
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(partnershipTaxableProfit(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
+      {shortConfirm && (
+        <PartnershipToShortModal requiresFull={partnershipRequiresFull(p)}
+          onConfirm={() => { switchForm('short'); setShortConfirm(false); }} onCancel={() => setShortConfirm(false)} />
+      )}
       {open && (
         <div className="border-t border-black/5">
           {/* Capium top tabs */}
           <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
-            {PARTNERSHIP_TABS.map(tt => (
+            {TABS.map(tt => (
               <button key={tt} onClick={() => setTop(tt)}
                 className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
                 {tt}
@@ -1398,7 +1421,7 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
                 <BoxDate box={4} label="Date left" value={p.dateLeft ?? ''} onChange={v => set({ dateLeft: v })} />
               </BoxSection>
             )}
-            {subName === 'Professional profits' && (
+            {(subName === 'Professional profits' || subName === 'Trading or professional profit') && (
               <BoxSection title="Your share of the partnership's trading or professional profits">
                 <BoxNum box={8} label="Share of profit/(loss)" help={PH.shareOfProfit} value={p.profit} onChange={v => set({ profit: v })} />
                 <BoxNum box={9} label="Adjustment for a short/long accounting period" help={PH.adjustmentPeriod} value={p.adjustmentPeriod ?? 0} onChange={v => set({ adjustmentPeriod: v })} />
@@ -1521,7 +1544,7 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
                 <BoxNum box="76.1" label="Total amount claimed under the FIG regime" value={p.totalFig ?? 0} onChange={v => set({ totalFig: v })} />
               </BoxSection>
             )}
-            {subName === 'Tax paid and deductions' && (
+            {subName === 'Tax paid and deductions' && !isShort && (
               <BoxSection title="Your share of the partnership's tax paid and deductions">
                 <BoxNum box={77} label="Share of income tax taken off partnership income" help={PH.incomeTaxTaken} value={p.incomeTaxTaken ?? 0} onChange={v => set({ incomeTaxTaken: v })} />
                 <BoxNum box={78} label="Share of CIS deductions" help={PH.cisDeductions} value={p.cisDeductions ?? 0} onChange={v => set({ cisDeductions: v })} />
@@ -1529,10 +1552,76 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
                 <BoxCalc box={80} label="Share of total tax taken off (boxes 77 to 79)" help={PH.totalTaxTaken} value={partnershipTaxTakenTotal(p)} />
               </BoxSection>
             )}
+
+            {/* ── SA104S short — trading profit (continue) ── */}
+            {subName === 'Trading or professional profit (continue)' && (
+              <BoxSection title="Your share of the partnership's trading or professional profits (continued)">
+                <BoxCalc box={16} label="Adjusted profit" help={PH.adjustedProfit} value={partnershipAdjustedProfit(p)} />
+                <BoxNum box={17} label="Loss b/fwd used" help={PH.lossBroughtForwardUsed} value={p.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
+                <BoxNum box="17.1" label="Unused losses b/fwd to carry forward to next year" help={PH.unusedLossCarriedForward} value={p.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
+                <BoxCalc box={18} label="Taxable profit" help={PH.taxableProfit} value={partnershipTaxableTradeProfit(p)} />
+                <BoxNum box={19} label="Other business income" help={PH.otherBusinessIncome} value={p.otherBusinessIncome ?? 0} onChange={v => set({ otherBusinessIncome: v })} />
+                <BoxCalc box={20} label="Total taxable profits" help={PH.totalTaxableProfits} value={partnershipTotalTaxableProfit(p)} />
+              </BoxSection>
+            )}
+            {/* ── SA104S short — losses ── */}
+            {subName === 'Trading or professional losses' && (
+              <BoxSection title="Your share of the partnership's trading or professional losses">
+                <BoxCalc box={21} label="Adjusted loss this year" help={PH.adjustedLoss} value={partnershipAdjustedLoss(p)} />
+                <BoxNum box={22} label="Loss against other income" help={PH.lossAgainstOtherIncome} value={p.lossAgainstOtherIncome ?? 0} onChange={v => set({ lossAgainstOtherIncome: v })} />
+                <BoxNum box={23} label="Loss to be carried back to previous year" help={PH.lossCarriedBack} value={p.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} />
+                <BoxCalc box={24} label="Total loss to carry forward" help={PH.totalLossCarryForward} value={partnershipLossCarryForward(p)} />
+              </BoxSection>
+            )}
+            {/* ── SA104S short — NICs & taxed interest ── */}
+            {subName === 'NICs & taxed interest' && (<>
+              <BoxSection title="National Insurance contributions">
+                <BoxCheck box={25} label="Pay Class 2 NICs voluntarily" help={PH.class2Voluntary} checked={!!p.class2Voluntary} onChange={v => set({ class2Voluntary: v })} />
+                <BoxCheck box={26} label="Exempt from Class 4 NIC" help={PH.class4Exempt} checked={!!p.class4Exempt} onChange={v => set({ class4Exempt: v })} />
+                <BoxNum box={27} label="Adjustment to profits chargeable to Class 4 NICs" help={PH.class4Adjustment} value={p.class4Adjustment ?? 0} onChange={v => set({ class4Adjustment: v })} />
+                <BoxYesNo label="Partner for the full year & willing to pay Class 2 NIC for the full year?" help={PH.willingClass2} value={!!p.willingClass2} onChange={v => set({ willingClass2: v })} />
+              </BoxSection>
+              <BoxSection title="Your share of the partnership's taxed interest etc.">
+                <BoxNum box={28} label="Your share of taxed interest etc" help={PH.taxedInterestShort} value={p.taxedIncome20 ?? 0} onChange={v => set({ taxedIncome20: v })} />
+              </BoxSection>
+            </>)}
+            {/* ── SA104S short — tax paid and deductions ── */}
+            {subName === 'Tax paid and deductions' && isShort && (
+              <BoxSection title="Your share of the partnership tax paid and deductions">
+                <BoxNum box={30} label="Share of CIS deductions" help={PH.cisDeductions} value={p.cisDeductions ?? 0} onChange={v => set({ cisDeductions: v })} />
+                <BoxNum box={31} label="Share of tax taken off trading income" help={PH.taxTakenTradingIncome} value={p.taxTakenTradingIncome ?? 0} onChange={v => set({ taxTakenTradingIncome: v })} />
+                <BoxText box={32} label="Other information" help={PH.otherInformation} value={p.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} />
+              </BoxSection>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// Confirm dialog when switching a partnership to the short SA104S form.
+function PartnershipToShortModal({ requiresFull, onConfirm, onCancel }: { requiresFull: boolean; onConfirm: () => void; onCancel: () => void }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <p className="text-[15px] font-bold text-[var(--text-primary)]">Switch to the short (SA104S) form?</p>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--text-secondary)]">
+          The short form only reports your share of trading profit, losses, NICs and taxed interest. UK property, foreign, offshore and other income boxes are hidden — your figures are kept and reappear if you switch back to full.
+        </p>
+        {requiresFull && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
+            This partnership has property, foreign or other income that the short form can’t report. HMRC requires the full SA104F in that case — switch only if you’re sure.
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onCancel} className="btn-secondary">Cancel</button>
+          <button onClick={onConfirm} className="btn-primary">Switch to short</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
