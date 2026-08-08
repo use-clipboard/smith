@@ -375,29 +375,48 @@ export interface CapitalAllowancesState {
 }
 // SA105 UK property. Box numbers follow the HMRC SA105 form (2025/26 — the
 // furnished-holiday-lettings regime was abolished from 6 April 2025).
+// SA105 UK Property, per-property. Box numbers follow the Capium UK Property
+// layout (Property income / Property expenses / Taxable profit or loss). Several
+// properties (or Landlord-tool links) are entered separately and SUMMED into the
+// single SA105 that gets submitted. Blue "total" boxes are computed (see calc.ts).
 export interface PropertySource {
   id: string;
   address: string;
-  // Income
-  rents?: number;        // box 20 — total rents & other income from property
-  taxTaken?: number;     // box 21 — tax taken off any income in box 20
-  premiums?: number;     // box 22 — premiums for the grant of a lease
-  // Allowable expenses (boxes 24–29)
-  expPremises?: number;    // 24 — rent, rates, insurance, ground rents
-  expRepairs?: number;     // 25 — property repairs & maintenance
-  expLoanInterest?: number;// 26 — non-residential loan interest & finance costs
-  expProfessional?: number;// 27 — legal, management & professional fees
-  expServices?: number;    // 28 — costs of services, incl. wages
-  expOther?: number;       // 29 — other allowable property expenses
-  // Tax adjustments
-  privateUse?: number;         // 36 — private use adjustment (add back)
-  balancingCharges?: number;   // 37 — balancing charges (add back)
-  aia?: number;                // 38 — annual investment allowance (deduct)
-  capitalAllowances?: number;  // other property capital allowances (deduct)
-  domesticItems?: number;      // 40 — replacement of domestic items relief (deduct)
-  residentialFinanceCosts?: number; // 44 — residential finance costs → 20% reducer
-  rentARoom?: number;          // Rent a Room relief claimed (deduct)
-  lossBroughtForward?: number; // 43 — loss brought forward used this year
+  // ── Property income (boxes 20–23) ──
+  rents?: number;                  // box 20 — total rents & other income from property
+  propertyIncomeAllowance?: number;// box 20.1 — property income allowance (£1,000; instead of expenses)
+  traditionalAccounting?: boolean; // box 20.2 — traditional (accruals) accounting
+  taxTaken?: number;               // box 21 — tax taken off any income in box 20
+  premiums?: number;               // box 22 — premiums for the grant of a lease
+  reversePremiums?: number;        // box 23 — reverse premiums and inducements
+  // ── Allowable expenses (boxes 24–29) ──
+  expPremises?: number;    // box 24 — rent, rates, insurance, ground rents etc.
+  expRepairs?: number;     // box 25 — property repairs & maintenance
+  expLoanInterest?: number;// box 26 — loan interest & other financial costs
+  expProfessional?: number;// box 27 — legal, management & other professional fees
+  expServices?: number;    // box 28 — costs of services provided, incl. wages
+  expOther?: number;       // box 29 — other allowable property expenses
+  // ── Taxable profit or loss (boxes 30–45) ──
+  privateUse?: number;          // box 30 — private use adjustment (add back)
+  balancingCharges?: number;    // box 31 — balancing charges (add back)
+  aia?: number;                 // box 32 — Annual Investment Allowance (deduct)
+  sba?: number;                 // box 33 — Structures and Buildings Allowance (deduct)
+  electricChargepoint?: number; // box 33.1 — electric charge-point allowance (deduct)
+  freeportSba?: number;         // box 33.2 — Freeport/Investment Zones SBA (deduct)
+  zeroEmissionCar?: number;     // box 34.1 — zero-emission car allowance (deduct)
+  capitalAllowances?: number;   // box 35 — all other capital allowances (deduct)
+  domesticItems?: number;       // box 36 — costs of replacing domestic items (deduct)
+  rentARoomExempt?: number;     // box 37 — Rent a Room exempt amount (deduct)
+  // box 38 — adjusted profit for the year (computed)
+  lossBroughtForward?: number;  // box 39 — loss b/fwd used against this year's profits
+  unusedLossCarriedForward?: number; // unused losses b/fwd to carry forward
+  // box 40 — taxable profit for the year (computed)
+  // box 41 — adjusted loss for the year (computed)
+  lossSetOffTotalIncome?: number; // box 42 — loss set off against total income
+  // box 43 — loss to carry forward to following year (computed)
+  residentialFinanceCosts?: number; // box 44 — residential finance costs → 20% reducer
+  unusedFinanceCostsBfwd?: number;   // box 45 — unused residential finance costs b/fwd
+  rentARoom?: number;          // legacy Rent a Room deduct (→ box 37 fallback)
   // Legacy — accounts net profit fallback (used when boxes aren't itemised).
   profit: number;
 }
@@ -475,6 +494,13 @@ export interface Sa100Income {
   selfEmployment: TradeSource[];
   partnerships?: PartnershipSource[]; // SA104 — share of partnership profit
   property: PropertySource[];
+  // ── SA105 return-level details (boxes 1–4) — one per return, across all
+  //    properties. `propertyCount`/`propertyLetJointly` are smart-guessed from the
+  //    analysis and overridable. ──
+  propertyCount?: number;        // box 1 — number of properties rented out
+  propertyCeased?: boolean;      // box 2 — property income ceased in the year
+  propertyLetJointly?: boolean;  // box 3 — is the property let jointly
+  propertyRentARoom?: boolean;   // box 4 — claim Rent a Room relief
   // ── Interest & dividends (SA100 TR3, boxes 1–7) ──
   taxedInterestItems?: TaxedInterestItem[]; // box 1 — taxed UK interest (net + tax)
   savingsInterest: number;                  // box 2 — untaxed UK interest (scalar fallback)

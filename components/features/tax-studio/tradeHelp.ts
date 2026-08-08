@@ -192,3 +192,28 @@ export const PH = {
   taxedInterestShort: 'Your share of the partnership’s interest and other income that already had tax taken off at source — the tax is credited against your bill.',
   otherInformation: 'Any additional notes for HMRC about this partnership (e.g. an explanation of an entry or a claim). Free text — leave blank if nothing applies.',
 } as const;
+
+// ── UK Property (SA105) ──────────────────────────────────────────────────────
+// Each property is entered separately; the boxes are summed into one SA105.
+export const PROP = {
+  propertyCount: 'The number of UK properties you received rental income from in the year. SMITH guesses this from the properties added below — change it if it’s wrong.',
+  ceased: 'Tick if you stopped receiving UK property income during the year (e.g. you sold or stopped letting all your properties).',
+  letJointly: 'Tick if any property is let jointly with someone else (e.g. a spouse). Enter only YOUR share of the income and expenses.',
+  claimRentARoom: 'Tick if you’re claiming Rent a Room relief — rent from a lodger in your own home is tax-free up to £7,500 (£3,750 if shared).',
+  incomeAllowance: 'The £1,000 property income allowance — claim it INSTEAD of your actual expenses when expenses are under £1,000. You cannot claim both.',
+  traditionalAccounting: 'Tick if you use traditional (accruals) accounting — income when it’s due and costs when incurred. Leave unticked for the cash basis (when money changes hands).',
+  premiums: 'A lump sum received for granting a lease of 50 years or less — part of it is taxed as income.',
+  reversePremiums: 'A payment or benefit you received as an inducement to take on a lease (e.g. a rent-free period paid in cash).',
+  loanInterest: 'For non-residential lets, loan interest is a normal expense here. For RESIDENTIAL lets, put finance costs in box 44 instead — they get a 20% tax reducer, not a deduction.',
+  privateUse: 'The part of the expenses above that relates to your own private (non-letting) use — added back so it isn’t claimed.',
+  balancingCharges: 'A balancing charge — added back when you sell an item you claimed capital allowances on for more than its tax written-down value.',
+  aia: 'Annual Investment Allowance — 100% relief on qualifying equipment for the property business (not the dwelling itself), up to the annual limit.',
+  domesticItems: 'Replacement of domestic items relief — the cost of replacing (not first buying) furnishings, appliances and kitchenware in a residential let.',
+  rentARoomExempt: 'The Rent a Room exempt amount you’re deducting (up to £7,500 / £3,750) where receipts are within the limit.',
+  adjustedProfit: 'Income − expenses + adjustments − allowances for this property. Computed for you.',
+  lossBroughtForward: 'Unused property losses from earlier years, set against this property business’s profit this year.',
+  taxableProfit: 'Taxable profit after losses brought forward. Computed for you and summed across all properties into the SA105.',
+  adjustedLoss: 'This year’s property loss. Computed for you. Property losses carry forward — they can’t be set against your other income.',
+  lossCarryForward: 'The loss to carry forward to next year. Computed for you.',
+  residentialFinanceCosts: 'Residential mortgage/loan interest — relieved as a 20% tax reducer, NOT deducted from profit. Enter the full amount here.',
+} as const;

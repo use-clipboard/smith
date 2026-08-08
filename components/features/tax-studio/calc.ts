@@ -428,25 +428,51 @@ export function tradeAddBacks(t: TradeSource): number { return tradeAdditions(t)
 
 // ── SA105 property helpers ───────────────────────────────────────────────────
 const PROP_EXP_KEYS = ['expPremises', 'expRepairs', 'expLoanInterest', 'expProfessional', 'expServices', 'expOther'] as const;
+const PROP_ALLOWANCE_KEYS = ['aia', 'sba', 'electricChargepoint', 'freeportSba', 'zeroEmissionCar', 'capitalAllowances', 'domesticItems'] as const;
 
 export function propertyExpensesTotal(p: PropertySource): number {
   return PROP_EXP_KEYS.reduce((a, k) => a + (p[k] || 0), 0);
 }
-export function propertyItemised(p: PropertySource): boolean {
-  return (p.rents || 0) > 0 || (p.premiums || 0) > 0 || propertyExpensesTotal(p) > 0;
+/** Capital allowances + reliefs deducted in the taxable-profit section (32–36). */
+export function propertyAllowancesTotal(p: PropertySource): number {
+  return PROP_ALLOWANCE_KEYS.reduce((a, k) => a + (p[k] || 0), 0);
 }
-/** Net rental profit before tax adjustments — derived from rents − expenses when
+/** box 20 + 22 + 23 — total property income before expenses. */
+export function propertyGrossIncome(p: PropertySource): number {
+  return (p.rents || 0) + (p.premiums || 0) + (p.reversePremiums || 0);
+}
+export function propertyItemised(p: PropertySource): boolean {
+  return propertyGrossIncome(p) > 0 || propertyExpensesTotal(p) > 0;
+}
+/** Net rental profit before tax adjustments — gross income − expenses when
  *  itemised, else the imported/entered accounts profit. */
 export function propertyNetProfit(p: PropertySource): number {
-  return propertyItemised(p) ? (p.rents || 0) + (p.premiums || 0) - propertyExpensesTotal(p) : (p.profit || 0);
+  return propertyItemised(p) ? propertyGrossIncome(p) - propertyExpensesTotal(p) : (p.profit || 0);
 }
-/** Taxable property profit for one property: net profit + adjustments − reliefs
- *  − brought-forward loss, floored at nil (property losses carry forward, they
- *  are not relieved sideways). */
+/** Adjusted result for the year (+ = box 38 profit, − = box 41 loss). When the
+ *  property income allowance is claimed it replaces actual expenses/allowances. */
+export function propertyAdjustedResult(p: PropertySource): number {
+  const rentARoom = p.rentARoomExempt ?? p.rentARoom ?? 0;
+  if ((p.propertyIncomeAllowance || 0) > 0) return propertyGrossIncome(p) - (p.propertyIncomeAllowance || 0);
+  return propertyNetProfit(p) + (p.privateUse || 0) + (p.balancingCharges || 0)
+    - propertyAllowancesTotal(p) - rentARoom;
+}
+/** box 38 — adjusted profit for the year (nil in a loss year). */
+export function propertyAdjustedProfit(p: PropertySource): number {
+  return Math.max(0, propertyAdjustedResult(p));
+}
+/** box 41 — adjusted loss for the year (nil in a profit year). */
+export function propertyAdjustedLoss(p: PropertySource): number {
+  return Math.max(0, -propertyAdjustedResult(p));
+}
+/** box 40 — taxable profit: adjusted profit less brought-forward loss used.
+ *  Property losses carry forward; they are not relieved sideways. */
 export function propertyTaxable(p: PropertySource): number {
-  const adjusted = propertyNetProfit(p) + (p.privateUse || 0) + (p.balancingCharges || 0)
-    - (p.aia || 0) - (p.capitalAllowances || 0) - (p.domesticItems || 0) - (p.rentARoom || 0);
-  return Math.max(0, adjusted - (p.lossBroughtForward || 0));
+  return Math.max(0, propertyAdjustedProfit(p) - (p.lossBroughtForward || 0));
+}
+/** box 43 — loss to carry forward: this year's loss + unused b/fwd − loss set off. */
+export function propertyLossCarryForward(p: PropertySource): number {
+  return Math.max(0, propertyAdjustedLoss(p) + (p.unusedLossCarriedForward || 0) - (p.lossSetOffTotalIncome || 0));
 }
 
 // ── SA108 capital-gains helpers ──────────────────────────────────────────────

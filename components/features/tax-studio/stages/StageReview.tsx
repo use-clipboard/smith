@@ -15,12 +15,12 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -1802,64 +1802,139 @@ function PartnershipStatementModal({ source, onApply, onClose }: { source: Partn
 function idOf(p: PartnershipSource): string { return p.id.replace(/[^a-z0-9]/gi, '').slice(-6) || '0'; }
 
 function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const list = income.property;
   const add = () => setIncome(i => ({ ...i, property: [...i.property, { id: `p-${i.property.length}-${Date.now()}`, address: '', profit: 0 }] }));
+  const set = (u: Partial<Sa100Income>) => setIncome(i => ({ ...i, ...u }));
+  // Smart guess: number of properties defaults to how many were added/found.
+  const countGuess = list.length;
+  const countShown = income.propertyCount ?? countGuess;
+  // Aggregate SA105 (submitted as one) — sums across every property.
+  const sum = (f: (p: PropertySource) => number) => list.reduce((a, p) => a + f(p), 0);
+  const agg = {
+    income: sum(propertyGrossIncome), adjProfit: sum(propertyAdjustedProfit),
+    taxable: sum(propertyTaxable), lossCf: sum(propertyLossCarryForward), finance: sum(p => p.residentialFinanceCosts ?? 0),
+  };
   return (
     <div className="space-y-3">
-      {income.property.length === 0 && (
-        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No properties yet — add one to enter the SA105 figures.</p>
+      {/* Return-level details (SA105 boxes 1–4) */}
+      <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">UK property details</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div>
+            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+              <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">1</span> Number of properties<HelpDot help={PROP.propertyCount} label="Number of properties" />
+            </label>
+            <div className="flex items-center gap-1.5">
+              <NumIn value={countShown} onChange={v => set({ propertyCount: v })} />
+              {income.propertyCount == null && countGuess > 0 && <span className="whitespace-nowrap text-[9.5px] font-semibold text-[var(--accent)]">auto</span>}
+            </div>
+          </div>
+          <BoxYesNo box={2} label="Property income ceased in year?" help={PROP.ceased} value={!!income.propertyCeased} onChange={v => set({ propertyCeased: v })} />
+          <BoxYesNo box={3} label="Is property let jointly?" help={PROP.letJointly} value={!!income.propertyLetJointly} onChange={v => set({ propertyLetJointly: v })} />
+          <BoxYesNo box={4} label="Claim Rent a Room relief?" help={PROP.claimRentARoom} value={!!income.propertyRentARoom} onChange={v => set({ propertyRentARoom: v })} />
+        </div>
+      </div>
+
+      {/* Aggregate SA105 — every property is summed into one submitted return */}
+      {list.length > 0 && (
+        <div className="rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] px-3 py-2.5">
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--accent)]"><Home size={12} /> SA105 total — submitted as one ({list.length} propert{list.length === 1 ? 'y' : 'ies'})</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11.5px] sm:grid-cols-4">
+            <span className="text-[var(--text-muted)]">Income <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.income)}</span></span>
+            <span className="text-[var(--text-muted)]">Adjusted profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.adjProfit)}</span></span>
+            <span className="text-[var(--text-muted)]">Taxable profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.taxable)}</span></span>
+            <span className="text-[var(--text-muted)]">Loss to carry fwd <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.lossCf)}</span></span>
+          </div>
+        </div>
       )}
-      {income.property.map((p, idx) => (
+
+      {list.length === 0 && (
+        <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No properties yet — add one (or import from Landlord Analysis) to enter the SA105 figures.</p>
+      )}
+      {list.map((p, idx) => (
         <PropertyCard key={p.id} p={p} idx={idx}
           onChange={u => setIncome(i => ({ ...i, property: i.property.map((x, j) => j === idx ? { ...x, ...u } : x) }))}
           onRemove={() => setIncome(i => ({ ...i, property: i.property.filter((_, j) => j !== idx) }))} />
       ))}
       <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add property</button>
-      <p className="text-[10.5px] text-[var(--text-muted)]">Furnished holiday lettings ended on 5 April 2025, so 2025/26 uses the single UK-property section. Residential finance costs are relieved as a 20% reducer, not deducted.</p>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Each property is entered separately and summed into one SA105. Furnished holiday lettings ended on 5 April 2025, so 2025/26 uses the single UK-property section. Residential finance costs (box 44) are relieved as a 20% reducer, not deducted.</p>
     </div>
   );
 }
+
+const PROPERTY_TABS = ['Property income', 'Property expenses', 'Taxable profit or loss'] as const;
 
 function PropertyCard({ p, idx, onChange, onRemove }: {
   p: PropertySource; idx: number; onChange: (u: Partial<PropertySource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState<string>('Property income');
+  const set = (u: Partial<PropertySource>) => onChange(u);
+  const activeTab = (PROPERTY_TABS as readonly string[]).includes(tab) ? tab : PROPERTY_TABS[0];
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        <input value={p.address} placeholder={`Property ${idx + 1}`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <input value={p.address} placeholder={`Property ${idx + 1} — address`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <ProvenanceBadge id={p.id} />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
-        <div className="space-y-3 border-t border-black/5 px-3 py-3">
-          <BoxSection title="Income">
-            <BoxNum box={20} label="Rents & other income" value={p.rents ?? 0} onChange={v => onChange({ rents: v })} />
-            <BoxNum box={21} label="Tax taken off" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
-            <BoxNum box={22} label="Lease premiums" value={p.premiums ?? 0} onChange={v => onChange({ premiums: v })} />
-          </BoxSection>
-          <BoxSection title="Allowable expenses">
-            <BoxNum box={24} label="Rent, rates, insurance" value={p.expPremises ?? 0} onChange={v => onChange({ expPremises: v })} />
-            <BoxNum box={25} label="Repairs & maintenance" value={p.expRepairs ?? 0} onChange={v => onChange({ expRepairs: v })} />
-            <BoxNum box={26} label="Non-resi. loan interest" value={p.expLoanInterest ?? 0} onChange={v => onChange({ expLoanInterest: v })} />
-            <BoxNum box={27} label="Legal & professional" value={p.expProfessional ?? 0} onChange={v => onChange({ expProfessional: v })} />
-            <BoxNum box={28} label="Cost of services" value={p.expServices ?? 0} onChange={v => onChange({ expServices: v })} />
-            <BoxNum box={29} label="Other expenses" value={p.expOther ?? 0} onChange={v => onChange({ expOther: v })} />
-          </BoxSection>
-          <BoxSection title="Adjustments & reliefs">
-            <BoxNum box={36} label="Private use adjustment" value={p.privateUse ?? 0} onChange={v => onChange({ privateUse: v })} />
-            <BoxNum box={37} label="Balancing charges" value={p.balancingCharges ?? 0} onChange={v => onChange({ balancingCharges: v })} />
-            <BoxNum box={38} label="Annual investment allowance" value={p.aia ?? 0} onChange={v => onChange({ aia: v })} />
-            <LabelledNum box={39} label="Other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => onChange({ capitalAllowances: v })} />
-            <BoxNum box={40} label="Replacing domestic items" value={p.domesticItems ?? 0} onChange={v => onChange({ domesticItems: v })} />
-            <LabelledNum box={37} label="Rent a Room relief" value={p.rentARoom ?? 0} onChange={v => onChange({ rentARoom: v })} />
-          </BoxSection>
-          <BoxSection title="Finance costs & losses">
-            <BoxNum box={44} label="Residential finance costs" value={p.residentialFinanceCosts ?? 0} onChange={v => onChange({ residentialFinanceCosts: v })} />
-            <BoxNum box={43} label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
-          </BoxSection>
-          <p className="text-[10.5px] text-[var(--text-muted)]">Net profit {fmtMoney(propertyNetProfit(p))} + adjustments − reliefs − loss b/fwd = taxable. Residential finance costs give a separate 20% reducer.</p>
+        <div className="border-t border-black/5">
+          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
+            {PROPERTY_TABS.map(tt => (
+              <button key={tt} onClick={() => setTab(tt)}
+                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {tt}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-3 px-3 py-3">
+            {activeTab === 'Property income' && (
+              <BoxSection title="Property income">
+                <BoxNum box={20} label="Total rents and other income from property" value={p.rents ?? 0} onChange={v => set({ rents: v })} />
+                <BoxNum box="20.1" label="Property income allowance" help={PROP.incomeAllowance} value={p.propertyIncomeAllowance ?? 0} onChange={v => set({ propertyIncomeAllowance: v })} />
+                <BoxCheck box="20.2" label="Traditional accounting" help={PROP.traditionalAccounting} checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
+                <BoxNum box={21} label="Tax taken off any income in box 20" value={p.taxTaken ?? 0} onChange={v => set({ taxTaken: v })} />
+                <BoxNum box={22} label="Premiums for the grant of a lease" help={PROP.premiums} value={p.premiums ?? 0} onChange={v => set({ premiums: v })} />
+                <BoxNum box={23} label="Reverse premiums and inducements" help={PROP.reversePremiums} value={p.reversePremiums ?? 0} onChange={v => set({ reversePremiums: v })} />
+              </BoxSection>
+            )}
+            {activeTab === 'Property expenses' && (
+              <BoxSection title="Property expenses">
+                <BoxNum box={24} label="Rent, rates, insurance, ground rents etc." value={p.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
+                <BoxNum box={25} label="Property repairs and maintenance" value={p.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
+                <BoxNum box={26} label="Loan interest and other financial costs" help={PROP.loanInterest} value={p.expLoanInterest ?? 0} onChange={v => set({ expLoanInterest: v })} />
+                <BoxNum box={27} label="Legal, management and other professional fees" value={p.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
+                <BoxNum box={28} label="Costs of services provided, including wages" value={p.expServices ?? 0} onChange={v => set({ expServices: v })} />
+                <BoxNum box={29} label="Other allowable property expenses" value={p.expOther ?? 0} onChange={v => set({ expOther: v })} />
+              </BoxSection>
+            )}
+            {activeTab === 'Taxable profit or loss' && (
+              <BoxSection title="Taxable profit or loss">
+                <BoxNum box={30} label="Private use adjustment" help={PROP.privateUse} value={p.privateUse ?? 0} onChange={v => set({ privateUse: v })} />
+                <BoxNum box={31} label="Balancing charges" help={PROP.balancingCharges} value={p.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
+                <BoxNum box={32} label="Annual Investment Allowance" help={PROP.aia} value={p.aia ?? 0} onChange={v => set({ aia: v })} />
+                <BoxNum box={33} label="Structures and Buildings Allowance" value={p.sba ?? 0} onChange={v => set({ sba: v })} />
+                <BoxNum box="33.1" label="Electric charge-point allowance" value={p.electricChargepoint ?? 0} onChange={v => set({ electricChargepoint: v })} />
+                <BoxNum box="33.2" label="Freeport and Investment Zones Structures and Buildings Allowance" value={p.freeportSba ?? 0} onChange={v => set({ freeportSba: v })} />
+                <BoxNum box="34.1" label="Zero-emission car allowance" value={p.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
+                <BoxNum box={35} label="All other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => set({ capitalAllowances: v })} />
+                <BoxNum box={36} label="Costs of replacing domestic items" help={PROP.domesticItems} value={p.domesticItems ?? 0} onChange={v => set({ domesticItems: v })} />
+                <BoxNum box={37} label="Rent a Room exempt amount" help={PROP.rentARoomExempt} value={p.rentARoomExempt ?? p.rentARoom ?? 0} onChange={v => set({ rentARoomExempt: v })} />
+                <BoxCalc box={38} label="Adjusted profit for the year" help={PROP.adjustedProfit} value={propertyAdjustedProfit(p)} />
+                <BoxNum box={39} label="Loss brought forward used against this year's profits" help={PROP.lossBroughtForward} value={p.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
+                <BoxNum label="Unused losses b/fwd to carry forward to next year" value={p.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
+                <BoxCalc box={40} label="Taxable profit for the year" help={PROP.taxableProfit} value={propertyTaxable(p)} />
+                <BoxCalc box={41} label="Adjusted loss for the year" help={PROP.adjustedLoss} value={propertyAdjustedLoss(p)} />
+                <BoxNum box={42} label="Loss set off against total income for the year" value={p.lossSetOffTotalIncome ?? 0} onChange={v => set({ lossSetOffTotalIncome: v })} />
+                <BoxCalc box={43} label="Loss to carry forward to following year" help={PROP.lossCarryForward} value={propertyLossCarryForward(p)} />
+                <BoxNum box={44} label="Residential property finance costs" help={PROP.residentialFinanceCosts} value={p.residentialFinanceCosts ?? 0} onChange={v => set({ residentialFinanceCosts: v })} />
+                <BoxNum box={45} label="Unused residential property finance costs brought forward" value={p.unusedFinanceCostsBfwd ?? 0} onChange={v => set({ unusedFinanceCostsBfwd: v })} />
+              </BoxSection>
+            )}
+          </div>
         </div>
       )}
     </div>

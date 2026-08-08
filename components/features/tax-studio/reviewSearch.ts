@@ -69,6 +69,12 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Partnership foreign income', context: 'Partnership · boxes 56–63', page: 'partnership', keywords: 'other untaxed foreign income box 56 60 63' },
   { label: 'Partnership taxed income', context: 'Partnership · boxes 68–76', page: 'partnership', keywords: 'taxed income 10% 20% other taxed box 68 70 71 73 74 76' },
   { label: 'Partnership tax paid & CIS deductions', context: 'Partnership · boxes 77–80', page: 'partnership', keywords: 'tax taken off cis deductions trading income box 77 78 79 80' },
+  // Property (SA105)
+  { label: 'Number of properties / let jointly', context: 'Property · boxes 1–4', page: 'property', keywords: 'number of properties let jointly rent a room ceased box 1 2 3 4' },
+  { label: 'Property income', context: 'Property · boxes 20–23', page: 'property', keywords: 'total rents property income allowance premiums reverse premiums box 20 21 22 23' },
+  { label: 'Property expenses', context: 'Property · boxes 24–29', page: 'property', keywords: 'rent rates insurance repairs loan interest legal management services other box 24 25 26 27 28 29' },
+  { label: 'Property allowances & taxable profit', context: 'Property · boxes 30–43', page: 'property', keywords: 'private use balancing aia sba capital allowances domestic items adjusted taxable profit loss box 30 38 40 41 43' },
+  { label: 'Residential property finance costs', context: 'Property · boxes 44–45', page: 'property', keywords: 'residential finance costs mortgage interest 20% reducer box 44 45' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },
