@@ -222,6 +222,17 @@ export const SA103_BOX_CATALOG: Sa103Box[] = [
  *  portion the AI judged disallowable for tax (added back in boxes 32–45). */
 export interface BoxAllocation { label: string; amount: number; box: string; disallowable: number; }
 
+/** dd-mm-yyyy → yyyy-mm-dd (for HTML date inputs); passes through an ISO date. */
+export function dmyToIso(s?: string): string | undefined {
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.trim().match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : undefined;
+}
+
+/** The accounting period a source covers, as ISO dates (for boxes 8/9 or 7). */
+export interface TradePeriod { start?: string; end?: string; }
+
 /** Ask the server to map source P&L lines to SA103F boxes (AI). Falls back to a
  *  turnover/other-costs split on any failure so the import still proceeds. */
 export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocation[]> {
@@ -246,8 +257,10 @@ export async function fetchTradeBoxMapping(lines: PlLine[]): Promise<BoxAllocati
  *  expense boxes (15–30) and the disallowable portions (32–45). Picks the full
  *  or short form by turnover: at/above the VAT threshold it stays full; below it
  *  is folded to the short form (allowable-only, combined boxes). */
-export function buildItemisedTrade(id: string, name: string, allocations: BoxAllocation[]): TradeSource {
+export function buildItemisedTrade(id: string, name: string, allocations: BoxAllocation[], period?: TradePeriod): TradeSource {
   const trade: TradeSource = { id, name, profit: 0, form: 'full' };
+  if (period?.start) trade.periodStart = period.start;
+  if (period?.end) trade.periodEnd = period.end;
   const nums = trade as unknown as Record<string, number>;
   const byBox = new Map(SA103_BOX_CATALOG.map(b => [b.box, b]));
   let turnover = 0;
@@ -276,9 +289,9 @@ export function mergeItemisedTrade(income: Sa100Income, trade: TradeSource, src:
  *  extract routes' file shape. */
 export interface UploadFile { name: string; mimeType: string; base64?: string; text?: string; }
 
-/** Read an uploaded set of accounts / trial balance into P&L lines (AI). These
- *  then flow into the same itemise-and-review modal as the connected tools. */
-export async function fetchTradePlFromFiles(files: UploadFile[]): Promise<PlLine[]> {
+/** Read an uploaded set of accounts / trial balance into P&L lines + the
+ *  accounting period (AI). These flow into the same itemise-and-review modal. */
+export async function fetchTradePlFromFiles(files: UploadFile[]): Promise<{ lines: PlLine[]; period: TradePeriod }> {
   const r = await fetch('/api/tax-studio/integrations/extract-trade-pl', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }),
   });
@@ -286,6 +299,9 @@ export async function fetchTradePlFromFiles(files: UploadFile[]): Promise<PlLine
     const d = await r.json().catch(() => ({}));
     throw new Error((d as { error?: string }).error ?? 'Could not read the accounts.');
   }
-  const d = await r.json() as { lines?: PlLine[] };
-  return (d.lines ?? []).filter(l => l && l.label && l.amount);
+  const d = await r.json() as { lines?: PlLine[]; periodStart?: string; periodEnd?: string };
+  return {
+    lines: (d.lines ?? []).filter(l => l && l.label && l.amount),
+    period: { start: dmyToIso(d.periodStart), end: dmyToIso(d.periodEnd) },
+  };
 }

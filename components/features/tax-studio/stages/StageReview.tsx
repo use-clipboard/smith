@@ -701,13 +701,14 @@ function BoxNum({ box, label, value, onChange }: { box?: number | string; label:
   );
 }
 
-function BoxText({ box, label, value, onChange, placeholder }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function BoxText({ box, label, value, onChange, placeholder, required }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; placeholder?: string; required?: boolean }) {
+  const missing = required && !value.trim();
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{required && <span className="text-rose-500">*</span>}
       </label>
-      <TextIn value={value} onChange={onChange} placeholder={placeholder} />
+      <input value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className={`input-base py-1 text-[12.5px] ${missing ? 'border-rose-300' : ''}`} />
     </div>
   );
 }
@@ -838,7 +839,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        <input value={t.name} placeholder={`Trade ${idx + 1}`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <input value={t.name} placeholder={`Trade ${idx + 1} — business name*`} onChange={ev => set({ name: ev.target.value })} className={`input-base flex-1 py-1 text-[12.5px] font-semibold ${!t.name.trim() ? 'border-rose-300' : ''}`} />
         {/* SA103 full / short toggle */}
         <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--border)] text-[10.5px] font-semibold">
           <button onClick={() => { if (isShort) switchForm('full'); }} className={`px-2 py-0.5 ${!isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Full</button>
@@ -879,8 +880,8 @@ function TradeCard({ t, idx, onChange, onRemove }: {
             {/* ── Business details ── */}
             {subName === 'Business Details' && (
               <BoxSection title="Business details">
-                <BoxText box={1} label="Business name" value={t.name} onChange={v => set({ name: v })} />
-                <BoxText box={2} label="Description of business" value={t.description ?? ''} onChange={v => set({ description: v })} />
+                <BoxText box={1} label="Business name" required value={t.name} onChange={v => set({ name: v })} />
+                <BoxText box={2} label="Description of business" required value={t.description ?? ''} onChange={v => set({ description: v })} />
                 <BoxText box={3} label="First line of business address" value={t.addressLine ?? ''} onChange={v => set({ addressLine: v })} />
                 <BoxText box={4} label="Postcode of business address" value={t.postcode ?? ''} onChange={v => set({ postcode: v })} />
                 <BoxCheck box={5} label="Name/address details changed in last 12 months" checked={!!t.detailsChanged} onChange={v => set({ detailsChanged: v })} />
@@ -1099,7 +1100,7 @@ function TradeShortBody({ t, set, subName, caDiverged, onOpenCa }: {
     <>
       {subName === 'Business Details' && (
         <BoxSection title="Business details">
-          <BoxText box={1} label="Description of business" value={t.description ?? ''} onChange={v => set({ description: v })} />
+          <BoxText box={1} label="Description of business" required value={t.description ?? ''} onChange={v => set({ description: v })} />
           <BoxText box={2} label="Postcode of your business address" value={t.postcode ?? ''} onChange={v => set({ postcode: v })} />
           <BoxCheck box={3} label="Name/address details changed in last 12 months" checked={!!t.detailsChanged} onChange={v => set({ detailsChanged: v })} />
           <BoxCheck box={4} label="If you are a foster carer" checked={!!t.fosterCarer} onChange={v => set({ fosterCarer: v })} />

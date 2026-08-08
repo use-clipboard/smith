@@ -59,8 +59,9 @@ Rules:
 - IGNORE any total / subtotal / net-profit / gross-profit lines — return only the individual account lines.
 - Return each line's amount as a POSITIVE number and mark it "income" or "expense" (in a trial balance, income is the credit balance, expenses are the debit balance).
 - Use the account's own name as the label.
+- Also read the accounting period the statements cover, as ISO dates (yyyy-mm-dd) — periodStart and periodEnd. Omit them if not shown.
 
-Reply with ONLY this JSON, no prose: {"lines":[{"label":"...","amount":123.45,"section":"income"}]}`;
+Reply with ONLY this JSON, no prose: {"lines":[{"label":"...","amount":123.45,"section":"income"}],"periodStart":"2025-04-06","periodEnd":"2026-04-05"}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -78,11 +79,13 @@ Reply with ONLY this JSON, no prose: {"lines":[{"label":"...","amount":123.45,"s
     try { raw = parseJson(textPart.text); }
     catch { return NextResponse.json({ error: 'Could not read the accounts — please check the file or enter the figures manually.' }, { status: 502 }); }
 
-    const lines = (((raw as { lines?: unknown }).lines ?? []) as { label?: unknown; amount?: unknown; section?: unknown }[])
+    const r = raw as { lines?: unknown; periodStart?: unknown; periodEnd?: unknown };
+    const lines = ((r.lines ?? []) as { label?: unknown; amount?: unknown; section?: unknown }[])
       .map(l => ({ label: String(l.label ?? '').trim(), amount: Math.round(Number(l.amount) || 0), section: l.section === 'income' ? 'income' as const : 'expense' as const }))
       .filter(l => l.label && l.amount !== 0);
+    const iso = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
 
-    return NextResponse.json({ lines });
+    return NextResponse.json({ lines, periodStart: iso(r.periodStart), periodEnd: iso(r.periodEnd) });
   } catch (err) {
     if (err instanceof ApiKeyNotConfiguredError) return NextResponse.json({ error: err.message }, { status: 402 });
     console.error('[/api/tax-studio/integrations/extract-trade-pl]', err);

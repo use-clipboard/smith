@@ -11,10 +11,10 @@ import { fmtMoney } from './data';
 import {
   fetchMtdItSummary, fetchAccountsStudioSummary, fetchLandlordSummary, fetchBookkeepingSummary,
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
-  buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles,
+  buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles, dmyToIso,
   summaryHasData,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
-  type SourceRef, type PlLine, type BoxAllocation,
+  type SourceRef, type PlLine, type BoxAllocation, type TradePeriod,
 } from './integrations';
 import { encodeFile } from './extract';
 import TradeImportReview from './TradeImportReview';
@@ -45,6 +45,8 @@ interface ToolAdapter<S> {
   getLines?: (s: S) => PlLine[] | undefined;
   itemiseKind?: 'as' | 'bk';
   expectedNet?: (s: S) => number;
+  /** Accounting period this source covers — pulled into boxes 8/9 (or 7). */
+  datesFor?: (s: S) => TradePeriod;
   timelineLabel: (sourceLabel: string) => string;
 }
 
@@ -79,6 +81,7 @@ const ACCOUNTS: ToolAdapter<AccountsStudioSummary> = {
   fetch: fetchAccountsStudioSummary, hasData: s => s.found && !!s.netProfit, headline: s => `${fmtMoney(s.netProfit)} net profit`, note: s => s.note,
   merge: mergeCrossAccounts,
   getLines: s => s.lines, itemiseKind: 'as', expectedNet: s => s.netProfit,
+  datesFor: s => ({ start: dmyToIso(s.periodStart), end: dmyToIso(s.periodEnd) }),
   timelineLabel: l => `Imported itemised trade from ${l} (Accounts Studio)`,
 };
 
@@ -87,6 +90,7 @@ const BOOKKEEPING: ToolAdapter<BookkeepingSummary> = {
   fetch: fetchBookkeepingSummary, hasData: s => s.found && !!s.netProfit, headline: s => `${fmtMoney(s.netProfit)} net profit`, note: s => s.note,
   merge: mergeCrossBookkeeping,
   getLines: s => s.lines, itemiseKind: 'bk', expectedNet: s => s.netProfit,
+  datesFor: s => ({ start: s.from || undefined, end: s.to || undefined }),
   timelineLabel: l => `Imported itemised trade from ${l} (Bookkeeping)`,
 };
 
@@ -180,7 +184,7 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
   function confirmItemised(allocations: BoxAllocation[]) {
     if (!adapter.itemiseKind) return;
     const label = importLabel();
-    const trade = buildItemisedTrade('tmp', `Trade — ${label}`, allocations);
+    const trade = buildItemisedTrade('tmp', `Trade — ${label}`, allocations, summary ? adapter.datesFor?.(summary) : undefined);
     patch(r => ({
       ...r,
       income: mergeItemisedTrade(r.income, trade, { clientId: src.clientId, label }, adapter.itemiseKind!),
@@ -325,6 +329,7 @@ function UploadAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
   const [error, setError] = useState('');
   const [reviewing, setReviewing] = useState<PlLine[] | null>(null);
   const [srcLabel, setSrcLabel] = useState('');
+  const [period, setPeriod] = useState<TradePeriod | undefined>();
   const [imported, setImported] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -333,9 +338,10 @@ function UploadAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
     setBusy(true); setError('');
     try {
       const files = await Promise.all([...list].map(encodeFile));
-      const lines = await fetchTradePlFromFiles(files);
+      const { lines, period } = await fetchTradePlFromFiles(files);
       if (!lines.length) { setError('No profit & loss lines found in that file.'); return; }
       setSrcLabel(list.length === 1 ? list[0].name : `${list.length} files`);
+      setPeriod(period);
       setReviewing(lines);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read the accounts.');
@@ -346,7 +352,7 @@ function UploadAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
   }
 
   function confirmItemised(allocations: BoxAllocation[]) {
-    const trade = buildItemisedTrade(`upl-${ret.income.selfEmployment.length}-${srcLabel}`, `Trade — ${srcLabel}`, allocations);
+    const trade = buildItemisedTrade(`upl-${ret.income.selfEmployment.length}-${srcLabel}`, `Trade — ${srcLabel}`, allocations, period);
     patch(r => ({
       ...r,
       income: { ...r.income, selfEmployment: [...r.income.selfEmployment, trade] },

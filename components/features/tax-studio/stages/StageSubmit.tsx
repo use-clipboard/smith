@@ -10,6 +10,7 @@ import { fmtDateUK, fmtMoney } from '../data';
 import { computeSa100Full } from '../calc';
 import { collectFraudData } from '@/lib/hmrc/clientFraudData';
 import { hmrcCalculate, hmrcSubmitFinal, type HmrcCalcResponse } from '../persistence';
+import { requiredFieldIssues, type FieldIssue } from '../validation';
 import type { TaxReturn } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -17,22 +18,35 @@ type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 export default function StageSubmit({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
   const submitted = ret.approvalStatus === 'submitted';
   const approved = ret.approvalStatus === 'approved' || submitted;
+  const issues = requiredFieldIssues(ret);
 
   if (submitted) return <SuccessView ret={ret} />;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <ReadinessCard ret={ret} approved={approved} />
-      <LiveHmrcCard ret={ret} patch={patch} approved={approved} />
-      <ManualCard patch={patch} approved={approved} taxYear={ret.taxYear} id={ret.id} />
+      <ReadinessCard ret={ret} approved={approved} issues={issues} />
+      <LiveHmrcCard ret={ret} patch={patch} approved={approved} issues={issues} />
+      <ManualCard patch={patch} approved={approved} issues={issues} taxYear={ret.taxYear} id={ret.id} />
+    </div>
+  );
+}
+
+// A shared banner listing the required fields that must be filled before filing.
+function RequiredFieldsBanner({ issues }: { issues: FieldIssue[] }) {
+  if (!issues.length) return null;
+  return (
+    <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800">
+      <p className="flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} /> Complete these required fields before filing:</p>
+      <ul className="mt-1 list-disc pl-6">{issues.map((f, i) => <li key={i}>{f.label}</li>)}</ul>
     </div>
   );
 }
 
 // ─── Readiness checklist ─────────────────────────────────────────────────────
-function ReadinessCard({ ret, approved }: { ret: TaxReturn; approved: boolean }) {
+function ReadinessCard({ ret, approved, issues }: { ret: TaxReturn; approved: boolean; issues: FieldIssue[] }) {
   const checks = [
     { ok: ret.stageStatus.review === 'complete', label: 'Review complete' },
+    { ok: issues.length === 0, label: 'Required details complete' },
     { ok: approved, label: 'Client approval recorded' },
     { ok: !!ret.utr, label: 'UTR present' },
   ];
@@ -47,12 +61,14 @@ function ReadinessCard({ ret, approved }: { ret: TaxReturn; approved: boolean })
           </div>
         ))}
       </div>
+      {issues.length > 0 && <div className="mt-3"><RequiredFieldsBanner issues={issues} /></div>}
     </StudioCard>
   );
 }
 
 // ─── Live HMRC (MTD ITSA final declaration) ──────────────────────────────────
-function LiveHmrcCard({ ret, patch, approved }: { ret: TaxReturn; patch: Patch; approved: boolean }) {
+function LiveHmrcCard({ ret, patch, approved, issues }: { ret: TaxReturn; patch: Patch; approved: boolean; issues: FieldIssue[] }) {
+  const canFile = approved && issues.length === 0;
   const [phase, setPhase] = useState<'idle' | 'calculating' | 'submitting'>('idle');
   const [calc, setCalc] = useState<HmrcCalcResponse | null>(null);
   const [error, setError] = useState('');
@@ -103,6 +119,7 @@ function LiveHmrcCard({ ret, patch, approved }: { ret: TaxReturn; patch: Patch; 
       </div>
 
       <div className="px-5 py-4">
+        <RequiredFieldsBanner issues={issues} />
         {!approved && (
           <p className="mb-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] text-amber-700">
             <AlertTriangle size={13} /> Record client approval before filing.
@@ -111,7 +128,7 @@ function LiveHmrcCard({ ret, patch, approved }: { ret: TaxReturn; patch: Patch; 
 
         {/* Step 1 — calculate */}
         {!calc ? (
-          <button onClick={runCalc} disabled={!approved || phase === 'calculating'} className="btn-primary w-full justify-center disabled:opacity-40">
+          <button onClick={runCalc} disabled={!canFile || phase === 'calculating'} className="btn-primary w-full justify-center disabled:opacity-40">
             {phase === 'calculating' ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             {phase === 'calculating' ? 'Asking HMRC…' : 'Calculate with HMRC'}
           </button>
@@ -181,7 +198,8 @@ function FigureCol({ title, rows, accent }: { title: string; rows: [string, numb
 }
 
 // ─── Manual / paper filing ───────────────────────────────────────────────────
-function ManualCard({ patch, approved, taxYear, id }: { patch: Patch; approved: boolean; taxYear: string; id: string }) {
+function ManualCard({ patch, approved, issues, taxYear, id }: { patch: Patch; approved: boolean; issues: FieldIssue[]; taxYear: string; id: string }) {
+  const canFile = approved && issues.length === 0;
   const [open, setOpen] = useState(false);
   function markFiled() {
     const ref = `MAN-${taxYear.replace('/', '')}-${Math.abs(hash(id)).toString().slice(0, 6)}`;
@@ -201,7 +219,8 @@ function ManualCard({ patch, approved, taxYear, id }: { patch: Patch; approved: 
       {open && (
         <div className="mt-2 border-t border-black/5 pt-3">
           <p className="text-[12px] text-[var(--text-muted)]">For clients not on MTD for Income Tax (filed via HMRC online or on paper), record the return as filed here to complete the workflow.</p>
-          <button onClick={markFiled} disabled={!approved} className="btn-secondary mt-2 disabled:opacity-40"><CheckCircle2 size={14} /> Mark as filed</button>
+          <RequiredFieldsBanner issues={issues} />
+          <button onClick={markFiled} disabled={!canFile} className="btn-secondary mt-2 disabled:opacity-40"><CheckCircle2 size={14} /> Mark as filed</button>
         </div>
       )}
     </StudioCard>
