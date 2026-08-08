@@ -1,18 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X,
 } from 'lucide-react';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { H, CH } from '../tradeHelp';
+import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
@@ -21,8 +22,12 @@ import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySou
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
+export type Reveal = { page: PageId; section?: string; nonce: number };
+const RevealContext = createContext<Reveal | null>(null);
+
 export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; patch: Patch; advance: () => void }) {
   const [page, setPage] = useState<PageId>('core');
+  const [reveal, setReveal] = useState<Reveal | null>(null);
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
   const counts = pageCounts(ret.income);
 
@@ -30,10 +35,17 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
     patch(r => ({ ...r, income: u(r.income) }));
   }
 
+  function goTo(entry: SearchEntry) {
+    setPage(entry.page as PageId);
+    setReveal({ page: entry.page as PageId, section: entry.section, nonce: (reveal?.nonce ?? 0) + 1 });
+  }
+
   return (
     <div className="space-y-4">
+      <ReviewSearch onGo={goTo} />
+
       {/* Section tabs + panel */}
-      <SectionPanel ret={ret} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} />
+      <SectionPanel ret={ret} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
 
       {/* Live computation (the AI assistant is docked on the right of the workspace) */}
       <ComputationCard ret={ret} />
@@ -64,6 +76,63 @@ export default function StageReview({ ret, patch, advance }: { ret: TaxReturn; p
           Continue to approval <ArrowRight size={15} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── "Jump to" search — find a section, field or box number ──────────────────
+function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const results = q ? searchReview(q) : [];
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const pick = (e: SearchEntry) => { onGo(e); setQ(''); setOpen(false); };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-white/70 px-3 py-2">
+        <Search size={15} className="shrink-0 text-[var(--text-muted)]" />
+        <input
+          value={q}
+          onChange={e => { setQ(e.target.value); setOpen(true); setActive(0); }}
+          onFocus={() => { if (q) setOpen(true); }}
+          onKeyDown={e => {
+            if (!results.length) return;
+            if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, results.length - 1)); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
+            else if (e.key === 'Enter') { e.preventDefault(); pick(results[active]); }
+            else if (e.key === 'Escape') setOpen(false);
+          }}
+          placeholder="Jump to a section, field or box number…"
+          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-muted)]"
+        />
+        {q && <button onClick={() => { setQ(''); setOpen(false); }} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><X size={14} /></button>}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-[var(--border)] bg-white shadow-xl">
+          {results.map((e, i) => (
+            <button key={`${e.label}-${i}`} onMouseEnter={() => setActive(i)} onClick={() => pick(e)}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-colors ${i === active ? 'bg-[var(--accent)]/[0.07]' : 'hover:bg-black/[0.02]'}`}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12.5px] font-semibold text-[var(--text-primary)]">{e.label}</p>
+                <p className="truncate text-[11px] text-[var(--text-muted)]">{e.context}</p>
+              </div>
+              {i === active && <CornerDownLeft size={13} className="shrink-0 text-[var(--text-muted)]" />}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && q && results.length === 0 && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-[12px] text-[var(--text-muted)] shadow-xl">No matches — try a box number, field name or section.</div>
+      )}
     </div>
   );
 }
@@ -225,8 +294,8 @@ function coreSectionCounts(i: Sa100Income) {
 
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
  *  above the selected section's fields. */
-function SectionPanel({ ret, page, setPage, counts, income, setIncome }: {
-  ret: TaxReturn; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome;
+function SectionPanel({ ret, page, setPage, counts, income, setIncome, reveal }: {
+  ret: TaxReturn; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null;
 }) {
   const active = PAGES.find(p => p.id === page)!;
   const pv = pageValue(page, income);
@@ -258,7 +327,7 @@ function SectionPanel({ ret, page, setPage, counts, income, setIncome }: {
         )}
       </div>
 
-      {page === 'core' && <CorePage ret={ret} income={income} setIncome={setIncome} />}
+      {page === 'core' && <CorePage ret={ret} income={income} setIncome={setIncome} reveal={reveal} />}
       {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
       {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
@@ -310,11 +379,24 @@ function LineField({ box, label, title, items, onChange, fallbackTotal, help }: 
   );
 }
 
-/** Collapsible sub-section grouping the SA100 main-return boxes by form page. */
+/** Collapsible sub-section grouping the SA100 main-return boxes by form page.
+ *  Opens, scrolls into view and briefly highlights when the "jump to" search
+ *  targets it (via RevealContext). */
 function CoreSection({ title, count, defaultOpen, children }: { title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
+  const [flash, setFlash] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const reveal = useContext(RevealContext);
+  useEffect(() => {
+    if (!reveal || reveal.section !== title) return;
+    setOpen(true);
+    setFlash(true);
+    const raf = requestAnimationFrame(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    const t = setTimeout(() => setFlash(false), 1700);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); };
+  }, [reveal, title]);
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+    <div ref={ref} className={`scroll-mt-24 rounded-xl border bg-white/60 transition-shadow ${flash ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/40' : 'border-[var(--border)]'}`}>
       <button onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
         <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? 'rotate-90' : ''}`} />
         <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{title}{count != null && count > 0 && <span className="text-[var(--accent)]"> ({count})</span>}</span>
@@ -324,9 +406,10 @@ function CoreSection({ title, count, defaultOpen, children }: { title: string; c
   );
 }
 
-function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null }) {
   const c = coreSectionCounts(income);
   return (
+    <RevealContext.Provider value={reveal}>
     <div className="space-y-3">
       <CoreSection title="Interest & dividends" count={c.interest} defaultOpen>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -529,6 +612,7 @@ function CorePage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Inc
         <p className="mt-3 text-[11px] text-[var(--text-muted)]">Box 22 (signature) is not needed when filing online.</p>
       </CoreSection>
     </div>
+    </RevealContext.Provider>
   );
 }
 
