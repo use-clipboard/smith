@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Link2, CalendarCheck, Calculator, BookOpen, House, Receipt, Users,
   Loader2, Download, Check, Info, RefreshCw, Search, Sparkles, FileUp,
+  Plus, Trash2, CalendarDays,
 } from 'lucide-react';
 import { StudioCard } from './primitives';
 import { fmtMoney } from './data';
@@ -47,7 +48,20 @@ interface ToolAdapter<S> {
   expectedNet?: (s: S) => number;
   /** Accounting period this source covers — pulled into boxes 8/9 (or 7). */
   datesFor?: (s: S) => TradePeriod;
+  /** Human date/period label for the found data (assurance it's the right one). */
+  dateLabel?: (s: S) => string | undefined;
   timelineLabel: (sourceLabel: string) => string;
+}
+
+// dd-mm-yyyy display for an ISO or already-UK date string.
+function ukDate(s?: string): string {
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return iso ? `${iso[3]}-${iso[2]}-${iso[1]}` : s;
+}
+function rangeLabel(a?: string, b?: string): string {
+  const x = ukDate(a), y = ukDate(b);
+  return x && y ? `${x} – ${y}` : (x || y || '');
 }
 
 function mtdHeadline(s: MtdItAnnualSummary): string {
@@ -73,6 +87,7 @@ const MTD: ToolAdapter<MtdItAnnualSummary> = {
     ukProperty: selected ? selected.has('uk') : !!s.ukProperty,
     foreignProperty: selected ? selected.has('foreign') : !!s.foreignProperty,
   }, src),
+  dateLabel: s => `${s.taxYear}${s.quartersFound ? ` · ${s.quartersFound} quarter${s.quartersFound === 1 ? '' : 's'}` : ''}`,
   timelineLabel: l => `Imported MTD IT figures from ${l}`,
 };
 
@@ -82,6 +97,7 @@ const ACCOUNTS: ToolAdapter<AccountsStudioSummary> = {
   merge: mergeCrossAccounts,
   getLines: s => s.lines, itemiseKind: 'as', expectedNet: s => s.netProfit,
   datesFor: s => ({ start: dmyToIso(s.periodStart), end: dmyToIso(s.periodEnd) }),
+  dateLabel: s => rangeLabel(s.periodStart, s.periodEnd),
   timelineLabel: l => `Imported itemised trade from ${l} (Accounts Studio)`,
 };
 
@@ -91,13 +107,15 @@ const BOOKKEEPING: ToolAdapter<BookkeepingSummary> = {
   merge: mergeCrossBookkeeping,
   getLines: s => s.lines, itemiseKind: 'bk', expectedNet: s => s.netProfit,
   datesFor: s => ({ start: s.from || undefined, end: s.to || undefined }),
+  dateLabel: s => rangeLabel(s.from, s.to),
   timelineLabel: l => `Imported itemised trade from ${l} (Bookkeeping)`,
 };
 
 const LANDLORD: ToolAdapter<LandlordSummary> = {
   name: 'Landlord Analysis', target: 'UK property', icon: House,
   fetch: fetchLandlordSummary, hasData: s => s.found && !!s.taxableProfit, headline: s => `${fmtMoney(s.taxableProfit)} taxable profit`, note: s => s.note,
-  merge: mergeCrossLandlord, timelineLabel: l => `Imported rental from ${l} (Landlord Analysis)`,
+  merge: mergeCrossLandlord, dateLabel: s => rangeLabel(s.dateFrom, s.dateTo),
+  timelineLabel: l => `Imported rental from ${l} (Landlord Analysis)`,
 };
 
 export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
@@ -108,7 +126,7 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
           <Link2 size={15} className="text-[var(--accent)]" /> Pull figures from connected tools
         </p>
         <p className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
-          Reads this client by default — hit <span className="font-semibold">Change</span> on any tool to pull from another client. A client can have several trades or partnerships: link each business’s own client code, or upload each set of accounts — every import adds a separate entry.
+          Each tool shows what it found for this client — with the period and amount. Tick what to include, hit <span className="font-semibold">Add another source</span> to pull a second business (or another client’s data), and use the bin to drop any. Nothing imports until you press Import.
         </p>
       </div>
 
@@ -129,75 +147,101 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
   );
 }
 
+interface SourceEntry<S> {
+  key: string;
+  clientId: string; name: string; ref: string; own: boolean;
+  summary: S | null; loading: boolean; error: string;
+  included: boolean;
+  selected: Set<string>;
+}
+
 function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; ret: TaxReturn; patch: Patch }) {
-  const [src, setSrc] = useState<{ clientId: string; name: string; ref: string; own: boolean }>({
-    clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
-  });
-  const [summary, setSummary] = useState<S | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [imported, setImported] = useState(false);
+  const [sources, setSources] = useState<SourceEntry<S>[]>([{
+    key: 'own', clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
+    summary: null, loading: !!ret.clientId, error: ret.clientId ? '' : 'No client linked to this return.', included: true, selected: new Set<string>(),
+  }]);
   const [searching, setSearching] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [reviewing, setReviewing] = useState<PlLine[] | null>(null);
+  const [imported, setImported] = useState(false);
+  const [queue, setQueue] = useState<{ src: SourceEntry<S>; lines: PlLine[] }[]>([]);
 
-  const load = useCallback(async (clientId: string) => {
-    if (!clientId) { setError('No client linked to this return.'); setSummary(null); return; }
-    setLoading(true); setError('');
-    try { setSummary(await adapter.fetch(clientId, ret.taxYear)); }
-    catch (e) { setError(e instanceof Error ? e.message : `Could not read ${adapter.name}.`); }
-    finally { setLoading(false); }
-  }, [adapter, ret.taxYear]);
+  const patchSource = useCallback((key: string, u: Partial<SourceEntry<S>>) =>
+    setSources(ss => ss.map(s => (s.key === key ? { ...s, ...u } : s))), []);
 
-  useEffect(() => { void load(src.clientId); }, [load, src.clientId]);
+  const loadSource = useCallback(async (key: string, clientId: string) => {
+    if (!clientId) { patchSource(key, { loading: false, error: 'No client linked to this return.' }); return; }
+    patchSource(key, { loading: true, error: '' });
+    try {
+      const summary = await adapter.fetch(clientId, ret.taxYear);
+      patchSource(key, {
+        summary, loading: false, included: adapter.hasData(summary),
+        selected: adapter.parts ? new Set(adapter.parts(summary).map(p => p.key)) : new Set<string>(),
+      });
+    } catch (e) {
+      patchSource(key, { loading: false, error: e instanceof Error ? e.message : `Could not read ${adapter.name}.` });
+    }
+  }, [adapter, ret.taxYear, patchSource]);
 
-  // When a source's parts change, default to selecting them all.
-  useEffect(() => {
-    if (summary && adapter.parts) setSelected(new Set(adapter.parts(summary).map(p => p.key)));
-  }, [summary, adapter]);
+  useEffect(() => { if (ret.clientId) void loadSource('own', ret.clientId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function pick(clientId: string, name: string, ref: string) {
-    setSrc({ clientId, name, ref, own: clientId === ret.clientId });
-    setSearching(false); setImported(false);
+  const label = (s: SourceEntry<S>) => `${s.name}${s.ref ? ` (${s.ref})` : ''}`;
+
+  function addSource(clientId: string, name: string, ref: string) {
+    if (sources.some(s => s.clientId === clientId)) { setSearching(false); return; } // already listed
+    const key = `s-${Date.now()}`;
+    setSources(ss => [...ss, { key, clientId, name, ref, own: clientId === ret.clientId, summary: null, loading: true, error: '', included: true, selected: new Set<string>() }]);
+    setSearching(false);
+    void loadSource(key, clientId);
   }
+  const removeSource = (key: string) => setSources(ss => ss.filter(s => s.key !== key));
+  const toggleInclude = (key: string) => setSources(ss => ss.map(s => (s.key === key ? { ...s, included: !s.included } : s)));
+  const togglePart = (key: string, part: string) => setSources(ss => ss.map(s => {
+    if (s.key !== key) return s;
+    const n = new Set(s.selected); if (n.has(part)) n.delete(part); else n.add(part);
+    return { ...s, selected: n };
+  }));
+  const reloadAll = () => sources.forEach(s => { if (s.clientId) void loadSource(s.key, s.clientId); });
 
-  const has = summary ? adapter.hasData(summary) : false;
-  const note = summary && adapter.note ? adapter.note(summary) : undefined;
-  const parts = summary && has && adapter.parts ? adapter.parts(summary) : null;
-  const nothingChosen = !!parts && selected.size === 0;
+  const chosen = () => sources.filter(s => s.summary && adapter.hasData(s.summary) && s.included && (!adapter.parts || s.selected.size > 0));
   const Icon = adapter.icon;
 
-  const importLabel = () => `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
-  const itemisable = summary && adapter.getLines ? (adapter.getLines(summary) ?? []) : [];
-  const canItemise = !!adapter.itemiseKind && itemisable.length > 0;
+  function mergeDirect(r: TaxReturn, s: SourceEntry<S>): TaxReturn {
+    return {
+      ...r,
+      income: adapter.merge(r.income, s.summary as S, { clientId: s.clientId, label: label(s) }, adapter.parts ? s.selected : undefined),
+      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label(s)) }],
+    };
+  }
 
   function doImport() {
-    if (!summary || !adapter.hasData(summary) || nothingChosen) return;
-    if (canItemise) { setReviewing(itemisable); return; }
-    const label = importLabel();
-    patch(r => ({
-      ...r,
-      income: adapter.merge(r.income, summary, { clientId: src.clientId, label }, parts ? selected : undefined),
-      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label) }],
-    }));
-    setImported(true); setTimeout(() => setImported(false), 2500);
+    const list = chosen();
+    if (!list.length) return;
+    const q: { src: SourceEntry<S>; lines: PlLine[] }[] = [];
+    let didDirect = false;
+    for (const s of list) {
+      const lines = adapter.getLines && s.summary ? (adapter.getLines(s.summary) ?? []) : [];
+      if (adapter.itemiseKind && lines.length) q.push({ src: s, lines });
+      else { patch(r => mergeDirect(r, s)); didDirect = true; }
+    }
+    if (q.length) setQueue(q);
+    else if (didDirect) { setImported(true); setTimeout(() => setImported(false), 2500); }
   }
 
   function confirmItemised(allocations: BoxAllocation[]) {
-    if (!adapter.itemiseKind) return;
-    const label = importLabel();
-    const trade = buildItemisedTrade('tmp', `Trade — ${label}`, allocations, summary ? adapter.datesFor?.(summary) : undefined);
-    patch(r => ({
-      ...r,
-      income: mergeItemisedTrade(r.income, trade, { clientId: src.clientId, label }, adapter.itemiseKind!),
-      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label) }],
-    }));
-    setReviewing(null); setImported(true); setTimeout(() => setImported(false), 2500);
+    const head = queue[0];
+    if (head?.src.summary && adapter.itemiseKind) {
+      const trade = buildItemisedTrade('tmp', `Trade — ${label(head.src)}`, allocations, adapter.datesFor?.(head.src.summary));
+      patch(r => ({
+        ...r,
+        income: mergeItemisedTrade(r.income, trade, { clientId: head.src.clientId, label: label(head.src) }, adapter.itemiseKind!),
+        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: adapter.timelineLabel(label(head.src)) }],
+      }));
+    }
+    const rest = queue.slice(1);
+    setQueue(rest);
+    if (!rest.length) { setImported(true); setTimeout(() => setImported(false), 2500); }
   }
 
-  function toggle(key: string) {
-    setSelected(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  }
+  const count = chosen().length;
 
   return (
     <StudioCard className="flex flex-col p-4">
@@ -209,74 +253,103 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
             <p className="text-[11px] text-[var(--text-muted)]">{adapter.target}</p>
           </div>
         </div>
-        <button onClick={() => load(src.clientId)} disabled={loading} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)] disabled:opacity-40" aria-label={`Refresh ${adapter.name}`}>
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-        </button>
+        <button onClick={reloadAll} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)]" aria-label={`Refresh ${adapter.name}`}><RefreshCw size={14} /></button>
       </div>
 
-      {/* Source client + change */}
-      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-black/[0.02] px-2.5 py-1.5">
-        <div className="min-w-0">
-          <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
-            {src.name || '—'}{src.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {src.ref}</span> : null}
-          </p>
-          <p className="text-[9.5px] uppercase tracking-wide text-[var(--text-muted)]">{src.own ? 'This return’s client' : 'Another client'}</p>
-        </div>
-        <button onClick={() => setSearching(s => !s)} className="shrink-0 text-[11.5px] font-semibold text-[var(--accent)] hover:underline">
-          {searching ? 'Close' : 'Change'}
-        </button>
-      </div>
+      <div className="mt-3 flex-1 space-y-2">
+        {sources.map(s => (
+          <SourceRow key={s.key} adapter={adapter} entry={s} taxYear={ret.taxYear}
+            onToggleInclude={() => toggleInclude(s.key)} onTogglePart={p => togglePart(s.key, p)}
+            onRemove={() => removeSource(s.key)} />
+        ))}
 
-      {searching && <InlineClientSearch onPick={pick} />}
-
-      {/* Body */}
-      <div className="mt-3 min-h-[48px] flex-1">
-        {loading ? (
-          <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading…</div>
-        ) : error ? (
-          <p className="py-2 text-[12px] text-rose-600">{error}</p>
-        ) : has && summary && parts ? (
-          <div className="space-y-1.5">
-            {parts.map(p => {
-              const on = selected.has(p.key);
-              return (
-                <label key={p.key} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 transition-colors ${on ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.04]' : 'border-[var(--border)] bg-white/60'}`}>
-                  <input type="checkbox" checked={on} onChange={() => toggle(p.key)} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" />
-                  <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-[var(--text-primary)]">{p.label}</span>
-                  <span className="shrink-0 text-[12px] font-bold text-[var(--text-primary)]">{fmtMoney(p.profit)}</span>
-                </label>
-              );
-            })}
-            {note && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> {note}</p>}
-          </div>
-        ) : has && summary ? (
-          <div>
-            <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{adapter.headline(summary)}</p>
-            {note && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> {note}</p>}
-          </div>
+        {searching ? (
+          <InlineClientSearch onPick={addSource} />
         ) : (
-          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]">
-            <Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> No saved {adapter.name} run for {src.own ? 'this client' : 'that client'} in {ret.taxYear}.
-          </p>
+          <button onClick={() => setSearching(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] py-1.5 text-[11.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.04]">
+            <Plus size={13} /> Add another source
+          </button>
         )}
       </div>
 
       <div className="mt-2 flex justify-end">
-        <button onClick={doImport} disabled={!has || nothingChosen} className="btn-primary disabled:opacity-40">
-          {imported ? <Check size={15} /> : canItemise ? <Sparkles size={15} /> : <Download size={15} />} {imported ? 'Imported' : canItemise ? 'Itemise & import' : 'Import'}
+        <button onClick={doImport} disabled={count === 0} className="btn-primary disabled:opacity-40">
+          {imported ? <Check size={15} /> : adapter.itemiseKind ? <Sparkles size={15} /> : <Download size={15} />} {imported ? 'Imported' : `Import selected${count > 1 ? ` (${count})` : ''}`}
         </button>
       </div>
 
-      {reviewing && summary && (
+      {queue.length > 0 && queue[0].src.summary && (
         <TradeImportReview
-          lines={reviewing}
-          sourceLabel={importLabel()}
-          expectedNet={adapter.expectedNet?.(summary)}
+          lines={queue[0].lines}
+          sourceLabel={label(queue[0].src)}
+          expectedNet={adapter.expectedNet?.(queue[0].src.summary)}
           onConfirm={confirmItemised}
-          onClose={() => setReviewing(null)}
+          onClose={() => setQueue([])}
         />
       )}
     </StudioCard>
+  );
+}
+
+// One source (client) inside a tool card: shows what was found — amount + period
+// — with an include toggle, per-part toggles (MTD), and a bin to remove it.
+function SourceRow<S>({ adapter, entry, taxYear, onToggleInclude, onTogglePart, onRemove }: {
+  adapter: ToolAdapter<S>; entry: SourceEntry<S>; taxYear: string;
+  onToggleInclude: () => void; onTogglePart: (p: string) => void; onRemove: () => void;
+}) {
+  const s = entry.summary;
+  const has = !!s && adapter.hasData(s);
+  const parts = s && has && adapter.parts ? adapter.parts(s) : null;
+  const note = s && has && adapter.note ? adapter.note(s) : undefined;
+  const date = s && has && adapter.dateLabel ? adapter.dateLabel(s) : undefined;
+
+  return (
+    <div className={`rounded-xl border px-2.5 py-2 transition-colors ${entry.included && has ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.05]' : 'border-[var(--border)] bg-white/60'}`}>
+      <div className="flex items-start gap-2">
+        {has
+          ? <input type="checkbox" checked={entry.included} onChange={onToggleInclude} className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[var(--accent)]" aria-label="Include this source" />
+          : <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
+            {entry.name || '—'}{entry.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {entry.ref}</span> : null}
+            {entry.own && <span className="ml-1 rounded bg-slate-100 px-1 text-[9px] font-bold uppercase text-slate-500">This client</span>}
+          </p>
+
+          {entry.loading ? (
+            <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]"><Loader2 size={11} className="animate-spin" /> Reading…</p>
+          ) : entry.error ? (
+            <p className="mt-0.5 text-[11px] text-rose-600">{entry.error}</p>
+          ) : has && s ? (
+            <>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{adapter.headline(s)}</span>
+                {date && <span className="inline-flex items-center gap-1 text-[10.5px] text-[var(--text-muted)]"><CalendarDays size={10} /> {date}</span>}
+              </div>
+              {parts && (
+                <div className="mt-1.5 space-y-1">
+                  {parts.map(p => {
+                    const on = entry.selected.has(p.key);
+                    return (
+                      <label key={p.key} className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border)] bg-white/70 px-2 py-1">
+                        <input type="checkbox" checked={on} onChange={() => onTogglePart(p.key)} className="h-3 w-3 rounded border-slate-300 text-[var(--accent)]" />
+                        <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-[var(--text-primary)]">{p.label}</span>
+                        <span className="shrink-0 text-[11.5px] font-bold text-[var(--text-primary)]">{fmtMoney(p.profit)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {note && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> {note}</p>}
+            </>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">No {adapter.name} data for {taxYear}.</p>
+          )}
+        </div>
+
+        <button onClick={onRemove} className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500" aria-label="Remove source"><Trash2 size={13} /></button>
+      </div>
+    </div>
   );
 }
 
