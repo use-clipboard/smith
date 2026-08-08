@@ -12,12 +12,12 @@ import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
-import { H, CH, EMP } from '../tradeHelp';
+import { H, CH, EMP, PH } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -1321,7 +1321,7 @@ function MigrateToShortModal({ onConfirm, onCancel }: { onConfirm: () => void; o
 
 function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const list = income.partnerships ?? [];
-  const add = () => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt-${(i.partnerships ?? []).length}-${Date.now()}`, name: '', profit: 0 }] }));
+  const add = () => setIncome(i => ({ ...i, partnerships: [...(i.partnerships ?? []), { id: `pt-${(i.partnerships ?? []).length}-${Date.now()}`, name: '', profit: 0, form: 'full' }] }));
   return (
     <div className="space-y-3">
       {list.length === 0 && (
@@ -1337,38 +1337,199 @@ function PartnershipPage({ income, setIncome }: { income: Sa100Income; setIncome
   );
 }
 
+// Capium Partnership (full) tab layout — mirrors the SA104F on-screen structure.
+const PARTNERSHIP_TABS = ['Partnership details', 'Trading, NICs & Untaxed income', 'UK, Foreign Incomes & Offshore funds', "Partnership's taxed income"] as const;
+type PartnershipTab = typeof PARTNERSHIP_TABS[number];
+const PARTNERSHIP_SUBTABS: Record<PartnershipTab, string[]> = {
+  'Partnership details': ['Partnership details', 'Professional profits', 'Professional profits (continue)'],
+  'Trading, NICs & Untaxed income': ['Loss allocation', 'NICs', 'Untaxed savings income', 'Income from UK property'],
+  'UK, Foreign Incomes & Offshore funds': ['UK income', 'Offshore funds', 'Foreign income'],
+  "Partnership's taxed income": ['Total untaxed income', 'Taxed income', 'Tax paid and deductions'],
+};
+
 function PartnershipCard({ p, idx, onChange, onRemove }: {
   p: PartnershipSource; idx: number; onChange: (u: Partial<PartnershipSource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState<string>('Partnership details');
+  const [sub, setSub] = useState(0);
+  const set = (u: Partial<PartnershipSource>) => onChange(u);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (PARTNERSHIP_TABS as readonly string[]).includes(tab) ? tab : PARTNERSHIP_TABS[0];
+  const subList = PARTNERSHIP_SUBTABS[activeTab as PartnershipTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        <input value={p.name} placeholder={`Partnership ${idx + 1}`} onChange={ev => onChange({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <input value={p.name} placeholder={`Partnership ${idx + 1} — name`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(partnershipTaxableProfit(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
-        <div className="space-y-3 border-t border-black/5 px-3 py-3">
-          <BoxSection title="Partnership details">
-            <BoxText box={1} label="Partnership UTR" value={p.utr ?? ''} onChange={v => onChange({ utr: v })} />
-            <BoxText box={6} label="Period start (dd-mm-yyyy)" value={p.periodStart ?? ''} onChange={v => onChange({ periodStart: v })} />
-            <BoxText box={7} label="Period end (dd-mm-yyyy)" value={p.periodEnd ?? ''} onChange={v => onChange({ periodEnd: v })} />
-          </BoxSection>
-          <BoxSection title="Share of profit">
-            <LabelledNum box={8} label="Taxable profit share" value={p.profit} onChange={v => onChange({ profit: v })} />
-            <LabelledNum box={10} label="Basis-period adjustment" value={p.adjustments ?? 0} onChange={v => onChange({ adjustments: v })} />
-            <LabelledNum box={18} label="Loss brought forward" value={p.lossBroughtForward ?? 0} onChange={v => onChange({ lossBroughtForward: v })} />
-          </BoxSection>
-          <BoxSection title="Other income & tax">
-            <LabelledNum box={26} label="Share of savings interest" value={p.savingsInterest ?? 0} onChange={v => onChange({ savingsInterest: v })} />
-            <LabelledNum box={30} label="Share of dividends" value={p.dividends ?? 0} onChange={v => onChange({ dividends: v })} />
-            <LabelledNum box={24} label="Tax deducted at source" value={p.taxTaken ?? 0} onChange={v => onChange({ taxTaken: v })} />
-            <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
-              <input type="checkbox" checked={p.class4Exempt ?? false} onChange={e => onChange({ class4Exempt: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Exempt from Class 4 NIC (box 4)
-            </label>
-          </BoxSection>
+        <div className="border-t border-black/5">
+          {/* Capium top tabs */}
+          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
+            {PARTNERSHIP_TABS.map(tt => (
+              <button key={tt} onClick={() => setTop(tt)}
+                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {tt}
+              </button>
+            ))}
+          </div>
+          {/* Capium sub-tabs */}
+          {subList.length > 1 && <div className="flex flex-wrap gap-1 px-3 pt-2.5">
+            {subList.map((st, i) => (
+              <button key={st} onClick={() => setSub(i)}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+                {st}
+              </button>
+            ))}
+          </div>}
+          <div className="space-y-3 px-3 py-3">
+            {/* ── Partnership details ── */}
+            {subName === 'Partnership details' && (
+              <BoxSection title="Partnership details">
+                <BoxText box={1} label="Partnership reference number" required help={PH.utr} value={p.utr ?? ''} onChange={v => set({ utr: v })} />
+                <BoxText box={2} label="Description of partnership trade or profession" value={p.description ?? ''} onChange={v => set({ description: v })} />
+                <BoxYesNo box="3Q" label="Did you become a partner after 5 April 2025?" help={PH.becamePartner} value={!!p.becamePartner} onChange={v => set({ becamePartner: v })} />
+                <BoxDate box={3} label="Date joined" value={p.dateJoined ?? ''} onChange={v => set({ dateJoined: v })} />
+                <BoxYesNo box="4Q" label="Did you cease being a partner in the year?" help={PH.ceasedPartner} value={!!p.ceasedPartner} onChange={v => set({ ceasedPartner: v })} />
+                <BoxDate box={4} label="Date left" value={p.dateLeft ?? ''} onChange={v => set({ dateLeft: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Professional profits' && (
+              <BoxSection title="Your share of the partnership's trading or professional profits">
+                <BoxNum box={8} label="Share of profit/(loss)" help={PH.shareOfProfit} value={p.profit} onChange={v => set({ profit: v })} />
+                <BoxNum box={9} label="Adjustment for a short/long accounting period" help={PH.adjustmentPeriod} value={p.adjustmentPeriod ?? 0} onChange={v => set({ adjustmentPeriod: v })} />
+                <BoxNum box={10} label="Accounting adjustment" help={PH.accountingAdjustment} value={p.accountingAdjustment ?? 0} onChange={v => set({ accountingAdjustment: v })} />
+                <BoxNum box={11} label="Averaging adjustment" help={PH.averagingAdjustment} value={p.averagingAdjustment ?? 0} onChange={v => set({ averagingAdjustment: v })} />
+                <BoxNum box={12} label="Foreign tax claimed by deduction" help={PH.foreignTaxDeduction} value={p.foreignTaxDeduction ?? 0} onChange={v => set({ foreignTaxDeduction: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Professional profits (continue)' && (
+              <BoxSection title="Your share of the partnership's trading or professional profits (continued)">
+                <BoxCalc box={16} label="Adjusted profit" help={PH.adjustedProfit} value={partnershipAdjustedProfit(p)} />
+                <BoxNum box="16.3" label="Spread of the transition profit treated as arising this year" help={PH.transitionProfit} value={p.transitionProfit ?? 0} onChange={v => set({ transitionProfit: v })} />
+                <BoxNum box="16.4" label="Loss b/fwd set off against this year's spread of the transition profit" help={PH.transitionLossBfwd} value={p.transitionLossBfwd ?? 0} onChange={v => set({ transitionLossBfwd: v })} />
+                <BoxNum box={17} label="Loss b/fwd used" help={PH.lossBroughtForwardUsed} value={p.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
+                <BoxNum box="17.1" label="Unused losses b/fwd to carry forward to next year" help={PH.unusedLossCarriedForward} value={p.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
+                <BoxCalc box={18} label="Taxable profit" help={PH.taxableProfit} value={partnershipTaxableTradeProfit(p)} />
+                <BoxNum box={19} label="Other business income" help={PH.otherBusinessIncome} value={p.otherBusinessIncome ?? 0} onChange={v => set({ otherBusinessIncome: v })} />
+                <BoxCalc box={20} label="Total taxable profits" help={PH.totalTaxableProfits} value={partnershipTotalTaxableProfit(p)} />
+                <BoxNum box="20.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.figClaim ?? 0} onChange={v => set({ figClaim: v })} />
+              </BoxSection>
+            )}
+            {/* ── Trading, NICs & Untaxed income ── */}
+            {subName === 'Loss allocation' && (
+              <BoxSection title="Your share of the partnership's trading or professional losses">
+                <BoxCalc box={21} label="Adjusted loss this year" help={PH.adjustedLoss} value={partnershipAdjustedLoss(p)} />
+                <BoxNum box="21.1" label="Adjustment to losses under the FIG regime" value={p.lossFigAdjustment ?? 0} onChange={v => set({ lossFigAdjustment: v })} />
+                <BoxNum box={22} label="Loss against other income" help={PH.lossAgainstOtherIncome} value={p.lossAgainstOtherIncome ?? 0} onChange={v => set({ lossAgainstOtherIncome: v })} />
+                <BoxNum box={23} label="Loss to be carried back to previous year" help={PH.lossCarriedBack} value={p.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} />
+                <BoxCalc box={24} label="Total loss to carry forward" help={PH.totalLossCarryForward} value={partnershipLossCarryForward(p)} />
+              </BoxSection>
+            )}
+            {subName === 'NICs' && (
+              <BoxSection title="National Insurance contributions">
+                <BoxCheck box={25} label="Pay Class 2 NICs voluntarily" help={PH.class2Voluntary} checked={!!p.class2Voluntary} onChange={v => set({ class2Voluntary: v })} />
+                <BoxCheck box={26} label="Exempt from Class 4 NIC" help={PH.class4Exempt} checked={!!p.class4Exempt} onChange={v => set({ class4Exempt: v })} />
+                <BoxNum box={27} label="Adjustment to profits chargeable to Class 4 NICs" help={PH.class4Adjustment} value={p.class4Adjustment ?? 0} onChange={v => set({ class4Adjustment: v })} />
+                <BoxYesNo label="Partner for the full year & willing to pay Class 2 NIC for the full year?" help={PH.willingClass2} value={!!p.willingClass2} onChange={v => set({ willingClass2: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Untaxed savings income' && (
+              <BoxSection title="Your share of the partnership's untaxed savings income">
+                <BoxNum box={28} label="Share of UK untaxed savings income" help={PH.ukSavings} value={p.ukSavings ?? 0} onChange={v => set({ ukSavings: v })} />
+                <BoxNum box={29} label="Adjustment to UK untaxed savings income" value={p.ukSavingsAdjustment ?? 0} onChange={v => set({ ukSavingsAdjustment: v })} />
+                <BoxCalc box={30} label="Adjusted UK savings income" value={partnershipAdjustedUkSavings(p)} />
+                <BoxNum box={31} label="Share of foreign untaxed savings income" help={PH.foreignSavings} value={p.foreignSavings ?? 0} onChange={v => set({ foreignSavings: v })} />
+                <BoxNum box={32} label="Adjustment to foreign untaxed savings income" value={p.foreignSavingsAdjustment ?? 0} onChange={v => set({ foreignSavingsAdjustment: v })} />
+                <BoxNum box={33} label="Total foreign tax taken off" help={PH.foreignSavingsTax} value={p.foreignSavingsTax ?? 0} onChange={v => set({ foreignSavingsTax: v })} />
+                <BoxCalc box={34} label="Adjusted foreign savings income" value={partnershipAdjustedForeignSavings(p)} />
+                <BoxCalc box={35} label="Total untaxed savings income" value={partnershipTotalUntaxedSavings(p)} />
+                <BoxNum box="35.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.savingsFigClaim ?? 0} onChange={v => set({ savingsFigClaim: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Income from UK property' && (
+              <BoxSection title="Income from UK property">
+                <BoxNum box={36} label="Share of profit or loss from UK property" help={PH.propertyShare} value={p.propertyProfit ?? 0} onChange={v => set({ propertyProfit: v })} />
+                <BoxNum box={37} label="Adjustment to UK property income" value={p.propertyAdjustment ?? 0} onChange={v => set({ propertyAdjustment: v })} />
+                <BoxNum box={38} label="Losses brought forward" value={p.propertyLossBfwd ?? 0} onChange={v => set({ propertyLossBfwd: v })} />
+                <BoxNum box={39} label="Loss used against other income" value={p.propertyLossAgainstOther ?? 0} onChange={v => set({ propertyLossAgainstOther: v })} />
+                <BoxNum box={40} label="Loss to carry forward" value={p.propertyLossCarryForward ?? 0} onChange={v => set({ propertyLossCarryForward: v })} />
+                <BoxCalc box={41} label="Taxable profit" value={partnershipPropertyTaxable(p)} />
+                <BoxNum box="41.1" label="Residential property finance costs" help={PH.propertyFinanceCosts} value={p.propertyFinanceCosts ?? 0} onChange={v => set({ propertyFinanceCosts: v })} />
+                <BoxNum box="41.2" label="Unused residential property finance costs brought forward" value={p.propertyFinanceCostsBfwd ?? 0} onChange={v => set({ propertyFinanceCostsBfwd: v })} />
+              </BoxSection>
+            )}
+            {/* ── UK, Foreign Incomes & Offshore funds ── */}
+            {subName === 'UK income' && (
+              <BoxSection title="Other untaxed UK income">
+                <BoxNum box={45} label="Share of other untaxed UK income" value={p.otherUkIncome ?? 0} onChange={v => set({ otherUkIncome: v })} />
+                <BoxNum box={46} label="Adjustment to other untaxed UK income" value={p.otherUkIncomeAdjustment ?? 0} onChange={v => set({ otherUkIncomeAdjustment: v })} />
+                <BoxNum box={47} label="Losses brought forward" value={p.otherUkLossBfwd ?? 0} onChange={v => set({ otherUkLossBfwd: v })} />
+                <BoxCalc box={48} label="Taxable profit" value={partnershipOtherUkTaxable(p)} />
+                <BoxNum box={49} label="Other untaxed UK income" value={p.otherUkIncomeB ?? 0} onChange={v => set({ otherUkIncomeB: v })} />
+                <BoxNum box={50} label="Adjustment to loss for other untaxed UK income" value={p.otherUkLossAdjustment ?? 0} onChange={v => set({ otherUkLossAdjustment: v })} />
+                <BoxCalc box={51} label="Total loss to carry forward after all other set-offs" value={partnershipOtherUkLossCarryForward(p)} />
+              </BoxSection>
+            )}
+            {subName === 'Offshore funds' && (
+              <BoxSection title="Income from offshore funds">
+                <BoxNum box={52} label="Share of income from offshore funds" help={PH.offshoreIncome} value={p.offshoreIncome ?? 0} onChange={v => set({ offshoreIncome: v })} />
+                <BoxNum box={53} label="Adjustment to offshore funds income" value={p.offshoreAdjustment ?? 0} onChange={v => set({ offshoreAdjustment: v })} />
+                <BoxNum box={54} label="Foreign tax taken off" value={p.offshoreTax ?? 0} onChange={v => set({ offshoreTax: v })} />
+                <BoxCalc box={55} label="Taxable profit" value={partnershipOffshoreTaxable(p)} />
+                <BoxNum box="55.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.offshoreFigClaim ?? 0} onChange={v => set({ offshoreFigClaim: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Foreign income' && (
+              <BoxSection title="Other untaxed foreign income">
+                <BoxNum box={56} label="Share of other untaxed foreign income" help={PH.foreignIncome} value={p.foreignIncome ?? 0} onChange={v => set({ foreignIncome: v })} />
+                <BoxNum box={57} label="Adjustment to other untaxed foreign income" value={p.foreignIncomeAdjustment ?? 0} onChange={v => set({ foreignIncomeAdjustment: v })} />
+                <BoxNum box={58} label="Losses brought forward" value={p.foreignLossBfwd ?? 0} onChange={v => set({ foreignLossBfwd: v })} />
+                <BoxNum box={59} label="Total foreign tax taken off" value={p.foreignTax ?? 0} onChange={v => set({ foreignTax: v })} />
+                <BoxCalc box={60} label="Taxable profit" value={partnershipForeignTaxable(p)} />
+                <BoxNum box="60.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.foreignFigClaim ?? 0} onChange={v => set({ foreignFigClaim: v })} />
+                <BoxNum box={61} label="Other untaxed foreign income" value={p.foreignIncomeB ?? 0} onChange={v => set({ foreignIncomeB: v })} />
+                <BoxNum box={62} label="Adjustment to loss for other untaxed foreign income" value={p.foreignLossAdjustment ?? 0} onChange={v => set({ foreignLossAdjustment: v })} />
+                <BoxCalc box={63} label="Total loss to carry forward after all other set-offs" value={partnershipForeignLossCarryForward(p)} />
+                <BoxNum box="63.1" label="Residential property finance costs" help={PH.propertyFinanceCosts} value={p.foreignFinanceCosts ?? 0} onChange={v => set({ foreignFinanceCosts: v })} />
+                <BoxNum box="63.2" label="Unused residential property finance costs brought forward" value={p.foreignFinanceCostsBfwd ?? 0} onChange={v => set({ foreignFinanceCostsBfwd: v })} />
+              </BoxSection>
+            )}
+            {/* ── Partnership's taxed income ── */}
+            {subName === 'Total untaxed income' && (
+              <BoxSection title="Total untaxed income">
+                <BoxCalc box={67} label="Untaxed income from this business (other than that liable at 20%)" value={partnershipUntaxedOther(p)} />
+              </BoxSection>
+            )}
+            {subName === 'Taxed income' && (
+              <BoxSection title="Your share of the partnership's taxed income">
+                <BoxNum box={68} label="Share of taxed income taxable at 10%" help={PH.taxedIncome10} value={p.taxedIncome10 ?? 0} onChange={v => set({ taxedIncome10: v })} />
+                <BoxNum box={69} label="Total foreign tax taken off" value={p.taxedIncome10ForeignTax ?? 0} onChange={v => set({ taxedIncome10ForeignTax: v })} />
+                <BoxCalc box={70} label="Taxed income taxable at 10%" value={partnershipTaxedIncome10(p)} />
+                <BoxNum box="70.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.taxedIncome10Fig ?? 0} onChange={v => set({ taxedIncome10Fig: v })} />
+                <BoxNum box={71} label="Share of taxed income taxable at 20%" help={PH.taxedIncome20} value={p.taxedIncome20 ?? 0} onChange={v => set({ taxedIncome20: v })} />
+                <BoxNum box={72} label="Total foreign tax taken off" value={p.taxedIncome20ForeignTax ?? 0} onChange={v => set({ taxedIncome20ForeignTax: v })} />
+                <BoxCalc box={73} label="Taxed income taxable at 20%" value={partnershipTaxedIncome20(p)} />
+                <BoxNum box={74} label="Share of other taxed income" help={PH.otherTaxedIncome} value={p.otherTaxedIncome ?? 0} onChange={v => set({ otherTaxedIncome: v })} />
+                <BoxNum box={75} label="Foreign tax taken off" value={p.otherTaxedIncomeForeignTax ?? 0} onChange={v => set({ otherTaxedIncomeForeignTax: v })} />
+                <BoxNum box="75.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.otherTaxedFig ?? 0} onChange={v => set({ otherTaxedFig: v })} />
+                <BoxCalc box={76} label="Other taxed income taxable" value={partnershipOtherTaxedIncome(p)} />
+                <BoxNum box="76.1" label="Total amount claimed under the FIG regime" value={p.totalFig ?? 0} onChange={v => set({ totalFig: v })} />
+              </BoxSection>
+            )}
+            {subName === 'Tax paid and deductions' && (
+              <BoxSection title="Your share of the partnership's tax paid and deductions">
+                <BoxNum box={77} label="Share of income tax taken off partnership income" help={PH.incomeTaxTaken} value={p.incomeTaxTaken ?? 0} onChange={v => set({ incomeTaxTaken: v })} />
+                <BoxNum box={78} label="Share of CIS deductions" help={PH.cisDeductions} value={p.cisDeductions ?? 0} onChange={v => set({ cisDeductions: v })} />
+                <BoxNum box={79} label="Share of tax taken off trading income" help={PH.taxTakenTradingIncome} value={p.taxTakenTradingIncome ?? 0} onChange={v => set({ taxTakenTradingIncome: v })} />
+                <BoxCalc box={80} label="Share of total tax taken off (boxes 77 to 79)" help={PH.totalTaxTaken} value={partnershipTaxTakenTotal(p)} />
+              </BoxSection>
+            )}
+          </div>
         </div>
       )}
     </div>

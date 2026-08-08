@@ -77,20 +77,131 @@ export interface EmploymentSource {
   expenses?: number;
 }
 // SA104 Partnership — this partner's share of the partnership's income.
+// SA104 Partnership. Box numbers follow the Capium Partnership (full) layout:
+// Partnership details / Trading, NICs & Untaxed income / UK, Foreign Incomes &
+// Offshore funds / Partnership's taxed income. Blue "total" boxes are computed
+// (see calc.ts). 'short' (SA104S) is a slimmer view of the same data.
 export interface PartnershipSource {
   id: string;
   name: string;
-  utr?: string;                 // partnership UTR
-  periodStart?: string;         // basis period start (dd-mm-yyyy)
-  periodEnd?: string;           // basis period end (dd-mm-yyyy)
-  profit: number;               // share of the partnership's taxable trade profit
-  adjustments?: number;         // basis-period / overlap adjustments (+/−)
-  lossBroughtForward?: number;  // share of loss brought forward, used this year
-  taxTaken?: number;            // share of CIS / tax deducted at source
-  class4Exempt?: boolean;       // partner exempt from Class 4 NIC
-  // Share of the partnership's other income (SA104F), routed to the right rate
-  savingsInterest?: number;     // share of savings interest
-  dividends?: number;           // share of dividends
+  /** Which SA104 form this is presented as. Undefined = 'full' (back-compat). */
+  form?: 'full' | 'short';
+
+  // ── Partnership details (boxes 1–4) ──
+  utr?: string;                    // box 1 — partnership reference number (required)
+  description?: string;            // box 2 — description of partnership trade or profession
+  becamePartner?: boolean;         // box 3Q — became a partner after 5 April?
+  dateJoined?: string;             // box 3 — date joined (YYYY-MM-DD)
+  ceasedPartner?: boolean;         // box 4Q — ceased being a partner in the year?
+  dateLeft?: string;               // box 4 — date left (YYYY-MM-DD)
+  periodStart?: string;            // accounting-period start (import metadata; YYYY-MM-DD)
+  periodEnd?: string;              // accounting-period end (import metadata; YYYY-MM-DD)
+
+  // ── Share of trading / professional profits (boxes 8–20.1) ──
+  profit: number;                  // box 8 — share of profit/(loss)
+  adjustmentPeriod?: number;       // box 9 — adjustment for short/long accounting period
+  accountingAdjustment?: number;   // box 10 — accounting adjustment
+  averagingAdjustment?: number;    // box 11 — averaging adjustment
+  foreignTaxDeduction?: number;    // box 12 — foreign tax claimed by deduction
+  // box 16 — adjusted profit (computed)
+  transitionProfit?: number;       // box 16.3 — spread of transition profit this year
+  transitionLossBfwd?: number;     // box 16.4 — loss b/fwd set off vs transition profit
+  lossBroughtForward?: number;     // box 17 — loss b/fwd used
+  unusedLossCarriedForward?: number; // box 17.1 — unused loss b/fwd to carry forward
+  // box 18 — taxable profit (computed)
+  otherBusinessIncome?: number;    // box 19 — other business income
+  // box 20 — total taxable profits (computed)
+  figClaim?: number;               // box 20.1 — amount claimed under FIG regime
+
+  // ── Loss allocation (boxes 21–24) ──
+  // box 21 — adjusted loss this year (computed)
+  lossFigAdjustment?: number;      // box 21.1 — adjustment to losses under FIG regime
+  lossAgainstOtherIncome?: number; // box 22 — loss against other income
+  lossCarriedBack?: number;        // box 23 — loss carried back to previous year
+  // box 24 — total loss to carry forward (computed)
+
+  // ── NICs (boxes 25–27) ──
+  class2Voluntary?: boolean;       // box 25 — pay Class 2 NIC voluntarily
+  class4Exempt?: boolean;          // box 26 — exempt from Class 4 NIC
+  class4Adjustment?: number;       // box 27 — adjustment to profits chargeable to Class 4
+  willingClass2?: boolean;         // self-employed all year & willing to pay Class 2 (Yes/No)
+
+  // ── Untaxed savings income (boxes 28–35.1) ──
+  ukSavings?: number;              // box 28 — share of UK untaxed savings income
+  ukSavingsAdjustment?: number;    // box 29 — adjustment to UK untaxed savings
+  // box 30 — adjusted UK savings income (computed)
+  foreignSavings?: number;         // box 31 — share of foreign untaxed savings income
+  foreignSavingsAdjustment?: number; // box 32 — adjustment to foreign untaxed savings
+  foreignSavingsTax?: number;      // box 33 — total foreign tax taken off (savings)
+  // box 34 — adjusted foreign savings income (computed)
+  // box 35 — total untaxed savings income (computed)
+  savingsFigClaim?: number;        // box 35.1 — amount claimed under FIG regime
+
+  // ── Income from UK property (boxes 36–41.2) ──
+  propertyProfit?: number;         // box 36 — share of profit or loss from UK property
+  propertyAdjustment?: number;     // box 37 — adjustment to UK property income
+  propertyLossBfwd?: number;       // box 38 — losses brought forward
+  propertyLossAgainstOther?: number; // box 39 — loss used against other income
+  propertyLossCarryForward?: number; // box 40 — loss to carry forward
+  // box 41 — taxable profit (computed)
+  propertyFinanceCosts?: number;   // box 41.1 — residential property finance costs
+  propertyFinanceCostsBfwd?: number; // box 41.2 — unused residential finance costs b/fwd
+
+  // ── Other untaxed UK income (boxes 45–51) ──
+  otherUkIncome?: number;          // box 45 — share of other untaxed UK income
+  otherUkIncomeAdjustment?: number; // box 46 — adjustment to other untaxed UK income
+  otherUkLossBfwd?: number;        // box 47 — losses brought forward
+  // box 48 — taxable profit (computed)
+  otherUkIncomeB?: number;         // box 49 — other untaxed UK income
+  otherUkLossAdjustment?: number;  // box 50 — adjustment to loss for other untaxed UK income
+  // box 51 — total loss to carry forward after all other set-offs (computed)
+
+  // ── Income from offshore funds (boxes 52–55.1) ──
+  offshoreIncome?: number;         // box 52 — share of income from offshore funds
+  offshoreAdjustment?: number;     // box 53 — adjustment to offshore funds income
+  offshoreTax?: number;            // box 54 — foreign tax taken off
+  // box 55 — taxable profit (computed)
+  offshoreFigClaim?: number;       // box 55.1 — amount claimed under FIG regime
+
+  // ── Other untaxed foreign income (boxes 56–63.2) ──
+  foreignIncome?: number;          // box 56 — share of other untaxed foreign income
+  foreignIncomeAdjustment?: number; // box 57 — adjustment to other untaxed foreign income
+  foreignLossBfwd?: number;        // box 58 — losses brought forward
+  foreignTax?: number;             // box 59 — total foreign tax taken off
+  // box 60 — taxable profit (computed)
+  foreignFigClaim?: number;        // box 60.1 — amount claimed under FIG regime
+  foreignIncomeB?: number;         // box 61 — other untaxed foreign income
+  foreignLossAdjustment?: number;  // box 62 — adjustment to loss for other untaxed foreign
+  // box 63 — total loss to carry forward after all other set-offs (computed)
+  foreignFinanceCosts?: number;    // box 63.1 — residential property finance costs
+  foreignFinanceCostsBfwd?: number; // box 63.2 — unused residential finance costs b/fwd
+
+  // ── Partnership's taxed income ──
+  // box 67 — untaxed income from this business (other than liable at 20%) (computed)
+  taxedIncome10?: number;          // box 68 — share of taxed income taxable at 10%
+  taxedIncome10ForeignTax?: number; // box 69 — total foreign tax taken off
+  // box 70 — taxed income taxable at 10% (computed)
+  taxedIncome10Fig?: number;       // box 70.1 — amount claimed under FIG regime
+  taxedIncome20?: number;          // box 71 — share of taxed income taxable at 20%
+  taxedIncome20ForeignTax?: number; // box 72 — total foreign tax taken off
+  // box 73 — taxed income taxable at 20% (computed)
+  otherTaxedIncome?: number;       // box 74 — share of other taxed income
+  otherTaxedIncomeForeignTax?: number; // box 75 — foreign tax taken off
+  otherTaxedFig?: number;          // box 75.1 — amount claimed under FIG regime
+  // box 76 — other taxed income taxable (computed)
+  totalFig?: number;               // box 76.1 — total amount claimed under FIG regime
+
+  // ── Tax paid and deductions (boxes 77–80) ──
+  incomeTaxTaken?: number;         // box 77 — share of income tax taken off partnership income
+  cisDeductions?: number;          // box 78 — share of CIS deductions
+  taxTakenTradingIncome?: number;  // box 79 — share of tax taken off trading income
+  // box 80 — total tax taken off (computed)
+
+  // ── Legacy fields (older imports) — folded into the computed helpers ──
+  adjustments?: number;            // legacy basis-period adjustment (→ box 9/10)
+  taxTaken?: number;               // legacy tax deducted at source (→ box 80)
+  savingsInterest?: number;        // legacy savings share (→ box 28)
+  dividends?: number;              // legacy dividend share (routed to dividend income)
 }
 // SA103F Self-employment (full). Box numbers follow the Capium Self Employment
 // (full) layout: Business details / Business Expenses / Net profit(loss) /

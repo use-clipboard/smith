@@ -56,6 +56,19 @@ const FIELD_ENTRIES: SearchEntry[] = [
   // Employment (SA102)
   { label: 'Pay from employment', context: 'Employment · box 6', page: 'employment', keywords: 'pay salary p60 gross box 6' },
   { label: 'Benefits (P11D)', context: 'Employment · boxes 9–16', page: 'employment', keywords: 'benefits p11d company car fuel medical box 9 16' },
+  // Partnership (SA104)
+  { label: 'Partnership reference number (UTR)', context: 'Partnership · box 1', page: 'partnership', keywords: 'partnership reference number utr box 1' },
+  { label: 'Share of profit', context: 'Partnership · box 8', page: 'partnership', keywords: 'share of profit loss partnership box 8' },
+  { label: 'Adjusted / taxable profit', context: 'Partnership · boxes 16–20', page: 'partnership', keywords: 'adjusted profit taxable profit total taxable profits transition box 16 18 20' },
+  { label: 'Partnership loss allocation', context: 'Partnership · boxes 21–24', page: 'partnership', keywords: 'loss against other income carried back carry forward box 21 22 23 24' },
+  { label: 'Partnership Class 2 / Class 4 NIC', context: 'Partnership · boxes 25–27', page: 'partnership', keywords: 'class 2 class 4 nic national insurance voluntary exempt box 25 26 27' },
+  { label: 'Partnership untaxed savings income', context: 'Partnership · boxes 28–35', page: 'partnership', keywords: 'untaxed savings interest uk foreign box 28 30 34 35' },
+  { label: 'Partnership UK property income', context: 'Partnership · boxes 36–41', page: 'partnership', keywords: 'uk property rental finance costs box 36 41' },
+  { label: 'Partnership other untaxed UK income', context: 'Partnership · boxes 45–51', page: 'partnership', keywords: 'other untaxed uk income box 45 48 51' },
+  { label: 'Partnership offshore funds', context: 'Partnership · boxes 52–55', page: 'partnership', keywords: 'offshore funds income box 52 55' },
+  { label: 'Partnership foreign income', context: 'Partnership · boxes 56–63', page: 'partnership', keywords: 'other untaxed foreign income box 56 60 63' },
+  { label: 'Partnership taxed income', context: 'Partnership · boxes 68–76', page: 'partnership', keywords: 'taxed income 10% 20% other taxed box 68 70 71 73 74 76' },
+  { label: 'Partnership tax paid & CIS deductions', context: 'Partnership · boxes 77–80', page: 'partnership', keywords: 'tax taken off cis deductions trading income box 77 78 79 80' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

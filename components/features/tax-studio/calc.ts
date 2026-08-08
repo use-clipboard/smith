@@ -39,11 +39,95 @@ export function trustTotals(income: Sa100Income): {
   return { nonSavings, savings, dividend, taxCredit };
 }
 
-// ── SA104 partnership helper ─────────────────────────────────────────────────
-/** This partner's taxable share of the partnership trade profit: share +
- *  basis-period adjustments − brought-forward loss, floored at nil. */
+// ── SA104 partnership computed boxes (mirror Capium's blue fields) ────────────
+const pnum = (x?: number) => x || 0;
+
+/** box 16 — adjusted profit: share of profit + period / accounting / averaging
+ *  adjustments (and any legacy basis-period adjustment) − foreign tax by deduction. */
+export function partnershipAdjustedProfit(p: PartnershipSource): number {
+  return pnum(p.profit) + pnum(p.adjustmentPeriod) + pnum(p.accountingAdjustment)
+    + pnum(p.averagingAdjustment) + pnum(p.adjustments) - pnum(p.foreignTaxDeduction);
+}
+/** box 18 — taxable profit: adjusted profit + transition profit − losses used. */
+export function partnershipTaxableTradeProfit(p: PartnershipSource): number {
+  return Math.max(0, partnershipAdjustedProfit(p) + pnum(p.transitionProfit)
+    - pnum(p.transitionLossBfwd) - pnum(p.lossBroughtForward));
+}
+/** box 20 — total taxable profits: taxable profit + other business income. */
+export function partnershipTotalTaxableProfit(p: PartnershipSource): number {
+  return partnershipTaxableTradeProfit(p) + pnum(p.otherBusinessIncome);
+}
+/** box 21 — adjusted loss this year (when the adjusted result is negative). */
+export function partnershipAdjustedLoss(p: PartnershipSource): number {
+  return Math.max(0, -(partnershipAdjustedProfit(p) + pnum(p.transitionProfit)));
+}
+/** box 24 — total loss to carry forward. */
+export function partnershipLossCarryForward(p: PartnershipSource): number {
+  return Math.max(0, partnershipAdjustedLoss(p) + pnum(p.lossFigAdjustment)
+    - pnum(p.lossAgainstOtherIncome) - pnum(p.lossCarriedBack)) + pnum(p.unusedLossCarriedForward);
+}
+/** box 30 — adjusted UK savings income. */
+export function partnershipAdjustedUkSavings(p: PartnershipSource): number {
+  return pnum(p.ukSavings ?? p.savingsInterest) + pnum(p.ukSavingsAdjustment);
+}
+/** box 34 — adjusted foreign savings income. */
+export function partnershipAdjustedForeignSavings(p: PartnershipSource): number {
+  return pnum(p.foreignSavings) + pnum(p.foreignSavingsAdjustment);
+}
+/** box 35 — total untaxed savings income. */
+export function partnershipTotalUntaxedSavings(p: PartnershipSource): number {
+  return partnershipAdjustedUkSavings(p) + partnershipAdjustedForeignSavings(p);
+}
+/** box 41 — UK property taxable profit. */
+export function partnershipPropertyTaxable(p: PartnershipSource): number {
+  return Math.max(0, pnum(p.propertyProfit) + pnum(p.propertyAdjustment) - pnum(p.propertyLossBfwd));
+}
+/** box 48 — other untaxed UK income taxable profit. */
+export function partnershipOtherUkTaxable(p: PartnershipSource): number {
+  return Math.max(0, pnum(p.otherUkIncome) + pnum(p.otherUkIncomeAdjustment)
+    - pnum(p.otherUkLossBfwd) + pnum(p.otherUkIncomeB));
+}
+/** box 51 — other untaxed UK income: total loss to carry forward. */
+export function partnershipOtherUkLossCarryForward(p: PartnershipSource): number {
+  return Math.max(0, -(pnum(p.otherUkIncome) + pnum(p.otherUkIncomeAdjustment) + pnum(p.otherUkIncomeB))
+    + pnum(p.otherUkLossAdjustment) + pnum(p.otherUkLossBfwd));
+}
+/** box 55 — offshore funds taxable profit. */
+export function partnershipOffshoreTaxable(p: PartnershipSource): number {
+  return Math.max(0, pnum(p.offshoreIncome) + pnum(p.offshoreAdjustment));
+}
+/** box 60 — other untaxed foreign income taxable profit. */
+export function partnershipForeignTaxable(p: PartnershipSource): number {
+  return Math.max(0, pnum(p.foreignIncome) + pnum(p.foreignIncomeAdjustment)
+    - pnum(p.foreignLossBfwd) + pnum(p.foreignIncomeB));
+}
+/** box 63 — other untaxed foreign income: total loss to carry forward. */
+export function partnershipForeignLossCarryForward(p: PartnershipSource): number {
+  return Math.max(0, -(pnum(p.foreignIncome) + pnum(p.foreignIncomeAdjustment) + pnum(p.foreignIncomeB))
+    + pnum(p.foreignLossAdjustment) + pnum(p.foreignLossBfwd));
+}
+/** box 70 — taxed income taxable at 10%. */
+export function partnershipTaxedIncome10(p: PartnershipSource): number { return pnum(p.taxedIncome10); }
+/** box 73 — taxed income taxable at 20%. */
+export function partnershipTaxedIncome20(p: PartnershipSource): number { return pnum(p.taxedIncome20); }
+/** box 76 — other taxed income taxable. */
+export function partnershipOtherTaxedIncome(p: PartnershipSource): number { return pnum(p.otherTaxedIncome); }
+/** box 67 — untaxed income from this business other than that liable at 20% —
+ *  the untaxed streams (savings, property, other UK, offshore, foreign). */
+export function partnershipUntaxedOther(p: PartnershipSource): number {
+  return partnershipTotalUntaxedSavings(p) + partnershipPropertyTaxable(p)
+    + partnershipOtherUkTaxable(p) + partnershipOffshoreTaxable(p) + partnershipForeignTaxable(p);
+}
+/** box 80 — total tax taken off (boxes 77–79), falling back to a legacy figure. */
+export function partnershipTaxTakenTotal(p: PartnershipSource): number {
+  const boxes = pnum(p.incomeTaxTaken) + pnum(p.cisDeductions) + pnum(p.taxTakenTradingIncome);
+  return boxes || pnum(p.taxTaken);
+}
+
+// ── SA104 partnership headline ───────────────────────────────────────────────
+/** This partner's total taxable trade/professional profit (box 20). */
 export function partnershipTaxableProfit(p: PartnershipSource): number {
-  return Math.max(0, (p.profit || 0) + (p.adjustments || 0) - (p.lossBroughtForward || 0));
+  return partnershipTotalTaxableProfit(p);
 }
 
 /** Dividends total — sum of the itemised breakdown when present, else the scalar. */
@@ -532,11 +616,12 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
 
   const partnerships = income.partnerships ?? [];
   const partnershipProfit = sum(partnerships.map(partnershipTaxableProfit));
-  const partnershipClass4 = sum(partnerships.filter(p => !p.class4Exempt).map(partnershipTaxableProfit));
-  const partnershipSavings = sum(partnerships.map(p => p.savingsInterest || 0));
+  const partnershipClass4 = sum(partnerships.filter(p => !p.class4Exempt).map(p => partnershipTaxableProfit(p) + (p.class4Adjustment || 0)));
+  const partnershipSavings = sum(partnerships.map(partnershipTotalUntaxedSavings));
   const partnershipDividends = sum(partnerships.map(p => p.dividends || 0));
-  const partnershipTaxTaken = sum(partnerships.map(p => p.taxTaken || 0));
-  const propertyProfit = sum(income.property.map(propertyTaxable));
+  const partnershipTaxTaken = sum(partnerships.map(partnershipTaxTakenTotal));
+  const partnershipProperty = sum(partnerships.map(partnershipPropertyTaxable));
+  const propertyProfit = sum(income.property.map(propertyTaxable)) + partnershipProperty;
   const pensionsBenefits = pensionsBenefitsTotal(income); // boxes 8, 9, 11, 13, 15, 16
   const ft = foreignTotals(income);
   const tr = trustTotals(income);
