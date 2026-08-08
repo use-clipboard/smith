@@ -490,44 +490,70 @@ function ShareInput({ share, setShare, netProfit }: { share: number; setShare: (
 // partnership held under its own client code — and add the partner's SHARE as an
 // SA104 entry. Idempotent per source client, so linking a second partnership
 // client adds a second partnership.
+interface PtSourceEntry {
+  key: string;
+  clientId: string; name: string; ref: string; own: boolean;
+  summary: AccountsStudioSummary | null; loading: boolean; error: string;
+  included: boolean; share: number;
+}
+
 function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
-  const [src, setSrc] = useState<{ clientId: string; name: string; ref: string; own: boolean }>({
-    clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
-  });
-  const [summary, setSummary] = useState<AccountsStudioSummary | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [sources, setSources] = useState<PtSourceEntry[]>([{
+    key: 'own', clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
+    summary: null, loading: !!ret.clientId, error: ret.clientId ? '' : 'No client linked to this return.', included: true, share: 100,
+  }]);
   const [searching, setSearching] = useState(false);
-  const [share, setShare] = useState(100);
   const [imported, setImported] = useState(false);
 
-  const load = useCallback(async (clientId: string) => {
-    if (!clientId) { setError('No client linked to this return.'); setSummary(null); return; }
-    setLoading(true); setError('');
-    try { setSummary(await fetchAccountsStudioSummary(clientId, ret.taxYear)); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not read Accounts Studio.'); }
-    finally { setLoading(false); }
-  }, [ret.taxYear]);
-  useEffect(() => { void load(src.clientId); }, [load, src.clientId]);
+  const patchSource = useCallback((key: string, u: Partial<PtSourceEntry>) =>
+    setSources(ss => ss.map(s => (s.key === key ? { ...s, ...u } : s))), []);
 
-  function pick(clientId: string, name: string, ref: string) {
-    setSrc({ clientId, name, ref, own: clientId === ret.clientId }); setSearching(false); setImported(false);
+  const loadSource = useCallback(async (key: string, clientId: string) => {
+    if (!clientId) { patchSource(key, { loading: false, error: 'No client linked to this return.' }); return; }
+    patchSource(key, { loading: true, error: '' });
+    try {
+      const summary = await fetchAccountsStudioSummary(clientId, ret.taxYear);
+      patchSource(key, { summary, loading: false, included: summary.found && !!summary.netProfit });
+    } catch (e) {
+      patchSource(key, { loading: false, error: e instanceof Error ? e.message : 'Could not read Accounts Studio.' });
+    }
+  }, [ret.taxYear, patchSource]);
+
+  useEffect(() => { if (ret.clientId) void loadSource('own', ret.clientId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const label = (s: PtSourceEntry) => `${s.name}${s.ref ? ` (${s.ref})` : ''}`;
+  const has = (s: PtSourceEntry) => !!s.summary && s.summary.found && !!s.summary.netProfit;
+
+  function addSource(clientId: string, name: string, ref: string) {
+    if (sources.some(s => s.clientId === clientId)) { setSearching(false); return; }
+    const key = `s-${Date.now()}`;
+    setSources(ss => [...ss, { key, clientId, name, ref, own: clientId === ret.clientId, summary: null, loading: true, error: '', included: true, share: 100 }]);
+    setSearching(false);
+    void loadSource(key, clientId);
   }
+  const removeSource = (key: string) => setSources(ss => ss.filter(s => s.key !== key));
+  const toggleInclude = (key: string) => setSources(ss => ss.map(s => (s.key === key ? { ...s, included: !s.included } : s)));
+  const setShare = (key: string, share: number) => patchSource(key, { share });
+  const reloadAll = () => sources.forEach(s => { if (s.clientId) void loadSource(s.key, s.clientId); });
 
-  const has = !!summary && summary.found && !!summary.netProfit;
-  const label = () => `${src.name}${src.ref ? ` (${src.ref})` : ''}`;
+  const chosen = () => sources.filter(s => has(s) && s.included);
 
   function doImport() {
-    if (!has || !summary) return;
-    const lbl = label();
-    const partnership = buildPartnershipFromNet('tmp', `Partnership — ${lbl}`, summary.netProfit, share, { start: dmyToIso(summary.periodStart), end: dmyToIso(summary.periodEnd) });
-    patch(r => ({
-      ...r,
-      income: mergeImportedPartnership(r.income, partnership, { clientId: src.clientId, label: lbl }, 'as'),
-      timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from ${lbl} (Accounts Studio)` }],
-    }));
+    const list = chosen();
+    if (!list.length) return;
+    for (const s of list) {
+      const lbl = label(s);
+      const summary = s.summary as AccountsStudioSummary;
+      patch(r => ({
+        ...r,
+        income: mergeImportedPartnership(r.income, buildPartnershipFromNet('tmp', `Partnership — ${lbl}`, summary.netProfit, s.share, { start: dmyToIso(summary.periodStart), end: dmyToIso(summary.periodEnd) }), { clientId: s.clientId, label: lbl }, 'as'),
+        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from ${lbl} (Accounts Studio)` }],
+      }));
+    }
     setImported(true); setTimeout(() => setImported(false), 2500);
   }
+
+  const count = chosen().length;
 
   return (
     <StudioCard className="flex flex-col p-4">
@@ -539,40 +565,71 @@ function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch 
             <p className="text-[11px] text-[var(--text-muted)]">Partnership share (SA104)</p>
           </div>
         </div>
-        <button onClick={() => load(src.clientId)} disabled={loading} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)] disabled:opacity-40" aria-label="Refresh Accounts Studio">
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-        </button>
+        <button onClick={reloadAll} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)]" aria-label="Refresh Accounts Studio"><RefreshCw size={14} /></button>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-black/[0.02] px-2.5 py-1.5">
-        <div className="min-w-0">
-          <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">{src.name || '—'}{src.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {src.ref}</span> : null}</p>
-          <p className="text-[9.5px] uppercase tracking-wide text-[var(--text-muted)]">{src.own ? 'This return’s client' : 'Another client'}</p>
-        </div>
-        <button onClick={() => setSearching(s => !s)} className="shrink-0 text-[11.5px] font-semibold text-[var(--accent)] hover:underline">{searching ? 'Close' : 'Change'}</button>
-      </div>
-      {searching && <InlineClientSearch onPick={pick} />}
-
-      <div className="mt-3 min-h-[48px] flex-1">
-        {loading ? (
-          <div className="flex items-center gap-2 py-3 text-[12px] text-[var(--text-muted)]"><Loader2 size={14} className="animate-spin" /> Reading…</div>
-        ) : error ? (
-          <p className="py-2 text-[12px] text-rose-600">{error}</p>
-        ) : has && summary ? (
-          <div>
-            <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{fmtMoney(summary.netProfit)} net profit</p>
-            {!summary.isPartnership && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> These accounts aren’t flagged as a partnership — double-check the source before adding as a partnership share.</p>}
-            <ShareInput share={share} setShare={setShare} netProfit={summary.netProfit} />
-          </div>
+      <div className="mt-3 flex-1 space-y-2">
+        {sources.map(s => (
+          <PtSourceRow key={s.key} entry={s} taxYear={ret.taxYear} hasData={has(s)}
+            onToggleInclude={() => toggleInclude(s.key)} onShare={v => setShare(s.key, v)} onRemove={() => removeSource(s.key)} />
+        ))}
+        {searching ? (
+          <InlineClientSearch onPick={addSource} />
         ) : (
-          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]"><Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> No saved Accounts Studio run for {src.own ? 'this client' : 'that client'} in {ret.taxYear}.</p>
+          <button onClick={() => setSearching(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] py-1.5 text-[11.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/[0.04]">
+            <Plus size={13} /> Add another partnership
+          </button>
         )}
       </div>
 
       <div className="mt-2 flex justify-end">
-        <button onClick={doImport} disabled={!has} className="btn-primary disabled:opacity-40">{imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Added' : 'Add partnership'}</button>
+        <button onClick={doImport} disabled={count === 0} className="btn-primary disabled:opacity-40">
+          {imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Added' : `Add partnership${count > 1 ? `s (${count})` : ''}`}
+        </button>
       </div>
     </StudioCard>
+  );
+}
+
+// One partnership source (client) inside the Accounts Studio card — amount +
+// period + a per-source profit-share input, an include toggle and a bin.
+function PtSourceRow({ entry, taxYear, hasData, onToggleInclude, onShare, onRemove }: {
+  entry: PtSourceEntry; taxYear: string; hasData: boolean;
+  onToggleInclude: () => void; onShare: (v: number) => void; onRemove: () => void;
+}) {
+  const s = entry.summary;
+  const date = s && hasData ? rangeLabel(s.periodStart, s.periodEnd) : undefined;
+  return (
+    <div className={`rounded-xl border px-2.5 py-2 transition-colors ${entry.included && hasData ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.05]' : 'border-[var(--border)] bg-white/60'}`}>
+      <div className="flex items-start gap-2">
+        {hasData
+          ? <input type="checkbox" checked={entry.included} onChange={onToggleInclude} className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[var(--accent)]" aria-label="Include this partnership" />
+          : <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
+            {entry.name || '—'}{entry.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {entry.ref}</span> : null}
+            {entry.own && <span className="ml-1 rounded bg-slate-100 px-1 text-[9px] font-bold uppercase text-slate-500">This client</span>}
+          </p>
+          {entry.loading ? (
+            <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]"><Loader2 size={11} className="animate-spin" /> Reading…</p>
+          ) : entry.error ? (
+            <p className="mt-0.5 text-[11px] text-rose-600">{entry.error}</p>
+          ) : hasData && s ? (
+            <>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{fmtMoney(s.netProfit)} net profit</span>
+                {date && <span className="inline-flex items-center gap-1 text-[10.5px] text-[var(--text-muted)]"><CalendarDays size={10} /> {date}</span>}
+              </div>
+              {!s.isPartnership && <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> Not flagged as a partnership — double-check the source.</p>}
+              {entry.included && <ShareInput share={entry.share} setShare={onShare} netProfit={s.netProfit} />}
+            </>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">No Accounts Studio data for {taxYear}.</p>
+          )}
+        </div>
+        <button onClick={onRemove} className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500" aria-label="Remove source"><Trash2 size={13} /></button>
+      </div>
+    </div>
   );
 }
 
@@ -635,6 +692,7 @@ function UploadPartnershipCard({ ret, patch }: { ret: TaxReturn; patch: Patch })
         ) : net != null ? (
           <div>
             <p className="text-[15px] font-extrabold text-[var(--text-primary)]">{fmtMoney(net)} net profit <span className="text-[11px] font-medium text-[var(--text-muted)]">— {srcLabel}</span></p>
+            {rangeLabel(period?.start, period?.end) && <p className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-[var(--text-muted)]"><CalendarDays size={10} /> {rangeLabel(period?.start, period?.end)}</p>}
             <ShareInput share={share} setShare={setShare} netProfit={net} />
           </div>
         ) : (
