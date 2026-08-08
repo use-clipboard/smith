@@ -6,7 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
-  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText,
+  Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
@@ -19,7 +19,7 @@ import { H, CH, EMP, PH } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
-import { fmtMoney } from '../data';
+import { fmtMoney, provenanceFor } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
@@ -289,6 +289,38 @@ function coreSectionCounts(i: Sa100Income) {
   return { interest, pensions, other, pensionPayments, charitable, blindStudent, childBenefit, marriage, taxRefunded, repayment, adviser, signing, total };
 }
 
+// Row ids feeding each SA-page's provenance summary.
+function rowIdsForPage(page: PageId, income: Sa100Income): string[] {
+  switch (page) {
+    case 'employment': return income.employment.map(e => e.id);
+    case 'selfemp': return income.selfEmployment.map(t => t.id);
+    case 'partnership': return (income.partnerships ?? []).map(p => p.id);
+    case 'property': return income.property.map(p => p.id);
+    case 'core': return (income.dividendItems ?? []).map(d => d.id);
+    default: return [];
+  }
+}
+/** Aggregate provenance for a page — the distinct sources its rows came from. */
+function pageProvenance(page: PageId, income: Sa100Income): { summary: string; via: 'scan' | 'link' } | null {
+  const provs = rowIdsForPage(page, income).map(provenanceFor).filter((p): p is { label: string; via: 'scan' | 'link' } => !!p);
+  if (!provs.length) return null;
+  const labels = [...new Set(provs.map(p => p.label))];
+  return { summary: labels.join(' · '), via: provs.some(p => p.via === 'link') ? 'link' : 'scan' };
+}
+
+/** A small badge marking a row/section as imported (scanned or tool-linked), with
+ *  a hover tooltip naming the source. Nothing renders for hand-keyed rows. */
+function ProvenanceBadge({ id, label, via }: { id?: string; label?: string; via?: 'scan' | 'link' }) {
+  const p = id ? provenanceFor(id) : (label ? { label, via: via ?? 'link' } : null);
+  if (!p) return null;
+  const Icon = p.via === 'scan' ? ScanText : Link2;
+  return (
+    <Tooltip label={p.label} side="top">
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[var(--accent)]/10 text-[var(--accent)]" aria-label={p.label}><Icon size={10} /></span>
+    </Tooltip>
+  );
+}
+
 /** Tabbed section editor — horizontal tabs (icon · label · entry count · SA code)
  *  above the selected section's fields. */
 function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, reveal }: {
@@ -305,12 +337,14 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
           const on = p.id === page;
           const n = counts[p.id];
           const Icon = p.icon;
+          const prov = pageProvenance(p.id, income);
           return (
             <button key={p.id} onClick={() => setPage(p.id)}
               className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${on ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
               <Icon size={13} className="shrink-0" />
               {p.label}{n > 0 && <span className="font-bold"> ({n})</span>}
               <span className={`text-[9px] font-bold uppercase tracking-wide ${on ? 'text-[var(--accent)]/70' : 'text-slate-400'}`}>{p.code}</span>
+              {prov && <ProvenanceBadge label={prov.summary} via={prov.via} />}
             </button>
           );
         })}
@@ -719,6 +753,7 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={e.employer} placeholder={`Employer ${idx + 1}`} onChange={ev => onChange({ employer: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <ProvenanceBadge id={e.id} />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(employmentTaxable(e))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
@@ -952,6 +987,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={t.name} placeholder={`Trade ${idx + 1} — business name*`} onChange={ev => set({ name: ev.target.value })} className={`input-base flex-1 py-1 text-[12.5px] font-semibold ${!t.name.trim() ? 'border-rose-300' : ''}`} />
+        <ProvenanceBadge id={t.id} />
         {/* SA103 full / short toggle */}
         <div className="flex shrink-0 overflow-hidden rounded-md border border-[var(--border)] text-[10.5px] font-semibold">
           <button onClick={() => { if (isShort) switchForm('full'); }} className={`px-2 py-0.5 ${!isShort ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>Full</button>
@@ -1410,6 +1446,7 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.name} placeholder={`Partnership ${idx + 1} — name`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <ProvenanceBadge id={p.id} />
         {/* Partnership Statement — allocate partner shares */}
         <Tooltip label="Partnership Statement — split the profit between partners">
           <button onClick={() => setStmtOpen(true)} className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition-colors ${p.statement ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
@@ -1791,6 +1828,7 @@ function PropertyCard({ p, idx, onChange, onRemove }: {
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.address} placeholder={`Property ${idx + 1}`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <ProvenanceBadge id={p.id} />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>

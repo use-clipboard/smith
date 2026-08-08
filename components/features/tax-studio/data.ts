@@ -25,6 +25,20 @@ export function returnType(id: ReturnTypeId) {
   return RETURN_TYPES.find(r => r.id === id) ?? RETURN_TYPES[0];
 }
 
+// ─── Provenance ──────────────────────────────────────────────────────────────
+// Imported income rows carry a source-identifying id prefix (document scans →
+// `doc-*`, uploads → `upl-*`, connected-tool links → `xc-*`), so a row's origin
+// can be derived without storing anything extra. Returns null for hand-keyed rows.
+export function provenanceFor(id: string): { label: string; via: 'scan' | 'link' } | null {
+  if (id.startsWith('doc-')) return { label: 'Imported from a scanned document', via: 'scan' };
+  if (id.startsWith('upl-')) return { label: 'Imported from uploaded accounts', via: 'scan' };
+  if (id.startsWith('xc-as-') || id.startsWith('xc-pas-')) return { label: 'Linked from Accounts Studio', via: 'link' };
+  if (id.startsWith('xc-bk-') || id.startsWith('xc-pbk-')) return { label: 'Linked from Bookkeeping', via: 'link' };
+  if (id.startsWith('xc-mtd-')) return { label: 'Linked from MTD IT', via: 'link' };
+  if (id.startsWith('xc-ll-')) return { label: 'Linked from Landlord Analysis', via: 'link' };
+  return null;
+}
+
 // ─── Stages ──────────────────────────────────────────────────────────────────
 export const STAGES: { id: StageId; label: string; blurb: string }[] = [
   { id: 'setup',    label: 'Setup',            blurb: 'Year, return type & connected data' },
