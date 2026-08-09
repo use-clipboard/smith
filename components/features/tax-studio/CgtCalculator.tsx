@@ -2,14 +2,15 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Calculator, Sparkles, Loader2, Check, Users, ScanText } from 'lucide-react';
+import { X, Plus, Trash2, Calculator, Sparkles, Loader2, Check, Users, ScanText, ArrowUpRight } from 'lucide-react';
 import { fmtMoney } from './data';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
 import CgtScanReview from './CgtScanReview';
 import {
   cgtCalcSummary, cgtGrossGain, cgtTaxpayerGain, cgtTaxpayerShare, cgtSuggestReliefs, CGT_AEA,
 } from './calc';
-import type { CgtCalcState, CgtCalcDisposal, CgtOwner, CgtRelief } from './types';
+import { coOwnersFromDisposals, findCoOwnerReturn, pushToCoOwnerReturn, type CoOwnerGroup } from './cgtCoOwner';
+import type { CgtCalcState, CgtCalcDisposal, CgtOwner, CgtRelief, ReturnTypeId, TaxReturn } from './types';
 
 const rid = (p: string) => `${p}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 const ASSET_CLASSES: { value: CgtCalcDisposal['assetClass']; label: string }[] = [
@@ -52,10 +53,11 @@ function PlainNum({ label, value, onChange }: { label: string; value?: number; o
   );
 }
 
-export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, onClose }: {
+export default function CgtCalculator({ state, taxYear, taxpayerName, returnType, onChange, onClose }: {
   state: CgtCalcState;
   taxYear: string;
   taxpayerName: string;
+  returnType?: ReturnTypeId;
   onChange: (s: CgtCalcState) => void;
   onClose: () => void;
 }) {
@@ -64,6 +66,7 @@ export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, 
   const [reviewing, setReviewing] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
+  const coOwners = coOwnersFromDisposals(disposals);
 
   const patch = (u: Partial<CgtCalcState>) => onChange({ ...state, ...u });
   const updDisposal = (id: string, u: Partial<CgtCalcDisposal>) => patch({ disposals: disposals.map(d => d.id === id ? { ...d, ...u } : d) });
@@ -79,6 +82,33 @@ export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, 
     } catch (e) {
       setReviewErr(e instanceof Error ? e.message : 'SMITH is unavailable right now.');
     } finally { setReviewing(false); }
+  }
+
+  // ── Co-owner push — a co-owner's share of a jointly-owned disposal → their return ──
+  const [coBusy, setCoBusy] = useState<string | null>(null);
+  const [coMsg, setCoMsg] = useState<string | null>(null);
+  const [coConfirm, setCoConfirm] = useState<{ group: CoOwnerGroup; existing: TaxReturn | null } | null>(null);
+
+  async function pushCoOwner(group: CoOwnerGroup) {
+    if (!returnType) { setCoMsg('Pushing to a co-owner’s return is only available from a live return.'); return; }
+    setCoBusy(group.clientId); setCoMsg(null);
+    try {
+      const { ret, hasCgt } = await findCoOwnerReturn(group.clientId, taxYear);
+      if (hasCgt && ret) { setCoConfirm({ group, existing: ret }); return; }
+      const { created } = await pushToCoOwnerReturn({ group, taxYear, returnType, existing: ret, mode: 'replace' });
+      setCoMsg(`${created ? 'Created a new return for' : 'Added to'} ${group.name}’s ${taxYear} return — their ${fmtMoney(group.shareGain)} share.`);
+    } catch (e) { setCoMsg(e instanceof Error ? e.message : 'Could not push to the co-owner’s return.'); }
+    finally { setCoBusy(null); }
+  }
+  async function doCoPush(mode: 'replace' | 'add') {
+    if (!coConfirm || !returnType) return;
+    const { group, existing } = coConfirm;
+    setCoBusy(group.clientId); setCoConfirm(null);
+    try {
+      await pushToCoOwnerReturn({ group, taxYear, returnType, existing, mode });
+      setCoMsg(`${mode === 'replace' ? 'Replaced' : 'Added to'} ${group.name}’s ${taxYear} return — their ${fmtMoney(group.shareGain)} share.`);
+    } catch (e) { setCoMsg(e instanceof Error ? e.message : 'Could not push to the co-owner’s return.'); }
+    finally { setCoBusy(null); }
   }
 
   if (typeof document === 'undefined') return null;
@@ -126,6 +156,41 @@ export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, 
             <button onClick={() => setScanOpen(true)} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><ScanText size={13} /> Scan documents</button>
           </div>
           {scanOpen && <CgtScanReview taxYear={taxYear} taxpayerName={taxpayerName} onApply={addScanned} onClose={() => setScanOpen(false)} />}
+
+          {/* Co-owners — push each co-owner's share to their own return */}
+          {coOwners.length > 0 && (
+            <div className="mt-5 rounded-xl border border-[var(--border)] bg-white/60 p-3">
+              <p className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-primary)]"><Users size={13} className="text-[var(--accent)]" /> Co-owners</p>
+              <p className="mt-0.5 text-[10.5px] text-[var(--text-muted)]">Push each co-owner’s share to their own self-assessment return so the same calculation isn’t done twice.</p>
+              <div className="mt-2 space-y-1.5">
+                {coOwners.map(g => (
+                  <div key={g.clientId} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[var(--text-primary)]">{g.name}</span>
+                    <span className="text-[11px] text-[var(--text-muted)]">{g.disposals.length} disposal{g.disposals.length === 1 ? '' : 's'} · <span className="font-semibold text-[var(--text-primary)]">{g.shareGain < 0 ? `Loss ${fmtMoney(-g.shareGain)}` : fmtMoney(g.shareGain)}</span></span>
+                    <button onClick={() => pushCoOwner(g)} disabled={coBusy === g.clientId || !returnType} className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2 py-0.5 text-[10.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40">
+                      {coBusy === g.clientId ? <><Loader2 size={11} className="animate-spin" /> Pushing…</> : <><ArrowUpRight size={11} /> Push to their return</>}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {!returnType && <p className="mt-1.5 text-[10.5px] text-amber-600">Link a co-owner to a client (in a disposal’s ownership) and open this from a live return to enable the push.</p>}
+              {coMsg && <p className="mt-1.5 text-[11px] font-semibold text-emerald-700">{coMsg}</p>}
+            </div>
+          )}
+
+          {coConfirm && (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={() => setCoConfirm(null)}>
+              <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <p className="text-[15px] font-bold text-[var(--text-primary)]">Add to {coConfirm.group.name}’s return</p>
+                <p className="mt-1 text-[12.5px] text-[var(--text-muted)]">{coConfirm.group.name}’s {taxYear} return already has capital gains. Replace it with their share of these disposals, or add on top of what’s there?</p>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button onClick={() => setCoConfirm(null)} className="btn-secondary">Cancel</button>
+                  <button onClick={() => doCoPush('add')} className="btn-secondary bg-white">Add to existing</button>
+                  <button onClick={() => doCoPush('replace')} className="btn-primary">Replace</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* SMITH Review */}
           <div className="mt-5 rounded-xl border border-[var(--accent)]/25 bg-[var(--accent)]/[0.03] p-3">

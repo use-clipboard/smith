@@ -6,18 +6,19 @@ import { fmtMoney } from '../data';
 import { scenarioResult } from './data';
 import { cgtCalcSummary, cgtCalcToSa108 } from '../calc';
 import CgtCalculator from '../CgtCalculator';
-import type { Sa100Income, Scenario, CgtCalcState } from '../types';
+import type { Sa100Income, Scenario, CgtCalcState, ReturnTypeId } from '../types';
 
 export type EditCategory = 'income' | 'capital' | 'pensions' | 'investments' | 'property' | 'business' | 'other';
 
 export default function ScenarioEditor({
-  scenario, category, baseIncome, taxYear, taxpayerName, onChange, onPushCgtToMain,
+  scenario, category, baseIncome, taxYear, taxpayerName, returnType, onChange, onPushCgtToMain,
 }: {
   scenario: Scenario;
   category: EditCategory;
   baseIncome: Sa100Income;
   taxYear: string;
   taxpayerName: string;
+  returnType?: ReturnTypeId;
   onChange: (income: Sa100Income) => void;
   onPushCgtToMain?: (calc: CgtCalcState) => void;
 }) {
@@ -53,7 +54,7 @@ export default function ScenarioEditor({
               <NumField label="Pensions income" value={income.pensionsIncome} onChange={v => set(i => ({ ...i, pensionsIncome: v }))} />
             </>
           )}
-          {category === 'capital' && <CapitalGainsScenario income={income} set={set} taxYear={taxYear} taxpayerName={taxpayerName} onPushCgtToMain={onPushCgtToMain} />}
+          {category === 'capital' && <CapitalGainsScenario income={income} set={set} taxYear={taxYear} taxpayerName={taxpayerName} returnType={returnType} onPushCgtToMain={onPushCgtToMain} />}
           {category === 'business' && (
             <div className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-white/60 px-4 py-4 text-[12.5px] text-[var(--text-secondary)]">
               <Info size={15} className="mt-0.5 shrink-0 text-[var(--accent)]" />
@@ -86,8 +87,8 @@ export default function ScenarioEditor({
   );
 }
 
-function CapitalGainsScenario({ income, set, taxYear, taxpayerName, onPushCgtToMain }: {
-  income: Sa100Income; set: (u: (i: Sa100Income) => Sa100Income) => void; taxYear: string; taxpayerName: string; onPushCgtToMain?: (calc: CgtCalcState) => void;
+function CapitalGainsScenario({ income, set, taxYear, taxpayerName, returnType, onPushCgtToMain }: {
+  income: Sa100Income; set: (u: (i: Sa100Income) => Sa100Income) => void; taxYear: string; taxpayerName: string; returnType?: ReturnTypeId; onPushCgtToMain?: (calc: CgtCalcState) => void;
 }) {
   const calc = income.cgtCalc ?? {};
   const summary = cgtCalcSummary(calc);
@@ -107,7 +108,7 @@ function CapitalGainsScenario({ income, set, taxYear, taxpayerName, onPushCgtToM
         {onPushCgtToMain && n > 0 && <button onClick={() => onPushCgtToMain(calc)} className="btn-secondary bg-white"><ArrowUpRight size={14} /> Add to main return</button>}
       </div>
       {n === 0 && <p className="text-[11.5px] text-[var(--text-muted)]">No disposals yet — open the calculator to add or scan them.</p>}
-      {open && <CgtCalculator state={calc} taxYear={taxYear} taxpayerName={taxpayerName} onChange={s => set(i => ({ ...i, cgtCalc: s, sa108: cgtCalcToSa108(s, i.sa108) }))} onClose={() => setOpen(false)} />}
+      {open && <CgtCalculator state={calc} taxYear={taxYear} taxpayerName={taxpayerName} returnType={returnType} onChange={s => set(i => ({ ...i, cgtCalc: s, sa108: cgtCalcToSa108(s, i.sa108) }))} onClose={() => setOpen(false)} />}
     </div>
   );
 }

@@ -2400,7 +2400,7 @@ function Sa108Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
         <p className="text-[11.5px] text-[var(--text-secondary)]"><span className="font-semibold text-[var(--text-primary)]">Capital gains calculator</span> — record each disposal, suggest reliefs, allocate losses, and auto-total onto the SA108 boxes.{calcCount > 0 && <span className="text-[var(--text-muted)]"> ({calcCount} disposal{calcCount === 1 ? '' : 's'})</span>}</p>
         <button onClick={() => setCalcOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-bold text-white transition-opacity hover:opacity-90"><Calculator size={14} /> {calcCount > 0 ? 'Open calculator' : 'Open calculator'}</button>
       </div>
-      {calcOpen && <CgtCalculator state={calcState} taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} onChange={onCalcChange} onClose={() => setCalcOpen(false)} />}
+      {calcOpen && <CgtCalculator state={calcState} taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} returnType={ret.returnType} onChange={onCalcChange} onClose={() => setCalcOpen(false)} />}
       {/* Top tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
         {SA108_TABS.map(tt => {

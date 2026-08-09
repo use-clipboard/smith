@@ -184,7 +184,7 @@ export default function SandboxView({
               ) : (
                 selected ? (
                   <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
-                    taxpayerName={ret.clientName ?? 'You'} onChange={income => updateScenario(selected.id, income)} onPushCgtToMain={pushCgtToMain} />
+                    taxpayerName={ret.clientName ?? 'You'} returnType={ret.returnType} onChange={income => updateScenario(selected.id, income)} onPushCgtToMain={pushCgtToMain} />
                 ) : (
                   <div className="flex flex-col items-center gap-2 px-8 py-12 text-center">
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>
