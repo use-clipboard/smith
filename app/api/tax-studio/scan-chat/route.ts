@@ -18,12 +18,31 @@ const BodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).min(1).max(40),
 });
 
+// Extract the JSON object from the model's reply. The model is asked to return
+// ONLY JSON, but it sometimes prefixes a prose sentence (and/or wraps in code
+// fences), so we (1) strip fences, (2) try a straight parse, and (3) fall back
+// to a brace-balanced scan for the first complete {...} object in the text.
 function parseJson(text: string): unknown {
   let s = text.trim();
   if (s.startsWith('```json')) s = s.slice(7).trim();
-  if (s.startsWith('```')) s = s.slice(3).trim();
+  else if (s.startsWith('```')) s = s.slice(3).trim();
   if (s.endsWith('```')) s = s.slice(0, -3).trim();
-  return JSON.parse(s);
+  try { return JSON.parse(s); } catch { /* fall through to brace scan */ }
+
+  const start = s.indexOf('{');
+  if (start === -1) throw new Error('no JSON object in response');
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return JSON.parse(s.slice(start, i + 1)); }
+  }
+  throw new Error('unterminated JSON object in response');
 }
 
 // POST /api/tax-studio/scan-chat — one turn of the scan-review "Ask SMITH" chat.
