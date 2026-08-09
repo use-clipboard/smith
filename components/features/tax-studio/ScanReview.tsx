@@ -6,7 +6,7 @@ import { X, Check, FileText, Sparkles, AlertTriangle, HelpCircle, MessageSquare,
 import { fmtMoney } from './data';
 import {
   buildScanProposals, applyScanProposals, applyScanEdit, fetchScanChat, scanDestLabel, SCAN_DESTS,
-  encodeFile, fetchExtraction,
+  encodeFile, fetchExtraction, isIncomeField,
   type Sa100Extraction, type ScanProposal, type ScanEdit,
 } from './extract';
 import type { TaxReturn } from './types';
@@ -46,11 +46,10 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
 
   const upd = (id: string, u: Partial<ScanProposal>) => setProposals(ps => ps.map(p => p.id === id ? { ...p, ...u } : p));
   const included = proposals.filter(p => p.dest !== 'exclude');
-  // Headline £ = income brought on. PAYE tax and expenses are components of an
-  // employment (a credit / a deduction), not income lines, so they're listed but
-  // not summed here.
-  const isIncomeFigure = (p: ScanProposal) => p.empField !== 'taxDeducted' && p.empField !== 'expenses';
-  const total = included.reduce((a, p) => a + (isIncomeFigure(p) ? (p.amount || 0) : 0), 0);
+  // Headline £ = income brought on. Companion figures (PAYE tax, expenses,
+  // capital allowances, CIS, foreign tax) are listed but not summed here — they're
+  // deductions/credits within a source, not separate income lines.
+  const total = included.reduce((a, p) => a + (isIncomeField(p.field) ? (p.amount || 0) : 0), 0);
 
   // ── Phase 3 — scan another document without leaving the review ──
   async function onScanMore(files: FileList | null) {
@@ -66,7 +65,7 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
       setDocs(d => [...d, ...ex.documents]);
       setSetAside(s => [...s, ...ex.setAside]);
       setNeeds(n => Array.from(new Set([...n, ...ex.needs])));
-      const found = fresh.filter(p => p.empField !== 'taxDeducted' && p.empField !== 'expenses');
+      const found = fresh.filter(p => isIncomeField(p.field));
       const summary = found.length
         ? `Read ${ex.documents.map(d => d.docType).join(', ') || 'the document'} — I've added ${fresh.length} figure${fresh.length === 1 ? '' : 's'} to the list on the left. Have a look and adjust anything that needs it.`
         : `I read ${ex.documents.map(d => d.docType).join(', ') || 'the document'} but couldn't pull out a clear figure — take a look at what I've set aside.`;
@@ -149,7 +148,7 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
               <div className="space-y-1.5">
                 {proposals.map(p => {
                   const on = p.dest !== 'exclude';
-                  const isSub = !!p.empField && p.empField !== 'pay'; // an employment companion figure (tax/benefits/expenses)
+                  const isSub = !!p.group && !p.primary; // a companion figure bound to its source's section
                   return (
                     <div key={p.id} className={`flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 transition-colors ${isSub ? 'ml-5 border-l-2 border-l-[var(--accent)]/25' : ''} ${on ? 'border-[var(--accent)]/30 bg-[var(--accent)]/[0.03]' : 'border-[var(--border)] bg-black/[0.015] opacity-70'}`}>
                       <input type="checkbox" checked={on} onChange={e => upd(p.id, { dest: e.target.checked ? (p.origin === 'exclude' ? 'otherIncome' : p.origin) : 'exclude' })} className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[var(--accent)]" aria-label="Include" />
@@ -160,7 +159,7 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
                       </div>
                       <span className="text-[11px] text-[var(--text-muted)]">→</span>
                       {isSub ? (
-                        <span className="rounded-md border border-[var(--border)] bg-black/[0.02] px-2 py-1 text-[11px] text-[var(--text-muted)]">Employment (SA102)</span>
+                        <span className="rounded-md border border-[var(--border)] bg-black/[0.02] px-2 py-1 text-[11px] text-[var(--text-muted)]">{scanDestLabel(p.dest)}</span>
                       ) : (
                         <select value={p.dest} onChange={e => upd(p.id, { dest: e.target.value as ScanProposal['dest'] })} className={`rounded-md border py-1 text-[11.5px] ${p.dest !== p.origin && on ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-[var(--border)] bg-white text-[var(--text-secondary)]'}`}>
                           {SCAN_DESTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
