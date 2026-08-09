@@ -1,14 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, FileText, Sparkles, AlertTriangle, HelpCircle, MessageSquare, Send } from 'lucide-react';
+import { X, Check, FileText, Sparkles, AlertTriangle, HelpCircle, MessageSquare, Send, Loader2, Plus } from 'lucide-react';
 import { fmtMoney } from './data';
 import {
-  buildScanProposals, applyScanProposals, SCAN_DESTS, scanDestLabel,
-  type Sa100Extraction, type ScanProposal,
+  buildScanProposals, applyScanProposals, applyScanEdit, fetchScanChat, scanDestLabel, SCAN_DESTS,
+  type Sa100Extraction, type ScanProposal, type ScanEdit,
 } from './extract';
 import type { TaxReturn } from './types';
+
+interface ChatMsg { role: 'user' | 'assistant'; content: string; edits?: ScanEdit[]; appliedEdits?: Set<number> }
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -21,9 +23,50 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
   const [proposals, setProposals] = useState<ScanProposal[]>(() => buildScanProposals(extraction));
   const [imported, setImported] = useState(false);
 
+  // ── Ask-SMITH chat ──
+  const [messages, setMessages] = useState<ChatMsg[]>(() => [{
+    role: 'assistant',
+    content: extraction.needs[0]
+      ? `I've listed what I found on the left. A few things need your input — let's start there: ${extraction.needs[0]}`
+      : `I've listed what I found on the left. Ask me anything, or tell me about anything I've set aside and I'll sort it.`,
+  }]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }, [messages, sending]);
+
   const upd = (id: string, u: Partial<ScanProposal>) => setProposals(ps => ps.map(p => p.id === id ? { ...p, ...u } : p));
   const included = proposals.filter(p => p.dest !== 'exclude');
   const total = included.reduce((a, p) => a + (p.amount || 0), 0);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    const history: ChatMsg[] = [...messages, { role: 'user', content: text }];
+    setMessages(history);
+    setInput('');
+    setSending(true);
+    try {
+      const { reply, edits } = await fetchScanChat({
+        taxYear: ret.taxYear,
+        documents: extraction.documents.map(d => ({ docType: d.docType, summary: d.summary })),
+        proposals: proposals.filter(p => p.dest !== 'exclude').map(p => ({ label: p.label, amount: p.amount, dest: p.dest })),
+        setAside: extraction.setAside,
+        needs: extraction.needs,
+        messages: history.map(m => ({ role: m.role, content: m.content })),
+      });
+      setMessages(ms => [...ms, { role: 'assistant', content: reply, edits: edits.length ? edits : undefined, appliedEdits: new Set() }]);
+    } catch (e) {
+      setMessages(ms => [...ms, { role: 'assistant', content: e instanceof Error ? e.message : 'SMITH is unavailable right now.' }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function applyEdit(msgIdx: number, editIdx: number, edit: ScanEdit) {
+    setProposals(ps => applyScanEdit(ps, edit));
+    setMessages(ms => ms.map((m, i) => i === msgIdx ? { ...m, appliedEdits: new Set([...(m.appliedEdits ?? []), editIdx]) } : m));
+  }
 
   function doImport() {
     patch(r => ({
@@ -109,17 +152,41 @@ export default function ScanReview({ ret, patch, extraction, batchId, onClose }:
             )}
           </div>
 
-          {/* RIGHT — chat (Phase 2 placeholder) */}
+          {/* RIGHT — Ask SMITH chat */}
           <div className="flex min-h-0 flex-col bg-black/[0.015]">
             <div className="flex items-center gap-1.5 border-b border-black/5 px-4 py-2.5 text-[12px] font-bold text-[var(--text-primary)]"><MessageSquare size={13} className="text-[var(--accent)]" /> Ask SMITH</div>
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-5 text-center">
-              <MessageSquare size={22} className="text-[var(--text-muted)]/50" />
-              <p className="text-[12px] font-semibold text-[var(--text-secondary)]">Chat with SMITH is coming next</p>
-              <p className="text-[11px] text-[var(--text-muted)]">You’ll be able to answer SMITH’s questions, add a missing document, or refine any figure — and it’ll update the list on the left.</p>
+            <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-auto px-3 py-3">
+              {messages.map((m, i) => (
+                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                  <div className={`max-w-[88%] rounded-2xl px-3 py-1.5 text-[12px] leading-snug ${m.role === 'user' ? 'bg-[var(--accent)] text-white' : 'bg-white text-[var(--text-primary)] shadow-sm'}`}>
+                    {m.content}
+                    {m.edits && m.edits.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {m.edits.map((e, j) => {
+                          const applied = m.appliedEdits?.has(j);
+                          const verb = e.action === 'exclude' ? 'Remove' : e.action === 'add' ? 'Add' : 'Update';
+                          const target = e.action === 'add' ? e.label : e.target;
+                          return (
+                            <div key={j} className="rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/[0.05] px-2 py-1.5">
+                              <p className="text-[11px] font-semibold text-[var(--text-primary)]">{verb}: {target}{e.amount != null ? ` — ${fmtMoney(e.amount)}` : ''}{e.dest ? ` → ${scanDestLabel(e.dest)}` : ''}</p>
+                              {e.reason && <p className="text-[10.5px] text-[var(--text-muted)]">{e.reason}</p>}
+                              <button onClick={() => !applied && applyEdit(i, j, e)} disabled={applied}
+                                className={`mt-1 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-bold transition-colors ${applied ? 'bg-emerald-100 text-emerald-700' : 'bg-[var(--accent)] text-white hover:opacity-90'}`}>
+                                {applied ? <><Check size={11} /> Applied</> : <><Plus size={11} /> Apply</>}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {sending && <div className="flex justify-start"><div className="rounded-2xl bg-white px-3 py-1.5 text-[12px] text-[var(--text-muted)] shadow-sm"><Loader2 size={13} className="inline animate-spin" /> SMITH is thinking…</div></div>}
             </div>
             <div className="flex items-center gap-2 border-t border-black/5 px-3 py-2.5">
-              <input disabled placeholder="Ask SMITH about this scan…" className="input-base flex-1 py-1.5 text-[12px] opacity-60" />
-              <button disabled className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]/40 text-white"><Send size={14} /></button>
+              <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} placeholder="Reply to SMITH…" className="input-base flex-1 py-1.5 text-[12px]" />
+              <button onClick={send} disabled={sending || !input.trim()} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"><Send size={14} /></button>
             </div>
           </div>
         </div>

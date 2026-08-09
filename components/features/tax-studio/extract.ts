@@ -144,6 +144,52 @@ function emptyExtraction(): Sa100Extraction {
   return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, pensionsIncome: 0, statePension: 0, foreignIncome: 0, foreignTaxPaid: 0, otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
 }
 
+// ── Ask-SMITH chat (Phase 2) — proposed edits the user applies one-click ──────
+export interface ScanEdit {
+  action: 'add' | 'edit' | 'exclude';
+  target?: string;   // label of an existing proposal (edit/exclude)
+  label?: string;
+  amount?: number;
+  dest?: ScanDest;
+  reason?: string;   // shown on the Apply chip
+}
+export interface ScanChatMessage { role: 'user' | 'assistant'; content: string; edits?: ScanEdit[] }
+
+const VALID_DESTS = new Set(SCAN_DESTS.map(d => d.value));
+function coerceDest(d: unknown): ScanDest { return typeof d === 'string' && VALID_DESTS.has(d as ScanDest) ? d as ScanDest : 'otherIncome'; }
+
+/** Apply one SMITH-proposed edit to the current proposals (returns a new list). */
+export function applyScanEdit(proposals: ScanProposal[], edit: ScanEdit): ScanProposal[] {
+  if (edit.action === 'add') {
+    const dest = coerceDest(edit.dest);
+    return [...proposals, { id: pid(), label: edit.label || 'Added by SMITH', amount: Math.round(edit.amount || 0), dest, origin: dest }];
+  }
+  return proposals.map(p => {
+    if (p.label !== edit.target) return p;
+    if (edit.action === 'exclude') return { ...p, dest: 'exclude' };
+    return { ...p, amount: edit.amount != null ? Math.round(edit.amount) : p.amount, dest: edit.dest ? coerceDest(edit.dest) : p.dest, label: edit.label || p.label };
+  });
+}
+
+/** One turn of the scan-review chat. Returns SMITH's reply + proposed edits. */
+export async function fetchScanChat(payload: {
+  taxYear: string;
+  documents: { docType: string; summary: string }[];
+  proposals: { label: string; amount: number; dest: string }[];
+  setAside: { label: string; reason: string }[];
+  needs: string[];
+  messages: { role: 'user' | 'assistant'; content: string }[];
+}): Promise<{ reply: string; edits: ScanEdit[] }> {
+  const r = await fetch('/api/tax-studio/scan-chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  const ct = r.headers.get('content-type') ?? '';
+  const d = ct.includes('application/json') ? await r.json().catch(() => ({})) : {};
+  if (!r.ok) throw new Error((d as { error?: string }).error ?? 'SMITH is unavailable right now.');
+  const edits = Array.isArray((d as { edits?: unknown }).edits) ? ((d as { edits: ScanEdit[] }).edits) : [];
+  return { reply: String((d as { reply?: string }).reply ?? ''), edits };
+}
+
 /** Apply the (edited) proposals to the income — routes each to its chosen
  *  destination and merges additively (batch-keyed, like a normal scan import). */
 export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[], batchId: string): Sa100Income {
