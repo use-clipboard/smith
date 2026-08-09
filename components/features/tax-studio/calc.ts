@@ -261,8 +261,17 @@ export function foreignTotals(income: Sa100Income): {
 }
 
 // ── SA106 foreign helpers (country-row tables + foreign property) ────────────
+/** B — income arising for a foreign row: its "+" breakdown total when itemised,
+ *  else the entered figure. */
+export function foreignRowIncome(r: ForeignRow): number {
+  return r.breakdown?.length ? r.breakdown.reduce((a, x) => a + (x.grossIncome || 0), 0) : (r.incomeArising || 0);
+}
+/** C — foreign tax for a foreign row: its breakdown total when itemised, else entered. */
+export function foreignRowForeignTax(r: ForeignRow): number {
+  return r.breakdown?.length ? r.breakdown.reduce((a, x) => a + (x.foreignTax || 0), 0) : (r.foreignTax || 0);
+}
 /** F — taxable amount for a foreign income row (= income arising). */
-export function foreignRowTaxable(r: ForeignRow): number { return r.incomeArising || 0; }
+export function foreignRowTaxable(r: ForeignRow): number { return foreignRowIncome(r); }
 /** Column totals for a foreign income table: SWT (D), taxable (F), foreign tax
  *  (C) and the FTCR-claimed portion of it. */
 export function foreignTableTotals(rows?: ForeignRow[]): { swt: number; taxable: number; foreignTax: number; ftcr: number } {
@@ -270,22 +279,31 @@ export function foreignTableTotals(rows?: ForeignRow[]): { swt: number; taxable:
   for (const r of rows ?? []) {
     swt += r.specialWithholding || 0;
     taxable += foreignRowTaxable(r);
-    foreignTax += r.foreignTax || 0;
-    if (r.creditRelief) ftcr += r.foreignTax || 0;
+    const ft = foreignRowForeignTax(r);
+    foreignTax += ft;
+    if (r.creditRelief) ftcr += ft;
   }
   return { swt, taxable, foreignTax, ftcr };
 }
 const FP_ALLOW = ['capitalAllowances', 'zeroEmissionCar', 'sba', 'electricChargepoint', 'domesticItems'] as const;
+/** box 17 — property expenses: "+" breakdown total when itemised, else entered. */
+export function foreignPropertyExpenses(p: ForeignProperty): number {
+  return p.expenseItems?.length ? p.expenseItems.reduce((a, x) => a + (x.expense || 0), 0) : (p.expenses || 0);
+}
+/** box 19 — private use adjustment: breakdown total when itemised, else entered. */
+export function foreignPropertyPrivateUse(p: ForeignProperty): number {
+  return p.expenseItems?.length ? p.expenseItems.reduce((a, x) => a + (x.privateUse || 0), 0) : (p.privateUse || 0);
+}
 /** box 18 — net profit/loss for a foreign property (allowance replaces expenses). */
 export function foreignPropertyNet(p: ForeignProperty): number {
   if ((p.propertyIncomeAllowance || 0) > 0) return (p.totalRents || 0) + (p.premiumsPaid || 0) - (p.propertyIncomeAllowance || 0);
-  return (p.totalRents || 0) + (p.premiumsPaid || 0) - (p.expenses || 0);
+  return (p.totalRents || 0) + (p.premiumsPaid || 0) - foreignPropertyExpenses(p);
 }
 /** box 24 — adjusted profit (+) or loss (−) for a foreign property. */
 export function foreignPropertyAdjusted(p: ForeignProperty): number {
   if ((p.propertyIncomeAllowance || 0) > 0) return foreignPropertyNet(p);
   const allow = FP_ALLOW.reduce((a, k) => a + (p[k] || 0), 0);
-  return foreignPropertyNet(p) + (p.privateUse || 0) + (p.balancingCharges || 0) - allow;
+  return foreignPropertyNet(p) + foreignPropertyPrivateUse(p) + (p.balancingCharges || 0) - allow;
 }
 /** Foreign-property section totals: box 25 adjusted, box 27 taxable profit, box 32 loss c/fwd. */
 export function foreignPropertyTotals(sa: Sa106 | undefined): { adjusted: number; taxableProfit: number; lossCf: number } {

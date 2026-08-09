@@ -49,7 +49,7 @@ export function BreakdownField<T extends { id: string }>({
   );
 }
 
-function BreakdownModal<T extends { id: string }>({
+export function BreakdownModal<T extends { id: string }>({
   title, items, columns, blank, onChange, onClose,
 }: {
   title: string;

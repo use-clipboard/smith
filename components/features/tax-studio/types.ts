@@ -478,8 +478,19 @@ export interface ForeignSource {
   claimFtcr?: boolean;    // claim Foreign Tax Credit Relief (default true)
 }
 
+// One itemised income line inside a foreign row's "+" breakdown sub-table.
+export interface ForeignIncomeItem {
+  id: string;
+  description?: string;
+  grossIncome?: number;   // gross income arising
+  foreignTax?: number;    // foreign tax taken off
+  ukTax?: number;         // UK tax taken off
+  tenPercent?: boolean;   // pensions: 10% deduction
+}
+
 // SA106 Foreign — the recurring country-income row (columns A–F on every
-// "overseas income" sub-table). F (taxable amount) is computed.
+// "overseas income" sub-table). F (taxable amount) is computed. The "+" opens an
+// itemised breakdown; when present, B (income) & C (foreign tax) are its totals.
 export interface ForeignRow {
   id: string;
   country?: string;          // A — country/territory code
@@ -487,7 +498,16 @@ export interface ForeignRow {
   foreignTax?: number;       // C — foreign tax taken off or paid
   specialWithholding?: number; // D — special withholding tax
   creditRelief?: boolean;    // E — claim Foreign Tax Credit Relief on this row
-  // F — taxable amount (computed = incomeArising)
+  breakdown?: ForeignIncomeItem[]; // "+" itemised income lines (totals feed B & C)
+  // F — taxable amount (computed = income arising)
+}
+
+// One itemised expense line inside a foreign property's "+" expenses sub-table.
+export interface ForeignExpenseItem {
+  id: string;
+  description?: string;
+  expense?: number;     // → box 17 total
+  privateUse?: number;  // → box 19 total
 }
 
 // SA106 foreign land & property, per property (a "foreign SA105"). Boxes 14–24.2.
@@ -501,6 +521,7 @@ export interface ForeignProperty {
   letProperties?: number;           // 15 — number of let properties
   premiumsPaid?: number;            // 16 — premiums paid
   expenses?: number;                // 17 — property expenses
+  expenseItems?: ForeignExpenseItem[]; // "+" itemised expenses (totals feed 17 & 19)
   // 18 — net profit or loss (computed)
   // ── Calculate Taxable P&L (19–24.2) ──
   privateUse?: number;              // 19 — private use adjustment

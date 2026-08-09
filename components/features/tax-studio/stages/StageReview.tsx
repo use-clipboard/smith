@@ -9,7 +9,7 @@ import {
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
-import { BreakdownField, type BreakdownColumn } from '../IncomeBreakdown';
+import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
@@ -21,8 +21,8 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, Sa106, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -2090,14 +2090,29 @@ function CountrySelect({ value, onChange, className = '' }: { value?: string; on
   );
 }
 
+// Breakdown sub-table columns (the "+" pop-ups).
+const FGN_INCOME_COLS: BreakdownColumn<ForeignIncomeItem>[] = [
+  { key: 'description', label: 'Description of income', kind: 'text' },
+  { key: 'grossIncome', label: 'Gross income arising', kind: 'number', total: true },
+  { key: 'foreignTax', label: 'Foreign tax taken off', kind: 'number', total: true },
+  { key: 'ukTax', label: 'UK tax taken off', kind: 'number', total: true },
+];
+const FGN_EXPENSE_COLS: BreakdownColumn<ForeignExpenseItem>[] = [
+  { key: 'description', label: 'Description of expense', kind: 'text' },
+  { key: 'expense', label: 'Expense', kind: 'number', total: true },
+  { key: 'privateUse', label: 'Private use', kind: 'number', total: true },
+];
+
 // The recurring SA106 country-income table (columns A–F). `columns="acef"` drops
 // the Income-arising (B) and Special-Withholding (D) columns (used by "Foreign tax").
+// The green "+" on each row itemises that row's income into a breakdown sub-table.
 function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, maxRows }: {
   title: string; note?: string; rows: ForeignRow[]; onChange: (r: ForeignRow[]) => void;
   totalBoxes?: { swt?: string; taxable?: string }; extra?: React.ReactNode; columns?: 'full' | 'acef';
   fig?: string; figValue?: number; maxRows?: number;
 }) {
   const full = columns === 'full';
+  const [itemise, setItemise] = useState<number | null>(null);
   const atMax = maxRows != null && rows.length >= maxRows;
   const add = () => { if (!atMax) onChange([...rows, { id: foreignRid(rows.length) }]); };
   const upd = (i: number, u: Partial<ForeignRow>) => onChange(rows.map((r, j) => j === i ? { ...r, ...u } : r));
@@ -2115,9 +2130,20 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
       {rows.map((r, i) => (
         <div key={r.id} className="grid items-center gap-2 border-b border-black/5 py-1.5" style={{ gridTemplateColumns: cols }}>
           <CountrySelect value={r.country} onChange={v => upd(i, { country: v })} />
-          {full && <NumIn value={r.incomeArising ?? 0} onChange={v => upd(i, { incomeArising: v })} />}
-          <NumIn value={r.foreignTax ?? 0} onChange={v => upd(i, { foreignTax: v })} />
-          {full && <NumIn value={r.specialWithholding ?? 0} onChange={v => upd(i, { specialWithholding: v })} />}
+          {full && (r.breakdown?.length
+            ? <div className="input-base flex items-center justify-end bg-sky-50/70 py-1 text-[11.5px] font-semibold text-sky-700" title="From the itemised breakdown">{fmtMoney(foreignRowIncome(r))}</div>
+            : <NumIn value={r.incomeArising ?? 0} onChange={v => upd(i, { incomeArising: v })} />)}
+          {r.breakdown?.length
+            ? <div className="input-base flex items-center justify-end bg-sky-50/70 py-1 text-[11.5px] font-semibold text-sky-700" title="From the itemised breakdown">{fmtMoney(foreignRowForeignTax(r))}</div>
+            : <NumIn value={r.foreignTax ?? 0} onChange={v => upd(i, { foreignTax: v })} />}
+          {full && (
+            <div className="flex items-center gap-1">
+              <NumIn value={r.specialWithholding ?? 0} onChange={v => upd(i, { specialWithholding: v })} />
+              <Tooltip label={`Itemise this row's income${r.breakdown?.length ? ` (${r.breakdown.length})` : ''}`}>
+                <button onClick={() => setItemise(i)} className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-white transition-colors ${r.breakdown?.length ? 'bg-lime-600' : 'bg-lime-500 hover:bg-lime-600'}`} aria-label="Itemise income"><Plus size={13} /></button>
+              </Tooltip>
+            </div>
+          )}
           <input type="checkbox" checked={!!r.creditRelief} onChange={e => upd(i, { creditRelief: e.target.checked })} className="mx-auto h-3.5 w-3.5 accent-[var(--accent)]" aria-label="Claim FTCR" />
           <div className="rounded-md bg-sky-50/70 px-2 py-1 text-right text-[12px] font-semibold text-sky-700">{fmtMoney(foreignRowTaxable(r))}</div>
           <button onClick={() => del(i)} className="text-[var(--text-muted)] transition-colors hover:text-rose-500" aria-label="Remove country"><Trash2 size={13} /></button>
@@ -2134,6 +2160,16 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
           {fig && <BoxNum box={fig} label="Total claimed under the FIG regime" help={FGN.fig} value={figValue ?? 0} onChange={() => { /* FIG claim tracked per-return later */ }} />}
           {extra}
         </div>
+      )}
+      {itemise != null && rows[itemise] && (
+        <BreakdownModal<ForeignIncomeItem>
+          title={`${title} — income breakdown`}
+          items={rows[itemise].breakdown ?? []}
+          columns={FGN_INCOME_COLS}
+          blank={() => ({ id: foreignRid((rows[itemise].breakdown ?? []).length) })}
+          onChange={items => upd(itemise, { breakdown: items })}
+          onClose={() => setItemise(null)}
+        />
       )}
     </StudioCard>
   );
@@ -2175,11 +2211,34 @@ function ForeignPropertySection({ sa, set, subName }: { sa: Sa106; set: (u: Part
   );
 }
 
+// A number box with a green "+" that itemises it into a breakdown sub-table;
+// when itemised the value is the breakdown total (read-only).
+function ItemiseNumField({ box, label, help, itemised, value, onChange, onItemise, count }: {
+  box: number | string; label: string; help?: string; itemised: boolean;
+  value: number; onChange: (v: number) => void; onItemise: () => void; count?: number;
+}) {
+  return (
+    <div>
+      <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}{count ? <span className="font-bold text-[var(--text-secondary)]"> ({count})</span> : null}{help && <HelpDot help={help} label={label} />}
+      </label>
+      <div className="flex items-center gap-1">
+        {itemised
+          ? <div className="input-base flex flex-1 items-center justify-end bg-sky-50/70 py-1 text-[12px] font-semibold text-sky-700" title="From itemised expenses">{fmtMoney(value)}</div>
+          : <NumIn value={value} onChange={onChange} />}
+        <Tooltip label="Itemise expenses"><button onClick={onItemise} className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-lime-500 text-white transition-colors hover:bg-lime-600" aria-label="Itemise expenses"><Plus size={13} /></button></Tooltip>
+      </div>
+    </div>
+  );
+}
+
 function ForeignPropertyCard({ p, idx, subName, onChange, onRemove }: {
   p: ForeignProperty; idx: number; subName: string; onChange: (u: Partial<ForeignProperty>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [expOpen, setExpOpen] = useState(false);
   const set = (u: Partial<ForeignProperty>) => onChange(u);
+  const expItemised = !!p.expenseItems?.length;
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -2197,13 +2256,13 @@ function ForeignPropertyCard({ p, idx, subName, onChange, onRemove }: {
               <BoxCheck box="14.2" label="Traditional accounting" checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
               <BoxNum box={15} label="No. of let properties" value={p.letProperties ?? 0} onChange={v => set({ letProperties: v })} />
               <BoxNum box={16} label="Premiums paid" value={p.premiumsPaid ?? 0} onChange={v => set({ premiumsPaid: v })} />
-              <BoxNum box={17} label="Property expenses" value={p.expenses ?? 0} onChange={v => set({ expenses: v })} />
+              <ItemiseNumField box={17} label="Property expenses" itemised={expItemised} count={p.expenseItems?.length} value={foreignPropertyExpenses(p)} onChange={v => set({ expenses: v })} onItemise={() => setExpOpen(true)} />
               <BoxCalc box={18} label="Net profit or loss" value={foreignPropertyNet(p)} />
             </BoxSection>
           )}
           {subName === 'Calculate Taxable P&L' && (
             <BoxSection title="Calculate taxable profit or loss">
-              <BoxNum box={19} label="Private use adjustment" help={PROP.privateUse} value={p.privateUse ?? 0} onChange={v => set({ privateUse: v })} />
+              <ItemiseNumField box={19} label="Private use adjustment" help={PROP.privateUse} itemised={expItemised} count={p.expenseItems?.length} value={foreignPropertyPrivateUse(p)} onChange={v => set({ privateUse: v })} onItemise={() => setExpOpen(true)} />
               <BoxNum box={20} label="Balancing charges" help={PROP.balancingCharges} value={p.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
               <BoxNum box={21} label="Capital allowances" value={p.capitalAllowances ?? 0} onChange={v => set({ capitalAllowances: v })} />
               <BoxNum box="21.1" label="Zero-emission car allowance" value={p.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
@@ -2225,6 +2284,16 @@ function ForeignPropertyCard({ p, idx, subName, onChange, onRemove }: {
             </BoxSection>
           )}
         </div>
+      )}
+      {expOpen && (
+        <BreakdownModal<ForeignExpenseItem>
+          title="Expenses"
+          items={p.expenseItems ?? []}
+          columns={FGN_EXPENSE_COLS}
+          blank={() => ({ id: `fe-${Date.now()}-${Math.floor(Math.random() * 1000)}` })}
+          onChange={items => set({ expenseItems: items })}
+          onClose={() => setExpOpen(false)}
+        />
       )}
     </div>
   );
