@@ -434,6 +434,57 @@ export interface TrustEstateSource {
   taxPaid: number;  // tax already paid (estate kind; computed for discretionary)
 }
 
+// One row of a "Foreign estate" breakdown — the shared table behind SA107 boxes
+// 22 (income), 23 (UK tax withheld) and 24 (foreign tax): each estate is entered
+// once and the three box totals are its three column sums.
+export interface EstateForeignItem {
+  id: string;
+  description?: string;
+  income?: number;        // → box 22 total (foreign estate income)
+  foreignTax?: number;    // → box 24 total (FTCR not claimed)
+  ukTaxWithheld?: number; // → box 23 total (relief for UK tax already accounted for)
+}
+
+// SA107 Trusts & estates — the full supplementary page, box-for-box (Capium
+// layout: Income from Trusts / Income from the estates). The legacy simplified
+// per-source model lives on `income.trusts` (TrustEstateSource[]) and is still
+// summed into the tax; this is the box-for-box page layered alongside it, exactly
+// as Sa106 was layered over the legacy foreign fields.
+export interface Sa107 {
+  // ── Income from Trusts ──
+  // Discretionary income (boxes 1–2)
+  discretionaryNet?: number;          // box 1 — net amount, discretionary income from a UK resident trust
+  settlorInterestedPayments?: number; // box 2 — total payments from settlor-interested trusts (memo)
+  // Non-discretionary income entitlement (boxes 3–6)
+  nonDiscNonSavings?: number;         // box 3 — net amount of non-savings income
+  nonDiscSavings?: number;            // box 4 — net amount of savings income
+  nonDiscDividend?: number;           // box 5 — net amount of dividend income
+  trusteesNonResident?: boolean;      // box 6 — trustees not resident in the UK for tax purposes?
+  // Income chargeable on settlors (boxes 7–15)
+  settlorNonSavingsBasic?: number;    // box 7  — non-savings income taxed at basic rate (net)
+  settlorSavingsBasic?: number;       // box 8  — savings income taxed at basic rate (net)
+  settlorDividend?: number;           // box 9  — dividends income taxed at dividend rate (net)
+  settlorNonSavingsTrust?: number;    // box 10 — non-savings income taxed at trust rate (net)
+  settlorSavingsTrust?: number;       // box 11 — savings income taxed at trust rate (net)
+  settlorDividendTrust?: number;      // box 12 — dividend income taxed at trust rate (net)
+  settlorNonSavingsGross?: number;    // box 13 — non-savings income paid gross
+  settlorSavingsGross?: number;       // box 14 — savings income paid gross
+  lifeAssuranceTaxPaid?: number;      // box 15 — tax paid on certain UK life assurance policies
+  // ── Income from the estates ──
+  // UK estates (boxes 16–19)
+  estateNonSavings?: number;          // box 16 — non-savings income (after tax)
+  estateSavings?: number;             // box 17 — savings income (after tax)
+  estateDividend?: number;            // box 18 — dividend income (after tax)
+  estateDividend75?: number;          // box 18.1 — dividend income taxed at 7.5%, after tax taken off
+  estateNonSavingsNonRepayable?: number; // box 19 — non-savings income taxed at non-repayable basic rate
+  // Foreign estates — the shared breakdown drives boxes 22 / 23 / 24
+  foreignEstates?: EstateForeignItem[];
+  foreignEstateFig?: number;          // box 22.1 — amount claimed under the FIG regime
+  estateResiPropertyIncome?: number;  // box 25 — residential property income
+  estateResiFinanceBfwd?: number;     // box 25.1 — unused residential finance costs brought forward
+  otherInformation?: string;          // box 26 — any other information
+}
+
 // One itemised dividend (UK company distribution) — the breakdown behind the
 // Dividends total on the SA100.
 export interface DividendItem {
@@ -765,8 +816,11 @@ export interface Sa100Income {
   signatoryAddress?: string;                // box 26 — signatory's address
   /** Brought-forward trade losses set against this year's trade profit. */
   tradeLossBroughtForward?: number;
-  /** SA107 — income from trusts, settlements and estates. */
+  /** SA107 — income from trusts, settlements and estates. `trusts` is the legacy
+   *  simplified per-source model (still summed into the tax); `sa107` is the full
+   *  box-for-box supplementary page. */
   trusts?: TrustEstateSource[];
+  sa107?: Sa107;
   /** SA109 — residence, domicile & remittance basis. Claiming the remittance
    *  basis withdraws the personal allowance and the CGT annual exempt amount. */
   residence?: {

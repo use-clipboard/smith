@@ -2,11 +2,18 @@
 
 import { fileToBase64, readFileAsText, compressImage } from '@/utils/fileUtils';
 import { countryLabel } from './countries';
-import type { Sa100Income, ForeignRow, ForeignProperty } from './types';
+import type { Sa100Income, ForeignRow, ForeignProperty, Sa107 } from './types';
 
 /** Which SA106 table a foreign income line belongs to. */
 export type ForeignCategory = 'interest' | 'dividends' | 'pension' | 'property' | 'other';
 const FOREIGN_CATS = new Set<ForeignCategory>(['interest', 'dividends', 'pension', 'property', 'other']);
+
+/** Which SA107 area a scanned trust/estate income line belongs to. */
+export type TrustCategory = 'discretionaryTrust' | 'nonDiscTrust' | 'ukEstate';
+const TRUST_CATS = new Set<TrustCategory>(['discretionaryTrust', 'nonDiscTrust', 'ukEstate']);
+const TRUST_CAT_LABEL: Record<TrustCategory, string> = {
+  discretionaryTrust: 'Discretionary trust income', nonDiscTrust: 'Trust income', ukEstate: 'Estate income',
+};
 
 export interface Sa100Extraction {
   documents: { fileName: string; docType: string; summary: string }[];
@@ -29,6 +36,8 @@ export interface Sa100Extraction {
   foreignItems: { country: string; category: ForeignCategory; income: number; foreignTax: number }[];
   foreignDividends: number;    // box 6 — foreign dividends (≤ £500) on the main return
   foreignDividendsTax: number; // box 7 — tax taken off those
+  /** Trust / estate income lines (SA107), each routed to the right area. */
+  trustEstate: { source: string; category: TrustCategory; nonSavings: number; savings: number; dividend: number }[];
   otherIncome: number;
   giftAid: number;
   pensionContributions: number;
@@ -59,6 +68,7 @@ function normalise(raw: unknown): Sa100Extraction {
   const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
   const str = (v: unknown): string | undefined => (v != null ? String(v) : undefined);
   const cat = (v: unknown): ForeignCategory => (FOREIGN_CATS.has(v as ForeignCategory) ? v as ForeignCategory : 'other');
+  const tcat = (v: unknown): TrustCategory => (TRUST_CATS.has(v as TrustCategory) ? v as TrustCategory : 'ukEstate');
   return {
     documents: arr(e.documents),
     employment: arr<Sa100Extraction['employment'][number]>(e.employment).map(x => ({ employer: String(x?.employer ?? ''), pay: num(x?.pay), taxDeducted: num(x?.taxDeducted), benefits: num(x?.benefits), expenses: num(x?.expenses) })),
@@ -71,6 +81,7 @@ function normalise(raw: unknown): Sa100Extraction {
     pensionsIncome: num(e.pensionsIncome), statePension: num(e.statePension),
     foreignItems: arr<Sa100Extraction['foreignItems'][number]>(e.foreignItems).map(x => ({ country: String(x?.country ?? ''), category: cat(x?.category), income: num(x?.income), foreignTax: num(x?.foreignTax) })).filter(x => x.income > 0 || x.foreignTax > 0),
     foreignDividends: num(e.foreignDividends), foreignDividendsTax: num(e.foreignDividendsTax),
+    trustEstate: arr<Sa100Extraction['trustEstate'][number]>(e.trustEstate).map(x => ({ source: String(x?.source ?? ''), category: tcat(x?.category), nonSavings: num(x?.nonSavings), savings: num(x?.savings), dividend: num(x?.dividend) })).filter(x => x.nonSavings > 0 || x.savings > 0 || x.dividend > 0),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
@@ -92,14 +103,14 @@ export async function fetchExtraction(taxYear: string, files: EncodedFile[]): Pr
 /** True if the extraction found anything importable. */
 export function extractionHasData(e: Sa100Extraction): boolean {
   return e.employment.length > 0 || e.selfEmployment.length > 0 || e.partnerships.length > 0 || e.property.length > 0
-    || e.foreignItems.length > 0 || e.taxedInterestList.length > 0 || e.dividendList.length > 0
+    || e.foreignItems.length > 0 || e.taxedInterestList.length > 0 || e.dividendList.length > 0 || e.trustEstate.length > 0
     || [e.dividends, e.savingsInterest, e.pensionsIncome, e.statePension, e.foreignDividends, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
 }
 
 // ── Scan-review proposals (the editable left panel of the review lightbox) ─────
 export type ScanDest =
   | 'employment' | 'selfEmployment' | 'partnership' | 'property' | 'dividends'
-  | 'savingsInterest' | 'pensionsIncome' | 'statePension' | 'foreign' | 'giftAid'
+  | 'savingsInterest' | 'pensionsIncome' | 'statePension' | 'foreign' | 'trusts' | 'giftAid'
   | 'pensionContributions' | 'otherIncome' | 'childBenefit' | 'exclude';
 
 /** The destinations a scanned figure can be sent to (the reassignment dropdown). */
@@ -109,6 +120,7 @@ export const SCAN_DESTS: { value: ScanDest; label: string }[] = [
   { value: 'partnership', label: 'Partnership (SA104)' },
   { value: 'property', label: 'UK property (SA105)' },
   { value: 'foreign', label: 'Foreign income (SA106)' },
+  { value: 'trusts', label: 'Trusts & estates (SA107)' },
   { value: 'dividends', label: 'Dividends' },
   { value: 'savingsInterest', label: 'Savings interest' },
   { value: 'pensionsIncome', label: 'Pension income' },
@@ -129,7 +141,7 @@ const NON_INCOME_FIELDS = new Set(['taxDeducted', 'expenses', 'capitalAllowances
 export const isIncomeField = (field?: string): boolean => !field || !NON_INCOME_FIELDS.has(field);
 
 /** Extra context carried on a grouped source's primary row (drives reassembly). */
-export interface ScanProposalMeta { name?: string; address?: string; residential?: boolean; country?: string; category?: ForeignCategory }
+export interface ScanProposalMeta { name?: string; address?: string; residential?: boolean; country?: string; category?: ForeignCategory; trustCategory?: TrustCategory }
 
 /** One editable proposed entry on the review lightbox's left panel. */
 export interface ScanProposal {
@@ -238,6 +250,16 @@ export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
     ]);
   });
 
+  // Trusts & estates (SA107) — income by type, routed to the right area.
+  e.trustEstate.forEach(x => {
+    const who = x.source || 'trust / estate';
+    pushGroup('trusts', { name: who, trustCategory: x.category }, [
+      { field: 'trustNonSavings', label: `${TRUST_CAT_LABEL[x.category]} — ${who}`, amount: x.nonSavings, primary: true },
+      { field: 'trustSavings', label: `Savings income — ${who}`, amount: x.savings },
+      { field: 'trustDividend', label: `Dividend income — ${who}`, amount: x.dividend },
+    ]);
+  });
+
   // Interest & dividends and the reliefs — scalar / itemised income lines.
   if (e.dividendList.length) e.dividendList.forEach(x => push(`Dividend — ${x.company || 'company'}`, x.amount, 'dividends'));
   else if (e.dividends) push('Dividends', e.dividends, 'dividends');
@@ -265,7 +287,7 @@ export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
 }
 
 function emptyExtraction(): Sa100Extraction {
-  return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, taxedInterestList: [], pensionsIncome: 0, statePension: 0, foreignItems: [], foreignDividends: 0, foreignDividendsTax: 0, otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
+  return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, taxedInterestList: [], pensionsIncome: 0, statePension: 0, foreignItems: [], foreignDividends: 0, foreignDividendsTax: 0, trustEstate: [], otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
 }
 
 // ── Ask-SMITH chat (Phase 2) — proposed edits the user applies one-click ──────
@@ -345,6 +367,7 @@ export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[
   each('partnership', (f, meta) => e.partnerships.push({ name: meta.name || 'Partnership', profit: f.profit || 0, taxTaken: f.taxTaken || 0, cis: f.cis || 0 }));
   each('property', (f, meta) => e.property.push({ address: meta.address || 'Property', rents: f.rents || 0, expPremises: f.expPremises || 0, expRepairs: f.expRepairs || 0, expFinance: f.expFinance || 0, expProfessional: f.expProfessional || 0, expOther: f.expOther || 0, netProfit: f.netProfit || 0, residential: meta.residential !== false }));
   each('foreign', (f, meta) => e.foreignItems.push({ country: meta.country || '', category: meta.category || 'other', income: f.foreignIncome || 0, foreignTax: f.foreignTax || 0 }));
+  each('trusts', (f, meta) => e.trustEstate.push({ source: meta.name || 'Trust / estate', category: meta.trustCategory || 'ukEstate', nonSavings: f.trustNonSavings || 0, savings: f.trustSavings || 0, dividend: f.trustDividend || 0 }));
   each('savingsInterest', (f, meta) => { if (f.taxedInterestNet != null || f.taxDeducted != null) e.taxedInterestList.push({ description: meta.name, net: f.taxedInterestNet || 0, tax: f.taxDeducted || 0 }); });
   each('dividends', f => { e.foreignDividends += f.foreignDividends || 0; e.foreignDividendsTax += f.foreignTax || 0; });
 
@@ -358,6 +381,7 @@ export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[
       case 'partnership': e.partnerships.push({ name: p.label, profit: amt, taxTaken: 0, cis: 0 }); break;
       case 'property': e.property.push({ address: p.label, rents: 0, expPremises: 0, expRepairs: 0, expFinance: 0, expProfessional: 0, expOther: 0, netProfit: amt, residential: true }); break;
       case 'foreign': e.foreignItems.push({ country: '', category: 'other', income: amt, foreignTax: 0 }); break;
+      case 'trusts': e.trustEstate.push({ source: p.label, category: 'ukEstate', nonSavings: amt, savings: 0, dividend: 0 }); break;
       case 'dividends': e.dividendList.push({ company: p.label, amount: amt }); e.dividends += amt; break;
       case 'savingsInterest': e.savingsInterest += amt; break;
       case 'pensionsIncome': e.pensionsIncome += amt; break;
@@ -459,9 +483,26 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     foreign.properties = [...(foreign.properties ?? []).filter(x => !x.id.startsWith(xfPfx)), ...properties];
   }
 
+  // Trusts & estates → SA107 boxes (income.sa107), summed by area across the
+  // scanned lines. Scalar boxes take the scanned total when the scan found one.
+  let sa107 = income.sa107;
+  if (e.trustEstate.length) {
+    const d = { discretionaryNet: 0, nonDiscNonSavings: 0, nonDiscSavings: 0, nonDiscDividend: 0, estateNonSavings: 0, estateSavings: 0, estateDividend: 0 };
+    for (const t of e.trustEstate) {
+      if (t.category === 'discretionaryTrust') d.discretionaryNet += t.nonSavings;
+      else if (t.category === 'nonDiscTrust') { d.nonDiscNonSavings += t.nonSavings; d.nonDiscSavings += t.savings; d.nonDiscDividend += t.dividend; }
+      else { d.estateNonSavings += t.nonSavings; d.estateSavings += t.savings; d.estateDividend += t.dividend; }
+    }
+    sa107 = { ...(income.sa107 ?? {}) };
+    const put = (k: keyof Sa107, v: number) => { if (v > 0) (sa107 as Record<string, number>)[k] = r(v); };
+    put('discretionaryNet', d.discretionaryNet);
+    put('nonDiscNonSavings', d.nonDiscNonSavings); put('nonDiscSavings', d.nonDiscSavings); put('nonDiscDividend', d.nonDiscDividend);
+    put('estateNonSavings', d.estateNonSavings); put('estateSavings', d.estateSavings); put('estateDividend', d.estateDividend);
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),

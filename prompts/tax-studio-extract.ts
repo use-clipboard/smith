@@ -20,6 +20,7 @@ Common documents and what to take:
 - Private pension statements: taxable pension income received (→ "pensionsIncome"); and, SEPARATELY, any personal pension CONTRIBUTIONS the taxpayer paid (relief at source, net amount → "pensionContributions").
 - State pension letter (DWP): the total STATE pension received in the year (→ "statePension", separate from private pensions).
 - Gift Aid receipts: net donations paid (→ "giftAid").
+- Trust / estate income (R185 statements — "Statement of income from trust" or "…from estate"): list EACH source SEPARATELY in "trustEstate" — one entry per statement with the "source" (trust/estate name), a "category" of exactly one of "discretionaryTrust" (a discretionary payment received net of 45% tax), "nonDiscTrust" (a non-discretionary income entitlement from a trust) or "ukEstate" (income from a deceased person's estate), and the net income split by type into "nonSavings", "savings" and "dividend". For a discretionary payment put the single net amount in "nonSavings".
 - Child Benefit award notice: the total child benefit received in the year (→ "childBenefit", for the HICBC).
 - SA302 / HMRC tax calculation: use only as a cross-check — do NOT double count figures already taken from source documents.
 
@@ -51,6 +52,7 @@ Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
   "foreignItems": [{ "country": string, "category": "interest" | "dividends" | "pension" | "property" | "other", "income": number, "foreignTax": number }],
   "foreignDividends": number,
   "foreignDividendsTax": number,
+  "trustEstate": [{ "source": string, "category": "discretionaryTrust" | "nonDiscTrust" | "ukEstate", "nonSavings": number, "savings": number, "dividend": number }],
   "otherIncome": number,
   "giftAid": number,
   "pensionContributions": number,

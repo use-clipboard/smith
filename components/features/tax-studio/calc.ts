@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106 } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -36,6 +36,48 @@ export function trustTotals(income: Sa100Income): {
       taxCredit += t.taxPaid || 0;
     }
   }
+  // Fold in the full box-for-box SA107 page (income.sa107) alongside the legacy
+  // per-source list, so both feed the computation.
+  const s = sa107Totals(income);
+  return { nonSavings: nonSavings + s.nonSavings, savings: savings + s.savings, dividend: dividend + s.dividend, taxCredit: taxCredit + s.taxCredit };
+}
+
+/** Column totals of the shared "Foreign estate" breakdown (SA107 boxes 22/23/24). */
+export function estateForeignTotals(items?: EstateForeignItem[]): { income: number; foreignTax: number; ukTaxWithheld: number } {
+  let income = 0, foreignTax = 0, ukTaxWithheld = 0;
+  for (const it of items ?? []) { income += it.income || 0; foreignTax += it.foreignTax || 0; ukTaxWithheld += it.ukTaxWithheld || 0; }
+  return { income, foreignTax, ukTaxWithheld };
+}
+
+/** Split the full SA107 page (income.sa107) by UK treatment, mirroring
+ *  `trustTotals`. Discretionary trust income (box 1) is received net of the 45%
+ *  trust rate and grossed up (a creditable tax credit); the other "net amount"
+ *  boxes are added at their entered value and their explicit tax boxes (15/23/24)
+ *  feed the credit. Finer per-rate gross-up of the estate/settlor boxes is left
+ *  as entered (deferred), matching how the niche SA106 trust boxes are handled. */
+export function sa107Totals(income: Sa100Income): { nonSavings: number; savings: number; dividend: number; taxCredit: number } {
+  const s: Sa107 | undefined = income.sa107;
+  if (!s) return { nonSavings: 0, savings: 0, dividend: 0, taxCredit: 0 };
+  const p = (v?: number) => v || 0;
+  let nonSavings = 0, savings = 0, dividend = 0, taxCredit = 0;
+  // Discretionary (box 1) — net of 45%, grossed up.
+  const discNet = p(s.discretionaryNet);
+  if (discNet) { const gross = discNet / 0.55; nonSavings += gross; taxCredit += gross - discNet; }
+  // Non-discretionary entitlement (boxes 3–5).
+  nonSavings += p(s.nonDiscNonSavings); savings += p(s.nonDiscSavings); dividend += p(s.nonDiscDividend);
+  // Income chargeable on settlors (boxes 7–14) — the settlor's own income.
+  nonSavings += p(s.settlorNonSavingsBasic) + p(s.settlorNonSavingsTrust) + p(s.settlorNonSavingsGross);
+  savings += p(s.settlorSavingsBasic) + p(s.settlorSavingsTrust) + p(s.settlorSavingsGross);
+  dividend += p(s.settlorDividend) + p(s.settlorDividendTrust);
+  taxCredit += p(s.lifeAssuranceTaxPaid); // box 15
+  // UK estates (boxes 16–19).
+  nonSavings += p(s.estateNonSavings) + p(s.estateNonSavingsNonRepayable);
+  savings += p(s.estateSavings);
+  dividend += p(s.estateDividend) + p(s.estateDividend75);
+  // Foreign estates (boxes 22–25) + the UK-tax / foreign-tax credits (23/24).
+  const fe = estateForeignTotals(s.foreignEstates);
+  nonSavings += fe.income + p(s.estateResiPropertyIncome);
+  taxCredit += fe.foreignTax + fe.ukTaxWithheld;
   return { nonSavings, savings, dividend, taxCredit };
 }
 

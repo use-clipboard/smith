@@ -22,7 +22,7 @@ import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -189,7 +189,17 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     })(),
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
-    trusts: (income.trusts ?? []).length,
+    trusts: (() => {
+      const legacy = (income.trusts ?? []).length;
+      const sa = income.sa107;
+      if (!sa) return legacy;
+      const boxes = [sa.discretionaryNet, sa.settlorInterestedPayments, sa.nonDiscNonSavings, sa.nonDiscSavings, sa.nonDiscDividend, sa.trusteesNonResident,
+        sa.settlorNonSavingsBasic, sa.settlorSavingsBasic, sa.settlorDividend, sa.settlorNonSavingsTrust, sa.settlorSavingsTrust, sa.settlorDividendTrust,
+        sa.settlorNonSavingsGross, sa.settlorSavingsGross, sa.lifeAssuranceTaxPaid, sa.estateNonSavings, sa.estateSavings, sa.estateDividend, sa.estateDividend75,
+        sa.estateNonSavingsNonRepayable, sa.foreignEstateFig, sa.estateResiPropertyIncome, sa.estateResiFinanceBfwd, sa.otherInformation]
+        .filter(v => (typeof v === 'number' ? v !== 0 : !!v)).length + (sa.foreignEstates?.length ?? 0);
+      return legacy + boxes;
+    })(),
     residence: income.residence && (income.residence.remittanceBasis || (income.residence.status && income.residence.status !== 'resident') || income.residence.domicile === 'non-uk' || (income.residence.daysInUk || 0) > 0) ? 1 : 0,
     additional: income.additional && [
       income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
@@ -379,7 +389,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
       {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
-      {page === 'trusts' && <TrustsPage income={income} setIncome={setIncome} />}
+      {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
       {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
@@ -2402,6 +2412,136 @@ function ResidencePage({ income, setIncome }: { income: Sa100Income; setIncome: 
         Claim the remittance basis
       </label>
       <p className="text-[10.5px] text-[var(--text-muted)]">Claiming the remittance basis withdraws the personal allowance and the £3,000 CGT annual exempt amount. The remittance basis was replaced by the FIG regime from 6 April 2025 — transitional rules may apply. Split-year / non-resident income apportionment isn’t modelled here.</p>
+    </div>
+  );
+}
+
+// ── SA107 Trusts & estates — full box-for-box page (Capium layout) ────────────
+const SA107_TABS = ['Income from Trusts', 'Income from the estates'] as const;
+const SA107_SUBTABS: Record<string, string[]> = {
+  'Income from Trusts': ['Discretionary income', 'Non-discretionary income', 'Income chargeable'],
+  'Income from the estates': ['Income from UK estates', 'Income from foreign estates', 'Foreign tax paid on estate income'],
+};
+const estateRid = () => `ef-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+const ESTATE_FGN_COLS: BreakdownColumn<EstateForeignItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'income', label: 'Income', kind: 'number', total: true },
+  { key: 'foreignTax', label: 'Foreign tax', kind: 'number', total: true },
+  { key: 'ukTaxWithheld', label: 'UK Tax withheld', kind: 'number', total: true },
+];
+
+// Entry count shown in brackets on a Trusts sub-tab heading (0 = no badge).
+function sa107SubCount(sa: Sa107, sub: string): number {
+  const c = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : !!v)).length;
+  switch (sub) {
+    case 'Discretionary income': return c([sa.discretionaryNet, sa.settlorInterestedPayments]);
+    case 'Non-discretionary income': return c([sa.nonDiscNonSavings, sa.nonDiscSavings, sa.nonDiscDividend, sa.trusteesNonResident]);
+    case 'Income chargeable': return c([sa.settlorNonSavingsBasic, sa.settlorSavingsBasic, sa.settlorDividend, sa.settlorNonSavingsTrust, sa.settlorSavingsTrust, sa.settlorDividendTrust, sa.settlorNonSavingsGross, sa.settlorSavingsGross, sa.lifeAssuranceTaxPaid]);
+    case 'Income from UK estates': return c([sa.estateNonSavings, sa.estateSavings, sa.estateDividend, sa.estateDividend75, sa.estateNonSavingsNonRepayable]);
+    case 'Income from foreign estates': return (sa.foreignEstates?.length ?? 0) + c([sa.foreignEstateFig]);
+    case 'Foreign tax paid on estate income': return c([sa.estateResiPropertyIncome, sa.estateResiFinanceBfwd, sa.otherInformation]);
+  }
+  return 0;
+}
+
+function Sa107Page({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const sa: Sa107 = income.sa107 ?? {};
+  const set = (u: Partial<Sa107>) => setIncome(i => ({ ...i, sa107: { ...i.sa107, ...u } }));
+  const [tab, setTab] = useState<string>('Income from Trusts');
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (SA107_TABS as readonly string[]).includes(tab) ? tab : SA107_TABS[0];
+  const subList = SA107_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+  const estates = sa.foreignEstates ?? [];
+  const legacy = (income.trusts ?? []).length > 0;
+  return (
+    <div className="space-y-3">
+      {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">You have legacy trust / estate sources (still counted in the tax) below. Re-enter them box-for-box above to file from the SA107 page, then clear the old ones.</p>}
+      {/* Top tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
+        {SA107_TABS.map(tt => (
+          <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}</button>
+        ))}
+      </div>
+      {/* Sub tabs */}
+      <div className="flex flex-wrap gap-1 px-0.5">
+        {subList.map((st, i) => {
+          const cnt = sa107SubCount(sa, st);
+          return (
+            <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{cnt > 0 && <span className="font-bold"> ({cnt})</span>}</button>
+          );
+        })}
+      </div>
+
+      {/* ── Income from Trusts ── */}
+      {subName === 'Discretionary income' && (
+        <StudioCard className="p-4"><BoxSection title="Discretionary income payment from a UK resident trust">
+          <BoxNum box={1} label="Net amount" value={sa.discretionaryNet ?? 0} onChange={v => set({ discretionaryNet: v })} />
+          <BoxNum box={2} label="Total payments from settlor-interested trusts" value={sa.settlorInterestedPayments ?? 0} onChange={v => set({ settlorInterestedPayments: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Non-discretionary income' && (
+        <StudioCard className="p-4"><BoxSection title="Non-discretionary income entitlement from a trust">
+          <BoxNum box={3} label="Net amount of non-savings income" value={sa.nonDiscNonSavings ?? 0} onChange={v => set({ nonDiscNonSavings: v })} />
+          <BoxNum box={4} label="Net amount of savings income" value={sa.nonDiscSavings ?? 0} onChange={v => set({ nonDiscSavings: v })} />
+          <BoxNum box={5} label="Net amount of dividend income" value={sa.nonDiscDividend ?? 0} onChange={v => set({ nonDiscDividend: v })} />
+          <BoxCheck box={6} label="Trustees not resident in the UK for tax purposes?" checked={!!sa.trusteesNonResident} onChange={v => set({ trusteesNonResident: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Income chargeable' && (
+        <StudioCard className="p-4"><BoxSection title="Income chargeable on settlors">
+          <BoxNum box={7} label="Non-savings income taxed at basic rate (net amount)" value={sa.settlorNonSavingsBasic ?? 0} onChange={v => set({ settlorNonSavingsBasic: v })} />
+          <BoxNum box={8} label="Savings income taxed at basic rate (net amount)" value={sa.settlorSavingsBasic ?? 0} onChange={v => set({ settlorSavingsBasic: v })} />
+          <BoxNum box={9} label="Dividends income taxed at dividend rate (net amount)" value={sa.settlorDividend ?? 0} onChange={v => set({ settlorDividend: v })} />
+          <BoxNum box={10} label="Non-savings income taxed at trust rate (net amount)" value={sa.settlorNonSavingsTrust ?? 0} onChange={v => set({ settlorNonSavingsTrust: v })} />
+          <BoxNum box={11} label="Savings income taxed at trust rate (net amount)" value={sa.settlorSavingsTrust ?? 0} onChange={v => set({ settlorSavingsTrust: v })} />
+          <BoxNum box={12} label="Dividend income taxed at trust rate (net amount)" value={sa.settlorDividendTrust ?? 0} onChange={v => set({ settlorDividendTrust: v })} />
+          <BoxNum box={13} label="Non-savings income paid gross" value={sa.settlorNonSavingsGross ?? 0} onChange={v => set({ settlorNonSavingsGross: v })} />
+          <BoxNum box={14} label="Savings income paid gross" value={sa.settlorSavingsGross ?? 0} onChange={v => set({ settlorSavingsGross: v })} />
+          <BoxNum box={15} label="Tax paid on certain UK life assurance policies" value={sa.lifeAssuranceTaxPaid ?? 0} onChange={v => set({ lifeAssuranceTaxPaid: v })} />
+        </BoxSection></StudioCard>
+      )}
+
+      {/* ── Income from the estates ── */}
+      {subName === 'Income from UK estates' && (
+        <StudioCard className="p-4"><BoxSection title="Income from United Kingdom (UK) estates">
+          <BoxNum box={16} label="Non savings income (after tax)" value={sa.estateNonSavings ?? 0} onChange={v => set({ estateNonSavings: v })} />
+          <BoxNum box={17} label="Savings income (after tax)" value={sa.estateSavings ?? 0} onChange={v => set({ estateSavings: v })} />
+          <BoxNum box={18} label="Dividend income (after tax)" value={sa.estateDividend ?? 0} onChange={v => set({ estateDividend: v })} />
+          <BoxNum box="18.1" label="Dividend income that has been taxed at 7.5%, after tax taken off" value={sa.estateDividend75 ?? 0} onChange={v => set({ estateDividend75: v })} />
+          <BoxNum box={19} label="Non-savings income taxed at non-repayable basic rate" value={sa.estateNonSavingsNonRepayable ?? 0} onChange={v => set({ estateNonSavingsNonRepayable: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Income from foreign estates' && (
+        <StudioCard className="p-4"><BoxSection title="Income from foreign estates">
+          <BreakdownField box={22} label="Foreign estate income" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.income || 0} />
+          <BoxNum box="22.1" label="Amount claimed under the foreign income and gains (FIG) regime" help={FGN.fig} value={sa.foreignEstateFig ?? 0} onChange={v => set({ foreignEstateFig: v })} />
+          <BreakdownField box={23} label="Relief for UK tax already accounted for" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.ukTaxWithheld || 0} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Foreign tax paid on estate income' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Foreign tax paid on estate income">
+            <BreakdownField box={24} label="Foreign Tax Credit Relief has not been claimed" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.foreignTax || 0} />
+          </BoxSection>
+          <BoxSection title="Residential property income">
+            <BoxNum box={25} label="Residential property income" help={PROP.residentialFinanceCosts} value={sa.estateResiPropertyIncome ?? 0} onChange={v => set({ estateResiPropertyIncome: v })} />
+            <BoxNum box="25.1" label="Unused residential finance costs brought forward" value={sa.estateResiFinanceBfwd ?? 0} onChange={v => set({ estateResiFinanceBfwd: v })} />
+          </BoxSection>
+          <div>
+            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">26</span> Any other information</label>
+            <textarea value={sa.otherInformation ?? ''} onChange={e => set({ otherInformation: e.target.value })} rows={3} className="input-base w-full py-1.5 text-[12.5px]" placeholder="Please give any other information in this space" />
+          </div>
+        </StudioCard>
+      )}
+
+      {legacy && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Legacy sources</p>
+          <TrustsPage income={income} setIncome={setIncome} />
+        </div>
+      )}
     </div>
   );
 }
