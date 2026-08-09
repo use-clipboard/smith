@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106 } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -228,19 +228,75 @@ export function otherIncomeTaxCredit(income: Sa100Income): number {
 export function foreignTotals(income: Sa100Income): {
   interest: number; dividends: number; other: number; taxClaimed: number; incomeClaimed: number;
 } {
-  const sources = income.foreign?.sources ?? [];
-  if (!sources.length) {
-    const inc = income.foreign?.income || 0, tax = income.foreign?.foreignTaxPaid || 0;
-    return { interest: 0, dividends: 0, other: inc, taxClaimed: tax, incomeClaimed: inc };
+  const sa = income.foreign;
+  const hasNew = !!(sa && (sa.interest?.length || sa.dividends?.length || sa.pensions?.length || sa.remittedExcl?.length
+    || sa.remittedDividends?.length || sa.otherDividend?.length || sa.otherAll?.length || sa.properties?.length
+    || sa.foreignTaxRows?.length || sa.ftcrOnIncome));
+  if (!hasNew) {
+    // Legacy path — old itemised sources, or the scalar income/foreignTaxPaid bucket.
+    const sources = sa?.sources ?? [];
+    if (!sources.length) {
+      const inc = sa?.income || 0, tax = sa?.foreignTaxPaid || 0;
+      return { interest: 0, dividends: 0, other: inc, taxClaimed: tax, incomeClaimed: inc };
+    }
+    let interest = 0, dividends = 0, other = 0, taxClaimed = 0, incomeClaimed = 0;
+    for (const f of sources) {
+      if (f.category === 'interest') interest += f.income;
+      else if (f.category === 'dividends') dividends += f.income;
+      else other += f.income;
+      if (f.claimFtcr !== false) { taxClaimed += f.foreignTaxPaid; incomeClaimed += f.income; }
+    }
+    return { interest, dividends, other, taxClaimed, incomeClaimed };
   }
-  let interest = 0, dividends = 0, other = 0, taxClaimed = 0, incomeClaimed = 0;
-  for (const f of sources) {
-    if (f.category === 'interest') interest += f.income;
-    else if (f.category === 'dividends') dividends += f.income;
-    else other += f.income;
-    if (f.claimFtcr !== false) { taxClaimed += f.foreignTaxPaid; incomeClaimed += f.income; }
+  // New SA106 structured path. Interest → savings rates, dividend tables →
+  // dividend rates, pensions/remitted/other + foreign property → other income.
+  const T = foreignTableTotals;
+  const interest = T(sa!.interest).taxable;
+  const dividends = T(sa!.dividends).taxable + T(sa!.remittedDividends).taxable + T(sa!.otherDividend).taxable;
+  const propTaxable = foreignPropertyTotals(sa).taxableProfit;
+  const other = T(sa!.pensions).taxable + T(sa!.remittedExcl).taxable + T(sa!.otherAll).taxable + propTaxable;
+  const ftcr = T(sa!.interest).ftcr + T(sa!.dividends).ftcr + T(sa!.remittedDividends).ftcr + T(sa!.otherDividend).ftcr
+    + T(sa!.pensions).ftcr + T(sa!.remittedExcl).ftcr + T(sa!.otherAll).ftcr + T(sa!.foreignTaxRows).ftcr + (sa!.ftcrOnIncome || 0);
+  return { interest, dividends, other, taxClaimed: ftcr, incomeClaimed: interest + dividends + other };
+}
+
+// ── SA106 foreign helpers (country-row tables + foreign property) ────────────
+/** F — taxable amount for a foreign income row (= income arising). */
+export function foreignRowTaxable(r: ForeignRow): number { return r.incomeArising || 0; }
+/** Column totals for a foreign income table: SWT (D), taxable (F), foreign tax
+ *  (C) and the FTCR-claimed portion of it. */
+export function foreignTableTotals(rows?: ForeignRow[]): { swt: number; taxable: number; foreignTax: number; ftcr: number } {
+  let swt = 0, taxable = 0, foreignTax = 0, ftcr = 0;
+  for (const r of rows ?? []) {
+    swt += r.specialWithholding || 0;
+    taxable += foreignRowTaxable(r);
+    foreignTax += r.foreignTax || 0;
+    if (r.creditRelief) ftcr += r.foreignTax || 0;
   }
-  return { interest, dividends, other, taxClaimed, incomeClaimed };
+  return { swt, taxable, foreignTax, ftcr };
+}
+const FP_ALLOW = ['capitalAllowances', 'zeroEmissionCar', 'sba', 'electricChargepoint', 'domesticItems'] as const;
+/** box 18 — net profit/loss for a foreign property (allowance replaces expenses). */
+export function foreignPropertyNet(p: ForeignProperty): number {
+  if ((p.propertyIncomeAllowance || 0) > 0) return (p.totalRents || 0) + (p.premiumsPaid || 0) - (p.propertyIncomeAllowance || 0);
+  return (p.totalRents || 0) + (p.premiumsPaid || 0) - (p.expenses || 0);
+}
+/** box 24 — adjusted profit (+) or loss (−) for a foreign property. */
+export function foreignPropertyAdjusted(p: ForeignProperty): number {
+  if ((p.propertyIncomeAllowance || 0) > 0) return foreignPropertyNet(p);
+  const allow = FP_ALLOW.reduce((a, k) => a + (p[k] || 0), 0);
+  return foreignPropertyNet(p) + (p.privateUse || 0) + (p.balancingCharges || 0) - allow;
+}
+/** Foreign-property section totals: box 25 adjusted, box 27 taxable profit, box 32 loss c/fwd. */
+export function foreignPropertyTotals(sa: Sa106 | undefined): { adjusted: number; taxableProfit: number; lossCf: number } {
+  const props = sa?.properties ?? [];
+  const adjusted = props.reduce((a, p) => a + foreignPropertyAdjusted(p), 0);
+  const lossBf = sa?.propLossBroughtForward || 0, lossSetOff = sa?.propLossSetOff || 0;
+  return {
+    adjusted,
+    taxableProfit: Math.max(0, adjusted - lossBf),          // box 27
+    lossCf: Math.max(0, Math.max(0, -adjusted) - lossSetOff), // box 32
+  };
 }
 
 // ── SA102 employment helpers ─────────────────────────────────────────────────

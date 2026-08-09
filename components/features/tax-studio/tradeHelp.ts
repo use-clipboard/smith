@@ -217,3 +217,20 @@ export const PROP = {
   lossCarryForward: 'The loss to carry forward to next year. Computed for you.',
   residentialFinanceCosts: 'Residential mortgage/loan interest — relieved as a 20% tax reducer, NOT deducted from profit. Enter the full amount here.',
 } as const;
+
+// ── Foreign (SA106) ──────────────────────────────────────────────────────────
+export const FGN = {
+  unremittable: 'Tick if you couldn’t bring some overseas income to the UK because of exchange controls or a shortage of foreign currency — it’s then taxed only when you can transfer it.',
+  ftcrOnIncome: 'Foreign Tax Credit Relief you’re claiming on your overseas income — a credit for foreign tax already paid, capped at the UK tax on the same income. SMITH totals the per-row claims for you.',
+  country: 'The country or territory the income came from — use HMRC’s SA106 notes for the code.',
+  incomeArising: 'The gross income arising in the country before any foreign tax — in £ sterling.',
+  foreignTax: 'Foreign tax actually taken off or paid on this income, in £ sterling.',
+  specialWithholding: 'Special Withholding Tax (e.g. under the EU Savings Directive) taken off at source — credited against your UK bill.',
+  creditRelief: 'Tick to claim Foreign Tax Credit Relief on this row — a credit for the foreign tax, capped at the UK tax on the same income. Leave unticked to instead deduct the foreign tax from the income.',
+  propAllowance: 'The £1,000 property income allowance — claim it instead of actual expenses when expenses are under £1,000. You cannot claim both.',
+  cgUkGain: 'The chargeable gain on the foreign asset worked out under UK rules.',
+  cgForeignGain: 'The chargeable gain worked out under the other country’s tax rules — used to work out the credit relief.',
+  lifeGains: 'Gains on foreign life insurance policies, capital redemption policies and life annuity contracts.',
+  lifeYears: 'The number of complete years the policy was held — used for top-slicing relief.',
+  fig: 'Amount of this income you’re claiming under the Foreign Income and Gains (FIG) regime as a qualifying new UK resident.',
+} as const;

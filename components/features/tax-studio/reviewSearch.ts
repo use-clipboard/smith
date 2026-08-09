@@ -75,6 +75,14 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Property expenses', context: 'Property · boxes 24–29', page: 'property', keywords: 'rent rates insurance repairs loan interest legal management services other box 24 25 26 27 28 29' },
   { label: 'Property allowances & taxable profit', context: 'Property · boxes 30–43', page: 'property', keywords: 'private use balancing aia sba capital allowances domestic items adjusted taxable profit loss box 30 38 40 41 43' },
   { label: 'Residential property finance costs', context: 'Property · boxes 44–45', page: 'property', keywords: 'residential finance costs mortgage interest 20% reducer box 44 45' },
+  // Foreign (SA106)
+  { label: 'Unremittable income / FTCR on income', context: 'Foreign · boxes 1–2', page: 'foreign', keywords: 'unremittable foreign tax credit relief ftcr box 1 2' },
+  { label: 'Foreign interest & other income', context: 'Foreign · Overseas income', page: 'foreign', keywords: 'foreign interest savings overseas income arising box 3 4 country' },
+  { label: 'Foreign dividends', context: 'Foreign · Overseas income', page: 'foreign', keywords: 'foreign dividends companies remitted box 6 7' },
+  { label: 'Foreign pensions', context: 'Foreign · Overseas income', page: 'foreign', keywords: 'overseas pensions social security royalties box 8 9' },
+  { label: 'Foreign land & property', context: 'Foreign · boxes 14–32', page: 'foreign', keywords: 'foreign property rents overseas letting abroad box 14 18 24 27 32' },
+  { label: 'Foreign tax paid / capital gains', context: 'Foreign · boxes 33–46', page: 'foreign', keywords: 'foreign tax paid capital gains life insurance ftcr box 33 39 43 46' },
+  { label: 'Non-resident trusts / Transfer of Assets', context: 'Foreign · boxes 49–64', page: 'foreign', keywords: 'non-resident trusts transfer of assets abroad settlements fig box 49 54 58 62 64' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

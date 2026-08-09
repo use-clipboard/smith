@@ -478,6 +478,117 @@ export interface ForeignSource {
   claimFtcr?: boolean;    // claim Foreign Tax Credit Relief (default true)
 }
 
+// SA106 Foreign — the recurring country-income row (columns A–F on every
+// "overseas income" sub-table). F (taxable amount) is computed.
+export interface ForeignRow {
+  id: string;
+  country?: string;          // A — country/territory code
+  incomeArising?: number;    // B — income arising
+  foreignTax?: number;       // C — foreign tax taken off or paid
+  specialWithholding?: number; // D — special withholding tax
+  creditRelief?: boolean;    // E — claim Foreign Tax Credit Relief on this row
+  // F — taxable amount (computed = incomeArising)
+}
+
+// SA106 foreign land & property, per property (a "foreign SA105"). Boxes 14–24.2.
+export interface ForeignProperty {
+  id: string;
+  country?: string;
+  // ── Income & Expenses (14–18) ──
+  totalRents?: number;              // 14 — total rents & receipts
+  propertyIncomeAllowance?: number; // 14.1 — property income allowance
+  traditionalAccounting?: boolean;  // 14.2 — traditional accounting
+  letProperties?: number;           // 15 — number of let properties
+  premiumsPaid?: number;            // 16 — premiums paid
+  expenses?: number;                // 17 — property expenses
+  // 18 — net profit or loss (computed)
+  // ── Calculate Taxable P&L (19–24.2) ──
+  privateUse?: number;              // 19 — private use adjustment
+  balancingCharges?: number;        // 20 — balancing charges
+  capitalAllowances?: number;       // 21 — capital allowances
+  zeroEmissionCar?: number;         // 21.1 — zero-emission car allowance
+  sba?: number;                     // 22.1 — Structures and Buildings Allowance
+  electricChargepoint?: number;     // 22.2 — electric charge-point allowance
+  domesticItems?: number;           // 23 — costs of replacing domestic items
+  // 24 — adjusted profit or loss (computed)
+  residentialFinanceCosts?: number; // 24.1 — residential property finance costs
+  unusedFinanceCostsBfwd?: number;  // 24.2 — unused residential finance costs b/fwd
+  // ── Summary (per country, C/D/E) ──
+  foreignTax?: number;              // C — foreign tax taken off or paid
+  ukTax?: number;                   // D — UK tax taken off
+  creditRelief?: boolean;           // E — claim credit relief
+}
+
+// SA106 Foreign — the whole supplementary page. Legacy fields (sources/income/
+// foreignTaxPaid) are retained so older returns and imports still compute.
+export interface Sa106 {
+  sources?: ForeignSource[];   // legacy itemised sources
+  income?: number;             // legacy scalar foreign income
+  foreignTaxPaid?: number;     // legacy scalar foreign tax
+  // ── Unremittable income (boxes 1–2) ──
+  unremittable?: boolean;      // box 1
+  ftcrOnIncome?: number;       // box 2 — Foreign Tax Credit Relief on income
+  // ── Overseas Income tables ──
+  interest?: ForeignRow[];             // Interest and other income (totals 3/4/4.1)
+  dividends?: ForeignRow[];            // Dividends from foreign companies
+  remittedExcl?: ForeignRow[];         // Remitted foreign income excluding dividends
+  remittedDividends?: ForeignRow[];    // Remitted foreign dividends (totals 7.3/7.4)
+  remittedDivSubjectToCredit?: number; // 7.5 — amount in 7.4 subject to dividend tax credit
+  pensions?: ForeignRow[];             // Overseas pensions etc. (totals 8/9)
+  otherDividend?: ForeignRow[];        // Other income — dividends by a person abroad (10/11/11.1)
+  otherAll?: ForeignRow[];             // Other income — all other by a person abroad (12/13/13.0)
+  otherResiFinanceCost?: number;       // 13.1 — residential finance cost
+  otherResiFinanceBfwd?: number;       // 13.2 — unused residential finance costs b/fwd
+  // ── Foreign land & property (boxes 14–32) ──
+  properties?: ForeignProperty[];
+  propLossBroughtForward?: number; // 26 — total loss brought forward
+  propLossSetOff?: number;         // 31 — loss set off against total income
+  // ── Foreign tax paid ──
+  foreignTaxRows?: ForeignRow[];   // "Foreign tax" country table (A/C/E/F)
+  // Capital gains (33–40)
+  cgUkGain?: number;      // 33
+  cgUkDays?: number;      // 34
+  cgForeignGain?: number; // 35
+  cgForeignDays?: number; // 36
+  cgForeignTax?: number;  // 37
+  cgClaimFtcr?: boolean;  // 38
+  cgFtcr?: number;        // 39
+  cgSwt?: number;         // 40 — special withholding tax
+  // Foreign life insurance (43–46)
+  lifeGains?: number;     // 43
+  lifeYears?: number;     // 44
+  lifeTaxPaid?: number;   // 45
+  lifeOmitted?: number;   // 46
+  // Non-resident trusts (49–57)
+  nrtResiProperty?: number;    // 49 — overseas resi property income for NR trust
+  nrtResiFinanceBfwd?: number; // 49.1 — unused overseas resi finance costs b/fwd re box 48
+  nrtSavings?: ForeignRow[];   // savings income in NR settlor-interested trusts (50/51/51.1)
+  nrtDividends?: ForeignRow[]; // dividend income in NR settlor-interested trusts (52/53/53.1)
+  nrtDiscretionary?: number;   // 54
+  nrtDiscretionaryFig?: number;// 54.1
+  nrtCapitalSums?: number;     // 55
+  nrtCapitalSumsFig?: number;  // 55.1
+  offshoreFundGains?: number;  // 56
+  offshoreFundGainsFig?: number; // 56.1
+  nonTradeIncome?: number;     // 57
+  nonTradeIncomeFig?: number;  // 57.1
+  // Transfer of Assets Abroad + Settlements (58–64)
+  toaaBenefits?: number;         // 58
+  toaaBenefitsFig?: number;      // 58.1
+  toaaTpiPfsi?: number;          // 59
+  toaaTpiPfsiFig?: number;       // 59.1
+  toaaCloseFamily?: number;      // 60
+  toaaCloseFamilyFig?: number;   // 60.1
+  toaaOnwardGifts?: number;      // 61
+  toaaOnwardGiftsFig?: number;   // 61.1
+  settleTtiPfsi?: number;        // 62
+  settleTtiPfsiFig?: number;     // 62.1
+  settleCloseFamily?: number;    // 63
+  settleCloseFamilyFig?: number; // 63.1
+  settleOnwardGifts?: number;    // 64
+  settleOnwardGiftsFig?: number; // 64.1
+}
+
 // SA108 Capital gains — one itemised disposal.
 export interface CgtDisposal {
   id: string;
@@ -530,11 +641,7 @@ export interface Sa100Income {
   otherPensionsBenefits?: number;           // box 16 — total of any other pensions & benefits
   /** SA106 — foreign income. Itemised `sources` (each routed to the right rate)
    *  take precedence; the single income/foreignTaxPaid bucket is a fallback. */
-  foreign?: {
-    sources?: ForeignSource[];
-    income?: number;
-    foreignTaxPaid?: number;
-  };
+  foreign?: Sa106;
   // ── Other UK income (SA100 TR3, boxes 17–21) ──
   otherIncome: number;                      // box 17 — other taxable income (scalar fallback)
   otherIncomeItems?: LineItem[];            // box 17 breakdown

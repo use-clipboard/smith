@@ -15,13 +15,13 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, trustTotals } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, Sa106, TrustEstateSource, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -1941,61 +1941,276 @@ function PropertyCard({ p, idx, onChange, onRemove }: {
   );
 }
 
+const FOREIGN_TABS = ['Unremittable income', 'Overseas Income', 'Income from Land and property', 'Foreign tax paid'] as const;
+const FOREIGN_SUBTABS: Record<string, string[]> = {
+  'Unremittable income': [],
+  'Overseas Income': ['Interest & other income', 'Dividends from foreign companies', 'Remitted income excl. dividends', 'Remitted foreign dividends', 'Pensions income', 'Other income'],
+  'Income from Land and property': ['Income & Expenses', 'Calculate Taxable P&L', 'Summary', 'Total P&L'],
+  'Foreign tax paid': ['Foreign tax', 'Capital gains', 'Foreign life insurance', 'Non-resident trusts', 'Transfer of Assets & Settlements'],
+};
+const foreignRid = (n: number) => `fr-${n}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
 function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const f = income.foreign ?? {};
-  const sources = f.sources ?? [];
-  const patchForeign = (u: Partial<NonNullable<Sa100Income['foreign']>>) => setIncome(i => ({ ...i, foreign: { ...i.foreign, ...u } }));
-  const setSources = (s: ForeignSource[]) => patchForeign({ sources: s });
-  const add = () => setSources([...sources, { id: `f-${sources.length}-${Date.now()}`, country: '', category: 'interest', income: 0, foreignTaxPaid: 0, claimFtcr: true }]);
+  const sa: Sa106 = income.foreign ?? {};
+  const set = (u: Partial<Sa106>) => setIncome(i => ({ ...i, foreign: { ...i.foreign, ...u } }));
+  const [tab, setTab] = useState<string>('Overseas Income');
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (FOREIGN_TABS as readonly string[]).includes(tab) ? tab : FOREIGN_TABS[0];
+  const subList = FOREIGN_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+  const legacy = !!(sa.sources?.length || sa.income || sa.foreignTaxPaid);
   return (
     <div className="space-y-3">
-      {sources.length === 0 && (
-        <div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <LabelledNum icon={Globe2} label="Foreign income" value={f.income ?? 0} onChange={v => patchForeign({ income: v })} />
-            <LabelledNum label="Foreign tax paid" value={f.foreignTaxPaid ?? 0} onChange={v => patchForeign({ foreignTaxPaid: v })} />
-          </div>
-          <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Quick summary (taxed as other income) — or add itemised sources below (they take precedence).</p>
+      {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Legacy foreign figures are still counted in the tax. Re-enter them in the boxes below to file box-for-box, then clear the old ones.</p>}
+      {/* Top tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
+        {FOREIGN_TABS.map(tt => (
+          <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}</button>
+        ))}
+      </div>
+      {/* Sub tabs */}
+      {subList.length > 0 && (
+        <div className="flex flex-wrap gap-1 px-0.5">
+          {subList.map((st, i) => (
+            <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}</button>
+          ))}
         </div>
       )}
-      {sources.map((s, idx) => (
-        <ForeignCard key={s.id} s={s} idx={idx}
-          onChange={u => setSources(sources.map((x, j) => j === idx ? { ...x, ...u } : x))}
-          onRemove={() => setSources(sources.filter((_, j) => j !== idx))} />
-      ))}
-      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add foreign source</button>
-      <p className="text-[10.5px] text-[var(--text-muted)]">Interest is taxed at savings rates, dividends at dividend rates, the rest as other income. Foreign Tax Credit Relief is applied automatically, capped at the UK tax on the same income.</p>
+
+      {/* ── Unremittable income ── */}
+      {activeTab === 'Unremittable income' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Unremittable income">
+            <BoxYesNo box={1} label="Unable to transfer any of your overseas income to the UK?" help={FGN.unremittable} value={!!sa.unremittable} onChange={v => set({ unremittable: v })} />
+          </BoxSection>
+          <BoxSection title="Foreign Tax Credit Relief">
+            <BoxNum box={2} label="Foreign Tax Credit Relief on your income" help={FGN.ftcrOnIncome} value={sa.ftcrOnIncome ?? 0} onChange={v => set({ ftcrOnIncome: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+
+      {/* ── Overseas Income ── */}
+      {subName === 'Interest & other income' && <ForeignIncomeTable title="Interest and other income" rows={sa.interest ?? []} onChange={r => set({ interest: r })} totalBoxes={{ swt: '3', taxable: '4' }} fig="4.1" figValue={0} />}
+      {subName === 'Dividends from foreign companies' && <ForeignIncomeTable title="Dividends from foreign companies" rows={sa.dividends ?? []} onChange={r => set({ dividends: r })} totalBoxes={{ taxable: '6' }} />}
+      {subName === 'Remitted income excl. dividends' && <ForeignIncomeTable title="Remitted foreign income excluding dividends" rows={sa.remittedExcl ?? []} onChange={r => set({ remittedExcl: r })} />}
+      {subName === 'Remitted foreign dividends' && (
+        <ForeignIncomeTable title="Remitted foreign dividends income" rows={sa.remittedDividends ?? []} onChange={r => set({ remittedDividends: r })} totalBoxes={{ swt: '7.3', taxable: '7.4' }}
+          extra={<BoxNum box="7.5" label="Amount in box 7.4 subject to dividend tax credit" value={sa.remittedDivSubjectToCredit ?? 0} onChange={v => set({ remittedDivSubjectToCredit: v })} />} />
+      )}
+      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} />}
+      {subName === 'Other income' && (
+        <div className="space-y-3">
+          <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={0} />
+          <ForeignIncomeTable title="All other income received by a person abroad" rows={sa.otherAll ?? []} onChange={r => set({ otherAll: r })} totalBoxes={{ swt: '12', taxable: '13' }} fig="13.0" figValue={0}
+            extra={<>
+              <BoxNum box="13.1" label="Residential finance cost" help={PROP.residentialFinanceCosts} value={sa.otherResiFinanceCost ?? 0} onChange={v => set({ otherResiFinanceCost: v })} />
+              <BoxNum box="13.2" label="Unused residential property finance costs brought forward" value={sa.otherResiFinanceBfwd ?? 0} onChange={v => set({ otherResiFinanceBfwd: v })} />
+            </>} />
+        </div>
+      )}
+
+      {/* ── Income from Land and property ── */}
+      {activeTab === 'Income from Land and property' && <ForeignPropertySection sa={sa} set={set} subName={subName} />}
+
+      {/* ── Foreign tax paid ── */}
+      {subName === 'Foreign tax' && <ForeignIncomeTable title="Foreign tax" note="Foreign tax on income reported elsewhere on your return." rows={sa.foreignTaxRows ?? []} onChange={r => set({ foreignTaxRows: r })} columns="acef" />}
+      {subName === 'Capital gains' && (
+        <StudioCard className="p-4"><BoxSection title="Foreign tax paid on capital gains">
+          <BoxNum box={33} label="Amount of chargeable gain under UK rules" help={FGN.cgUkGain} value={sa.cgUkGain ?? 0} onChange={v => set({ cgUkGain: v })} />
+          <BoxNum box={34} label="Number of days over which UK gain accrued" value={sa.cgUkDays ?? 0} onChange={v => set({ cgUkDays: v })} />
+          <BoxNum box={35} label="Amount of chargeable gain under foreign tax rules" help={FGN.cgForeignGain} value={sa.cgForeignGain ?? 0} onChange={v => set({ cgForeignGain: v })} />
+          <BoxNum box={36} label="Number of days over which foreign gain accrued" value={sa.cgForeignDays ?? 0} onChange={v => set({ cgForeignDays: v })} />
+          <BoxNum box={37} label="Foreign tax paid" value={sa.cgForeignTax ?? 0} onChange={v => set({ cgForeignTax: v })} />
+          <BoxYesNo box={38} label="To claim Foreign Tax Credit Relief?" value={!!sa.cgClaimFtcr} onChange={v => set({ cgClaimFtcr: v })} />
+          <BoxNum box={39} label="Total Foreign Tax Credit Relief on gains" value={sa.cgFtcr ?? 0} onChange={v => set({ cgFtcr: v })} />
+          <BoxNum box={40} label="Special Withholding Tax" value={sa.cgSwt ?? 0} onChange={v => set({ cgSwt: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Foreign life insurance' && (
+        <StudioCard className="p-4"><BoxSection title="Gains on foreign life insurance policies etc.">
+          <BoxNum box={43} label="Gains on foreign life insurance policies, etc." help={FGN.lifeGains} value={sa.lifeGains ?? 0} onChange={v => set({ lifeGains: v })} />
+          <BoxNum box={44} label="Number of years" help={FGN.lifeYears} value={sa.lifeYears ?? 0} onChange={v => set({ lifeYears: v })} />
+          <BoxNum box={45} label="Tax treated as paid" value={sa.lifeTaxPaid ?? 0} onChange={v => set({ lifeTaxPaid: v })} />
+          <BoxNum box={46} label="Total amount omitted" value={sa.lifeOmitted ?? 0} onChange={v => set({ lifeOmitted: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Non-resident trusts' && (
+        <div className="space-y-3">
+          <StudioCard className="p-4"><BoxSection title="Non-resident settlor-interested trusts — residential property">
+            <BoxNum box={49} label="Overseas residential property income / restricted finance costs for NR trust" value={sa.nrtResiProperty ?? 0} onChange={v => set({ nrtResiProperty: v })} />
+            <BoxNum box="49.1" label="Unused overseas residential property finance costs b/fwd (re box 48)" value={sa.nrtResiFinanceBfwd ?? 0} onChange={v => set({ nrtResiFinanceBfwd: v })} />
+          </BoxSection></StudioCard>
+          <ForeignIncomeTable title="Savings income arising in non-resident settlor-interested trusts" rows={sa.nrtSavings ?? []} onChange={r => set({ nrtSavings: r })} totalBoxes={{ swt: '50', taxable: '51' }} fig="51.1" figValue={0} />
+          <ForeignIncomeTable title="Dividend income arising in non-resident settlor-interested trusts" rows={sa.nrtDividends ?? []} onChange={r => set({ nrtDividends: r })} totalBoxes={{ swt: '52', taxable: '53' }} fig="53.1" figValue={0} />
+          <StudioCard className="p-4"><BoxSection title="Other non-resident trust income">
+            <BoxNum box={54} label="Discretionary income from non-settlor interested non-resident trusts" value={sa.nrtDiscretionary ?? 0} onChange={v => set({ nrtDiscretionary: v })} />
+            <BoxNum box="54.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.nrtDiscretionaryFig ?? 0} onChange={v => set({ nrtDiscretionaryFig: v })} />
+            <BoxNum box={55} label="Capital sums paid to settlor by trustees of non-resident trusts" value={sa.nrtCapitalSums ?? 0} onChange={v => set({ nrtCapitalSums: v })} />
+            <BoxNum box="55.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.nrtCapitalSumsFig ?? 0} onChange={v => set({ nrtCapitalSumsFig: v })} />
+            <BoxNum box={56} label="Gains on disposal of holdings in offshore fund (excl. box 13)" value={sa.offshoreFundGains ?? 0} onChange={v => set({ offshoreFundGains: v })} />
+            <BoxNum box="56.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.offshoreFundGainsFig ?? 0} onChange={v => set({ offshoreFundGainsFig: v })} />
+            <BoxNum box={57} label="Non-trade income (excl. box 13)" value={sa.nonTradeIncome ?? 0} onChange={v => set({ nonTradeIncome: v })} />
+            <BoxNum box="57.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.nonTradeIncomeFig ?? 0} onChange={v => set({ nonTradeIncomeFig: v })} />
+          </BoxSection></StudioCard>
+        </div>
+      )}
+      {subName === 'Transfer of Assets & Settlements' && (
+        <StudioCard className="p-4"><BoxSection title="Transfer of Assets Abroad & Settlements">
+          <BoxNum box={58} label="Transfer of Assets Abroad — Taxable Benefits" value={sa.toaaBenefits ?? 0} onChange={v => set({ toaaBenefits: v })} />
+          <BoxNum box="58.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.toaaBenefitsFig ?? 0} onChange={v => set({ toaaBenefitsFig: v })} />
+          <BoxNum box={59} label="Transfer of Assets Abroad — Taxable Benefits (TPI / PFSI)" value={sa.toaaTpiPfsi ?? 0} onChange={v => set({ toaaTpiPfsi: v })} />
+          <BoxNum box="59.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.toaaTpiPfsiFig ?? 0} onChange={v => set({ toaaTpiPfsiFig: v })} />
+          <BoxNum box={60} label="Transfer of Assets Abroad — Close Family Member Benefits" value={sa.toaaCloseFamily ?? 0} onChange={v => set({ toaaCloseFamily: v })} />
+          <BoxNum box="60.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.toaaCloseFamilyFig ?? 0} onChange={v => set({ toaaCloseFamilyFig: v })} />
+          <BoxNum box={61} label="Transfer of Assets Abroad — Onward Gifts Benefits" value={sa.toaaOnwardGifts ?? 0} onChange={v => set({ toaaOnwardGifts: v })} />
+          <BoxNum box="61.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.toaaOnwardGiftsFig ?? 0} onChange={v => set({ toaaOnwardGiftsFig: v })} />
+          <BoxNum box={62} label="Settlements — Taxable Benefits (TTI / PFSI)" value={sa.settleTtiPfsi ?? 0} onChange={v => set({ settleTtiPfsi: v })} />
+          <BoxNum box="62.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.settleTtiPfsiFig ?? 0} onChange={v => set({ settleTtiPfsiFig: v })} />
+          <BoxNum box={63} label="Settlements — Close Family Member Benefits (TTI / PFSI)" value={sa.settleCloseFamily ?? 0} onChange={v => set({ settleCloseFamily: v })} />
+          <BoxNum box="63.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.settleCloseFamilyFig ?? 0} onChange={v => set({ settleCloseFamilyFig: v })} />
+          <BoxNum box={64} label="Settlements — Onward Gifts Benefits" value={sa.settleOnwardGifts ?? 0} onChange={v => set({ settleOnwardGifts: v })} />
+          <BoxNum box="64.1" label="Amount claimed under the FIG regime" help={FGN.fig} value={sa.settleOnwardGiftsFig ?? 0} onChange={v => set({ settleOnwardGiftsFig: v })} />
+        </BoxSection></StudioCard>
+      )}
+
+      <p className="text-[10.5px] text-[var(--text-muted)]">Interest is taxed at savings rates, dividends at dividend rates, foreign property & the rest as other income. Foreign Tax Credit Relief (per row) is credited, capped at the UK tax on the same income. Capital gains, life insurance, trust and Transfer-of-Assets boxes are captured for the return but not yet in the headline estimate.</p>
     </div>
   );
 }
 
-function ForeignCard({ s, idx, onChange, onRemove }: {
-  s: ForeignSource; idx: number; onChange: (u: Partial<ForeignSource>) => void; onRemove: () => void;
+// The recurring SA106 country-income table (columns A–F). `columns="acef"` drops
+// the Income-arising (B) and Special-Withholding (D) columns (used by "Foreign tax").
+function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue }: {
+  title: string; note?: string; rows: ForeignRow[]; onChange: (r: ForeignRow[]) => void;
+  totalBoxes?: { swt?: string; taxable?: string }; extra?: React.ReactNode; columns?: 'full' | 'acef';
+  fig?: string; figValue?: number;
 }) {
+  const full = columns === 'full';
+  const add = () => onChange([...rows, { id: foreignRid(rows.length) }]);
+  const upd = (i: number, u: Partial<ForeignRow>) => onChange(rows.map((r, j) => j === i ? { ...r, ...u } : r));
+  const del = (i: number) => onChange(rows.filter((_, j) => j !== i));
+  const t = foreignTableTotals(rows);
+  const cols = full ? 'minmax(88px,1.3fr) 1fr 1fr 1fr 40px 1fr 26px' : 'minmax(88px,1.3fr) 1fr 40px 1fr 26px';
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
-      <div className="mb-2 flex items-center gap-2">
-        <input value={s.country ?? ''} placeholder={`Country ${idx + 1}`} onChange={ev => onChange({ country: ev.target.value })} className="input-base w-44 py-1 text-[12.5px] font-semibold" />
-        <div className="flex-1" />
+    <StudioCard className="p-4">
+      <SectionTitle title={title} />
+      {note && <p className="mb-2 flex items-start gap-1 text-[11px] text-amber-700"><Info size={11} className="mt-0.5 shrink-0" /> {note}</p>}
+      <div className="mt-2 hidden gap-2 border-b border-black/5 pb-1 text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted)] sm:grid" style={{ gridTemplateColumns: cols }}>
+        <span>A Country</span>{full && <span>B Income</span>}<span>C Foreign tax</span>{full && <span>D SWT</span>}<span className="text-center">E FTCR</span><span className="text-right">F Taxable</span><span />
+      </div>
+      {rows.length === 0 && <p className="py-2 text-[11.5px] text-[var(--text-muted)]">No entries yet — add a country.</p>}
+      {rows.map((r, i) => (
+        <div key={r.id} className="grid items-center gap-2 border-b border-black/5 py-1.5" style={{ gridTemplateColumns: cols }}>
+          <input value={r.country ?? ''} placeholder="Country" onChange={e => upd(i, { country: e.target.value })} className="input-base py-1 text-[12px]" />
+          {full && <NumIn value={r.incomeArising ?? 0} onChange={v => upd(i, { incomeArising: v })} />}
+          <NumIn value={r.foreignTax ?? 0} onChange={v => upd(i, { foreignTax: v })} />
+          {full && <NumIn value={r.specialWithholding ?? 0} onChange={v => upd(i, { specialWithholding: v })} />}
+          <input type="checkbox" checked={!!r.creditRelief} onChange={e => upd(i, { creditRelief: e.target.checked })} className="mx-auto h-3.5 w-3.5 accent-[var(--accent)]" aria-label="Claim FTCR" />
+          <div className="rounded-md bg-sky-50/70 px-2 py-1 text-right text-[12px] font-semibold text-sky-700">{fmtMoney(foreignRowTaxable(r))}</div>
+          <button onClick={() => del(i)} className="text-[var(--text-muted)] transition-colors hover:text-rose-500" aria-label="Remove country"><Trash2 size={13} /></button>
+        </div>
+      ))}
+      <button onClick={add} className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add country</button>
+      {(totalBoxes || extra) && (
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/5 pt-3 sm:grid-cols-3">
+          {full && totalBoxes?.swt && <BoxCalc box={totalBoxes.swt} label="Total SWT (column above)" value={t.swt} />}
+          {totalBoxes?.taxable && <BoxCalc box={totalBoxes.taxable} label="Total taxable (column above)" value={t.taxable} />}
+          {fig && <BoxNum box={fig} label="Total claimed under the FIG regime" help={FGN.fig} value={figValue ?? 0} onChange={() => { /* FIG claim tracked per-return later */ }} />}
+          {extra}
+        </div>
+      )}
+    </StudioCard>
+  );
+}
+
+// Foreign land & property — a foreign SA105. Sub-tabs mirror Capium: Income &
+// Expenses (14–18), Calculate Taxable P&L (19–24.2), Summary (per-country A–F),
+// Total P&L (26/27/31/32). Multiple properties are summed into the section.
+function ForeignPropertySection({ sa, set, subName }: { sa: Sa106; set: (u: Partial<Sa106>) => void; subName: string }) {
+  const props = sa.properties ?? [];
+  const setProps = (p: ForeignProperty[]) => set({ properties: p });
+  const add = () => setProps([...props, { id: `fp-${props.length}-${Date.now()}` }]);
+  const upd = (i: number, u: Partial<ForeignProperty>) => setProps(props.map((x, j) => j === i ? { ...x, ...u } : x));
+  const del = (i: number) => setProps(props.filter((_, j) => j !== i));
+  const totals = foreignPropertyTotals(sa);
+
+  if (subName === 'Total P&L') {
+    return (
+      <StudioCard className="p-4"><BoxSection title="Total profit or loss">
+        <BoxNum box={26} label="Total loss brought forward from earlier years" value={sa.propLossBroughtForward ?? 0} onChange={v => set({ propLossBroughtForward: v })} />
+        <BoxCalc box={27} label="Total taxable profits (box 25 − box 26, if positive)" value={totals.taxableProfit} />
+        <BoxNum box={31} label="Loss set off against total income" value={sa.propLossSetOff ?? 0} onChange={v => set({ propLossSetOff: v })} />
+        <BoxCalc box={32} label="Total loss to carry forward to the following year" value={totals.lossCf} />
+      </BoxSection></StudioCard>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {props.length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No foreign properties yet — add one to enter the boxes.</p>}
+      {props.map((p, i) => <ForeignPropertyCard key={p.id} p={p} idx={i} subName={subName} onChange={u => upd(i, u)} onRemove={() => del(i)} />)}
+      <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add foreign property</button>
+      {subName === 'Summary' && (
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.04] p-3 sm:grid-cols-4">
+          <BoxCalc box={25} label="Total adjusted profit/loss" value={totals.adjusted} />
+          <BoxCalc box={30} label="Total taxable amount" value={props.reduce((a, p) => a + Math.max(0, foreignPropertyAdjusted(p)), 0)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ForeignPropertyCard({ p, idx, subName, onChange, onRemove }: {
+  p: ForeignProperty; idx: number; subName: string; onChange: (u: Partial<ForeignProperty>) => void; onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const set = (u: Partial<ForeignProperty>) => onChange(u);
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <input value={p.country ?? ''} placeholder={`Foreign property ${idx + 1} — country`} onChange={ev => set({ country: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Adjusted <span className="font-bold text-[var(--text-primary)]">{fmtMoney(foreignPropertyAdjusted(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div>
-          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Type</label>
-          <select value={s.category} onChange={e => onChange({ category: e.target.value as ForeignSource['category'] })} className="input-base py-1 text-[12.5px]">
-            <option value="interest">Interest</option>
-            <option value="dividends">Dividends</option>
-            <option value="pension">Pension</option>
-            <option value="property">Property</option>
-            <option value="other">Other</option>
-          </select>
+      {open && (
+        <div className="space-y-3 border-t border-black/5 px-3 py-3">
+          {subName === 'Income & Expenses' && (
+            <BoxSection title="Income & expenses">
+              <BoxNum box={14} label="Total rents & receipts" value={p.totalRents ?? 0} onChange={v => set({ totalRents: v })} />
+              <BoxNum box="14.1" label="Property income allowance" help={FGN.propAllowance} value={p.propertyIncomeAllowance ?? 0} onChange={v => set({ propertyIncomeAllowance: v })} />
+              <BoxCheck box="14.2" label="Traditional accounting" checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
+              <BoxNum box={15} label="No. of let properties" value={p.letProperties ?? 0} onChange={v => set({ letProperties: v })} />
+              <BoxNum box={16} label="Premiums paid" value={p.premiumsPaid ?? 0} onChange={v => set({ premiumsPaid: v })} />
+              <BoxNum box={17} label="Property expenses" value={p.expenses ?? 0} onChange={v => set({ expenses: v })} />
+              <BoxCalc box={18} label="Net profit or loss" value={foreignPropertyNet(p)} />
+            </BoxSection>
+          )}
+          {subName === 'Calculate Taxable P&L' && (
+            <BoxSection title="Calculate taxable profit or loss">
+              <BoxNum box={19} label="Private use adjustment" help={PROP.privateUse} value={p.privateUse ?? 0} onChange={v => set({ privateUse: v })} />
+              <BoxNum box={20} label="Balancing charges" help={PROP.balancingCharges} value={p.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
+              <BoxNum box={21} label="Capital allowances" value={p.capitalAllowances ?? 0} onChange={v => set({ capitalAllowances: v })} />
+              <BoxNum box="21.1" label="Zero-emission car allowance" value={p.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
+              <BoxNum box="22.1" label="Structures and Buildings Allowance" value={p.sba ?? 0} onChange={v => set({ sba: v })} />
+              <BoxNum box="22.2" label="Electric charge-point allowance" value={p.electricChargepoint ?? 0} onChange={v => set({ electricChargepoint: v })} />
+              <BoxNum box={23} label="Costs of replacing domestic items" help={PROP.domesticItems} value={p.domesticItems ?? 0} onChange={v => set({ domesticItems: v })} />
+              <BoxCalc box={24} label="Adjusted profit or loss" value={foreignPropertyAdjusted(p)} />
+              <BoxNum box="24.1" label="Residential property finance costs" help={PROP.residentialFinanceCosts} value={p.residentialFinanceCosts ?? 0} onChange={v => set({ residentialFinanceCosts: v })} />
+              <BoxNum box="24.2" label="Unused residential property finance costs brought forward" value={p.unusedFinanceCostsBfwd ?? 0} onChange={v => set({ unusedFinanceCostsBfwd: v })} />
+            </BoxSection>
+          )}
+          {subName === 'Summary' && (
+            <BoxSection title="Summary (per country)">
+              <BoxCalc box="B" label="Adjusted profit or loss" value={foreignPropertyAdjusted(p)} />
+              <BoxNum box="C" label="Foreign tax taken off or paid" value={p.foreignTax ?? 0} onChange={v => set({ foreignTax: v })} />
+              <BoxNum box="D" label="UK tax taken off" value={p.ukTax ?? 0} onChange={v => set({ ukTax: v })} />
+              <BoxCheck box="E" label="Claim credit relief" checked={!!p.creditRelief} onChange={v => set({ creditRelief: v })} />
+              <BoxCalc box="F" label="Taxable amount" value={Math.max(0, foreignPropertyAdjusted(p))} />
+            </BoxSection>
+          )}
         </div>
-        <LabelledNum box={FOREIGN_PAGES[s.category]} label="Income (£)" value={s.income} onChange={v => onChange({ income: v })} />
-        <LabelledNum box={FOREIGN_PAGES[s.category]} label="Foreign tax (£)" value={s.foreignTaxPaid} onChange={v => onChange({ foreignTaxPaid: v })} />
-        <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
-          <input type="checkbox" checked={s.claimFtcr !== false} onChange={e => onChange({ claimFtcr: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> Claim FTCR
-        </label>
-      </div>
+      )}
     </div>
   );
 }
@@ -2006,11 +2221,6 @@ const CGT_BOXES: Record<CgtDisposal['assetType'], { proceeds: number; cost: numb
   other: { proceeds: 15, cost: 16, gains: 17 },
   listed: { proceeds: 24, cost: 25, gains: 26 },
   unlisted: { proceeds: 32, cost: 33, gains: 34 },
-};
-
-// SA106 page/section the income sits on, by category.
-const FOREIGN_PAGES: Record<ForeignSource['category'], string> = {
-  interest: 'F2', dividends: 'F2', pension: 'F2', property: 'F4', other: 'F3',
 };
 
 function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
