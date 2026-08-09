@@ -13,11 +13,12 @@ import { WorkspaceControls, type SaveState } from '../WorkspaceControls';
 import ComparisonTable from './ComparisonTable';
 import ScenarioEditor, { type EditCategory } from './ScenarioEditor';
 import { returnType, fmtMoney } from '../data';
+import { cgtCalcToSa108, mergeCgtCalcForPush, sa108HasData } from '../calc';
 import {
   currentPlanScenario, scenarioResult, newScenarioId, buildQuickScenario,
   keyAssumptions, planningInsights, QUICK_ACTIONS, type QuickKind,
 } from './data';
-import type { TaxReturn, Sa100Income, Scenario } from '../types';
+import type { TaxReturn, Sa100Income, Scenario, CgtCalcState } from '../types';
 
 type Tab = 'overview' | EditCategory | 'summary';
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
@@ -46,6 +47,8 @@ export default function SandboxView({
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedId, setSelectedId] = useState<string | null>(ret.scenarios[0]?.id ?? null);
   const [promoteId, setPromoteId] = useState<string | null>(null);
+  const [cgtPush, setCgtPush] = useState<CgtCalcState | null>(null); // pending "add to main return" awaiting replace/add choice
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
 
   const rt = returnType(ret.returnType);
   const current = currentPlanScenario(ret);
@@ -88,8 +91,47 @@ export default function SandboxView({
     setTab('overview');
   }
 
+  // Add a scenario's CGT working to the live return. If the return already has
+  // CGT, ask whether to replace it or add these disposals on top.
+  function pushCgtToMain(calc: CgtCalcState) {
+    const hasMain = (ret.income.cgtCalc?.disposals ?? []).length > 0 || sa108HasData(ret.income.sa108);
+    if (!hasMain) { doPushCgt(calc, 'replace'); return; }
+    setCgtPush(calc);
+  }
+  function doPushCgt(calc: CgtCalcState, mode: 'replace' | 'add') {
+    patch(r => {
+      const merged = mergeCgtCalcForPush(r.income.cgtCalc, calc, mode);
+      return {
+        ...r,
+        income: { ...r.income, cgtCalc: merged, sa108: cgtCalcToSa108(merged, r.income.sa108) },
+        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'edited', label: `${mode === 'replace' ? 'Replaced' : 'Added to'} the live return’s capital gains from a planning scenario` }],
+      };
+    });
+    setCgtPush(null);
+    setPushMsg(mode === 'replace' ? 'Capital gains replaced on the main return.' : 'Capital gains added to the main return.');
+  }
+
   return (
     <div className="space-y-4">
+      {pushMsg && (
+        <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-emerald-700"><Check size={14} /> {pushMsg}</p>
+          <button onClick={() => setPushMsg(null)} className="text-emerald-600 hover:text-emerald-800"><X size={15} /></button>
+        </div>
+      )}
+      {cgtPush && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={() => setCgtPush(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <p className="text-[15px] font-bold text-[var(--text-primary)]">Add to the main return</p>
+            <p className="mt-1 text-[12.5px] text-[var(--text-muted)]">The live return already has capital gains. Replace it with this scenario’s disposals, or add these on top of what’s there?</p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button onClick={() => setCgtPush(null)} className="btn-secondary">Cancel</button>
+              <button onClick={() => doPushCgt(cgtPush, 'add')} className="btn-secondary bg-white">Add to existing</button>
+              <button onClick={() => doPushCgt(cgtPush, 'replace')} className="btn-primary">Replace</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -142,7 +184,7 @@ export default function SandboxView({
               ) : (
                 selected ? (
                   <ScenarioEditor scenario={selected} category={tab as EditCategory} baseIncome={ret.income} taxYear={ret.taxYear}
-                    onChange={income => updateScenario(selected.id, income)} />
+                    taxpayerName={ret.clientName ?? 'You'} onChange={income => updateScenario(selected.id, income)} onPushCgtToMain={pushCgtToMain} />
                 ) : (
                   <div className="flex flex-col items-center gap-2 px-8 py-12 text-center">
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Info size={20} /></div>

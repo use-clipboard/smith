@@ -1,20 +1,25 @@
 'use client';
 
-import { Plus, Trash2, Info } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, Info, Calculator, ArrowUpRight } from 'lucide-react';
 import { fmtMoney } from '../data';
 import { scenarioResult } from './data';
-import type { Sa100Income, Scenario } from '../types';
+import { cgtCalcSummary, cgtCalcToSa108 } from '../calc';
+import CgtCalculator from '../CgtCalculator';
+import type { Sa100Income, Scenario, CgtCalcState } from '../types';
 
 export type EditCategory = 'income' | 'capital' | 'pensions' | 'investments' | 'property' | 'business' | 'other';
 
 export default function ScenarioEditor({
-  scenario, category, baseIncome, taxYear, onChange,
+  scenario, category, baseIncome, taxYear, taxpayerName, onChange, onPushCgtToMain,
 }: {
   scenario: Scenario;
   category: EditCategory;
   baseIncome: Sa100Income;
   taxYear: string;
+  taxpayerName: string;
   onChange: (income: Sa100Income) => void;
+  onPushCgtToMain?: (calc: CgtCalcState) => void;
 }) {
   const income = scenario.income;
   const set = (u: (i: Sa100Income) => Sa100Income) => onChange(u(income));
@@ -48,16 +53,13 @@ export default function ScenarioEditor({
               <NumField label="Pensions income" value={income.pensionsIncome} onChange={v => set(i => ({ ...i, pensionsIncome: v }))} />
             </>
           )}
-          {(category === 'capital' || category === 'business') && (
+          {category === 'capital' && <CapitalGainsScenario income={income} set={set} taxYear={taxYear} taxpayerName={taxpayerName} onPushCgtToMain={onPushCgtToMain} />}
+          {category === 'business' && (
             <div className="flex items-start gap-2 rounded-xl border border-[var(--border)] bg-white/60 px-4 py-4 text-[12.5px] text-[var(--text-secondary)]">
               <Info size={15} className="mt-0.5 shrink-0 text-[var(--accent)]" />
               <div>
-                <p className="font-semibold text-[var(--text-primary)]">{category === 'capital' ? 'Capital gains' : 'Business structure'} modelling</p>
-                <p className="mt-0.5 text-[var(--text-muted)]">
-                  {category === 'capital'
-                    ? 'Capital gains are computed in the Review stage (18%/24% after the £3,000 annual exempt amount). Sandbox scenarios don’t vary CGT yet — model disposals in Review.'
-                    : 'Incorporation / salary-vs-dividend structural modelling arrives in a later increment. For now, use the Investments and Pensions levers to approximate the effect.'}
-                </p>
+                <p className="font-semibold text-[var(--text-primary)]">Business structure modelling</p>
+                <p className="mt-0.5 text-[var(--text-muted)]">Incorporation / salary-vs-dividend structural modelling arrives in a later increment. For now, use the Investments and Pensions levers to approximate the effect.</p>
               </div>
             </div>
           )}
@@ -80,6 +82,40 @@ export default function ScenarioEditor({
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CapitalGainsScenario({ income, set, taxYear, taxpayerName, onPushCgtToMain }: {
+  income: Sa100Income; set: (u: (i: Sa100Income) => Sa100Income) => void; taxYear: string; taxpayerName: string; onPushCgtToMain?: (calc: CgtCalcState) => void;
+}) {
+  const calc = income.cgtCalc ?? {};
+  const summary = cgtCalcSummary(calc);
+  const n = (calc.disposals ?? []).length;
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-3">
+      <p className="text-[12.5px] text-[var(--text-secondary)]">Model this scenario's disposals with the full calculator — reliefs, ownership splits, losses and the £3,000 exemption. When you're happy, add the result to the live return.</p>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label="Disposals" value={String(n)} />
+        <Stat label="Total gains" value={fmtMoney(summary.totalGains)} />
+        <Stat label={`Taxable (after £${(3000).toLocaleString()})`} value={fmtMoney(summary.taxableGains)} />
+        <Stat label="Est. CGT" value={fmtMoney(summary.estCgt)} />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setOpen(true)} className="btn-primary"><Calculator size={15} /> Open capital gains calculator</button>
+        {onPushCgtToMain && n > 0 && <button onClick={() => onPushCgtToMain(calc)} className="btn-secondary bg-white"><ArrowUpRight size={14} /> Add to main return</button>}
+      </div>
+      {n === 0 && <p className="text-[11.5px] text-[var(--text-muted)]">No disposals yet — open the calculator to add or scan them.</p>}
+      {open && <CgtCalculator state={calc} taxYear={taxYear} taxpayerName={taxpayerName} onChange={s => set(i => ({ ...i, cgtCalc: s, sa108: cgtCalcToSa108(s, i.sa108) }))} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">{label}</p>
+      <p className="text-[14px] font-bold text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }

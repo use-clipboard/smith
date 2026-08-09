@@ -717,6 +717,15 @@ export function cgtCalcSummary(state?: CgtCalcState): CgtCalcSummary {
   return { byClass, totalGains, totalLosses, badrGains, lossesInYearUsed, lossesBfAvailable, lossesBfUsed, lossesCarriedForward, taxableGains, estCgt, badrLifetimeRemaining };
 }
 
+/** Merge a scenario's CGT working into the main return when "pushing to the main
+ *  return": 'replace' takes the scenario as-is; 'add' appends the scenario's
+ *  disposals to the main working (keeping the main return's losses/BADR settings). */
+export function mergeCgtCalcForPush(main: CgtCalcState | undefined, scenario: CgtCalcState | undefined, mode: 'replace' | 'add'): CgtCalcState {
+  const sc = scenario ?? {};
+  if (mode === 'replace' || !main) return { ...sc };
+  return { ...main, disposals: [...(main.disposals ?? []), ...(sc.disposals ?? [])] };
+}
+
 /** Write a calculator working into the SA108 boxes (the auto-total to the form). */
 export function cgtCalcToSa108(state: CgtCalcState | undefined, existing?: Sa108): Sa108 {
   const s = cgtCalcSummary(state);
