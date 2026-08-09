@@ -228,8 +228,10 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   }
   if (selected.savings) {
     out.savingsInterest = prior.savingsInterest;
-    out.savingsInterestItems = prior.savingsInterestItems?.map(s => ({ ...s }));
-    out.taxedInterestItems = prior.taxedInterestItems?.map(t => ({ ...t }));
+    // A joint-account split (who + the percentages) stays constant year on year,
+    // so carry the `owners` over as an independent deep copy.
+    out.savingsInterestItems = prior.savingsInterestItems?.map(s => ({ ...s, owners: s.owners?.map(o => ({ ...o })) }));
+    out.taxedInterestItems = prior.taxedInterestItems?.map(t => ({ ...t, owners: t.owners?.map(o => ({ ...o })) }));
     out.untaxedForeignInterest = prior.untaxedForeignInterest;
   }
   if (selected.pension) {
