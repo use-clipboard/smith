@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
   const search = url.searchParams.get('search') ?? '';
   const statusFilter = url.searchParams.get('status');
   const typeFilter = url.searchParams.get('type');
+  // `types` (comma-separated) narrows to several business types at once — e.g.
+  // individuals + sole traders for personal-asset co-ownership pickers.
+  const typesFilter = (url.searchParams.get('types') ?? '').split(',').map(s => s.trim()).filter(Boolean);
   const riskFilter = url.searchParams.get('risk');
 
   const SELECT_COLS = 'id, name, client_ref, business_type, contact_email, contact_number, risk_rating, status, created_at, address, utr_number, registration_number, national_insurance_number, companies_house_id, vat_number, companies_house_auth_code, date_of_birth, paye_reference, paye_accounts_office_reference, vat_submit_type, vat_scheme, vat_scheme_period_end_month, year_end, mtd_it';
@@ -62,6 +65,7 @@ export async function GET(req: NextRequest) {
     if (search) q = q.or(`name.ilike.%${search}%,client_ref.ilike.%${search}%`);
     if (statusFilter === 'active' || statusFilter === 'hold' || statusFilter === 'inactive') q = q.eq('status', statusFilter);
     if (typeFilter) q = q.eq('business_type', typeFilter);
+    if (typesFilter.length) q = q.in('business_type', typesFilter);
     if (riskFilter) q = q.eq('risk_rating', riskFilter);
 
     const { data, error } = await q;

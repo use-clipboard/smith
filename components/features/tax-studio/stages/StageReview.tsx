@@ -12,6 +12,7 @@ import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import CgtCalculator from '../CgtCalculator';
+import JointInterestField from '../JointInterestField';
 import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
@@ -493,18 +494,16 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
     <div className="space-y-3">
       <CoreSection title="Interest & dividends" count={c.interest} defaultOpen>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <BreakdownField<TaxedInterestItem>
-            box={1} label="Taxed UK interest" title="Taxed UK interest etc." help={CH.taxedInterest}
-            items={income.taxedInterestItems ?? []} columns={TAXED_INT_COLS}
-            blank={() => ({ id: rid('ti'), net: 0, tax: 0 })}
-            onChange={items => setIncome(i => ({ ...i, taxedInterestItems: items }))}
-            rowTotal={t => (t.net || 0) + (t.tax || 0)} />
-          <BreakdownField<SavingsItem>
-            box={2} label="Untaxed UK interest" title="Untaxed UK interest etc." help={CH.untaxedInterest}
-            items={income.savingsInterestItems ?? []} columns={SAVINGS_COLS}
-            blank={() => ({ id: rid('si'), amount: 0 })}
-            onChange={items => setIncome(i => ({ ...i, savingsInterestItems: items }))}
-            rowTotal={s => s.amount || 0} fallbackTotal={income.savingsInterest} />
+          <JointInterestField
+            box={1} label="Taxed UK interest" title="Taxed UK interest etc." help={CH.taxedInterest} kind="taxed"
+            items={income.taxedInterestItems ?? []}
+            onChange={items => setIncome(i => ({ ...i, taxedInterestItems: items as TaxedInterestItem[] }))}
+            taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} returnType={ret.returnType} />
+          <JointInterestField
+            box={2} label="Untaxed UK interest" title="Untaxed UK interest etc." help={CH.untaxedInterest} kind="untaxed"
+            items={income.savingsInterestItems ?? []}
+            onChange={items => setIncome(i => ({ ...i, savingsInterestItems: items as SavingsItem[] }))}
+            taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} returnType={ret.returnType} />
           <LabelledNum box={3} label="Untaxed foreign interest" help={CH.untaxedForeignInterest} value={income.untaxedForeignInterest ?? 0} onChange={v => setIncome(i => ({ ...i, untaxedForeignInterest: v }))} />
           <BreakdownField<DividendItem>
             box={4} label="Dividends" title="Dividends from UK companies" help={CH.dividends}

@@ -501,6 +501,9 @@ export interface SavingsItem {
   id: string;
   description?: string;
   amount: number;
+  /** Joint account — this is the WHOLE interest; the return uses the taxpayer's
+   *  share and each co-owner's share can be pushed to their own return. */
+  owners?: CgtOwner[];
 }
 
 // A generic itemised income/expense line (description + amount) used by the
@@ -517,6 +520,8 @@ export interface TaxedInterestItem {
   description?: string;
   net: number;
   tax: number;
+  /** Joint account — whole-account net/tax; the return uses the taxpayer's share. */
+  owners?: CgtOwner[];
 }
 
 // SA106 Foreign — one foreign income source, routed to the right UK rate.

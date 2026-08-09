@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Plus, Trash2, Calculator, Sparkles, Loader2, Check, Users, ScanText, ArrowUpRight } from 'lucide-react';
 import { fmtMoney } from './data';
-import ClientSearchInput from '@/components/ui/ClientSearchInput';
+import OwnershipEditor from './OwnershipEditor';
 import CgtScanReview from './CgtScanReview';
 import {
   cgtCalcSummary, cgtGrossGain, cgtTaxpayerGain, cgtTaxpayerShare, cgtSuggestReliefs, CGT_AEA,
@@ -238,10 +238,6 @@ function DisposalCard({ d, idx, taxpayerName, onChange, onRemove }: {
   const addManualRelief = () => setReliefs([...reliefs, { id: rid('r'), kind: 'other', label: 'Other relief', amount: 0, accepted: true }]);
 
   const setOwners = (os: CgtOwner[]) => onChange({ owners: os });
-  const initOwners = () => setOwners([
-    { id: rid('o'), name: taxpayerName || 'You', sharePct: 50, isTaxpayer: true },
-    { id: rid('o'), name: '', sharePct: 50 },
-  ]);
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/70 p-3">
@@ -262,35 +258,8 @@ function DisposalCard({ d, idx, taxpayerName, onChange, onRemove }: {
 
       {/* Ownership */}
       <div className="mt-2.5 rounded-lg border border-[var(--border)] bg-black/[0.015] p-2">
-        <div className="flex items-center justify-between">
-          <p className="flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-[var(--text-muted)]"><Users size={11} /> Ownership</p>
-          {owners.length === 0 && <button onClick={initOwners} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">Split with co-owner(s)</button>}
-        </div>
-        {owners.length === 0 ? (
-          <p className="mt-1 text-[11px] text-[var(--text-muted)]">Owned 100% by {taxpayerName || 'the taxpayer'}. Split it if the asset is jointly owned (e.g. with a spouse).</p>
-        ) : (
-          <div className="mt-1.5 space-y-1.5">
-            {owners.map((o, oi) => (
-              <div key={o.id} className="flex flex-wrap items-center gap-1.5">
-                {o.isTaxpayer ? (
-                  <span className="min-w-0 flex-1 truncate rounded-md bg-[var(--accent)]/10 px-2 py-1 text-[11.5px] font-semibold text-[var(--accent)]">{taxpayerName || 'You'} (this return)</span>
-                ) : (
-                  <div className="min-w-0 flex-1"><ClientSearchInput value={o.clientId ?? ''} valueName={o.name} placeholder="Link co-owner's client…" onChange={(id, name, ref) => setOwners(owners.map(x => x.id === o.id ? { ...x, clientId: id, clientRef: ref, name: name || x.name } : x))} /></div>
-                )}
-                <div className="flex items-center rounded-md border border-[var(--border)] bg-white px-1.5">
-                  <input type="number" value={o.sharePct || ''} onChange={e => setOwners(owners.map(x => x.id === o.id ? { ...x, sharePct: Number(e.target.value) || 0 } : x))} className="w-12 bg-transparent py-1 text-right text-[12px] outline-none" />
-                  <span className="text-[11px] text-[var(--text-muted)]">%</span>
-                </div>
-                {!o.isTaxpayer && <button onClick={() => setOwners(owners.filter(x => x.id !== o.id))} className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-muted)] hover:text-rose-500"><Trash2 size={12} /></button>}
-              </div>
-            ))}
-            <div className="flex items-center justify-between">
-              <button onClick={() => setOwners([...owners, { id: rid('o'), name: '', sharePct: 0 }])} className="text-[11px] font-semibold text-[var(--accent)] hover:underline">+ Add owner</button>
-              <span className={`text-[10.5px] ${owners.reduce((a, o) => a + (o.sharePct || 0), 0) === 100 ? 'text-[var(--text-muted)]' : 'text-amber-600'}`}>Total {owners.reduce((a, o) => a + (o.sharePct || 0), 0)}%</span>
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)]">Co-owners you link to a client can have their share pushed to their own return (coming next).</p>
-          </div>
-        )}
+        <OwnershipEditor owners={owners} onChange={setOwners} taxpayerName={taxpayerName} />
+        {owners.length > 0 && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Co-owners linked to a client can have their share pushed to their own return, below.</p>}
       </div>
 
       {/* Residential / PRR + BADR flags */}

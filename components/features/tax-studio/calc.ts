@@ -12,7 +12,16 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, CgtCalcDisposal, CgtCalcState, CgtRelief } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
+
+/** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
+ *  Shared by CGT disposals and joint interest. */
+export function ownerShareFraction(owners?: CgtOwner[]): number {
+  if (!owners || !owners.length) return 1;
+  const tp = owners.find(o => o.isTaxpayer);
+  const pct = tp ? (tp.sharePct || 0) : Math.max(0, 100 - owners.reduce((a, o) => a + (o.sharePct || 0), 0));
+  return pct / 100;
+}
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -194,19 +203,20 @@ export function dividendsTotal(income: Sa100Income): number {
   return income.dividends || 0;
 }
 
-/** Untaxed UK interest (box 2) — itemised sum when present, else the scalar. */
+/** Untaxed UK interest (box 2) — itemised sum when present, else the scalar. Joint
+ *  entries count only the taxpayer's share. */
 export function savingsInterestTotal(income: Sa100Income): number {
   const items = income.savingsInterestItems;
-  if (items && items.length) return items.reduce((a, s) => a + (s.amount || 0), 0);
+  if (items && items.length) return items.reduce((a, s) => a + (s.amount || 0) * ownerShareFraction(s.owners), 0);
   return income.savingsInterest || 0;
 }
-/** Taxed UK interest (box 1) grossed up: net + tax across the breakdown. */
+/** Taxed UK interest (box 1) grossed up: net + tax across the breakdown (taxpayer's share). */
 export function taxedInterestGross(income: Sa100Income): number {
-  return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0) + (t.tax || 0), 0);
+  return (income.taxedInterestItems ?? []).reduce((a, t) => a + ((t.net || 0) + (t.tax || 0)) * ownerShareFraction(t.owners), 0);
 }
-/** Tax deducted at source on taxed UK interest (box 1). */
+/** Tax deducted at source on taxed UK interest (box 1), taxpayer's share. */
 export function taxedInterestTaxCredit(income: Sa100Income): number {
-  return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.tax || 0), 0);
+  return (income.taxedInterestItems ?? []).reduce((a, t) => a + (t.tax || 0) * ownerShareFraction(t.owners), 0);
 }
 
 // ── Generic itemised line helpers (pensions & other income) ──────────────────
@@ -624,10 +634,7 @@ const cgtNum = (v?: number) => v || 0;
 
 /** The taxpayer's ownership share of a disposal (%). No owners ⇒ sole owner. */
 export function cgtTaxpayerShare(d: CgtCalcDisposal): number {
-  const owners = d.owners ?? [];
-  if (!owners.length) return 100;
-  const tp = owners.find(o => o.isTaxpayer);
-  return tp ? (tp.sharePct || 0) : Math.max(0, 100 - owners.reduce((a, o) => a + (o.sharePct || 0), 0));
+  return ownerShareFraction(d.owners) * 100;
 }
 /** Whole-asset gain before reliefs (proceeds − all allowable costs); may be a loss. */
 export function cgtGrossGain(d: CgtCalcDisposal): number {

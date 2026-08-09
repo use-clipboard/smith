@@ -40,6 +40,8 @@ interface Props {
   /** Extra classes applied to the root element */
   className?: string;
   disabled?: boolean;
+  /** Restrict results to these business types (e.g. ['individual','sole_trader']). */
+  businessTypes?: string[];
 }
 
 const STATUS_COLOURS: Record<string, string> = {
@@ -55,6 +57,7 @@ export default function ClientSearchInput({
   placeholder = 'Select client…',
   className = '',
   disabled = false,
+  businessTypes,
 }: Props) {
   const [open, setOpen]       = useState(false);
   const [search, setSearch]   = useState('');
@@ -65,10 +68,11 @@ export default function ClientSearchInput({
   const inputRef     = useRef<HTMLInputElement>(null);
 
   // ── API fetch (debounced) ──────────────────────────────────────────────────
+  const typesParam = businessTypes && businessTypes.length ? `&types=${encodeURIComponent(businessTypes.join(','))}` : '';
   const fetchOptions = useCallback(async (q: string) => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/clients?search=${encodeURIComponent(q)}`);
+      const r = await fetch(`/api/clients?search=${encodeURIComponent(q)}${typesParam}`);
       if (r.ok) {
         const d = await r.json();
         setOptions(d.clients ?? []);
@@ -76,7 +80,7 @@ export default function ClientSearchInput({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [typesParam]);
 
   useEffect(() => {
     if (!open) return;
