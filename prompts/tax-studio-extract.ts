@@ -22,11 +22,14 @@ Common documents and what to take:
 - SA302 / HMRC tax calculation: use only as a cross-check — do NOT double count figures already taken from source documents.
 
 Rules:
-- Only include figures for the ${taxYear} tax year. If a document clearly relates to a different year, exclude it and say so in "notes".
+- Only include figures for the ${taxYear} tax year. If a document clearly relates to a different year, exclude it and add it to "setAside" with the reason.
 - Combine a P60 and a P11D for the SAME employer into ONE employment entry (pay from the P60, benefits from the P11D).
 - All amounts must be plain GBP numbers — no currency symbols, no commas, no words.
-- If a figure is unclear, or a document is not tax-relevant, set it to 0 (or omit that entry) and add a short line to "notes" explaining what to check.
 - Never invent figures. Only report what the documents show.
+
+Also produce two review lists:
+- "setAside": anything you found but did NOT put into a figure above — a document that isn't tax-relevant, is for the wrong year, is a duplicate, or a figure you couldn't confidently categorise or read. Give each a short human "label" and a plain-English "reason" a non-expert taxpayer would understand (e.g. "This looks like a 2023/24 P60, which is outside this return's year" or "I found £4,200 but couldn't tell if it's rent received or a returned deposit").
+- "needs": specific things you would need from the taxpayer to make the entries accurate — a MISSING document, or missing CONTEXT. Be concrete. Examples: "To finish the capital gain I need the original purchase completion statement." / "Is the rental property let jointly with anyone else?" / "Is 12 High St residential or commercial?" / "Were any of these dividends from a foreign company?"
 
 Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
 
@@ -47,6 +50,8 @@ Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
   "giftAid": number,
   "pensionContributions": number,
   "childBenefit": number,
-  "notes": [string]
+  "notes": [string],
+  "setAside": [{ "label": string, "reason": string }],
+  "needs": [string]
 }`;
 }

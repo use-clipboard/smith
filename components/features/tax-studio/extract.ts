@@ -22,6 +22,10 @@ export interface Sa100Extraction {
   pensionContributions: number;
   childBenefit: number;
   notes: string[];
+  /** Documents/figures found but NOT used, each with a plain-English reason. */
+  setAside: { label: string; reason: string }[];
+  /** Missing documents or context SMITH would need to make entries accurate. */
+  needs: string[];
 }
 
 export interface EncodedFile { name: string; mimeType: string; base64?: string; text?: string }
@@ -52,6 +56,8 @@ function normalise(raw: unknown): Sa100Extraction {
     statePension: num(e.statePension), foreignIncome: num(e.foreignIncome), foreignTaxPaid: num(e.foreignTaxPaid),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
+    setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
+    needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
 }
 
@@ -70,6 +76,98 @@ export async function fetchExtraction(taxYear: string, files: EncodedFile[]): Pr
 export function extractionHasData(e: Sa100Extraction): boolean {
   return e.employment.length > 0 || e.selfEmployment.length > 0 || e.partnerships.length > 0 || e.property.length > 0
     || [e.dividends, e.savingsInterest, e.pensionsIncome, e.statePension, e.foreignIncome, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
+}
+
+// ── Scan-review proposals (the editable left panel of the review lightbox) ─────
+export type ScanDest =
+  | 'employment' | 'selfEmployment' | 'partnership' | 'property' | 'dividends'
+  | 'savingsInterest' | 'pensionsIncome' | 'statePension' | 'foreign' | 'giftAid'
+  | 'pensionContributions' | 'otherIncome' | 'childBenefit' | 'exclude';
+
+/** The destinations a scanned figure can be sent to (the reassignment dropdown). */
+export const SCAN_DESTS: { value: ScanDest; label: string }[] = [
+  { value: 'employment', label: 'Employment (SA102)' },
+  { value: 'selfEmployment', label: 'Self-employment (SA103)' },
+  { value: 'partnership', label: 'Partnership (SA104)' },
+  { value: 'property', label: 'UK property (SA105)' },
+  { value: 'foreign', label: 'Foreign income (SA106)' },
+  { value: 'dividends', label: 'Dividends' },
+  { value: 'savingsInterest', label: 'Savings interest' },
+  { value: 'pensionsIncome', label: 'Pension income' },
+  { value: 'statePension', label: 'State pension' },
+  { value: 'giftAid', label: 'Gift Aid' },
+  { value: 'pensionContributions', label: 'Pension contributions' },
+  { value: 'otherIncome', label: 'Other income' },
+  { value: 'childBenefit', label: 'Child benefit' },
+  { value: 'exclude', label: '— Don’t import' },
+];
+const DEST_LABEL = new Map(SCAN_DESTS.map(d => [d.value, d.label]));
+export const scanDestLabel = (d: ScanDest): string => DEST_LABEL.get(d) ?? d;
+
+/** One editable proposed entry on the review lightbox's left panel. */
+export interface ScanProposal {
+  id: string;
+  label: string;
+  amount: number;
+  dest: ScanDest;
+  origin: ScanDest;   // where it was first proposed (drives the "reassigned" cue)
+  emp?: Sa100Extraction['employment'][number]; // rich P60/P11D data preserved for employment
+}
+
+let _pid = 0;
+const pid = () => `sp-${Date.now()}-${_pid++}`;
+
+/** Turn a raw extraction into editable proposals (each figure → its destination). */
+export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
+  const out: ScanProposal[] = [];
+  const push = (label: string, amount: number, dest: ScanDest, emp?: Sa100Extraction['employment'][number]) => {
+    if (amount || emp) out.push({ id: pid(), label, amount: Math.round(amount), dest, origin: dest, emp });
+  };
+  e.employment.forEach(x => push(`Pay — ${x.employer || 'employment'}`, x.pay, 'employment', x));
+  e.selfEmployment.forEach(x => push(`Trade profit — ${x.name || 'self-employment'}`, x.profit, 'selfEmployment'));
+  e.partnerships.forEach(x => push(`Partnership share — ${x.name || 'partnership'}`, x.profit, 'partnership'));
+  e.property.forEach(x => push(`Rental profit — ${x.address || 'property'}`, x.profit, 'property'));
+  if (e.dividendList.length) e.dividendList.forEach(x => push(`Dividend — ${x.company || 'company'}`, x.amount, 'dividends'));
+  else if (e.dividends) push('Dividends', e.dividends, 'dividends');
+  if (e.savingsInterest) push('Savings interest', e.savingsInterest, 'savingsInterest');
+  if (e.pensionsIncome) push('Pension income', e.pensionsIncome, 'pensionsIncome');
+  if (e.statePension) push('State pension', e.statePension, 'statePension');
+  if (e.foreignIncome) push('Foreign income', e.foreignIncome, 'foreign');
+  if (e.otherIncome) push('Other income', e.otherIncome, 'otherIncome');
+  if (e.giftAid) push('Gift Aid', e.giftAid, 'giftAid');
+  if (e.pensionContributions) push('Pension contributions', e.pensionContributions, 'pensionContributions');
+  if (e.childBenefit) push('Child benefit', e.childBenefit, 'childBenefit');
+  return out;
+}
+
+function emptyExtraction(): Sa100Extraction {
+  return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, pensionsIncome: 0, statePension: 0, foreignIncome: 0, foreignTaxPaid: 0, otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
+}
+
+/** Apply the (edited) proposals to the income — routes each to its chosen
+ *  destination and merges additively (batch-keyed, like a normal scan import). */
+export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[], batchId: string): Sa100Income {
+  const e = emptyExtraction();
+  for (const p of proposals) {
+    if (p.dest === 'exclude') continue;
+    const amt = Math.round(p.amount || 0);
+    switch (p.dest) {
+      case 'employment': e.employment.push(p.emp && p.origin === 'employment' ? { ...p.emp, pay: amt } : { employer: p.label, pay: amt, taxDeducted: 0, benefits: 0, expenses: 0 }); break;
+      case 'selfEmployment': e.selfEmployment.push({ name: p.label, profit: amt }); break;
+      case 'partnership': e.partnerships.push({ name: p.label, profit: amt }); break;
+      case 'property': e.property.push({ address: p.label, profit: amt }); break;
+      case 'dividends': e.dividendList.push({ company: p.label, amount: amt }); e.dividends += amt; break;
+      case 'savingsInterest': e.savingsInterest += amt; break;
+      case 'pensionsIncome': e.pensionsIncome += amt; break;
+      case 'statePension': e.statePension += amt; break;
+      case 'foreign': e.foreignIncome += amt; break;
+      case 'giftAid': e.giftAid += amt; break;
+      case 'pensionContributions': e.pensionContributions += amt; break;
+      case 'otherIncome': e.otherIncome += amt; break;
+      case 'childBenefit': e.childBenefit += amt; break;
+    }
+  }
+  return mergeExtractionIntoIncome(income, e, batchId);
 }
 
 const DOC_EMP = 'doc-emp-', DOC_SE = 'doc-se-', DOC_PT = 'doc-pt-', DOC_PROP = 'doc-prop-', DOC_DV = 'doc-dv-';
