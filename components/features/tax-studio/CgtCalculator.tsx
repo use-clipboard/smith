@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Calculator, Sparkles, Loader2, Check, Users } from 'lucide-react';
+import { X, Plus, Trash2, Calculator, Sparkles, Loader2, Check, Users, ScanText } from 'lucide-react';
 import { fmtMoney } from './data';
 import ClientSearchInput from '@/components/ui/ClientSearchInput';
+import CgtScanReview from './CgtScanReview';
 import {
   cgtCalcSummary, cgtGrossGain, cgtTaxpayerGain, cgtTaxpayerShare, cgtSuggestReliefs, CGT_AEA,
 } from './calc';
@@ -62,11 +63,13 @@ export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, 
   const summary = cgtCalcSummary(state);
   const [reviewing, setReviewing] = useState(false);
   const [reviewErr, setReviewErr] = useState<string | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
 
   const patch = (u: Partial<CgtCalcState>) => onChange({ ...state, ...u });
   const updDisposal = (id: string, u: Partial<CgtCalcDisposal>) => patch({ disposals: disposals.map(d => d.id === id ? { ...d, ...u } : d) });
   const addDisposal = () => patch({ disposals: [...disposals, { id: rid('d'), description: '', assetClass: 'residential', proceeds: 0 }] });
   const removeDisposal = (id: string) => patch({ disposals: disposals.filter(d => d.id !== id) });
+  const addScanned = (ds: CgtCalcDisposal[]) => patch({ disposals: [...disposals, ...ds] });
 
   async function runReview() {
     setReviewing(true); setReviewErr(null);
@@ -118,7 +121,11 @@ export default function CgtCalculator({ state, taxYear, taxpayerName, onChange, 
           <div className="space-y-2.5">
             {disposals.map((d, i) => <DisposalCard key={d.id} d={d} idx={i} taxpayerName={taxpayerName} onChange={u => updDisposal(d.id, u)} onRemove={() => removeDisposal(d.id)} />)}
           </div>
-          <button onClick={addDisposal} className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add disposal</button>
+          <div className="mt-2 flex items-center gap-3">
+            <button onClick={addDisposal} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add disposal</button>
+            <button onClick={() => setScanOpen(true)} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><ScanText size={13} /> Scan documents</button>
+          </div>
+          {scanOpen && <CgtScanReview taxYear={taxYear} taxpayerName={taxpayerName} onApply={addScanned} onClose={() => setScanOpen(false)} />}
 
           {/* SMITH Review */}
           <div className="mt-5 rounded-xl border border-[var(--accent)]/25 bg-[var(--accent)]/[0.03] p-3">
