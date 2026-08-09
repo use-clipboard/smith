@@ -104,6 +104,12 @@ export const SCAN_DESTS: { value: ScanDest; label: string }[] = [
 const DEST_LABEL = new Map(SCAN_DESTS.map(d => [d.value, d.label]));
 export const scanDestLabel = (d: ScanDest): string => DEST_LABEL.get(d) ?? d;
 
+/** Which SA102 box an employment sub-figure feeds (pay + its companions). */
+export type EmpField = 'pay' | 'taxDeducted' | 'benefits' | 'expenses';
+export const EMP_FIELD_LABEL: Record<Exclude<EmpField, 'pay'>, string> = {
+  taxDeducted: 'PAYE tax deducted', benefits: 'Benefits in kind', expenses: 'Employment expenses',
+};
+
 /** One editable proposed entry on the review lightbox's left panel. */
 export interface ScanProposal {
   id: string;
@@ -112,6 +118,8 @@ export interface ScanProposal {
   dest: ScanDest;
   origin: ScanDest;   // where it was first proposed (drives the "reassigned" cue)
   emp?: Sa100Extraction['employment'][number]; // rich P60/P11D data preserved for employment
+  group?: string;     // links an employment's figures (pay + tax + benefits + expenses) into one SA102
+  empField?: EmpField; // which SA102 box this figure feeds (employment groups only)
 }
 
 let _pid = 0;
@@ -123,7 +131,19 @@ export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
   const push = (label: string, amount: number, dest: ScanDest, emp?: Sa100Extraction['employment'][number]) => {
     if (amount || emp) out.push({ id: pid(), label, amount: Math.round(amount), dest, origin: dest, emp });
   };
-  e.employment.forEach(x => push(`Pay — ${x.employer || 'employment'}`, x.pay, 'employment', x));
+  // Employment — one group per P60, listing EVERY figure read (pay + PAYE tax +
+  // benefits + expenses) as its own row so nothing found is hidden.
+  e.employment.forEach(x => {
+    const who = x.employer || 'employment';
+    const group = pid();
+    out.push({ id: pid(), label: `Pay — ${who}`, amount: Math.round(x.pay), dest: 'employment', origin: 'employment', emp: x, group, empField: 'pay' });
+    const sub = (field: Exclude<EmpField, 'pay'>, amount: number) => {
+      if (amount) out.push({ id: pid(), label: `${EMP_FIELD_LABEL[field]} — ${who}`, amount: Math.round(amount), dest: 'employment', origin: 'employment', group, empField: field });
+    };
+    sub('taxDeducted', x.taxDeducted);
+    sub('benefits', x.benefits);
+    sub('expenses', x.expenses);
+  });
   e.selfEmployment.forEach(x => push(`Trade profit — ${x.name || 'self-employment'}`, x.profit, 'selfEmployment'));
   e.partnerships.forEach(x => push(`Partnership share — ${x.name || 'partnership'}`, x.profit, 'partnership'));
   e.property.forEach(x => push(`Rental profit — ${x.address || 'property'}`, x.profit, 'property'));
@@ -194,11 +214,28 @@ export async function fetchScanChat(payload: {
  *  destination and merges additively (batch-keyed, like a normal scan import). */
 export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[], batchId: string): Sa100Income {
   const e = emptyExtraction();
+
+  // Employment — reassemble each grouped P60 from its (included) figure rows so
+  // pay, PAYE tax, benefits and expenses land in the right SA102 boxes together.
+  const groups = new Map<string, ScanProposal[]>();
+  for (const p of proposals) {
+    if (p.dest === 'employment' && p.group) {
+      const g = groups.get(p.group); if (g) g.push(p); else groups.set(p.group, [p]);
+    }
+  }
+  for (const rows of groups.values()) {
+    const payRow = rows.find(r => r.empField === 'pay');
+    const employer = payRow?.emp?.employer || payRow?.label.replace(/^Pay — /, '') || 'Employment';
+    const field = (f: EmpField) => { const r = rows.find(x => x.empField === f); return r ? Math.round(r.amount || 0) : 0; };
+    e.employment.push({ employer, pay: field('pay'), taxDeducted: field('taxDeducted'), benefits: field('benefits'), expenses: field('expenses') });
+  }
+
   for (const p of proposals) {
     if (p.dest === 'exclude') continue;
+    if (p.dest === 'employment' && p.group) continue; // handled by the group pass above
     const amt = Math.round(p.amount || 0);
     switch (p.dest) {
-      case 'employment': e.employment.push(p.emp && p.origin === 'employment' ? { ...p.emp, pay: amt } : { employer: p.label, pay: amt, taxDeducted: 0, benefits: 0, expenses: 0 }); break;
+      case 'employment': e.employment.push({ employer: p.label, pay: amt, taxDeducted: 0, benefits: 0, expenses: 0 }); break;
       case 'selfEmployment': e.selfEmployment.push({ name: p.label, profit: amt }); break;
       case 'partnership': e.partnerships.push({ name: p.label, profit: amt }); break;
       case 'property': e.property.push({ address: p.label, profit: amt }); break;
