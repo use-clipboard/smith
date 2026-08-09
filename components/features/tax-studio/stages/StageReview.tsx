@@ -179,8 +179,14 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     selfemp: income.selfEmployment.length,
     partnership: (income.partnerships ?? []).length,
     property: income.property.length,
-    foreign: income.foreign?.sources?.length
-      || (income.foreign && ((income.foreign.income || 0) || (income.foreign.foreignTaxPaid || 0)) ? 1 : 0),
+    foreign: (() => {
+      const sa = income.foreign; if (!sa) return 0;
+      const rows = [sa.interest, sa.dividends, sa.remittedExcl, sa.remittedDividends, sa.pensions, sa.otherDividend, sa.otherAll, sa.properties, sa.foreignTaxRows, sa.nrtSavings, sa.nrtDividends]
+        .reduce((a, x) => a + (x?.length ?? 0), 0);
+      if (rows) return rows;
+      if (sa.sources?.length) return sa.sources.length;
+      return [sa.unremittable, sa.ftcrOnIncome, sa.cgUkGain, sa.lifeGains, sa.income, sa.foreignTaxPaid].some(v => v) ? 1 : 0;
+    })(),
     cgt: income.capitalGains?.disposals?.length
       || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
     trusts: (income.trusts ?? []).length,
@@ -1951,6 +1957,27 @@ const FOREIGN_SUBTABS: Record<string, string[]> = {
 };
 const foreignRid = (n: number) => `fr-${n}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+// Entry count shown in brackets on a foreign sub-tab heading (0 = no badge).
+function foreignSubCount(sa: Sa106, tab: string, sub: string): number {
+  const n = (a?: unknown[]) => a?.length ?? 0;
+  if (tab === 'Overseas Income') {
+    switch (sub) {
+      case 'Interest & other income': return n(sa.interest);
+      case 'Dividends from foreign companies': return n(sa.dividends);
+      case 'Remitted income excl. dividends': return n(sa.remittedExcl);
+      case 'Remitted foreign dividends': return n(sa.remittedDividends);
+      case 'Pensions income': return n(sa.pensions);
+      case 'Other income': return n(sa.otherDividend) + n(sa.otherAll);
+    }
+  }
+  if (tab === 'Income from Land and property') return sub === 'Total P&L' ? 0 : n(sa.properties);
+  if (tab === 'Foreign tax paid') {
+    if (sub === 'Foreign tax') return n(sa.foreignTaxRows);
+    if (sub === 'Non-resident trusts') return n(sa.nrtSavings) + n(sa.nrtDividends);
+  }
+  return 0;
+}
+
 function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const sa: Sa106 = income.foreign ?? {};
   const set = (u: Partial<Sa106>) => setIncome(i => ({ ...i, foreign: { ...i.foreign, ...u } }));
@@ -1973,9 +2000,12 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
       {/* Sub tabs */}
       {subList.length > 0 && (
         <div className="flex flex-wrap gap-1 px-0.5">
-          {subList.map((st, i) => (
-            <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}</button>
-          ))}
+          {subList.map((st, i) => {
+            const c = foreignSubCount(sa, activeTab, st);
+            return (
+              <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{c > 0 && <span className="font-bold"> ({c})</span>}</button>
+            );
+          })}
         </div>
       )}
 
