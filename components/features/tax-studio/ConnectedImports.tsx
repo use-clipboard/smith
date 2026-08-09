@@ -113,7 +113,9 @@ const BOOKKEEPING: ToolAdapter<BookkeepingSummary> = {
 
 const LANDLORD: ToolAdapter<LandlordSummary> = {
   name: 'Landlord Analysis', target: 'UK property', icon: House,
-  fetch: fetchLandlordSummary, hasData: s => s.found && !!s.taxableProfit, headline: s => `${fmtMoney(s.taxableProfit)} taxable profit`, note: s => s.note,
+  fetch: fetchLandlordSummary, hasData: s => s.found && !!s.taxableProfit,
+  headline: s => `${fmtMoney(s.taxableProfit)} taxable profit${s.ownerSharePct != null ? ` · your ${s.ownerSharePct}% share` : ''}`,
+  note: s => [s.ownerSharePct != null && s.analysisClientName ? `This is your ${s.ownerSharePct}% share of ${s.analysisClientName}’s rental portfolio.` : '', s.note ?? ''].filter(Boolean).join(' ') || undefined,
   merge: mergeCrossLandlord, dateLabel: s => rangeLabel(s.dateFrom, s.dateTo),
   timelineLabel: l => `Imported rental from ${l} (Landlord Analysis)`,
 };

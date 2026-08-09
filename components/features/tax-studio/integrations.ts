@@ -92,6 +92,11 @@ export interface LandlordSummary {
   /** The client owns a property jointly (additional owners or ownership < 100%) —
    *  used to smart-guess the SA105 "let jointly" box (box 3). */
   jointlyOwned?: boolean;
+  /** When the figures are this client's SHARE of a split portfolio: their % (null
+   *  if it varies by property) and whose analysis it came from. */
+  ownerSharePct?: number | null;
+  analysisClientId?: string;
+  analysisClientName?: string;
   note?: string;
 }
 
@@ -153,7 +158,11 @@ export interface SourceRef {
 export function mergeCrossLandlord(income: Sa100Income, s: LandlordSummary, src: SourceRef): Sa100Income {
   const pfx = `${XC}ll-${src.clientId}-`;
   const property = income.property.filter(p => !p.id.startsWith(pfx));
-  property.push({ id: `${pfx}0`, address: `UK property — ${src.label}`, profit: Math.round(s.taxableProfit), residentialFinanceCosts: Math.round(s.financeCosts) });
+  // When it's this owner's share of a jointly-owned portfolio, name the address
+  // after the portfolio + their %, so the SA105 line reads clearly.
+  const shared = s.ownerSharePct != null && s.analysisClientName;
+  const address = shared ? `UK property — ${s.ownerSharePct}% share of ${s.analysisClientName}` : `UK property — ${src.label}`;
+  property.push({ id: `${pfx}0`, address, profit: Math.round(s.taxableProfit), residentialFinanceCosts: Math.round(s.financeCosts) });
   return { ...income, property, propertyLetJointly: s.jointlyOwned ? true : income.propertyLetJointly };
 }
 
