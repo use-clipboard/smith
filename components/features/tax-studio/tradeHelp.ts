@@ -234,3 +234,49 @@ export const FGN = {
   lifeYears: 'The number of complete years the policy was held — used for top-slicing relief.',
   fig: 'Amount of this income you’re claiming under the Foreign Income and Gains (FIG) regime as a qualifying new UK resident.',
 } as const;
+
+// SA108 Capital gains summary
+export const CGT = {
+  disposals: 'The number of disposals of this type in the year — count each asset (or share pool) sold, given away or otherwise disposed of.',
+  proceeds: 'Total sale proceeds (or market value on a gift / connected-party disposal) for disposals of this type, before deducting costs.',
+  costs: 'Allowable costs — the purchase price plus incidental costs of buying and selling and any capital improvements.',
+  gains: 'Total chargeable gains of this type in the year, before deducting losses — after any Private Residence Relief or other reliefs.',
+  losses: 'Allowable capital losses of this type arising in the year — set first against gains taxed at the highest rate.',
+  fig: 'Amount of the gain you’re claiming under the Foreign Income and Gains (FIG) regime as a qualifying new UK resident.',
+  claimCode: 'Enter HMRC’s relevant claim or election code (e.g. PRR, GHO, LET) — see the SA108 notes.',
+  rtt: 'Total gains or losses on disposals of this type already reported on a Real Time Transaction return during the year.',
+  rttTaxPaid: 'CGT already paid on the gains reported on Real Time Transaction returns.',
+  pptGains: 'Total gains or losses on UK residential property already reported on a CGT UK Property Disposal (60-day) return.',
+  pptTaxCharged: 'CGT already charged on the gains reported on the UK Property Disposal return — credited against your bill.',
+  carriedInterest: 'Carried interest is the performance share fund managers receive — taxed as a capital gain, entered before any claim or election.',
+  badr: 'Gains qualifying for Business Asset Disposal Relief (formerly Entrepreneurs’ Relief) — taxed at 14% for 2025/26, up to the £1m lifetime limit.',
+  badrLifetime: 'The cumulative BADR / Entrepreneurs’ Relief you have already claimed against the £1m lifetime limit in earlier years.',
+  badrSplit: 'Of the total in box 17, the amount relating to this asset class where BADR is being claimed — so it’s taxed at the 14% rate.',
+  lossesBf: 'Capital losses brought forward from earlier years, used against this year’s gains after the annual exempt amount.',
+  lossesCf: 'Unused capital losses carried forward to set against future gains.',
+  incomeLosses: 'Trading or other income losses you’re setting against this year’s capital gains.',
+  essLimit: 'Gains on Employee Shareholder Status shares above the £100,000 lifetime exemption.',
+  seis: 'Gains reinvested under the Seed Enterprise Investment Scheme and qualifying for SEIS reinvestment relief.',
+  shareLossRelief: 'Of the losses used against income, the amount that is Share Loss Relief on qualifying unlisted / EIS shares claimed in-year.',
+  nrcgt: 'Non-Resident Capital Gains Tax on UK land and property — for periods you were non-UK resident.',
+  nrcgtIndirect: 'Tick if any of the NRCGT gains are from indirect disposals of UK property (e.g. shares in a property-rich company).',
+  eisExcluded: 'Gains on excluded indexed securities (deeply discounted / index-linked) that are chargeable to CGT.',
+  qahc: 'Gains or losses on Qualifying Asset Holding Company share repurchases and security redemptions.',
+  estimates: 'Tick if your computations include any estimates or valuations (e.g. a probate value or an apportionment) — then explain them in box 54.',
+  adjustments: 'Any adjustment to the Capital Gains Tax otherwise due (for example under an averaging or recomputation).',
+} as const;
+
+// SA107 Trusts & estates
+export const TRUST = {
+  discretionary: 'A discretionary payment from a UK trust — enter the NET amount received. SMITH grosses it up at the 45% trust rate and gives you the tax credit.',
+  settlorInterested: 'Total payments you received from trusts you (or your spouse) settled — a memo figure; the income itself is taxed on the settlor.',
+  nonDiscNet: 'Income you were entitled to from a trust (not a discretionary payment) — enter the net amount by type; it carries the tax already suffered.',
+  trusteesNonResident: 'Tick if the trustees are not resident in the UK for tax purposes — this affects how the income and any credit are treated.',
+  settlorChargeable: 'Income of a settlor-interested trust that is chargeable on you as the settlor — enter the net amount at the rate shown.',
+  lifeAssurance: 'Tax treated as paid on a gain from certain UK life assurance policies held within the trust.',
+  estateIncome: 'Income from a deceased person’s estate, entered by type at the amount received after tax — from the R185 (Estate Income) the executors give you.',
+  estateDividend75: 'Estate dividend income that bore tax at 7.5% (the pre-2016 dividend trust rate), entered after the tax taken off.',
+  estateNonRepayable: 'Estate non-savings income taxed at a basic rate that is not repayable — the credit can’t be refunded, only set against your bill.',
+  foreignEstate: 'Income from a foreign estate — enter each estate’s income, the foreign tax paid and any UK tax withheld; the three totals feed boxes 22, 24 and 23.',
+  estateResiProperty: 'Residential property income received through the estate, and any unused residential finance costs brought forward.',
+} as const;

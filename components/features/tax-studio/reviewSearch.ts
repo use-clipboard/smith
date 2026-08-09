@@ -83,6 +83,22 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Foreign land & property', context: 'Foreign · boxes 14–32', page: 'foreign', keywords: 'foreign property rents overseas letting abroad box 14 18 24 27 32' },
   { label: 'Foreign tax paid / capital gains', context: 'Foreign · boxes 33–46', page: 'foreign', keywords: 'foreign tax paid capital gains life insurance ftcr box 33 39 43 46' },
   { label: 'Non-resident trusts / Transfer of Assets', context: 'Foreign · boxes 49–64', page: 'foreign', keywords: 'non-resident trusts transfer of assets abroad settlements fig box 49 54 58 62 64' },
+  // Capital gains (SA108)
+  { label: 'Residential property gains', context: 'Capital gains · Property and Assets · boxes 3–13C', page: 'cgt', keywords: 'residential property gains disposals proceeds allowable costs losses carried interest ppt box 3 4 5 6 7 8 9 10 11 12 13' },
+  { label: 'Cryptoassets gains', context: 'Capital gains · Property and Assets · boxes 13.1–13.8', page: 'cgt', keywords: 'crypto cryptoassets bitcoin ethereum token gains disposals real time transaction box 13.1 13.4 13.5 13.7' },
+  { label: 'Other property, assets and gains', context: 'Capital gains · Property and Assets · boxes 14–22', page: 'cgt', keywords: 'other property assets gains chattels goodwill land badr box 14 15 16 17 19 21 22' },
+  { label: 'Listed shares and securities', context: 'Capital gains · Shares and Securities · boxes 23–30', page: 'cgt', keywords: 'listed shares securities quoted gains disposals proceeds box 23 24 25 26 27 29' },
+  { label: 'Unlisted shares and securities', context: 'Capital gains · Shares and Securities · boxes 31–44', page: 'cgt', keywords: 'unlisted shares securities eis seis ess share loss relief box 31 34 39 40 41 42 43 44' },
+  { label: 'Capital losses & adjustments', context: 'Capital gains · Losses and adjustments · boxes 45–52', page: 'cgt', keywords: 'losses brought forward carried forward entrepreneurs relief business asset disposal badr adjustments box 45 46 47 48 49 50 51 52' },
+  { label: 'Business Asset Disposal Relief (BADR)', context: 'Capital gains · Losses and adjustments · box 50', page: 'cgt', keywords: 'badr business asset disposal relief entrepreneurs 14% lifetime limit box 50 50.1' },
+  { label: 'Non-resident Capital Gains Tax (NRCGT)', context: 'Capital gains · Non-resident CGT · boxes 52.1–52QL', page: 'cgt', keywords: 'nrcgt non resident capital gains uk property indirect eis qahc box 52.1 52.2 52.3 52EG 52QG' },
+  { label: 'CGT estimates or valuations', context: 'Capital gains · Any other information · boxes 53–54', page: 'cgt', keywords: 'estimates valuations any other information note box 53 54' },
+  // Trusts & estates (SA107)
+  { label: 'Discretionary trust income', context: 'Trusts · Income from Trusts · boxes 1–2', page: 'trusts', keywords: 'discretionary trust payment net amount settlor-interested box 1 2' },
+  { label: 'Non-discretionary trust income', context: 'Trusts · Income from Trusts · boxes 3–6', page: 'trusts', keywords: 'non-discretionary trust entitlement non-savings savings dividend trustees non-resident box 3 4 5 6' },
+  { label: 'Income chargeable on settlors', context: 'Trusts · Income from Trusts · boxes 7–15', page: 'trusts', keywords: 'settlor chargeable basic rate trust rate gross life assurance box 7 8 9 10 11 12 13 14 15' },
+  { label: 'Income from UK estates', context: 'Trusts · Income from the estates · boxes 16–19', page: 'trusts', keywords: 'estate deceased r185 non-savings savings dividend after tax non-repayable box 16 17 18 19' },
+  { label: 'Income from foreign estates', context: 'Trusts · Income from the estates · boxes 22–24', page: 'trusts', keywords: 'foreign estate income foreign tax uk tax withheld ftcr fig box 22 23 24' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

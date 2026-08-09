@@ -2,7 +2,7 @@
 
 import { fileToBase64, readFileAsText, compressImage } from '@/utils/fileUtils';
 import { countryLabel } from './countries';
-import type { Sa100Income, ForeignRow, ForeignProperty, Sa107 } from './types';
+import type { Sa100Income, ForeignRow, ForeignProperty, Sa107, Sa108 } from './types';
 
 /** Which SA106 table a foreign income line belongs to. */
 export type ForeignCategory = 'interest' | 'dividends' | 'pension' | 'property' | 'other';
@@ -13,6 +13,21 @@ export type TrustCategory = 'discretionaryTrust' | 'nonDiscTrust' | 'ukEstate';
 const TRUST_CATS = new Set<TrustCategory>(['discretionaryTrust', 'nonDiscTrust', 'ukEstate']);
 const TRUST_CAT_LABEL: Record<TrustCategory, string> = {
   discretionaryTrust: 'Discretionary trust income', nonDiscTrust: 'Trust income', ukEstate: 'Estate income',
+};
+
+/** Which SA108 asset class a scanned capital-gains line belongs to. */
+export type CgtCategory = 'residential' | 'crypto' | 'other' | 'listed' | 'unlisted';
+const CGT_CATS = new Set<CgtCategory>(['residential', 'crypto', 'other', 'listed', 'unlisted']);
+const CGT_CAT_LABEL: Record<CgtCategory, string> = {
+  residential: 'Residential property', crypto: 'Cryptoassets', other: 'Other assets', listed: 'Listed shares', unlisted: 'Unlisted shares',
+};
+/** SA108 box keys per asset class (disposals / proceeds / costs / gains / losses). */
+const CGT_BOX: Record<CgtCategory, { disposals: keyof Sa108; proceeds: keyof Sa108; costs: keyof Sa108; gains: keyof Sa108; losses: keyof Sa108 }> = {
+  residential: { disposals: 'resiDisposals', proceeds: 'resiProceeds', costs: 'resiCosts', gains: 'resiGains', losses: 'resiLosses' },
+  crypto: { disposals: 'cryptoDisposals', proceeds: 'cryptoProceeds', costs: 'cryptoCosts', gains: 'cryptoGains', losses: 'cryptoLosses' },
+  other: { disposals: 'otherDisposals', proceeds: 'otherProceeds', costs: 'otherCosts', gains: 'otherGains', losses: 'otherLosses' },
+  listed: { disposals: 'listedDisposals', proceeds: 'listedProceeds', costs: 'listedCosts', gains: 'listedGains', losses: 'listedLosses' },
+  unlisted: { disposals: 'unlistedDisposals', proceeds: 'unlistedProceeds', costs: 'unlistedCosts', gains: 'unlistedGains', losses: 'unlistedLosses' },
 };
 
 export interface Sa100Extraction {
@@ -38,6 +53,8 @@ export interface Sa100Extraction {
   foreignDividendsTax: number; // box 7 — tax taken off those
   /** Trust / estate income lines (SA107), each routed to the right area. */
   trustEstate: { source: string; category: TrustCategory; nonSavings: number; savings: number; dividend: number }[];
+  /** Capital-gains disposal groups (SA108), one per asset class. */
+  capitalGains: { category: CgtCategory; disposals: number; proceeds: number; costs: number; gains: number; losses: number }[];
   otherIncome: number;
   giftAid: number;
   pensionContributions: number;
@@ -69,6 +86,7 @@ function normalise(raw: unknown): Sa100Extraction {
   const str = (v: unknown): string | undefined => (v != null ? String(v) : undefined);
   const cat = (v: unknown): ForeignCategory => (FOREIGN_CATS.has(v as ForeignCategory) ? v as ForeignCategory : 'other');
   const tcat = (v: unknown): TrustCategory => (TRUST_CATS.has(v as TrustCategory) ? v as TrustCategory : 'ukEstate');
+  const ccat = (v: unknown): CgtCategory => (CGT_CATS.has(v as CgtCategory) ? v as CgtCategory : 'other');
   return {
     documents: arr(e.documents),
     employment: arr<Sa100Extraction['employment'][number]>(e.employment).map(x => ({ employer: String(x?.employer ?? ''), pay: num(x?.pay), taxDeducted: num(x?.taxDeducted), benefits: num(x?.benefits), expenses: num(x?.expenses) })),
@@ -82,6 +100,7 @@ function normalise(raw: unknown): Sa100Extraction {
     foreignItems: arr<Sa100Extraction['foreignItems'][number]>(e.foreignItems).map(x => ({ country: String(x?.country ?? ''), category: cat(x?.category), income: num(x?.income), foreignTax: num(x?.foreignTax) })).filter(x => x.income > 0 || x.foreignTax > 0),
     foreignDividends: num(e.foreignDividends), foreignDividendsTax: num(e.foreignDividendsTax),
     trustEstate: arr<Sa100Extraction['trustEstate'][number]>(e.trustEstate).map(x => ({ source: String(x?.source ?? ''), category: tcat(x?.category), nonSavings: num(x?.nonSavings), savings: num(x?.savings), dividend: num(x?.dividend) })).filter(x => x.nonSavings > 0 || x.savings > 0 || x.dividend > 0),
+    capitalGains: arr<Sa100Extraction['capitalGains'][number]>(e.capitalGains).map(x => ({ category: ccat(x?.category), disposals: num(x?.disposals), proceeds: num(x?.proceeds), costs: num(x?.costs), gains: num(x?.gains), losses: num(x?.losses) })).filter(x => x.gains > 0 || x.losses > 0 || x.proceeds > 0),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
@@ -103,14 +122,14 @@ export async function fetchExtraction(taxYear: string, files: EncodedFile[]): Pr
 /** True if the extraction found anything importable. */
 export function extractionHasData(e: Sa100Extraction): boolean {
   return e.employment.length > 0 || e.selfEmployment.length > 0 || e.partnerships.length > 0 || e.property.length > 0
-    || e.foreignItems.length > 0 || e.taxedInterestList.length > 0 || e.dividendList.length > 0 || e.trustEstate.length > 0
+    || e.foreignItems.length > 0 || e.taxedInterestList.length > 0 || e.dividendList.length > 0 || e.trustEstate.length > 0 || e.capitalGains.length > 0
     || [e.dividends, e.savingsInterest, e.pensionsIncome, e.statePension, e.foreignDividends, e.otherIncome, e.giftAid, e.pensionContributions, e.childBenefit].some(n => n > 0);
 }
 
 // ── Scan-review proposals (the editable left panel of the review lightbox) ─────
 export type ScanDest =
   | 'employment' | 'selfEmployment' | 'partnership' | 'property' | 'dividends'
-  | 'savingsInterest' | 'pensionsIncome' | 'statePension' | 'foreign' | 'trusts' | 'giftAid'
+  | 'savingsInterest' | 'pensionsIncome' | 'statePension' | 'foreign' | 'trusts' | 'cgt' | 'giftAid'
   | 'pensionContributions' | 'otherIncome' | 'childBenefit' | 'exclude';
 
 /** The destinations a scanned figure can be sent to (the reassignment dropdown). */
@@ -121,6 +140,7 @@ export const SCAN_DESTS: { value: ScanDest; label: string }[] = [
   { value: 'property', label: 'UK property (SA105)' },
   { value: 'foreign', label: 'Foreign income (SA106)' },
   { value: 'trusts', label: 'Trusts & estates (SA107)' },
+  { value: 'cgt', label: 'Capital gains (SA108)' },
   { value: 'dividends', label: 'Dividends' },
   { value: 'savingsInterest', label: 'Savings interest' },
   { value: 'pensionsIncome', label: 'Pension income' },
@@ -136,12 +156,12 @@ export const scanDestLabel = (d: ScanDest): string => DEST_LABEL.get(d) ?? d;
 
 /** Fields that are a deduction, credit or tax withheld — listed and editable but
  *  NOT part of the headline "income brought on" total (e.g. PAYE tax, expenses). */
-const NON_INCOME_FIELDS = new Set(['taxDeducted', 'expenses', 'capitalAllowances', 'cis', 'taxTaken', 'expPremises', 'expRepairs', 'expFinance', 'expProfessional', 'expOther', 'foreignTax']);
+const NON_INCOME_FIELDS = new Set(['taxDeducted', 'expenses', 'capitalAllowances', 'cis', 'taxTaken', 'expPremises', 'expRepairs', 'expFinance', 'expProfessional', 'expOther', 'foreignTax', 'cgtProceeds', 'cgtCosts', 'cgtLosses']);
 /** True when a proposal's figure is income (counts toward the headline total). */
 export const isIncomeField = (field?: string): boolean => !field || !NON_INCOME_FIELDS.has(field);
 
 /** Extra context carried on a grouped source's primary row (drives reassembly). */
-export interface ScanProposalMeta { name?: string; address?: string; residential?: boolean; country?: string; category?: ForeignCategory; trustCategory?: TrustCategory }
+export interface ScanProposalMeta { name?: string; address?: string; residential?: boolean; country?: string; category?: ForeignCategory; trustCategory?: TrustCategory; cgtCategory?: CgtCategory; cgtDisposals?: number }
 
 /** One editable proposed entry on the review lightbox's left panel. */
 export interface ScanProposal {
@@ -260,6 +280,17 @@ export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
     ]);
   });
 
+  // Capital gains (SA108) — one group per asset class (gains + proceeds/costs/losses).
+  e.capitalGains.forEach(x => {
+    const lbl = CGT_CAT_LABEL[x.category];
+    pushGroup('cgt', { name: lbl, cgtCategory: x.category, cgtDisposals: x.disposals }, [
+      { field: 'cgtGains', label: `${lbl} — gains`, amount: x.gains, primary: true },
+      { field: 'cgtProceeds', label: `Proceeds — ${lbl}`, amount: x.proceeds },
+      { field: 'cgtCosts', label: `Allowable costs — ${lbl}`, amount: x.costs },
+      { field: 'cgtLosses', label: `Losses — ${lbl}`, amount: x.losses },
+    ]);
+  });
+
   // Interest & dividends and the reliefs — scalar / itemised income lines.
   if (e.dividendList.length) e.dividendList.forEach(x => push(`Dividend — ${x.company || 'company'}`, x.amount, 'dividends'));
   else if (e.dividends) push('Dividends', e.dividends, 'dividends');
@@ -287,7 +318,7 @@ export function buildScanProposals(e: Sa100Extraction): ScanProposal[] {
 }
 
 function emptyExtraction(): Sa100Extraction {
-  return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, taxedInterestList: [], pensionsIncome: 0, statePension: 0, foreignItems: [], foreignDividends: 0, foreignDividendsTax: 0, trustEstate: [], otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
+  return { documents: [], employment: [], selfEmployment: [], partnerships: [], property: [], dividends: 0, dividendList: [], savingsInterest: 0, taxedInterestList: [], pensionsIncome: 0, statePension: 0, foreignItems: [], foreignDividends: 0, foreignDividendsTax: 0, trustEstate: [], capitalGains: [], otherIncome: 0, giftAid: 0, pensionContributions: 0, childBenefit: 0, notes: [], setAside: [], needs: [] };
 }
 
 // ── Ask-SMITH chat (Phase 2) — proposed edits the user applies one-click ──────
@@ -368,6 +399,7 @@ export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[
   each('property', (f, meta) => e.property.push({ address: meta.address || 'Property', rents: f.rents || 0, expPremises: f.expPremises || 0, expRepairs: f.expRepairs || 0, expFinance: f.expFinance || 0, expProfessional: f.expProfessional || 0, expOther: f.expOther || 0, netProfit: f.netProfit || 0, residential: meta.residential !== false }));
   each('foreign', (f, meta) => e.foreignItems.push({ country: meta.country || '', category: meta.category || 'other', income: f.foreignIncome || 0, foreignTax: f.foreignTax || 0 }));
   each('trusts', (f, meta) => e.trustEstate.push({ source: meta.name || 'Trust / estate', category: meta.trustCategory || 'ukEstate', nonSavings: f.trustNonSavings || 0, savings: f.trustSavings || 0, dividend: f.trustDividend || 0 }));
+  each('cgt', (f, meta) => e.capitalGains.push({ category: meta.cgtCategory || 'other', disposals: meta.cgtDisposals || 0, proceeds: f.cgtProceeds || 0, costs: f.cgtCosts || 0, gains: f.cgtGains || 0, losses: f.cgtLosses || 0 }));
   each('savingsInterest', (f, meta) => { if (f.taxedInterestNet != null || f.taxDeducted != null) e.taxedInterestList.push({ description: meta.name, net: f.taxedInterestNet || 0, tax: f.taxDeducted || 0 }); });
   each('dividends', f => { e.foreignDividends += f.foreignDividends || 0; e.foreignDividendsTax += f.foreignTax || 0; });
 
@@ -382,6 +414,7 @@ export function applyScanProposals(income: Sa100Income, proposals: ScanProposal[
       case 'property': e.property.push({ address: p.label, rents: 0, expPremises: 0, expRepairs: 0, expFinance: 0, expProfessional: 0, expOther: 0, netProfit: amt, residential: true }); break;
       case 'foreign': e.foreignItems.push({ country: '', category: 'other', income: amt, foreignTax: 0 }); break;
       case 'trusts': e.trustEstate.push({ source: p.label, category: 'ukEstate', nonSavings: amt, savings: 0, dividend: 0 }); break;
+      case 'cgt': e.capitalGains.push({ category: 'other', disposals: 0, proceeds: 0, costs: 0, gains: amt, losses: 0 }); break;
       case 'dividends': e.dividendList.push({ company: p.label, amount: amt }); e.dividends += amt; break;
       case 'savingsInterest': e.savingsInterest += amt; break;
       case 'pensionsIncome': e.pensionsIncome += amt; break;
@@ -500,9 +533,26 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     put('estateNonSavings', d.estateNonSavings); put('estateSavings', d.estateSavings); put('estateDividend', d.estateDividend);
   }
 
+  // Capital gains → SA108 boxes (income.sa108), summed per asset class.
+  let sa108 = income.sa108;
+  if (e.capitalGains.length) {
+    const acc = new Map<CgtCategory, { disposals: number; proceeds: number; costs: number; gains: number; losses: number }>();
+    for (const c of e.capitalGains) {
+      const a = acc.get(c.category) ?? { disposals: 0, proceeds: 0, costs: 0, gains: 0, losses: 0 };
+      a.disposals += c.disposals; a.proceeds += c.proceeds; a.costs += c.costs; a.gains += c.gains; a.losses += c.losses;
+      acc.set(c.category, a);
+    }
+    sa108 = { ...(income.sa108 ?? {}) };
+    const put = (k: keyof Sa108, v: number) => { if (v > 0) (sa108 as Record<string, number>)[k] = r(v); };
+    for (const [cat, a] of acc) {
+      const box = CGT_BOX[cat];
+      put(box.disposals, a.disposals); put(box.proceeds, a.proceeds); put(box.costs, a.costs); put(box.gains, a.gains); put(box.losses, a.losses);
+    }
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),

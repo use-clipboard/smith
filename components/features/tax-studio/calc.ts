@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108 } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -599,6 +599,24 @@ export function disposalGainLoss(d: CgtDisposal): { gain: number; loss: number }
   return { gain: 0, loss: -raw };
 }
 
+/** Roll up the box-for-box SA108 page into the figures the CGT computation
+ *  needs: standard-rated gains, BADR/ER gains (box 50, taxed at 14% — carved out
+ *  of the category gains), in-year losses (all categories) and brought-forward
+ *  losses used (box 45). Used only when there's no per-disposal working list. */
+export function sa108Gains(s: Sa108): { normalGains: number; badrGains: number; inYearLosses: number; broughtForwardUsed: number } {
+  const p = (v?: number) => v || 0;
+  const gains = p(s.resiGains) + p(s.cryptoGains) + p(s.otherGains) + p(s.listedGains) + p(s.unlistedGains);
+  const badrGains = Math.min(gains, p(s.badrGains));
+  const inYearLosses = p(s.resiLosses) + p(s.cryptoLosses) + p(s.otherLosses) + p(s.listedLosses) + p(s.unlistedLosses);
+  return { normalGains: Math.max(0, gains - badrGains), badrGains, inYearLosses, broughtForwardUsed: p(s.lossesBfUsed) };
+}
+/** True once any SA108 gain/loss box carries a figure. */
+export function sa108HasData(s?: Sa108): boolean {
+  if (!s) return false;
+  const g = sa108Gains(s);
+  return g.normalGains > 0 || g.badrGains > 0 || g.inYearLosses > 0 || g.broughtForwardUsed > 0;
+}
+
 // ── SA101 additional-information helper ──────────────────────────────────────
 /** Total SA101 income-tax reducers: EIS/SEIS/VCT/CITR subscriptions + capped
  *  maintenance relief. Unrounded — round at the call site. */
@@ -975,19 +993,24 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   // Capital gains tax — gains stack above income; the unused basic-rate band
   // (extended by reliefs) is taxed at the lower rate, the rest at the higher.
   const cg = income.capitalGains;
+  const s8 = income.sa108;
   let taxableGains = 0, capitalGainsTax = 0;
-  if (cg) {
+  if (cg || sa108HasData(s8)) {
     // Split gains into standard-rate (18/24) and BADR/Investors' Relief (14),
-    // and gather in-year losses. Itemised disposals take precedence.
-    let normalGains = 0, badrGains = 0, inYearLosses = 0;
-    const disposals = cg.disposals ?? [];
+    // and gather in-year losses. Per-disposal working list takes precedence, then
+    // the box-for-box SA108 page, then the quick-summary fallback.
+    let normalGains = 0, badrGains = 0, inYearLosses = 0, broughtForward = cg?.lossesBroughtForward || 0;
+    const disposals = cg?.disposals ?? [];
     if (disposals.length) {
       for (const d of disposals) {
         const { gain, loss } = disposalGainLoss(d);
         inYearLosses += loss;
         if (gain > 0) { if (d.relief === 'badr' || d.relief === 'investors') badrGains += gain; else normalGains += gain; }
       }
-    } else {
+    } else if (sa108HasData(s8)) {
+      const g = sa108Gains(s8!);
+      normalGains = g.normalGains; badrGains = g.badrGains; inYearLosses = g.inYearLosses; broughtForward = g.broughtForwardUsed;
+    } else if (cg) {
       normalGains = Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0));
       inYearLosses = cg.losses || 0;
     }
@@ -995,7 +1018,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     // the higher-taxed standard-rate gains first, then BADR gains. The AEA is
     // withdrawn when the remittance basis is claimed.
     const aea = remittanceBasis ? 0 : CGT_ANNUAL_EXEMPT;
-    let deduction = inYearLosses + (cg.lossesBroughtForward || 0) + aea;
+    let deduction = inYearLosses + broughtForward + aea;
     const normAfter = Math.max(0, normalGains - deduction);
     deduction = Math.max(0, deduction - normalGains);
     const badrAfter = Math.max(0, badrGains - deduction);

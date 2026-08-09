@@ -15,14 +15,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -162,10 +162,11 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
     case 'property': return { value: sum(income.property, propertyTaxable), label: 'Property profit' };
     case 'foreign': { const f = foreignTotals(income); return { value: f.interest + f.dividends + f.other, label: 'Foreign income' }; }
     case 'cgt': {
+      const d = income.capitalGains?.disposals ?? [];
+      if (d.length) return { value: sum(d, x => disposalGainLoss(x).gain), label: 'Gains before AEA' };
+      if (sa108HasData(income.sa108)) { const g = sa108Gains(income.sa108!); return { value: g.normalGains + g.badrGains, label: 'Gains before AEA' }; }
       const cg = income.capitalGains; if (!cg) return { value: 0, label: 'Gains' };
-      const d = cg.disposals ?? [];
-      const g = d.length ? sum(d, x => disposalGainLoss(x).gain) : Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0));
-      return { value: g, label: 'Gains before AEA' };
+      return { value: Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0)), label: 'Gains before AEA' };
     }
     case 'trusts': { const t = trustTotals(income); return { value: t.nonSavings + t.savings + t.dividend, label: 'Trust / estate income' }; }
     default: return null; // core / residence / additional — no single headline
@@ -187,8 +188,9 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
       if (sa.sources?.length) return sa.sources.length;
       return [sa.unremittable, sa.ftcrOnIncome, sa.cgUkGain, sa.lifeGains, sa.income, sa.foreignTaxPaid].some(v => v) ? 1 : 0;
     })(),
-    cgt: income.capitalGains?.disposals?.length
-      || (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0),
+    cgt: (income.capitalGains?.disposals?.length || 0)
+      + (income.capitalGains && ((income.capitalGains.residentialGains || 0) || (income.capitalGains.otherGains || 0) || (income.capitalGains.losses || 0)) ? 1 : 0)
+      + (income.sa108 ? (['Residential property (and carried interest)', 'Cryptoassets', 'Other property, assets and gains', 'Listed shares and securities', 'Unlisted shares and securities', 'Losses and adjustments', 'Non-resident Capital Gains Tax', 'Any other information'].reduce((a, k) => a + sa108Count(income.sa108!, k), 0)) : 0),
     trusts: (() => {
       const legacy = (income.trusts ?? []).length;
       const sa = income.sa107;
@@ -388,7 +390,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
       {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
-      {page === 'cgt' && <CapitalGainsPage income={income} setIncome={setIncome} />}
+      {page === 'cgt' && <Sa108Page income={income} setIncome={setIncome} />}
       {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
       {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
@@ -2349,6 +2351,218 @@ const CGT_BOXES: Record<CgtDisposal['assetType'], { proceeds: number; cost: numb
   unlisted: { proceeds: 32, cost: 33, gains: 34 },
 };
 
+// ── SA108 Capital gains summary — full box-for-box page (Capium layout) ───────
+const SA108_TABS = ['Property and Assets', 'Shares and Securities', 'Losses and adjustments', 'Non-resident Capital Gains Tax', 'Any other information'] as const;
+const SA108_SUBTABS: Record<string, string[]> = {
+  'Property and Assets': ['Residential property (and carried interest)', 'Cryptoassets', 'Other property, assets and gains'],
+  'Shares and Securities': ['Listed shares and securities', 'Unlisted shares and securities'],
+  'Losses and adjustments': [],
+  'Non-resident Capital Gains Tax': [],
+  'Any other information': [],
+};
+const nz = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : !!v)).length;
+function sa108Count(s: Sa108, key: string): number {
+  switch (key) {
+    case 'Residential property (and carried interest)': return nz([s.resiDisposals, s.resiProceeds, s.resiCosts, s.resiGains, s.resiFig, s.resiLosses, s.resiClaimCode, s.resiPptGains, s.resiPptTaxCharged, s.resiOverallGain, s.resiOverallTaxPaid, s.carriedInterestArising, s.carriedInterestAccruals, s.carriedInterestGains, s.carriedInterestFig]);
+    case 'Cryptoassets': return nz([s.cryptoDisposals, s.cryptoProceeds, s.cryptoCosts, s.cryptoGains, s.cryptoLosses, s.cryptoClaimCode, s.cryptoRtt, s.cryptoRttTaxPaid]);
+    case 'Other property, assets and gains': return nz([s.otherDisposals, s.otherProceeds, s.otherCosts, s.otherGains, s.otherFig, s.otherNonResiLand, s.otherBadrResiLand, s.otherBadrShares, s.otherBadrOther, s.otherLosses, s.otherClaimCode, s.otherRtt, s.otherRttTaxPaid]);
+    case 'Listed shares and securities': return nz([s.listedDisposals, s.listedProceeds, s.listedCosts, s.listedGains, s.listedFig, s.listedLosses, s.listedClaimCode, s.listedRtt, s.listedRttTaxPaid]);
+    case 'Unlisted shares and securities': return nz([s.unlistedDisposals, s.unlistedProceeds, s.unlistedCosts, s.unlistedGains, s.unlistedFig, s.unlistedLosses, s.unlistedClaimCode, s.unlistedRtt, s.unlistedRttTaxPaid, s.essExceedingLimit, s.seisReinvestment, s.lossesUsedAgainstIncome1, s.shareLossRelief1, s.lossesUsedAgainstIncome2, s.shareLossRelief2]);
+    case 'Losses and adjustments': return nz([s.lossesBfUsed, s.incomeLossesSetAgainst, s.lossesCarriedForward, s.lossesUsedEarlierYear, s.erGainsPre2010, s.badrGains, s.badrLifetimeClaimed, s.cgtAdjustments, s.nonResTrustLiability]);
+    case 'Non-resident Capital Gains Tax': return nz([s.nrcgtResiProperty, s.nrcgtNonResiProperty, s.nrcgtIndirect, s.nrcgtTaxCharged, s.nrcgtLosses, s.eisExcludedSecurities, s.eisExcludedFig, s.qahcGains, s.qahcGainsFig, s.qahcLosses]);
+    case 'Any other information': return nz([s.estimatesOrValuations, s.otherInformation]);
+  }
+  return 0;
+}
+
+function Sa108Page({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const sa: Sa108 = income.sa108 ?? {};
+  const set = (u: Partial<Sa108>) => setIncome(i => ({ ...i, sa108: { ...i.sa108, ...u } }));
+  const [tab, setTab] = useState<string>('Property and Assets');
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (SA108_TABS as readonly string[]).includes(tab) ? tab : SA108_TABS[0];
+  const subList = SA108_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+  const legacy = (income.capitalGains?.disposals?.length ?? 0) > 0 || nz([income.capitalGains?.residentialGains, income.capitalGains?.otherGains, income.capitalGains?.losses]) > 0;
+  return (
+    <div className="space-y-3">
+      {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">You have a legacy per-disposal capital-gains working (still used for the tax) below. Re-enter it box-for-box above to file from the SA108 page, then clear the old one.</p>}
+      {/* Top tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
+        {SA108_TABS.map(tt => {
+          const c = (SA108_SUBTABS[tt] ?? []).length === 0 ? sa108Count(sa, tt) : 0;
+          return <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}{c > 0 && <span className="font-bold"> ({c})</span>}</button>;
+        })}
+      </div>
+      {/* Sub tabs */}
+      {subList.length > 0 && (
+        <div className="flex flex-wrap gap-1 px-0.5">
+          {subList.map((st, i) => {
+            const c = sa108Count(sa, st);
+            return <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{c > 0 && <span className="font-bold"> ({c})</span>}</button>;
+          })}
+        </div>
+      )}
+
+      {/* ── Property and Assets ── */}
+      {subName === 'Residential property (and carried interest)' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Residential property">
+            <BoxNum box={3} label="Number of disposals" help={CGT.disposals} value={sa.resiDisposals ?? 0} onChange={v => set({ resiDisposals: v })} />
+            <BoxNum box={4} label="Disposal proceeds" help={CGT.proceeds} value={sa.resiProceeds ?? 0} onChange={v => set({ resiProceeds: v })} />
+            <BoxNum box={5} label="Allowable costs (including purchase price)" help={CGT.costs} value={sa.resiCosts ?? 0} onChange={v => set({ resiCosts: v })} />
+            <BoxNum box={6} label="Gains in the year, before losses (excl. carried interest)" help={CGT.gains} value={sa.resiGains ?? 0} onChange={v => set({ resiGains: v })} />
+            <BoxNum box="6.1" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.resiFig ?? 0} onChange={v => set({ resiFig: v })} />
+            <BoxNum box={7} label="Losses in the year" help={CGT.losses} value={sa.resiLosses ?? 0} onChange={v => set({ resiLosses: v })} />
+            <BoxText box={8} label="Claim or election code" help={CGT.claimCode} value={sa.resiClaimCode ?? ''} onChange={v => set({ resiClaimCode: v })} />
+            <BoxNum box={9} label="Total gains/losses on UK residential property reported on CGT UK Property Disposal returns" help={CGT.pptGains} value={sa.resiPptGains ?? 0} onChange={v => set({ resiPptGains: v })} />
+            <BoxNum box={10} label="Tax on gains in box 9 already charged" help={CGT.pptTaxCharged} value={sa.resiPptTaxCharged ?? 0} onChange={v => set({ resiPptTaxCharged: v })} />
+            <BoxNum box={11} label="Overall gain or loss" value={sa.resiOverallGain ?? 0} onChange={v => set({ resiOverallGain: v })} />
+            <BoxNum box={12} label="Tax on gains in box 11 already paid" value={sa.resiOverallTaxPaid ?? 0} onChange={v => set({ resiOverallTaxPaid: v })} />
+          </BoxSection>
+          <BoxSection title="Carried interest">
+            <BoxNum box={13} label="Carried interest (arising basis) — before any claim or election" help={CGT.carriedInterest} value={sa.carriedInterestArising ?? 0} onChange={v => set({ carriedInterestArising: v })} />
+            <BoxNum box="13A" label="Carried interest (accruals basis) — before any claim or election" help={CGT.carriedInterest} value={sa.carriedInterestAccruals ?? 0} onChange={v => set({ carriedInterestAccruals: v })} />
+            <BoxNum box="13B" label="Gains on carried interest in the year (CGT13 + CGT13A, less claim/election)" value={sa.carriedInterestGains ?? 0} onChange={v => set({ carriedInterestGains: v })} />
+            <BoxNum box="13C" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.carriedInterestFig ?? 0} onChange={v => set({ carriedInterestFig: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+      {subName === 'Cryptoassets' && (
+        <StudioCard className="p-4"><BoxSection title="Cryptoassets">
+          <BoxNum box="13.1" label="Number of disposals" help={CGT.disposals} value={sa.cryptoDisposals ?? 0} onChange={v => set({ cryptoDisposals: v })} />
+          <BoxNum box="13.2" label="Disposal proceeds" help={CGT.proceeds} value={sa.cryptoProceeds ?? 0} onChange={v => set({ cryptoProceeds: v })} />
+          <BoxNum box="13.3" label="Allowable costs" help={CGT.costs} value={sa.cryptoCosts ?? 0} onChange={v => set({ cryptoCosts: v })} />
+          <BoxNum box="13.4" label="Gains in the year, before losses" help={CGT.gains} value={sa.cryptoGains ?? 0} onChange={v => set({ cryptoGains: v })} />
+          <BoxNum box="13.5" label="Losses in the year" help={CGT.losses} value={sa.cryptoLosses ?? 0} onChange={v => set({ cryptoLosses: v })} />
+          <BoxText box="13.6" label="Claim or election code" help={CGT.claimCode} value={sa.cryptoClaimCode ?? ''} onChange={v => set({ cryptoClaimCode: v })} />
+          <BoxNum box="13.7" label="Total gains/losses on this asset type reported on Real Time Transaction returns" help={CGT.rtt} value={sa.cryptoRtt ?? 0} onChange={v => set({ cryptoRtt: v })} />
+          <BoxNum box="13.8" label="Tax on gains in box 13.7 already paid" help={CGT.rttTaxPaid} value={sa.cryptoRttTaxPaid ?? 0} onChange={v => set({ cryptoRttTaxPaid: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Other property, assets and gains' && (
+        <StudioCard className="p-4"><BoxSection title="Other property, assets and gains">
+          <BoxNum box={14} label="Number of disposals" help={CGT.disposals} value={sa.otherDisposals ?? 0} onChange={v => set({ otherDisposals: v })} />
+          <BoxNum box={15} label="Disposal proceeds" help={CGT.proceeds} value={sa.otherProceeds ?? 0} onChange={v => set({ otherProceeds: v })} />
+          <BoxNum box={16} label="Allowable costs" help={CGT.costs} value={sa.otherCosts ?? 0} onChange={v => set({ otherCosts: v })} />
+          <BoxNum box={17} label="Gains in the year, before losses" help={CGT.gains} value={sa.otherGains ?? 0} onChange={v => set({ otherGains: v })} />
+          <BoxNum box="17.0" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.otherFig ?? 0} onChange={v => set({ otherFig: v })} />
+          <BoxNum box="17.1" label="Amount in CGT17 re non-residential land and buildings" value={sa.otherNonResiLand ?? 0} onChange={v => set({ otherNonResiLand: v })} />
+          <BoxNum box="17.2" label="Amount in box 17 re resi/non-resi land where BADR is claimed" help={CGT.badrSplit} value={sa.otherBadrResiLand ?? 0} onChange={v => set({ otherBadrResiLand: v })} />
+          <BoxNum box="17.3" label="Amount in box 17 re listed/unlisted shares where BADR is claimed" help={CGT.badrSplit} value={sa.otherBadrShares ?? 0} onChange={v => set({ otherBadrShares: v })} />
+          <BoxNum box="17.4" label="Amount in box 17 re other assets where BADR is claimed" help={CGT.badrSplit} value={sa.otherBadrOther ?? 0} onChange={v => set({ otherBadrOther: v })} />
+          <BoxNum box={19} label="Losses in the year" help={CGT.losses} value={sa.otherLosses ?? 0} onChange={v => set({ otherLosses: v })} />
+          <BoxText box={20} label="Claim or election code" help={CGT.claimCode} value={sa.otherClaimCode ?? ''} onChange={v => set({ otherClaimCode: v })} />
+          <BoxNum box={21} label="Total gains/losses on this asset type reported on Real Time Transaction returns" help={CGT.rtt} value={sa.otherRtt ?? 0} onChange={v => set({ otherRtt: v })} />
+          <BoxNum box={22} label="Tax on gains in box 21 already paid" help={CGT.rttTaxPaid} value={sa.otherRttTaxPaid ?? 0} onChange={v => set({ otherRttTaxPaid: v })} />
+        </BoxSection></StudioCard>
+      )}
+
+      {/* ── Shares and Securities ── */}
+      {subName === 'Listed shares and securities' && (
+        <StudioCard className="p-4"><BoxSection title="Listed shares and securities">
+          <BoxNum box={23} label="Number of disposals" help={CGT.disposals} value={sa.listedDisposals ?? 0} onChange={v => set({ listedDisposals: v })} />
+          <BoxNum box={24} label="Disposal proceeds" help={CGT.proceeds} value={sa.listedProceeds ?? 0} onChange={v => set({ listedProceeds: v })} />
+          <BoxNum box={25} label="Allowable costs" help={CGT.costs} value={sa.listedCosts ?? 0} onChange={v => set({ listedCosts: v })} />
+          <BoxNum box={26} label="Gains in the year, before losses" help={CGT.gains} value={sa.listedGains ?? 0} onChange={v => set({ listedGains: v })} />
+          <BoxNum box="26.1" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.listedFig ?? 0} onChange={v => set({ listedFig: v })} />
+          <BoxNum box={27} label="Losses in the year" help={CGT.losses} value={sa.listedLosses ?? 0} onChange={v => set({ listedLosses: v })} />
+          <BoxText box={28} label="Claim or election code" help={CGT.claimCode} value={sa.listedClaimCode ?? ''} onChange={v => set({ listedClaimCode: v })} />
+          <BoxNum box={29} label="Total gains/losses on this asset type reported on Real Time Transaction returns" help={CGT.rtt} value={sa.listedRtt ?? 0} onChange={v => set({ listedRtt: v })} />
+          <BoxNum box={30} label="Tax on gains in box 29 already paid" help={CGT.rttTaxPaid} value={sa.listedRttTaxPaid ?? 0} onChange={v => set({ listedRttTaxPaid: v })} />
+        </BoxSection></StudioCard>
+      )}
+      {subName === 'Unlisted shares and securities' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Unlisted shares and securities">
+            <BoxNum box={31} label="Number of disposals" help={CGT.disposals} value={sa.unlistedDisposals ?? 0} onChange={v => set({ unlistedDisposals: v })} />
+            <BoxNum box={32} label="Disposal proceeds" help={CGT.proceeds} value={sa.unlistedProceeds ?? 0} onChange={v => set({ unlistedProceeds: v })} />
+            <BoxNum box={33} label="Allowable costs" help={CGT.costs} value={sa.unlistedCosts ?? 0} onChange={v => set({ unlistedCosts: v })} />
+            <BoxNum box={34} label="Gains in the year, before losses" help={CGT.gains} value={sa.unlistedGains ?? 0} onChange={v => set({ unlistedGains: v })} />
+            <BoxNum box="34.1" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.unlistedFig ?? 0} onChange={v => set({ unlistedFig: v })} />
+            <BoxNum box={35} label="Losses in the year" help={CGT.losses} value={sa.unlistedLosses ?? 0} onChange={v => set({ unlistedLosses: v })} />
+            <BoxText box={36} label="Claim or election code" help={CGT.claimCode} value={sa.unlistedClaimCode ?? ''} onChange={v => set({ unlistedClaimCode: v })} />
+            <BoxNum box={37} label="Total gains/losses on this asset type reported on Real Time Transaction returns" help={CGT.rtt} value={sa.unlistedRtt ?? 0} onChange={v => set({ unlistedRtt: v })} />
+            <BoxNum box={38} label="Tax on gains in box 37 already paid" help={CGT.rttTaxPaid} value={sa.unlistedRttTaxPaid ?? 0} onChange={v => set({ unlistedRttTaxPaid: v })} />
+          </BoxSection>
+          <BoxSection title="Reliefs & losses against income">
+            <BoxNum box={39} label="Gains exceeding the lifetime limit for Employee Shareholder Status shares" help={CGT.essLimit} value={sa.essExceedingLimit ?? 0} onChange={v => set({ essExceedingLimit: v })} />
+            <BoxNum box={40} label="Gains invested under SEIS and qualifying for relief" help={CGT.seis} value={sa.seisReinvestment ?? 0} onChange={v => set({ seisReinvestment: v })} />
+            <BoxNum box={41} label="Losses used against income" value={sa.lossesUsedAgainstIncome1 ?? 0} onChange={v => set({ lossesUsedAgainstIncome1: v })} />
+            <BoxNum box={42} label="Amount in box 41 relating to Share Loss Relief in year" help={CGT.shareLossRelief} value={sa.shareLossRelief1 ?? 0} onChange={v => set({ shareLossRelief1: v })} />
+            <BoxNum box={43} label="Losses used against income" value={sa.lossesUsedAgainstIncome2 ?? 0} onChange={v => set({ lossesUsedAgainstIncome2: v })} />
+            <BoxNum box={44} label="Amount in box 43 relating to Share Loss Relief in year" help={CGT.shareLossRelief} value={sa.shareLossRelief2 ?? 0} onChange={v => set({ shareLossRelief2: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+
+      {/* ── Losses and adjustments ── */}
+      {activeTab === 'Losses and adjustments' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Losses set against capital gains">
+            <BoxNum box={45} label="Losses brought forward and used in-year" help={CGT.lossesBf} value={sa.lossesBfUsed ?? 0} onChange={v => set({ lossesBfUsed: v })} />
+            <BoxNum box={46} label="Income losses in-year set against gains" help={CGT.incomeLosses} value={sa.incomeLossesSetAgainst ?? 0} onChange={v => set({ incomeLossesSetAgainst: v })} />
+          </BoxSection>
+          <BoxSection title="Capital losses — other information">
+            <BoxNum box={47} label="Losses available to be carried forward" help={CGT.lossesCf} value={sa.lossesCarriedForward ?? 0} onChange={v => set({ lossesCarriedForward: v })} />
+            <BoxNum box={48} label="Losses used against an earlier year's gain" value={sa.lossesUsedEarlierYear ?? 0} onChange={v => set({ lossesUsedEarlierYear: v })} />
+          </BoxSection>
+          <BoxSection title="Entrepreneurs' Relief / Business Asset Disposal Relief">
+            <BoxNum box={49} label="Gains qualifying for Entrepreneurs' Relief — before 23 June 2010" value={sa.erGainsPre2010 ?? 0} onChange={v => set({ erGainsPre2010: v })} />
+            <BoxNum box={50} label="Gains qualifying for Business Asset Disposal Relief" help={CGT.badr} value={sa.badrGains ?? 0} onChange={v => set({ badrGains: v })} />
+            <BoxNum box="50.1" label="Lifetime allowance of BADR and Entrepreneurs' Relief claimed to date" help={CGT.badrLifetime} value={sa.badrLifetimeClaimed ?? 0} onChange={v => set({ badrLifetimeClaimed: v })} />
+          </BoxSection>
+          <BoxSection title="Tax adjustments to 2025-26 capital gains">
+            <BoxNum box={51} label="Adjustments to Capital Gains Tax" help={CGT.adjustments} value={sa.cgtAdjustments ?? 0} onChange={v => set({ cgtAdjustments: v })} />
+            <BoxNum box={52} label="Additional liability for non-resident or dual resident trusts" value={sa.nonResTrustLiability ?? 0} onChange={v => set({ nonResTrustLiability: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+
+      {/* ── Non-resident Capital Gains Tax ── */}
+      {activeTab === 'Non-resident Capital Gains Tax' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Non-resident Capital Gains Tax (NRCGT) on UK property">
+            <BoxNum box="52.1" label="Disposals of UK residential property" help={CGT.nrcgt} value={sa.nrcgtResiProperty ?? 0} onChange={v => set({ nrcgtResiProperty: v })} />
+            <BoxNum box="52.2" label="Direct disposals of non-residential UK properties" help={CGT.nrcgt} value={sa.nrcgtNonResiProperty ?? 0} onChange={v => set({ nrcgtNonResiProperty: v })} />
+            <BoxCheck box="52.3" label="Any gains from indirect disposals?" help={CGT.nrcgtIndirect} checked={!!sa.nrcgtIndirect} onChange={v => set({ nrcgtIndirect: v })} />
+            <BoxNum box="52.4" label="Tax on gains in boxes 52.1 and 52.2 already charged" value={sa.nrcgtTaxCharged ?? 0} onChange={v => set({ nrcgtTaxCharged: v })} />
+            <BoxNum box="52.5" label="Total losses available against NRCGT gains for the year" value={sa.nrcgtLosses ?? 0} onChange={v => set({ nrcgtLosses: v })} />
+          </BoxSection>
+          <BoxSection title="EIS and QAHC">
+            <BoxNum box="52EG" label="Total gains from the disposal of excluded indexed securities" help={CGT.eisExcluded} value={sa.eisExcludedSecurities ?? 0} onChange={v => set({ eisExcludedSecurities: v })} />
+            <BoxNum box="52EG.1" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.eisExcludedFig ?? 0} onChange={v => set({ eisExcludedFig: v })} />
+            <BoxNum box="52QG" label="Total gains from QAHC share repurchases and security redemptions" help={CGT.qahc} value={sa.qahcGains ?? 0} onChange={v => set({ qahcGains: v })} />
+            <BoxNum box="52QG.1" label="Amount claimed under the FIG regime" help={CGT.fig} value={sa.qahcGainsFig ?? 0} onChange={v => set({ qahcGainsFig: v })} />
+            <BoxNum box="52QL" label="Total losses from QAHC share repurchases and security redemptions" help={CGT.qahc} value={sa.qahcLosses ?? 0} onChange={v => set({ qahcLosses: v })} />
+          </BoxSection>
+        </StudioCard>
+      )}
+
+      {/* ── Any other information ── */}
+      {activeTab === 'Any other information' && (
+        <StudioCard className="space-y-3 p-4">
+          <BoxSection title="Any other information">
+            <BoxCheck box={53} label="Do the computations include any estimates or valuations?" help={CGT.estimates} checked={!!sa.estimatesOrValuations} onChange={v => set({ estimatesOrValuations: v })} />
+          </BoxSection>
+          <div>
+            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">54</span> Additional text note for Tax Return</label>
+            <textarea value={sa.otherInformation ?? ''} onChange={e => set({ otherInformation: e.target.value })} rows={3} className="input-base w-full py-1.5 text-[12.5px]" placeholder="Any other information for the Tax Return" />
+          </div>
+        </StudioCard>
+      )}
+
+      {legacy && (
+        <div className="space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Legacy working (per-disposal)</p>
+          <CapitalGainsPage income={income} setIncome={setIncome} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const cg = income.capitalGains ?? {};
   const disposals = cg.disposals ?? [];
@@ -2477,45 +2691,45 @@ function Sa107Page({ income, setIncome }: { income: Sa100Income; setIncome: SetI
       {/* ── Income from Trusts ── */}
       {subName === 'Discretionary income' && (
         <StudioCard className="p-4"><BoxSection title="Discretionary income payment from a UK resident trust">
-          <BoxNum box={1} label="Net amount" value={sa.discretionaryNet ?? 0} onChange={v => set({ discretionaryNet: v })} />
-          <BoxNum box={2} label="Total payments from settlor-interested trusts" value={sa.settlorInterestedPayments ?? 0} onChange={v => set({ settlorInterestedPayments: v })} />
+          <BoxNum box={1} label="Net amount" help={TRUST.discretionary} value={sa.discretionaryNet ?? 0} onChange={v => set({ discretionaryNet: v })} />
+          <BoxNum box={2} label="Total payments from settlor-interested trusts" help={TRUST.settlorInterested} value={sa.settlorInterestedPayments ?? 0} onChange={v => set({ settlorInterestedPayments: v })} />
         </BoxSection></StudioCard>
       )}
       {subName === 'Non-discretionary income' && (
         <StudioCard className="p-4"><BoxSection title="Non-discretionary income entitlement from a trust">
-          <BoxNum box={3} label="Net amount of non-savings income" value={sa.nonDiscNonSavings ?? 0} onChange={v => set({ nonDiscNonSavings: v })} />
-          <BoxNum box={4} label="Net amount of savings income" value={sa.nonDiscSavings ?? 0} onChange={v => set({ nonDiscSavings: v })} />
-          <BoxNum box={5} label="Net amount of dividend income" value={sa.nonDiscDividend ?? 0} onChange={v => set({ nonDiscDividend: v })} />
-          <BoxCheck box={6} label="Trustees not resident in the UK for tax purposes?" checked={!!sa.trusteesNonResident} onChange={v => set({ trusteesNonResident: v })} />
+          <BoxNum box={3} label="Net amount of non-savings income" help={TRUST.nonDiscNet} value={sa.nonDiscNonSavings ?? 0} onChange={v => set({ nonDiscNonSavings: v })} />
+          <BoxNum box={4} label="Net amount of savings income" help={TRUST.nonDiscNet} value={sa.nonDiscSavings ?? 0} onChange={v => set({ nonDiscSavings: v })} />
+          <BoxNum box={5} label="Net amount of dividend income" help={TRUST.nonDiscNet} value={sa.nonDiscDividend ?? 0} onChange={v => set({ nonDiscDividend: v })} />
+          <BoxCheck box={6} label="Trustees not resident in the UK for tax purposes?" help={TRUST.trusteesNonResident} checked={!!sa.trusteesNonResident} onChange={v => set({ trusteesNonResident: v })} />
         </BoxSection></StudioCard>
       )}
       {subName === 'Income chargeable' && (
         <StudioCard className="p-4"><BoxSection title="Income chargeable on settlors">
-          <BoxNum box={7} label="Non-savings income taxed at basic rate (net amount)" value={sa.settlorNonSavingsBasic ?? 0} onChange={v => set({ settlorNonSavingsBasic: v })} />
-          <BoxNum box={8} label="Savings income taxed at basic rate (net amount)" value={sa.settlorSavingsBasic ?? 0} onChange={v => set({ settlorSavingsBasic: v })} />
-          <BoxNum box={9} label="Dividends income taxed at dividend rate (net amount)" value={sa.settlorDividend ?? 0} onChange={v => set({ settlorDividend: v })} />
-          <BoxNum box={10} label="Non-savings income taxed at trust rate (net amount)" value={sa.settlorNonSavingsTrust ?? 0} onChange={v => set({ settlorNonSavingsTrust: v })} />
-          <BoxNum box={11} label="Savings income taxed at trust rate (net amount)" value={sa.settlorSavingsTrust ?? 0} onChange={v => set({ settlorSavingsTrust: v })} />
-          <BoxNum box={12} label="Dividend income taxed at trust rate (net amount)" value={sa.settlorDividendTrust ?? 0} onChange={v => set({ settlorDividendTrust: v })} />
-          <BoxNum box={13} label="Non-savings income paid gross" value={sa.settlorNonSavingsGross ?? 0} onChange={v => set({ settlorNonSavingsGross: v })} />
-          <BoxNum box={14} label="Savings income paid gross" value={sa.settlorSavingsGross ?? 0} onChange={v => set({ settlorSavingsGross: v })} />
-          <BoxNum box={15} label="Tax paid on certain UK life assurance policies" value={sa.lifeAssuranceTaxPaid ?? 0} onChange={v => set({ lifeAssuranceTaxPaid: v })} />
+          <BoxNum box={7} label="Non-savings income taxed at basic rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorNonSavingsBasic ?? 0} onChange={v => set({ settlorNonSavingsBasic: v })} />
+          <BoxNum box={8} label="Savings income taxed at basic rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorSavingsBasic ?? 0} onChange={v => set({ settlorSavingsBasic: v })} />
+          <BoxNum box={9} label="Dividends income taxed at dividend rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorDividend ?? 0} onChange={v => set({ settlorDividend: v })} />
+          <BoxNum box={10} label="Non-savings income taxed at trust rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorNonSavingsTrust ?? 0} onChange={v => set({ settlorNonSavingsTrust: v })} />
+          <BoxNum box={11} label="Savings income taxed at trust rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorSavingsTrust ?? 0} onChange={v => set({ settlorSavingsTrust: v })} />
+          <BoxNum box={12} label="Dividend income taxed at trust rate (net amount)" help={TRUST.settlorChargeable} value={sa.settlorDividendTrust ?? 0} onChange={v => set({ settlorDividendTrust: v })} />
+          <BoxNum box={13} label="Non-savings income paid gross" help={TRUST.settlorChargeable} value={sa.settlorNonSavingsGross ?? 0} onChange={v => set({ settlorNonSavingsGross: v })} />
+          <BoxNum box={14} label="Savings income paid gross" help={TRUST.settlorChargeable} value={sa.settlorSavingsGross ?? 0} onChange={v => set({ settlorSavingsGross: v })} />
+          <BoxNum box={15} label="Tax paid on certain UK life assurance policies" help={TRUST.lifeAssurance} value={sa.lifeAssuranceTaxPaid ?? 0} onChange={v => set({ lifeAssuranceTaxPaid: v })} />
         </BoxSection></StudioCard>
       )}
 
       {/* ── Income from the estates ── */}
       {subName === 'Income from UK estates' && (
         <StudioCard className="p-4"><BoxSection title="Income from United Kingdom (UK) estates">
-          <BoxNum box={16} label="Non savings income (after tax)" value={sa.estateNonSavings ?? 0} onChange={v => set({ estateNonSavings: v })} />
-          <BoxNum box={17} label="Savings income (after tax)" value={sa.estateSavings ?? 0} onChange={v => set({ estateSavings: v })} />
-          <BoxNum box={18} label="Dividend income (after tax)" value={sa.estateDividend ?? 0} onChange={v => set({ estateDividend: v })} />
-          <BoxNum box="18.1" label="Dividend income that has been taxed at 7.5%, after tax taken off" value={sa.estateDividend75 ?? 0} onChange={v => set({ estateDividend75: v })} />
-          <BoxNum box={19} label="Non-savings income taxed at non-repayable basic rate" value={sa.estateNonSavingsNonRepayable ?? 0} onChange={v => set({ estateNonSavingsNonRepayable: v })} />
+          <BoxNum box={16} label="Non savings income (after tax)" help={TRUST.estateIncome} value={sa.estateNonSavings ?? 0} onChange={v => set({ estateNonSavings: v })} />
+          <BoxNum box={17} label="Savings income (after tax)" help={TRUST.estateIncome} value={sa.estateSavings ?? 0} onChange={v => set({ estateSavings: v })} />
+          <BoxNum box={18} label="Dividend income (after tax)" help={TRUST.estateIncome} value={sa.estateDividend ?? 0} onChange={v => set({ estateDividend: v })} />
+          <BoxNum box="18.1" label="Dividend income that has been taxed at 7.5%, after tax taken off" help={TRUST.estateDividend75} value={sa.estateDividend75 ?? 0} onChange={v => set({ estateDividend75: v })} />
+          <BoxNum box={19} label="Non-savings income taxed at non-repayable basic rate" help={TRUST.estateNonRepayable} value={sa.estateNonSavingsNonRepayable ?? 0} onChange={v => set({ estateNonSavingsNonRepayable: v })} />
         </BoxSection></StudioCard>
       )}
       {subName === 'Income from foreign estates' && (
         <StudioCard className="p-4"><BoxSection title="Income from foreign estates">
-          <BreakdownField box={22} label="Foreign estate income" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.income || 0} />
+          <BreakdownField box={22} label="Foreign estate income" title="Foreign estate" help={TRUST.foreignEstate} items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.income || 0} />
           <BoxNum box="22.1" label="Amount claimed under the foreign income and gains (FIG) regime" help={FGN.fig} value={sa.foreignEstateFig ?? 0} onChange={v => set({ foreignEstateFig: v })} />
           <BreakdownField box={23} label="Relief for UK tax already accounted for" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.ukTaxWithheld || 0} />
         </BoxSection></StudioCard>
@@ -2526,7 +2740,7 @@ function Sa107Page({ income, setIncome }: { income: Sa100Income; setIncome: SetI
             <BreakdownField box={24} label="Foreign Tax Credit Relief has not been claimed" title="Foreign estate" items={estates} columns={ESTATE_FGN_COLS} blank={() => ({ id: estateRid() })} onChange={r => set({ foreignEstates: r })} rowTotal={i => i.foreignTax || 0} />
           </BoxSection>
           <BoxSection title="Residential property income">
-            <BoxNum box={25} label="Residential property income" help={PROP.residentialFinanceCosts} value={sa.estateResiPropertyIncome ?? 0} onChange={v => set({ estateResiPropertyIncome: v })} />
+            <BoxNum box={25} label="Residential property income" help={TRUST.estateResiProperty} value={sa.estateResiPropertyIncome ?? 0} onChange={v => set({ estateResiPropertyIncome: v })} />
             <BoxNum box="25.1" label="Unused residential finance costs brought forward" value={sa.estateResiFinanceBfwd ?? 0} onChange={v => set({ estateResiFinanceBfwd: v })} />
           </BoxSection>
           <div>

@@ -672,6 +672,103 @@ export interface CgtDisposal {
   relief?: 'none' | 'badr' | 'investors'; // special 14% rate reliefs
 }
 
+// SA108 Capital gains summary — the full supplementary page, box-for-box (Capium
+// layout). The legacy per-disposal model lives on `income.capitalGains`; this is
+// the box-for-box filing page layered alongside it, as Sa107/Sa106 were.
+export interface Sa108 {
+  // ── Property and Assets ──
+  // Residential property (and carried interest) — boxes 3–13C
+  resiDisposals?: number;        // 3  — number of disposals
+  resiProceeds?: number;         // 4  — disposal proceeds
+  resiCosts?: number;            // 5  — allowable costs (including purchase price)
+  resiGains?: number;            // 6  — gains on residential property before losses (excl. carried interest)
+  resiFig?: number;              // 6.1 — amount claimed under the FIG regime
+  resiLosses?: number;           // 7  — losses in the year
+  resiClaimCode?: string;        // 8  — claim / election code
+  resiPptGains?: number;         // 9  — total gains/losses on UK residential property on CGT UK Property Disposal returns
+  resiPptTaxCharged?: number;    // 10 — tax on gains in box 9 already charged
+  resiOverallGain?: number;      // 11 — overall gain or loss
+  resiOverallTaxPaid?: number;   // 12 — tax on gains in box 11 already paid
+  carriedInterestArising?: number;  // 13  — carried interest (arising basis) before claim/election
+  carriedInterestAccruals?: number; // 13A — carried interest (accruals basis) before claim/election
+  carriedInterestGains?: number;    // 13B — gains on carried interest (CGT13 + CGT13A less claim/election)
+  carriedInterestFig?: number;      // 13C — amount claimed under the FIG regime
+  // Cryptoassets — boxes 13.1–13.8
+  cryptoDisposals?: number;      // 13.1
+  cryptoProceeds?: number;       // 13.2
+  cryptoCosts?: number;          // 13.3
+  cryptoGains?: number;          // 13.4 — gains in the year, before losses
+  cryptoLosses?: number;         // 13.5
+  cryptoClaimCode?: string;      // 13.6
+  cryptoRtt?: number;            // 13.7 — total gains/losses reported on Real Time Transaction returns
+  cryptoRttTaxPaid?: number;     // 13.8 — tax on gains in box 13.7 already paid
+  // Other property, assets and gains — boxes 14–22
+  otherDisposals?: number;       // 14
+  otherProceeds?: number;        // 15
+  otherCosts?: number;           // 16
+  otherGains?: number;           // 17 — gains in the year, before losses
+  otherFig?: number;             // 17.0 — FIG regime
+  otherNonResiLand?: number;     // 17.1 — amount in CGT17 re non-residential land & buildings
+  otherBadrResiLand?: number;    // 17.2 — amount in box 17 re resi/non-resi land where BADR claimed
+  otherBadrShares?: number;      // 17.3 — amount in box 17 re shares & securities where BADR claimed
+  otherBadrOther?: number;       // 17.4 — amount in box 17 re other assets where BADR claimed
+  otherLosses?: number;          // 19
+  otherClaimCode?: string;       // 20
+  otherRtt?: number;             // 21 — total gains/losses reported on RTT returns
+  otherRttTaxPaid?: number;      // 22 — tax on gains in box 21 already paid
+  // ── Shares and Securities ──
+  // Listed shares and securities — boxes 23–30
+  listedDisposals?: number;      // 23
+  listedProceeds?: number;       // 24
+  listedCosts?: number;          // 25
+  listedGains?: number;          // 26
+  listedFig?: number;            // 26.1
+  listedLosses?: number;         // 27
+  listedClaimCode?: string;      // 28
+  listedRtt?: number;            // 29
+  listedRttTaxPaid?: number;     // 30
+  // Unlisted shares and securities — boxes 31–44
+  unlistedDisposals?: number;    // 31
+  unlistedProceeds?: number;     // 32
+  unlistedCosts?: number;        // 33
+  unlistedGains?: number;        // 34
+  unlistedFig?: number;          // 34.1
+  unlistedLosses?: number;       // 35
+  unlistedClaimCode?: string;    // 36
+  unlistedRtt?: number;          // 37
+  unlistedRttTaxPaid?: number;   // 38
+  essExceedingLimit?: number;    // 39 — gains exceeding the lifetime limit for Employee Shareholder Status shares
+  seisReinvestment?: number;     // 40 — gains invested under SEIS and qualifying for relief
+  lossesUsedAgainstIncome1?: number; // 41 — losses used against income
+  shareLossRelief1?: number;     // 42 — amount in box 41 relating to Share Loss Relief in year
+  lossesUsedAgainstIncome2?: number; // 43 — losses used against income
+  shareLossRelief2?: number;     // 44 — amount in box 43 relating to Share Loss Relief in year
+  // ── Losses and adjustments — boxes 45–52 ──
+  lossesBfUsed?: number;         // 45 — losses brought forward and used in-year
+  incomeLossesSetAgainst?: number; // 46 — income losses in-year set against gains
+  lossesCarriedForward?: number; // 47 — losses available to be carried forward
+  lossesUsedEarlierYear?: number; // 48 — losses used against an earlier year's gain
+  erGainsPre2010?: number;       // 49 — gains qualifying for Entrepreneurs' Relief before 23 June 2010
+  badrGains?: number;            // 50 — gains qualifying for Business Asset Disposal Relief
+  badrLifetimeClaimed?: number;  // 50.1 — lifetime allowance of BADR/ER claimed to date
+  cgtAdjustments?: number;       // 51 — adjustments to Capital Gains Tax
+  nonResTrustLiability?: number; // 52 — additional liability for non-resident or dual resident trusts
+  // ── Non-resident Capital Gains Tax — boxes 52.1–52QL ──
+  nrcgtResiProperty?: number;    // 52.1 — NRCGT: disposals of UK residential property
+  nrcgtNonResiProperty?: number; // 52.2 — direct disposals of non-residential UK properties
+  nrcgtIndirect?: boolean;       // 52.3 — any gains from indirect disposals
+  nrcgtTaxCharged?: number;      // 52.4 — tax on gains in boxes 52.1 & 52.2 already charged
+  nrcgtLosses?: number;          // 52.5 — total losses available against NRCGT gains for the year
+  eisExcludedSecurities?: number; // 52EG — total gains from disposal of excluded indexed securities
+  eisExcludedFig?: number;       // 52EG.1 — FIG regime
+  qahcGains?: number;            // 52QG — total gains from QAHC share repurchases & security redemptions
+  qahcGainsFig?: number;         // 52QG.1 — FIG regime
+  qahcLosses?: number;           // 52QL — total losses from QAHC share repurchases & security redemptions
+  // ── Any other information — boxes 53–54 ──
+  estimatesOrValuations?: boolean; // 53 — computations include any estimates or valuations?
+  otherInformation?: string;       // 54 — additional text note for the Tax Return
+}
+
 export interface Sa100Income {
   employment: EmploymentSource[];
   selfEmployment: TradeSource[];
@@ -765,6 +862,9 @@ export interface Sa100Income {
     otherGains?: number;
     losses?: number; // current-year allowable losses
   };
+  /** SA108 — the full box-for-box Capital gains summary page. `capitalGains` is
+   *  the legacy working model (per-disposal); `sa108` is the filing page. */
+  sa108?: Sa108;
   /** Tax residence for the rate bands: 'scotland' uses Scottish rates on
    *  non-savings/non-dividend income (savings & dividends stay UK rates).
    *  Wales currently mirrors UK rates. Defaults to 'uk'. */
