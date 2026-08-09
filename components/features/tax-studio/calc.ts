@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108 } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, CgtCalcDisposal, CgtCalcState, CgtRelief } from './types';
 
 // ── SA107 trusts & estates helper ────────────────────────────────────────────
 /** Split trust/estate income by UK treatment. Discretionary trust income is
@@ -615,6 +615,123 @@ export function sa108HasData(s?: Sa108): boolean {
   if (!s) return false;
   const g = sa108Gains(s);
   return g.normalGains > 0 || g.badrGains > 0 || g.inYearLosses > 0 || g.broughtForwardUsed > 0;
+}
+
+// ── CGT calculator ────────────────────────────────────────────────────────────
+export const CGT_AEA = 3000;               // 2025/26 annual exempt amount
+export const BADR_LIFETIME_LIMIT = 1_000_000;
+const cgtNum = (v?: number) => v || 0;
+
+/** The taxpayer's ownership share of a disposal (%). No owners ⇒ sole owner. */
+export function cgtTaxpayerShare(d: CgtCalcDisposal): number {
+  const owners = d.owners ?? [];
+  if (!owners.length) return 100;
+  const tp = owners.find(o => o.isTaxpayer);
+  return tp ? (tp.sharePct || 0) : Math.max(0, 100 - owners.reduce((a, o) => a + (o.sharePct || 0), 0));
+}
+/** Whole-asset gain before reliefs (proceeds − all allowable costs); may be a loss. */
+export function cgtGrossGain(d: CgtCalcDisposal): number {
+  return cgtNum(d.proceeds) - (cgtNum(d.acquisitionCost) + cgtNum(d.incidentalCosts) + cgtNum(d.improvementCosts));
+}
+/** Total accepted gain-reducing reliefs (BADR is a rate, not a reducer, so excluded). */
+export function cgtAcceptedReliefs(d: CgtCalcDisposal): number {
+  return (d.reliefs ?? []).filter(r => r.accepted && r.kind !== 'badr').reduce((a, r) => a + cgtNum(r.amount), 0);
+}
+/** Whole-asset net gain after reliefs (reliefs never turn a gain into a loss, and
+ *  don't apply to a loss disposal). Signed: negative = loss. */
+export function cgtNetGainWhole(d: CgtCalcDisposal): number {
+  const g = cgtGrossGain(d);
+  return g <= 0 ? g : Math.max(0, g - cgtAcceptedReliefs(d));
+}
+/** The taxpayer's signed share of the net gain / (loss). */
+export function cgtTaxpayerGain(d: CgtCalcDisposal): number {
+  return Math.round(cgtNetGainWhole(d) * cgtTaxpayerShare(d) / 100);
+}
+
+/** Rules-based relief suggestions for a disposal (whole-asset amounts). */
+export function cgtSuggestReliefs(d: CgtCalcDisposal): { kind: CgtRelief['kind']; label: string; amount: number; note: string }[] {
+  const out: { kind: CgtRelief['kind']; label: string; amount: number; note: string }[] = [];
+  const gross = cgtGrossGain(d);
+  if (gross <= 0) return out; // no reliefs on a loss
+  if (d.assetClass === 'residential' && d.wasMainResidence) {
+    const own = cgtNum(d.ownershipMonths), occ = cgtNum(d.occupationMonths);
+    if (own > 0) {
+      const qualifying = Math.min(own, occ + Math.min(9, Math.max(0, own - occ))); // + final 9 months
+      const prr = Math.round(gross * qualifying / own);
+      if (prr > 0) out.push({ kind: 'prr', label: 'Private Residence Relief', amount: prr, note: `Main home for ${occ} of ${own} months (plus the final 9 months) — ${qualifying}/${own} of the gain is exempt.` });
+      if (d.wasLet && prr < gross) {
+        const lettingGain = gross - prr;
+        const lettings = Math.min(prr, 40000, lettingGain);
+        if (lettings > 0) out.push({ kind: 'lettings', label: 'Letting Relief', amount: lettings, note: 'May apply where you shared the home with a tenant. Restricted since April 2020 to periods of shared occupancy — confirm eligibility.' });
+      }
+    }
+  }
+  if (d.claimBadr && (d.assetClass === 'unlisted' || d.assetClass === 'other')) {
+    out.push({ kind: 'badr', label: 'Business Asset Disposal Relief (14%)', amount: 0, note: 'Taxed at 14% instead of 20/24%, up to the £1m lifetime limit — needs a 2-year qualifying period (5%+ shareholding & officer/employee for shares).' });
+  }
+  return out;
+}
+
+export interface CgtCalcSummary {
+  byClass: Record<string, { disposals: number; proceeds: number; costs: number; gains: number; losses: number }>;
+  totalGains: number; totalLosses: number; badrGains: number;
+  lossesInYearUsed: number; lossesBfAvailable: number; lossesBfUsed: number; lossesCarriedForward: number;
+  taxableGains: number; estCgt: number; badrLifetimeRemaining: number;
+}
+const CGT_CLASSES = ['residential', 'crypto', 'listed', 'unlisted', 'other'] as const;
+
+/** Total a calculator working: aggregate disposals into per-class figures, auto-
+ *  allocate losses (in-year first, then brought-forward down to the AEA) and
+ *  carry the rest forward, and estimate the CGT. */
+export function cgtCalcSummary(state?: CgtCalcState): CgtCalcSummary {
+  const byClass: CgtCalcSummary['byClass'] = {};
+  for (const c of CGT_CLASSES) byClass[c] = { disposals: 0, proceeds: 0, costs: 0, gains: 0, losses: 0 };
+  let badrGains = 0;
+  for (const d of state?.disposals ?? []) {
+    const share = cgtTaxpayerShare(d) / 100;
+    const b = byClass[d.assetClass] ?? byClass.other;
+    b.disposals += 1;
+    b.proceeds += Math.round(cgtNum(d.proceeds) * share);
+    b.costs += Math.round((cgtNum(d.acquisitionCost) + cgtNum(d.incidentalCosts) + cgtNum(d.improvementCosts)) * share);
+    const g = cgtTaxpayerGain(d);
+    if (g >= 0) { b.gains += g; if (d.claimBadr) badrGains += g; } else b.losses += -g;
+  }
+  const totalGains = CGT_CLASSES.reduce((a, c) => a + byClass[c].gains, 0);
+  const totalLosses = CGT_CLASSES.reduce((a, c) => a + byClass[c].losses, 0);
+  const lossesBfAvailable = cgtNum(state?.lossesBroughtForward);
+  const netInYear = totalGains - totalLosses;
+  let lossesInYearUsed = 0, lossesBfUsed = 0, taxableGains = 0, lossesCarriedForward = 0;
+  if (netInYear <= 0) {
+    lossesInYearUsed = totalGains;
+    lossesCarriedForward = (totalLosses - totalGains) + lossesBfAvailable;
+  } else {
+    lossesInYearUsed = totalLosses;
+    const bfNeeded = Math.max(0, netInYear - CGT_AEA);
+    lossesBfUsed = Math.min(lossesBfAvailable, bfNeeded);
+    taxableGains = Math.max(0, netInYear - lossesBfUsed - CGT_AEA);
+    lossesCarriedForward = lossesBfAvailable - lossesBfUsed;
+  }
+  const badrLifetimeRemaining = Math.max(0, BADR_LIFETIME_LIMIT - cgtNum(state?.badrLifetimeUsed));
+  const badrTaxable = Math.min(taxableGains, Math.min(badrGains, badrLifetimeRemaining));
+  const estCgt = Math.round(badrTaxable * 0.14 + (taxableGains - badrTaxable) * 0.24); // higher-rate estimate
+  return { byClass, totalGains, totalLosses, badrGains, lossesInYearUsed, lossesBfAvailable, lossesBfUsed, lossesCarriedForward, taxableGains, estCgt, badrLifetimeRemaining };
+}
+
+/** Write a calculator working into the SA108 boxes (the auto-total to the form). */
+export function cgtCalcToSa108(state: CgtCalcState | undefined, existing?: Sa108): Sa108 {
+  const s = cgtCalcSummary(state);
+  const set = (v: number) => (v ? Math.round(v) : undefined);
+  const badrApplied = Math.min(s.badrGains, s.badrLifetimeRemaining);
+  return {
+    ...existing,
+    resiDisposals: set(s.byClass.residential.disposals), resiProceeds: set(s.byClass.residential.proceeds), resiCosts: set(s.byClass.residential.costs), resiGains: set(s.byClass.residential.gains), resiLosses: set(s.byClass.residential.losses),
+    cryptoDisposals: set(s.byClass.crypto.disposals), cryptoProceeds: set(s.byClass.crypto.proceeds), cryptoCosts: set(s.byClass.crypto.costs), cryptoGains: set(s.byClass.crypto.gains), cryptoLosses: set(s.byClass.crypto.losses),
+    otherDisposals: set(s.byClass.other.disposals), otherProceeds: set(s.byClass.other.proceeds), otherCosts: set(s.byClass.other.costs), otherGains: set(s.byClass.other.gains), otherLosses: set(s.byClass.other.losses),
+    listedDisposals: set(s.byClass.listed.disposals), listedProceeds: set(s.byClass.listed.proceeds), listedCosts: set(s.byClass.listed.costs), listedGains: set(s.byClass.listed.gains), listedLosses: set(s.byClass.listed.losses),
+    unlistedDisposals: set(s.byClass.unlisted.disposals), unlistedProceeds: set(s.byClass.unlisted.proceeds), unlistedCosts: set(s.byClass.unlisted.costs), unlistedGains: set(s.byClass.unlisted.gains), unlistedLosses: set(s.byClass.unlisted.losses),
+    lossesBfUsed: set(s.lossesBfUsed), lossesCarriedForward: set(s.lossesCarriedForward),
+    badrGains: set(s.badrGains), badrLifetimeClaimed: set(cgtNum(state?.badrLifetimeUsed) + badrApplied),
+  };
 }
 
 // ── SA101 additional-information helper ──────────────────────────────────────

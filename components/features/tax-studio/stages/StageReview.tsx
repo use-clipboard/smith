@@ -11,6 +11,7 @@ import {
 import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
+import CgtCalculator from '../CgtCalculator';
 import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
@@ -21,7 +22,7 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108 } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -390,7 +391,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
       {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
-      {page === 'cgt' && <Sa108Page income={income} setIncome={setIncome} />}
+      {page === 'cgt' && <Sa108Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
       {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
@@ -2375,11 +2376,17 @@ function sa108Count(s: Sa108, key: string): number {
   return 0;
 }
 
-function Sa108Page({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+function Sa108Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
   const sa: Sa108 = income.sa108 ?? {};
   const set = (u: Partial<Sa108>) => setIncome(i => ({ ...i, sa108: { ...i.sa108, ...u } }));
   const [tab, setTab] = useState<string>('Property and Assets');
   const [sub, setSub] = useState(0);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const calcState = income.cgtCalc ?? {};
+  const calcCount = (calcState.disposals ?? []).length;
+  // Autosave + auto-total: every calculator change writes cgtCalc AND recomputes
+  // the SA108 boxes it manages, so the form always mirrors the working.
+  const onCalcChange = (s: NonNullable<Sa100Income['cgtCalc']>) => setIncome(i => ({ ...i, cgtCalc: s, sa108: cgtCalcToSa108(s, i.sa108) }));
   const setTop = (tt: string) => { setTab(tt); setSub(0); };
   const activeTab = (SA108_TABS as readonly string[]).includes(tab) ? tab : SA108_TABS[0];
   const subList = SA108_SUBTABS[activeTab] ?? [];
@@ -2388,6 +2395,12 @@ function Sa108Page({ income, setIncome }: { income: Sa100Income; setIncome: SetI
   return (
     <div className="space-y-3">
       {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">You have a legacy per-disposal capital-gains working (still used for the tax) below. Re-enter it box-for-box above to file from the SA108 page, then clear the old one.</p>}
+      {/* CGT calculator — totals disposals onto the boxes below */}
+      <div className="flex items-center justify-between rounded-xl border border-[var(--accent)]/25 bg-[var(--accent)]/[0.03] px-3 py-2">
+        <p className="text-[11.5px] text-[var(--text-secondary)]"><span className="font-semibold text-[var(--text-primary)]">Capital gains calculator</span> — record each disposal, suggest reliefs, allocate losses, and auto-total onto the SA108 boxes.{calcCount > 0 && <span className="text-[var(--text-muted)]"> ({calcCount} disposal{calcCount === 1 ? '' : 's'})</span>}</p>
+        <button onClick={() => setCalcOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-bold text-white transition-opacity hover:opacity-90"><Calculator size={14} /> {calcCount > 0 ? 'Open calculator' : 'Open calculator'}</button>
+      </div>
+      {calcOpen && <CgtCalculator state={calcState} taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} onChange={onCalcChange} onClose={() => setCalcOpen(false)} />}
       {/* Top tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
         {SA108_TABS.map(tt => {

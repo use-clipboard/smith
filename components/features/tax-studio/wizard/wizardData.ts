@@ -292,6 +292,13 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   out.adviserPhone = prior.adviserPhone;
   out.adviserAddress = prior.adviserAddress;
   out.adviserReference = prior.adviserReference;
+  // Capital losses and the BADR lifetime-used total are statutory standing
+  // balances — carry them into next year's CGT calculator automatically.
+  const cgtLossesCf = prior.cgtCalc?.lossesCarriedForward ?? prior.sa108?.lossesCarriedForward ?? 0;
+  const badrToDate = prior.sa108?.badrLifetimeClaimed ?? prior.cgtCalc?.badrLifetimeUsed ?? 0;
+  if (cgtLossesCf > 0 || badrToDate > 0) {
+    out.cgtCalc = { lossesBroughtForward: cgtLossesCf || undefined, badrLifetimeUsed: badrToDate || undefined };
+  }
   return out;
 }
 

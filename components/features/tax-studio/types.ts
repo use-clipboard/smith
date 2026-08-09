@@ -769,6 +769,56 @@ export interface Sa108 {
   otherInformation?: string;       // 54 — additional text note for the Tax Return
 }
 
+// ── CGT calculator ────────────────────────────────────────────────────────────
+// A per-disposal working that totals up into the SA108 boxes. One asset can be
+// co-owned; each owner's share can be pushed to their own return (Phase 2).
+export interface CgtOwner {
+  id: string;
+  name: string;
+  sharePct: number;       // 0–100
+  isTaxpayer?: boolean;   // the owner whose return this is
+  clientId?: string;      // linked client record (for the push-to-their-return)
+  clientRef?: string;
+}
+export type CgtReliefKind = 'prr' | 'lettings' | 'badr' | 'giftHoldover' | 'spouseTransfer' | 'other';
+export interface CgtRelief {
+  id: string;
+  kind: CgtReliefKind;
+  label: string;
+  amount: number;         // gain-reducing £ (BADR is a rate, so amount 0 + a flag)
+  note?: string;          // plain-English rationale
+  accepted: boolean;      // the user has accepted the suggestion
+  suggested?: boolean;    // proposed by the rules (vs added manually)
+}
+export interface CgtCalcDisposal {
+  id: string;
+  description: string;
+  assetClass: 'residential' | 'crypto' | 'listed' | 'unlisted' | 'other';
+  acquisitionDate?: string; // YYYY-MM-DD
+  disposalDate?: string;    // YYYY-MM-DD
+  proceeds: number;         // whole-asset proceeds (100%)
+  acquisitionCost?: number; // whole-asset
+  incidentalCosts?: number; // buying + selling costs (whole-asset)
+  improvementCosts?: number;// whole-asset
+  owners?: CgtOwner[];      // co-ownership; empty ⇒ 100% the taxpayer
+  // Private Residence Relief inputs (residential)
+  wasMainResidence?: boolean;
+  occupationMonths?: number;
+  ownershipMonths?: number;
+  wasLet?: boolean;
+  // Business Asset Disposal Relief
+  claimBadr?: boolean;
+  reliefs?: CgtRelief[];
+}
+export interface CgtCalcState {
+  disposals?: CgtCalcDisposal[];
+  lossesBroughtForward?: number;  // capital losses brought forward and available
+  badrLifetimeUsed?: number;      // BADR/ER gains already claimed to date (default 0)
+  lossesCarriedForward?: number;  // computed on save — feeds box 47 + next year's roll-forward
+  reviewNotes?: string[];         // last "SMITH Review" AI suggestions
+  reviewedAt?: string;
+}
+
 export interface Sa100Income {
   employment: EmploymentSource[];
   selfEmployment: TradeSource[];
@@ -865,6 +915,8 @@ export interface Sa100Income {
   /** SA108 — the full box-for-box Capital gains summary page. `capitalGains` is
    *  the legacy working model (per-disposal); `sa108` is the filing page. */
   sa108?: Sa108;
+  /** CGT calculator working — per-disposal, totals up into the `sa108` boxes. */
+  cgtCalc?: CgtCalcState;
   /** Tax residence for the rate bands: 'scotland' uses Scottish rates on
    *  non-savings/non-dividend income (savings & dividends stay UK rates).
    *  Wales currently mirrors UK rates. Defaults to 'uk'. */
