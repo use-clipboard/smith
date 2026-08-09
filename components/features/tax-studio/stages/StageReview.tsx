@@ -17,6 +17,7 @@ import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } f
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
 import { H, CH, EMP, PH, PROP, FGN } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
+import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
@@ -1991,18 +1992,18 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
       )}
 
       {/* ── Overseas Income ── */}
-      {subName === 'Interest & other income' && <ForeignIncomeTable title="Interest and other income" rows={sa.interest ?? []} onChange={r => set({ interest: r })} totalBoxes={{ swt: '3', taxable: '4' }} fig="4.1" figValue={0} />}
-      {subName === 'Dividends from foreign companies' && <ForeignIncomeTable title="Dividends from foreign companies" rows={sa.dividends ?? []} onChange={r => set({ dividends: r })} totalBoxes={{ taxable: '6' }} />}
-      {subName === 'Remitted income excl. dividends' && <ForeignIncomeTable title="Remitted foreign income excluding dividends" rows={sa.remittedExcl ?? []} onChange={r => set({ remittedExcl: r })} />}
+      {subName === 'Interest & other income' && <ForeignIncomeTable title="Interest and other income" rows={sa.interest ?? []} onChange={r => set({ interest: r })} totalBoxes={{ swt: '3', taxable: '4' }} fig="4.1" figValue={0} maxRows={12} />}
+      {subName === 'Dividends from foreign companies' && <ForeignIncomeTable title="Dividends from foreign companies" rows={sa.dividends ?? []} onChange={r => set({ dividends: r })} totalBoxes={{ taxable: '6' }} maxRows={18} />}
+      {subName === 'Remitted income excl. dividends' && <ForeignIncomeTable title="Remitted foreign income excluding dividends" rows={sa.remittedExcl ?? []} onChange={r => set({ remittedExcl: r })} maxRows={5} />}
       {subName === 'Remitted foreign dividends' && (
-        <ForeignIncomeTable title="Remitted foreign dividends income" rows={sa.remittedDividends ?? []} onChange={r => set({ remittedDividends: r })} totalBoxes={{ swt: '7.3', taxable: '7.4' }}
+        <ForeignIncomeTable title="Remitted foreign dividends income" rows={sa.remittedDividends ?? []} onChange={r => set({ remittedDividends: r })} totalBoxes={{ swt: '7.3', taxable: '7.4' }} maxRows={1}
           extra={<BoxNum box="7.5" label="Amount in box 7.4 subject to dividend tax credit" value={sa.remittedDivSubjectToCredit ?? 0} onChange={v => set({ remittedDivSubjectToCredit: v })} />} />
       )}
-      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} />}
+      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} maxRows={4} />}
       {subName === 'Other income' && (
         <div className="space-y-3">
-          <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={0} />
-          <ForeignIncomeTable title="All other income received by a person abroad" rows={sa.otherAll ?? []} onChange={r => set({ otherAll: r })} totalBoxes={{ swt: '12', taxable: '13' }} fig="13.0" figValue={0}
+          <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={0} maxRows={5} />
+          <ForeignIncomeTable title="All other income received by a person abroad" rows={sa.otherAll ?? []} onChange={r => set({ otherAll: r })} totalBoxes={{ swt: '12', taxable: '13' }} fig="13.0" figValue={0} maxRows={5}
             extra={<>
               <BoxNum box="13.1" label="Residential finance cost" help={PROP.residentialFinanceCosts} value={sa.otherResiFinanceCost ?? 0} onChange={v => set({ otherResiFinanceCost: v })} />
               <BoxNum box="13.2" label="Unused residential property finance costs brought forward" value={sa.otherResiFinanceBfwd ?? 0} onChange={v => set({ otherResiFinanceBfwd: v })} />
@@ -2079,15 +2080,26 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
   );
 }
 
+// Country dropdown — stores the 3-letter ISO/HMRC territory code, shows the name.
+function CountrySelect({ value, onChange, className = '' }: { value?: string; onChange: (code: string) => void; className?: string }) {
+  return (
+    <select value={value ?? ''} onChange={e => onChange(e.target.value)} className={`input-base py-1 text-[12px] ${className}`}>
+      <option value="">Select country…</option>
+      {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+    </select>
+  );
+}
+
 // The recurring SA106 country-income table (columns A–F). `columns="acef"` drops
 // the Income-arising (B) and Special-Withholding (D) columns (used by "Foreign tax").
-function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue }: {
+function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, maxRows }: {
   title: string; note?: string; rows: ForeignRow[]; onChange: (r: ForeignRow[]) => void;
   totalBoxes?: { swt?: string; taxable?: string }; extra?: React.ReactNode; columns?: 'full' | 'acef';
-  fig?: string; figValue?: number;
+  fig?: string; figValue?: number; maxRows?: number;
 }) {
   const full = columns === 'full';
-  const add = () => onChange([...rows, { id: foreignRid(rows.length) }]);
+  const atMax = maxRows != null && rows.length >= maxRows;
+  const add = () => { if (!atMax) onChange([...rows, { id: foreignRid(rows.length) }]); };
   const upd = (i: number, u: Partial<ForeignRow>) => onChange(rows.map((r, j) => j === i ? { ...r, ...u } : r));
   const del = (i: number) => onChange(rows.filter((_, j) => j !== i));
   const t = foreignTableTotals(rows);
@@ -2102,7 +2114,7 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
       {rows.length === 0 && <p className="py-2 text-[11.5px] text-[var(--text-muted)]">No entries yet — add a country.</p>}
       {rows.map((r, i) => (
         <div key={r.id} className="grid items-center gap-2 border-b border-black/5 py-1.5" style={{ gridTemplateColumns: cols }}>
-          <input value={r.country ?? ''} placeholder="Country" onChange={e => upd(i, { country: e.target.value })} className="input-base py-1 text-[12px]" />
+          <CountrySelect value={r.country} onChange={v => upd(i, { country: v })} />
           {full && <NumIn value={r.incomeArising ?? 0} onChange={v => upd(i, { incomeArising: v })} />}
           <NumIn value={r.foreignTax ?? 0} onChange={v => upd(i, { foreignTax: v })} />
           {full && <NumIn value={r.specialWithholding ?? 0} onChange={v => upd(i, { specialWithholding: v })} />}
@@ -2111,7 +2123,10 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
           <button onClick={() => del(i)} className="text-[var(--text-muted)] transition-colors hover:text-rose-500" aria-label="Remove country"><Trash2 size={13} /></button>
         </div>
       ))}
-      <button onClick={add} className="mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add country</button>
+      <div className="mt-2 flex items-center gap-2">
+        <button onClick={add} disabled={atMax} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline disabled:cursor-not-allowed disabled:text-[var(--text-muted)] disabled:no-underline"><Plus size={13} /> Add country</button>
+        {maxRows != null && <span className="text-[10.5px] text-[var(--text-muted)]">{rows.length} / {maxRows}{atMax ? ' — max reached' : ''}</span>}
+      </div>
       {(totalBoxes || extra) && (
         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/5 pt-3 sm:grid-cols-3">
           {full && totalBoxes?.swt && <BoxCalc box={totalBoxes.swt} label="Total SWT (column above)" value={t.swt} />}
@@ -2169,7 +2184,7 @@ function ForeignPropertyCard({ p, idx, subName, onChange, onRemove }: {
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
-        <input value={p.country ?? ''} placeholder={`Foreign property ${idx + 1} — country`} onChange={ev => set({ country: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
+        <CountrySelect value={p.country} onChange={v => set({ country: v })} className="flex-1 font-semibold" />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Adjusted <span className="font-bold text-[var(--text-primary)]">{fmtMoney(foreignPropertyAdjusted(p))}</span></span>
         <RemoveBtn onClick={onRemove} />
       </div>

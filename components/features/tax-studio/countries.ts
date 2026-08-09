@@ -1,0 +1,66 @@
+// Country / territory list for the SA106 Foreign page. Codes are ISO 3166-1
+// alpha-3, which HMRC's "country codes for foreign income" list is based on —
+// selecting a country stores its 3-letter code so the user never looks it up.
+export const COUNTRIES: { name: string; code: string }[] = [
+  { name: 'Afghanistan', code: 'AFG' }, { name: 'Albania', code: 'ALB' }, { name: 'Algeria', code: 'DZA' },
+  { name: 'Andorra', code: 'AND' }, { name: 'Angola', code: 'AGO' }, { name: 'Antigua and Barbuda', code: 'ATG' },
+  { name: 'Argentina', code: 'ARG' }, { name: 'Armenia', code: 'ARM' }, { name: 'Australia', code: 'AUS' },
+  { name: 'Austria', code: 'AUT' }, { name: 'Azerbaijan', code: 'AZE' }, { name: 'Bahamas', code: 'BHS' },
+  { name: 'Bahrain', code: 'BHR' }, { name: 'Bangladesh', code: 'BGD' }, { name: 'Barbados', code: 'BRB' },
+  { name: 'Belarus', code: 'BLR' }, { name: 'Belgium', code: 'BEL' }, { name: 'Belize', code: 'BLZ' },
+  { name: 'Benin', code: 'BEN' }, { name: 'Bermuda', code: 'BMU' }, { name: 'Bhutan', code: 'BTN' },
+  { name: 'Bolivia', code: 'BOL' }, { name: 'Bosnia and Herzegovina', code: 'BIH' }, { name: 'Botswana', code: 'BWA' },
+  { name: 'Brazil', code: 'BRA' }, { name: 'British Virgin Islands', code: 'VGB' }, { name: 'Brunei', code: 'BRN' },
+  { name: 'Bulgaria', code: 'BGR' }, { name: 'Burkina Faso', code: 'BFA' }, { name: 'Cambodia', code: 'KHM' },
+  { name: 'Cameroon', code: 'CMR' }, { name: 'Canada', code: 'CAN' }, { name: 'Cayman Islands', code: 'CYM' },
+  { name: 'Chile', code: 'CHL' }, { name: 'China', code: 'CHN' }, { name: 'Colombia', code: 'COL' },
+  { name: 'Costa Rica', code: 'CRI' }, { name: 'Croatia', code: 'HRV' }, { name: 'Cuba', code: 'CUB' },
+  { name: 'Cyprus', code: 'CYP' }, { name: 'Czech Republic', code: 'CZE' }, { name: 'Denmark', code: 'DNK' },
+  { name: 'Dominica', code: 'DMA' }, { name: 'Dominican Republic', code: 'DOM' }, { name: 'Ecuador', code: 'ECU' },
+  { name: 'Egypt', code: 'EGY' }, { name: 'El Salvador', code: 'SLV' }, { name: 'Estonia', code: 'EST' },
+  { name: 'Eswatini', code: 'SWZ' }, { name: 'Ethiopia', code: 'ETH' }, { name: 'Fiji', code: 'FJI' },
+  { name: 'Finland', code: 'FIN' }, { name: 'France', code: 'FRA' }, { name: 'Gabon', code: 'GAB' },
+  { name: 'Gambia', code: 'GMB' }, { name: 'Georgia', code: 'GEO' }, { name: 'Germany', code: 'DEU' },
+  { name: 'Ghana', code: 'GHA' }, { name: 'Gibraltar', code: 'GIB' }, { name: 'Greece', code: 'GRC' },
+  { name: 'Grenada', code: 'GRD' }, { name: 'Guatemala', code: 'GTM' }, { name: 'Guernsey', code: 'GGY' },
+  { name: 'Guyana', code: 'GUY' }, { name: 'Honduras', code: 'HND' }, { name: 'Hong Kong', code: 'HKG' },
+  { name: 'Hungary', code: 'HUN' }, { name: 'Iceland', code: 'ISL' }, { name: 'India', code: 'IND' },
+  { name: 'Indonesia', code: 'IDN' }, { name: 'Iran', code: 'IRN' }, { name: 'Iraq', code: 'IRQ' },
+  { name: 'Ireland', code: 'IRL' }, { name: 'Isle of Man', code: 'IMN' }, { name: 'Israel', code: 'ISR' },
+  { name: 'Italy', code: 'ITA' }, { name: 'Ivory Coast', code: 'CIV' }, { name: 'Jamaica', code: 'JAM' },
+  { name: 'Japan', code: 'JPN' }, { name: 'Jersey', code: 'JEY' }, { name: 'Jordan', code: 'JOR' },
+  { name: 'Kazakhstan', code: 'KAZ' }, { name: 'Kenya', code: 'KEN' }, { name: 'Kuwait', code: 'KWT' },
+  { name: 'Latvia', code: 'LVA' }, { name: 'Lebanon', code: 'LBN' }, { name: 'Liberia', code: 'LBR' },
+  { name: 'Libya', code: 'LBY' }, { name: 'Liechtenstein', code: 'LIE' }, { name: 'Lithuania', code: 'LTU' },
+  { name: 'Luxembourg', code: 'LUX' }, { name: 'Macau', code: 'MAC' }, { name: 'Malawi', code: 'MWI' },
+  { name: 'Malaysia', code: 'MYS' }, { name: 'Maldives', code: 'MDV' }, { name: 'Malta', code: 'MLT' },
+  { name: 'Mauritius', code: 'MUS' }, { name: 'Mexico', code: 'MEX' }, { name: 'Moldova', code: 'MDA' },
+  { name: 'Monaco', code: 'MCO' }, { name: 'Mongolia', code: 'MNG' }, { name: 'Montenegro', code: 'MNE' },
+  { name: 'Morocco', code: 'MAR' }, { name: 'Mozambique', code: 'MOZ' }, { name: 'Myanmar', code: 'MMR' },
+  { name: 'Namibia', code: 'NAM' }, { name: 'Nepal', code: 'NPL' }, { name: 'Netherlands', code: 'NLD' },
+  { name: 'New Zealand', code: 'NZL' }, { name: 'Nicaragua', code: 'NIC' }, { name: 'Nigeria', code: 'NGA' },
+  { name: 'North Macedonia', code: 'MKD' }, { name: 'Norway', code: 'NOR' }, { name: 'Oman', code: 'OMN' },
+  { name: 'Pakistan', code: 'PAK' }, { name: 'Panama', code: 'PAN' }, { name: 'Papua New Guinea', code: 'PNG' },
+  { name: 'Paraguay', code: 'PRY' }, { name: 'Peru', code: 'PER' }, { name: 'Philippines', code: 'PHL' },
+  { name: 'Poland', code: 'POL' }, { name: 'Portugal', code: 'PRT' }, { name: 'Qatar', code: 'QAT' },
+  { name: 'Romania', code: 'ROU' }, { name: 'Russia', code: 'RUS' }, { name: 'Rwanda', code: 'RWA' },
+  { name: 'Saudi Arabia', code: 'SAU' }, { name: 'Senegal', code: 'SEN' }, { name: 'Serbia', code: 'SRB' },
+  { name: 'Seychelles', code: 'SYC' }, { name: 'Sierra Leone', code: 'SLE' }, { name: 'Singapore', code: 'SGP' },
+  { name: 'Slovakia', code: 'SVK' }, { name: 'Slovenia', code: 'SVN' }, { name: 'South Africa', code: 'ZAF' },
+  { name: 'South Korea', code: 'KOR' }, { name: 'Spain', code: 'ESP' }, { name: 'Sri Lanka', code: 'LKA' },
+  { name: 'St Kitts and Nevis', code: 'KNA' }, { name: 'St Lucia', code: 'LCA' }, { name: 'Sudan', code: 'SDN' },
+  { name: 'Sweden', code: 'SWE' }, { name: 'Switzerland', code: 'CHE' }, { name: 'Taiwan', code: 'TWN' },
+  { name: 'Tanzania', code: 'TZA' }, { name: 'Thailand', code: 'THA' }, { name: 'Trinidad and Tobago', code: 'TTO' },
+  { name: 'Tunisia', code: 'TUN' }, { name: 'Turkey', code: 'TUR' }, { name: 'Turks and Caicos Islands', code: 'TCA' },
+  { name: 'Uganda', code: 'UGA' }, { name: 'Ukraine', code: 'UKR' }, { name: 'United Arab Emirates', code: 'ARE' },
+  { name: 'United States', code: 'USA' }, { name: 'Uruguay', code: 'URY' }, { name: 'Uzbekistan', code: 'UZB' },
+  { name: 'Venezuela', code: 'VEN' }, { name: 'Vietnam', code: 'VNM' }, { name: 'Yemen', code: 'YEM' },
+  { name: 'Zambia', code: 'ZMB' }, { name: 'Zimbabwe', code: 'ZWE' },
+];
+
+const CODE_TO_NAME = new Map(COUNTRIES.map(c => [c.code, c.name]));
+/** Display label for a stored country code (falls back to the raw value). */
+export function countryLabel(code?: string): string {
+  if (!code) return '';
+  return CODE_TO_NAME.get(code) ? `${CODE_TO_NAME.get(code)} (${code})` : code;
+}
