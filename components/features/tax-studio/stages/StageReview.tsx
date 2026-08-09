@@ -1999,7 +1999,7 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
         <ForeignIncomeTable title="Remitted foreign dividends income" rows={sa.remittedDividends ?? []} onChange={r => set({ remittedDividends: r })} totalBoxes={{ swt: '7.3', taxable: '7.4' }} maxRows={1}
           extra={<BoxNum box="7.5" label="Amount in box 7.4 subject to dividend tax credit" value={sa.remittedDivSubjectToCredit ?? 0} onChange={v => set({ remittedDivSubjectToCredit: v })} />} />
       )}
-      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} maxRows={4} />}
+      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} maxRows={4} breakdownCols={FGN_PENSION_COLS} />}
       {subName === 'Other income' && (
         <div className="space-y-3">
           <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={0} maxRows={5} />
@@ -2097,6 +2097,8 @@ const FGN_INCOME_COLS: BreakdownColumn<ForeignIncomeItem>[] = [
   { key: 'foreignTax', label: 'Foreign tax taken off', kind: 'number', total: true },
   { key: 'ukTax', label: 'UK tax taken off', kind: 'number', total: true },
 ];
+// Overseas pensions add a "10% Deduction" checkbox column.
+const FGN_PENSION_COLS: BreakdownColumn<ForeignIncomeItem>[] = [...FGN_INCOME_COLS, { key: 'tenPercent', label: '10% Deduction', kind: 'check' }];
 const FGN_EXPENSE_COLS: BreakdownColumn<ForeignExpenseItem>[] = [
   { key: 'description', label: 'Description of expense', kind: 'text' },
   { key: 'expense', label: 'Expense', kind: 'number', total: true },
@@ -2106,10 +2108,10 @@ const FGN_EXPENSE_COLS: BreakdownColumn<ForeignExpenseItem>[] = [
 // The recurring SA106 country-income table (columns A–F). `columns="acef"` drops
 // the Income-arising (B) and Special-Withholding (D) columns (used by "Foreign tax").
 // The green "+" on each row itemises that row's income into a breakdown sub-table.
-function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, maxRows }: {
+function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, maxRows, breakdownCols = FGN_INCOME_COLS }: {
   title: string; note?: string; rows: ForeignRow[]; onChange: (r: ForeignRow[]) => void;
   totalBoxes?: { swt?: string; taxable?: string }; extra?: React.ReactNode; columns?: 'full' | 'acef';
-  fig?: string; figValue?: number; maxRows?: number;
+  fig?: string; figValue?: number; maxRows?: number; breakdownCols?: BreakdownColumn<ForeignIncomeItem>[];
 }) {
   const full = columns === 'full';
   const [itemise, setItemise] = useState<number | null>(null);
@@ -2165,7 +2167,7 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
         <BreakdownModal<ForeignIncomeItem>
           title={`${title} — income breakdown`}
           items={rows[itemise].breakdown ?? []}
-          columns={FGN_INCOME_COLS}
+          columns={breakdownCols}
           blank={() => ({ id: foreignRid((rows[itemise].breakdown ?? []).length) })}
           onChange={items => upd(itemise, { breakdown: items })}
           onClose={() => setItemise(null)}

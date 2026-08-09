@@ -9,7 +9,7 @@ import FieldHelp from './FieldHelp';
 export interface BreakdownColumn<T> {
   key: Extract<keyof T, string>;
   label: string;
-  kind: 'text' | 'number';
+  kind: 'text' | 'number' | 'check';
   /** Include this column in the footer total row. */
   total?: boolean;
 }
@@ -75,7 +75,7 @@ export function BreakdownModal<T extends { id: string }>({
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-black/5 text-left text-[10.5px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                {columns.map(c => <th key={c.key} className={`pb-2 pr-2 ${c.kind === 'number' ? 'text-right' : ''}`}>{c.label}</th>)}
+                {columns.map(c => <th key={c.key} className={`pb-2 pr-2 ${c.kind === 'number' ? 'text-right' : c.kind === 'check' ? 'text-center' : ''}`}>{c.label}</th>)}
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -85,14 +85,18 @@ export function BreakdownModal<T extends { id: string }>({
               ) : items.map((it, idx) => (
                 <tr key={it.id} className="border-b border-black/5">
                   {columns.map(c => (
-                    <td key={c.key} className="py-1.5 pr-2">
-                      <input
-                        type={c.kind === 'number' ? 'number' : 'text'}
-                        value={c.kind === 'number' ? ((it[c.key] as number) || '') : ((it[c.key] as string) ?? '')}
-                        onChange={e => upd(idx, { [c.key]: c.kind === 'number' ? (Number(e.target.value) || 0) : e.target.value } as unknown as Partial<T>)}
-                        placeholder={c.label}
-                        className={`input-base py-1 text-[12px] ${c.kind === 'number' ? 'text-right' : ''}`}
-                      />
+                    <td key={c.key} className={`py-1.5 pr-2 ${c.kind === 'check' ? 'text-center' : ''}`}>
+                      {c.kind === 'check' ? (
+                        <input type="checkbox" checked={!!it[c.key]} onChange={e => upd(idx, { [c.key]: e.target.checked } as unknown as Partial<T>)} className="h-3.5 w-3.5 accent-[var(--accent)]" />
+                      ) : (
+                        <input
+                          type={c.kind === 'number' ? 'number' : 'text'}
+                          value={c.kind === 'number' ? ((it[c.key] as number) || '') : ((it[c.key] as string) ?? '')}
+                          onChange={e => upd(idx, { [c.key]: c.kind === 'number' ? (Number(e.target.value) || 0) : e.target.value } as unknown as Partial<T>)}
+                          placeholder={c.label}
+                          className={`input-base py-1 text-[12px] ${c.kind === 'number' ? 'text-right' : ''}`}
+                        />
+                      )}
                     </td>
                   ))}
                   <td className="py-1.5"><button onClick={() => del(idx)} className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500"><Trash2 size={13} /></button></td>
