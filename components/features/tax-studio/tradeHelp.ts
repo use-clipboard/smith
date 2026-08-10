@@ -79,7 +79,7 @@ export const CH = {
   untaxedForeignInterest: 'Interest from overseas up to £2,000 that you’re reporting here without the full Foreign pages. Above £2,000 use the Foreign (SA106) section.',
   dividends: 'Dividends from UK companies and unit trusts — enter the cash amount received. The £500 dividend allowance is applied for you.',
   otherDividends: 'Other dividend-type income not from ordinary UK shares — e.g. authorised unit trusts, open-ended investment companies, stock dividends.',
-  foreignDividends: 'Dividends from overseas companies up to £2,000 reported here without the full Foreign pages. Above £2,000 use the Foreign (SA106) section.',
+  foreignDividends: 'Dividends from overseas companies up to £500 reported here without the full Foreign pages. Above £500 use the Foreign (SA106) section.',
   foreignDividendsTax: 'Foreign tax already taken off those foreign dividends — may be claimable as Foreign Tax Credit Relief.',
   // Pensions & benefits
   statePension: 'The total State Pension you were ENTITLED to for the year (not necessarily what was paid) — from your DWP letter. It’s paid without tax taken off.',
