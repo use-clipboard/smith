@@ -280,3 +280,53 @@ export const TRUST = {
   foreignEstate: 'Income from a foreign estate — enter each estate’s income, the foreign tax paid and any UK tax withheld; the three totals feed boxes 22, 24 and 23.',
   estateResiProperty: 'Residential property income received through the estate, and any unused residential finance costs brought forward.',
 } as const;
+
+// SA109 Residence, FIG regime & remittance basis.
+export const RES = {
+  // Residence status
+  notResident: 'Tick if you were not resident in the UK for the whole of this tax year under the Statutory Residence Test (SRT).',
+  splitYear: 'Tick if the year splits into a UK part and an overseas part because you arrived in, or left, the UK part-way through it.',
+  splitYearMultiple: 'Tick if more than one of the split-year “cases” applies to your circumstances this year.',
+  residentLastYear: 'Answer Yes if you were UK resident for the previous tax year — it affects which SRT tests apply.',
+  splitYearDate: 'The date the UK part of the split year begins or ends (dd-mm-yyyy).',
+  thirdAutoOverseasTest: 'Tick if you met the third automatic overseas test — you worked full-time overseas with few UK days and UK workdays.',
+  gapBetweenEmployments: 'Tick if you had a gap between employments during the year — relevant to the full-time-work parts of the SRT.',
+  homeOverseas: 'Tick if you had a home overseas at any point in the year — relevant to the automatic overseas / UK tests.',
+  daysInUk: 'The total number of days you were in the UK at the end of the day (midnight) during the tax year.',
+  daysExceptional: 'Of the days above, the ones you would not otherwise count because exceptional circumstances kept you in the UK (capped at 60 days).',
+  daysTransit: 'Days you were in the UK at midnight only because you were passing through (in transit) between two places outside the UK.',
+  ukTies: 'Your number of UK ties under the SRT — family, accommodation, work, the 90-day tie and (if relevant) the country tie.',
+  workdaysUk: 'The number of days on which you did more than three hours of work in the UK.',
+  workdaysOverseas: 'The number of days on which you did more than three hours of work overseas.',
+  // Personal allowances & domicile
+  paUnderDta: 'Tick if you are a non-resident claiming UK personal allowances under the terms of a double-taxation agreement (DTA).',
+  paOtherBasis: 'Tick if you are claiming UK personal allowances on another basis — e.g. as an EEA national or another eligible category.',
+  nationalResidentCountries: 'The countries you are a national of and/or resident in — used to check your entitlement to UK personal allowances.',
+  residentCountryCodes: 'The countries, other than the UK, where you were resident for tax purposes during this tax year.',
+  residentCountryCodesPrior: 'Of those countries, the ones you were also resident in for the previous tax year.',
+  dtaIncomeReliefAmount: 'The amount of income on which you are claiming relief under a double-taxation agreement.',
+  dtaReliefResidence: 'Relief claimed under a DTA because its tie-breaker treats you as resident in the other country.',
+  dtaReliefOther: 'Relief claimed under other provisions of a double-taxation agreement.',
+  figArrivalDate: 'The date you most recently arrived in the UK — sets the clock for the four-year Foreign Income & Gains (FIG) regime.',
+  figPriorResidentYear: 'If you were UK resident in a tax year before your most recent arrival, enter that year.',
+  // FIG regime & remittance basis
+  figIncomeClaim: 'Claim relief on foreign income under the FIG regime (your first four years of UK residence). Claiming withdraws your personal allowance.',
+  figGainsClaim: 'Claim relief on foreign gains under the FIG regime. Claiming withdraws your CGT annual exempt amount.',
+  qahcDeemedForeign: 'Tick if you have UK income or gains treated as foreign under the qualifying asset holding company (QAHC) rules.',
+  remittedNominated: 'Tick if you remitted (brought to the UK) any income or gains you had previously nominated under the remittance basis.',
+  figCompanies: 'Business Investment Relief — the companies you invested remitted foreign income in. Enter each company and the amount invested.',
+  investmentNoLongerQualifies: 'Tick if a Business Investment Relief investment stopped qualifying this year (a potentially chargeable event).',
+  // OWR & TRF
+  owrElection: 'Tick if you are making an election for Overseas Workday Relief (OWR).',
+  owrClaim: 'Tick if you are making a claim for Overseas Workday Relief for this year.',
+  owrTransitional: 'Tick if you qualify for the OWR transitional provisions for any year you are claiming.',
+  owrQualifyingEmpIncome: 'Your qualifying employment income after deductions, for Overseas Workday Relief purposes.',
+  owrQualifyingForeignEmpIncome: 'The part of your qualifying employment income that relates to overseas workdays.',
+  owrMaxRelief: 'The maximum relief available under the financial limit — broadly the lower of £300,000 or 30% of qualifying income.',
+  owrClaimedOnEmpIncome: 'The amount of OWR you are claiming against the qualifying employment income.',
+  owrTotalRelief: 'The total OWR relief you are claiming for this tax year across all claims.',
+  trfElection: 'Tick if you are making an election under the Temporary Repatriation Facility (TRF).',
+  trfPersonalDesignations: 'The amount that relates to your personal TRF designations.',
+  trfTrustPayments: 'The amount that relates to capital payments or benefits you received from trusts.',
+  trfRemitted: 'The amount of TRF-designated funds you remitted to the UK in this tax year.',
+} as const;

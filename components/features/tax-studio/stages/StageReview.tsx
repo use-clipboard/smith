@@ -19,7 +19,7 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
@@ -2199,6 +2199,41 @@ function CountrySelect({ value, onChange, className = '' }: { value?: string; on
   );
 }
 
+// Resolve a raw token (a code, or a country name from a scan) to an ISO alpha-3
+// code, or null if it's not a country we know.
+function resolveCountryCode(token: string): string | null {
+  const s = token.trim();
+  if (!s) return null;
+  const hit = COUNTRIES.find(c => c.code === s.toUpperCase() || c.name.toLowerCase() === s.toLowerCase());
+  return hit ? hit.code : null;
+}
+
+// A pick-as-many-as-you-need country list (SA109 boxes 17/18/19) — reuses
+// CountrySelect so each choice stores its 3-letter code. The model field stays a
+// simple comma-joined code string, so scans / the AI note keep working; scanned
+// country names are resolved to codes on display.
+function CountryCodeList({ box, label, value, onChange, note, help }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; note?: string; help?: string }) {
+  const codes = [...new Set((value ? value.split(/[,\n;]/) : []).map(resolveCountryCode).filter((c): c is string => !!c))];
+  const write = (next: string[]) => onChange([...new Set(next.filter(Boolean))].join(', '));
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+      </div>
+      <div className="space-y-1.5">
+        {codes.map((c, i) => (
+          <div key={`${c}-${i}`} className="flex items-center gap-2">
+            <CountrySelect value={c} onChange={v => { const n = [...codes]; if (v) n[i] = v; else n.splice(i, 1); write(n); }} className="flex-1" />
+            <button onClick={() => { const n = [...codes]; n.splice(i, 1); write(n); }} className="shrink-0 rounded-lg p-1 text-[var(--text-muted)] transition-colors hover:bg-rose-50 hover:text-rose-500" aria-label="Remove country"><Trash2 size={13} /></button>
+          </div>
+        ))}
+        <CountrySelect value="" onChange={v => { if (v) write([...codes, v]); }} className="w-full" />
+      </div>
+      {note && <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">{note}</p>}
+    </div>
+  );
+}
+
 // Breakdown sub-table columns (the "+" pop-ups).
 const FGN_INCOME_COLS: BreakdownColumn<ForeignIncomeItem>[] = [
   { key: 'description', label: 'Description of income', kind: 'text' },
@@ -2842,22 +2877,22 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
         <div className="space-y-3">
           <SectionTitle title="Residence status" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <BoxCheck box={1} label="Not resident in the UK?" checked={!!sa.notResident} onChange={v => set({ notResident: v, status: v ? 'non-resident' : (sa.splitYear ? 'split-year' : 'resident') })} />
-            <BoxCheck box={3} label="Requesting split-year treatment?" checked={!!sa.splitYear} onChange={v => set({ splitYear: v, status: v ? 'split-year' : (sa.notResident ? 'non-resident' : 'resident') })} />
-            <BoxCheck box="3.1" label="Does more than one case of split-year treatment apply?" checked={!!sa.splitYearMultiple} onChange={v => set({ splitYearMultiple: v })} />
-            <BoxCheck box={4} label="Resident in the UK last year?" checked={!!sa.residentLastYear} onChange={v => set({ residentLastYear: v })} />
-            <BoxText box={6} label="Date from which the UK part of the split year begins or ends" value={sa.splitYearDate ?? ''} onChange={v => set({ splitYearDate: v })} placeholder="dd-mm-yyyy" />
-            <BoxCheck box={7} label="Meets the third automatic overseas test?" checked={!!sa.thirdAutoOverseasTest} onChange={v => set({ thirdAutoOverseasTest: v })} />
-            <BoxCheck box={8} label="Had a gap between employments in the year?" checked={!!sa.gapBetweenEmployments} onChange={v => set({ gapBetweenEmployments: v })} />
-            <BoxCheck box={9} label="Has a home overseas?" checked={!!sa.homeOverseas} onChange={v => set({ homeOverseas: v })} />
+            <BoxCheck box={1} label="Not resident in the UK?" checked={!!sa.notResident} onChange={v => set({ notResident: v, status: v ? 'non-resident' : (sa.splitYear ? 'split-year' : 'resident') })} help={RES.notResident} />
+            <BoxCheck box={3} label="Requesting split-year treatment?" checked={!!sa.splitYear} onChange={v => set({ splitYear: v, status: v ? 'split-year' : (sa.notResident ? 'non-resident' : 'resident') })} help={RES.splitYear} />
+            <BoxCheck box="3.1" label="Does more than one case of split-year treatment apply?" checked={!!sa.splitYearMultiple} onChange={v => set({ splitYearMultiple: v })} help={RES.splitYearMultiple} />
+            <BoxCheck box={4} label="Resident in the UK last year?" checked={!!sa.residentLastYear} onChange={v => set({ residentLastYear: v })} help={RES.residentLastYear} />
+            <BoxText box={6} label="Date from which the UK part of the split year begins or ends" value={sa.splitYearDate ?? ''} onChange={v => set({ splitYearDate: v })} placeholder="dd-mm-yyyy" help={RES.splitYearDate} />
+            <BoxCheck box={7} label="Meets the third automatic overseas test?" checked={!!sa.thirdAutoOverseasTest} onChange={v => set({ thirdAutoOverseasTest: v })} help={RES.thirdAutoOverseasTest} />
+            <BoxCheck box={8} label="Had a gap between employments in the year?" checked={!!sa.gapBetweenEmployments} onChange={v => set({ gapBetweenEmployments: v })} help={RES.gapBetweenEmployments} />
+            <BoxCheck box={9} label="Has a home overseas?" checked={!!sa.homeOverseas} onChange={v => set({ homeOverseas: v })} help={RES.homeOverseas} />
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <DayNum box={10} label="Days spent in the UK during the year" value={sa.daysInUk ?? 0} onChange={v => set({ daysInUk: v })} />
-            <DayNum box={11} label="Days attributed to exceptional circumstances" value={sa.daysExceptional ?? 0} onChange={v => set({ daysExceptional: v })} />
-            <DayNum box="11.1" label="Days in the UK at midnight but in transit" value={sa.daysTransit ?? 0} onChange={v => set({ daysTransit: v })} />
-            <LabelledNum box={12} label="Number of ties to the UK" value={sa.ukTies ?? 0} onChange={v => set({ ukTies: v })} />
-            <DayNum box={13} label="Workdays in the UK" value={sa.workdaysUk ?? 0} onChange={v => set({ workdaysUk: v })} />
-            <DayNum box={14} label="Workdays overseas" value={sa.workdaysOverseas ?? 0} onChange={v => set({ workdaysOverseas: v })} />
+            <DayNum box={10} label="Days spent in the UK during the year" value={sa.daysInUk ?? 0} onChange={v => set({ daysInUk: v })} help={RES.daysInUk} />
+            <DayNum box={11} label="Days attributed to exceptional circumstances" value={sa.daysExceptional ?? 0} onChange={v => set({ daysExceptional: v })} help={RES.daysExceptional} />
+            <DayNum box="11.1" label="Days in the UK at midnight but in transit" value={sa.daysTransit ?? 0} onChange={v => set({ daysTransit: v })} help={RES.daysTransit} />
+            <LabelledNum box={12} label="Number of ties to the UK" value={sa.ukTies ?? 0} onChange={v => set({ ukTies: v })} help={RES.ukTies} />
+            <DayNum box={13} label="Workdays in the UK" value={sa.workdaysUk ?? 0} onChange={v => set({ workdaysUk: v })} help={RES.workdaysUk} />
+            <DayNum box={14} label="Workdays overseas" value={sa.workdaysOverseas ?? 0} onChange={v => set({ workdaysOverseas: v })} help={RES.workdaysOverseas} />
           </div>
         </div>
       )}
@@ -2866,22 +2901,21 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
         <div className="space-y-3">
           <SectionTitle title="Personal allowances for non-residents and dual residents" />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <BoxCheck box={15} label="Claiming personal allowances under the terms of a DTA?" checked={!!sa.paUnderDta} onChange={v => set({ paUnderDta: v })} />
-            <BoxCheck box={16} label="Claiming personal allowances on some other basis?" checked={!!sa.paOtherBasis} onChange={v => set({ paOtherBasis: v })} />
+            <BoxCheck box={15} label="Claiming personal allowances under the terms of a DTA?" checked={!!sa.paUnderDta} onChange={v => set({ paUnderDta: v })} help={RES.paUnderDta} />
+            <BoxCheck box={16} label="Claiming personal allowances on some other basis?" checked={!!sa.paOtherBasis} onChange={v => set({ paOtherBasis: v })} help={RES.paOtherBasis} />
           </div>
-          <BoxTextArea box={17} label="Countries of which you are a national and/or resident" value={sa.nationalResidentCountries ?? ''} onChange={v => set({ nationalResidentCountries: v })} placeholder="One per line" />
-          <p className="text-[10.5px] text-[var(--text-muted)]">For country or territory codes, see the SA109 notes provided by HMRC.</p>
+          <CountryCodeList box={17} label="Countries of which you are a national and/or resident" value={sa.nationalResidentCountries ?? ''} onChange={v => set({ nationalResidentCountries: v })} help={RES.nationalResidentCountries} note="Pick each country — SMITH stores its 3-letter HMRC code." />
         </div>
       )}
       {activeTab === 'Personal allowances and domicile' && subName === 'Residence in other countries' && (
         <div className="space-y-3">
           <SectionTitle title="Residence in other countries" />
-          <BoxTextArea box={18} label="Country codes in which you were resident for tax purposes this year (other than the UK)" value={sa.residentCountryCodes ?? ''} onChange={v => set({ residentCountryCodes: v })} rows={2} />
-          <BoxTextArea box={19} label="If also resident in either/both of those countries for the prior year, enter the appropriate codes" value={sa.residentCountryCodesPrior ?? ''} onChange={v => set({ residentCountryCodesPrior: v })} rows={2} />
+          <CountryCodeList box={18} label="Countries in which you were resident for tax purposes this year (other than the UK)" value={sa.residentCountryCodes ?? ''} onChange={v => set({ residentCountryCodes: v })} help={RES.residentCountryCodes} />
+          <CountryCodeList box={19} label="If also resident in either/both of those countries for the prior year, enter them" value={sa.residentCountryCodesPrior ?? ''} onChange={v => set({ residentCountryCodesPrior: v })} help={RES.residentCountryCodesPrior} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <LabelledNum box={20} label="Amount of DTA income on which relief is claimed" value={sa.dtaIncomeReliefAmount ?? 0} onChange={v => set({ dtaIncomeReliefAmount: v })} />
-            <LabelledNum box={21} label="Relief claimed under a DTA for residence in another country" value={sa.dtaReliefResidence ?? 0} onChange={v => set({ dtaReliefResidence: v })} />
-            <LabelledNum box={22} label="Relief claimed under other provisions of a DTA" value={sa.dtaReliefOther ?? 0} onChange={v => set({ dtaReliefOther: v })} />
+            <LabelledNum box={20} label="Amount of DTA income on which relief is claimed" value={sa.dtaIncomeReliefAmount ?? 0} onChange={v => set({ dtaIncomeReliefAmount: v })} help={RES.dtaIncomeReliefAmount} />
+            <LabelledNum box={21} label="Relief claimed under a DTA for residence in another country" value={sa.dtaReliefResidence ?? 0} onChange={v => set({ dtaReliefResidence: v })} help={RES.dtaReliefResidence} />
+            <LabelledNum box={22} label="Relief claimed under other provisions of a DTA" value={sa.dtaReliefOther ?? 0} onChange={v => set({ dtaReliefOther: v })} help={RES.dtaReliefOther} />
           </div>
         </div>
       )}
@@ -2889,8 +2923,8 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
         <div className="space-y-3">
           <SectionTitle title="Foreign income and gains (FIG) regime" />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <BoxText box={23} label="Date of arrival in the UK" value={sa.figArrivalDate ?? ''} onChange={v => set({ figArrivalDate: v })} placeholder="dd-mm-yyyy" />
-            <BoxText box={24} label="If UK resident in a tax year before your most recent arrival, enter that year" value={sa.figPriorResidentYear ?? ''} onChange={v => set({ figPriorResidentYear: v })} placeholder="e.g. 2021-22" />
+            <BoxText box={23} label="Date of arrival in the UK" value={sa.figArrivalDate ?? ''} onChange={v => set({ figArrivalDate: v })} placeholder="dd-mm-yyyy" help={RES.figArrivalDate} />
+            <BoxText box={24} label="If UK resident in a tax year before your most recent arrival, enter that year" value={sa.figPriorResidentYear ?? ''} onChange={v => set({ figPriorResidentYear: v })} placeholder="e.g. 2021-22" help={RES.figPriorResidentYear} />
           </div>
         </div>
       )}
@@ -2900,22 +2934,22 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
           <div className="space-y-2">
             <SectionTitle title="Foreign income and gains (FIG) regime" />
             <div className="grid grid-cols-1 gap-2">
-              <BoxCheck box={28} label="Making a claim for relief on foreign income under the FIG regime" checked={!!sa.figIncomeClaim} onChange={v => set({ figIncomeClaim: v })} />
-              <BoxCheck box={29} label="Making a claim for relief on foreign gains under the FIG regime" checked={!!sa.figGainsClaim} onChange={v => set({ figGainsClaim: v })} />
-              <BoxCheck box={30} label="UK income or gains deemed to be foreign under qualifying asset holding company (QAHC) rules" checked={!!sa.qahcDeemedForeign} onChange={v => set({ qahcDeemedForeign: v })} />
+              <BoxCheck box={28} label="Making a claim for relief on foreign income under the FIG regime" checked={!!sa.figIncomeClaim} onChange={v => set({ figIncomeClaim: v })} help={RES.figIncomeClaim} />
+              <BoxCheck box={29} label="Making a claim for relief on foreign gains under the FIG regime" checked={!!sa.figGainsClaim} onChange={v => set({ figGainsClaim: v })} help={RES.figGainsClaim} />
+              <BoxCheck box={30} label="UK income or gains deemed to be foreign under qualifying asset holding company (QAHC) rules" checked={!!sa.qahcDeemedForeign} onChange={v => set({ qahcDeemedForeign: v })} help={RES.qahcDeemedForeign} />
             </div>
             {(sa.figIncomeClaim || sa.figGainsClaim) && <p className="text-[10.5px] text-amber-700">Claiming FIG relief withdraws the personal allowance and the CGT annual exempt amount — reflected in the tax computation.</p>}
           </div>
           <div className="space-y-2">
             <SectionTitle title="Remittance basis" />
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <BoxCheck box={37} label="Remitted any nominated income or gains this year?" checked={!!sa.remittedNominated} onChange={v => set({ remittedNominated: v })} />
-              <BoxCheck box={39} label="The investment no longer qualifies for relief?" checked={!!sa.investmentNoLongerQualifies} onChange={v => set({ investmentNoLongerQualifies: v })} />
+              <BoxCheck box={37} label="Remitted any nominated income or gains this year?" checked={!!sa.remittedNominated} onChange={v => set({ remittedNominated: v })} help={RES.remittedNominated} />
+              <BoxCheck box={39} label="The investment no longer qualifies for relief?" checked={!!sa.investmentNoLongerQualifies} onChange={v => set({ investmentNoLongerQualifies: v })} help={RES.investmentNoLongerQualifies} />
             </div>
             <BreakdownField box={38} label="Claiming relief for foreign income (companies invested in)" title="Claiming relief for foreign income"
               items={sa.figForeignIncomeReliefCompanies ?? []} columns={SA109_COMPANY_COLS}
               blank={() => ({ id: sa109Cid() })} onChange={items => set({ figForeignIncomeReliefCompanies: items })}
-              rowTotal={c => c.amountInvested || 0} />
+              rowTotal={c => c.amountInvested || 0} help={RES.figCompanies} />
           </div>
         </div>
       )}
@@ -2925,25 +2959,25 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
           <div className="space-y-2">
             <SectionTitle title="Overseas Workday Relief (OWR)" />
             <div className="grid grid-cols-1 gap-2">
-              <BoxCheck box={40} label="Making an election for Overseas Workday Relief" checked={!!sa.owrElection} onChange={v => set({ owrElection: v })} />
-              <BoxCheck box={41} label="Making a claim for Overseas Workday Relief" checked={!!sa.owrClaim} onChange={v => set({ owrClaim: v })} />
-              <BoxCheck box={43} label="Qualify for the OWR transitional provisions for any year claimed" checked={!!sa.owrTransitional} onChange={v => set({ owrTransitional: v })} />
+              <BoxCheck box={40} label="Making an election for Overseas Workday Relief" checked={!!sa.owrElection} onChange={v => set({ owrElection: v })} help={RES.owrElection} />
+              <BoxCheck box={41} label="Making a claim for Overseas Workday Relief" checked={!!sa.owrClaim} onChange={v => set({ owrClaim: v })} help={RES.owrClaim} />
+              <BoxCheck box={43} label="Qualify for the OWR transitional provisions for any year claimed" checked={!!sa.owrTransitional} onChange={v => set({ owrTransitional: v })} help={RES.owrTransitional} />
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <LabelledNum box={44} label="Qualifying employment income after deductions" value={sa.owrQualifyingEmpIncome ?? 0} onChange={v => set({ owrQualifyingEmpIncome: v })} />
-              <LabelledNum box={46} label="Qualifying foreign employment income after deductions" value={sa.owrQualifyingForeignEmpIncome ?? 0} onChange={v => set({ owrQualifyingForeignEmpIncome: v })} />
-              <LabelledNum box={47} label="Maximum relief available under the financial limit" value={sa.owrMaxRelief ?? 0} onChange={v => set({ owrMaxRelief: v })} />
-              <LabelledNum box={48} label="OWR claimed on the qualifying employment income" value={sa.owrClaimedOnEmpIncome ?? 0} onChange={v => set({ owrClaimedOnEmpIncome: v })} />
-              <LabelledNum box={49} label="Total amount of OWR relief claimed for the year" value={sa.owrTotalRelief ?? 0} onChange={v => set({ owrTotalRelief: v })} />
+              <LabelledNum box={44} label="Qualifying employment income after deductions" value={sa.owrQualifyingEmpIncome ?? 0} onChange={v => set({ owrQualifyingEmpIncome: v })} help={RES.owrQualifyingEmpIncome} />
+              <LabelledNum box={46} label="Qualifying foreign employment income after deductions" value={sa.owrQualifyingForeignEmpIncome ?? 0} onChange={v => set({ owrQualifyingForeignEmpIncome: v })} help={RES.owrQualifyingForeignEmpIncome} />
+              <LabelledNum box={47} label="Maximum relief available under the financial limit" value={sa.owrMaxRelief ?? 0} onChange={v => set({ owrMaxRelief: v })} help={RES.owrMaxRelief} />
+              <LabelledNum box={48} label="OWR claimed on the qualifying employment income" value={sa.owrClaimedOnEmpIncome ?? 0} onChange={v => set({ owrClaimedOnEmpIncome: v })} help={RES.owrClaimedOnEmpIncome} />
+              <LabelledNum box={49} label="Total amount of OWR relief claimed for the year" value={sa.owrTotalRelief ?? 0} onChange={v => set({ owrTotalRelief: v })} help={RES.owrTotalRelief} />
             </div>
           </div>
           <div className="space-y-2">
             <SectionTitle title="Temporary repatriation facility (TRF)" />
-            <div className="grid grid-cols-1 gap-2"><BoxCheck box={50} label="Making an election under the TRF" checked={!!sa.trfElection} onChange={v => set({ trfElection: v })} /></div>
+            <div className="grid grid-cols-1 gap-2"><BoxCheck box={50} label="Making an election under the TRF" checked={!!sa.trfElection} onChange={v => set({ trfElection: v })} help={RES.trfElection} /></div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <LabelledNum box={51} label="Amount relating to personal TRF designations" value={sa.trfPersonalDesignations ?? 0} onChange={v => set({ trfPersonalDesignations: v })} />
-              <LabelledNum box={52} label="Amount relating to capital payments / benefits received from trusts" value={sa.trfTrustPayments ?? 0} onChange={v => set({ trfTrustPayments: v })} />
-              <LabelledNum box={53} label="Amount of TRF designations remitted in this tax year" value={sa.trfRemitted ?? 0} onChange={v => set({ trfRemitted: v })} />
+              <LabelledNum box={51} label="Amount relating to personal TRF designations" value={sa.trfPersonalDesignations ?? 0} onChange={v => set({ trfPersonalDesignations: v })} help={RES.trfPersonalDesignations} />
+              <LabelledNum box={52} label="Amount relating to capital payments / benefits received from trusts" value={sa.trfTrustPayments ?? 0} onChange={v => set({ trfTrustPayments: v })} help={RES.trfTrustPayments} />
+              <LabelledNum box={53} label="Amount of TRF designations remitted in this tax year" value={sa.trfRemitted ?? 0} onChange={v => set({ trfRemitted: v })} help={RES.trfRemitted} />
             </div>
           </div>
           <p className="text-[10.5px] text-[var(--text-muted)]">OWR, TRF and residence-relief amounts are captured for filing; they are not yet applied to the headline tax computation — review before filing.</p>
