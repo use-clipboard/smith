@@ -596,6 +596,17 @@ export function propertyAdjustedLoss(p: PropertySource): number {
 export function propertyTaxable(p: PropertySource): number {
   return Math.max(0, propertyAdjustedProfit(p) - (p.lossBroughtForward || 0));
 }
+/** The TAXPAYER's share of a property's taxable profit — the whole when solely
+ *  owned, or their ownership fraction of a jointly-owned property. (Uniformly
+ *  scaling a property's figures scales its taxable profit by the same fraction,
+ *  so the share can be applied to the computed profit.) */
+export function propertyTaxableShare(p: PropertySource): number {
+  return Math.round(propertyTaxable(p) * ownerShareFraction(p.owners));
+}
+/** The taxpayer's share of a property's residential finance costs (box 44). */
+export function propertyFinanceShare(p: PropertySource): number {
+  return (p.residentialFinanceCosts || 0) * ownerShareFraction(p.owners);
+}
 /** box 43 — loss to carry forward: this year's loss + unused b/fwd − loss set off. */
 export function propertyLossCarryForward(p: PropertySource): number {
   return Math.max(0, propertyAdjustedLoss(p) + (p.unusedLossCarriedForward || 0) - (p.lossSetOffTotalIncome || 0));
@@ -929,7 +940,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const partnershipDividends = sum(partnerships.map(p => p.dividends || 0));
   const partnershipTaxTaken = sum(partnerships.map(partnershipTaxTakenTotal));
   const partnershipProperty = sum(partnerships.map(partnershipPropertyTaxable));
-  const propertyProfit = sum(income.property.map(propertyTaxable)) + partnershipProperty;
+  const propertyProfit = sum(income.property.map(propertyTaxableShare)) + partnershipProperty;
   const pensionsBenefits = pensionsBenefitsTotal(income); // boxes 8, 9, 11, 13, 15, 16
   const ft = foreignTotals(income);
   const tr = trustTotals(income);
@@ -941,7 +952,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
-  const perPropertyFinance = sum(income.property.map(p => p.residentialFinanceCosts || 0));
+  const perPropertyFinance = sum(income.property.map(propertyFinanceShare));
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
@@ -1170,7 +1181,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   // Tax already paid at source: PAYE on employment + CIS on trades + tax taken
   // off property income + basic-rate credit on UK life-insurance gains.
   const cisDeducted = sum(income.selfEmployment.map(t => (t.cisDeductions || 0) + (t.otherTaxTaken || 0)));
-  const propertyTaxTaken = sum(income.property.map(p => p.taxTaken || 0));
+  const propertyTaxTaken = sum(income.property.map(p => (p.taxTaken || 0) * ownerShareFraction(p.owners)));
   const chargeableEventCredit = income.additional?.chargeableEventUkPolicy ? r0(chargeableEventGains * R_BASIC) : 0;
   if (cisDeducted > 0) notes.push('CIS deductions credited against the liability.');
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');

@@ -419,6 +419,10 @@ export interface PropertySource {
   rentARoom?: number;          // legacy Rent a Room deduct (→ box 37 fallback)
   // Legacy — accounts net profit fallback (used when boxes aren't itemised).
   profit: number;
+  /** Jointly-owned property — these are the WHOLE-property figures; the return
+   *  uses the taxpayer's ownership share and each co-owner's share can be pushed
+   *  to their own SA105. */
+  owners?: CgtOwner[];
 }
 
 // SA107 Trusts & estates — income received from a trust, settlement or estate.

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
-  ArrowRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
+  ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
 } from 'lucide-react';
@@ -13,6 +13,8 @@ import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeB
 import CapitalAllowancesCalculator from '../CapitalAllowancesCalculator';
 import CgtCalculator from '../CgtCalculator';
 import JointInterestField from '../JointInterestField';
+import OwnershipEditor from '../OwnershipEditor';
+import { propertyCoOwners, findCoOwnerReturn as findPropertyCoOwnerReturn, pushPropertyToCoOwner, type PropertyCoOwnerGroup } from '../propertyCoOwner';
 import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
@@ -23,7 +25,7 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108 } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -161,7 +163,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
     case 'employment': return { value: sum(income.employment, employmentTaxable), label: 'Employment income' };
     case 'selfemp': return { value: sum(income.selfEmployment, tradeAdjustedProfit), label: 'Adjusted trade profit' };
     case 'partnership': return { value: sum(income.partnerships ?? [], partnershipTaxableProfit), label: 'Partnership profit' };
-    case 'property': return { value: sum(income.property, propertyTaxable), label: 'Property profit' };
+    case 'property': return { value: sum(income.property, propertyTaxableShare), label: 'Property profit' };
     case 'foreign': { const f = foreignTotals(income); return { value: f.interest + f.dividends + f.other, label: 'Foreign income' }; }
     case 'cgt': {
       const d = income.capitalGains?.disposals ?? [];
@@ -390,7 +392,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'employment' && <EmploymentPage income={income} setIncome={setIncome} />}
       {page === 'selfemp' && <SelfEmploymentPage income={income} setIncome={setIncome} />}
       {page === 'partnership' && <PartnershipPage income={income} setIncome={setIncome} />}
-      {page === 'property' && <PropertyPage income={income} setIncome={setIncome} />}
+      {page === 'property' && <PropertyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
       {page === 'cgt' && <Sa108Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
@@ -1820,10 +1822,37 @@ function PartnershipStatementModal({ source, onApply, onClose }: { source: Partn
 
 function idOf(p: PartnershipSource): string { return p.id.replace(/[^a-z0-9]/gi, '').slice(-6) || '0'; }
 
-function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+function PropertyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
   const list = income.property;
   const add = () => setIncome(i => ({ ...i, property: [...i.property, { id: `p-${i.property.length}-${Date.now()}`, address: '', profit: 0 }] }));
   const set = (u: Partial<Sa100Income>) => setIncome(i => ({ ...i, ...u }));
+  const taxpayerName = ret.clientName ?? 'You';
+
+  // Co-owner push — a co-owner's share of a jointly-owned property → their return.
+  const coOwners = propertyCoOwners(list);
+  const [coBusy, setCoBusy] = useState<string | null>(null);
+  const [coMsg, setCoMsg] = useState<string | null>(null);
+  const [coConfirm, setCoConfirm] = useState<{ group: PropertyCoOwnerGroup; existing: TaxReturn | null } | null>(null);
+  async function pushCo(group: PropertyCoOwnerGroup) {
+    if (!ret.returnType) return;
+    setCoBusy(group.clientId); setCoMsg(null);
+    try {
+      const { ret: co, hasProperty } = await findPropertyCoOwnerReturn(group.clientId, ret.taxYear);
+      if (hasProperty && co) { setCoConfirm({ group, existing: co }); return; }
+      const { created } = await pushPropertyToCoOwner({ group, taxYear: ret.taxYear, returnType: ret.returnType, existing: co, mode: 'replace' });
+      setCoMsg(`${created ? 'Created a new return for' : 'Added to'} ${group.name}’s ${ret.taxYear} return — their ${fmtMoney(group.shareProfit)} share.`);
+    } catch (e) { setCoMsg(e instanceof Error ? e.message : 'Could not push to the co-owner’s return.'); }
+    finally { setCoBusy(null); }
+  }
+  async function doCoPush(mode: 'replace' | 'add') {
+    if (!coConfirm || !ret.returnType) return;
+    const { group, existing } = coConfirm; setCoBusy(group.clientId); setCoConfirm(null);
+    try {
+      await pushPropertyToCoOwner({ group, taxYear: ret.taxYear, returnType: ret.returnType, existing, mode });
+      setCoMsg(`${mode === 'replace' ? 'Replaced' : 'Added to'} ${group.name}’s ${ret.taxYear} return — their ${fmtMoney(group.shareProfit)} share.`);
+    } catch (e) { setCoMsg(e instanceof Error ? e.message : 'Could not push to the co-owner’s return.'); }
+    finally { setCoBusy(null); }
+  }
   // Smart guess: number of properties defaults to how many were added/found.
   const countGuess = list.length;
   const countShown = income.propertyCount ?? countGuess;
@@ -1871,24 +1900,58 @@ function PropertyPage({ income, setIncome }: { income: Sa100Income; setIncome: S
         <p className="rounded-xl border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12px] text-[var(--text-muted)]">No properties yet — add one (or import from Landlord Analysis) to enter the SA105 figures.</p>
       )}
       {list.map((p, idx) => (
-        <PropertyCard key={p.id} p={p} idx={idx}
+        <PropertyCard key={p.id} p={p} idx={idx} taxpayerName={taxpayerName}
           onChange={u => setIncome(i => ({ ...i, property: i.property.map((x, j) => j === idx ? { ...x, ...u } : x) }))}
           onRemove={() => setIncome(i => ({ ...i, property: i.property.filter((_, j) => j !== idx) }))} />
       ))}
       <button onClick={add} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--accent)] hover:underline"><Plus size={13} /> Add property</button>
-      <p className="text-[10.5px] text-[var(--text-muted)]">Each property is entered separately and summed into one SA105. Furnished holiday lettings ended on 5 April 2025, so 2025/26 uses the single UK-property section. Residential finance costs (box 44) are relieved as a 20% reducer, not deducted.</p>
+      <p className="text-[10.5px] text-[var(--text-muted)]">Each property is entered separately and summed into one SA105. Mark a property joint to split it with co-owners — the return uses this client’s share. Residential finance costs (box 44) are relieved as a 20% reducer, not deducted.</p>
+
+      {coOwners.length > 0 && (
+        <div className="rounded-xl border border-[var(--border)] bg-white/60 p-3">
+          <p className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--text-primary)]"><Users size={13} className="text-[var(--accent)]" /> Co-owners</p>
+          <p className="mt-0.5 text-[10.5px] text-[var(--text-muted)]">Push each co-owner’s share of the jointly-owned properties to their own return.</p>
+          <div className="mt-2 space-y-1.5">
+            {coOwners.map(g => (
+              <div key={g.clientId} className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[var(--text-primary)]">{g.name}</span>
+                <span className="text-[11px] text-[var(--text-muted)]">Share <span className="font-semibold text-[var(--text-primary)]">{fmtMoney(g.shareProfit)}</span> taxable</span>
+                <button onClick={() => pushCo(g)} disabled={coBusy === g.clientId} className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2 py-0.5 text-[10.5px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40">
+                  {coBusy === g.clientId ? <><Loader2 size={11} className="animate-spin" /> Pushing…</> : <><ArrowUpRight size={11} /> Push to their return</>}
+                </button>
+              </div>
+            ))}
+          </div>
+          {coMsg && <p className="mt-1.5 text-[11px] font-semibold text-emerald-700">{coMsg}</p>}
+        </div>
+      )}
+      {coConfirm && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onClick={() => setCoConfirm(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <p className="text-[15px] font-bold text-[var(--text-primary)]">Add to {coConfirm.group.name}’s return</p>
+            <p className="mt-1 text-[12.5px] text-[var(--text-muted)]">{coConfirm.group.name}’s {ret.taxYear} return already has property. Replace it with their share, or add on top?</p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button onClick={() => setCoConfirm(null)} className="btn-secondary">Cancel</button>
+              <button onClick={() => doCoPush('add')} className="btn-secondary bg-white">Add to existing</button>
+              <button onClick={() => doCoPush('replace')} className="btn-primary">Replace</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 const PROPERTY_TABS = ['Property income', 'Property expenses', 'Taxable profit or loss'] as const;
 
-function PropertyCard({ p, idx, onChange, onRemove }: {
-  p: PropertySource; idx: number; onChange: (u: Partial<PropertySource>) => void; onRemove: () => void;
+function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
+  p: PropertySource; idx: number; taxpayerName: string; onChange: (u: Partial<PropertySource>) => void; onRemove: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<string>('Property income');
   const set = (u: Partial<PropertySource>) => onChange(u);
+  const joint = !!p.owners;
+  const share = ownerShareFraction(p.owners);
   const activeTab = (PROPERTY_TABS as readonly string[]).includes(tab) ? tab : PROPERTY_TABS[0];
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
@@ -1896,11 +1959,15 @@ function PropertyCard({ p, idx, onChange, onRemove }: {
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.address} placeholder={`Property ${idx + 1} — address`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <ProvenanceBadge id={p.id} />
-        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span></span>
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span>{joint && <span className="ml-1 text-[var(--accent)]">· your {fmtMoney(Math.round(propertyTaxable(p) * share))}</span>}</span>
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
         <div className="border-t border-black/5">
+          <div className="border-b border-black/5 px-3 py-2.5">
+            <OwnershipEditor owners={p.owners ?? []} onChange={o => set({ owners: o.length ? o : undefined })} taxpayerName={taxpayerName} />
+            {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter the WHOLE property above; the return uses {taxpayerName}’s {Math.round(share * 100)}% share. The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
+          </div>
           <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
             {PROPERTY_TABS.map(tt => (
               <button key={tt} onClick={() => setTab(tt)}
