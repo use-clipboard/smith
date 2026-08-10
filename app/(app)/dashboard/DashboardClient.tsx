@@ -384,7 +384,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                     <p className="text-xs text-[var(--text-muted)] truncate">
                       {o.clients?.name
                         ? `${o.clients.name}${o.clients.client_ref ? ` · ${o.clients.client_ref}` : ''}`
-                        : 'No client'} · {formatTimeAgo(o.created_at)}
+                        : 'No client'} · <span suppressHydrationWarning>{formatTimeAgo(o.created_at)}</span>
                     </p>
                   </div>
                 </>
@@ -676,7 +676,7 @@ export default function DashboardClient({ displayName, recentClients, recentOutp
                         <p className="text-xs text-[var(--text-muted)]">No client</p>
                       )}
                     </div>
-                    <span className="text-xs text-[var(--text-muted)] shrink-0 whitespace-nowrap">
+                    <span className="text-xs text-[var(--text-muted)] shrink-0 whitespace-nowrap" suppressHydrationWarning>
                       {formatTimeAgo(o.created_at)}
                     </span>
                   </li>
