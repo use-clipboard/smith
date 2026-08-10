@@ -99,6 +99,16 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Income chargeable on settlors', context: 'Trusts · Income from Trusts · boxes 7–15', page: 'trusts', keywords: 'settlor chargeable basic rate trust rate gross life assurance box 7 8 9 10 11 12 13 14 15' },
   { label: 'Income from UK estates', context: 'Trusts · Income from the estates · boxes 16–19', page: 'trusts', keywords: 'estate deceased r185 non-savings savings dividend after tax non-repayable box 16 17 18 19' },
   { label: 'Income from foreign estates', context: 'Trusts · Income from the estates · boxes 22–24', page: 'trusts', keywords: 'foreign estate income foreign tax uk tax withheld ftcr fig box 22 23 24' },
+  // Residence (SA109)
+  { label: 'Residence status', context: 'Residence · Residence status · boxes 1–14', page: 'residence', keywords: 'residence status not resident non-resident split year srt statutory residence test automatic overseas test home overseas ties box 1 3 4 7 9 12' },
+  { label: 'Days spent in the UK', context: 'Residence · Residence status · boxes 10–14', page: 'residence', keywords: 'days spent uk exceptional circumstances transit midnight workdays ties count days box 10 11 12 13 14' },
+  { label: 'Split-year treatment', context: 'Residence · Residence status · boxes 3–6', page: 'residence', keywords: 'split year treatment case date arrival departure box 3 3.1 6' },
+  { label: 'Personal allowances (non-resident / DTA)', context: 'Residence · Personal allowances and domicile · boxes 15–22', page: 'residence', keywords: 'personal allowances non-resident dual resident dta double taxation agreement treaty relief country codes box 15 16 17 18 19 20 21 22' },
+  { label: 'Foreign income and gains (FIG) regime', context: 'Residence · FIG regime & remittance basis · boxes 23–30', page: 'residence', keywords: 'fig foreign income gains regime claim relief arrival qahc qualifying asset holding company box 23 24 28 29 30' },
+  { label: 'Remittance basis', context: 'Residence · FIG regime & remittance basis · boxes 37–39', page: 'residence', keywords: 'remittance basis nominated income business investment relief companies box 37 38 39' },
+  { label: 'Overseas Workday Relief (OWR)', context: 'Residence · OWR & TRF · boxes 40–49', page: 'residence', keywords: 'overseas workday relief owr election claim transitional qualifying employment income financial limit box 40 41 43 44 46 47 48 49' },
+  { label: 'Temporary repatriation facility (TRF)', context: 'Residence · OWR & TRF · boxes 50–53', page: 'residence', keywords: 'temporary repatriation facility trf election designations remitted box 50 51 52 53' },
+  { label: 'Residence — any other information', context: 'Residence · Any other information · box 54', page: 'residence', keywords: 'residence any other information note box 54' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

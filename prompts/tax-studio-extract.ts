@@ -7,6 +7,8 @@ You have been given one or more of the taxpayer's documents (attached above). Id
 
 Capture EVERY figure a document gives you into the right field below — not just a headline total. If a set of accounts shows turnover, expenses and capital allowances, report all three; if a letting statement itemises expenses, split them into the expense fields. Only leave a field 0 when the document genuinely doesn't provide it.
 
+Some documents may be written in a language other than English (this is common for foreign income and residence documents). Read them directly, translate any names, labels and descriptions into English in your output, and report the figures exactly as the document shows them. Never refuse or skip a document because of its language.
+
 Common documents and what to take:
 - P60 / P45 (employment): employer name, gross pay for the year, and PAYE tax deducted.
 - P11D (benefits in kind): the total cash-equivalent of benefits for that employment (→ "benefits").
@@ -23,6 +25,7 @@ Common documents and what to take:
 - Trust / estate income (R185 statements — "Statement of income from trust" or "…from estate"): list EACH source SEPARATELY in "trustEstate" — one entry per statement with the "source" (trust/estate name), a "category" of exactly one of "discretionaryTrust" (a discretionary payment received net of 45% tax), "nonDiscTrust" (a non-discretionary income entitlement from a trust) or "ukEstate" (income from a deceased person's estate), and the net income split by type into "nonSavings", "savings" and "dividend". For a discretionary payment put the single net amount in "nonSavings".
 - Capital gains (contract notes, completion statements, CGT computations): group disposals by asset class in "capitalGains" — one entry per "category" of exactly one of "residential" (UK residential property), "crypto" (cryptoassets), "listed" (listed/quoted shares & securities), "unlisted" (unlisted shares & securities) or "other" (all other assets) — with the number of "disposals", total "proceeds", total allowable "costs" (purchase price + costs of buying/selling + improvements), total chargeable "gains" (after reliefs like Private Residence Relief), and total "losses" in the year. If the document already states the gain, use it; otherwise gain = proceeds − costs.
 - Child Benefit award notice: the total child benefit received in the year (→ "childBenefit", for the HICBC).
+- Residence documents (SA109) — e.g. a P85 (leaving the UK), a certificate of residence, a foreign tax-residency certificate, a travel/day-count record, or a double-taxation-agreement (DTA) claim: populate "residence" ONLY with what the document evidences. Set "notResident"/"splitYear"/"residentLastYear"/"homeOverseas" true only when clearly stated. Put day counts in "daysInUk"/"daysExceptional"/"daysTransit", UK "ukTies", and "workdaysUk"/"workdaysOverseas". Put an arrival date in "arrivalDate" (dd-mm-yyyy), the country/countries the person is a national or resident of in "nationalResidentCountries", and country codes they were tax-resident in this year in "residentCountryCodes". For a FIG-regime claim set "figIncomeClaim"/"figGainsClaim". For a DTA claim put the relieved income in "dtaIncomeReliefAmount" and the relief amounts in "dtaReliefResidence"/"dtaReliefOther". If a document is NOT about residence, leave every "residence" field at its default (false/0/"").
 - SA302 / HMRC tax calculation: use only as a cross-check — do NOT double count figures already taken from source documents.
 
 Rules:
@@ -59,6 +62,7 @@ Return ONLY valid JSON (no prose, no code fences) matching EXACTLY this shape:
   "giftAid": number,
   "pensionContributions": number,
   "childBenefit": number,
+  "residence": { "notResident": boolean, "splitYear": boolean, "residentLastYear": boolean, "homeOverseas": boolean, "daysInUk": number, "daysExceptional": number, "daysTransit": number, "ukTies": number, "workdaysUk": number, "workdaysOverseas": number, "arrivalDate": string, "nationalResidentCountries": string, "residentCountryCodes": string, "figIncomeClaim": boolean, "figGainsClaim": boolean, "dtaIncomeReliefAmount": number, "dtaReliefResidence": number, "dtaReliefOther": number },
   "notes": [string],
   "setAside": [{ "label": string, "reason": string }],
   "needs": [string]

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { useState, useEffect, useRef, createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -26,7 +26,7 @@ import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -206,7 +206,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
         .filter(v => (typeof v === 'number' ? v !== 0 : !!v)).length + (sa.foreignEstates?.length ?? 0);
       return legacy + boxes;
     })(),
-    residence: income.residence && (income.residence.remittanceBasis || (income.residence.status && income.residence.status !== 'resident') || income.residence.domicile === 'non-uk' || (income.residence.daysInUk || 0) > 0) ? 1 : 0,
+    residence: income.residence ? sa109Count(income.residence) : 0,
     additional: income.additional && [
       income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
       income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
@@ -396,7 +396,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'foreign' && <ForeignPage income={income} setIncome={setIncome} />}
       {page === 'cgt' && <Sa108Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
-      {page === 'residence' && <ResidencePage income={income} setIncome={setIncome} />}
+      {page === 'residence' && <Sa109Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
@@ -2674,37 +2674,289 @@ function CapitalGainsPage({ income, setIncome }: { income: Sa100Income; setIncom
   );
 }
 
-function ResidencePage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const r = income.residence ?? {};
-  const patchR = (u: Partial<NonNullable<Sa100Income['residence']>>) => setIncome(i => ({ ...i, residence: { ...i.residence, ...u } }));
+// ── SA109 Residence, FIG regime & remittance basis — full box-for-box page ────
+const SA109_TABS = [
+  'Residence status',
+  'Personal allowances and domicile',
+  'Foreign income and gains (FIG) regime & Remittance Basis',
+  'Overseas Workday Relief & Temporary repatriation facility',
+  'Any other information',
+] as const;
+const SA109_SUBTABS: Record<string, string[]> = {
+  'Personal allowances and domicile': ['Personal allowances', 'Residence in other countries', 'Foreign income and gains (FIG) regime'],
+};
+const sa109Cid = () => `s109c-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+const SA109_COMPANY_COLS: BreakdownColumn<Sa109Company>[] = [
+  { key: 'companyNumber', label: 'Company number', kind: 'text' },
+  { key: 'companyName', label: 'Company name', kind: 'text' },
+  { key: 'amountInvested', label: 'Amount invested', kind: 'number', total: true },
+];
+
+// Count populated boxes — overall (no tab) or for one top tab (drives the (N) badges).
+function sa109Count(sa: Sa109, tab?: string): number {
+  const f = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()))).length;
+  const status = () => f([sa.notResident, sa.splitYear, sa.splitYearMultiple, sa.residentLastYear, sa.splitYearDate, sa.thirdAutoOverseasTest, sa.gapBetweenEmployments, sa.homeOverseas, sa.daysInUk, sa.daysExceptional, sa.daysTransit, sa.ukTies, sa.workdaysUk, sa.workdaysOverseas]);
+  const allowances = () => f([sa.paUnderDta, sa.paOtherBasis, sa.nationalResidentCountries, sa.residentCountryCodes, sa.residentCountryCodesPrior, sa.dtaIncomeReliefAmount, sa.dtaReliefResidence, sa.dtaReliefOther, sa.figArrivalDate, sa.figPriorResidentYear]);
+  const figRemit = () => f([sa.figIncomeClaim, sa.figGainsClaim, sa.qahcDeemedForeign, sa.remittedNominated, sa.investmentNoLongerQualifies]) + (sa.figForeignIncomeReliefCompanies?.length ?? 0);
+  const owrTrf = () => f([sa.owrElection, sa.owrClaim, sa.owrTransitional, sa.owrQualifyingEmpIncome, sa.owrQualifyingForeignEmpIncome, sa.owrMaxRelief, sa.owrClaimedOnEmpIncome, sa.owrTotalRelief, sa.trfElection, sa.trfPersonalDesignations, sa.trfTrustPayments, sa.trfRemitted]);
+  const other = () => f([sa.otherInformation]);
+  switch (tab) {
+    case 'Residence status': return status();
+    case 'Personal allowances and domicile': return allowances();
+    case 'Foreign income and gains (FIG) regime & Remittance Basis': return figRemit();
+    case 'Overseas Workday Relief & Temporary repatriation facility': return owrTrf();
+    case 'Any other information': return other();
+    default: return status() + allowances() + figRemit() + owrTrf() + other();
+  }
+}
+
+// A free-text box with a box chip (multi-line) — matches BoxText's chrome.
+function BoxTextArea({ box, label, value, onChange, rows = 3, placeholder, right }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; right?: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+        {right && <span className="ml-auto">{right}</span>}
+      </div>
+      <textarea value={value} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base w-full py-1 text-[12.5px]" />
+    </div>
+  );
+}
+
+// A day-count box (SA109 boxes 10/11/11.1/13/14) with a "count the days" helper —
+// enter one or more date ranges and SMITH totals the (inclusive) days for you.
+function DayNum({ box, label, value, onChange, help }: { box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        <button onClick={() => setOpen(true)} className="ml-auto inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20"><Calculator size={10} /> Count days</button>
+      </div>
+      <input type="number" value={value || ''} onChange={e => onChange(Number(e.target.value) || 0)} className="input-base py-1 text-right text-[12.5px]" />
+      {open && <DaysCalcModal current={value || 0} label={label} onApply={v => { onChange(v); setOpen(false); }} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+// Inclusive day count between two ISO dates (or 0 if incomplete/invalid).
+function inclusiveDays(from: string, to: string): number {
+  if (!from || !to) return 0;
+  const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00');
+  if (isNaN(a.getTime()) || isNaN(b.getTime()) || b < a) return 0;
+  return Math.floor((b.getTime() - a.getTime()) / 86400000) + 1;
+}
+
+function DaysCalcModal({ current, label, onApply, onClose }: { current: number; label: string; onApply: (v: number) => void; onClose: () => void }) {
+  const [ranges, setRanges] = useState<{ id: string; from: string; to: string }[]>([{ id: 'r0', from: '', to: '' }]);
+  const total = ranges.reduce((a, r) => a + inclusiveDays(r.from, r.to), 0);
+  const upd = (id: string, u: Partial<{ from: string; to: string }>) => setRanges(rs => rs.map(r => (r.id === id ? { ...r, ...u } : r)));
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-black/5 px-5 py-3">
+          <p className="text-[14px] font-bold text-[var(--text-primary)]">Count the days — {label}</p>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-4">
+          <p className="mb-2 text-[11px] text-[var(--text-muted)]">Add each trip / period as a date range — SMITH counts the days (inclusive of both dates) and totals them.</p>
+          <div className="space-y-2">
+            {ranges.map(r => (
+              <div key={r.id} className="flex items-center gap-2">
+                <input type="date" value={r.from} onChange={e => upd(r.id, { from: e.target.value })} className="input-base flex-1 py-1 text-[12px]" aria-label="From" />
+                <span className="text-[11px] text-[var(--text-muted)]">to</span>
+                <input type="date" value={r.to} onChange={e => upd(r.id, { to: e.target.value })} className="input-base flex-1 py-1 text-[12px]" aria-label="To" />
+                <span className="w-14 shrink-0 text-right text-[12px] font-semibold text-[var(--text-primary)]">{inclusiveDays(r.from, r.to)}d</span>
+                {ranges.length > 1 && <button onClick={() => setRanges(rs => rs.filter(x => x.id !== r.id))} className="text-[var(--text-muted)] hover:text-rose-500"><Trash2 size={13} /></button>}
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setRanges(rs => [...rs, { id: `r${Date.now()}`, from: '', to: '' }])} className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-[var(--accent)]"><Plus size={12} /> Add another period</button>
+          <div className="mt-3 flex items-center justify-between rounded-lg bg-[var(--accent)]/[0.06] px-3 py-2">
+            <span className="text-[12px] font-medium text-[var(--text-secondary)]">Total days</span>
+            <span className="text-[15px] font-extrabold text-[var(--text-primary)]">{total}</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-black/5 px-5 py-3">
+          {current > 0 && <button onClick={() => onApply(current + total)} className="btn-secondary">Add to current ({current})</button>}
+          <button onClick={() => onApply(total)} disabled={total === 0} className="btn-primary disabled:opacity-40"><Check size={14} /> Use {total} days</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const sa: Sa109 = income.residence ?? {};
+  const set = (u: Partial<Sa109>) => setIncome(i => ({ ...i, residence: { ...i.residence, ...u } }));
+  const [tab, setTab] = useState<string>(SA109_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (SA109_TABS as readonly string[]).includes(tab) ? tab : SA109_TABS[0];
+  const subList = SA109_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+
+  async function suggestNote() {
+    setNoteBusy(true);
+    try {
+      const r = await fetch('/api/tax-studio/suggest-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taxYear: ret.taxYear, clientName: ret.clientName ?? '', residence: sa }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.note) set({ otherInformation: sa.otherInformation ? `${sa.otherInformation}\n\n${d.note}` : d.note });
+    } finally { setNoteBusy(false); }
+  }
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div>
-          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Residence status</label>
-          <select value={r.status ?? 'resident'} onChange={e => patchR({ status: e.target.value as NonNullable<Sa100Income['residence']>['status'] })} className="input-base py-1 text-[12.5px]">
-            <option value="resident">UK resident</option>
-            <option value="non-resident">Non-resident</option>
-            <option value="split-year">Split year</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-[11px] font-medium text-[var(--text-muted)]">Domicile</label>
-          <select value={r.domicile ?? 'uk'} onChange={e => patchR({ domicile: e.target.value as NonNullable<Sa100Income['residence']>['domicile'] })} className="input-base py-1 text-[12.5px]">
-            <option value="uk">UK domiciled</option>
-            <option value="non-uk">Non-UK domiciled</option>
-          </select>
-        </div>
-        <LabelledNum label="Days spent in the UK" value={r.daysInUk ?? 0} onChange={v => patchR({ daysInUk: v })} />
-        {r.status === 'split-year' && (
-          <BoxText label="Split-year date (dd-mm-yyyy)" value={r.splitYearDate ?? ''} onChange={v => patchR({ splitYearDate: v })} />
-        )}
+      {/* Top tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
+        {SA109_TABS.map(tt => {
+          const n = sa109Count(sa, tt);
+          return (
+            <button key={tt} onClick={() => setTop(tt)}
+              className={`rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+              {tt}{n > 0 && <span className="font-bold"> ({n})</span>}
+            </button>
+          );
+        })}
       </div>
-      <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[var(--text-secondary)]">
-        <input type="checkbox" checked={r.remittanceBasis ?? false} onChange={e => patchR({ remittanceBasis: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" />
-        Claim the remittance basis
-      </label>
-      <p className="text-[10.5px] text-[var(--text-muted)]">Claiming the remittance basis withdraws the personal allowance and the £3,000 CGT annual exempt amount. The remittance basis was replaced by the FIG regime from 6 April 2025 — transitional rules may apply. Split-year / non-resident income apportionment isn’t modelled here.</p>
+
+      {/* Sub-tabs (Personal allowances and domicile) */}
+      {subList.length > 0 && (
+        <div className="flex flex-wrap gap-1 border-b border-black/5 pb-2">
+          {subList.map((ss, i) => (
+            <button key={ss} onClick={() => setSub(i)}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+              {ss}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'Residence status' && (
+        <div className="space-y-3">
+          <SectionTitle title="Residence status" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={1} label="Not resident in the UK?" checked={!!sa.notResident} onChange={v => set({ notResident: v, status: v ? 'non-resident' : (sa.splitYear ? 'split-year' : 'resident') })} />
+            <BoxCheck box={3} label="Requesting split-year treatment?" checked={!!sa.splitYear} onChange={v => set({ splitYear: v, status: v ? 'split-year' : (sa.notResident ? 'non-resident' : 'resident') })} />
+            <BoxCheck box="3.1" label="Does more than one case of split-year treatment apply?" checked={!!sa.splitYearMultiple} onChange={v => set({ splitYearMultiple: v })} />
+            <BoxCheck box={4} label="Resident in the UK last year?" checked={!!sa.residentLastYear} onChange={v => set({ residentLastYear: v })} />
+            <BoxText box={6} label="Date from which the UK part of the split year begins or ends" value={sa.splitYearDate ?? ''} onChange={v => set({ splitYearDate: v })} placeholder="dd-mm-yyyy" />
+            <BoxCheck box={7} label="Meets the third automatic overseas test?" checked={!!sa.thirdAutoOverseasTest} onChange={v => set({ thirdAutoOverseasTest: v })} />
+            <BoxCheck box={8} label="Had a gap between employments in the year?" checked={!!sa.gapBetweenEmployments} onChange={v => set({ gapBetweenEmployments: v })} />
+            <BoxCheck box={9} label="Has a home overseas?" checked={!!sa.homeOverseas} onChange={v => set({ homeOverseas: v })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <DayNum box={10} label="Days spent in the UK during the year" value={sa.daysInUk ?? 0} onChange={v => set({ daysInUk: v })} />
+            <DayNum box={11} label="Days attributed to exceptional circumstances" value={sa.daysExceptional ?? 0} onChange={v => set({ daysExceptional: v })} />
+            <DayNum box="11.1" label="Days in the UK at midnight but in transit" value={sa.daysTransit ?? 0} onChange={v => set({ daysTransit: v })} />
+            <LabelledNum box={12} label="Number of ties to the UK" value={sa.ukTies ?? 0} onChange={v => set({ ukTies: v })} />
+            <DayNum box={13} label="Workdays in the UK" value={sa.workdaysUk ?? 0} onChange={v => set({ workdaysUk: v })} />
+            <DayNum box={14} label="Workdays overseas" value={sa.workdaysOverseas ?? 0} onChange={v => set({ workdaysOverseas: v })} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Personal allowances and domicile' && subName === 'Personal allowances' && (
+        <div className="space-y-3">
+          <SectionTitle title="Personal allowances for non-residents and dual residents" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={15} label="Claiming personal allowances under the terms of a DTA?" checked={!!sa.paUnderDta} onChange={v => set({ paUnderDta: v })} />
+            <BoxCheck box={16} label="Claiming personal allowances on some other basis?" checked={!!sa.paOtherBasis} onChange={v => set({ paOtherBasis: v })} />
+          </div>
+          <BoxTextArea box={17} label="Countries of which you are a national and/or resident" value={sa.nationalResidentCountries ?? ''} onChange={v => set({ nationalResidentCountries: v })} placeholder="One per line" />
+          <p className="text-[10.5px] text-[var(--text-muted)]">For country or territory codes, see the SA109 notes provided by HMRC.</p>
+        </div>
+      )}
+      {activeTab === 'Personal allowances and domicile' && subName === 'Residence in other countries' && (
+        <div className="space-y-3">
+          <SectionTitle title="Residence in other countries" />
+          <BoxTextArea box={18} label="Country codes in which you were resident for tax purposes this year (other than the UK)" value={sa.residentCountryCodes ?? ''} onChange={v => set({ residentCountryCodes: v })} rows={2} />
+          <BoxTextArea box={19} label="If also resident in either/both of those countries for the prior year, enter the appropriate codes" value={sa.residentCountryCodesPrior ?? ''} onChange={v => set({ residentCountryCodesPrior: v })} rows={2} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <LabelledNum box={20} label="Amount of DTA income on which relief is claimed" value={sa.dtaIncomeReliefAmount ?? 0} onChange={v => set({ dtaIncomeReliefAmount: v })} />
+            <LabelledNum box={21} label="Relief claimed under a DTA for residence in another country" value={sa.dtaReliefResidence ?? 0} onChange={v => set({ dtaReliefResidence: v })} />
+            <LabelledNum box={22} label="Relief claimed under other provisions of a DTA" value={sa.dtaReliefOther ?? 0} onChange={v => set({ dtaReliefOther: v })} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Personal allowances and domicile' && subName === 'Foreign income and gains (FIG) regime' && (
+        <div className="space-y-3">
+          <SectionTitle title="Foreign income and gains (FIG) regime" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxText box={23} label="Date of arrival in the UK" value={sa.figArrivalDate ?? ''} onChange={v => set({ figArrivalDate: v })} placeholder="dd-mm-yyyy" />
+            <BoxText box={24} label="If UK resident in a tax year before your most recent arrival, enter that year" value={sa.figPriorResidentYear ?? ''} onChange={v => set({ figPriorResidentYear: v })} placeholder="e.g. 2021-22" />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Foreign income and gains (FIG) regime & Remittance Basis' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <SectionTitle title="Foreign income and gains (FIG) regime" />
+            <div className="grid grid-cols-1 gap-2">
+              <BoxCheck box={28} label="Making a claim for relief on foreign income under the FIG regime" checked={!!sa.figIncomeClaim} onChange={v => set({ figIncomeClaim: v })} />
+              <BoxCheck box={29} label="Making a claim for relief on foreign gains under the FIG regime" checked={!!sa.figGainsClaim} onChange={v => set({ figGainsClaim: v })} />
+              <BoxCheck box={30} label="UK income or gains deemed to be foreign under qualifying asset holding company (QAHC) rules" checked={!!sa.qahcDeemedForeign} onChange={v => set({ qahcDeemedForeign: v })} />
+            </div>
+            {(sa.figIncomeClaim || sa.figGainsClaim) && <p className="text-[10.5px] text-amber-700">Claiming FIG relief withdraws the personal allowance and the CGT annual exempt amount — reflected in the tax computation.</p>}
+          </div>
+          <div className="space-y-2">
+            <SectionTitle title="Remittance basis" />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <BoxCheck box={37} label="Remitted any nominated income or gains this year?" checked={!!sa.remittedNominated} onChange={v => set({ remittedNominated: v })} />
+              <BoxCheck box={39} label="The investment no longer qualifies for relief?" checked={!!sa.investmentNoLongerQualifies} onChange={v => set({ investmentNoLongerQualifies: v })} />
+            </div>
+            <BreakdownField box={38} label="Claiming relief for foreign income (companies invested in)" title="Claiming relief for foreign income"
+              items={sa.figForeignIncomeReliefCompanies ?? []} columns={SA109_COMPANY_COLS}
+              blank={() => ({ id: sa109Cid() })} onChange={items => set({ figForeignIncomeReliefCompanies: items })}
+              rowTotal={c => c.amountInvested || 0} />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Overseas Workday Relief & Temporary repatriation facility' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <SectionTitle title="Overseas Workday Relief (OWR)" />
+            <div className="grid grid-cols-1 gap-2">
+              <BoxCheck box={40} label="Making an election for Overseas Workday Relief" checked={!!sa.owrElection} onChange={v => set({ owrElection: v })} />
+              <BoxCheck box={41} label="Making a claim for Overseas Workday Relief" checked={!!sa.owrClaim} onChange={v => set({ owrClaim: v })} />
+              <BoxCheck box={43} label="Qualify for the OWR transitional provisions for any year claimed" checked={!!sa.owrTransitional} onChange={v => set({ owrTransitional: v })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <LabelledNum box={44} label="Qualifying employment income after deductions" value={sa.owrQualifyingEmpIncome ?? 0} onChange={v => set({ owrQualifyingEmpIncome: v })} />
+              <LabelledNum box={46} label="Qualifying foreign employment income after deductions" value={sa.owrQualifyingForeignEmpIncome ?? 0} onChange={v => set({ owrQualifyingForeignEmpIncome: v })} />
+              <LabelledNum box={47} label="Maximum relief available under the financial limit" value={sa.owrMaxRelief ?? 0} onChange={v => set({ owrMaxRelief: v })} />
+              <LabelledNum box={48} label="OWR claimed on the qualifying employment income" value={sa.owrClaimedOnEmpIncome ?? 0} onChange={v => set({ owrClaimedOnEmpIncome: v })} />
+              <LabelledNum box={49} label="Total amount of OWR relief claimed for the year" value={sa.owrTotalRelief ?? 0} onChange={v => set({ owrTotalRelief: v })} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <SectionTitle title="Temporary repatriation facility (TRF)" />
+            <div className="grid grid-cols-1 gap-2"><BoxCheck box={50} label="Making an election under the TRF" checked={!!sa.trfElection} onChange={v => set({ trfElection: v })} /></div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <LabelledNum box={51} label="Amount relating to personal TRF designations" value={sa.trfPersonalDesignations ?? 0} onChange={v => set({ trfPersonalDesignations: v })} />
+              <LabelledNum box={52} label="Amount relating to capital payments / benefits received from trusts" value={sa.trfTrustPayments ?? 0} onChange={v => set({ trfTrustPayments: v })} />
+              <LabelledNum box={53} label="Amount of TRF designations remitted in this tax year" value={sa.trfRemitted ?? 0} onChange={v => set({ trfRemitted: v })} />
+            </div>
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">OWR, TRF and residence-relief amounts are captured for filing; they are not yet applied to the headline tax computation — review before filing.</p>
+        </div>
+      )}
+
+      {activeTab === 'Any other information' && (
+        <div className="space-y-2">
+          <BoxTextArea box={54} label="Please give any other information in this space" value={sa.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} rows={8}
+            right={<button onClick={suggestNote} disabled={noteBusy} className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:opacity-50">{noteBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} SMITH, help me write this</button>} />
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the residence details entered — review and edit before filing.</p>
+        </div>
+      )}
     </div>
   );
 }

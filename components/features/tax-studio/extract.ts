@@ -60,6 +60,15 @@ export interface Sa100Extraction {
   pensionContributions: number;
   childBenefit: number;
   notes: string[];
+  /** SA109 residence facts evidenced by a document (P85, certificate of residence,
+   *  travel record, DTA claim, etc.). Empty/undefined when nothing relevant found. */
+  residence?: {
+    notResident: boolean; splitYear: boolean; residentLastYear: boolean; homeOverseas: boolean;
+    daysInUk: number; daysExceptional: number; daysTransit: number; ukTies: number; workdaysUk: number; workdaysOverseas: number;
+    arrivalDate: string; nationalResidentCountries: string; residentCountryCodes: string;
+    figIncomeClaim: boolean; figGainsClaim: boolean;
+    dtaIncomeReliefAmount: number; dtaReliefResidence: number; dtaReliefOther: number;
+  };
   /** Documents/figures found but NOT used, each with a plain-English reason. */
   setAside: { label: string; reason: string }[];
   /** Missing documents or context SMITH would need to make entries accurate. */
@@ -103,9 +112,28 @@ function normalise(raw: unknown): Sa100Extraction {
     capitalGains: arr<Sa100Extraction['capitalGains'][number]>(e.capitalGains).map(x => ({ category: ccat(x?.category), disposals: num(x?.disposals), proceeds: num(x?.proceeds), costs: num(x?.costs), gains: num(x?.gains), losses: num(x?.losses) })).filter(x => x.gains > 0 || x.losses > 0 || x.proceeds > 0),
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
+    residence: normResidence(e.residence),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
     needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
+}
+
+// Normalise scanned residence facts — returns undefined when nothing was found so
+// the merge never touches the SA109 page for an unrelated document.
+function normResidence(raw: unknown): Sa100Extraction['residence'] {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const b = (v: unknown) => v === true;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const s = (v: unknown) => (v != null ? String(v).trim() : '');
+  const res = {
+    notResident: b(r.notResident), splitYear: b(r.splitYear), residentLastYear: b(r.residentLastYear), homeOverseas: b(r.homeOverseas),
+    daysInUk: n(r.daysInUk), daysExceptional: n(r.daysExceptional), daysTransit: n(r.daysTransit), ukTies: n(r.ukTies), workdaysUk: n(r.workdaysUk), workdaysOverseas: n(r.workdaysOverseas),
+    arrivalDate: s(r.arrivalDate), nationalResidentCountries: s(r.nationalResidentCountries), residentCountryCodes: s(r.residentCountryCodes),
+    figIncomeClaim: b(r.figIncomeClaim), figGainsClaim: b(r.figGainsClaim),
+    dtaIncomeReliefAmount: n(r.dtaIncomeReliefAmount), dtaReliefResidence: n(r.dtaReliefResidence), dtaReliefOther: n(r.dtaReliefOther),
+  };
+  const any = Object.values(res).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!v));
+  return any ? res : undefined;
 }
 
 export async function fetchExtraction(taxYear: string, files: EncodedFile[]): Promise<Sa100Extraction> {
@@ -550,9 +578,42 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     }
   }
 
+  // SA109 residence facts — additive: fill only boxes the user hasn't set (never
+  // flip a hand-entered flag off, or overwrite a typed value with a scan).
+  let residence = income.residence;
+  if (e.residence) {
+    const cur = income.residence ?? {};
+    const rs = e.residence;
+    const setBool = (c: boolean | undefined, v: boolean) => (v && !c ? true : c);
+    const setNum = (c: number | undefined, v: number) => ((c == null || c === 0) && v > 0 ? r(v) : c);
+    const setStr = (c: string | undefined, v: string) => (!c && v ? v : c);
+    residence = {
+      ...cur,
+      notResident: setBool(cur.notResident, rs.notResident),
+      splitYear: setBool(cur.splitYear, rs.splitYear),
+      residentLastYear: setBool(cur.residentLastYear, rs.residentLastYear),
+      homeOverseas: setBool(cur.homeOverseas, rs.homeOverseas),
+      daysInUk: setNum(cur.daysInUk, rs.daysInUk),
+      daysExceptional: setNum(cur.daysExceptional, rs.daysExceptional),
+      daysTransit: setNum(cur.daysTransit, rs.daysTransit),
+      ukTies: setNum(cur.ukTies, rs.ukTies),
+      workdaysUk: setNum(cur.workdaysUk, rs.workdaysUk),
+      workdaysOverseas: setNum(cur.workdaysOverseas, rs.workdaysOverseas),
+      figArrivalDate: setStr(cur.figArrivalDate, rs.arrivalDate),
+      nationalResidentCountries: setStr(cur.nationalResidentCountries, rs.nationalResidentCountries),
+      residentCountryCodes: setStr(cur.residentCountryCodes, rs.residentCountryCodes),
+      figIncomeClaim: setBool(cur.figIncomeClaim, rs.figIncomeClaim),
+      figGainsClaim: setBool(cur.figGainsClaim, rs.figGainsClaim),
+      dtaIncomeReliefAmount: setNum(cur.dtaIncomeReliefAmount, rs.dtaIncomeReliefAmount),
+      dtaReliefResidence: setNum(cur.dtaReliefResidence, rs.dtaReliefResidence),
+      dtaReliefOther: setNum(cur.dtaReliefOther, rs.dtaReliefOther),
+    };
+    residence.status = residence.notResident ? 'non-resident' : residence.splitYear ? 'split-year' : cur.status;
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),

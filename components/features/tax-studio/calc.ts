@@ -996,13 +996,26 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     personalAllowance += BLIND_PERSONS_ALLOWANCE;
     notes.push('Spouse’s surplus Blind Person’s Allowance claimed.');
   }
-  const remittanceBasis = !!income.residence?.remittanceBasis;
+  // Claiming FIG relief (boxes 28/29) or the legacy remittance basis withdraws the
+  // personal allowance and the CGT annual exempt amount.
+  const res = income.residence;
+  const figClaim = !!(res?.figIncomeClaim || res?.figGainsClaim);
+  const remittanceBasis = !!res?.remittanceBasis || figClaim;
   if (remittanceBasis) {
     personalAllowance = 0;
-    notes.push('Remittance basis claimed — personal allowance and CGT annual exempt amount withdrawn (the remittance basis was replaced by the FIG regime from 6 April 2025; transitional rules may apply).');
+    notes.push(figClaim
+      ? 'Foreign income & gains (FIG) regime claimed (SA109 box 28/29) — personal allowance and CGT annual exempt amount withdrawn.'
+      : 'Remittance basis claimed — personal allowance and CGT annual exempt amount withdrawn (replaced by the FIG regime from 6 April 2025; transitional rules may apply).');
   }
-  if (income.residence && income.residence.status && income.residence.status !== 'resident') {
-    notes.push('Non-resident / split-year status noted — income apportionment and residence reliefs are not modelled here; review before filing.');
+  // Non-resident (box 1) or split-year status. A non-resident is not automatically
+  // entitled to UK personal allowances unless claimed under a DTA (box 15) or on
+  // another basis (box 16); flag rather than silently deny/grant.
+  const nonResident = !!(res?.notResident || res?.splitYear || (res?.status && res.status !== 'resident'));
+  if (nonResident) {
+    const paClaim = !!(res?.paUnderDta || res?.paOtherBasis);
+    notes.push(paClaim
+      ? 'Non-resident / split-year — UK personal allowances claimed under a DTA / other basis (SA109 box 15/16). Income apportionment and residence reliefs are not modelled here; review before filing.'
+      : 'Non-resident / split-year status noted — a non-resident may not be entitled to UK personal allowances (SA109 box 15/16 not ticked), and income apportionment / residence reliefs are not modelled here; review before filing.');
   }
 
   // Allocate the personal allowance + any charity asset-gift deduction:

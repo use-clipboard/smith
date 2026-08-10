@@ -982,15 +982,10 @@ export interface Sa100Income {
    *  box-for-box supplementary page. */
   trusts?: TrustEstateSource[];
   sa107?: Sa107;
-  /** SA109 — residence, domicile & remittance basis. Claiming the remittance
-   *  basis withdraws the personal allowance and the CGT annual exempt amount. */
-  residence?: {
-    status?: 'resident' | 'non-resident' | 'split-year';
-    splitYearDate?: string;   // date of arrival / departure (dd-mm-yyyy)
-    domicile?: 'uk' | 'non-uk';
-    remittanceBasis?: boolean;
-    daysInUk?: number;
-  };
+  /** SA109 — residence, FIG regime & remittance basis (full box-for-box page).
+   *  Claiming FIG relief / the remittance basis withdraws the personal allowance
+   *  and the CGT annual exempt amount. See the Sa109 interface below. */
+  residence?: Sa109;
   /** SA101 Additional information — life-insurance chargeable event gains and
    *  the venture-capital / other reliefs that reduce the income-tax liability. */
   additional?: {
@@ -1002,6 +997,80 @@ export interface Sa100Income {
     citrInvestment?: number;          // Community Investment Tax Relief — 5% reducer
     maintenancePayments?: number;     // maintenance relief — 10%, capped
   };
+}
+
+// ── SA109 Residence, FIG regime & remittance basis ───────────────────────────
+// One company a remittance-basis user invested foreign income in (Business
+// Investment Relief) — box 38 detail. Total amount invested drives box 38.
+export interface Sa109Company {
+  id: string;
+  companyNumber?: string;
+  companyName?: string;
+  amountInvested?: number;
+}
+
+// Full SA109 supplementary page, box-for-box (Capium layout). Box numbers follow
+// HMRC's SA109 (2025–26). The first few `status`/`domicile` fields are kept for
+// back-compatibility with the previous light model + the calc; the new boxes are
+// the box-numbered fields below.
+export interface Sa109 {
+  // Legacy light fields (still read by the tax calc + roll-forward).
+  status?: 'resident' | 'non-resident' | 'split-year';
+  domicile?: 'uk' | 'non-uk';
+  remittanceBasis?: boolean;
+
+  // ── Residence status (page 1) ──
+  notResident?: boolean;          // box 1  — not resident in the UK
+  splitYear?: boolean;            // box 3  — requesting split-year treatment
+  splitYearMultiple?: boolean;    // box 3.1 — more than one case of split year applies
+  residentLastYear?: boolean;     // box 4  — resident in the UK last year
+  splitYearDate?: string;         // box 6  — date UK part of split year begins/ends (dd-mm-yyyy)
+  thirdAutoOverseasTest?: boolean;// box 7  — meets the third automatic overseas test
+  gapBetweenEmployments?: boolean;// box 8  — gap between employments in the year
+  homeOverseas?: boolean;         // box 9  — has a home overseas
+  daysInUk?: number;              // box 10 — days spent in the UK during the year
+  daysExceptional?: number;       // box 11 — days attributed to exceptional circumstances
+  daysTransit?: number;           // box 11.1 — days in the UK at midnight but in transit
+  ukTies?: number;                // box 12 — number of ties to the UK
+  workdaysUk?: number;            // box 13 — workdays in the UK
+  workdaysOverseas?: number;      // box 14 — workdays overseas
+
+  // ── Personal allowances & domicile (page 2) ──
+  paUnderDta?: boolean;           // box 15 — claiming personal allowances under a DTA
+  paOtherBasis?: boolean;         // box 16 — claiming personal allowances on some other basis
+  nationalResidentCountries?: string; // box 17 — countries of which national and/or resident
+  residentCountryCodes?: string;      // box 18 — country codes resident for tax purposes this year
+  residentCountryCodesPrior?: string; // box 19 — codes also resident for the prior year
+  dtaIncomeReliefAmount?: number;      // box 20 — amount of DTA income on which relief is claimed
+  dtaReliefResidence?: number;         // box 21 — relief claimed under DTA for residence in another country
+  dtaReliefOther?: number;             // box 22 — relief claimed under other provisions of a DTA
+  figArrivalDate?: string;             // box 23 — date of arrival in the UK
+  figPriorResidentYear?: string;       // box 24 — year UK resident prior to most recent arrival
+
+  // ── Foreign income and gains (FIG) regime & remittance basis ──
+  figIncomeClaim?: boolean;       // box 28 — claim for relief on foreign income under FIG
+  figGainsClaim?: boolean;        // box 29 — claim for relief on foreign gains under FIG
+  qahcDeemedForeign?: boolean;    // box 30 — UK income/gains deemed foreign under QAHC rules
+  remittedNominated?: boolean;    // box 37 — remitted any nominated income or gains this year
+  figForeignIncomeReliefCompanies?: Sa109Company[]; // box 38 — Business Investment Relief companies
+  investmentNoLongerQualifies?: boolean; // box 39 — the investment no longer qualifies for relief
+
+  // ── Overseas Workday Relief (OWR) & Temporary repatriation facility (TRF) ──
+  owrElection?: boolean;          // box 40 — making an election for OWR
+  owrClaim?: boolean;             // box 41 — making a claim for OWR
+  owrTransitional?: boolean;      // box 43 — qualify for OWR transitional provisions
+  owrQualifyingEmpIncome?: number;      // box 44 — qualifying employment income after deductions
+  owrQualifyingForeignEmpIncome?: number; // box 46 — qualifying foreign employment income after deductions
+  owrMaxRelief?: number;          // box 47 — maximum relief available under the financial limit
+  owrClaimedOnEmpIncome?: number; // box 48 — OWR claimed on the qualifying employment income
+  owrTotalRelief?: number;        // box 49 — total OWR relief claimed for the year
+  trfElection?: boolean;          // box 50 — making an election under the TRF
+  trfPersonalDesignations?: number; // box 51 — amount relating to personal TRF designations
+  trfTrustPayments?: number;      // box 52 — amount relating to capital payments/benefits from trusts
+  trfRemitted?: number;           // box 53 — amount of TRF designations remitted this year
+
+  // ── Any other information ──
+  otherInformation?: string;      // box 54 — free-text notes
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────
