@@ -69,6 +69,20 @@ export interface Sa100Extraction {
     figIncomeClaim: boolean; figGainsClaim: boolean;
     dtaIncomeReliefAmount: number; dtaReliefResidence: number; dtaReliefOther: number;
   };
+  /** SA101 Additional-information figures evidenced by a document — a chargeable-
+   *  event certificate, an EIS3/SEIS3/VCT3 certificate, a pension savings
+   *  statement, a redundancy/settlement statement, a gilt interest statement, etc.
+   *  Empty/undefined when nothing relevant found. */
+  additional?: {
+    giltInterestNet: number; giltTaxTaken: number; giltGross: number;
+    lifeGain: number; lifeGainYears: number; lifeGainUkPolicy: boolean; lifeGainNoTaxPaid: number;
+    voidedIsaGain: number; voidedIsaTax: number;
+    stockDividends: number;
+    redundancy: number; taxableLumpSums: number; taxOffLumpSums: number; lumpSumExemption30k: number;
+    eisSubscriptions: number; seisSubscriptions: number; vctSubscriptions: number; citrInvestment: number;
+    annualAllowanceExcess: number; annualAllowanceTaxPaid: number;
+    businessReceipts: number;
+  };
   /** Documents/figures found but NOT used, each with a plain-English reason. */
   setAside: { label: string; reason: string }[];
   /** Missing documents or context SMITH would need to make entries accurate. */
@@ -113,9 +127,29 @@ function normalise(raw: unknown): Sa100Extraction {
     otherIncome: num(e.otherIncome), giftAid: num(e.giftAid), pensionContributions: num(e.pensionContributions),
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
     residence: normResidence(e.residence),
+    additional: normAdditional(e.additional),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
     needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
+}
+
+// Normalise scanned SA101 figures — undefined when nothing relevant was found.
+function normAdditional(raw: unknown): Sa100Extraction['additional'] {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const b = (v: unknown) => v === true;
+  const a = {
+    giltInterestNet: n(r.giltInterestNet), giltTaxTaken: n(r.giltTaxTaken), giltGross: n(r.giltGross),
+    lifeGain: n(r.lifeGain), lifeGainYears: n(r.lifeGainYears), lifeGainUkPolicy: b(r.lifeGainUkPolicy), lifeGainNoTaxPaid: n(r.lifeGainNoTaxPaid),
+    voidedIsaGain: n(r.voidedIsaGain), voidedIsaTax: n(r.voidedIsaTax),
+    stockDividends: n(r.stockDividends),
+    redundancy: n(r.redundancy), taxableLumpSums: n(r.taxableLumpSums), taxOffLumpSums: n(r.taxOffLumpSums), lumpSumExemption30k: n(r.lumpSumExemption30k),
+    eisSubscriptions: n(r.eisSubscriptions), seisSubscriptions: n(r.seisSubscriptions), vctSubscriptions: n(r.vctSubscriptions), citrInvestment: n(r.citrInvestment),
+    annualAllowanceExcess: n(r.annualAllowanceExcess), annualAllowanceTaxPaid: n(r.annualAllowanceTaxPaid),
+    businessReceipts: n(r.businessReceipts),
+  };
+  const any = Object.values(a).some(v => (typeof v === 'number' ? v !== 0 : v));
+  return any ? a : undefined;
 }
 
 // Normalise scanned residence facts — returns undefined when nothing was found so
@@ -611,9 +645,42 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     residence.status = residence.notResident ? 'non-resident' : residence.splitYear ? 'split-year' : cur.status;
   }
 
+  // SA101 additional-information figures — fill only boxes the user hasn't set
+  // (never overwrite a typed figure with a scan).
+  let additional = income.additional;
+  if (e.additional) {
+    const cur = income.additional ?? {};
+    const ad = e.additional;
+    const setNum = (c: number | undefined, v: number) => ((c == null || c === 0) && v > 0 ? r(v) : c);
+    additional = {
+      ...cur,
+      giltInterestNet: setNum(cur.giltInterestNet, ad.giltInterestNet),
+      giltTaxTaken: setNum(cur.giltTaxTaken, ad.giltTaxTaken),
+      giltGross: setNum(cur.giltGross, ad.giltGross),
+      chargeableEventGains: setNum(cur.chargeableEventGains, ad.lifeGain),
+      chargeableEventUkPolicy: cur.chargeableEventUkPolicy || (ad.lifeGain > 0 && ad.lifeGainUkPolicy) || undefined,
+      lifeGainTaxPaidYears: setNum(cur.lifeGainTaxPaidYears, ad.lifeGainYears),
+      lifeGainNoTaxPaid: setNum(cur.lifeGainNoTaxPaid, ad.lifeGainNoTaxPaid),
+      voidedIsaGain: setNum(cur.voidedIsaGain, ad.voidedIsaGain),
+      voidedIsaTax: setNum(cur.voidedIsaTax, ad.voidedIsaTax),
+      stockDividends: setNum(cur.stockDividends, ad.stockDividends),
+      redundancyReceipts: setNum(cur.redundancyReceipts, ad.redundancy),
+      taxableLumpSums: setNum(cur.taxableLumpSums, ad.taxableLumpSums),
+      taxOffLumpSums: setNum(cur.taxOffLumpSums, ad.taxOffLumpSums),
+      lumpSumExemption30k: setNum(cur.lumpSumExemption30k, ad.lumpSumExemption30k),
+      eisSubscriptions: setNum(cur.eisSubscriptions, ad.eisSubscriptions),
+      seisSubscriptions: setNum(cur.seisSubscriptions, ad.seisSubscriptions),
+      vctSubscriptions: setNum(cur.vctSubscriptions, ad.vctSubscriptions),
+      citrInvestment: setNum(cur.citrInvestment, ad.citrInvestment),
+      annualAllowanceExcess: setNum(cur.annualAllowanceExcess, ad.annualAllowanceExcess),
+      annualAllowanceTaxPaid: setNum(cur.annualAllowanceTaxPaid, ad.annualAllowanceTaxPaid),
+      businessReceipts: setNum(cur.businessReceipts, ad.businessReceipts),
+    };
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),
