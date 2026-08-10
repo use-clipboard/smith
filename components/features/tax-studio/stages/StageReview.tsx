@@ -3224,6 +3224,29 @@ const FLUMP_COLS: BreakdownColumn<Sa101ForeignLumpItem>[] = [
 ];
 const sumK = <T,>(items: T[] | undefined, k: keyof T): number => (items ?? []).reduce((a, x) => a + (Number(x[k]) || 0), 0);
 
+// A box entered as a fixed number of stacked single-line inputs (SA101 boxes 19 &
+// 20 — the scheme reference numbers and their tax years). Stored newline-joined.
+function StackedInputs({ box, label, value, onChange, rows = 3, placeholder, help }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; help?: string }) {
+  const lines = value ? value.split('\n') : [];
+  const cells = Array.from({ length: Math.max(rows, lines.length) }, (_, i) => lines[i] ?? '');
+  const setAt = (i: number, v: string) => {
+    const n = [...cells]; n[i] = v;
+    onChange(n.join('\n').replace(/\n+$/, ''));
+  };
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
+        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+      </div>
+      <div className="space-y-1">
+        {cells.map((c, i) => (
+          <input key={i} value={c} placeholder={i === 0 ? placeholder : undefined} onChange={e => setAt(i, e.target.value)} className="input-base w-full py-1 text-[12.5px]" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Count populated boxes — overall (no tab) or per top tab (drives the (N) badges).
 function sa101Count(sa: Sa101, tab?: string): number {
   const f = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()))).length;
@@ -3483,8 +3506,8 @@ function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome:
       {activeTab === 'Pension & Tax avoidance schemes' && subName === 'Tax avoidance schemes' && (
         <div className="space-y-3">
           <SectionTitle title="Tax avoidance schemes" />
-          <BoxTextArea box={19} label="The scheme reference number(s)" value={sa.avoidanceSchemeRefs ?? ''} onChange={v => set({ avoidanceSchemeRefs: v })} rows={3} placeholder="One per line" />
-          <BoxTextArea box={20} label="Tax year(s) in which the expected advantage arises" value={sa.avoidanceTaxYears ?? ''} onChange={v => set({ avoidanceTaxYears: v })} rows={3} placeholder="YYYY-YY, one per line" />
+          <StackedInputs box={19} label="The scheme reference number(s)" value={sa.avoidanceSchemeRefs ?? ''} onChange={v => set({ avoidanceSchemeRefs: v })} rows={3} placeholder="Scheme reference number" help={ADD.avoidanceSchemeRefs} />
+          <StackedInputs box={20} label="Tax year(s) in which the expected advantage arises" value={sa.avoidanceTaxYears ?? ''} onChange={v => set({ avoidanceTaxYears: v })} rows={3} placeholder="YYYY-YY" help={ADD.avoidanceTaxYears} />
         </div>
       )}
     </div>

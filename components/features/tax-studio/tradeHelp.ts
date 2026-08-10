@@ -407,4 +407,7 @@ export const ADD = {
   foreignLumpShortServiceRefund: 'A short-service refund lump sum from a foreign pension scheme.',
   foreignLumpTaxable: 'The taxable amount of a foreign pension lump sum.',
   foreignLumpForeignTax: 'Foreign tax paid on the foreign pension lump sum.',
+  // Tax avoidance schemes
+  avoidanceSchemeRefs: 'The 8-digit Scheme Reference Number (SRN) HMRC gave the disclosed tax-avoidance scheme — one per box.',
+  avoidanceTaxYears: 'For each scheme above, the tax year in which you expect the tax advantage to arise (YYYY-YY).',
 } as const;
