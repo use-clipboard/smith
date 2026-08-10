@@ -20,7 +20,7 @@ const PatchBody = z.object({ data: ReturnData });
 async function requireCtx() {
   const ctx = await getUserContext();
   if (!ctx) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  if (!canAccessTaxStudio(ctx.email)) return { error: NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 }) };
+  if (!canAccessTaxStudio(ctx.activeModules)) return { error: NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 }) };
   return { ctx };
 }
 

@@ -45,7 +45,7 @@ const NOT_FOUND = { found: false, dateFrom: '', dateTo: '', totalIncome: 0, tota
 export async function GET(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   const url = new URL(req.url);
   const clientId = url.searchParams.get('clientId');

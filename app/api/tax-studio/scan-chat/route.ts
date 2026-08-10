@@ -50,7 +50,7 @@ function parseJson(text: string): unknown {
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   let body: z.infer<typeof BodySchema>;
   try { body = BodySchema.parse(await req.json()); }

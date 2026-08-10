@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   const supabase = createClient();
   const { data: row } = await supabase

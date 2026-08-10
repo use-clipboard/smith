@@ -10,5 +10,5 @@ export default async function TaxStudioPage() {
     const { data } = await supabase.from('users').select('full_name').eq('id', ctx.userId).maybeSingle();
     userName = (data?.full_name as string | null)?.trim() || '';
   }
-  return <TaxStudioModule userEmail={ctx?.email ?? null} userName={userName} />;
+  return <TaxStudioModule activeModules={ctx?.activeModules ?? null} userName={userName} />;
 }

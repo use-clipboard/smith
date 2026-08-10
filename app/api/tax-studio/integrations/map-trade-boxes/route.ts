@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const userCtx = await getUserContext();
     if (!userCtx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    if (!canAccessTaxStudio(userCtx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+    if (!canAccessTaxStudio(userCtx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
     const anthropic = await getAnthropicForFirm(userCtx.firmId);
 

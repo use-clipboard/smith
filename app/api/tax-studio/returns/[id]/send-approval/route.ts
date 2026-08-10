@@ -29,7 +29,7 @@ const genToken = () => randomBytes(24).toString('base64url');
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid input' }, { status: 400 });

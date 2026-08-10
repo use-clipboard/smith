@@ -27,7 +27,7 @@ const CreateBody = z.object({ data: ReturnData });
 export async function GET() {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   const supabase = createClient();
   const { data, error } = await supabase
@@ -54,7 +54,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   let body: z.infer<typeof CreateBody>;
   try { body = CreateBody.parse(await req.json()); }

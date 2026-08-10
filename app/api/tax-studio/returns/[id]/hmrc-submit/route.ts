@@ -17,7 +17,7 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const ctx = await getUserContext();
   if (!ctx) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
-  if (!canAccessTaxStudio(ctx.email)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
+  if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
   const body = await req.json().catch(() => ({})) as { calculationId?: string; fraudData?: ClientFraudData; testScenario?: string };
   if (!body.calculationId) return NextResponse.json({ error: 'calculationId is required — run the calculation first.' }, { status: 400 });

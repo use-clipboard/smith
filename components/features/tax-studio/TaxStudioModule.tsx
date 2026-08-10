@@ -25,8 +25,8 @@ import type { TaxReturn, StageId } from './types';
 
 const ACCENT = '#6366F1';
 
-export default function TaxStudioModule({ userEmail, userName }: { userEmail: string | null; userName: string }) {
-  const allowed = canAccessTaxStudio(userEmail);
+export default function TaxStudioModule({ activeModules, userName }: { activeModules: string[] | null; userName: string }) {
+  const allowed = canAccessTaxStudio(activeModules);
   const [view, setView] = useState<'home' | 'new'>('home');
   const [items, setItems] = useState<ReturnListItem[]>([]);
   const [loading, setLoading] = useState(true);
