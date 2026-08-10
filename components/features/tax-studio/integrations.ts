@@ -136,6 +136,40 @@ export async function fetchBookkeepingSummary(clientId: string, taxYear: string)
   return (await r.json()) as BookkeepingSummary;
 }
 
+// ─── Linked-entity discovery (Entity → Individual SA feed) ───────────────────
+// An individual's SA return auto-finds the businesses they're a sole trader or
+// partner of (via bookkeeping book participants) so their trade/partnership
+// figures can be pulled in without searching for the entity by hand. Mirrors the
+// landlord per-owner pull. The entity's actual P&L is read by the normal readers.
+
+export interface LinkedEntity {
+  clientId: string;
+  name: string;
+  ref: string;
+  role: 'sole_trader' | 'partner';
+  /** Partner's profit share (%) for SA104; null when not recorded. */
+  sharePct: number | null;
+  bookName?: string;
+}
+
+export interface LinkedEntities {
+  soleTrades: LinkedEntity[];
+  partnerships: LinkedEntity[];
+}
+
+/** Discover the sole-trade / partnership entities an individual is linked to. */
+export async function fetchLinkedEntities(clientId: string, taxYear: string): Promise<LinkedEntities> {
+  const empty: LinkedEntities = { soleTrades: [], partnerships: [] };
+  if (!clientId) return empty;
+  try {
+    const qs = new URLSearchParams({ clientId, taxYear });
+    const r = await fetch(`/api/tax-studio/integrations/entity-sources?${qs.toString()}`, { cache: 'no-store' });
+    if (!r.ok) return empty;
+    const d = await r.json() as Partial<LinkedEntities>;
+    return { soleTrades: d.soleTrades ?? [], partnerships: d.partnerships ?? [] };
+  } catch { return empty; }
+}
+
 // ─── Cross-client imports ────────────────────────────────────────────────────
 // Pull a saved analysis from ANOTHER client's history — e.g. a rental portfolio
 // held under a dedicated rental client code that doesn't match the SA100 client.

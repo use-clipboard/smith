@@ -14,8 +14,9 @@ import {
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
   buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles, dmyToIso,
   summaryHasData, netFromPlLines, buildPartnershipFromNet, mergeImportedPartnership, appendUploadedPartnership,
+  fetchLinkedEntities,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
-  type SourceRef, type PlLine, type BoxAllocation, type TradePeriod,
+  type SourceRef, type PlLine, type BoxAllocation, type TradePeriod, type LinkedEntity, type LinkedEntities,
 } from './integrations';
 import { encodeFile } from './extract';
 import TradeImportReview from './TradeImportReview';
@@ -121,6 +122,18 @@ const LANDLORD: ToolAdapter<LandlordSummary> = {
 };
 
 export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+  // Auto-discover the businesses this individual is a sole trader / partner of, so
+  // their trade + partnership figures surface without searching for the entity.
+  const [linked, setLinked] = useState<LinkedEntities>({ soleTrades: [], partnerships: [] });
+  useEffect(() => {
+    if (!ret.clientId) return;
+    let cancelled = false;
+    void fetchLinkedEntities(ret.clientId, ret.taxYear).then(d => { if (!cancelled) setLinked(d); });
+    return () => { cancelled = true; };
+  }, [ret.clientId, ret.taxYear]);
+
+  const linkCount = linked.soleTrades.length + linked.partnerships.length;
+
   return (
     <div className="space-y-3">
       <div>
@@ -130,15 +143,21 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
         <p className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
           Each tool shows what it found for this client — with the period and amount. Tick what to include, hit <span className="font-semibold">Add another source</span> to pull a second business (or another client’s data), and use the bin to drop any. Nothing imports until you press Import.
         </p>
+        {linkCount > 0 && (
+          <p className="mt-1 flex items-start gap-1.5 text-[11.5px] text-[var(--accent)]">
+            <Sparkles size={13} className="mt-0.5 shrink-0" />
+            SMITH found {linkCount} linked {linkCount === 1 ? 'business' : 'businesses'} this person is a {linked.soleTrades.length && linked.partnerships.length ? 'sole trader / partner' : linked.partnerships.length ? 'partner' : 'sole trader'} of — added below, ready to import.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <ToolImportPanel adapter={MTD} ret={ret} patch={patch} />
         <ToolImportPanel adapter={ACCOUNTS} ret={ret} patch={patch} />
-        <ToolImportPanel adapter={BOOKKEEPING} ret={ret} patch={patch} />
+        <ToolImportPanel adapter={BOOKKEEPING} ret={ret} patch={patch} discovered={linked.soleTrades} />
         <UploadAccountsCard ret={ret} patch={patch} />
         <ToolImportPanel adapter={LANDLORD} ret={ret} patch={patch} />
-        <PartnershipAccountsCard ret={ret} patch={patch} />
+        <PartnershipAccountsCard ret={ret} patch={patch} discovered={linked.partnerships} />
         <UploadPartnershipCard ret={ret} patch={patch} />
         <ComingSoonPanel icon={Receipt} name="Payroll" target="Employment income"
           note="Per-employee pay isn’t stored yet — P32 only records employer-level PAYE/NIC. Enter employment income in Review & Adjust for now." />
@@ -155,9 +174,11 @@ interface SourceEntry<S> {
   summary: S | null; loading: boolean; error: string;
   included: boolean;
   selected: Set<string>;
+  /** Auto-discovered via the person's participant link (not manually searched). */
+  discovered?: boolean;
 }
 
-function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; ret: TaxReturn; patch: Patch }) {
+function ToolImportPanel<S>({ adapter, ret, patch, discovered }: { adapter: ToolAdapter<S>; ret: TaxReturn; patch: Patch; discovered?: LinkedEntity[] }) {
   const [sources, setSources] = useState<SourceEntry<S>[]>([{
     key: 'own', clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
     summary: null, loading: !!ret.clientId, error: ret.clientId ? '' : 'No client linked to this return.', included: true, selected: new Set<string>(),
@@ -184,6 +205,19 @@ function ToolImportPanel<S>({ adapter, ret, patch }: { adapter: ToolAdapter<S>; 
   }, [adapter, ret.taxYear, patchSource]);
 
   useEffect(() => { if (ret.clientId) void loadSource('own', ret.clientId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-add discovered linked entities (dedupe against what's already listed).
+  const addedDiscovered = useRef(new Set<string>());
+  useEffect(() => {
+    for (const e of discovered ?? []) {
+      if (!e.clientId || e.clientId === ret.clientId || addedDiscovered.current.has(e.clientId)) continue;
+      addedDiscovered.current.add(e.clientId);
+      const key = `d-${e.clientId}`;
+      setSources(ss => ss.some(s => s.clientId === e.clientId) ? ss
+        : [...ss, { key, clientId: e.clientId, name: e.name, ref: e.ref, own: false, summary: null, loading: true, error: '', included: true, selected: new Set<string>(), discovered: true }]);
+      void loadSource(key, e.clientId);
+    }
+  }, [discovered, ret.clientId, loadSource]);
 
   const label = (s: SourceEntry<S>) => `${s.name}${s.ref ? ` (${s.ref})` : ''}`;
 
@@ -316,6 +350,7 @@ function SourceRow<S>({ adapter, entry, taxYear, onToggleInclude, onTogglePart, 
           <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
             {entry.name || '—'}{entry.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {entry.ref}</span> : null}
             {entry.own && <span className="ml-1 rounded bg-slate-100 px-1 text-[9px] font-bold uppercase text-slate-500">This client</span>}
+            {entry.discovered && <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-[var(--accent)]/10 px-1 text-[9px] font-bold uppercase text-[var(--accent)]"><Link2 size={8} /> Linked · Sole trader</span>}
           </p>
 
           {entry.loading ? (
@@ -497,12 +532,23 @@ interface PtSourceEntry {
   clientId: string; name: string; ref: string; own: boolean;
   summary: AccountsStudioSummary | null; loading: boolean; error: string;
   included: boolean; share: number;
+  /** Which reader supplies this partnership's net profit. Discovered partner
+   *  links live on a bookkeeping book, so they read from Bookkeeping. */
+  source: 'as' | 'bk';
+  discovered?: boolean;
 }
 
-function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+// A bookkeeping ledger P&L, normalised to the partnership card's summary shape
+// (dates as ISO — rangeLabel/dmyToIso both accept ISO — and flagged as a
+// partnership since it was reached via a partner link).
+function bkToPartnershipSummary(b: BookkeepingSummary): AccountsStudioSummary {
+  return { found: b.found, periodStart: b.from, periodEnd: b.to, entityLabel: b.bookName, isPartnership: true, netProfit: b.netProfit, turnover: b.turnover, note: b.note };
+}
+
+function PartnershipAccountsCard({ ret, patch, discovered }: { ret: TaxReturn; patch: Patch; discovered?: LinkedEntity[] }) {
   const [sources, setSources] = useState<PtSourceEntry[]>([{
     key: 'own', clientId: ret.clientId ?? '', name: ret.clientName ?? 'This client', ref: ret.clientRef ?? '', own: true,
-    summary: null, loading: !!ret.clientId, error: ret.clientId ? '' : 'No client linked to this return.', included: true, share: 100,
+    summary: null, loading: !!ret.clientId, error: ret.clientId ? '' : 'No client linked to this return.', included: true, share: 100, source: 'as',
   }]);
   const [searching, setSearching] = useState(false);
   const [imported, setImported] = useState(false);
@@ -510,18 +556,33 @@ function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch 
   const patchSource = useCallback((key: string, u: Partial<PtSourceEntry>) =>
     setSources(ss => ss.map(s => (s.key === key ? { ...s, ...u } : s))), []);
 
-  const loadSource = useCallback(async (key: string, clientId: string) => {
+  const loadSource = useCallback(async (key: string, clientId: string, source: 'as' | 'bk') => {
     if (!clientId) { patchSource(key, { loading: false, error: 'No client linked to this return.' }); return; }
     patchSource(key, { loading: true, error: '' });
     try {
-      const summary = await fetchAccountsStudioSummary(clientId, ret.taxYear);
+      const summary = source === 'bk'
+        ? bkToPartnershipSummary(await fetchBookkeepingSummary(clientId, ret.taxYear))
+        : await fetchAccountsStudioSummary(clientId, ret.taxYear);
       patchSource(key, { summary, loading: false, included: summary.found && !!summary.netProfit });
     } catch (e) {
-      patchSource(key, { loading: false, error: e instanceof Error ? e.message : 'Could not read Accounts Studio.' });
+      patchSource(key, { loading: false, error: e instanceof Error ? e.message : `Could not read ${source === 'bk' ? 'Bookkeeping' : 'Accounts Studio'}.` });
     }
   }, [ret.taxYear, patchSource]);
 
-  useEffect(() => { if (ret.clientId) void loadSource('own', ret.clientId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ret.clientId) void loadSource('own', ret.clientId, 'as'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-add discovered partnership links (read from Bookkeeping, share prefilled).
+  const addedDiscovered = useRef(new Set<string>());
+  useEffect(() => {
+    for (const e of discovered ?? []) {
+      if (!e.clientId || e.clientId === ret.clientId || addedDiscovered.current.has(e.clientId)) continue;
+      addedDiscovered.current.add(e.clientId);
+      const key = `d-${e.clientId}`;
+      setSources(ss => ss.some(s => s.clientId === e.clientId) ? ss
+        : [...ss, { key, clientId: e.clientId, name: e.name, ref: e.ref, own: false, summary: null, loading: true, error: '', included: true, share: e.sharePct ?? 100, source: 'bk', discovered: true }]);
+      void loadSource(key, e.clientId, 'bk');
+    }
+  }, [discovered, ret.clientId, loadSource]);
 
   const label = (s: PtSourceEntry) => `${s.name}${s.ref ? ` (${s.ref})` : ''}`;
   const has = (s: PtSourceEntry) => !!s.summary && s.summary.found && !!s.summary.netProfit;
@@ -529,14 +590,14 @@ function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch 
   function addSource(clientId: string, name: string, ref: string) {
     if (sources.some(s => s.clientId === clientId)) { setSearching(false); return; }
     const key = `s-${Date.now()}`;
-    setSources(ss => [...ss, { key, clientId, name, ref, own: clientId === ret.clientId, summary: null, loading: true, error: '', included: true, share: 100 }]);
+    setSources(ss => [...ss, { key, clientId, name, ref, own: clientId === ret.clientId, summary: null, loading: true, error: '', included: true, share: 100, source: 'as' }]);
     setSearching(false);
-    void loadSource(key, clientId);
+    void loadSource(key, clientId, 'as');
   }
   const removeSource = (key: string) => setSources(ss => ss.filter(s => s.key !== key));
   const toggleInclude = (key: string) => setSources(ss => ss.map(s => (s.key === key ? { ...s, included: !s.included } : s)));
   const setShare = (key: string, share: number) => patchSource(key, { share });
-  const reloadAll = () => sources.forEach(s => { if (s.clientId) void loadSource(s.key, s.clientId); });
+  const reloadAll = () => sources.forEach(s => { if (s.clientId) void loadSource(s.key, s.clientId, s.source); });
 
   const chosen = () => sources.filter(s => has(s) && s.included);
 
@@ -546,10 +607,11 @@ function PartnershipAccountsCard({ ret, patch }: { ret: TaxReturn; patch: Patch 
     for (const s of list) {
       const lbl = label(s);
       const summary = s.summary as AccountsStudioSummary;
+      const via = s.source === 'bk' ? 'Bookkeeping' : 'Accounts Studio';
       patch(r => ({
         ...r,
-        income: mergeImportedPartnership(r.income, buildPartnershipFromNet('tmp', `Partnership — ${lbl}`, summary.netProfit, s.share, { start: dmyToIso(summary.periodStart), end: dmyToIso(summary.periodEnd) }), { clientId: s.clientId, label: lbl }, 'as'),
-        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from ${lbl} (Accounts Studio)` }],
+        income: mergeImportedPartnership(r.income, buildPartnershipFromNet('tmp', `Partnership — ${lbl}`, summary.netProfit, s.share, { start: dmyToIso(summary.periodStart), end: dmyToIso(summary.periodEnd) }), { clientId: s.clientId, label: lbl }, s.source),
+        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported partnership share from ${lbl} (${via})` }],
       }));
     }
     setImported(true); setTimeout(() => setImported(false), 2500);
@@ -611,6 +673,7 @@ function PtSourceRow({ entry, taxYear, hasData, onToggleInclude, onShare, onRemo
           <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
             {entry.name || '—'}{entry.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {entry.ref}</span> : null}
             {entry.own && <span className="ml-1 rounded bg-slate-100 px-1 text-[9px] font-bold uppercase text-slate-500">This client</span>}
+            {entry.discovered && <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-[var(--accent)]/10 px-1 text-[9px] font-bold uppercase text-[var(--accent)]"><Link2 size={8} /> Linked · Partner</span>}
           </p>
           {entry.loading ? (
             <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]"><Loader2 size={11} className="animate-spin" /> Reading…</p>
