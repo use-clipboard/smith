@@ -5,7 +5,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Link2, CalendarCheck, Calculator, BookOpen, House, Receipt, Users,
   Loader2, Download, Check, Info, RefreshCw, Search, Sparkles, FileUp,
-  Plus, Trash2, CalendarDays,
+  Plus, Trash2, CalendarDays, Coins,
 } from 'lucide-react';
 import { StudioCard } from './primitives';
 import { fmtMoney } from './data';
@@ -14,9 +14,10 @@ import {
   mergeCrossMtd, mergeCrossAccounts, mergeCrossLandlord, mergeCrossBookkeeping,
   buildItemisedTrade, mergeItemisedTrade, fetchTradePlFromFiles, dmyToIso,
   summaryHasData, netFromPlLines, buildPartnershipFromNet, mergeImportedPartnership, appendUploadedPartnership,
-  fetchLinkedEntities,
+  fetchLinkedEntities, fetchDividendSummary, mergeImportedDividends,
   type MtdItAnnualSummary, type AccountsStudioSummary, type LandlordSummary, type BookkeepingSummary,
   type SourceRef, type PlLine, type BoxAllocation, type TradePeriod, type LinkedEntity, type LinkedEntities,
+  type DividendSourceEntry,
 } from './integrations';
 import { encodeFile } from './extract';
 import TradeImportReview from './TradeImportReview';
@@ -159,6 +160,7 @@ export default function ConnectedImports({ ret, patch }: { ret: TaxReturn; patch
         <ToolImportPanel adapter={LANDLORD} ret={ret} patch={patch} />
         <PartnershipAccountsCard ret={ret} patch={patch} discovered={linked.partnerships} />
         <UploadPartnershipCard ret={ret} patch={patch} />
+        <DividendsCard ret={ret} patch={patch} />
         <ComingSoonPanel icon={Receipt} name="Payroll" target="Employment income"
           note="Per-employee pay isn’t stored yet — P32 only records employer-level PAYE/NIC. Enter employment income in Review & Adjust for now." />
         <ComingSoonPanel icon={Users} name="Partnership tax return (SA800)" target="Direct partner-share link"
@@ -772,6 +774,102 @@ function UploadPartnershipCard({ ret, patch }: { ret: TaxReturn; patch: Patch })
         ) : (
           <button onClick={() => inputRef.current?.click()} disabled={busy} className="btn-primary disabled:opacity-40">{imported ? <Check size={15} /> : <FileUp size={15} />} {imported ? 'Added' : 'Upload'}</button>
         )}
+      </div>
+    </StudioCard>
+  );
+}
+
+// Ltd dividends → SA100 box 4. Auto-finds every company the individual holds
+// shares in and received a dividend from this year (their per-recipient slice is
+// already snapshotted, so no share input) and imports each as an itemised
+// dividend line. Idempotent per paying company.
+interface DivSourceEntry extends DividendSourceEntry { included: boolean; }
+
+function DividendsCard({ ret, patch }: { ret: TaxReturn; patch: Patch }) {
+  const [sources, setSources] = useState<DivSourceEntry[]>([]);
+  const [loading, setLoading] = useState(!!ret.clientId);
+  const [error, setError] = useState('');
+  const [imported, setImported] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!ret.clientId) { setLoading(false); return; }
+    setLoading(true); setError('');
+    try {
+      const s = await fetchDividendSummary(ret.clientId, ret.taxYear);
+      setSources(s.sources.map(x => ({ ...x, included: true })));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not read dividends.');
+    } finally { setLoading(false); }
+  }, [ret.clientId, ret.taxYear]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const toggleInclude = (clientId: string) => setSources(ss => ss.map(s => (s.clientId === clientId ? { ...s, included: !s.included } : s)));
+  const chosen = () => sources.filter(s => s.included && s.amount > 0);
+
+  function doImport() {
+    const list = chosen();
+    if (!list.length) return;
+    for (const s of list) {
+      const lbl = `${s.name}${s.ref ? ` (${s.ref})` : ''}`;
+      patch(r => ({
+        ...r,
+        income: mergeImportedDividends(r.income, { clientId: s.clientId, label: lbl }, s.items),
+        timeline: [...r.timeline, { id: `t-${r.timeline.length}`, at: new Date().toISOString(), kind: 'imported', label: `Imported dividends from ${lbl} (Bookkeeping)` }],
+      }));
+    }
+    setImported(true); setTimeout(() => setImported(false), 2500);
+  }
+
+  const count = chosen().length;
+
+  return (
+    <StudioCard className="flex flex-col p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--accent)]/10 text-[var(--accent)]"><Coins size={18} /></div>
+          <div>
+            <p className="text-[13px] font-bold text-[var(--text-primary)]">Dividends from Bookkeeping</p>
+            <p className="text-[11px] text-[var(--text-muted)]">UK company dividends (SA100 box 4)</p>
+          </div>
+        </div>
+        <button onClick={load} className="rounded-lg p-1.5 text-[var(--text-muted)] transition-colors hover:bg-black/[0.03] hover:text-[var(--text-secondary)]" aria-label="Refresh dividends"><RefreshCw size={14} /></button>
+      </div>
+
+      <div className="mt-3 flex-1 space-y-2">
+        {loading ? (
+          <p className="flex items-center gap-1.5 py-2 text-[11px] text-[var(--text-muted)]"><Loader2 size={12} className="animate-spin" /> Reading shareholdings…</p>
+        ) : error ? (
+          <p className="py-2 text-[11px] text-rose-600">{error}</p>
+        ) : sources.length === 0 ? (
+          <p className="flex items-start gap-1.5 py-2 text-[11.5px] text-[var(--text-muted)]">
+            <Info size={13} className="mt-0.5 shrink-0 text-[var(--accent)]" /> No dividends found. SMITH looks across the Ltd companies this person holds shares in — declare a dividend in Bookkeeping and it appears here.
+          </p>
+        ) : (
+          sources.map(s => (
+            <div key={s.clientId} className={`rounded-xl border px-2.5 py-2 transition-colors ${s.included ? 'border-[var(--accent)]/40 bg-[var(--accent)]/[0.05]' : 'border-[var(--border)] bg-white/60'}`}>
+              <div className="flex items-start gap-2">
+                <input type="checkbox" checked={s.included} onChange={() => toggleInclude(s.clientId)} className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-[var(--accent)]" aria-label="Include these dividends" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11.5px] font-semibold text-[var(--text-primary)]">
+                    {s.name || '—'}{s.ref ? <span className="font-mono font-normal text-[var(--text-muted)]"> · {s.ref}</span> : null}
+                    <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-[var(--accent)]/10 px-1 text-[9px] font-bold uppercase text-[var(--accent)]"><Link2 size={8} /> Linked · Shareholder</span>
+                  </p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{fmtMoney(s.amount)}</span>
+                    <span className="text-[10.5px] text-[var(--text-muted)]">{s.count} dividend{s.count === 1 ? '' : 's'} this year</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="mt-2 flex justify-end">
+        <button onClick={doImport} disabled={count === 0} className="btn-primary disabled:opacity-40">
+          {imported ? <Check size={15} /> : <Download size={15} />} {imported ? 'Imported' : `Import dividends${count > 1 ? ` (${count})` : ''}`}
+        </button>
       </div>
     </StudioCard>
   );

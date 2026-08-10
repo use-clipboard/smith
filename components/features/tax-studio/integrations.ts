@@ -5,7 +5,7 @@
 // sees the normalised shape, so a source changing its internals never touches
 // the import components.
 
-import type { Sa100Income, TradeSource, PartnershipSource } from './types';
+import type { Sa100Income, TradeSource, PartnershipSource, DividendItem } from './types';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToShort } from './tradeForm';
 
 /** One line of a source P&L (an income or expense account/statement line). */
@@ -168,6 +168,55 @@ export async function fetchLinkedEntities(clientId: string, taxYear: string): Pr
     const d = await r.json() as Partial<LinkedEntities>;
     return { soleTrades: d.soleTrades ?? [], partnerships: d.partnerships ?? [] };
   } catch { return empty; }
+}
+
+// ─── Dividends (Ltd shareholdings → SA100 box 4) ─────────────────────────────
+// A Ltd company the individual holds shares in declares dividends; each
+// shareholder's slice is snapshotted per recipient. This pulls those slices into
+// the person's SA100 dividends (box 4), one itemised entry per paying company.
+
+/** One UK-company dividend line found for the individual. */
+export interface DividendLine { company: string; description?: string; paymentDate?: string; amount: number; }
+
+/** Dividends from one paying company (Ltd book the person is a shareholder of). */
+export interface DividendSourceEntry {
+  clientId: string;
+  name: string;
+  ref: string;
+  amount: number;
+  count: number;
+  items: DividendLine[];
+}
+
+export interface DividendSummary { found: boolean; total: number; sources: DividendSourceEntry[]; }
+
+/** Find the UK-company dividends an individual received in the tax year. */
+export async function fetchDividendSummary(clientId: string, taxYear: string): Promise<DividendSummary> {
+  const empty: DividendSummary = { found: false, total: 0, sources: [] };
+  if (!clientId) return empty;
+  try {
+    const qs = new URLSearchParams({ clientId, taxYear });
+    const r = await fetch(`/api/tax-studio/integrations/dividends?${qs.toString()}`, { cache: 'no-store' });
+    if (!r.ok) return empty;
+    const d = await r.json() as Partial<DividendSummary>;
+    return { found: !!d.found, total: d.total ?? 0, sources: d.sources ?? [] };
+  } catch { return empty; }
+}
+
+/** Merge a company's dividends into SA100 box 4 as itemised entries (idempotent
+ *  per paying company). Preserves an existing manually-typed scalar (which the
+ *  itemised total would otherwise supersede) by carrying it as its own line. */
+export function mergeImportedDividends(income: Sa100Income, src: SourceRef, items: DividendLine[]): Sa100Income {
+  const pfx = `${XC}div-${src.clientId}-`;
+  let existing = income.dividendItems ?? [];
+  if (existing.length === 0 && (income.dividends || 0) > 0) {
+    existing = [{ id: 'manual-div-0', company: 'Dividends', amount: Math.round(income.dividends || 0) }];
+  }
+  const kept = existing.filter(d => !d.id.startsWith(pfx));
+  const added: DividendItem[] = items.map((it, i) => ({
+    id: `${pfx}${i}`, company: it.company, description: it.description, paymentDate: it.paymentDate, amount: Math.round(it.amount),
+  }));
+  return { ...income, dividendItems: [...kept, ...added] };
 }
 
 // ─── Cross-client imports ────────────────────────────────────────────────────
