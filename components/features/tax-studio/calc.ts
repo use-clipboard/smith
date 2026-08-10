@@ -772,6 +772,23 @@ export function additionalReliefs(income: Sa100Income): number {
     + Math.min(a.maintenancePayments || 0, MAINTENANCE_CAP) * MAINTENANCE_RATE;
 }
 
+/** SA101 extra income + tax credits that flow into the SA100 computation:
+ *  non-savings (life-insurance gains without a credit, voided-ISA gains, business
+ *  receipts, share-scheme & employment lump-sum amounts), dividend-type income
+ *  (stock dividends, bonus issues, close-company loans written off), and the tax
+ *  already taken off (voided-ISA tax, tax off the lump sums). The box-4 life gain
+ *  + its 20% credit are handled separately (chargeableEventGains). Niche pension /
+ *  loss / annual-payment boxes are captured on the page but not applied here. */
+export function sa101ExtraIncome(income: Sa100Income): { nonSavings: number; dividends: number; taxDeducted: number } {
+  const a = income.additional;
+  if (!a) return { nonSavings: 0, dividends: 0, taxDeducted: 0 };
+  const nonSavings = (a.lifeGainNoTaxPaid || 0) + (a.voidedIsaGain || 0) + (a.businessReceipts || 0)
+    + (a.shareSchemesTaxable || 0) + (a.taxableLumpSums || 0) + (a.efrbsBenefits || 0) + (a.redundancyReceipts || 0);
+  const dividends = (a.stockDividends || 0) + (a.bonusIssues || 0) + (a.closeCompanyLoansWrittenOff || 0);
+  const taxDeducted = (a.voidedIsaTax || 0) + (a.taxOffLumpSums || 0);
+  return { nonSavings, dividends, taxDeducted };
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -947,16 +964,17 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const foreignIncome = ft.other;              // foreign non-savings/non-dividend → NSND
   const foreignTaxPaid = ft.taxClaimed;
   const otherIncome = otherIncomeNet(income);  // box 17 − 18 + 20
-  const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains
+  const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains (box 4, with credit)
+  const sa101 = sa101ExtraIncome(income);   // other SA101 income + credits
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
-  const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend;
+  const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend + sa101.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
   // the legacy income-level figure (e.g. from an older Landlord import).
   const perPropertyFinance = sum(income.property.map(propertyFinanceShare));
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + tr.nonSavings;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -1200,7 +1218,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   // Tax already refunded / set off in-year (TR6 box 1) is added back to what's due.
   const taxRefundedOrSetOff = income.taxRefundedOrSetOff || 0;
   if (taxRefundedOrSetOff > 0) notes.push('Tax refunded or set off in-year (box 1) added back to the balancing payment.');
@@ -1218,7 +1236,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + tr.nonSavings),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + tr.nonSavings),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered, charityAssetGiftsDeduction: r0(assetGifts),
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),

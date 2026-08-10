@@ -986,17 +986,9 @@ export interface Sa100Income {
    *  Claiming FIG relief / the remittance basis withdraws the personal allowance
    *  and the CGT annual exempt amount. See the Sa109 interface below. */
   residence?: Sa109;
-  /** SA101 Additional information — life-insurance chargeable event gains and
-   *  the venture-capital / other reliefs that reduce the income-tax liability. */
-  additional?: {
-    chargeableEventGains?: number;    // life-insurance gains (added to income)
-    chargeableEventUkPolicy?: boolean;// UK policy → 20% basic-rate treated as paid
-    eisSubscriptions?: number;        // EIS — 30% income-tax reducer
-    seisSubscriptions?: number;       // SEIS — 50% reducer
-    vctSubscriptions?: number;        // VCT — 30% reducer
-    citrInvestment?: number;          // Community Investment Tax Relief — 5% reducer
-    maintenancePayments?: number;     // maintenance relief — 10%, capped
-  };
+  /** SA101 Additional information — full box-for-box page. See the Sa101 interface
+   *  below. The venture-capital reliefs + life-insurance gains drive the calc. */
+  additional?: Sa101;
 }
 
 // ── SA109 Residence, FIG regime & remittance basis ───────────────────────────
@@ -1071,6 +1063,130 @@ export interface Sa109 {
 
   // ── Any other information ──
   otherInformation?: string;      // box 54 — free-text notes
+}
+
+// ── SA101 Additional information ─────────────────────────────────────────────
+// Breakdown-row shapes for the itemised (+) pop-ups.
+export interface Sa101GiltItem { id: string; description?: string; gross?: number; tax?: number; }
+export interface Sa101LifeGainItem { id: string; description?: string; years?: number; gain?: number; taxPaid?: number; }
+export interface Sa101VoidedIsaItem { id: string; description?: string; gain?: number; taxPaid?: number; }
+export interface Sa101AnnualAllowanceItem { id: string; description?: string; amount?: number; taxPaid?: number; }
+export interface Sa101UnauthPaymentItem { id: string; description?: string; notSurcharge?: number; surcharge?: number; foreignTax?: number; }
+export interface Sa101ForeignLumpItem { id: string; description?: string; shortServiceRefund?: number; taxableLumpSum?: number; foreignTax?: number; }
+
+// Full SA101 supplementary page (Capium layout). Box numbers follow the Capium
+// tabs. The chargeableEvent* + EIS/SEIS/VCT/CITR/maintenance fields are kept from
+// the previous model so the tax calc keeps working.
+export interface Sa101 {
+  // ══ Tab 1: Other UK Income ══
+  // Interest from gilts / deeply-discounted securities (boxes 1–3, "Gilts etc").
+  giltInterestNet?: number;   // box 1 — gilt interest after tax taken off
+  giltTaxTaken?: number;      // box 2 — tax taken off
+  giltGross?: number;         // box 3 — gross amount before tax
+  giltItems?: Sa101GiltItem[];
+  // Life insurance gains (boxes 4–11).
+  chargeableEventGains?: number;      // box 4 — UK policy gains, tax treated as paid (added to income; 20% credit if UK policy)
+  chargeableEventUkPolicy?: boolean;  // whether box-4 gains are a UK policy (basic-rate credit)
+  lifeGainTaxPaidYears?: number;      // box 5 — years the policy was held
+  lifeGainNoTaxPaid?: number;         // box 6 — UK policy gains, no tax treated as paid
+  lifeGainNoTaxYears?: number;        // box 7 — years held
+  voidedIsaGain?: number;             // box 8 — gains from voided ISAs
+  voidedIsaYears?: number;            // box 9 — years held
+  voidedIsaTax?: number;              // box 10 — tax taken off box 8
+  deficiencyRelief?: number;          // box 11 — deficiency relief
+  lifeGainItems?: Sa101LifeGainItem[];
+  voidedIsaItems?: Sa101VoidedIsaItem[];
+  deficiencyItems?: LineItem[];
+  // Stock dividends & bonus issues (boxes 12–13.1).
+  stockDividends?: number;            // box 12 — stock dividends (dividend income)
+  bonusIssues?: number;               // box 13 — bonus issues of securities / redeemable shares
+  closeCompanyLoansWrittenOff?: number; // box 13.1 — close company loans written off / released
+  stockDividendItems?: LineItem[];
+  bonusIssueItems?: LineItem[];
+  // Business receipts taxed as income of an earlier year (boxes 14–15).
+  businessReceipts?: number;          // box 14 — post-cessation / other business receipts
+  businessReceiptsYear?: string;      // box 15 — tax year (YYYY-YY)
+  businessReceiptItems?: LineItem[];
+
+  // ══ Tab 2: Share schemes and other tax reliefs ══
+  // Share schemes / lump sums (boxes 1, 3–15).
+  shareSchemesTaxable?: number;       // box 1 — share schemes taxable amount (not taxed under PAYE)
+  shareSchemeItems?: LineItem[];
+  taxableLumpSums?: number;           // box 3
+  efrbsBenefits?: number;             // box 4 — relevant benefits under an EFRBS
+  redundancyReceipts?: number;        // box 5 — total redundancy & other receipts
+  taxOffLumpSums?: number;            // box 6 — tax taken off boxes 3–5
+  taxOnEmploymentPages?: boolean;     // box 7 — all tax already on employment pages?
+  exemptForeignService?: number;      // box 8
+  lumpSumExemption30k?: number;       // box 9 — £30,000 exemption
+  disabilityPortion?: number;         // box 10 — portion paid for disability
+  seafarersDeduction?: number;        // box 11
+  foreignEarningsNotTaxable?: number; // box 12
+  foreignTaxNoTcr?: number;           // box 13 — foreign tax, TCR not claimed
+  exemptOverseasPensionContrib?: number; // box 14
+  patentRoyaltyPayments?: number;     // box 15 — UK patent royalty payments made
+  patentRoyaltyItems?: LineItem[];
+  // Other tax reliefs (venture capital etc.).
+  vctSubscriptions?: number;          // box 1 — VCT (30% reducer)
+  vctItems?: LineItem[];
+  eisSubscriptions?: number;          // box 2 — EIS (30% reducer)
+  eisItems?: LineItem[];
+  citrInvestment?: number;            // box 3 — Community Investment Tax Relief (5%)
+  citrItems?: LineItem[];
+  annualPayments?: number;            // box 4
+  annualPaymentItems?: LineItem[];
+  qualifyingLoanInterest?: number;    // box 5 — qualifying loan interest (deduction)
+  qualifyingLoanItems?: LineItem[];
+  postCessationExpenses?: number;     // box 6
+  postCessationItems?: LineItem[];
+  preIncorporationLosses?: number;    // box 6.1
+  maintenancePayments?: number;       // box 7 — maintenance relief (10%, capped £401)
+  tradeUnionDeathBenefits?: number;   // box 8
+  reliefRedemptionBonusShares?: number; // box 9
+  redemptionBonusItems?: LineItem[];
+  seisSubscriptions?: number;         // box 10 — SEIS (50% reducer)
+  seisItems?: LineItem[];
+  nonDeductiblePropertyPartnershipInterest?: number; // box 12
+
+  // ══ Tab 3: Married couple's allowance & Other info ══
+  mcaSpouseName?: string;             // box 1
+  mcaSpouseDob?: string;              // box 2 (dd-mm-yyyy)
+  mcaTransferHalf?: boolean;          // box 3
+  mcaTransferAll?: boolean;           // box 4
+  mcaPrevSpouseDob?: string;          // box 5
+  mcaReceiveHalf?: boolean;           // box 6
+  mcaReceiveAll?: boolean;            // box 7
+  mcaSpousePartnerFullName?: string;  // box 8
+  mcaMarriageDate?: string;           // box 9
+  mcaHaveSurplus?: boolean;           // box 10 — to have your spouse's surplus allowance
+  mcaGiveSurplus?: boolean;           // box 11 — give your surplus to your spouse
+  // Other information — Income Tax losses & limit on relief.
+  earlierYearsLosses?: number;        // box 1 — other income losses, earlier years'
+  unusedLossesCarriedForward?: number;// box 2
+  laterYearReliefClaimed?: number;    // box 3 — trade losses from a later year, relief claimed
+  laterYearReliefNotLimited?: number; // box 4 — amount not subject to the limit
+  laterYearLossTaxYear?: string;      // box 5 (YYYY-YY)
+  payrollGiving?: number;             // box 6 — payments through the Payroll Giving scheme
+  payrollGivingItems?: LineItem[];
+
+  // ══ Tab 4: Pension & Tax avoidance schemes ══
+  annualAllowanceExcess?: number;     // box 10 — amount saved in excess of the AA
+  annualAllowanceTaxPaid?: number;    // box 11 — AA tax paid by scheme
+  annualAllowanceItems?: Sa101AnnualAllowanceItem[];
+  pensionOverseasTransfer?: number;   // box 11.1 — benefits transferred overseas
+  overseasTransferChargeTax?: number; // box 11.2 — tax paid on the overseas transfer charge
+  pensionSchemeRef?: string;          // box 12 — scheme reference
+  unauthNotSurcharge?: number;        // box 13 — unauthorised payment, not subject to surcharge
+  unauthSurcharge?: number;           // box 14 — subject to surcharge
+  unauthForeignTax?: number;          // box 15 — foreign tax paid (unauthorised payments)
+  unauthorisedItems?: Sa101UnauthPaymentItem[];
+  foreignLumpShortServiceRefund?: number; // box 16
+  foreignLumpTaxable?: number;        // box 17 — taxable lump sum
+  foreignLumpForeignTax?: number;     // box 18 — foreign tax paid
+  foreignLumpItems?: Sa101ForeignLumpItem[];
+  // Tax avoidance schemes.
+  avoidanceSchemeRefs?: string;       // box 19 — scheme reference number(s), one per line
+  avoidanceTaxYears?: string;         // box 20 — tax year(s) expected advantage arises (YYYY-YY)
 }
 
 // ─── Review + intelligence ───────────────────────────────────────────────────

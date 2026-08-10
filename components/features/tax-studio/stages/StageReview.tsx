@@ -19,14 +19,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
 import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -207,10 +207,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
       return legacy + boxes;
     })(),
     residence: income.residence ? sa109Count(income.residence) : 0,
-    additional: income.additional && [
-      income.additional.chargeableEventGains, income.additional.eisSubscriptions, income.additional.seisSubscriptions,
-      income.additional.vctSubscriptions, income.additional.citrInvestment, income.additional.maintenancePayments,
-    ].some(v => (v || 0) > 0) ? 1 : 0,
+    additional: income.additional ? sa101Count(income.additional) : 0,
   };
 }
 
@@ -3178,32 +3175,318 @@ function TrustCard({ t, idx, onChange, onRemove }: {
   );
 }
 
+// ── SA101 Additional information — full box-for-box page (Capium layout) ──────
+const SA101_TABS = [
+  'Other UK Income',
+  'Share schemes and other tax reliefs',
+  "Married couple's allowance & Other info",
+  'Pension & Tax avoidance schemes',
+] as const;
+const SA101_SUBTABS: Record<string, string[]> = {
+  'Other UK Income': ['Other UK Income', 'Life insurance gains', 'Stock dividends & Bonus issues', 'Business receipts taxed as income'],
+  'Share schemes and other tax reliefs': ['Share schemes', 'Other tax reliefs'],
+  "Married couple's allowance & Other info": ["Married Couple's Allowance", 'Other information'],
+  'Pension & Tax avoidance schemes': ['Pension savings tax charges', 'Tax avoidance schemes'],
+};
+const s101id = () => `s101-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+const GILT_COLS: BreakdownColumn<Sa101GiltItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'gross', label: 'Gross amount', kind: 'number', total: true },
+  { key: 'tax', label: 'Tax taken off', kind: 'number', total: true },
+];
+const LIFE_COLS: BreakdownColumn<Sa101LifeGainItem>[] = [
+  { key: 'description', label: 'Policy and event details', kind: 'text' },
+  { key: 'years', label: 'No. of years', kind: 'number' },
+  { key: 'gain', label: 'Amount of gain', kind: 'number', total: true },
+  { key: 'taxPaid', label: 'Tax treated as paid', kind: 'number', total: true },
+];
+const VOIDED_COLS: BreakdownColumn<Sa101VoidedIsaItem>[] = [
+  { key: 'description', label: 'Policy details', kind: 'text' },
+  { key: 'gain', label: 'Amount of gain', kind: 'number', total: true },
+  { key: 'taxPaid', label: 'Tax treated as paid', kind: 'number', total: true },
+];
+const AA_COLS: BreakdownColumn<Sa101AnnualAllowanceItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'amount', label: 'Amount', kind: 'number', total: true },
+  { key: 'taxPaid', label: 'Tax paid', kind: 'number', total: true },
+];
+const UNAUTH_COLS: BreakdownColumn<Sa101UnauthPaymentItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'notSurcharge', label: 'Not subject to surcharge', kind: 'number', total: true },
+  { key: 'surcharge', label: 'Subject to surcharge', kind: 'number', total: true },
+  { key: 'foreignTax', label: 'Foreign tax paid', kind: 'number', total: true },
+];
+const FLUMP_COLS: BreakdownColumn<Sa101ForeignLumpItem>[] = [
+  { key: 'description', label: 'Description', kind: 'text' },
+  { key: 'shortServiceRefund', label: 'Short service refund', kind: 'number', total: true },
+  { key: 'taxableLumpSum', label: 'Taxable lump sum', kind: 'number', total: true },
+  { key: 'foreignTax', label: 'Foreign tax paid', kind: 'number', total: true },
+];
+const sumK = <T,>(items: T[] | undefined, k: keyof T): number => (items ?? []).reduce((a, x) => a + (Number(x[k]) || 0), 0);
+
+// Count populated boxes — overall (no tab) or per top tab (drives the (N) badges).
+function sa101Count(sa: Sa101, tab?: string): number {
+  const f = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()))).length;
+  const otherUk = () => f([sa.giltInterestNet, sa.giltTaxTaken, sa.giltGross, sa.chargeableEventGains, sa.lifeGainNoTaxPaid, sa.voidedIsaGain, sa.voidedIsaTax, sa.deficiencyRelief, sa.stockDividends, sa.bonusIssues, sa.closeCompanyLoansWrittenOff, sa.businessReceipts, sa.businessReceiptsYear]);
+  const shares = () => f([sa.shareSchemesTaxable, sa.taxableLumpSums, sa.efrbsBenefits, sa.redundancyReceipts, sa.taxOffLumpSums, sa.taxOnEmploymentPages, sa.exemptForeignService, sa.lumpSumExemption30k, sa.disabilityPortion, sa.seafarersDeduction, sa.foreignEarningsNotTaxable, sa.foreignTaxNoTcr, sa.exemptOverseasPensionContrib, sa.patentRoyaltyPayments, sa.vctSubscriptions, sa.eisSubscriptions, sa.citrInvestment, sa.annualPayments, sa.qualifyingLoanInterest, sa.postCessationExpenses, sa.preIncorporationLosses, sa.maintenancePayments, sa.tradeUnionDeathBenefits, sa.reliefRedemptionBonusShares, sa.seisSubscriptions, sa.nonDeductiblePropertyPartnershipInterest]);
+  const mca = () => f([sa.mcaSpouseName, sa.mcaSpouseDob, sa.mcaTransferHalf, sa.mcaTransferAll, sa.mcaPrevSpouseDob, sa.mcaReceiveHalf, sa.mcaReceiveAll, sa.mcaSpousePartnerFullName, sa.mcaMarriageDate, sa.mcaHaveSurplus, sa.mcaGiveSurplus, sa.earlierYearsLosses, sa.unusedLossesCarriedForward, sa.laterYearReliefClaimed, sa.laterYearReliefNotLimited, sa.laterYearLossTaxYear, sa.payrollGiving]);
+  const pension = () => f([sa.annualAllowanceExcess, sa.annualAllowanceTaxPaid, sa.pensionOverseasTransfer, sa.overseasTransferChargeTax, sa.pensionSchemeRef, sa.unauthNotSurcharge, sa.unauthSurcharge, sa.unauthForeignTax, sa.foreignLumpShortServiceRefund, sa.foreignLumpTaxable, sa.foreignLumpForeignTax, sa.avoidanceSchemeRefs, sa.avoidanceTaxYears]);
+  switch (tab) {
+    case 'Other UK Income': return otherUk();
+    case 'Share schemes and other tax reliefs': return shares();
+    case "Married couple's allowance & Other info": return mca();
+    case 'Pension & Tax avoidance schemes': return pension();
+    default: return otherUk() + shares() + mca() + pension();
+  }
+}
+
 function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
-  const a = income.additional ?? {};
-  const patchA = (u: Partial<NonNullable<Sa100Income['additional']>>) => setIncome(i => ({ ...i, additional: { ...i.additional, ...u } }));
+  const sa: Sa101 = income.additional ?? {};
+  const set = (u: Partial<Sa101>) => setIncome(i => ({ ...i, additional: { ...i.additional, ...u } }));
+  const [tab, setTab] = useState<string>(SA101_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (SA101_TABS as readonly string[]).includes(tab) ? tab : SA101_TABS[0];
+  const subList = SA101_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+
   return (
-    <div className="space-y-4">
-      <div>
-        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Life insurance gains</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={4} label="Chargeable event gains" value={a.chargeableEventGains ?? 0} onChange={v => patchA({ chargeableEventGains: v })} />
-          <label className="flex cursor-pointer items-end gap-2 pb-1 text-[11.5px] text-[var(--text-secondary)]">
-            <input type="checkbox" checked={a.chargeableEventUkPolicy ?? false} onChange={e => patchA({ chargeableEventUkPolicy: e.target.checked })} className="h-3.5 w-3.5 rounded border-slate-300 text-[var(--accent)]" /> UK policy (basic rate treated as paid)
-          </label>
-        </div>
-        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Top-slicing relief isn’t modelled — review before filing.</p>
+    <div className="space-y-3">
+      {/* Top tabs */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
+        {SA101_TABS.map(tt => {
+          const n = sa101Count(sa, tt);
+          return (
+            <button key={tt} onClick={() => setTop(tt)}
+              className={`rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+              {tt}{n > 0 && <span className="font-bold"> ({n})</span>}
+            </button>
+          );
+        })}
       </div>
-      <div className="border-t border-black/5 pt-4">
-        <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Venture capital & other reliefs</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <LabelledNum box={2} label="EIS subscriptions (30%)" value={a.eisSubscriptions ?? 0} onChange={v => patchA({ eisSubscriptions: v })} />
-          <LabelledNum box={10} label="SEIS subscriptions (50%)" value={a.seisSubscriptions ?? 0} onChange={v => patchA({ seisSubscriptions: v })} />
-          <LabelledNum box={1} label="VCT subscriptions (30%)" value={a.vctSubscriptions ?? 0} onChange={v => patchA({ vctSubscriptions: v })} />
-          <LabelledNum box={3} label="CITR investment (5%)" value={a.citrInvestment ?? 0} onChange={v => patchA({ citrInvestment: v })} />
-          <LabelledNum box={6} label="Maintenance payments (10%)" value={a.maintenancePayments ?? 0} onChange={v => patchA({ maintenancePayments: v })} />
+      {/* Sub-tabs */}
+      {subList.length > 0 && (
+        <div className="flex flex-wrap gap-1 border-b border-black/5 pb-2">
+          {subList.map((ss, i) => (
+            <button key={ss} onClick={() => setSub(i)}
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+              {ss}
+            </button>
+          ))}
         </div>
-        <p className="mt-1 text-[10.5px] text-[var(--text-muted)]">Subscriptions give an income-tax reducer (EIS/VCT 30%, SEIS 50%, CITR 5%). Maintenance relief is 10%, capped at £401.</p>
-      </div>
+      )}
+
+      {/* ══ Tab 1 · Other UK Income ══ */}
+      {activeTab === 'Other UK Income' && subName === 'Other UK Income' && (
+        <div className="space-y-3">
+          <SectionTitle title="Interest from gilts, deeply-discounted securities and accrued income profits" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <BreakdownField box={1} label="Gilt etc interest after tax taken off" title="Gilts etc" items={sa.giltItems ?? []} columns={GILT_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={g => (g.gross || 0) - (g.tax || 0)} fallbackTotal={sa.giltInterestNet ?? 0} help={ADD.giltInterestNet}
+              onChange={items => set({ giltItems: items, giltInterestNet: sumK(items, 'gross') - sumK(items, 'tax'), giltGross: sumK(items, 'gross'), giltTaxTaken: sumK(items, 'tax') })} />
+            <LabelledNum box={2} label="Tax taken off" value={sa.giltTaxTaken ?? 0} onChange={v => set({ giltTaxTaken: v })} help={ADD.giltTaxTaken} />
+            <LabelledNum box={3} label="Gross amount before tax" value={sa.giltGross ?? 0} onChange={v => set({ giltGross: v })} help={ADD.giltGross} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Other UK Income' && subName === 'Life insurance gains' && (
+        <div className="space-y-3">
+          <SectionTitle title="Life insurance gains" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BreakdownField box={4} label="UK policy gains where tax was treated as paid — amount of gain" title="Life assurance gains" items={sa.lifeGainItems ?? []} columns={LIFE_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={g => g.gain || 0} fallbackTotal={sa.chargeableEventGains ?? 0} help={ADD.chargeableEventGains}
+              onChange={items => set({ lifeGainItems: items, chargeableEventGains: sumK(items, 'gain'), chargeableEventUkPolicy: true })} />
+            <LabelledNum box={5} label="Number of years the policy has been held" value={sa.lifeGainTaxPaidYears ?? 0} onChange={v => set({ lifeGainTaxPaidYears: v })} help={ADD.years} />
+            <LabelledNum box={6} label="UK policy gains where no tax was treated as paid — amount of gain" value={sa.lifeGainNoTaxPaid ?? 0} onChange={v => set({ lifeGainNoTaxPaid: v })} help={ADD.lifeGainNoTaxPaid} />
+            <LabelledNum box={7} label="Number of years the policy has been held" value={sa.lifeGainNoTaxYears ?? 0} onChange={v => set({ lifeGainNoTaxYears: v })} help={ADD.years} />
+            <BreakdownField box={8} label="UK policy gains from voided ISAs" title="Gains from voided ISAs" items={sa.voidedIsaItems ?? []} columns={VOIDED_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={g => g.gain || 0} fallbackTotal={sa.voidedIsaGain ?? 0} help={ADD.voidedIsaGain}
+              onChange={items => set({ voidedIsaItems: items, voidedIsaGain: sumK(items, 'gain'), voidedIsaTax: sumK(items, 'taxPaid') })} />
+            <LabelledNum box={9} label="Number of years the policy has been held" value={sa.voidedIsaYears ?? 0} onChange={v => set({ voidedIsaYears: v })} help={ADD.years} />
+            <LabelledNum box={10} label="Tax taken off box 8" value={sa.voidedIsaTax ?? 0} onChange={v => set({ voidedIsaTax: v })} help={ADD.voidedIsaTax} />
+            <BreakdownField box={11} label="Deficiency relief" title="Deficiency relief" items={sa.deficiencyItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.deficiencyRelief ?? 0} help={ADD.deficiencyRelief}
+              onChange={items => set({ deficiencyItems: items, deficiencyRelief: sumK(items, 'amount') })} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Gains are added to income; box-4 gains carry a 20% credit (UK policy). Top-slicing relief and deficiency relief are captured but not applied to the headline tax — review before filing.</p>
+        </div>
+      )}
+      {activeTab === 'Other UK Income' && subName === 'Stock dividends & Bonus issues' && (
+        <div className="space-y-3">
+          <SectionTitle title="Stock dividends, bonus issues of securities and redeemable shares" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <BreakdownField box={12} label="Stock dividends" title="Stock dividends" items={sa.stockDividendItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.stockDividends ?? 0} help={ADD.stockDividends}
+              onChange={items => set({ stockDividendItems: items, stockDividends: sumK(items, 'amount') })} />
+            <BreakdownField box={13} label="Bonus issues of securities and redeemable shares" title="Non-qualifying distributions" items={sa.bonusIssueItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.bonusIssues ?? 0} help={ADD.bonusIssues}
+              onChange={items => set({ bonusIssueItems: items, bonusIssues: sumK(items, 'amount') })} />
+            <LabelledNum box="13.1" label="Close company loans written off or released" value={sa.closeCompanyLoansWrittenOff ?? 0} onChange={v => set({ closeCompanyLoansWrittenOff: v })} help={ADD.closeCompanyLoansWrittenOff} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Other UK Income' && subName === 'Business receipts taxed as income' && (
+        <div className="space-y-3">
+          <SectionTitle title="Business receipts taxed as income of an earlier year" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BreakdownField box={14} label="Post-cessation or other business receipts" title="Post-cessation and other business receipts taxed as income of earlier years" items={sa.businessReceiptItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.businessReceipts ?? 0} help={ADD.businessReceipts}
+              onChange={items => set({ businessReceiptItems: items, businessReceipts: sumK(items, 'amount') })} />
+            <BoxText box={15} label="Tax year the income is to be taxed as" value={sa.businessReceiptsYear ?? ''} onChange={v => set({ businessReceiptsYear: v })} placeholder="YYYY-YY" help={ADD.businessReceiptsYear} />
+          </div>
+        </div>
+      )}
+
+      {/* ══ Tab 2 · Share schemes and other tax reliefs ══ */}
+      {activeTab === 'Share schemes and other tax reliefs' && subName === 'Share schemes' && (
+        <div className="space-y-3">
+          <SectionTitle title="Share schemes, employment lump sums, compensation, deductions and patent royalties" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BreakdownField box={1} label="Share schemes — the taxable amount" title="Share schemes — the taxable amount" items={sa.shareSchemeItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.shareSchemesTaxable ?? 0} help={ADD.shareSchemesTaxable}
+              onChange={items => set({ shareSchemeItems: items, shareSchemesTaxable: sumK(items, 'amount') })} />
+            <LabelledNum box={3} label="Taxable lump sums" value={sa.taxableLumpSums ?? 0} onChange={v => set({ taxableLumpSums: v })} help={ADD.taxableLumpSums} />
+            <LabelledNum box={4} label="Relevant benefits provided under an EFRBS" value={sa.efrbsBenefits ?? 0} onChange={v => set({ efrbsBenefits: v })} help={ADD.efrbsBenefits} />
+            <LabelledNum box={5} label="Total redundancy and other receipts" value={sa.redundancyReceipts ?? 0} onChange={v => set({ redundancyReceipts: v })} help={ADD.redundancyReceipts} />
+            <LabelledNum box={6} label="Tax taken off boxes 3 to 5" value={sa.taxOffLumpSums ?? 0} onChange={v => set({ taxOffLumpSums: v })} help={ADD.taxOffLumpSums} />
+            <BoxCheck box={7} label="Has all tax taken off been included on the employment pages?" checked={!!sa.taxOnEmploymentPages} onChange={v => set({ taxOnEmploymentPages: v })} help={ADD.taxOnEmploymentPages} />
+            <LabelledNum box={8} label="Exempt amount for foreign service" value={sa.exemptForeignService ?? 0} onChange={v => set({ exemptForeignService: v })} help={ADD.exemptForeignService} />
+            <LabelledNum box={9} label="£30,000 lump sum exemption applicable" value={sa.lumpSumExemption30k ?? 0} onChange={v => set({ lumpSumExemption30k: v })} help={ADD.lumpSumExemption30k} />
+            <LabelledNum box={10} label="Portion of the above paid for disability" value={sa.disabilityPortion ?? 0} onChange={v => set({ disabilityPortion: v })} help={ADD.disabilityPortion} />
+            <LabelledNum box={11} label="Seafarers' Earnings Deduction" value={sa.seafarersDeduction ?? 0} onChange={v => set({ seafarersDeduction: v })} help={ADD.seafarersDeduction} />
+            <LabelledNum box={12} label="Foreign earnings not taxable in the UK" value={sa.foreignEarningsNotTaxable ?? 0} onChange={v => set({ foreignEarningsNotTaxable: v })} help={ADD.foreignEarningsNotTaxable} />
+            <LabelledNum box={13} label="Foreign tax for which tax credit relief not claimed" value={sa.foreignTaxNoTcr ?? 0} onChange={v => set({ foreignTaxNoTcr: v })} help={ADD.foreignTaxNoTcr} />
+            <LabelledNum box={14} label="Exempt employers' contributions to an overseas pension scheme" value={sa.exemptOverseasPensionContrib ?? 0} onChange={v => set({ exemptOverseasPensionContrib: v })} help={ADD.exemptOverseasPensionContrib} />
+            <BreakdownField box={15} label="UK patent royalty payments made" title="UK patent royalty payments made" items={sa.patentRoyaltyItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.patentRoyaltyPayments ?? 0} help={ADD.patentRoyaltyPayments}
+              onChange={items => set({ patentRoyaltyItems: items, patentRoyaltyPayments: sumK(items, 'amount') })} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Share schemes and other tax reliefs' && subName === 'Other tax reliefs' && (
+        <div className="space-y-3">
+          <SectionTitle title="Other tax reliefs" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BreakdownField box={1} label="Subscriptions for Venture Capital Trust shares" title="Subscriptions for Venture Capital Trust shares" items={sa.vctItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.vctSubscriptions ?? 0} help={ADD.vctSubscriptions}
+              onChange={items => set({ vctItems: items, vctSubscriptions: sumK(items, 'amount') })} />
+            <BreakdownField box={2} label="Subscriptions for Enterprise Investment Scheme shares" title="Subscriptions for shares under the Enterprise Investment Scheme" items={sa.eisItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.eisSubscriptions ?? 0} help={ADD.eisSubscriptions}
+              onChange={items => set({ eisItems: items, eisSubscriptions: sumK(items, 'amount') })} />
+            <BreakdownField box={3} label="Community Investment Tax Relief" title="Community investment tax relief" items={sa.citrItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.citrInvestment ?? 0} help={ADD.citrInvestment}
+              onChange={items => set({ citrItems: items, citrInvestment: sumK(items, 'amount') })} />
+            <BreakdownField box={4} label="Annual payments made" title="Annual payments made" items={sa.annualPaymentItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.annualPayments ?? 0} help={ADD.annualPayments}
+              onChange={items => set({ annualPaymentItems: items, annualPayments: sumK(items, 'amount') })} />
+            <BreakdownField box={5} label="Qualifying loan interest" title="Qualifying loan interest" items={sa.qualifyingLoanItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.qualifyingLoanInterest ?? 0} help={ADD.qualifyingLoanInterest}
+              onChange={items => set({ qualifyingLoanItems: items, qualifyingLoanInterest: sumK(items, 'amount') })} />
+            <BreakdownField box={6} label="Post-cessation expenses and certain other losses" title="Post-cessation expenses and certain other losses" items={sa.postCessationItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.postCessationExpenses ?? 0} help={ADD.postCessationExpenses}
+              onChange={items => set({ postCessationItems: items, postCessationExpenses: sumK(items, 'amount') })} />
+            <LabelledNum box="6.1" label="Pre-incorporation losses" value={sa.preIncorporationLosses ?? 0} onChange={v => set({ preIncorporationLosses: v })} help={ADD.preIncorporationLosses} />
+            <LabelledNum box={7} label="Maintenance payments (maximum £4,360)" value={sa.maintenancePayments ?? 0} onChange={v => set({ maintenancePayments: v })} help={ADD.maintenancePayments} />
+            <LabelledNum box={8} label="Payments to a trade union etc. for death benefits" value={sa.tradeUnionDeathBenefits ?? 0} onChange={v => set({ tradeUnionDeathBenefits: v })} help={ADD.tradeUnionDeathBenefits} />
+            <BreakdownField box={9} label="Relief claimed on redemption of bonus shares" title="Relief claimed on redemption of bonus shares" items={sa.redemptionBonusItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.reliefRedemptionBonusShares ?? 0} help={ADD.reliefRedemptionBonusShares}
+              onChange={items => set({ redemptionBonusItems: items, reliefRedemptionBonusShares: sumK(items, 'amount') })} />
+            <BreakdownField box={10} label="Subscriptions for Seed Enterprise Investment Scheme shares" title="Subscriptions for shares under the Seed Enterprise Investment Scheme" items={sa.seisItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.seisSubscriptions ?? 0} help={ADD.seisSubscriptions}
+              onChange={items => set({ seisItems: items, seisSubscriptions: sumK(items, 'amount') })} />
+            <LabelledNum box={12} label="Non-deductible loan interest from property-letting partnerships" value={sa.nonDeductiblePropertyPartnershipInterest ?? 0} onChange={v => set({ nonDeductiblePropertyPartnershipInterest: v })} help={ADD.nonDeductiblePropertyPartnershipInterest} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">EIS/VCT give a 30% reducer, SEIS 50%, CITR 5%, maintenance 10% (capped). Annual payments, qualifying loan interest and post-cessation losses are captured but not yet applied to the headline tax — review before filing.</p>
+        </div>
+      )}
+
+      {/* ══ Tab 3 · Married couple's allowance & Other info ══ */}
+      {activeTab === "Married couple's allowance & Other info" && subName === "Married Couple's Allowance" && (
+        <div className="space-y-3">
+          <SectionTitle title="Married Couple's Allowance" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxText box={1} label="Name of spouse or civil partner" value={sa.mcaSpouseName ?? ''} onChange={v => set({ mcaSpouseName: v })} help={ADD.mcaSpouseName} />
+            <BoxText box={2} label="Spouse's date of birth" value={sa.mcaSpouseDob ?? ''} onChange={v => set({ mcaSpouseDob: v })} placeholder="dd-mm-yyyy" help={ADD.mcaSpouseDob} />
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={3} label="Transfer HALF of the minimum allowance to the lower-income spouse?" checked={!!sa.mcaTransferHalf} onChange={v => set({ mcaTransferHalf: v })} help={ADD.mcaTransferHalf} />
+            <BoxCheck box={4} label="Transfer ALL of the minimum allowance to the lower-income spouse?" checked={!!sa.mcaTransferAll} onChange={v => set({ mcaTransferAll: v })} help={ADD.mcaTransferAll} />
+          </div>
+          <BoxText box={5} label="Date of birth of previous spouse or civil partner" value={sa.mcaPrevSpouseDob ?? ''} onChange={v => set({ mcaPrevSpouseDob: v })} placeholder="dd-mm-yyyy" help={ADD.mcaPrevSpouseDob} />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={6} label="Receive HALF of the minimum allowance from your spouse?" checked={!!sa.mcaReceiveHalf} onChange={v => set({ mcaReceiveHalf: v })} help={ADD.mcaReceiveHalf} />
+            <BoxCheck box={7} label="Receive ALL of the minimum allowance from your spouse?" checked={!!sa.mcaReceiveAll} onChange={v => set({ mcaReceiveAll: v })} help={ADD.mcaReceiveAll} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxText box={8} label="Your spouse's or civil partner's full name" value={sa.mcaSpousePartnerFullName ?? ''} onChange={v => set({ mcaSpousePartnerFullName: v })} help={ADD.mcaSpousePartnerFullName} />
+            <BoxText box={9} label="Date of marriage or civil partnership" value={sa.mcaMarriageDate ?? ''} onChange={v => set({ mcaMarriageDate: v })} placeholder="dd-mm-yyyy" help={ADD.mcaMarriageDate} />
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={10} label="To have your spouse's or civil partner's surplus allowance?" checked={!!sa.mcaHaveSurplus} onChange={v => set({ mcaHaveSurplus: v })} help={ADD.mcaHaveSurplus} />
+            <BoxCheck box={11} label="Give your spouse or civil partner your surplus allowance?" checked={!!sa.mcaGiveSurplus} onChange={v => set({ mcaGiveSurplus: v })} help={ADD.mcaGiveSurplus} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Married Couple's Allowance (for couples where one was born before 6 April 1935) is captured for filing but not applied to the headline tax — review before filing.</p>
+        </div>
+      )}
+      {activeTab === "Married couple's allowance & Other info" && subName === 'Other information' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <SectionTitle title="Other income losses" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <LabelledNum box={1} label="Earlier years' losses" value={sa.earlierYearsLosses ?? 0} onChange={v => set({ earlierYearsLosses: v })} help={ADD.earlierYearsLosses} />
+              <LabelledNum box={2} label="Total unused losses carried forward" value={sa.unusedLossesCarriedForward ?? 0} onChange={v => set({ unusedLossesCarriedForward: v })} help={ADD.unusedLossesCarriedForward} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <SectionTitle title="Trade losses from a later year" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <LabelledNum box={3} label="Relief claimed" value={sa.laterYearReliefClaimed ?? 0} onChange={v => set({ laterYearReliefClaimed: v })} help={ADD.laterYearReliefClaimed} />
+              <LabelledNum box={4} label="Amount of relief not subject to the limit on Income Tax reliefs" value={sa.laterYearReliefNotLimited ?? 0} onChange={v => set({ laterYearReliefNotLimited: v })} help={ADD.laterYearReliefNotLimited} />
+              <BoxText box={5} label="Tax year for which you are claiming" value={sa.laterYearLossTaxYear ?? ''} onChange={v => set({ laterYearLossTaxYear: v })} placeholder="YYYY-YY" help={ADD.laterYearLossTaxYear} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <SectionTitle title="Limit on Income Tax relief" />
+            <BreakdownField box={6} label="Payments made through the Payroll Giving scheme" title="Payments made through the Payroll Giving scheme" items={sa.payrollGivingItems ?? []} columns={LINE_COLS}
+              blank={() => ({ id: s101id(), amount: 0 })} rowTotal={x => x.amount || 0} fallbackTotal={sa.payrollGiving ?? 0} help={ADD.payrollGiving}
+              onChange={items => set({ payrollGivingItems: items, payrollGiving: sumK(items, 'amount') })} />
+          </div>
+        </div>
+      )}
+
+      {/* ══ Tab 4 · Pension & Tax avoidance schemes ══ */}
+      {activeTab === 'Pension & Tax avoidance schemes' && subName === 'Pension savings tax charges' && (
+        <div className="space-y-3">
+          <SectionTitle title="Pension Savings Tax Charges" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BreakdownField box={10} label="Amount saved in excess of the Annual Allowance" title="Amounts saved in excess of the Annual Allowance" items={sa.annualAllowanceItems ?? []} columns={AA_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={x => x.amount || 0} fallbackTotal={sa.annualAllowanceExcess ?? 0} help={ADD.annualAllowanceExcess}
+              onChange={items => set({ annualAllowanceItems: items, annualAllowanceExcess: sumK(items, 'amount'), annualAllowanceTaxPaid: sumK(items, 'taxPaid') })} />
+            <LabelledNum box={11} label="Annual Allowance tax paid by the scheme" value={sa.annualAllowanceTaxPaid ?? 0} onChange={v => set({ annualAllowanceTaxPaid: v })} help={ADD.annualAllowanceTaxPaid} />
+            <LabelledNum box="11.1" label="Pension benefits transferred to an overseas scheme" value={sa.pensionOverseasTransfer ?? 0} onChange={v => set({ pensionOverseasTransfer: v })} help={ADD.pensionOverseasTransfer} />
+            <LabelledNum box="11.2" label="Tax paid on your overseas transfer charge" value={sa.overseasTransferChargeTax ?? 0} onChange={v => set({ overseasTransferChargeTax: v })} help={ADD.overseasTransferChargeTax} />
+            <BoxText box={12} label="Scheme reference" value={sa.pensionSchemeRef ?? ''} onChange={v => set({ pensionSchemeRef: v })} help={ADD.pensionSchemeRef} />
+            <BreakdownField box={13} label="Unauthorised payment — amount not subject to surcharge" title="Unauthorised payments from a pension scheme" items={sa.unauthorisedItems ?? []} columns={UNAUTH_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={x => x.notSurcharge || 0} fallbackTotal={sa.unauthNotSurcharge ?? 0} help={ADD.unauthNotSurcharge}
+              onChange={items => set({ unauthorisedItems: items, unauthNotSurcharge: sumK(items, 'notSurcharge'), unauthSurcharge: sumK(items, 'surcharge'), unauthForeignTax: sumK(items, 'foreignTax') })} />
+            <LabelledNum box={14} label="Unauthorised payment — amount subject to surcharge" value={sa.unauthSurcharge ?? 0} onChange={v => set({ unauthSurcharge: v })} help={ADD.unauthSurcharge} />
+            <LabelledNum box={15} label="Unauthorised payment — foreign tax paid" value={sa.unauthForeignTax ?? 0} onChange={v => set({ unauthForeignTax: v })} help={ADD.unauthForeignTax} />
+            <BreakdownField box={16} label="Foreign lump sums — short service refund" title="Foreign lump sums" items={sa.foreignLumpItems ?? []} columns={FLUMP_COLS}
+              blank={() => ({ id: s101id() })} rowTotal={x => x.shortServiceRefund || 0} fallbackTotal={sa.foreignLumpShortServiceRefund ?? 0} help={ADD.foreignLumpShortServiceRefund}
+              onChange={items => set({ foreignLumpItems: items, foreignLumpShortServiceRefund: sumK(items, 'shortServiceRefund'), foreignLumpTaxable: sumK(items, 'taxableLumpSum'), foreignLumpForeignTax: sumK(items, 'foreignTax') })} />
+            <LabelledNum box={17} label="Foreign lump sums — taxable lump sum" value={sa.foreignLumpTaxable ?? 0} onChange={v => set({ foreignLumpTaxable: v })} help={ADD.foreignLumpTaxable} />
+            <LabelledNum box={18} label="Foreign lump sums — foreign tax paid" value={sa.foreignLumpForeignTax ?? 0} onChange={v => set({ foreignLumpForeignTax: v })} help={ADD.foreignLumpForeignTax} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">Pension savings tax charges are captured for filing but not yet applied to the headline tax computation — review before filing.</p>
+        </div>
+      )}
+      {activeTab === 'Pension & Tax avoidance schemes' && subName === 'Tax avoidance schemes' && (
+        <div className="space-y-3">
+          <SectionTitle title="Tax avoidance schemes" />
+          <BoxTextArea box={19} label="The scheme reference number(s)" value={sa.avoidanceSchemeRefs ?? ''} onChange={v => set({ avoidanceSchemeRefs: v })} rows={3} placeholder="One per line" />
+          <BoxTextArea box={20} label="Tax year(s) in which the expected advantage arises" value={sa.avoidanceTaxYears ?? ''} onChange={v => set({ avoidanceTaxYears: v })} rows={3} placeholder="YYYY-YY, one per line" />
+        </div>
+      )}
     </div>
   );
 }
