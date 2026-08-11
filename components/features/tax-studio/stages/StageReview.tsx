@@ -777,14 +777,9 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
       </div>
       {open && (
         <div className="border-t border-black/5">
-          {/* Capium sub-tabs: Employment Details / Income / Benefit / Expenses */}
-          <div className="flex flex-wrap gap-1 px-3 pt-2.5">
-            {EMPLOYMENT_TABS.map(t => (
-              <button key={t} onClick={() => setTab(t)}
-                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${tab === t ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {t}
-              </button>
-            ))}
+          {/* Section tabs: Employment Details / Income / Benefit / Expenses */}
+          <div className="px-3 pt-2.5">
+            <SectionTabs tabs={EMPLOYMENT_TABS.map(t => ({ label: t }))} active={tab} onSelect={t => setTab(t as EmploymentTab)} />
           </div>
           <div className="space-y-3 px-3 py-3">
             {tab === 'Details' && (
@@ -1022,24 +1017,12 @@ function TradeCard({ t, idx, onChange, onRemove }: {
       )}
       {open && (
         <div className="border-t border-black/5">
-          {/* Capium top tabs */}
-          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
-            {TABS.map(tt => (
-              <button key={tt} onClick={() => setTop(tt)}
-                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {tt}
-              </button>
-            ))}
+          {/* Section tabs */}
+          <div className="px-3 pt-2.5">
+            <SectionTabs tabs={TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
           </div>
-          {/* Capium sub-tabs */}
-          {subList.length > 1 && <div className="flex flex-wrap gap-1 px-3 pt-2.5">
-            {subList.map((st, i) => (
-              <button key={st} onClick={() => setSub(i)}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {st}
-              </button>
-            ))}
-          </div>}
+          {/* Sub-tabs */}
+          {subList.length > 1 && <div className="px-3 pt-2.5"><SubTabs tabs={subList.map(st => ({ label: st }))} active={sub} onSelect={setSub} /></div>}
           <div className="space-y-3 px-3 py-3">
             {isShort && <TradeShortBody t={t} set={set} subName={subName} caDiverged={caDiverged} onOpenCa={() => setCaOpen(true)} />}
             {!isShort && (<>
@@ -1488,24 +1471,12 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
       )}
       {open && (
         <div className="border-t border-black/5">
-          {/* Capium top tabs */}
-          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
-            {TABS.map(tt => (
-              <button key={tt} onClick={() => setTop(tt)}
-                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {tt}
-              </button>
-            ))}
+          {/* Section tabs */}
+          <div className="px-3 pt-2.5">
+            <SectionTabs tabs={TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
           </div>
-          {/* Capium sub-tabs */}
-          {subList.length > 1 && <div className="flex flex-wrap gap-1 px-3 pt-2.5">
-            {subList.map((st, i) => (
-              <button key={st} onClick={() => setSub(i)}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {st}
-              </button>
-            ))}
-          </div>}
+          {/* Sub-tabs */}
+          {subList.length > 1 && <div className="px-3 pt-2.5"><SubTabs tabs={subList.map(st => ({ label: st }))} active={sub} onSelect={setSub} /></div>}
           <div className="space-y-3 px-3 py-3">
             {/* ── Partnership details ── */}
             {subName === 'Partnership details' && (
@@ -1965,13 +1936,8 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
             <OwnershipEditor owners={p.owners ?? []} onChange={o => set({ owners: o.length ? o : undefined })} taxpayerName={taxpayerName} />
             {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter the WHOLE property above; the return uses {taxpayerName}’s {Math.round(share * 100)}% share. The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
           </div>
-          <div className="flex flex-wrap gap-1 border-b border-black/5 px-3 pt-2.5 pb-2">
-            {PROPERTY_TABS.map(tt => (
-              <button key={tt} onClick={() => setTab(tt)}
-                className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-                {tt}
-              </button>
-            ))}
+          <div className="px-3 pt-2.5">
+            <SectionTabs tabs={PROPERTY_TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTab} />
           </div>
           <div className="space-y-3 px-3 py-3">
             {activeTab === 'Property income' && (
@@ -2712,6 +2678,16 @@ function sa109Count(sa: Sa109, tab?: string): number {
     default: return status() + allowances() + figRemit() + owrTrf() + other();
   }
 }
+// Per-sub-tab count for the SA109 "Personal allowances and domicile" tab.
+function sa109SubCount(sa: Sa109, sub: string): number {
+  const f = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()))).length;
+  switch (sub) {
+    case 'Personal allowances': return f([sa.paUnderDta, sa.paOtherBasis, sa.nationalResidentCountries]);
+    case 'Residence in other countries': return f([sa.residentCountryCodes, sa.residentCountryCodesPrior, sa.dtaIncomeReliefAmount, sa.dtaReliefResidence, sa.dtaReliefOther]);
+    case 'Foreign income and gains (FIG) regime': return f([sa.figArrivalDate, sa.figPriorResidentYear]);
+  }
+  return 0;
+}
 
 // A free-text box with a box chip (multi-line) — matches BoxText's chrome.
 function BoxTextArea({ box, label, value, onChange, rows = 3, placeholder, right }: { box?: number | string; label: string; value: string; onChange: (v: string) => void; rows?: number; placeholder?: string; right?: ReactNode }) {
@@ -2817,7 +2793,7 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
   return (
     <div className="space-y-3">
       <SectionTabs tabs={SA109_TABS.map(tt => ({ label: tt, count: sa109Count(sa, tt) }))} active={activeTab} onSelect={setTop} />
-      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss }))} active={sub} onSelect={setSub} />}
+      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss, count: sa109SubCount(sa, ss) }))} active={sub} onSelect={setSub} />}
 
       {activeTab === 'Residence status' && (
         <div className="space-y-3">
@@ -3236,6 +3212,23 @@ function sa101Count(sa: Sa101, tab?: string): number {
     default: return otherUk() + shares() + mca() + pension();
   }
 }
+// Per-sub-tab count (drives the (N) badge on the SA101 level-3 sub-tabs).
+function sa101SubCount(sa: Sa101, sub: string): number {
+  const f = (vals: (number | boolean | string | undefined)[]) => vals.filter(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()))).length;
+  switch (sub) {
+    case 'Other UK Income': return f([sa.giltInterestNet, sa.giltTaxTaken, sa.giltGross]);
+    case 'Life insurance gains': return f([sa.chargeableEventGains, sa.lifeGainTaxPaidYears, sa.lifeGainNoTaxPaid, sa.lifeGainNoTaxYears, sa.voidedIsaGain, sa.voidedIsaYears, sa.voidedIsaTax, sa.deficiencyRelief]);
+    case 'Stock dividends & Bonus issues': return f([sa.stockDividends, sa.bonusIssues, sa.closeCompanyLoansWrittenOff]);
+    case 'Business receipts taxed as income': return f([sa.businessReceipts, sa.businessReceiptsYear]);
+    case 'Share schemes': return f([sa.shareSchemesTaxable, sa.taxableLumpSums, sa.efrbsBenefits, sa.redundancyReceipts, sa.taxOffLumpSums, sa.taxOnEmploymentPages, sa.exemptForeignService, sa.lumpSumExemption30k, sa.disabilityPortion, sa.seafarersDeduction, sa.foreignEarningsNotTaxable, sa.foreignTaxNoTcr, sa.exemptOverseasPensionContrib, sa.patentRoyaltyPayments]);
+    case 'Other tax reliefs': return f([sa.vctSubscriptions, sa.eisSubscriptions, sa.citrInvestment, sa.annualPayments, sa.qualifyingLoanInterest, sa.postCessationExpenses, sa.preIncorporationLosses, sa.maintenancePayments, sa.tradeUnionDeathBenefits, sa.reliefRedemptionBonusShares, sa.seisSubscriptions, sa.nonDeductiblePropertyPartnershipInterest]);
+    case "Married Couple's Allowance": return f([sa.mcaSpouseName, sa.mcaSpouseDob, sa.mcaTransferHalf, sa.mcaTransferAll, sa.mcaPrevSpouseDob, sa.mcaReceiveHalf, sa.mcaReceiveAll, sa.mcaSpousePartnerFullName, sa.mcaMarriageDate, sa.mcaHaveSurplus, sa.mcaGiveSurplus]);
+    case 'Other information': return f([sa.earlierYearsLosses, sa.unusedLossesCarriedForward, sa.laterYearReliefClaimed, sa.laterYearReliefNotLimited, sa.laterYearLossTaxYear, sa.payrollGiving]);
+    case 'Pension savings tax charges': return f([sa.annualAllowanceExcess, sa.annualAllowanceTaxPaid, sa.pensionOverseasTransfer, sa.overseasTransferChargeTax, sa.pensionSchemeRef, sa.unauthNotSurcharge, sa.unauthSurcharge, sa.unauthForeignTax, sa.foreignLumpShortServiceRefund, sa.foreignLumpTaxable, sa.foreignLumpForeignTax]);
+    case 'Tax avoidance schemes': return f([sa.avoidanceSchemeRefs, sa.avoidanceTaxYears]);
+  }
+  return 0;
+}
 
 function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
   const sa: Sa101 = income.additional ?? {};
@@ -3250,7 +3243,7 @@ function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome:
   return (
     <div className="space-y-3">
       <SectionTabs tabs={SA101_TABS.map(tt => ({ label: tt, count: sa101Count(sa, tt) }))} active={activeTab} onSelect={setTop} />
-      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss }))} active={sub} onSelect={setSub} />}
+      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss, count: sa101SubCount(sa, ss) }))} active={sub} onSelect={setSub} />}
 
       {/* ══ Tab 1 · Other UK Income ══ */}
       {activeTab === 'Other UK Income' && subName === 'Other UK Income' && (
