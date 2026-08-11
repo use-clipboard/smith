@@ -14,6 +14,7 @@ const PANEL_BG = '#eaf4f3';
 const PANEL_BORDER = '#bcdedb';
 const CELL = '#a9d3d0';
 const MONEY_TINT = '#d4e9e6'; // light teal fill for the £ and pence cells
+const CELL_SHADOW = '0 1px 1.5px rgba(0,0,0,0.13)'; // subtle drop shadow on each cell
 const RED = '#d4351c';
 
 // ── primitives ───────────────────────────────────────────────────────────────
@@ -56,21 +57,20 @@ function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; lab
   const digits = value ? Math.round(Math.abs(value)).toString() : '';
   const arr: string[] = Array(cells).fill('');
   for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
-  const cellBorder = `1px solid ${CELL}`;
+  const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
   return (
     <div className="mb-4">
       <Label n={n}>{label}</Label>
-      <div className="flex items-stretch" style={{ height: 21 }}>
-        <div className="flex items-stretch" style={{ border: cellBorder }}>
-          <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ borderRight: cellBorder, background: MONEY_TINT }}>£</span>
-          {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ borderRight: cellBorder, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
-          {arr.map((d, idx) => (
-            <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={{ borderRight: cellBorder }}>{d}</span>
-          ))}
-          <span className="flex w-[9px] items-center justify-center bg-white text-[13px] font-bold text-black">·</span>
-          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-400" style={{ borderLeft: cellBorder, borderRight: cellBorder, background: MONEY_TINT }}>0</span>
-          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-400" style={{ background: MONEY_TINT }}>0</span>
-        </div>
+      <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
+        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
+        {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ ...base, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
+        {arr.map((d, idx) => (
+          <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
+        ))}
+        {/* decimal point sits on the panel background, not in a box */}
+        <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
       </div>
     </div>
   );
@@ -130,7 +130,7 @@ function Cells({ n, label, groups, value = '' }: { n?: React.ReactNode; label?: 
           <div key={gi} className="flex gap-[3px]">
             {Array.from({ length: g }).map((_, k) => {
               const ch = chars[idx++] || '';
-              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{ch}</span>;
+              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}>{ch}</span>;
             })}
           </div>
         ))}
