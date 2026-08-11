@@ -274,12 +274,13 @@ function officeForm(code: string, name: string, pageTag: string, taxable: number
   ]) }] };
 }
 
-// ── Master builder ───────────────────────────────────────────────────────────
-export function buildFilingForms(ret: TaxReturn): FilingForm[] {
+// The SA100 TR2 "what makes up your tax return" checklist — which supplementary
+// pages have data (drives both the on-screen preview and the stamped tick marks).
+export function filingChecklist(ret: TaxReturn): Record<string, boolean> {
   const i = ret.income;
-  const has = {
+  return {
     employment: i.employment.some(e => employmentTaxable(e) !== 0 || e.employer),
-    selfemp: i.selfEmployment.some(t => tradeTaxableProfit(t) !== 0 || t.name),
+    selfemp: i.selfEmployment.some(t => tradeTaxableProfit(t) !== 0 || t.name) || lloydsHasData(i.lloyds),
     partnership: (i.partnerships ?? []).some(p => partnershipTaxableProfit(p) !== 0 || p.name),
     property: i.property.length > 0,
     foreign: !!buildForeign(i),
@@ -287,8 +288,13 @@ export function buildFilingForms(ret: TaxReturn): FilingForm[] {
     cgt: !!buildCgt(i),
     residence: !!i.residence && Object.values(i.residence).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!v)),
     additional: !!i.additional && Object.values(i.additional).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!v)),
-    lloyds: lloydsHasData(i.lloyds),
   };
+}
+
+// ── Master builder ───────────────────────────────────────────────────────────
+export function buildFilingForms(ret: TaxReturn): FilingForm[] {
+  const i = ret.income;
+  const has: Record<string, boolean> = { ...filingChecklist(ret), lloyds: lloydsHasData(i.lloyds) };
 
   const forms: FilingForm[] = [];
   forms.push(buildSa100(ret, has));       // always

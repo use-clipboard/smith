@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
-import { X, Printer, FileText } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { X, Printer, FileText, FileDown, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import { buildFilingForms, buildTaxCalcForm, type FilingForm, type FilingRow } from './filingModel';
+import { downloadSa100Pdf } from './sa100Stamp';
 
 // Print stylesheet: when printing, show only the preview sheets (the browser's
 // "Save as PDF" then produces a clean, vector, multi-page client copy).
@@ -50,6 +51,14 @@ function Sheet({ form }: { form: FilingForm }) {
 }
 
 export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClose: () => void }) {
+  const [stamping, setStamping] = useState(false);
+  const [stampErr, setStampErr] = useState<string | null>(null);
+  async function downloadOfficial() {
+    setStamping(true); setStampErr(null);
+    try { await downloadSa100Pdf(ret); }
+    catch (e) { setStampErr(e instanceof Error ? e.message : 'Could not build the PDF.'); }
+    finally { setStamping(false); }
+  }
   const forms = useMemo(() => {
     const base = buildFilingForms(ret);
     // Insert the SA302 tax calculation right after the SA100 main form.
@@ -69,6 +78,10 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {stampErr && <span className="text-[11px] font-medium text-rose-600">{stampErr}</span>}
+          <button onClick={downloadOfficial} disabled={stamping} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/5 px-3 py-1.5 text-[12px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/10 disabled:opacity-50" title="Stamp the figures onto HMRC's official blank SA100 PDF (proof — calibrating box positions)">
+            {stamping ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} Official SA100 (proof)
+          </button>
           <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
             <Printer size={14} /> Print / Save as PDF
           </button>
