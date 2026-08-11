@@ -6,8 +6,8 @@ import {
 } from 'lucide-react';
 import type { ReturnTypeId, Sa100Income } from '../types';
 import { emptyIncome } from '../data';
-import { dividendsTotal, savingsInterestTotal, lineTotal, computeCapitalAllowances, tradeLossCarriedForward } from '../calc';
-import type { TradeSource } from '../types';
+import { dividendsTotal, savingsInterestTotal, lineTotal, computeCapitalAllowances, tradeLossCarriedForward, propertyLossCarryForward, partnershipLossCarryForward, partnershipOtherUkLossCarryForward, partnershipForeignLossCarryForward, lloydsComputed } from '../calc';
+import type { TradeSource, PropertySource, PartnershipSource } from '../types';
 
 /** Roll one trade forward:
  *  - last year's closing capital-allowance pools become this year's brought-forward
@@ -35,6 +35,45 @@ function rollTradeForward(s: TradeSource): TradeSource {
     aia: r.aia, ca18: r.wdaMain, ca6: r.wdaSpecial,
     enhancedCapitalAllowances: r.fya, allowancesOnSale: r.balancingAllowance, balancingCharges: r.balancingCharge,
     capitalAllowancesCalc: { ...caState, mainPoolCfwd: r.mainPoolCfwd, specialPoolCfwd: r.specialPoolCfwd },
+  };
+}
+
+/** Roll one property forward: this year's loss to carry forward (box 43) becomes
+ *  next year's loss brought forward (box 39); year-specific loss usage is reset. */
+function rollPropertyForward(p: PropertySource): PropertySource {
+  const lossCf = propertyLossCarryForward(p);
+  return {
+    ...p,
+    lossBroughtForward: lossCf > 0 ? lossCf : undefined,   // box 43 → box 39
+    lossSetOffTotalIncome: undefined,                       // box 42 reset
+    unusedLossCarriedForward: undefined,
+  };
+}
+
+/** Roll one partnership forward: each schedule's loss to carry forward becomes
+ *  next year's loss brought forward (trade box 24→17, property box 40→38, other
+ *  UK box 51→47, foreign box 63→58); the year-specific loss usage is reset. The
+ *  income figures carry as a template for the preparer to update. */
+function rollPartnershipForward(p: PartnershipSource): PartnershipSource {
+  const tradeLoss = partnershipLossCarryForward(p);
+  const otherUkLoss = partnershipOtherUkLossCarryForward(p);
+  const foreignLoss = partnershipForeignLossCarryForward(p);
+  const propertyLoss = p.propertyLossCarryForward || 0;
+  return {
+    ...p,
+    // Trade (SA104 box 24 → box 17), reset current-year usage
+    lossBroughtForward: tradeLoss > 0 ? tradeLoss : undefined,
+    lossAgainstOtherIncome: undefined, lossCarriedBack: undefined,
+    lossFigAdjustment: undefined, unusedLossCarriedForward: undefined, transitionLossBfwd: undefined,
+    // Inline UK property (box 40 → box 38)
+    propertyLossBfwd: propertyLoss > 0 ? propertyLoss : undefined,
+    propertyLossAgainstOther: undefined, propertyLossCarryForward: undefined,
+    // Other untaxed UK income (box 51 → box 47)
+    otherUkLossBfwd: otherUkLoss > 0 ? otherUkLoss : undefined,
+    otherUkLossAdjustment: undefined,
+    // Other untaxed foreign income (box 63 → box 58)
+    foreignLossBfwd: foreignLoss > 0 ? foreignLoss : undefined,
+    foreignLossAdjustment: undefined,
   };
 }
 
@@ -215,7 +254,7 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   const out = emptyIncome();
   if (selected.employment) out.employment = prior.employment.map(e => ({ ...e }));
   if (selected.selfEmployment) out.selfEmployment = prior.selfEmployment.map(rollTradeForward);
-  if (selected.property) out.property = prior.property.map(p => ({ ...p }));
+  if (selected.property) out.property = prior.property.map(rollPropertyForward);
   if (selected.dividends) {
     out.dividends = prior.dividends;
     out.dividendItems = prior.dividendItems?.map(d => ({ ...d }));
@@ -300,6 +339,16 @@ export function rollForwardIncome(prior: Sa100Income, selected: Record<RollKey, 
   const badrToDate = prior.sa108?.badrLifetimeClaimed ?? prior.cgtCalc?.badrLifetimeUsed ?? 0;
   if (cgtLossesCf > 0 || badrToDate > 0) {
     out.cgtCalc = { lossesBroughtForward: cgtLossesCf || undefined, badrLifetimeUsed: badrToDate || undefined };
+  }
+  // Partnerships are recurring structures — carry them forward with each schedule's
+  // loss to carry forward seeding next year's brought-forward loss.
+  if (prior.partnerships?.length) out.partnerships = prior.partnerships.map(rollPartnershipForward);
+  // Lloyd's: carry ONLY the total loss to carry forward (box 62) into next year's
+  // brought-forward loss (boxes 59 + 51). The swinging syndicate figures are entered
+  // fresh, so nothing else rolls — the schedule appears only if there's a b/f loss.
+  const lloydsLossCf = lloydsComputed(prior.lloyds).box62;
+  if (lloydsLossCf > 0) {
+    out.lloyds = { lossesBroughtForward: lloydsLossCf, lossesBroughtForwardProfit: lloydsLossCf };
   }
   return out;
 }

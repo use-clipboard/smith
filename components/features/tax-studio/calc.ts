@@ -964,7 +964,9 @@ export function lloydsComputed(l?: LloydsUnderwriter): LloydsComputed {
   return {
     box5, box11, box18, box26, box27, box40, box41, box42, box43, box48,
     box49, box52, box53, box54, box58, box60, box61, box62,
-    taxable: Math.max(0, box52 - box60),
+    // box 52 already deducts losses brought forward (box 51); boxes 59–62 are the
+    // loss-pool reconciliation memo, so the taxable figure is box 52 itself.
+    taxable: box52,
     allowableLoss: box53,
     taxDeducted: n(l?.ukInterestTaxTakenOff) + n(l?.nonUkInterestUkTax) + n(l?.nonUkDividendsUkTax),
     foreignTax: box48,
