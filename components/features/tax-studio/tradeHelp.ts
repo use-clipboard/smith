@@ -495,3 +495,22 @@ export const SCP = {
   otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
   otherInformation: 'Any other information relevant to your Scottish Parliament office income, benefits or expenses.',
 } as const;
+
+// SA102 Senedd / National Assembly for Wales — one hint per box.
+export const WAL = {
+  p60Pay: 'Total payments from your P60 (or P45) as a Member of the Senedd (National Assembly for Wales).',
+  payrolledBenefitsStudentLoan: 'The part of box 1 that is payrolled benefits which count towards your student loan repayments.',
+  taxTakenOff: 'Tax taken off the pay in box 1 (from your P60 / P45).',
+  familyTravelCosts: 'Family travel costs provided to you.',
+  accommodation: 'Accommodation provided to you.',
+  officeCostAllowance: 'Office Cost Allowance paid to you.',
+  groupSupportAllowance: 'Group Support Allowance paid to you.',
+  otherCashReimbursements: 'Other cash reimbursements you received in connection with your office.',
+  allOtherBenefits: 'The cash-equivalent of all other benefits received (e.g. those on a P11D).',
+  balancingCharges: 'Balancing charges arising when you dispose of an asset on which capital allowances were claimed.',
+  familyTravelExpenses: 'Family travel costs you paid personally.',
+  secretarialClerical: 'Amounts you paid personally for secretarial and clerical assistance.',
+  officeExpenses: 'Office running expenses you paid personally.',
+  otherExpenses: 'Other allowable expenses you paid personally.',
+  otherInformation: 'Any other information relevant to your Senedd office income, benefits or expenses.',
+} as const;

@@ -7,7 +7,7 @@ import {
   ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
-  Church, MoreHorizontal, ChevronDown, Building2, Vote,
+  Church, MoreHorizontal, ChevronDown, Building2, Vote, Flag,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
@@ -20,14 +20,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -168,7 +168,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -189,6 +189,7 @@ const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[
   { id: 'niassembly',  label: 'Northern Ireland Assembly', code: 'SA102', icon: Landmark },
   { id: 'parliament',  label: 'Parliament (MPs)', code: 'SA102', icon: Building2 },
   { id: 'scottishparliament', label: 'Scottish Parliament', code: 'SA102', icon: Vote },
+  { id: 'welshassembly', label: 'National Assembly for Wales', code: 'SA102', icon: Flag },
 ];
 const ALL_PAGES = [...PAGES, ...MORE_PAGES];
 
@@ -213,6 +214,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
     case 'niassembly': { const t = assemblyComputed(income.niAssembly).taxable; return t ? { value: t, label: 'Assembly income' } : null; }
     case 'parliament': { const t = parliamentComputed(income.parliament).taxable; return t ? { value: t, label: 'MP office income' } : null; }
     case 'scottishparliament': { const t = scottishParliamentComputed(income.scottishParliament).taxable; return t ? { value: t, label: 'MSP office income' } : null; }
+    case 'welshassembly': { const t = welshAssemblyComputed(income.welshAssembly).taxable; return t ? { value: t, label: 'Senedd office income' } : null; }
     default: return null; // core / residence / additional — no single headline
   }
 }
@@ -252,6 +254,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     niassembly: income.niAssembly ? (assemblySectionCount(income.niAssembly, ASSEMBLY_TABS[0]) + assemblySectionCount(income.niAssembly, ASSEMBLY_TABS[1])) : 0,
     parliament: income.parliament ? PARLIAMENT_TABS.reduce((acc, t) => acc + parliamentSectionCount(income.parliament!, t), 0) : 0,
     scottishparliament: income.scottishParliament ? (scotSectionCount(income.scottishParliament, SCOT_TABS[0]) + scotSectionCount(income.scottishParliament, SCOT_TABS[1])) : 0,
+    welshassembly: income.welshAssembly ? WELSH_TABS.reduce((acc, t) => acc + welshSectionCount(income.welshAssembly!, t), 0) : 0,
   };
 }
 
@@ -468,6 +471,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'niassembly' && <NiAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'parliament' && <ParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'scottishparliament' && <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />}
+      {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -3758,6 +3762,117 @@ function ScottishParliamentPage({ ret, income, setIncome }: { ret: TaxReturn; in
         <div className="space-y-2">
           <SectionTitle title="Any other information" />
           <BoxTextArea box={10} label="Please give any other information in this space" value={m.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} rows={8}
+            right={<button onClick={suggestNote} disabled={noteBusy} className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:opacity-50">{noteBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} SMITH, help me write this</button>} />
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the office figures entered — review and edit before filing.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SA102 National Assembly for Wales (Senedd) — box-for-box "More" page ──────
+const WELSH_TABS = ['Income from office', 'Benefit from your office', 'Office expenses paid out by you'] as const;
+const WELSH_SUBTABS: Record<string, string[]> = {
+  'Income from office': [],
+  'Benefit from your office': [],
+  'Office expenses paid out by you': ['Office expenses', 'Any other information'],
+};
+function welshSubCount(m: WelshAssemblyOffice, sub: string): number {
+  switch (sub) {
+    case 'Income from office': return [m.p60Pay, m.payrolledBenefitsStudentLoan, m.taxTakenOff].filter(truthy).length;
+    case 'Benefit from your office': return [m.familyTravelCosts, m.accommodation, m.officeCostAllowance, m.groupSupportAllowance, m.otherCashReimbursements, m.allOtherBenefits, m.balancingCharges].filter(truthy).length;
+    case 'Office expenses': return [m.familyTravelExpenses, m.secretarialClerical, m.officeExpenses, m.otherExpenses].filter(truthy).length;
+    case 'Any other information': return m.otherInformation && m.otherInformation.trim() ? 1 : 0;
+  }
+  return 0;
+}
+function welshSectionCount(m: WelshAssemblyOffice, tab: string): number {
+  switch (tab) {
+    case 'Income from office': return welshSubCount(m, 'Income from office');
+    case 'Benefit from your office': return welshSubCount(m, 'Benefit from your office');
+    case 'Office expenses paid out by you': return welshSubCount(m, 'Office expenses') + welshSubCount(m, 'Any other information');
+  }
+  return 0;
+}
+
+function WelshAssemblyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const m: WelshAssemblyOffice = income.welshAssembly ?? {};
+  const set = (u: Partial<WelshAssemblyOffice>) => setIncome(i => ({ ...i, welshAssembly: { ...i.welshAssembly, ...u } }));
+  const cb = welshAssemblyComputed(m);
+  const [tab, setTab] = useState<string>(WELSH_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (WELSH_TABS as readonly string[]).includes(tab) ? tab : WELSH_TABS[0];
+  const subList = WELSH_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+
+  async function suggestNote() {
+    setNoteBusy(true);
+    try {
+      const facts = [
+        m.p60Pay ? `Payments from P60 as a Member of the Senedd: £${m.p60Pay}.` : '',
+        cb.benefits ? `Office benefits and cash reimbursements total: £${cb.benefits}.` : '',
+        cb.expenses ? `Office expenses paid personally total: £${cb.expenses}.` : '',
+        m.taxTakenOff ? `Tax taken off the office pay: £${m.taxTakenOff}.` : '',
+        `Net taxable office income: £${cb.taxable}.`,
+      ].filter(Boolean);
+      const r = await fetch('/api/tax-studio/suggest-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taxYear: ret.taxYear, clientName: ret.clientName ?? '', context: { form: 'SA102 supplementary page for a Member of the Senedd (National Assembly for Wales)', facts } }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.note) set({ otherInformation: m.otherInformation ? `${m.otherInformation}\n\n${d.note}` : d.note });
+    } finally { setNoteBusy(false); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <SectionTabs tabs={WELSH_TABS.map(tt => ({ label: tt, count: welshSectionCount(m, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(s => ({ label: s, count: welshSubCount(m, s) }))} active={sub} onSelect={setSub} />}
+
+      {activeTab === 'Income from office' && (
+        <div className="space-y-3">
+          <SectionTitle title="Income from office" sub={countHint(welshSectionCount(m, 'Income from office'))} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={1} label="Payments from P60" value={m.p60Pay ?? 0} onChange={v => set({ p60Pay: v })} help={WAL.p60Pay} />
+            <LabelledNum box="1.1" label="Payrolled benefits in box 1 affecting student loan repayments" value={m.payrolledBenefitsStudentLoan ?? 0} onChange={v => set({ payrolledBenefitsStudentLoan: v })} help={WAL.payrolledBenefitsStudentLoan} />
+            <LabelledNum box={2} label="Tax taken off box 1" value={m.taxTakenOff ?? 0} onChange={v => set({ taxTakenOff: v })} help={WAL.taxTakenOff} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Benefit from your office' && (
+        <div className="space-y-3">
+          <SectionTitle title="Benefit from your office" sub={countHint(welshSectionCount(m, 'Benefit from your office'))} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={3} label="Family travel costs" value={m.familyTravelCosts ?? 0} onChange={v => set({ familyTravelCosts: v })} help={WAL.familyTravelCosts} />
+            <LabelledNum box={4} label="Accommodation" value={m.accommodation ?? 0} onChange={v => set({ accommodation: v })} help={WAL.accommodation} />
+            <LabelledNum box={5} label="Office Cost Allowance" value={m.officeCostAllowance ?? 0} onChange={v => set({ officeCostAllowance: v })} help={WAL.officeCostAllowance} />
+            <LabelledNum box={6} label="Group Support Allowance" value={m.groupSupportAllowance ?? 0} onChange={v => set({ groupSupportAllowance: v })} help={WAL.groupSupportAllowance} />
+            <LabelledNum box={7} label="Other cash reimbursements" value={m.otherCashReimbursements ?? 0} onChange={v => set({ otherCashReimbursements: v })} help={WAL.otherCashReimbursements} />
+            <LabelledNum box={8} label="All other benefits" value={m.allOtherBenefits ?? 0} onChange={v => set({ allOtherBenefits: v })} help={WAL.allOtherBenefits} />
+            <LabelledNum box={9} label="Balancing charges" value={m.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} help={WAL.balancingCharges} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Office expenses paid out by you' && subName === 'Office expenses' && (
+        <div className="space-y-3">
+          <SectionTitle title="Office expenses paid out by you" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={10} label="Family travel costs" value={m.familyTravelExpenses ?? 0} onChange={v => set({ familyTravelExpenses: v })} help={WAL.familyTravelExpenses} />
+            <LabelledNum box={11} label="Secretarial and clerical" value={m.secretarialClerical ?? 0} onChange={v => set({ secretarialClerical: v })} help={WAL.secretarialClerical} />
+            <LabelledNum box={12} label="Office expenses" value={m.officeExpenses ?? 0} onChange={v => set({ officeExpenses: v })} help={WAL.officeExpenses} />
+            <LabelledNum box={13} label="Other expenses" value={m.otherExpenses ?? 0} onChange={v => set({ otherExpenses: v })} help={WAL.otherExpenses} />
+            <BoxCalc label="Taxable office income (pay + benefits − expenses)" value={cb.taxable} />
+            <BoxCalc label="Tax taken off (credited against the bill)" value={cb.taxDeducted} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH adds the taxable office income to this client’s total income and credits the tax taken off against the bill.</p>
+        </div>
+      )}
+      {activeTab === 'Office expenses paid out by you' && subName === 'Any other information' && (
+        <div className="space-y-2">
+          <SectionTitle title="Any other information" />
+          <BoxTextArea box={14} label="Please give any other information in this space" value={m.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} rows={8}
             right={<button onClick={suggestNote} disabled={noteBusy} className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:opacity-50">{noteBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} SMITH, help me write this</button>} />
           <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the office figures entered — review and edit before filing.</p>
         </div>

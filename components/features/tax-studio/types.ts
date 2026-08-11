@@ -999,6 +999,8 @@ export interface Sa100Income {
   parliament?: ParliamentOffice;
   /** SA102 Scottish Parliament (MSP) office income (a rarely-used "More" page). */
   scottishParliament?: ScottishParliamentOffice;
+  /** SA102 Senedd / National Assembly for Wales office income (a "More" page). */
+  welshAssembly?: WelshAssemblyOffice;
 }
 
 // Income, benefits and expenses of a member of a devolved legislature office —
@@ -1021,6 +1023,31 @@ export interface AssemblyOffice {
   otherExpensesCapitalAllowances?: number; // box 9 — other expenses and capital allowances
   // Any other information (box 10)
   otherInformation?: string;             // box 10 — free text
+}
+
+// Income, benefits and expenses of a Member of the Senedd (National Assembly for
+// Wales) — the SA102 supplementary page. 14 boxes across three sections; taxable
+// = pay + benefits − expenses (see welshAssemblyComputed in calc.ts).
+export interface WelshAssemblyOffice {
+  // Income from office (boxes 1, 1.1, 2)
+  p60Pay?: number;                       // box 1 — payments from P60
+  payrolledBenefitsStudentLoan?: number; // box 1.1 — payrolled benefits in box 1 affecting student loan
+  taxTakenOff?: number;                  // box 2 — tax taken off box 1
+  // Benefit from your office (boxes 3–9)
+  familyTravelCosts?: number;            // box 3 — family travel costs
+  accommodation?: number;                // box 4 — accommodation
+  officeCostAllowance?: number;          // box 5 — Office Cost Allowance
+  groupSupportAllowance?: number;        // box 6 — Group Support Allowance
+  otherCashReimbursements?: number;      // box 7 — other cash reimbursements
+  allOtherBenefits?: number;             // box 8 — all other benefits
+  balancingCharges?: number;             // box 9 — balancing charges
+  // Office expenses paid out by you (boxes 10–13)
+  familyTravelExpenses?: number;         // box 10 — family travel costs
+  secretarialClerical?: number;          // box 11 — secretarial and clerical
+  officeExpenses?: number;               // box 12 — office expenses
+  otherExpenses?: number;                // box 13 — other expenses
+  // Any other information (box 14)
+  otherInformation?: string;             // box 14 — free text
 }
 
 // Income, benefits and expenses of a Member of Parliament — the SA102 (MPs)

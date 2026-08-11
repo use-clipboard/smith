@@ -42,6 +42,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Northern Ireland Assembly', code: 'SA102', page: 'niassembly', kw: 'northern ireland legislative assembly mla member office stormont devolved more' },
   { label: 'Parliament (MPs)', code: 'SA102', page: 'parliament', kw: 'parliament member mp mps house of commons westminster office more' },
   { label: 'Scottish Parliament', code: 'SA102', page: 'scottishparliament', kw: 'scottish parliament msp holyrood member office devolved more' },
+  { label: 'National Assembly for Wales', code: 'SA102', page: 'welshassembly', kw: 'senedd national assembly wales welsh ms member office cardiff devolved more' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.
@@ -139,6 +140,11 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'MSP benefit from your office', context: 'Scottish Parliament · Benefit from your office · boxes 3–7', page: 'scottishparliament', keywords: 'accommodation office cost provision non-capital items other cash reimbursements all other benefits balancing charges box 3 4 5 6 7' },
   { label: 'MSP office expenses paid by you', context: 'Scottish Parliament · Office expenses paid out by you · boxes 8–9', page: 'scottishparliament', keywords: 'office costs other expenses capital allowances box 8 9' },
   { label: 'MSP — any other information', context: 'Scottish Parliament · Any other information · box 10', page: 'scottishparliament', keywords: 'scottish parliament msp any other information note box 10' },
+  // National Assembly for Wales / Senedd (SA102)
+  { label: 'Senedd income from office', context: 'National Assembly for Wales · Income from office · boxes 1–2', page: 'welshassembly', keywords: 'senedd national assembly wales welsh ms payments p60 pay tax taken off payrolled benefits student loan box 1 1.1 2' },
+  { label: 'Senedd benefit from your office', context: 'National Assembly for Wales · Benefit from your office · boxes 3–9', page: 'welshassembly', keywords: 'family travel costs accommodation office cost allowance group support allowance other cash reimbursements all other benefits balancing charges box 3 4 5 6 7 8 9' },
+  { label: 'Senedd office expenses paid by you', context: 'National Assembly for Wales · Office expenses paid out by you · boxes 10–13', page: 'welshassembly', keywords: 'family travel costs secretarial clerical office expenses other expenses box 10 11 12 13' },
+  { label: 'Senedd — any other information', context: 'National Assembly for Wales · Any other information · box 14', page: 'welshassembly', keywords: 'senedd wales any other information note box 14' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Main Form · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Main Form · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

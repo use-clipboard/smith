@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -903,6 +903,30 @@ export function scottishParliamentHasData(m?: ScottishParliamentOffice): boolean
   return Object.values(m).some(v => (typeof v === 'number' ? v !== 0 : !!(v && String(v).trim())));
 }
 
+export interface WelshAssemblyComputed {
+  income: number;    // box 1 — pay from office
+  benefits: number;  // boxes 3–9 — office benefits
+  expenses: number;  // boxes 10–13 — office expenses paid personally
+  taxable: number;   // pay + benefits − expenses (floored at 0)
+  taxDeducted: number; // box 2 — tax taken off the office pay
+}
+/** SA102 Senedd (National Assembly for Wales) office schedule: taxable emoluments
+ *  are pay from office plus office benefits/reimbursements, less the office
+ *  expenses the member paid personally. Box 1.1 is a sub-figure of box 1. */
+export function welshAssemblyComputed(m?: WelshAssemblyOffice): WelshAssemblyComputed {
+  const n = (v?: number) => v || 0;
+  const income = n(m?.p60Pay);
+  const benefits = n(m?.familyTravelCosts) + n(m?.accommodation) + n(m?.officeCostAllowance) + n(m?.groupSupportAllowance) + n(m?.otherCashReimbursements) + n(m?.allOtherBenefits) + n(m?.balancingCharges);
+  const expenses = n(m?.familyTravelExpenses) + n(m?.secretarialClerical) + n(m?.officeExpenses) + n(m?.otherExpenses);
+  const taxable = Math.max(0, income + benefits - expenses);
+  return { income, benefits, expenses, taxable, taxDeducted: n(m?.taxTakenOff) };
+}
+/** True if any Senedd-office box carries a value (incl. the free-text note). */
+export function welshAssemblyHasData(m?: WelshAssemblyOffice): boolean {
+  if (!m) return false;
+  return Object.values(m).some(v => (typeof v === 'number' ? v !== 0 : !!(v && String(v).trim())));
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -1085,6 +1109,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const niAssembly = assemblyComputed(income.niAssembly); // SA102 NI Assembly office income + tax
   const parliament = parliamentComputed(income.parliament); // SA102 MPs office income + tax
   const scottishParliament = scottishParliamentComputed(income.scottishParliament); // SA102 MSP office income + tax
+  const welshAssembly = welshAssemblyComputed(income.welshAssembly); // SA102 Senedd office income + tax
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
   const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend + sa101.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
@@ -1093,7 +1118,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + tr.nonSavings;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -1337,7 +1362,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + minister.taxDeducted + niAssembly.taxDeducted + parliament.taxDeducted + scottishParliament.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + minister.taxDeducted + niAssembly.taxDeducted + parliament.taxDeducted + scottishParliament.taxDeducted + welshAssembly.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   // Tax already refunded / set off in-year (TR6 box 1) is added back to what's due.
   const taxRefundedOrSetOff = income.taxRefundedOrSetOff || 0;
   if (taxRefundedOrSetOff > 0) notes.push('Tax refunded or set off in-year (box 1) added back to the balancing payment.');
@@ -1355,13 +1380,14 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + tr.nonSavings),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + tr.nonSavings),
     otherIncomeParts: ([
       { label: 'Pensions & state benefits', amount: r0(pensionsBenefits) },
       { label: 'Minister of religion (SA102M)', amount: r0(minister.taxable) },
       { label: 'NI Legislative Assembly (SA102)', amount: r0(niAssembly.taxable) },
       { label: 'Parliament — MPs (SA102)', amount: r0(parliament.taxable) },
       { label: 'Scottish Parliament (SA102)', amount: r0(scottishParliament.taxable) },
+      { label: 'Senedd — Wales (SA102)', amount: r0(welshAssembly.taxable) },
       { label: 'Life insurance gains', amount: r0(chargeableEventGains) },
       { label: 'Other UK income (SA101)', amount: r0(sa101.nonSavings) },
       { label: 'Foreign income', amount: r0(foreignIncome) },
