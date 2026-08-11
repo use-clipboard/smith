@@ -123,12 +123,20 @@ function Comb({ n, label, value = '', cells = 12 }: { n?: React.ReactNode; label
   );
 }
 
-// A plain full-width text line (name/address boxes).
-function Line({ n, label, value, lines = 1 }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number }) {
+// A write-in text box drawn as N ruled lines (name/address boxes). The value sits
+// on the first line; `watermark` shows a faint placeholder on the last line (e.g.
+// 'Postcode').
+function Line({ n, label, value, lines = 1, watermark }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number; watermark?: string }) {
   return (
     <div className="mb-2.5">
       {label != null && <Label n={n}>{label}</Label>}
-      <div className="whitespace-pre-line px-1.5 py-1 text-[11px] font-medium leading-tight text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', minHeight: 20 * lines }}>{value || ''}</div>
+      <div>
+        {Array.from({ length: lines }).map((_, k) => (
+          <div key={k} className="flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
+            {k === 0 && value ? value : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -551,7 +559,10 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
               <div className="mb-2"><Label n={11}>If your nominee is your tax adviser, put ‘X’ in the box</Label><Tick on={!!i.repayNomineeIsAdviser} /></div>
               <Line n={12} label="Nominee’s address" value={i.repayNomineeAddress} lines={2} />
               <Cells n={13} label="and postcode" value={i.repayNomineePostcode} groups={[8]} />
-              <Line n={14} label="To authorise your nominee to receive any repayment, you must sign in the box. A photocopy of your signature will not do" value="" lines={2} />
+              <div className="mb-2.5">
+                <Label n={14}>To authorise your nominee to receive any repayment, you must sign in the box. A photocopy of your signature will not do</Label>
+                <div style={{ border: `1px solid ${CELL}`, background: '#fff', height: 40 }} />
+              </div>
             </div>
           </div>
         </Panel>
@@ -559,25 +570,27 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
 
       {/* ── TR7 — adviser + any other information ── */}
       <Page tag="TR 7">
-        <p className="mb-1 text-[14px] text-black">Your tax adviser, if you have one</p>
-        <Note>This section is optional. Please read the notes about authorising your tax adviser.</Note>
-        <Panel divided>
-          <div className="grid grid-cols-2 gap-x-10">
-            <div>
-              <Line n={15} label="Your tax adviser’s name" value={i.adviserName} lines={2} />
-              <Comb n={16} label="Their phone number" value={i.adviserPhone} cells={14} />
+        <div className="flex h-full flex-col">
+          <p className="mb-1 text-[14px] text-black">Your tax adviser, if you have one</p>
+          <Note>This section is optional. Please read the notes about authorising your tax adviser.</Note>
+          <Panel divided>
+            <div className="grid grid-cols-2 gap-x-10">
+              <div>
+                <Line n={15} label="Your tax adviser’s name" value={i.adviserName} lines={2} />
+                <Cells n={16} label="Their phone number" value={i.adviserPhone} groups={[14]} />
+              </div>
+              <div>
+                <Line n={17} label="The first line of their address including the postcode" value={i.adviserAddress} lines={3} watermark="Postcode" />
+                <Cells n={18} label="The reference your adviser uses for you" value={i.adviserReference} groups={[16]} />
+              </div>
             </div>
-            <div>
-              <Line n={17} label="The first line of their address including the postcode" value={i.adviserAddress} lines={3} />
-              <Comb n={18} label="The reference your adviser uses for you" value={i.adviserReference} cells={16} />
-            </div>
-          </div>
-        </Panel>
-        <p className="mb-1 text-[14px] text-black">Any other information</p>
-        <Panel>
-          <Label n={19}>Please give any other information in this space</Label>
-          <div style={{ border: `1px solid ${CELL}`, background: '#fff', minHeight: 360 }} />
-        </Panel>
+          </Panel>
+          <p className="mb-1 text-[14px] text-black">Any other information</p>
+          <Panel className="flex flex-1 flex-col">
+            <Label n={19}>Please give any other information in this space</Label>
+            <div className="flex-1" style={{ border: `1px solid ${CELL}`, background: '#fff' }} />
+          </Panel>
+        </div>
       </Page>
 
       {/* ── TR8 — signing ── */}
