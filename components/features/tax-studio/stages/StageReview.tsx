@@ -2067,23 +2067,8 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
   return (
     <div className="space-y-3">
       {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">Legacy foreign figures are still counted in the tax. Re-enter them in the boxes below to file box-for-box, then clear the old ones.</p>}
-      {/* Top tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
-        {FOREIGN_TABS.map(tt => (
-          <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}</button>
-        ))}
-      </div>
-      {/* Sub tabs */}
-      {subList.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-0.5">
-          {subList.map((st, i) => {
-            const c = foreignSubCount(sa, activeTab, st);
-            return (
-              <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{c > 0 && <span className="font-bold"> ({c})</span>}</button>
-            );
-          })}
-        </div>
-      )}
+      <SectionTabs tabs={FOREIGN_TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(st => ({ label: st, count: foreignSubCount(sa, activeTab, st) }))} active={sub} onSelect={setSub} />}
 
       {/* ── Unremittable income ── */}
       {activeTab === 'Unremittable income' && (
@@ -2499,22 +2484,8 @@ function Sa108Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
         <button onClick={() => setCalcOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-bold text-white transition-opacity hover:opacity-90"><Calculator size={14} /> {calcCount > 0 ? 'Open calculator' : 'Open calculator'}</button>
       </div>
       {calcOpen && <CgtCalculator state={calcState} taxYear={ret.taxYear} taxpayerName={ret.clientName ?? 'You'} returnType={ret.returnType} onChange={onCalcChange} onClose={() => setCalcOpen(false)} />}
-      {/* Top tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
-        {SA108_TABS.map(tt => {
-          const c = (SA108_SUBTABS[tt] ?? []).length === 0 ? sa108Count(sa, tt) : 0;
-          return <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}{c > 0 && <span className="font-bold"> ({c})</span>}</button>;
-        })}
-      </div>
-      {/* Sub tabs */}
-      {subList.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-0.5">
-          {subList.map((st, i) => {
-            const c = sa108Count(sa, st);
-            return <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{c > 0 && <span className="font-bold"> ({c})</span>}</button>;
-          })}
-        </div>
-      )}
+      <SectionTabs tabs={SA108_TABS.map(tt => ({ label: tt, count: (SA108_SUBTABS[tt] ?? []).length === 0 ? sa108Count(sa, tt) : 0 }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(st => ({ label: st, count: sa108Count(sa, st) }))} active={sub} onSelect={setSub} />}
 
       {/* ── Property and Assets ── */}
       {subName === 'Residential property (and carried interest)' && (
@@ -2845,30 +2816,8 @@ function Sa109Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
 
   return (
     <div className="space-y-3">
-      {/* Top tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
-        {SA109_TABS.map(tt => {
-          const n = sa109Count(sa, tt);
-          return (
-            <button key={tt} onClick={() => setTop(tt)}
-              className={`rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-              {tt}{n > 0 && <span className="font-bold"> ({n})</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Sub-tabs (Personal allowances and domicile) */}
-      {subList.length > 0 && (
-        <div className="flex flex-wrap gap-1 border-b border-black/5 pb-2">
-          {subList.map((ss, i) => (
-            <button key={ss} onClick={() => setSub(i)}
-              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-              {ss}
-            </button>
-          ))}
-        </div>
-      )}
+      <SectionTabs tabs={SA109_TABS.map(tt => ({ label: tt, count: sa109Count(sa, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss }))} active={sub} onSelect={setSub} />}
 
       {activeTab === 'Residence status' && (
         <div className="space-y-3">
@@ -3034,21 +2983,8 @@ function Sa107Page({ income, setIncome }: { income: Sa100Income; setIncome: SetI
   return (
     <div className="space-y-3">
       {legacy && <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">You have legacy trust / estate sources (still counted in the tax) below. Re-enter them box-for-box above to file from the SA107 page, then clear the old ones.</p>}
-      {/* Top tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
-        {SA107_TABS.map(tt => (
-          <button key={tt} onClick={() => setTop(tt)} className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{tt}</button>
-        ))}
-      </div>
-      {/* Sub tabs */}
-      <div className="flex flex-wrap gap-1 px-0.5">
-        {subList.map((st, i) => {
-          const cnt = sa107SubCount(sa, st);
-          return (
-            <button key={st} onClick={() => setSub(i)} className={`rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>{st}{cnt > 0 && <span className="font-bold"> ({cnt})</span>}</button>
-          );
-        })}
-      </div>
+      <SectionTabs tabs={SA107_TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
+      <SubTabs tabs={subList.map(st => ({ label: st, count: sa107SubCount(sa, st) }))} active={sub} onSelect={setSub} />
 
       {/* ── Income from Trusts ── */}
       {subName === 'Discretionary income' && (
@@ -3175,6 +3111,44 @@ function TrustCard({ t, idx, onChange, onRemove }: {
   );
 }
 
+// ── Shared SA-page navigation (used across SA106/107/108/109/101) ────────────
+// Level-2 "section" tabs — an underline tab bar: the primary tabs that open the
+// areas within a form page. Reads unmistakably as tabs (accent underline + text
+// on a shared divider), distinct from the level-1 form-page pills above it.
+function SectionTabs({ tabs, active, onSelect }: { tabs: { label: string; count?: number }[]; active: string; onSelect: (label: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-end gap-x-1 border-b border-[var(--border)]">
+      {tabs.map(t => {
+        const on = t.label === active;
+        return (
+          <button key={t.label} onClick={() => onSelect(t.label)}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[12.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}`}>
+            {t.label}{t.count ? <span className={`rounded-full px-1.5 text-[9.5px] font-bold leading-[1.6] ${on ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'}`}>{t.count}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+// Level-3 "sub-section" tabs — a segmented control: a nested toggle within a
+// section. Visually secondary (grouped pills with a raised active segment), so it
+// never gets confused with the level-2 section tabs above it.
+function SubTabs({ tabs, active, onSelect }: { tabs: { label: string; count?: number }[]; active: number; onSelect: (i: number) => void }) {
+  return (
+    <div className="inline-flex flex-wrap gap-0.5 rounded-lg bg-black/[0.04] p-0.5">
+      {tabs.map((t, i) => {
+        const on = i === active;
+        return (
+          <button key={t.label} onClick={() => onSelect(i)}
+            className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${on ? 'bg-white text-[var(--accent)] shadow-sm ring-1 ring-black/[0.04]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
+            {t.label}{t.count ? <span className="font-bold">({t.count})</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── SA101 Additional information — full box-for-box page (Capium layout) ──────
 const SA101_TABS = [
   'Other UK Income',
@@ -3275,29 +3249,8 @@ function AdditionalPage({ income, setIncome }: { income: Sa100Income; setIncome:
 
   return (
     <div className="space-y-3">
-      {/* Top tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--border)] bg-white/60 p-1.5">
-        {SA101_TABS.map(tt => {
-          const n = sa101Count(sa, tt);
-          return (
-            <button key={tt} onClick={() => setTop(tt)}
-              className={`rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors ${activeTab === tt ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-              {tt}{n > 0 && <span className="font-bold"> ({n})</span>}
-            </button>
-          );
-        })}
-      </div>
-      {/* Sub-tabs */}
-      {subList.length > 0 && (
-        <div className="flex flex-wrap gap-1 border-b border-black/5 pb-2">
-          {subList.map((ss, i) => (
-            <button key={ss} onClick={() => setSub(i)}
-              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${sub === i ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
-              {ss}
-            </button>
-          ))}
-        </div>
-      )}
+      <SectionTabs tabs={SA101_TABS.map(tt => ({ label: tt, count: sa101Count(sa, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(ss => ({ label: ss }))} active={sub} onSelect={setSub} />}
 
       {/* ══ Tab 1 · Other UK Income ══ */}
       {activeTab === 'Other UK Income' && subName === 'Other UK Income' && (
