@@ -461,3 +461,22 @@ export const NIA = {
   otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
   otherInformation: 'Any other information relevant to your Assembly office income, benefits or expenses.',
 } as const;
+
+// SA102 Members of Parliament (MPs) — one hint per box.
+export const PAR = {
+  p60Pay: 'Total payments from your P60 (or P45) as a Member of Parliament.',
+  payrolledBenefitsStudentLoan: 'The part of box 1 that is payrolled benefits which count towards your student loan repayments.',
+  taxTakenOff: 'Tax taken off the pay in box 1 (from your P60 / P45).',
+  travelVouchers: 'Travel, travel warrants and vouchers provided to you.',
+  accommodation: 'Accommodation provided, excluding Accommodation Expenses.',
+  officeCostsExpenditure: 'Office Costs Expenditure allowance paid to you.',
+  contingencyPayment: 'Any contingency payment received.',
+  financialAssistanceFund: 'Financial Assistance Fund payments and other cash reimbursements.',
+  allOtherBenefits: 'The cash-equivalent of all other benefits received (e.g. those on a P11D).',
+  balancingCharges: 'Balancing charges arising when you dispose of an asset on which capital allowances were claimed.',
+  travelWarrants: 'Cost of travel warrants you paid personally.',
+  secretarialAssistance: 'Amounts you paid personally for secretarial, clerical and research assistance.',
+  officeExpenses: 'Office running expenses you paid personally.',
+  otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
+  otherInformation: 'Any other information relevant to your Parliamentary office income, benefits or expenses.',
+} as const;

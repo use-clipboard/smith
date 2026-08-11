@@ -40,6 +40,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Additional info', code: 'SA101', page: 'additional', kw: 'additional information eis seis vct life insurance gains' },
   { label: 'Ministry of religion', code: 'SA102M', page: 'minister', kw: 'minister religion clergy vicar stipend manse vicarage chaplaincy more' },
   { label: 'Northern Ireland Assembly', code: 'SA102', page: 'niassembly', kw: 'northern ireland legislative assembly mla member office stormont devolved more' },
+  { label: 'Parliament (MPs)', code: 'SA102', page: 'parliament', kw: 'parliament member mp mps house of commons westminster office more' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.
@@ -127,6 +128,11 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Assembly benefit from your office', context: 'NI Assembly · Benefit from your office · boxes 3–6', page: 'niassembly', keywords: 'office cost expenditure other cash reimbursements all other benefits balancing charges box 3 4 5 6' },
   { label: 'Assembly office expenses paid by you', context: 'NI Assembly · Office expenses paid out by you · boxes 7–9', page: 'niassembly', keywords: 'secretarial clerical research assistance office expenses other expenses capital allowances box 7 8 9' },
   { label: 'Assembly — any other information', context: 'NI Assembly · Any other information · box 10', page: 'niassembly', keywords: 'northern ireland assembly any other information note box 10' },
+  // Parliament — Members of Parliament (SA102)
+  { label: 'MP income from office', context: 'Parliament · Income from office · boxes 1–2', page: 'parliament', keywords: 'parliament mp member payments p60 pay tax taken off payrolled benefits student loan box 1 1.1 2' },
+  { label: 'MP benefit from your office', context: 'Parliament · Benefit from your office · boxes 3–9', page: 'parliament', keywords: 'travel warrants vouchers accommodation office costs expenditure contingency payment financial assistance fund cash reimbursements other benefits balancing charges box 3 4 5 6 7 8 9' },
+  { label: 'MP office expenses paid by you', context: 'Parliament · Office expenses paid out by you · boxes 10–13', page: 'parliament', keywords: 'travel warrants secretarial clerical research assistance office expenses other expenses capital allowances box 10 11 12 13' },
+  { label: 'MP — any other information', context: 'Parliament · Any other information · box 14', page: 'parliament', keywords: 'parliament mp any other information note box 14' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Main Form · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Main Form · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

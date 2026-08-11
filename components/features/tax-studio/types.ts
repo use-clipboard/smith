@@ -995,6 +995,8 @@ export interface Sa100Income {
    *  "More" page). Shares the AssemblyOffice shape with the other devolved
    *  legislature schedules. */
   niAssembly?: AssemblyOffice;
+  /** SA102 Members of Parliament (MPs) office income (a rarely-used "More" page). */
+  parliament?: ParliamentOffice;
 }
 
 // Income, benefits and expenses of a member of a devolved legislature office —
@@ -1017,6 +1019,31 @@ export interface AssemblyOffice {
   otherExpensesCapitalAllowances?: number; // box 9 — other expenses and capital allowances
   // Any other information (box 10)
   otherInformation?: string;             // box 10 — free text
+}
+
+// Income, benefits and expenses of a Member of Parliament — the SA102 (MPs)
+// supplementary page. 14 boxes across three sections; taxable = pay + benefits −
+// expenses (see parliamentComputed in calc.ts).
+export interface ParliamentOffice {
+  // Income from office (boxes 1, 1.1, 2)
+  p60Pay?: number;                       // box 1 — payments from P60
+  payrolledBenefitsStudentLoan?: number; // box 1.1 — payrolled benefits in box 1 affecting student loan
+  taxTakenOff?: number;                  // box 2 — tax taken off box 1
+  // Benefit from your office (boxes 3–9)
+  travelVouchers?: number;               // box 3 — travel, travel warrants and vouchers
+  accommodation?: number;                // box 4 — accommodation, excluding Accommodation Expenses
+  officeCostsExpenditure?: number;       // box 5 — Office Costs Expenditure
+  contingencyPayment?: number;           // box 6 — contingency payment
+  financialAssistanceFund?: number;      // box 7 — Financial Assistance Fund and other cash reimbursements
+  allOtherBenefits?: number;             // box 8 — all other benefits
+  balancingCharges?: number;             // box 9 — balancing charges
+  // Office expenses paid out by you (boxes 10–13)
+  travelWarrants?: number;               // box 10 — travel warrants
+  secretarialAssistance?: number;        // box 11 — secretarial, clerical and research assistance
+  officeExpenses?: number;               // box 12 — office expenses
+  otherExpensesCapitalAllowances?: number; // box 13 — other expenses and capital allowances
+  // Any other information (box 14)
+  otherInformation?: string;             // box 14 — free text
 }
 
 // ── SA109 Residence, FIG regime & remittance basis ───────────────────────────
