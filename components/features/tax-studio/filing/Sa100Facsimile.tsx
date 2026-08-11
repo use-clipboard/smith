@@ -13,6 +13,7 @@ const TEAL = '#00928f';
 const PANEL_BG = '#eaf4f3';
 const PANEL_BORDER = '#bcdedb';
 const CELL = '#a9d3d0';
+const MONEY_TINT = '#d4e9e6'; // light teal fill for the £ and pence cells
 const RED = '#d4351c';
 
 // ── primitives ───────────────────────────────────────────────────────────────
@@ -31,11 +32,13 @@ function Panel({ children, className = '' }: { children: React.ReactNode; classN
 function BoxNum({ n }: { n: React.ReactNode }) {
   return <span className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center px-0.5 text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
+// Field label — the number chip sits flush to the panel's left edge (pulled out
+// of the panel's padding), with the label text beside it.
 function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="mb-1 flex gap-1.5 text-[10.5px] font-bold leading-tight text-black">
-      {n != null && <BoxNum n={n} />}
-      <span>{children}</span>
+    <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
+      {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
+      <span className={n != null ? 'block pl-1' : 'block'}>{children}</span>
     </div>
   );
 }
@@ -50,18 +53,18 @@ function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; lab
   for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
   const cellBorder = `1px solid ${CELL}`;
   return (
-    <div className="mb-2.5">
+    <div className="mb-3.5">
       <Label n={n}>{label}</Label>
       <div className="flex items-stretch" style={{ height: 21 }}>
-        {minus && <span className="mr-1 flex w-[13px] items-center justify-center text-[12px] font-bold text-black" style={{ border: cellBorder, background: '#fff' }}>{neg ? '−' : ''}</span>}
-        <div className="flex items-stretch" style={{ border: cellBorder, background: '#fff' }}>
-          <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-400" style={{ borderRight: cellBorder }}>£</span>
+        {minus && <span className="mr-1.5 flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ border: cellBorder, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
+        <div className="flex items-stretch" style={{ border: cellBorder }}>
+          <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ borderRight: cellBorder, background: MONEY_TINT }}>£</span>
           {arr.map((d, idx) => (
-            <span key={idx} className="flex w-[15px] items-center justify-center text-[11.5px] font-medium text-black" style={{ borderRight: cellBorder }}>{d}</span>
+            <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={{ borderRight: cellBorder }}>{d}</span>
           ))}
-          <span className="flex w-[9px] items-center justify-center text-[13px] font-bold text-black">·</span>
-          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-300" style={{ borderLeft: cellBorder, borderRight: cellBorder }}>0</span>
-          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-300">0</span>
+          <span className="flex w-[9px] items-center justify-center bg-white text-[13px] font-bold text-black">·</span>
+          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-400" style={{ borderLeft: cellBorder, borderRight: cellBorder, background: MONEY_TINT }}>0</span>
+          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-400" style={{ background: MONEY_TINT }}>0</span>
         </div>
       </div>
     </div>
