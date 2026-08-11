@@ -5,6 +5,7 @@ import { X, Printer, FileText, FileDown, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import { buildFilingForms, buildTaxCalcForm, type FilingForm, type FilingRow } from './filingModel';
 import { downloadSa100Pdf } from './sa100Stamp';
+import Sa100Facsimile from './Sa100Facsimile';
 
 // Print stylesheet: when printing, show only the preview sheets (the browser's
 // "Save as PDF" then produces a clean, vector, multi-page client copy).
@@ -59,11 +60,10 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
     catch (e) { setStampErr(e instanceof Error ? e.message : 'Could not build the PDF.'); }
     finally { setStamping(false); }
   }
-  const forms = useMemo(() => {
-    const base = buildFilingForms(ret);
-    // Insert the SA302 tax calculation right after the SA100 main form.
-    return [base[0], buildTaxCalcForm(ret), ...base.slice(1)];
-  }, [ret]);
+  // SA100 renders as the HMRC facsimile; the rest (tax calc + supplementary
+  // pages) render as structured sheets until they get their own facsimiles.
+  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1)], [ret]);
+  const totalForms = rest.length + 1;
 
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 overflow-auto bg-slate-100">
@@ -74,7 +74,7 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
           <FileText size={16} className="text-[var(--accent)]" />
           <div>
             <p className="text-[13px] font-bold text-slate-900">Filing preview — {ret.clientName}</p>
-            <p className="text-[11px] text-slate-500">SA100 {ret.taxYear} · {forms.length} form{forms.length === 1 ? '' : 's'} · main form always shown, supplementary pages only where there are entries</p>
+            <p className="text-[11px] text-slate-500">SA100 {ret.taxYear} · {totalForms} form{totalForms === 1 ? '' : 's'} · main form always shown, supplementary pages only where there are entries</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -92,7 +92,8 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
       </div>
       {/* Sheets */}
       <div className="px-4 py-6">
-        {forms.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
+        <Sa100Facsimile ret={ret} />
+        {rest.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
         <p className="no-print mx-auto mb-8 max-w-[210mm] text-center text-[11px] text-slate-400">
           This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.
         </p>
