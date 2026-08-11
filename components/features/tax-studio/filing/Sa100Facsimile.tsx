@@ -40,26 +40,43 @@ function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode
   );
 }
 
-// Segmented £ box: £ · pound cells · decimal · pence cells. Value right-aligned.
-function Money({ n, label, value, cells = 9 }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number }) {
+// A single outlined £ box like the HMRC form: £ (grey) · pound cells · decimal ·
+// pence cells (grey 0 0), all within one border. Value right-aligned in the pound
+// cells. `minus` renders the sign marker to the left (− when the value is negative).
+function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number; minus?: boolean }) {
+  const neg = (value || 0) < 0;
   const digits = value ? Math.round(Math.abs(value)).toString() : '';
   const arr: string[] = Array(cells).fill('');
   for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
+  const cellBorder = `1px solid ${CELL}`;
   return (
     <div className="mb-2.5">
       <Label n={n}>{label}</Label>
-      <div className="flex items-stretch text-[12px]" style={{ height: 20 }}>
-        <span className="flex w-4 items-center justify-center text-[12px] text-slate-500">£</span>
-        <div className="flex flex-1" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>
+      <div className="flex items-stretch" style={{ height: 21 }}>
+        {minus && <span className="mr-1 flex w-[13px] items-center justify-center text-[12px] font-bold text-black" style={{ border: cellBorder, background: '#fff' }}>{neg ? '−' : ''}</span>}
+        <div className="flex items-stretch" style={{ border: cellBorder, background: '#fff' }}>
+          <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-400" style={{ borderRight: cellBorder }}>£</span>
           {arr.map((d, idx) => (
-            <span key={idx} className="flex flex-1 items-center justify-center text-[11.5px] font-medium text-black" style={{ borderRight: idx < cells - 1 ? `1px solid ${CELL}` : 'none' }}>{d}</span>
+            <span key={idx} className="flex w-[15px] items-center justify-center text-[11.5px] font-medium text-black" style={{ borderRight: cellBorder }}>{d}</span>
           ))}
+          <span className="flex w-[9px] items-center justify-center text-[13px] font-bold text-black">·</span>
+          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-300" style={{ borderLeft: cellBorder, borderRight: cellBorder }}>0</span>
+          <span className="flex w-[13px] items-center justify-center text-[11px] text-slate-300">0</span>
         </div>
-        <span className="flex items-center px-0.5 text-[13px] font-bold text-black">·</span>
-        <div className="flex" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>
-          <span className="flex w-4 items-center justify-center text-[11px] text-slate-300" style={{ borderRight: `1px solid ${CELL}` }}>0</span>
-          <span className="flex w-4 items-center justify-center text-[11px] text-slate-300">0</span>
-        </div>
+      </div>
+    </div>
+  );
+}
+
+// Ruled multi-line write-in area (e.g. box 21 description) — N stacked lines.
+function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: React.ReactNode; lines?: number }) {
+  return (
+    <div className="mb-2.5">
+      {label != null && <Label n={n}>{label}</Label>}
+      <div>
+        {Array.from({ length: lines }).map((_, k) => (
+          <div key={k} style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }} />
+        ))}
       </div>
     </div>
   );
@@ -317,14 +334,14 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <Money n={1} label="Taxed UK interest — the net amount after tax has been taken off" value={taxedInterest} />
-              <Money n={2} label="Untaxed UK interest — amounts which have not had tax taken off" value={savingsInterestTotal(i)} />
-              <Money n={3} label="Untaxed foreign interest (up to £2,000)" value={i.untaxedForeignInterest} cells={6} />
-              <Money n={4} label="Dividends from UK companies — the amount received" value={dividendsTotal(i)} />
+              <Money n={1} label="Taxed UK interest — the net amount after tax has been taken off — read the notes" value={taxedInterest} />
+              <Money n={2} label="Untaxed UK interest — amounts which have not had tax taken off — read the notes" value={savingsInterestTotal(i)} />
+              <Money n={3} label="Untaxed foreign interest (up to £2,000) — amounts which have not had tax taken off — read the notes" value={i.untaxedForeignInterest} cells={6} />
+              <Money n={4} label="Dividends from UK companies — the amount received — read the notes" value={dividendsTotal(i)} />
             </div>
             <div>
-              <Money n={5} label="Other dividends — the amount received" value={i.otherDividends} />
-              <Money n={6} label="Foreign dividends (up to £500) — the amount in sterling after foreign tax was taken off" value={i.foreignDividendsMain} cells={6} />
+              <Money n={5} label="Other dividends — the amount received — read the notes" value={i.otherDividends} />
+              <Money n={6} label="Foreign dividends (up to £500) — the amount in sterling after foreign tax was taken off. Do not include this amount in the ‘Foreign’ pages" value={i.foreignDividendsMain} cells={6} />
               <Money n={7} label="Tax taken off foreign dividends — the sterling equivalent" value={i.foreignDividendsTax} cells={6} />
             </div>
           </div>
@@ -333,14 +350,14 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <Money n={8} label="State Pension — amount you were entitled to receive in the year" value={i.statePension} cells={6} />
-              <Money n={9} label="State Pension lump sum — the gross amount of any lump sum" value={undefined} cells={6} />
+              <Money n={8} label="State Pension — amount you were entitled to receive in the year, not the weekly or 4-weekly amount — read the notes" value={i.statePension} cells={6} />
+              <Money n={9} label="State Pension lump sum — the gross amount of any lump sum — read the notes" value={undefined} cells={6} />
               <Money n={10} label="Tax taken off box 9" value={undefined} cells={6} />
-              <Money n={11} label="Pensions (other than State Pension), retirement annuities and taxable lump sums — the gross amount" value={i.pensionsIncome} />
+              <Money n={11} label="Pensions (other than State Pension), retirement annuities and taxable lump sums treated as pensions — the gross amount. Tax taken off goes in box 12" value={i.pensionsIncome} />
             </div>
             <div>
-              <Money n={12} label="Tax taken off box 11" value={undefined} />
-              <Money n={13} label="Taxable Incapacity Benefit and contribution-based ESA" value={i.incapacityBenefit} cells={6} />
+              <Money n={12} label="Tax taken off box 11" value={undefined} minus />
+              <Money n={13} label="Taxable Incapacity Benefit and contribution-based Employment and Support Allowance — read the notes" value={i.incapacityBenefit} cells={6} />
               <Money n={14} label="Tax taken off Incapacity Benefit in box 13" value={undefined} cells={6} />
               <Money n={15} label="Jobseeker’s Allowance" value={i.jobseekersAllowance} cells={6} />
               <Money n={16} label="Total of any other taxable State Pensions and benefits" value={i.otherPensionsBenefits} cells={6} />
@@ -353,12 +370,12 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={17} label="Other taxable income — before expenses and tax taken off" value={i.otherIncome} />
-              <Money n={18} label="Total amount of allowable expenses" value={undefined} />
+              <Money n={18} label="Total amount of allowable expenses — read the notes" value={undefined} />
               <Money n={19} label="Any tax taken off box 17" value={undefined} />
             </div>
             <div>
-              <Money n={20} label="Benefit from pre-owned assets" value={undefined} />
-              <Line n={21} label="Description of income in boxes 17 and 20 — if there’s not enough space, give details in box 19 on page TR 7" value={i.otherIncomeDescription} lines={3} />
+              <Money n={20} label="Benefit from pre-owned assets — read the notes" value={undefined} />
+              <Ruled n={21} label="Description of income in boxes 17 and 20 — if there’s not enough space here please give details in the ‘Any other information’ box, box 19, on page TR 7" lines={3} />
             </div>
           </div>
         </Panel>
