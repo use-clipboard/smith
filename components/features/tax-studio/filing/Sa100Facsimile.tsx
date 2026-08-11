@@ -92,6 +92,38 @@ function Line({ n, label, value, lines = 1 }: { n?: React.ReactNode; label?: Rea
   );
 }
 
+// Individual character cells arranged in groups with gaps (dates, NINO, sort code,
+// phone) — matches the HMRC combs where cells sit apart in DD·MM·YYYY / NINO groups.
+function Cells({ n, label, groups, value = '' }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string }) {
+  const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
+  let idx = 0;
+  return (
+    <div className="mb-2.5">
+      {label != null && <Label n={n}>{label}</Label>}
+      <div className="flex items-center gap-2.5">
+        {groups.map((g, gi) => (
+          <div key={gi} className="flex gap-[3px]">
+            {Array.from({ length: g }).map((_, k) => {
+              const ch = chars[idx++] || '';
+              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{ch}</span>;
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Normalise a stored date (dd-mm-yyyy or yyyy-mm-dd) to DDMMYYYY for the cells.
+function toDDMMYYYY(d?: string): string {
+  if (!d) return '';
+  const p = d.split(/[-/.]/);
+  if (p.length !== 3) return d.replace(/\D/g, '');
+  return p[0].length === 4
+    ? p[2].padStart(2, '0') + p[1].padStart(2, '0') + p[0]   // yyyy-mm-dd
+    : p[0].padStart(2, '0') + p[1].padStart(2, '0') + (p[2].length === 2 ? '19' + p[2] : p[2]); // dd-mm-yyyy
+}
+
 function Tick({ on }: { on?: boolean }) {
   return <span className="inline-flex h-4 w-4 items-center justify-center text-[13px] font-bold leading-none text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{on ? 'X' : ''}</span>;
 }
@@ -107,17 +139,23 @@ function YesNo({ yes }: { yes?: boolean | null }) {
 // The official GOV.UK crown (Open Government Licence, from govuk-frontend) + the
 // HM Revenue & Customs wordmark, matching the form's masthead.
 function HmrcLogo() {
+  const crown = (
+    <svg width="26" height="23" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
+      <g>
+        <circle cx="20" cy="17.6" r="3.7" /><circle cx="10.2" cy="23.5" r="3.7" /><circle cx="3.7" cy="33.2" r="3.7" />
+        <circle cx="31.7" cy="30.6" r="3.7" /><circle cx="43.3" cy="17.6" r="3.7" /><circle cx="53.2" cy="23.5" r="3.7" />
+        <circle cx="59.7" cy="33.2" r="3.7" />
+        <path d="M33.1,9.8c.2-.1.3-.3.5-.5l4.6,2.4v-6.8l-4.6,1.5c-.1-.2-.3-.3-.5-.5l1.9-5.9h-6.7l1.9,5.9c-.2.1-.3.3-.5.5l-4.6-1.5v6.8l4.6-2.4c.1.2.3.3.5.5l-2.6,8c-.9,2.8,1.2,5.7,4.1,5.7h0c3,0,5.1-2.9,4.1-5.7l-2.6-8ZM37,37.9s-3.4,3.8-4.1,6.1c2.2,0,4.2-.5,6.4-2.8l-.7,8.5c-2-2.8-4.4-4.1-5.7-3.8.1,3.1.5,6.7,5.8,7.2,3.7.3,6.7-1.5,7-3.8.4-2.6-2-4.3-3.7-1.6-1.4-4.5,2.4-6.1,4.9-3.2-1.9-4.5-1.8-7.7,2.4-10.9,3,4,2.6,7.3-1.2,11.1,2.4-1.3,6.2,0,4,4.6-1.2-2.8-3.7-2.2-4.2.2-.3,1.7.7,3.7,3,4.2,1.9.3,4.7-.9,7-5.9-1.3,0-2.4.7-3.9,1.7l2.4-8c.6,2.3,1.4,3.7,2.2,4.5.6-1.6.5-2.8,0-5.3l5,1.8c-2.6,3.6-5.2,8.7-7.3,17.5-7.4-1.1-15.7-1.7-24.5-1.7h0c-8.8,0-17.1.6-24.5,1.7-2.1-8.9-4.7-13.9-7.3-17.5l5-1.8c-.5,2.5-.6,3.7,0,5.3.8-.8,1.6-2.3,2.2-4.5l2.4,8c-1.5-1-2.6-1.7-3.9-1.7,2.3,5,5.2,6.2,7,5.9,2.3-.4,3.3-2.4,3-4.2-.5-2.4-3-3.1-4.2-.2-2.2-4.6,1.6-6,4-4.6-3.7-3.7-4.2-7.1-1.2-11.1,4.2,3.2,4.3,6.4,2.4,10.9,2.5-2.8,6.3-1.3,4.9,3.2-1.8-2.7-4.1-1-3.7,1.6.3,2.3,3.3,4.1,7,3.8,5.4-.5,5.7-4.2,5.8-7.2-1.3-.2-3.7,1-5.7,3.8l-.7-8.5c2.2,2.3,4.2,2.7,6.4,2.8-.7-2.3-4.1-6.1-4.1-6.1h10.6,0Z" />
+      </g>
+    </svg>
+  );
   return (
-    <div className="flex flex-col items-start gap-1">
-      <svg width="42" height="37" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false" className="shrink-0">
-        <g>
-          <circle cx="20" cy="17.6" r="3.7" /><circle cx="10.2" cy="23.5" r="3.7" /><circle cx="3.7" cy="33.2" r="3.7" />
-          <circle cx="31.7" cy="30.6" r="3.7" /><circle cx="43.3" cy="17.6" r="3.7" /><circle cx="53.2" cy="23.5" r="3.7" />
-          <circle cx="59.7" cy="33.2" r="3.7" />
-          <path d="M33.1,9.8c.2-.1.3-.3.5-.5l4.6,2.4v-6.8l-4.6,1.5c-.1-.2-.3-.3-.5-.5l1.9-5.9h-6.7l1.9,5.9c-.2.1-.3.3-.5.5l-4.6-1.5v6.8l4.6-2.4c.1.2.3.3.5.5l-2.6,8c-.9,2.8,1.2,5.7,4.1,5.7h0c3,0,5.1-2.9,4.1-5.7l-2.6-8ZM37,37.9s-3.4,3.8-4.1,6.1c2.2,0,4.2-.5,6.4-2.8l-.7,8.5c-2-2.8-4.4-4.1-5.7-3.8.1,3.1.5,6.7,5.8,7.2,3.7.3,6.7-1.5,7-3.8.4-2.6-2-4.3-3.7-1.6-1.4-4.5,2.4-6.1,4.9-3.2-1.9-4.5-1.8-7.7,2.4-10.9,3,4,2.6,7.3-1.2,11.1,2.4-1.3,6.2,0,4,4.6-1.2-2.8-3.7-2.2-4.2.2-.3,1.7.7,3.7,3,4.2,1.9.3,4.7-.9,7-5.9-1.3,0-2.4.7-3.9,1.7l2.4-8c.6,2.3,1.4,3.7,2.2,4.5.6-1.6.5-2.8,0-5.3l5,1.8c-2.6,3.6-5.2,8.7-7.3,17.5-7.4-1.1-15.7-1.7-24.5-1.7h0c-8.8,0-17.1.6-24.5,1.7-2.1-8.9-4.7-13.9-7.3-17.5l5-1.8c-.5,2.5-.6,3.7,0,5.3.8-.8,1.6-2.3,2.2-4.5l2.4,8c-1.5-1-2.6-1.7-3.9-1.7,2.3,5,5.2,6.2,7,5.9,2.3-.4,3.3-2.4,3-4.2-.5-2.4-3-3.1-4.2-.2-2.2-4.6,1.6-6,4-4.6-3.7-3.7-4.2-7.1-1.2-11.1,4.2,3.2,4.3,6.4,2.4,10.9,2.5-2.8,6.3-1.3,4.9,3.2-1.8-2.7-4.1-1-3.7,1.6.3,2.3,3.3,4.1,7,3.8,5.4-.5,5.7-4.2,5.8-7.2-1.3-.2-3.7,1-5.7,3.8l-.7-8.5c2.2,2.3,4.2,2.7,6.4,2.8-.7-2.3-4.1-6.1-4.1-6.1h10.6,0Z" />
-        </g>
-      </svg>
-      <span className="text-[17px] font-bold leading-[1.03] text-black">HM Revenue<br />&amp; Customs</span>
+    <div className="flex items-stretch gap-2.5">
+      <div className="w-[3px] shrink-0 self-stretch bg-black" />
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ border: '1.5px solid #000' }}>{crown}</span>
+        <span className="text-[19px] font-bold leading-[1.02] text-black">HM Revenue<br />&amp; Customs</span>
+      </div>
     </div>
   );
 }
@@ -164,8 +202,6 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
   const i = ret.income;
   const has = filingChecklist(ret);
   const taxedInterest = (i.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0), 0);
-  const dob = ret.taxpayer?.dateOfBirth;
-  const dobCells = dob ? dob.split('-').reverse().join('') : ''; // yyyy-mm-dd → ddmmyyyy
 
   return (
     <>
@@ -224,12 +260,15 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel>
           <div className="grid grid-cols-2 gap-x-8">
             <div>
-              <Comb n={1} label="Your date of birth — it helps get your tax right — DD MM YYYY" value={dobCells} cells={8} />
-              <Line n={2} label="Your name and address — if it is different from what is on the front of this form, write the correct details" value={ret.clientName} lines={2} />
+              <Cells n={1} label="Your date of birth — it helps get your tax right — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(ret.taxpayer?.dateOfBirth)} />
+              <div className="mb-2.5">
+                <Label n={2}>Your name and address — if it is different from what is on the front of this form, please write the correct details underneath the wrong ones and put the date you changed address below — DD MM YYYY</Label>
+                <Cells groups={[2, 2, 4]} value="" />
+              </div>
             </div>
             <div>
-              <Comb n={3} label="Your phone number" value="" cells={14} />
-              <Comb n={4} label="Your National Insurance number — leave blank if the correct number is shown above" value={ret.taxpayer?.nino} cells={9} />
+              <Cells n={3} label="Your phone number" groups={[15]} value="" />
+              <Cells n={4} label="Your National Insurance number — leave blank if the correct number is shown above" groups={[2, 2, 2, 2, 1]} value={ret.taxpayer?.nino} />
             </div>
           </div>
         </Panel>
