@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -789,6 +789,38 @@ export function sa101ExtraIncome(income: Sa100Income): { nonSavings: number; div
   return { nonSavings, dividends, taxDeducted };
 }
 
+// ── SA102M Ministry of religion ──────────────────────────────────────────────
+export interface MinisterComputed {
+  box12: number; box19: number; box20: number; box26: number; box27: number;
+  box31: number; box32: number; box34: number; box35: number; box38: number; box39: number;
+  taxable: number; taxDeducted: number;
+}
+/** The SA102M computed ("blue") boxes + the taxable income / tax credit it feeds
+ *  into the SA100. The service-benefit-cap boxes (34/35) are a best-effort
+ *  working figure — review before filing. */
+export function ministerComputed(m?: MinisterOfReligion): MinisterComputed {
+  const n = (v?: number) => v || 0;
+  const box12 = n(m?.salary) + n(m?.feesOfferings) + n(m?.vicarageExpensesPaid) + n(m?.personalExpenses) + n(m?.excessMileage) + n(m?.roundSumExpenses) + n(m?.otherIncome);
+  const box19 = n(m?.vicarageServicesBenefit) + n(m?.carBenefit) + n(m?.carFuelBenefit) + n(m?.loansBenefit) + n(m?.expensesReceived) + n(m?.otherBenefits);
+  const box20 = box12 + box19;
+  const box26 = n(m?.travellingExpenses) + n(m?.manseMaintenance) + n(m?.rent) + n(m?.secretarialAssistance) + n(m?.otherExpenses);
+  const box27 = box20;
+  const box31 = box27 + n(m?.backPayAfterApril) + n(m?.earlierYearBackPay) - box26 - n(m?.pensionPayments);
+  const box32 = Math.round(box31 * 0.10);
+  const box34 = n(m?.amountPaidTowardBenefit) + n(m?.vicarageServicesBenefit);
+  const box35 = Math.max(0, box34 - box32);
+  const box38 = Math.max(0, box31 + n(m?.chaplaincyIncome));
+  const box39 = m?.totalTaxTakenOff != null && m.totalTaxTakenOff > 0
+    ? m.totalTaxTakenOff
+    : n(m?.taxOffSalary) + n(m?.taxOffRoundSum) + n(m?.taxOffOtherIncome) + n(m?.taxOffChaplaincy);
+  return { box12, box19, box20, box26, box27, box31, box32, box34, box35, box38, box39, taxable: box38, taxDeducted: box39 };
+}
+/** True if any minister-of-religion box carries a value. */
+export function ministerHasData(m?: MinisterOfReligion): boolean {
+  if (!m) return false;
+  return Object.values(m).some(v => (typeof v === 'number' ? v !== 0 : !!(v && String(v).trim())));
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -966,6 +998,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const otherIncome = otherIncomeNet(income);  // box 17 − 18 + 20
   const chargeableEventGains = income.additional?.chargeableEventGains || 0; // SA101 life-insurance gains (box 4, with credit)
   const sa101 = sa101ExtraIncome(income);   // other SA101 income + credits
+  const minister = ministerComputed(income.minister); // SA102M taxable income + tax
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
   const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend + sa101.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
@@ -974,7 +1007,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + tr.nonSavings;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -1218,7 +1251,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + minister.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   // Tax already refunded / set off in-year (TR6 box 1) is added back to what's due.
   const taxRefundedOrSetOff = income.taxRefundedOrSetOff || 0;
   if (taxRefundedOrSetOff > 0) notes.push('Tax refunded or set off in-year (box 1) added back to the balancing payment.');
@@ -1236,7 +1269,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + tr.nonSavings),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + tr.nonSavings),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered, charityAssetGiftsDeduction: r0(assetGifts),
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),

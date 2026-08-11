@@ -7,6 +7,7 @@ import {
   ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
+  Church, MoreHorizontal, ChevronDown,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
@@ -19,14 +20,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -141,7 +142,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -155,6 +156,12 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'residence',   label: 'Residence',        code: 'SA109', icon: MapPin },
   { id: 'additional',  label: 'Additional info',  code: 'SA101', icon: FileText },
 ];
+// Rarely-used supplementary pages, tucked behind a "More ▾" overflow so they
+// don't crowd the everyday page tabs.
+const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
+  { id: 'minister',    label: 'Ministry of religion', code: 'SA102M', icon: Church },
+];
+const ALL_PAGES = [...PAGES, ...MORE_PAGES];
 
 /** The headline figure a page contributes to income — shown in the page header. */
 function pageValue(id: PageId, income: Sa100Income): { value: number; label: string } | null {
@@ -173,6 +180,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
       return { value: Math.max(0, (cg.residentialGains || 0) + (cg.otherGains || 0)), label: 'Gains before AEA' };
     }
     case 'trusts': { const t = trustTotals(income); return { value: t.nonSavings + t.savings + t.dividend, label: 'Trust / estate income' }; }
+    case 'minister': { const t = ministerComputed(income.minister).taxable; return t ? { value: t, label: 'Minister income' } : null; }
     default: return null; // core / residence / additional — no single headline
   }
 }
@@ -208,6 +216,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     })(),
     residence: income.residence ? sa109Count(income.residence) : 0,
     additional: income.additional ? sa101Count(income.additional) : 0,
+    minister: income.minister ? (minSectionCount(income.minister, 'Income as a minister of religion') + minSectionCount(income.minister, 'Business expenses')) : 0,
   };
 }
 
@@ -346,9 +355,11 @@ function ProvenanceBadge({ id, label, via }: { id?: string; label?: string; via?
 function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, reveal }: {
   ret: TaxReturn; patch: Patch; page: PageId; setPage: (id: PageId) => void; counts: Record<PageId, number>; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null;
 }) {
-  const active = PAGES.find(p => p.id === page)!;
+  const active = ALL_PAGES.find(p => p.id === page)!;
   const pv = pageValue(page, income);
   const [scanOpen, setScanOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreCount = MORE_PAGES.filter(p => counts[p.id] > 0).length;
   return (
     <StudioCard className="overflow-hidden">
       {/* Section tabs */}
@@ -368,6 +379,29 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
             </button>
           );
         })}
+        {/* More — rarely-used supplementary pages */}
+        <div className="relative">
+          <button onClick={() => setMoreOpen(o => !o)}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition-colors ${MORE_PAGES.some(p => p.id === page) ? 'border-[var(--accent)]/50 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--accent)]/30 hover:text-[var(--text-secondary)]'}`}>
+            <MoreHorizontal size={13} className="shrink-0" /> More{moreCount > 0 && <span className="font-bold"> ({moreCount})</span>}
+            <ChevronDown size={12} className={`transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {moreOpen && <div className="fixed inset-0 z-10" onClick={() => setMoreOpen(false)} />}
+          {moreOpen && (
+            <div className="absolute left-0 top-full z-20 mt-1 min-w-[230px] rounded-xl border border-[var(--border)] bg-white p-1 shadow-lg">
+              {MORE_PAGES.map(p => {
+                const Icon = p.icon; const n = counts[p.id];
+                return (
+                  <button key={p.id} onClick={() => { setPage(p.id); setMoreOpen(false); }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] font-semibold transition-colors ${p.id === page ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:bg-black/[0.03]'}`}>
+                    <Icon size={13} className="shrink-0" /><span className="flex-1">{p.label}{n > 0 && <span className="font-bold"> ({n})</span>}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{p.code}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="p-5">
@@ -395,6 +429,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'trusts' && <Sa107Page income={income} setIncome={setIncome} />}
       {page === 'residence' && <Sa109Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
+      {page === 'minister' && <MinisterPage income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -3204,6 +3239,123 @@ function SubTabs({ tabs, active, onSelect }: { tabs: { label: string; count?: nu
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// ── SA102M Ministry of religion — box-for-box page (a "More" page) ───────────
+const MINISTER_TABS = ['Income as a minister of religion', 'Business expenses'] as const;
+const MINISTER_SUBTABS: Record<string, string[]> = {
+  'Income as a minister of religion': ['Income', 'Benefits and expenses'],
+  'Business expenses': ['Expenses paid', 'Service benefit', 'Other income'],
+};
+function minSubCount(m: MinisterOfReligion, sub: string): number {
+  switch (sub) {
+    case 'Income': return [m.natureOfPost, m.salary, m.payrolledBenefitsStudentLoan, m.taxOffSalary, m.feesOfferings, m.vicarageExpensesPaid, m.personalExpenses, m.excessMileage, m.roundSumExpenses, m.taxOffRoundSum, m.otherIncome, m.taxOffOtherIncome].filter(truthy).length;
+    case 'Benefits and expenses': return [m.vicarageServicesBenefit, m.carBenefit, m.carFuelBenefit, m.loansBenefit, m.expensesReceived, m.otherBenefits].filter(truthy).length;
+    case 'Expenses paid': return [m.travellingExpenses, m.manseMaintenance, m.rent, m.secretarialAssistance, m.otherExpenses, m.backPayAfterApril, m.earlierYearBackPay, m.pensionPayments].filter(truthy).length;
+    case 'Service benefit': return [m.amountPaidTowardBenefit].filter(truthy).length;
+    case 'Other income': return [m.chaplaincyIncome, m.taxOffChaplaincy, m.totalTaxTakenOff].filter(truthy).length;
+  }
+  return 0;
+}
+function minSectionCount(m: MinisterOfReligion, tab: string): number {
+  return (MINISTER_SUBTABS[tab] ?? []).reduce((a, s) => a + minSubCount(m, s), 0);
+}
+
+function MinisterPage({ income, setIncome }: { income: Sa100Income; setIncome: SetIncome }) {
+  const m: MinisterOfReligion = income.minister ?? {};
+  const set = (u: Partial<MinisterOfReligion>) => setIncome(i => ({ ...i, minister: { ...i.minister, ...u } }));
+  const cb = ministerComputed(m);
+  const [tab, setTab] = useState<string>(MINISTER_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (MINISTER_TABS as readonly string[]).includes(tab) ? tab : MINISTER_TABS[0];
+  const subList = MINISTER_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+  return (
+    <div className="space-y-3">
+      <SectionTabs tabs={MINISTER_TABS.map(tt => ({ label: tt, count: minSectionCount(m, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(s => ({ label: s, count: minSubCount(m, s) }))} active={sub} onSelect={setSub} />}
+
+      {activeTab === 'Income as a minister of religion' && subName === 'Income' && (
+        <div className="space-y-3">
+          <SectionTitle title="Income as a minister of religion" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxText box={1} label="Nature of post or appointment" value={m.natureOfPost ?? ''} onChange={v => set({ natureOfPost: v })} help={MIN.natureOfPost} />
+            <LabelledNum box={2} label="Salary or stipend" value={m.salary ?? 0} onChange={v => set({ salary: v })} help={MIN.salary} />
+            <LabelledNum box="2.1" label="Payrolled benefits in box 2 affecting student loan" value={m.payrolledBenefitsStudentLoan ?? 0} onChange={v => set({ payrolledBenefitsStudentLoan: v })} help={MIN.payrolledBenefitsStudentLoan} />
+            <LabelledNum box={3} label="Tax taken off salary" value={m.taxOffSalary ?? 0} onChange={v => set({ taxOffSalary: v })} help={MIN.taxOffSalary} />
+            <LabelledNum box={4} label="Fees and offerings" value={m.feesOfferings ?? 0} onChange={v => set({ feesOfferings: v })} help={MIN.feesOfferings} />
+            <LabelledNum box={5} label="Vicarage expenses paid for you" value={m.vicarageExpensesPaid ?? 0} onChange={v => set({ vicarageExpensesPaid: v })} help={MIN.vicarageExpensesPaid} />
+            <LabelledNum box={6} label="Personal expenses, living accommodation, vouchers etc" value={m.personalExpenses ?? 0} onChange={v => set({ personalExpenses: v })} help={MIN.personalExpenses} />
+            <LabelledNum box={7} label="Excess mileage allowance and passenger payments" value={m.excessMileage ?? 0} onChange={v => set({ excessMileage: v })} help={MIN.excessMileage} />
+            <LabelledNum box={8} label="Round-sum expenses and rent allowances" value={m.roundSumExpenses ?? 0} onChange={v => set({ roundSumExpenses: v })} help={MIN.roundSumExpenses} />
+            <LabelledNum box={9} label="Tax taken off round-sum expenses" value={m.taxOffRoundSum ?? 0} onChange={v => set({ taxOffRoundSum: v })} help={MIN.taxOffRoundSum} />
+            <LabelledNum box={10} label="Other income incl. gifts, grants and balancing charges" value={m.otherIncome ?? 0} onChange={v => set({ otherIncome: v })} help={MIN.otherIncome} />
+            <LabelledNum box={11} label="Tax taken off box 10" value={m.taxOffOtherIncome ?? 0} onChange={v => set({ taxOffOtherIncome: v })} help={MIN.taxOffOtherIncome} />
+            <BoxCalc box={12} label="Total income as a minister of religion" value={cb.box12} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Income as a minister of religion' && subName === 'Benefits and expenses' && (
+        <div className="space-y-3">
+          <SectionTitle title="Benefits and expenses payments you receive as a minister of religion" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={13} label="Vicarage or manse services benefits received" value={m.vicarageServicesBenefit ?? 0} onChange={v => set({ vicarageServicesBenefit: v })} help={MIN.vicarageServicesBenefit} />
+            <LabelledNum box={14} label="Car benefit" value={m.carBenefit ?? 0} onChange={v => set({ carBenefit: v })} help={MIN.carBenefit} />
+            <LabelledNum box={15} label="Car fuel benefit" value={m.carFuelBenefit ?? 0} onChange={v => set({ carFuelBenefit: v })} help={MIN.carFuelBenefit} />
+            <LabelledNum box={16} label="Interest-free and low interest loans" value={m.loansBenefit ?? 0} onChange={v => set({ loansBenefit: v })} help={MIN.loansBenefit} />
+            <LabelledNum box={17} label="Expenses payments received" value={m.expensesReceived ?? 0} onChange={v => set({ expensesReceived: v })} help={MIN.expensesReceived} />
+            <LabelledNum box={18} label="Other benefits" value={m.otherBenefits ?? 0} onChange={v => set({ otherBenefits: v })} help={MIN.otherBenefits} />
+            <BoxCalc box={19} label="Total benefits and expenses" value={cb.box19} />
+            <BoxCalc box={20} label="Taxable income, benefits and expenses received" value={cb.box20} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Business expenses' && subName === 'Expenses paid' && (
+        <div className="space-y-3">
+          <SectionTitle title="Expenses paid by you as a minister of religion" />
+          <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700"><Info size={13} className="mt-0.5 shrink-0" /> If your income, benefits and expenses received were more than £8,500 and you made an entry in box 5 or 13, complete boxes 27 to 35.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={21} label="Travelling expenses" value={m.travellingExpenses ?? 0} onChange={v => set({ travellingExpenses: v })} help={MIN.travellingExpenses} />
+            <LabelledNum box={22} label="Maintenance, repairs and insurance of manse etc" value={m.manseMaintenance ?? 0} onChange={v => set({ manseMaintenance: v })} help={MIN.manseMaintenance} />
+            <LabelledNum box={23} label="Rent" value={m.rent ?? 0} onChange={v => set({ rent: v })} help={MIN.rent} />
+            <LabelledNum box={24} label="Secretarial assistance" value={m.secretarialAssistance ?? 0} onChange={v => set({ secretarialAssistance: v })} help={MIN.secretarialAssistance} />
+            <LabelledNum box={25} label="Other expenses" value={m.otherExpenses ?? 0} onChange={v => set({ otherExpenses: v })} help={MIN.otherExpenses} />
+            <BoxCalc box={26} label="Total expenses paid" value={cb.box26} />
+            <BoxCalc box={27} label="Gross income" value={cb.box27} />
+            <LabelledNum box={28} label="Back pay received after 5 April" value={m.backPayAfterApril ?? 0} onChange={v => set({ backPayAfterApril: v })} help={MIN.backPayAfterApril} />
+            <LabelledNum box={29} label="Earlier year back pay received this year" value={m.earlierYearBackPay ?? 0} onChange={v => set({ earlierYearBackPay: v })} help={MIN.earlierYearBackPay} />
+            <LabelledNum box={30} label="Payments to registered pension schemes" value={m.pensionPayments ?? 0} onChange={v => set({ pensionPayments: v })} help={MIN.pensionPayments} />
+            <BoxCalc box={31} label="Net income" value={cb.box31} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Business expenses' && subName === 'Service benefit' && (
+        <div className="space-y-3">
+          <SectionTitle title="Service benefit cap calculation" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxCalc box={32} label="10% of net income" value={cb.box32} />
+            <LabelledNum box={33} label="Amount paid toward benefit received" value={m.amountPaidTowardBenefit ?? 0} onChange={v => set({ amountPaidTowardBenefit: v })} help={MIN.amountPaidTowardBenefit} />
+            <BoxCalc box={34} label="Payments and service benefits" value={cb.box34} />
+            <BoxCalc box={35} label="Service benefit cap" value={cb.box35} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">The service-benefit cap (boxes 34/35) is a working figure — review against the SA102M notes before filing.</p>
+        </div>
+      )}
+      {activeTab === 'Business expenses' && subName === 'Other income' && (
+        <div className="space-y-3">
+          <SectionTitle title="Other income as a minister of religion" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={36} label="Chaplaincy and other income as a minister" value={m.chaplaincyIncome ?? 0} onChange={v => set({ chaplaincyIncome: v })} help={MIN.chaplaincyIncome} />
+            <LabelledNum box={37} label="Tax taken off box 36" value={m.taxOffChaplaincy ?? 0} onChange={v => set({ taxOffChaplaincy: v })} help={MIN.taxOffChaplaincy} />
+            <BoxCalc box={38} label="Taxable income minus expenses" value={cb.box38} />
+            <LabelledNum box={39} label="Total tax taken off" value={m.totalTaxTakenOff ?? cb.box39} onChange={v => set({ totalTaxTakenOff: v })} help={MIN.totalTaxTakenOff} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">The taxable income (box 38) is added to your income and the total tax taken off (box 39) is credited against the bill.</p>
+        </div>
+      )}
     </div>
   );
 }

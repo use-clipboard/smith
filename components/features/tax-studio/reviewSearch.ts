@@ -38,6 +38,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Trusts', code: 'SA107', page: 'trusts', kw: 'trust estate settlement beneficiary' },
   { label: 'Residence', code: 'SA109', page: 'residence', kw: 'residence domicile remittance fig split year non-resident' },
   { label: 'Additional info', code: 'SA101', page: 'additional', kw: 'additional information eis seis vct life insurance gains' },
+  { label: 'Ministry of religion', code: 'SA102M', page: 'minister', kw: 'minister religion clergy vicar stipend manse vicarage chaplaincy more' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.

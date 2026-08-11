@@ -989,6 +989,8 @@ export interface Sa100Income {
   /** SA101 Additional information — full box-for-box page. See the Sa101 interface
    *  below. The venture-capital reliefs + life-insurance gains drive the calc. */
   additional?: Sa101;
+  /** SA102M Ministry of religion (a rarely-used "More" page). */
+  minister?: MinisterOfReligion;
 }
 
 // ── SA109 Residence, FIG regime & remittance basis ───────────────────────────
@@ -1063,6 +1065,47 @@ export interface Sa109 {
 
   // ── Any other information ──
   otherInformation?: string;      // box 54 — free-text notes
+}
+
+// ── SA102M Ministry of religion ──────────────────────────────────────────────
+// Income + benefits + expenses of a minister of religion. Blue "total" boxes
+// (12, 19, 20, 26, 27, 31, 32, 34, 35, 38) are computed in the UI/calc.
+export interface MinisterOfReligion {
+  // Income as a minister of religion (boxes 1–11)
+  natureOfPost?: string;          // box 1 — nature of post or appointment
+  salary?: number;                // box 2 — salary or stipend
+  payrolledBenefitsStudentLoan?: number; // box 2.1 — payrolled benefits in box 2 affecting student loan
+  taxOffSalary?: number;          // box 3 — tax taken off salary
+  feesOfferings?: number;         // box 4 — fees and offerings
+  vicarageExpensesPaid?: number;  // box 5 — vicarage expenses paid for you
+  personalExpenses?: number;      // box 6 — personal expenses, living accommodation, vouchers etc
+  excessMileage?: number;         // box 7 — excess mileage allowance and passenger payments
+  roundSumExpenses?: number;      // box 8 — round-sum expenses and rent allowances
+  taxOffRoundSum?: number;        // box 9 — tax taken off round-sum expenses
+  otherIncome?: number;           // box 10 — other income incl. gifts, grants and balancing charges
+  taxOffOtherIncome?: number;     // box 11 — tax taken off box 10
+  // Benefits and expenses received (boxes 13–18)
+  vicarageServicesBenefit?: number; // box 13 — vicarage/manse services benefits received
+  carBenefit?: number;            // box 14 — car benefit
+  carFuelBenefit?: number;        // box 15 — car fuel benefit
+  loansBenefit?: number;          // box 16 — interest-free and low interest loans
+  expensesReceived?: number;      // box 17 — expenses payments received
+  otherBenefits?: number;         // box 18 — other benefits
+  // Business expenses — expenses paid (boxes 21–30)
+  travellingExpenses?: number;    // box 21
+  manseMaintenance?: number;      // box 22 — maintenance, repairs and insurance of manse etc
+  rent?: number;                  // box 23
+  secretarialAssistance?: number; // box 24
+  otherExpenses?: number;         // box 25
+  backPayAfterApril?: number;     // box 28 — back pay received after 5 April
+  earlierYearBackPay?: number;    // box 29 — earlier year back pay received this year
+  pensionPayments?: number;       // box 30 — payments to registered pension schemes
+  // Service benefit (box 33)
+  amountPaidTowardBenefit?: number; // box 33 — amount paid toward benefit received
+  // Other income (boxes 36, 37, 39)
+  chaplaincyIncome?: number;      // box 36 — chaplaincy and other income as a minister
+  taxOffChaplaincy?: number;      // box 37 — tax taken off box 36
+  totalTaxTakenOff?: number;      // box 39 — total tax taken off (override; else computed)
 }
 
 // ── SA101 Additional information ─────────────────────────────────────────────
