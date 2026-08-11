@@ -27,6 +27,16 @@ function SubHead({ children }: { children: React.ReactNode }) {
 function Note({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;
 }
+// An intro line followed by a bulleted list (the HMRC 'only fill in if…' notes).
+function Bullets({ intro, items, after }: { intro: string; items: string[]; after?: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[9.5px] leading-snug text-black">
+      <p>{intro}</p>
+      {items.map((it, k) => <p key={k} className="pl-3 -indent-2">• {it}</p>)}
+      {after}
+    </div>
+  );
+}
 // Teal information dot (white 'i'), like the form's guidance markers.
 function InfoDot() {
   return <span className="mr-1 inline-flex h-[15px] w-[15px] shrink-0 translate-y-[2px] items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: TEAL, fontFamily: 'Georgia, "Times New Roman", serif' }}>i</span>;
@@ -454,7 +464,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Note>Please read the notes before filling in boxes 1 to 3.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box</Label><Tick on={!!i.studentLoanPlan} /></div>
+            <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box. We’ll use your plan and or loan type to calculate amounts due</Label><Tick on={!!i.studentLoanPlan} /></div>
             <div>
               <Money n={2} label="If your employer has deducted Student Loan repayments enter the amount deducted" value={undefined} />
               <Money n={3} label="If your employer has deducted Postgraduate Loan repayments enter the amount deducted" value={undefined} />
@@ -462,28 +472,45 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <Teal>High Income Child Benefit Charge</Teal>
-        <Note>Only fill in this section if: your income was over £60,000; you or your partner got Child Benefit; and (couples only) your income was higher than your partner’s.</Note>
+        <Bullets intro="Please read the notes before filling in this section. Only fill in this section if all of the following apply:" items={[
+          'your income was over £60,000',
+          'you or your partner (if you have one) got Child Benefit (this also applies if someone else claims Child Benefit for a child who lives with you and pays you or your partner for the child’s upkeep)',
+          'couples only – your income was higher than your partner’s',
+        ]} />
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Enter the total amount of Child Benefit you and your partner got for the year to 5 April 2026" value={i.childBenefit} cells={5} />
-              <Comb n={2} label="Enter the number of children you and your partner got Child Benefit for on 5 April 2026" value="" cells={2} />
+              <Cells n={2} label="Enter the number of children you and your partner got Child Benefit for on 5 April 2026" groups={[2]} value="" />
             </div>
-            <div><Comb n={3} label="Enter the date that you and your partner stopped getting all Child Benefit payments if this was before 6 April 2026 — DD MM YYYY" value="" cells={8} /></div>
+            <div><Cells n={3} label="Enter the date that you and your partner stopped getting all Child Benefit payments if this was before 6 April 2026 — DD MM YYYY" groups={[2, 2, 4]} value="" /></div>
           </div>
         </Panel>
+        <Teal>Winter Fuel Payment (WFP) and Pension Age Winter Heating Payment (PAWHP) charge</Teal>
+        <Bullets intro="Please read the notes before filling in this section. Only fill in this section if all of the following apply:" items={[
+          'you are over State Pension age',
+          'your total income for the year was over £35,000',
+          'you are not in receipt of a qualifying benefit – read the notes',
+        ]} />
+        <Panel>
+          <Money n={1} label="Enter the total amount of WFP or PAWHP you got for the tax year to 5 April 2026 – read the notes" value={undefined} cells={5} />
+        </Panel>
         <Teal>Marriage Allowance</Teal>
-        <Note>If your income was less than £12,570 you can transfer £1,260 of your Personal Allowance to your spouse or civil partner. Fill in this section if you want to make the transfer.</Note>
+        <Bullets intro="Please read the notes. If your income for the year ended 5 April 2026 was less than £12,570 you can transfer £1,260 of your Personal Allowance to your spouse or civil partner to reduce the amount of tax they pay if all of the following apply:" items={[
+          'you were married to, or in a civil partnership with, the same person for all or part of the tax year',
+          'you were both born on or after 6 April 1935',
+          'your spouse or civil partner’s income was not taxed at the higher rate',
+        ]} after={<p className="mb-2 text-[9.5px] font-bold text-black">Fill in this section if you want to make the transfer.</p>} />
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Line n={1} label="Your spouse or civil partner’s first name" value={i.spouseFirstName} />
               <Line n={2} label="Your spouse or civil partner’s last name" value={i.spouseLastName} />
-              <Comb n={3} label="Your spouse or civil partner’s National Insurance number" value={i.spouseNino} cells={9} />
+              <Cells n={3} label="Your spouse or civil partner’s National Insurance number" groups={[2, 2, 2, 2, 1]} value={i.spouseNino} />
             </div>
             <div>
-              <Comb n={4} label="Your spouse or civil partner’s date of birth — DD MM YYYY" value={i.spouseDob ? i.spouseDob.split('-').reverse().join('') : ''} cells={8} />
-              <Comb n={5} label="Date of marriage or civil partnership — DD MM YYYY" value={i.marriageDate ? i.marriageDate.split('-').reverse().join('') : ''} cells={8} />
+              <Cells n={4} label="Your spouse or civil partner’s date of birth — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(i.spouseDob)} />
+              <Cells n={5} label="Date of marriage or civil partnership — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(i.marriageDate)} />
             </div>
           </div>
         </Panel>
