@@ -997,6 +997,8 @@ export interface Sa100Income {
   niAssembly?: AssemblyOffice;
   /** SA102 Members of Parliament (MPs) office income (a rarely-used "More" page). */
   parliament?: ParliamentOffice;
+  /** SA102 Scottish Parliament (MSP) office income (a rarely-used "More" page). */
+  scottishParliament?: ScottishParliamentOffice;
 }
 
 // Income, benefits and expenses of a member of a devolved legislature office —
@@ -1044,6 +1046,27 @@ export interface ParliamentOffice {
   otherExpensesCapitalAllowances?: number; // box 13 — other expenses and capital allowances
   // Any other information (box 14)
   otherInformation?: string;             // box 14 — free text
+}
+
+// Income, benefits and expenses of a Member of the Scottish Parliament (MSP) —
+// the SA102 (Scottish Parliament) supplementary page. 10 boxes; taxable = pay +
+// benefits − expenses (see scottishParliamentComputed in calc.ts).
+export interface ScottishParliamentOffice {
+  // Income from office (boxes 1, 1.1, 2)
+  p60Pay?: number;                       // box 1 — payments from P60
+  payrolledBenefitsStudentLoan?: number; // box 1.1 — payrolled benefits in box 1 affecting student loan
+  taxTakenOff?: number;                  // box 2 — tax taken off box 1
+  // Benefit from your office (boxes 3–7)
+  accommodation?: number;                // box 3 — accommodation
+  officeCostProvision?: number;          // box 4 — Office Cost Provision — non-capital items
+  otherCashReimbursements?: number;      // box 5 — other cash reimbursements
+  allOtherBenefits?: number;             // box 6 — all other benefits
+  balancingCharges?: number;             // box 7 — balancing charges
+  // Office expenses paid out by you (boxes 8–9)
+  officeCosts?: number;                  // box 8 — office costs
+  otherExpensesCapitalAllowances?: number; // box 9 — other expenses and capital allowances
+  // Any other information (box 10)
+  otherInformation?: string;             // box 10 — free text
 }
 
 // ── SA109 Residence, FIG regime & remittance basis ───────────────────────────

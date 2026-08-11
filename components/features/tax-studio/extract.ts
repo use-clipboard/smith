@@ -99,6 +99,14 @@ export interface Sa100Extraction {
     travelVouchers: number; accommodation: number; officeCostsExpenditure: number; contingencyPayment: number; financialAssistanceFund: number; allOtherBenefits: number; balancingCharges: number;
     travelWarrants: number; secretarialAssistance: number; officeExpenses: number; otherExpensesCapitalAllowances: number;
   };
+  /** SA102 Scottish Parliament (MSP) office figures evidenced by a document (a
+   *  P60/P45 for the Holyrood office, an Office Cost Provision statement, etc.).
+   *  Empty/undefined when nothing relevant found. */
+  scottishParliament?: {
+    p60Pay: number; payrolledBenefitsStudentLoan: number; taxTakenOff: number;
+    accommodation: number; officeCostProvision: number; otherCashReimbursements: number; allOtherBenefits: number; balancingCharges: number;
+    officeCosts: number; otherExpensesCapitalAllowances: number;
+  };
   /** Documents/figures found but NOT used, each with a plain-English reason. */
   setAside: { label: string; reason: string }[];
   /** Missing documents or context SMITH would need to make entries accurate. */
@@ -146,6 +154,7 @@ function normalise(raw: unknown): Sa100Extraction {
     additional: normAdditional(e.additional),
     niAssembly: normNiAssembly(e.niAssembly),
     parliament: normParliament(e.parliament),
+    scottishParliament: normScotParliament(e.scottishParliament),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
     needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
@@ -191,6 +200,19 @@ function normParliament(raw: unknown): Sa100Extraction['parliament'] {
     p60Pay: n(r.p60Pay), payrolledBenefitsStudentLoan: n(r.payrolledBenefitsStudentLoan), taxTakenOff: n(r.taxTakenOff),
     travelVouchers: n(r.travelVouchers), accommodation: n(r.accommodation), officeCostsExpenditure: n(r.officeCostsExpenditure), contingencyPayment: n(r.contingencyPayment), financialAssistanceFund: n(r.financialAssistanceFund), allOtherBenefits: n(r.allOtherBenefits), balancingCharges: n(r.balancingCharges),
     travelWarrants: n(r.travelWarrants), secretarialAssistance: n(r.secretarialAssistance), officeExpenses: n(r.officeExpenses), otherExpensesCapitalAllowances: n(r.otherExpensesCapitalAllowances),
+  };
+  const any = Object.values(a).some(v => v !== 0);
+  return any ? a : undefined;
+}
+
+// Normalise scanned Scottish Parliament (MSP) office figures — undefined when none.
+function normScotParliament(raw: unknown): Sa100Extraction['scottishParliament'] {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const a = {
+    p60Pay: n(r.p60Pay), payrolledBenefitsStudentLoan: n(r.payrolledBenefitsStudentLoan), taxTakenOff: n(r.taxTakenOff),
+    accommodation: n(r.accommodation), officeCostProvision: n(r.officeCostProvision), otherCashReimbursements: n(r.otherCashReimbursements), allOtherBenefits: n(r.allOtherBenefits), balancingCharges: n(r.balancingCharges),
+    officeCosts: n(r.officeCosts), otherExpensesCapitalAllowances: n(r.otherExpensesCapitalAllowances),
   };
   const any = Object.values(a).some(v => v !== 0);
   return any ? a : undefined;
@@ -768,9 +790,30 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     };
   }
 
+  // SA102 Scottish Parliament (MSP) office figures — fill only unset boxes.
+  let scottishParliament = income.scottishParliament;
+  if (e.scottishParliament) {
+    const cur = income.scottishParliament ?? {};
+    const sp = e.scottishParliament;
+    const setNum = (c: number | undefined, v: number) => ((c == null || c === 0) && v > 0 ? r(v) : c);
+    scottishParliament = {
+      ...cur,
+      p60Pay: setNum(cur.p60Pay, sp.p60Pay),
+      payrolledBenefitsStudentLoan: setNum(cur.payrolledBenefitsStudentLoan, sp.payrolledBenefitsStudentLoan),
+      taxTakenOff: setNum(cur.taxTakenOff, sp.taxTakenOff),
+      accommodation: setNum(cur.accommodation, sp.accommodation),
+      officeCostProvision: setNum(cur.officeCostProvision, sp.officeCostProvision),
+      otherCashReimbursements: setNum(cur.otherCashReimbursements, sp.otherCashReimbursements),
+      allOtherBenefits: setNum(cur.allOtherBenefits, sp.allOtherBenefits),
+      balancingCharges: setNum(cur.balancingCharges, sp.balancingCharges),
+      officeCosts: setNum(cur.officeCosts, sp.officeCosts),
+      otherExpensesCapitalAllowances: setNum(cur.otherExpensesCapitalAllowances, sp.otherExpensesCapitalAllowances),
+    };
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional, niAssembly, parliament,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional, niAssembly, parliament, scottishParliament,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),

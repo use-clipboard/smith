@@ -480,3 +480,18 @@ export const PAR = {
   otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
   otherInformation: 'Any other information relevant to your Parliamentary office income, benefits or expenses.',
 } as const;
+
+// SA102 Scottish Parliament (MSP) — one hint per box.
+export const SCP = {
+  p60Pay: 'Total payments from your P60 (or P45) as a Member of the Scottish Parliament.',
+  payrolledBenefitsStudentLoan: 'The part of box 1 that is payrolled benefits which count towards your student loan repayments — read the notes.',
+  taxTakenOff: 'Tax taken off the pay in box 1 (from your P60 / P45).',
+  accommodation: 'Accommodation provided to you.',
+  officeCostProvision: 'Office Cost Provision — non-capital items.',
+  otherCashReimbursements: 'Other cash reimbursements you received in connection with your office.',
+  allOtherBenefits: 'The cash-equivalent of all other benefits received (e.g. those on a P11D).',
+  balancingCharges: 'Balancing charges arising when you dispose of an asset on which capital allowances were claimed.',
+  officeCosts: 'Office running costs you paid personally.',
+  otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
+  otherInformation: 'Any other information relevant to your Scottish Parliament office income, benefits or expenses.',
+} as const;
