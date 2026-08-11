@@ -3880,7 +3880,8 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
           { label: 'Property', amount: c.propertyProfit },
           { label: 'Savings & interest', amount: c.savingsIncome },
           { label: 'Dividends', amount: c.dividendIncome },
-          { label: 'Other income', amount: c.otherIncome },
+          // 'Other income' is itemised into its own sub-components (pensions, minister, etc.)
+          ...(c.otherIncomeParts.length ? c.otherIncomeParts : (c.otherIncome > 0 ? [{ label: 'Other income', amount: c.otherIncome }] : [])),
         ].filter(p => p.amount > 0);
         return parts.length > 1 ? (
           <div className="mb-1 ml-2 space-y-0.5 border-l-2 border-black/5 pl-2.5">

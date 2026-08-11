@@ -922,6 +922,7 @@ export interface Sa100Computation {
   savingsIncome: number;
   dividendIncome: number;
   otherIncome: number;
+  otherIncomeParts: { label: string; amount: number }[]; // sub-components that make up otherIncome
   totalIncome: number;
 
   personalAllowance: number;
@@ -1280,6 +1281,15 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
     savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + tr.nonSavings),
+    otherIncomeParts: ([
+      { label: 'Pensions & state benefits', amount: r0(pensionsBenefits) },
+      { label: 'Minister of religion (SA102M)', amount: r0(minister.taxable) },
+      { label: 'Life insurance gains', amount: r0(chargeableEventGains) },
+      { label: 'Other UK income (SA101)', amount: r0(sa101.nonSavings) },
+      { label: 'Foreign income', amount: r0(foreignIncome) },
+      { label: 'Trusts & estates', amount: r0(tr.nonSavings) },
+      { label: 'Any other income', amount: r0(otherIncome) },
+    ] as { label: string; amount: number }[]).filter(p => p.amount > 0),
     totalIncome: r0(totalIncome),
     personalAllowance: r0(personalAllowance), paTapered, charityAssetGiftsDeduction: r0(assetGifts),
     taxableNonSavings: r0(taxableNonSavings), taxableSavings: r0(taxableSavings), taxableDividends: r0(taxableDividends),
