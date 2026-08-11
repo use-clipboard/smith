@@ -135,15 +135,16 @@ function Line({ n, label, value, lines = 1 }: { n?: React.ReactNode; label?: Rea
 
 // Individual character cells arranged in groups with gaps (dates, NINO, sort code,
 // phone) — matches the HMRC combs where cells sit apart in DD·MM·YYYY / NINO groups.
-function Cells({ n, label, groups, value = '' }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string }) {
+function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string; sep?: string }) {
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
   let idx = 0;
   return (
     <div className="mb-2.5">
       {label != null && <Label n={n}>{label}</Label>}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center" style={{ gap: sep ? 6 : 10 }}>
         {groups.map((g, gi) => (
-          <div key={gi} className="flex gap-[3px]">
+          <div key={gi} className="flex items-center gap-[3px]">
+            {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}
             {Array.from({ length: g }).map((_, k) => {
               const ch = chars[idx++] || '';
               return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}>{ch}</span>;
@@ -519,33 +520,37 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       {/* ── TR6 — finishing ── */}
       <Page tag="TR 6">
         <Teal>Finishing your tax return</Teal>
-        <Note><InfoDot /> Calculating your tax — if we receive this paper tax return by 31 October 2026 or if you file online, we’ll do the calculation for you and tell you how much you have to pay (or your repayment) before 31 January 2027.</Note>
+        <div className="mb-2 text-[10px] leading-snug text-black">
+          <p><InfoDot /> Calculating your tax — if we receive this paper tax return by 31 October 2026 or if you file online, we’ll do the calculation for you and tell you how much you have to pay (or what your repayment will be) before 31 January 2027. We’ll add the amount due to your Self Assessment Statement, together with any other amounts due.</p>
+          <p className="mt-1.5">Do not enter payments on account, or other payments you’ve made towards the amounts due, on your tax return. We’ll deduct these on your Self Assessment Statement. If you want to calculate your tax, ask us for the ‘Tax calculation summary’ pages and notes. The notes will help you work out any tax due, or repayable, and if payments on account are necessary.</p>
+        </div>
         <SubHead>Tax refunded or set off</SubHead>
-        <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount" value={undefined} /></Panel>
+        <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount - read the notes" value={undefined} /></Panel>
         <SubHead>If you have not paid enough tax</SubHead>
+        <Note>We recommend you pay any tax due electronically. Read the notes.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Label n={2}>If you owe less than £3,000 for 2025–26 (excluding Class 2 NICs) and you file by the deadline, we’ll try to collect the tax through your 2027–28 tax code. If you do not want us to do this, put ‘X’ in the box</Label><Tick /></div>
-            <div><Label n={3}>If you owe tax on savings, casual earnings and/or the High Income Child Benefit Charge for 2026–27, we’ll try to collect it via your 2026–27 tax code. If you do not want this, put ‘X’ in the box</Label><Tick /></div>
+            <div><Label n={2}>If you owe less than £3,000 for the 2025–26 tax year (excluding Class 2 NICs) and you send us your paper tax return by 31 October, or 30 December 2026 if you file online, we’ll try to collect the tax through your wages or pension by adjusting your 2027–28 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick /></div>
+            <div><Label n={3}>If you owe tax on savings, casual earnings and/or the High Income Child Benefit Charge for the 2026–27 tax year, we’ll try to collect it through your wages or pension by adjusting your 2026–27 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick /></div>
           </div>
         </Panel>
         <SubHead>If you have paid too much tax</SubHead>
-        <Note>To claim a repayment, fill in boxes 4 to 14 below.</Note>
+        <Note>To claim a repayment, fill in boxes 4 to 14 below. If you paid your tax by credit or debit card, we’ll always try to repay back to your card first before making any repayment as requested by you below. Please allow up to 4 weeks for any repayment to reach you before contacting us.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Line n={4} label="Name of bank or building society" value={i.repayBankName} />
               <Line n={5} label="Name of account holder (or nominee)" value={i.repayAccountHolder} />
-              <Comb n={6} label="Branch sort code" value={i.repaySortCode} cells={6} />
-              <Comb n={7} label="Account number" value={i.repayAccountNumber} cells={8} />
-              <Comb n={8} label="Building society reference number" value={i.repayBuildingSocRef} cells={12} />
+              <Cells n={6} label="Branch sort code" value={i.repaySortCode} groups={[2, 2, 2]} sep="–" />
+              <Cells n={7} label="Account number" value={i.repayAccountNumber} groups={[8]} />
+              <Cells n={8} label="Building society reference number" value={i.repayBuildingSocRef} groups={[15]} />
               <div className="mt-1"><Label n={9}>If you or your nominee do not have a UK bank or building society account, put ‘X’ in the box</Label><Tick on={!!i.repayNoUkAccount} /></div>
             </div>
             <div>
               <div className="mb-2"><Label n={10}>If you’ve entered a nominee’s name in box 5, put ‘X’ in the box</Label><Tick on={!!i.repayNomineeNameEntered} /></div>
               <div className="mb-2"><Label n={11}>If your nominee is your tax adviser, put ‘X’ in the box</Label><Tick on={!!i.repayNomineeIsAdviser} /></div>
               <Line n={12} label="Nominee’s address" value={i.repayNomineeAddress} lines={2} />
-              <Comb n={13} label="and postcode" value={i.repayNomineePostcode} cells={8} />
+              <Cells n={13} label="and postcode" value={i.repayNomineePostcode} groups={[8]} />
               <Line n={14} label="To authorise your nominee to receive any repayment, you must sign in the box. A photocopy of your signature will not do" value="" lines={2} />
             </div>
           </div>
