@@ -43,6 +43,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Parliament (MPs)', code: 'SA102', page: 'parliament', kw: 'parliament member mp mps house of commons westminster office more' },
   { label: 'Scottish Parliament', code: 'SA102', page: 'scottishparliament', kw: 'scottish parliament msp holyrood member office devolved more' },
   { label: 'National Assembly for Wales', code: 'SA102', page: 'welshassembly', kw: 'senedd national assembly wales welsh ms member office cardiff devolved more' },
+  { label: "Lloyd's Underwriters", code: 'SA103L', page: 'lloyds', kw: 'lloyds underwriter underwriting syndicate personal funds insurance name member more' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.
@@ -145,6 +146,13 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Senedd benefit from your office', context: 'National Assembly for Wales · Benefit from your office · boxes 3–9', page: 'welshassembly', keywords: 'family travel costs accommodation office cost allowance group support allowance other cash reimbursements all other benefits balancing charges box 3 4 5 6 7 8 9' },
   { label: 'Senedd office expenses paid by you', context: 'National Assembly for Wales · Office expenses paid out by you · boxes 10–13', page: 'welshassembly', keywords: 'family travel costs secretarial clerical office expenses other expenses box 10 11 12 13' },
   { label: 'Senedd — any other information', context: 'National Assembly for Wales · Any other information · box 14', page: 'welshassembly', keywords: 'senedd wales any other information note box 14' },
+  // Lloyd's Underwriters (SA103L)
+  { label: "Lloyd's — UK interest & dividends", context: "Lloyd's · Income from personal funds · boxes 1–11", page: 'lloyds', keywords: 'lloyds personal funds uk interest untaxed taxed accrued income scheme deeply discounted stock dividends non-qualifying distributions box 1 2 3 4 5 6 8 9 11' },
+  { label: "Lloyd's — foreign sources income", context: "Lloyd's · Foreign sources income · boxes 12–28", page: 'lloyds', keywords: 'lloyds foreign non-uk interest dividends other receipts aggregate syndicate profits special reserve stop loss compensation ftcr box 12 15 18 20 26 27 28' },
+  { label: "Lloyd's — losses and expenses", context: "Lloyd's · Losses and expenses · boxes 29–48", page: 'lloyds', keywords: 'lloyds losses expenses syndicate special reserve stop loss premiums quota share estate protection underwriting interest members agent accountancy foreign tax us canadian box 29 40 41 42 43 48' },
+  { label: "Lloyd's — taxable profits or losses", context: "Lloyd's · Taxable profits or losses · boxes 49–62", page: 'lloyds', keywords: 'lloyds taxable profits losses foreign tax deduction brought forward reconciliation carried back unused loss box 49 50 51 52 53 55 58 59 62' },
+  { label: "Lloyd's — Class 2 / Class 4 NIC", context: "Lloyd's · NICs & other info · boxes 63–65", page: 'lloyds', keywords: 'lloyds class 2 class 4 nic national insurance voluntary exempt adjustment box 63 64 65' },
+  { label: "Lloyd's — any other information", context: "Lloyd's · NICs & other info · box 66", page: 'lloyds', keywords: 'lloyds any other information note box 66' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Main Form · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Main Form · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

@@ -12,7 +12,7 @@
 // top-slicing relief, trade-loss relief, Class 2 nuances, and Scottish/Welsh
 // rates. Those still require professional review before filing.
 
-import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
+import type { Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, CgtDisposal, CapitalAllowancesState, PartnershipStatement, ForeignRow, ForeignProperty, Sa106, Sa107, EstateForeignItem, Sa108, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, CgtCalcDisposal, CgtCalcState, CgtRelief, CgtOwner } from './types';
 
 /** The taxpayer's ownership share (0–1) of a jointly-owned item. No owners ⇒ 1.
  *  Shared by CGT disposals and joint interest. */
@@ -927,6 +927,55 @@ export function welshAssemblyHasData(m?: WelshAssemblyOffice): boolean {
   return Object.values(m).some(v => (typeof v === 'number' ? v !== 0 : !!(v && String(v).trim())));
 }
 
+export interface LloydsComputed {
+  box5: number; box11: number; box18: number; box26: number; box27: number;   // income totals
+  box40: number;                                                              // total losses & expenses
+  box41: number; box42: number;                                               // profit / loss
+  box43: number; box48: number;                                               // foreign tax totals
+  box49: number; box52: number; box53: number; box54: number;                 // taxable profit / loss calc
+  box58: number; box60: number; box61: number; box62: number;                 // loss reconciliation
+  taxable: number; allowableLoss: number; taxDeducted: number; foreignTax: number;
+}
+/** SA103L Lloyd's Underwriters computed ("blue") boxes + the taxable profit /
+ *  allowable loss and tax credits it feeds into the SA100. Lloyd's result is
+ *  taxed as trading income; the personal-fund interest/dividends are part of the
+ *  aggregate result, not taxed separately. These are best-effort working figures
+ *  — review against the SA103L notes before filing. */
+export function lloydsComputed(l?: LloydsUnderwriter): LloydsComputed {
+  const n = (v?: number) => v || 0;
+  const box5 = n(l?.ukUntaxedInterest) + n(l?.accruedIncomeProfits) + n(l?.ukTaxedInterest);
+  const box11 = n(l?.stockDividends) + n(l?.nonQualifyingDistributions) + n(l?.otherUkDividends);
+  const box18 = n(l?.nonUkInterestNet) + n(l?.nonUkDividendsGross);
+  const box26 = n(l?.aggregateSyndicateProfits) + n(l?.specialReserveWithdrawal) + n(l?.stopLossRecoveries) + n(l?.compensationReceipts) + n(l?.foreignTaxRepayments) + n(l?.otherNonSyndicateIncome);
+  const box27 = box5 + box11 + box18 + box26;
+  const box40 = n(l?.aggregateSyndicateLosses) + n(l?.specialReserveTransfer) + n(l?.stopLossPremiums) + n(l?.quotaSharePremiums) + n(l?.estateProtectionPremiums) + n(l?.underwritingLoanInterest) + n(l?.membersAssocExpenses) + n(l?.agentCommissionSalaries) + n(l?.bankGuaranteeFees) + n(l?.accountancyFees) + n(l?.otherExpenses);
+  const box41 = Math.max(0, box27 - box40);
+  const box42 = Math.max(0, box40 - box27);
+  const box43 = n(l?.nonUkInterestForeignTax) + n(l?.nonUkDividendsForeignTax);
+  const box48 = box43 + n(l?.usIncomeTax) + n(l?.canadianTax) + n(l?.syndicateForeignTax) + n(l?.additionalForeignTax);
+  const box49 = box41;
+  const box52 = Math.max(0, box49 - n(l?.foreignTaxDeductionProfit) - n(l?.lossesBroughtForwardProfit));
+  const box53 = box42;
+  const box54 = n(l?.foreignTaxDeductionProfit);
+  const box58 = Math.max(0, n(l?.lossForYear) - n(l?.lossSetOffOtherIncome) - n(l?.lossCarriedBack));
+  const box60 = Math.min(n(l?.lossesBroughtForward), box52);
+  const box61 = Math.max(0, n(l?.lossesBroughtForward) - box60);
+  const box62 = box58 + box61;
+  return {
+    box5, box11, box18, box26, box27, box40, box41, box42, box43, box48,
+    box49, box52, box53, box54, box58, box60, box61, box62,
+    taxable: Math.max(0, box52 - box60),
+    allowableLoss: box53,
+    taxDeducted: n(l?.ukInterestTaxTakenOff) + n(l?.nonUkInterestUkTax) + n(l?.nonUkDividendsUkTax),
+    foreignTax: box48,
+  };
+}
+/** True if any Lloyd's box carries a value (incl. the free-text note / flags). */
+export function lloydsHasData(l?: LloydsUnderwriter): boolean {
+  if (!l) return false;
+  return Object.values(l).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim())));
+}
+
 // ── 2025/26 parameters ───────────────────────────────────────────────────────
 const PA = 12570;
 const PA_TAPER_THRESHOLD = 100000;
@@ -1110,6 +1159,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const parliament = parliamentComputed(income.parliament); // SA102 MPs office income + tax
   const scottishParliament = scottishParliamentComputed(income.scottishParliament); // SA102 MSP office income + tax
   const welshAssembly = welshAssemblyComputed(income.welshAssembly); // SA102 Senedd office income + tax
+  const lloyds = lloydsComputed(income.lloyds); // SA103L Lloyd's taxable profit + tax
   const savingsIncome = savingsInterestTotal(income) + taxedInterestGross(income) + (income.untaxedForeignInterest || 0) + ft.interest + partnershipSavings + tr.savings;
   const dividendIncome = dividendsTotal(income) + lineTotal(income.otherDividendsItems, income.otherDividends || 0) + lineTotal(income.foreignDividendsItems, income.foreignDividendsMain || 0) + ft.dividends + partnershipDividends + tr.dividend + sa101.dividends;
   // Residential finance costs: per-property (SA105 box 44) when itemised, else
@@ -1118,7 +1168,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   const financeCosts = perPropertyFinance > 0 ? perPropertyFinance : (income.financeCosts || 0);
   const region = income.region ?? 'uk';
 
-  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + tr.nonSavings;
+  let nsnd = employmentIncome + tradeProfit + partnershipProfit + propertyProfit + pensionsBenefits + otherIncome + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + lloyds.taxable + tr.nonSavings;
   if (tradeLossSideways > 0) {
     const relief = Math.min(tradeLossSideways, nsnd);
     nsnd -= relief;
@@ -1362,7 +1412,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   if (chargeableEventCredit > 0) notes.push('Basic-rate tax treated as paid on the UK life-insurance gain; top-slicing relief not modelled.');
   const trustCredit = r0(tr.taxCredit);
   if (trustCredit > 0) notes.push('Tax credit on trust / estate income set against the liability.');
-  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + minister.taxDeducted + niAssembly.taxDeducted + parliament.taxDeducted + scottishParliament.taxDeducted + welshAssembly.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
+  const taxDeductedAtSource = r0(taxDeducted + cisDeducted + propertyTaxTaken + partnershipTaxTaken + chargeableEventCredit + sa101.taxDeducted + minister.taxDeducted + niAssembly.taxDeducted + parliament.taxDeducted + scottishParliament.taxDeducted + welshAssembly.taxDeducted + lloyds.taxDeducted + trustCredit + taxedInterestTaxCredit(income) + lineTotal(income.foreignDividendsTaxItems, income.foreignDividendsTax || 0) + pensionsBenefitsTaxCredit(income) + otherIncomeTaxCredit(income));
   // Tax already refunded / set off in-year (TR6 box 1) is added back to what's due.
   const taxRefundedOrSetOff = income.taxRefundedOrSetOff || 0;
   if (taxRefundedOrSetOff > 0) notes.push('Tax refunded or set off in-year (box 1) added back to the balancing payment.');
@@ -1380,7 +1430,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
   return {
     taxYear,
     employmentIncome: r0(employmentIncome), tradeProfit: r0(tradeProfit), partnershipProfit: r0(partnershipProfit), propertyProfit: r0(propertyProfit),
-    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + tr.nonSavings),
+    savingsIncome: r0(savingsIncome), dividendIncome: r0(dividendIncome), otherIncome: r0(otherIncome + pensionsBenefits + foreignIncome + chargeableEventGains + sa101.nonSavings + minister.taxable + niAssembly.taxable + parliament.taxable + scottishParliament.taxable + welshAssembly.taxable + lloyds.taxable + tr.nonSavings),
     otherIncomeParts: ([
       { label: 'Pensions & state benefits', amount: r0(pensionsBenefits) },
       { label: 'Minister of religion (SA102M)', amount: r0(minister.taxable) },
@@ -1388,6 +1438,7 @@ export function computeSa100Full(income: Sa100Income, taxYear = '2025/26'): Sa10
       { label: 'Parliament — MPs (SA102)', amount: r0(parliament.taxable) },
       { label: 'Scottish Parliament (SA102)', amount: r0(scottishParliament.taxable) },
       { label: 'Senedd — Wales (SA102)', amount: r0(welshAssembly.taxable) },
+      { label: "Lloyd's underwriting (SA103L)", amount: r0(lloyds.taxable) },
       { label: 'Life insurance gains', amount: r0(chargeableEventGains) },
       { label: 'Other UK income (SA101)', amount: r0(sa101.nonSavings) },
       { label: 'Foreign income', amount: r0(foreignIncome) },

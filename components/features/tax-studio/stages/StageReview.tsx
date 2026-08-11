@@ -7,7 +7,7 @@ import {
   ArrowRight, ArrowUpRight, Plus, Trash2, Briefcase, Home, PiggyBank, Sparkles,
   AlertTriangle, Info, CheckCircle2, Beaker, ChevronRight, TrendingUp, Users,
   Globe2, GraduationCap, Landmark, FileText, Scale, MapPin, Loader2, Calculator, Check, Search, CornerDownLeft, X, ScanText, Link2,
-  Church, MoreHorizontal, ChevronDown, Building2, Vote, Flag,
+  Church, MoreHorizontal, ChevronDown, Building2, Vote, Flag, Umbrella,
 } from 'lucide-react';
 import DocumentExtract from '../DocumentExtract';
 import { BreakdownField, BreakdownModal, type BreakdownColumn } from '../IncomeBreakdown';
@@ -20,14 +20,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA, PAR, SCP, WAL, LLU } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData, parliamentComputed, parliamentHasData, scottishParliamentComputed, scottishParliamentHasData, welshAssemblyComputed, welshAssemblyHasData, lloydsComputed, lloydsHasData } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, ParliamentOffice, ScottishParliamentOffice, WelshAssemblyOffice, LloydsUnderwriter, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -168,7 +168,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -190,6 +190,7 @@ const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[
   { id: 'parliament',  label: 'Parliament (MPs)', code: 'SA102', icon: Building2 },
   { id: 'scottishparliament', label: 'Scottish Parliament', code: 'SA102', icon: Vote },
   { id: 'welshassembly', label: 'National Assembly for Wales', code: 'SA102', icon: Flag },
+  { id: 'lloyds', label: "Lloyd's Underwriters", code: 'SA103L', icon: Umbrella },
 ];
 const ALL_PAGES = [...PAGES, ...MORE_PAGES];
 
@@ -215,6 +216,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
     case 'parliament': { const t = parliamentComputed(income.parliament).taxable; return t ? { value: t, label: 'MP office income' } : null; }
     case 'scottishparliament': { const t = scottishParliamentComputed(income.scottishParliament).taxable; return t ? { value: t, label: 'MSP office income' } : null; }
     case 'welshassembly': { const t = welshAssemblyComputed(income.welshAssembly).taxable; return t ? { value: t, label: 'Senedd office income' } : null; }
+    case 'lloyds': { const t = lloydsComputed(income.lloyds).taxable; return t ? { value: t, label: "Lloyd's taxable profit" } : null; }
     default: return null; // core / residence / additional — no single headline
   }
 }
@@ -255,6 +257,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     parliament: income.parliament ? PARLIAMENT_TABS.reduce((acc, t) => acc + parliamentSectionCount(income.parliament!, t), 0) : 0,
     scottishparliament: income.scottishParliament ? (scotSectionCount(income.scottishParliament, SCOT_TABS[0]) + scotSectionCount(income.scottishParliament, SCOT_TABS[1])) : 0,
     welshassembly: income.welshAssembly ? WELSH_TABS.reduce((acc, t) => acc + welshSectionCount(income.welshAssembly!, t), 0) : 0,
+    lloyds: income.lloyds ? LLOYDS_TABS.reduce((acc, t) => acc + lloydsSectionCount(income.lloyds!, t), 0) : 0,
   };
 }
 
@@ -472,6 +475,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'parliament' && <ParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'scottishparliament' && <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />}
       {page === 'welshassembly' && <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
+      {page === 'lloyds' && <LloydsPage ret={ret} income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -3877,6 +3881,232 @@ function WelshAssemblyPage({ ret, income, setIncome }: { ret: TaxReturn; income:
           <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the office figures entered — review and edit before filing.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── SA103L Lloyd's Underwriters — box-for-box "More" page ─────────────────────
+const LLOYDS_TABS = ['Income from personal funds', 'Foreign sources income', "Lloyd's losses and expenses", "Lloyd's taxable profits or losses"] as const;
+const LLOYDS_SUBTABS: Record<string, string[]> = {
+  'Income from personal funds': ['UK interest', 'UK dividends'],
+  'Foreign sources income': ['Non-UK interest', 'Non-UK dividends', "Other Lloyd's receipts"],
+  "Lloyd's losses and expenses": ["Lloyd's losses and expenses", "Lloyd's foreign tax"],
+  "Lloyd's taxable profits or losses": ['Taxable profits & losses', 'Taxable profits & losses (cont.)', "Lloyd's losses reconciliation", 'NICs & Other Info'],
+};
+function lloydsSubCount(l: LloydsUnderwriter, sub: string): number {
+  const num = (...xs: (number | undefined)[]) => xs.filter(truthy).length;
+  switch (sub) {
+    case 'UK interest': return num(l.ukUntaxedInterest, l.accruedIncomeProfits, l.ukTaxedInterest, l.ukInterestTaxTakenOff);
+    case 'UK dividends': return num(l.stockDividends, l.nonQualifyingDistributions, l.otherUkDividends);
+    case 'Non-UK interest': return num(l.nonUkInterestNet, l.nonUkInterestForeignTax, l.nonUkInterestUkTax);
+    case 'Non-UK dividends': return num(l.nonUkDividendsGross, l.nonUkDividendsForeignTax, l.nonUkDividendsUkTax);
+    case "Other Lloyd's receipts": return num(l.aggregateSyndicateProfits, l.specialReserveWithdrawal, l.stopLossRecoveries, l.compensationReceipts, l.foreignTaxRepayments, l.otherNonSyndicateIncome, l.ftcrGiven);
+    case "Lloyd's losses and expenses": return num(l.aggregateSyndicateLosses, l.specialReserveTransfer, l.stopLossPremiums, l.quotaSharePremiums, l.estateProtectionPremiums, l.underwritingLoanInterest, l.membersAssocExpenses, l.agentCommissionSalaries, l.bankGuaranteeFees, l.accountancyFees, l.otherExpenses);
+    case "Lloyd's foreign tax": return num(l.usIncomeTax, l.canadianTax, l.syndicateForeignTax, l.additionalForeignTax);
+    case 'Taxable profits & losses': return num(l.foreignTaxDeductionProfit, l.lossesBroughtForwardProfit);
+    case 'Taxable profits & losses (cont.)': return num(l.lossForYear, l.lossSetOffOtherIncome, l.lossCarriedBack);
+    case "Lloyd's losses reconciliation": return num(l.lossesBroughtForward);
+    case 'NICs & Other Info': return (l.class2Voluntary ? 1 : 0) + (l.class4Exempt ? 1 : 0) + num(l.class4Adjustment) + (l.class2FullYear ? 1 : 0) + (l.otherInformation && l.otherInformation.trim() ? 1 : 0);
+  }
+  return 0;
+}
+function lloydsSectionCount(l: LloydsUnderwriter, tab: string): number {
+  return (LLOYDS_SUBTABS[tab] ?? []).reduce((acc, s) => acc + lloydsSubCount(l, s), 0);
+}
+
+function LloydsPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const l: LloydsUnderwriter = income.lloyds ?? {};
+  const set = (u: Partial<LloydsUnderwriter>) => setIncome(i => ({ ...i, lloyds: { ...i.lloyds, ...u } }));
+  const cb = lloydsComputed(l);
+  const [tab, setTab] = useState<string>(LLOYDS_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (LLOYDS_TABS as readonly string[]).includes(tab) ? tab : LLOYDS_TABS[0];
+  const subList = LLOYDS_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+
+  async function suggestNote() {
+    setNoteBusy(true);
+    try {
+      const facts = [
+        cb.box27 ? `Total Lloyd's income: £${cb.box27}.` : '',
+        cb.box40 ? `Total Lloyd's losses and expenses: £${cb.box40}.` : '',
+        cb.box41 ? `Profit for the year: £${cb.box41}.` : cb.box42 ? `Loss for the year: £${cb.box42}.` : '',
+        cb.box48 ? `Total foreign tax: £${cb.box48}.` : '',
+        cb.taxable ? `Total taxable profits from Lloyd's: £${cb.taxable}.` : '',
+      ].filter(Boolean);
+      const r = await fetch('/api/tax-studio/suggest-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taxYear: ret.taxYear, clientName: ret.clientName ?? '', context: { form: "SA103L supplementary page for a member of Lloyd's (an underwriter)", facts } }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.note) set({ otherInformation: l.otherInformation ? `${l.otherInformation}\n\n${d.note}` : d.note });
+    } finally { setNoteBusy(false); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <SectionTabs tabs={LLOYDS_TABS.map(tt => ({ label: tt, count: lloydsSectionCount(l, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(s => ({ label: s, count: lloydsSubCount(l, s) }))} active={sub} onSelect={setSub} />}
+
+      {/* ── Income from personal funds ── */}
+      {activeTab === 'Income from personal funds' && subName === 'UK interest' && (
+        <div className="space-y-3">
+          <SectionTitle title="Income from personal funds at Lloyd's — UK interest" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={1} label="Untaxed UK interest (banks, unit trusts, gilts) — amount received" value={l.ukUntaxedInterest ?? 0} onChange={v => set({ ukUntaxedInterest: v })} help={LLU.ukUntaxedInterest} />
+            <LabelledNum box={2} label="Profits from Accrued Income Scheme and deeply discounted securities" value={l.accruedIncomeProfits ?? 0} onChange={v => set({ accruedIncomeProfits: v })} help={LLU.accruedIncomeProfits} />
+            <LabelledNum box={3} label="Taxed interest from other UK savings and investments — after tax taken off" value={l.ukTaxedInterest ?? 0} onChange={v => set({ ukTaxedInterest: v })} help={LLU.ukTaxedInterest} />
+            <LabelledNum box={4} label="Tax taken off" value={l.ukInterestTaxTakenOff ?? 0} onChange={v => set({ ukInterestTaxTakenOff: v })} help={LLU.ukInterestTaxTakenOff} />
+            <BoxCalc box={5} label="Total UK interest" value={cb.box5} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Income from personal funds' && subName === 'UK dividends' && (
+        <div className="space-y-3">
+          <SectionTitle title="Income from personal funds at Lloyd's — UK dividends" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={6} label="Stock dividends from UK companies — amount received" value={l.stockDividends ?? 0} onChange={v => set({ stockDividends: v })} help={LLU.stockDividends} />
+            <LabelledNum box={8} label="Non-qualifying distributions — amount received" value={l.nonQualifyingDistributions ?? 0} onChange={v => set({ nonQualifyingDistributions: v })} help={LLU.nonQualifyingDistributions} />
+            <LabelledNum box={9} label="Other UK dividends and qualifying distributions" value={l.otherUkDividends ?? 0} onChange={v => set({ otherUkDividends: v })} help={LLU.otherUkDividends} />
+            <BoxCalc box={11} label="Total UK dividends" value={cb.box11} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Foreign sources income ── */}
+      {activeTab === 'Foreign sources income' && subName === 'Non-UK interest' && (
+        <div className="space-y-3">
+          <SectionTitle title="Non-UK interest and other foreign sources income" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={12} label="Net amount received" value={l.nonUkInterestNet ?? 0} onChange={v => set({ nonUkInterestNet: v })} help={LLU.nonUkInterestNet} />
+            <LabelledNum box={13} label="Foreign tax taken off" value={l.nonUkInterestForeignTax ?? 0} onChange={v => set({ nonUkInterestForeignTax: v })} help={LLU.nonUkInterestForeignTax} />
+            <LabelledNum box={14} label="UK tax taken off" value={l.nonUkInterestUkTax ?? 0} onChange={v => set({ nonUkInterestUkTax: v })} help={LLU.nonUkInterestUkTax} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Foreign sources income' && subName === 'Non-UK dividends' && (
+        <div className="space-y-3">
+          <SectionTitle title="Non-UK dividends" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={15} label="Amount received including dividend tax credit" value={l.nonUkDividendsGross ?? 0} onChange={v => set({ nonUkDividendsGross: v })} help={LLU.nonUkDividendsGross} />
+            <LabelledNum box={16} label="Amount of foreign tax taken off" value={l.nonUkDividendsForeignTax ?? 0} onChange={v => set({ nonUkDividendsForeignTax: v })} help={LLU.nonUkDividendsForeignTax} />
+            <LabelledNum box={17} label="Amount of UK tax taken off" value={l.nonUkDividendsUkTax ?? 0} onChange={v => set({ nonUkDividendsUkTax: v })} help={LLU.nonUkDividendsUkTax} />
+            <BoxCalc box={18} label="Total non-UK income" value={cb.box18} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Foreign sources income' && subName === "Other Lloyd's receipts" && (
+        <div className="space-y-3">
+          <SectionTitle title="Other Lloyd's receipts" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={20} label="Aggregate syndicate profits" value={l.aggregateSyndicateProfits ?? 0} onChange={v => set({ aggregateSyndicateProfits: v })} help={LLU.aggregateSyndicateProfits} />
+            <LabelledNum box={21} label="Net withdrawal / release from Special Reserve Fund" value={l.specialReserveWithdrawal ?? 0} onChange={v => set({ specialReserveWithdrawal: v })} help={LLU.specialReserveWithdrawal} />
+            <LabelledNum box={22} label="Stop loss recoveries" value={l.stopLossRecoveries ?? 0} onChange={v => set({ stopLossRecoveries: v })} help={LLU.stopLossRecoveries} />
+            <LabelledNum box={23} label="Compensation receipts" value={l.compensationReceipts ?? 0} onChange={v => set({ compensationReceipts: v })} help={LLU.compensationReceipts} />
+            <LabelledNum box={24} label="Repayments of foreign tax previously allowed by deduction" value={l.foreignTaxRepayments ?? 0} onChange={v => set({ foreignTaxRepayments: v })} help={LLU.foreignTaxRepayments} />
+            <LabelledNum box={25} label="Other Lloyd's non-syndicate income" value={l.otherNonSyndicateIncome ?? 0} onChange={v => set({ otherNonSyndicateIncome: v })} help={LLU.otherNonSyndicateIncome} />
+            <BoxCalc box={26} label="Total other Lloyd's receipts" value={cb.box26} />
+            <BoxCalc box={27} label="Total Lloyd's income" value={cb.box27} />
+            <LabelledNum box={28} label="Foreign Tax Credit Relief was given" value={l.ftcrGiven ?? 0} onChange={v => set({ ftcrGiven: v })} help={LLU.ftcrGiven} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Losses and expenses ── */}
+      {activeTab === "Lloyd's losses and expenses" && subName === "Lloyd's losses and expenses" && (
+        <div className="space-y-3">
+          <SectionTitle title="Lloyd's losses and expenses" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={29} label="Aggregate syndicate losses" value={l.aggregateSyndicateLosses ?? 0} onChange={v => set({ aggregateSyndicateLosses: v })} help={LLU.aggregateSyndicateLosses} />
+            <LabelledNum box={30} label="Net transfer to Special Reserve Fund" value={l.specialReserveTransfer ?? 0} onChange={v => set({ specialReserveTransfer: v })} help={LLU.specialReserveTransfer} />
+            <LabelledNum box={31} label="Stop loss premiums paid" value={l.stopLossPremiums ?? 0} onChange={v => set({ stopLossPremiums: v })} help={LLU.stopLossPremiums} />
+            <LabelledNum box={32} label="Personal Quota Share and Exeat premiums paid" value={l.quotaSharePremiums ?? 0} onChange={v => set({ quotaSharePremiums: v })} help={LLU.quotaSharePremiums} />
+            <LabelledNum box={33} label="Estate protection plan premiums paid" value={l.estateProtectionPremiums ?? 0} onChange={v => set({ estateProtectionPremiums: v })} help={LLU.estateProtectionPremiums} />
+            <LabelledNum box={34} label="Interest paid on loans to fund underwriting" value={l.underwritingLoanInterest ?? 0} onChange={v => set({ underwritingLoanInterest: v })} help={LLU.underwritingLoanInterest} />
+            <LabelledNum box={35} label="Lloyd's Members' associations expenses paid" value={l.membersAssocExpenses ?? 0} onChange={v => set({ membersAssocExpenses: v })} help={LLU.membersAssocExpenses} />
+            <LabelledNum box={36} label="Members' Agent profit commission and salaries" value={l.agentCommissionSalaries ?? 0} onChange={v => set({ agentCommissionSalaries: v })} help={LLU.agentCommissionSalaries} />
+            <LabelledNum box={37} label="Fees for bank guarantees / letters of credit" value={l.bankGuaranteeFees ?? 0} onChange={v => set({ bankGuaranteeFees: v })} help={LLU.bankGuaranteeFees} />
+            <LabelledNum box={38} label="Accountancy fees" value={l.accountancyFees ?? 0} onChange={v => set({ accountancyFees: v })} help={LLU.accountancyFees} />
+            <LabelledNum box={39} label="Other Lloyd's expenses" value={l.otherExpenses ?? 0} onChange={v => set({ otherExpenses: v })} help={LLU.otherExpenses} />
+            <BoxCalc box={40} label="Total losses and expenses" value={cb.box40} />
+          </div>
+        </div>
+      )}
+      {activeTab === "Lloyd's losses and expenses" && subName === "Lloyd's foreign tax" && (
+        <div className="space-y-3">
+          <SectionTitle title="Total incomings and outgoings" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxCalc box={41} label="Amount of profit" value={cb.box41} />
+            <BoxCalc box={42} label="Amount of loss" value={cb.box42} />
+          </div>
+          <SectionTitle title="Lloyd's foreign tax" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxCalc box={43} label="Foreign tax on personal fund income" value={cb.box43} />
+            <LabelledNum box={44} label="US income tax paid" value={l.usIncomeTax ?? 0} onChange={v => set({ usIncomeTax: v })} help={LLU.usIncomeTax} />
+            <LabelledNum box={45} label="Canadian tax paid" value={l.canadianTax ?? 0} onChange={v => set({ canadianTax: v })} help={LLU.canadianTax} />
+            <LabelledNum box={46} label="Syndicate foreign tax" value={l.syndicateForeignTax ?? 0} onChange={v => set({ syndicateForeignTax: v })} help={LLU.syndicateForeignTax} />
+            <LabelledNum box={47} label="Additional payments of foreign tax" value={l.additionalForeignTax ?? 0} onChange={v => set({ additionalForeignTax: v })} help={LLU.additionalForeignTax} />
+            <BoxCalc box={48} label="Total foreign tax" value={cb.box48} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Taxable profits or losses ── */}
+      {activeTab === "Lloyd's taxable profits or losses" && subName === 'Taxable profits & losses' && (
+        <div className="space-y-3">
+          <SectionTitle title="Calculating Lloyd's taxable profits or allowable losses" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxCalc box={49} label="Profit from box 41" value={cb.box49} />
+            <LabelledNum box={50} label="Foreign tax claimed as a deduction" value={l.foreignTaxDeductionProfit ?? 0} onChange={v => set({ foreignTaxDeductionProfit: v })} help={LLU.foreignTaxDeductionProfit} />
+            <LabelledNum box={51} label="Lloyd's losses brought forward" value={l.lossesBroughtForwardProfit ?? 0} onChange={v => set({ lossesBroughtForwardProfit: v })} help={LLU.lossesBroughtForwardProfit} />
+            <BoxCalc box={52} label="Total taxable profits from Lloyd's" value={cb.box52} />
+            <BoxCalc box={53} label="Loss from box 42" value={cb.box53} />
+          </div>
+        </div>
+      )}
+      {activeTab === "Lloyd's taxable profits or losses" && subName === 'Taxable profits & losses (cont.)' && (
+        <div className="space-y-3">
+          <SectionTitle title="Lloyd's losses reconciliation" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <BoxCalc box={54} label="Foreign tax claimed as a deduction" value={cb.box54} />
+            <LabelledNum box={55} label="Loss for this year" value={l.lossForYear ?? 0} onChange={v => set({ lossForYear: v })} help={LLU.lossForYear} />
+            <LabelledNum box={56} label="Loss set off against other income" value={l.lossSetOffOtherIncome ?? 0} onChange={v => set({ lossSetOffOtherIncome: v })} help={LLU.lossSetOffOtherIncome} />
+            <LabelledNum box={57} label="Loss carried back to set against earlier years" value={l.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} help={LLU.lossCarriedBack} />
+            <BoxCalc box={58} label="Unused loss available to carry forward" value={cb.box58} />
+          </div>
+        </div>
+      )}
+      {activeTab === "Lloyd's taxable profits or losses" && subName === "Lloyd's losses reconciliation" && (
+        <div className="space-y-3">
+          <SectionTitle title="Lloyd's losses reconciliation" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={59} label="Losses brought forward from earlier years" value={l.lossesBroughtForward ?? 0} onChange={v => set({ lossesBroughtForward: v })} help={LLU.lossesBroughtForward} />
+            <BoxCalc box={60} label="Losses brought forward used against this year's profits" value={cb.box60} />
+            <BoxCalc box={61} label="Unused loss" value={cb.box61} />
+            <BoxCalc box={62} label="Total loss available to carry forward" value={cb.box62} />
+          </div>
+        </div>
+      )}
+      {activeTab === "Lloyd's taxable profits or losses" && subName === 'NICs & Other Info' && (
+        <div className="space-y-3">
+          <SectionTitle title="NICs & other information" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <BoxCheck box={63} label="You choose to pay Class 2 NICs voluntarily?" checked={!!l.class2Voluntary} onChange={v => set({ class2Voluntary: v })} help={LLU.class2Voluntary} />
+            <BoxCheck box={64} label="Exempt from paying Class 4 NICs?" checked={!!l.class4Exempt} onChange={v => set({ class4Exempt: v })} help={LLU.class4Exempt} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={65} label="Adjustment to profits chargeable to Class 4 NICs" value={l.class4Adjustment ?? 0} onChange={v => set({ class4Adjustment: v })} help={LLU.class4Adjustment} />
+            <BoxYesNo label="Member for the full tax year and willing to pay Class 2 NIC for the full year?" value={!!l.class2FullYear} onChange={v => set({ class2FullYear: v })} help={LLU.class2FullYear} />
+          </div>
+          <SectionTitle title="Any other information" />
+          <BoxTextArea box={66} label="Please give any other information in this space" value={l.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} rows={7}
+            right={<button onClick={suggestNote} disabled={noteBusy} className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:opacity-50">{noteBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} SMITH, help me write this</button>} />
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the Lloyd's figures entered — review and edit before filing.</p>
+        </div>
+      )}
+      <p className="text-[10.5px] text-[var(--text-muted)]">The Lloyd's result is taxed as trading income; the taxable profit (box 52) is added to this client's income and the UK tax taken off is credited. Computed boxes are working figures — review against the SA103L notes before filing.</p>
     </div>
   );
 }

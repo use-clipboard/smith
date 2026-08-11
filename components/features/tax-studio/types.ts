@@ -1001,6 +1001,70 @@ export interface Sa100Income {
   scottishParliament?: ScottishParliamentOffice;
   /** SA102 Senedd / National Assembly for Wales office income (a "More" page). */
   welshAssembly?: WelshAssemblyOffice;
+  /** SA103L Lloyd's Underwriters (a rarely-used "More" page). */
+  lloyds?: LloydsUnderwriter;
+}
+
+// SA103L Lloyd's Underwriters — a member of Lloyd's. All boxes are inputs; the
+// blue "total" boxes and the taxable profit / allowable loss are derived (see
+// lloydsComputed in calc.ts). Box numbers follow HMRC's SA103L.
+export interface LloydsUnderwriter {
+  // Income from personal funds at Lloyd's — UK interest (boxes 1–4; box 5 total)
+  ukUntaxedInterest?: number;        // box 1 — untaxed UK interest (banks, unit trusts, gilts) received
+  accruedIncomeProfits?: number;     // box 2 — profits from Accrued Income Scheme and deeply discounted securities
+  ukTaxedInterest?: number;          // box 3 — taxed interest from other UK savings/investments, after tax
+  ukInterestTaxTakenOff?: number;    // box 4 — tax taken off
+  // UK dividends (boxes 6, 8, 9; box 11 total)
+  stockDividends?: number;           // box 6 — stock dividends from UK companies received
+  nonQualifyingDistributions?: number; // box 8 — non-qualifying distributions received
+  otherUkDividends?: number;         // box 9 — other UK dividends and qualifying distributions
+  // Foreign — non-UK interest (boxes 12–14)
+  nonUkInterestNet?: number;         // box 12 — net amount received
+  nonUkInterestForeignTax?: number;  // box 13 — foreign tax taken off
+  nonUkInterestUkTax?: number;       // box 14 — UK tax taken off
+  // Foreign — non-UK dividends (boxes 15–17; box 18 total non-UK income)
+  nonUkDividendsGross?: number;      // box 15 — amount received including dividend tax credit
+  nonUkDividendsForeignTax?: number; // box 16 — foreign tax taken off
+  nonUkDividendsUkTax?: number;      // box 17 — UK tax taken off
+  // Other Lloyd's receipts (boxes 20–25; box 26 total; box 27 total Lloyd's income)
+  aggregateSyndicateProfits?: number; // box 20 — aggregate syndicate profits
+  specialReserveWithdrawal?: number;  // box 21 — net withdrawal/release from Special Reserve Fund
+  stopLossRecoveries?: number;        // box 22 — stop loss recoveries
+  compensationReceipts?: number;      // box 23 — compensation receipts
+  foreignTaxRepayments?: number;      // box 24 — repayments of foreign tax previously allowed by deduction
+  otherNonSyndicateIncome?: number;   // box 25 — other Lloyd's non-syndicate income
+  ftcrGiven?: number;                 // box 28 — Foreign Tax Credit Relief was given
+  // Lloyd's losses and expenses (boxes 29–39; box 40 total)
+  aggregateSyndicateLosses?: number;  // box 29
+  specialReserveTransfer?: number;    // box 30 — net transfer to Special Reserve Fund
+  stopLossPremiums?: number;          // box 31
+  quotaSharePremiums?: number;        // box 32 — Personal Quota Share and Exeat premiums paid
+  estateProtectionPremiums?: number;  // box 33
+  underwritingLoanInterest?: number;  // box 34 — interest paid on loans to fund underwriting
+  membersAssocExpenses?: number;      // box 35 — Lloyd's Members' associations expenses paid
+  agentCommissionSalaries?: number;   // box 36 — Members' Agent profit commission and salaries
+  bankGuaranteeFees?: number;         // box 37 — fees for bank guarantees / letters of credit
+  accountancyFees?: number;           // box 38
+  otherExpenses?: number;             // box 39 — other Lloyd's expenses
+  // Lloyd's foreign tax (boxes 44–47; boxes 43, 48 total)
+  usIncomeTax?: number;               // box 44
+  canadianTax?: number;               // box 45
+  syndicateForeignTax?: number;       // box 46
+  additionalForeignTax?: number;      // box 47
+  // Taxable profits (boxes 50, 51; boxes 49, 52, 53 computed)
+  foreignTaxDeductionProfit?: number; // box 50 — foreign tax claimed as a deduction
+  lossesBroughtForwardProfit?: number;// box 51 — Lloyd's losses brought forward
+  // Loss reconciliation (boxes 55–57, 59; boxes 54, 58, 60–62 computed)
+  lossForYear?: number;               // box 55 — loss for this year
+  lossSetOffOtherIncome?: number;     // box 56 — loss set off against other income
+  lossCarriedBack?: number;           // box 57 — loss carried back to set against earlier years
+  lossesBroughtForward?: number;      // box 59 — losses brought forward from earlier years
+  // NICs & other information (boxes 63–66)
+  class2Voluntary?: boolean;          // box 63 — choose to pay Class 2 NICs voluntarily
+  class4Exempt?: boolean;             // box 64 — exempt from paying Class 4 NICs
+  class4Adjustment?: number;          // box 65 — adjustment to profits chargeable to Class 4 NICs
+  class2FullYear?: boolean;           // full-year member willing to pay Class 2 NIC
+  otherInformation?: string;          // box 66 — free text
 }
 
 // Income, benefits and expenses of a member of a devolved legislature office —

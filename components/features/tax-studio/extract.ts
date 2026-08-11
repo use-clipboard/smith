@@ -115,6 +115,19 @@ export interface Sa100Extraction {
     familyTravelCosts: number; accommodation: number; officeCostAllowance: number; groupSupportAllowance: number; otherCashReimbursements: number; allOtherBenefits: number; balancingCharges: number;
     familyTravelExpenses: number; secretarialClerical: number; officeExpenses: number; otherExpenses: number;
   };
+  /** SA103L Lloyd's Underwriter figures evidenced by a document (a syndicate CTA
+   *  / result statement, a personal-fund income summary, a members' agent report).
+   *  Empty/undefined when nothing relevant found. */
+  lloyds?: {
+    ukUntaxedInterest: number; accruedIncomeProfits: number; ukTaxedInterest: number; ukInterestTaxTakenOff: number;
+    stockDividends: number; nonQualifyingDistributions: number; otherUkDividends: number;
+    nonUkInterestNet: number; nonUkInterestForeignTax: number; nonUkInterestUkTax: number;
+    nonUkDividendsGross: number; nonUkDividendsForeignTax: number; nonUkDividendsUkTax: number;
+    aggregateSyndicateProfits: number; specialReserveWithdrawal: number; stopLossRecoveries: number; compensationReceipts: number; foreignTaxRepayments: number; otherNonSyndicateIncome: number;
+    aggregateSyndicateLosses: number; specialReserveTransfer: number; stopLossPremiums: number; quotaSharePremiums: number; estateProtectionPremiums: number; underwritingLoanInterest: number; membersAssocExpenses: number; agentCommissionSalaries: number; bankGuaranteeFees: number; accountancyFees: number; otherExpenses: number;
+    usIncomeTax: number; canadianTax: number; syndicateForeignTax: number; additionalForeignTax: number;
+    lossesBroughtForward: number;
+  };
   /** Documents/figures found but NOT used, each with a plain-English reason. */
   setAside: { label: string; reason: string }[];
   /** Missing documents or context SMITH would need to make entries accurate. */
@@ -164,6 +177,7 @@ function normalise(raw: unknown): Sa100Extraction {
     parliament: normParliament(e.parliament),
     scottishParliament: normScotParliament(e.scottishParliament),
     welshAssembly: normWelshAssembly(e.welshAssembly),
+    lloyds: normLloyds(e.lloyds),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
     needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
@@ -235,6 +249,24 @@ function normWelshAssembly(raw: unknown): Sa100Extraction['welshAssembly'] {
     p60Pay: n(r.p60Pay), payrolledBenefitsStudentLoan: n(r.payrolledBenefitsStudentLoan), taxTakenOff: n(r.taxTakenOff),
     familyTravelCosts: n(r.familyTravelCosts), accommodation: n(r.accommodation), officeCostAllowance: n(r.officeCostAllowance), groupSupportAllowance: n(r.groupSupportAllowance), otherCashReimbursements: n(r.otherCashReimbursements), allOtherBenefits: n(r.allOtherBenefits), balancingCharges: n(r.balancingCharges),
     familyTravelExpenses: n(r.familyTravelExpenses), secretarialClerical: n(r.secretarialClerical), officeExpenses: n(r.officeExpenses), otherExpenses: n(r.otherExpenses),
+  };
+  const any = Object.values(a).some(v => v !== 0);
+  return any ? a : undefined;
+}
+
+// Normalise scanned Lloyd's Underwriter figures — undefined when none.
+function normLloyds(raw: unknown): Sa100Extraction['lloyds'] {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const a = {
+    ukUntaxedInterest: n(r.ukUntaxedInterest), accruedIncomeProfits: n(r.accruedIncomeProfits), ukTaxedInterest: n(r.ukTaxedInterest), ukInterestTaxTakenOff: n(r.ukInterestTaxTakenOff),
+    stockDividends: n(r.stockDividends), nonQualifyingDistributions: n(r.nonQualifyingDistributions), otherUkDividends: n(r.otherUkDividends),
+    nonUkInterestNet: n(r.nonUkInterestNet), nonUkInterestForeignTax: n(r.nonUkInterestForeignTax), nonUkInterestUkTax: n(r.nonUkInterestUkTax),
+    nonUkDividendsGross: n(r.nonUkDividendsGross), nonUkDividendsForeignTax: n(r.nonUkDividendsForeignTax), nonUkDividendsUkTax: n(r.nonUkDividendsUkTax),
+    aggregateSyndicateProfits: n(r.aggregateSyndicateProfits), specialReserveWithdrawal: n(r.specialReserveWithdrawal), stopLossRecoveries: n(r.stopLossRecoveries), compensationReceipts: n(r.compensationReceipts), foreignTaxRepayments: n(r.foreignTaxRepayments), otherNonSyndicateIncome: n(r.otherNonSyndicateIncome),
+    aggregateSyndicateLosses: n(r.aggregateSyndicateLosses), specialReserveTransfer: n(r.specialReserveTransfer), stopLossPremiums: n(r.stopLossPremiums), quotaSharePremiums: n(r.quotaSharePremiums), estateProtectionPremiums: n(r.estateProtectionPremiums), underwritingLoanInterest: n(r.underwritingLoanInterest), membersAssocExpenses: n(r.membersAssocExpenses), agentCommissionSalaries: n(r.agentCommissionSalaries), bankGuaranteeFees: n(r.bankGuaranteeFees), accountancyFees: n(r.accountancyFees), otherExpenses: n(r.otherExpenses),
+    usIncomeTax: n(r.usIncomeTax), canadianTax: n(r.canadianTax), syndicateForeignTax: n(r.syndicateForeignTax), additionalForeignTax: n(r.additionalForeignTax),
+    lossesBroughtForward: n(r.lossesBroughtForward),
   };
   const any = Object.values(a).some(v => v !== 0);
   return any ? a : undefined;
@@ -858,9 +890,20 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     };
   }
 
+  // SA103L Lloyd's Underwriter figures — fill only unset boxes (all numeric).
+  let lloyds = income.lloyds;
+  if (e.lloyds) {
+    const cur = (income.lloyds ?? {}) as Record<string, number | undefined>;
+    const la = e.lloyds as unknown as Record<string, number>;
+    const setNum = (c: number | undefined, v: number) => ((c == null || c === 0) && v > 0 ? r(v) : c);
+    const merged: Record<string, unknown> = { ...income.lloyds };
+    for (const k of Object.keys(la)) merged[k] = setNum(cur[k], la[k]);
+    lloyds = merged as typeof income.lloyds;
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional, niAssembly, parliament, scottishParliament, welshAssembly,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional, niAssembly, parliament, scottishParliament, welshAssembly, lloyds,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),
