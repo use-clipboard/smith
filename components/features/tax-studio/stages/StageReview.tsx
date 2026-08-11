@@ -144,7 +144,7 @@ type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
 export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
-  { id: 'core',        label: 'Income & reliefs', code: 'SA100', icon: PiggyBank },
+  { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
   { id: 'employment',  label: 'Employment',       code: 'SA102', icon: Briefcase },
   { id: 'selfemp',     label: 'Self-employment',  code: 'SA103', icon: Landmark },
   { id: 'partnership', label: 'Partnership',      code: 'SA104', icon: Users },
@@ -462,36 +462,72 @@ function LineField({ box, label, title, items, onChange, fallbackTotal, help }: 
 /** Collapsible sub-section grouping the SA100 main-return boxes by form page.
  *  Opens, scrolls into view and briefly highlights when the "jump to" search
  *  targets it (via RevealContext). */
-function CoreSection({ title, count, defaultOpen, children }: { title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
+// One core sub-section, shown as a panel when its sub-tab is active. The level-3
+// SubTab already labels it (+ count), so this is just the titled body. Flashes
+// when the "jump to" search targets it.
+function CoreSection({ title, active, children }: { title: string; count?: number; defaultOpen?: boolean; active: boolean; children: React.ReactNode }) {
   const [flash, setFlash] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const reveal = useContext(RevealContext);
   useEffect(() => {
-    if (!reveal || reveal.section !== title) return;
-    setOpen(true);
+    if (!reveal || reveal.section !== title || !active) return;
     setFlash(true);
     const raf = requestAnimationFrame(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
     const t = setTimeout(() => setFlash(false), 1700);
     return () => { cancelAnimationFrame(raf); clearTimeout(t); };
-  }, [reveal, title]);
+  }, [reveal, title, active]);
+  if (!active) return null;
   return (
-    <div ref={ref} className={`scroll-mt-24 rounded-xl border bg-white/60 transition-shadow ${flash ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/40' : 'border-[var(--border)]'}`}>
-      <button onClick={() => setOpen(o => !o)} className="flex w-full items-center gap-2 px-3 py-2.5 text-left">
-        <ChevronRight size={14} className={`shrink-0 text-[var(--text-muted)] transition-transform ${open ? 'rotate-90' : ''}`} />
-        <span className="text-[12.5px] font-bold text-[var(--text-primary)]">{title}{count != null && count > 0 && <span className="text-[var(--accent)]"> ({count})</span>}</span>
-      </button>
-      {open && <div className="border-t border-black/5 p-4">{children}</div>}
+    <div ref={ref} className={`scroll-mt-24 rounded-xl border bg-white/60 p-4 transition-shadow ${flash ? 'border-[var(--accent)] ring-2 ring-[var(--accent)]/40' : 'border-[var(--border)]'}`}>
+      <p className="mb-3 text-[12.5px] font-bold text-[var(--text-primary)]">{title}</p>
+      {children}
     </div>
   );
 }
 
+// The Main Form (SA100) grouped into three level-2 sections; each sub-section is
+// a level-3 sub-tab. `key` maps to coreSectionCounts for the (N) badges.
+const CORE_LAYOUT: { group: string; subs: { title: string; key: string }[] }[] = [
+  { group: 'Income', subs: [
+    { title: 'Interest & dividends', key: 'interest' },
+    { title: 'UK pensions & benefits', key: 'pensions' },
+    { title: 'Other UK income', key: 'other' },
+  ] },
+  { group: 'Tax Reliefs', subs: [
+    { title: 'Pension payments', key: 'pensionPayments' },
+    { title: 'Charitable giving', key: 'charitable' },
+    { title: 'Blind allowance & student loan', key: 'blindStudent' },
+    { title: 'Child benefit', key: 'childBenefit' },
+    { title: 'Marriage allowance', key: 'marriage' },
+  ] },
+  { group: 'Finishing your tax return', subs: [
+    { title: 'Tax refunded or set off', key: 'taxRefunded' },
+    { title: 'Paid too much tax — repayment details', key: 'repayment' },
+    { title: 'Your tax adviser', key: 'adviser' },
+    { title: 'Signing your form', key: 'signing' },
+  ] },
+];
+
 function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome; reveal: Reveal | null }) {
-  const c = coreSectionCounts(income);
+  const c = coreSectionCounts(income) as unknown as Record<string, number>;
+  const [grp, setGrp] = useState('Income');
+  const [sub, setSub] = useState(0);
+  const activeGroup = CORE_LAYOUT.find(g => g.group === grp) ?? CORE_LAYOUT[0];
+  const activeSub = activeGroup.subs[sub] ?? activeGroup.subs[0];
+  // "Jump to" search → switch to the group + sub-tab that owns the target section.
+  useEffect(() => {
+    if (!reveal?.section) return;
+    for (const g of CORE_LAYOUT) {
+      const idx = g.subs.findIndex(s => s.title === reveal.section);
+      if (idx >= 0) { setGrp(g.group); setSub(idx); break; }
+    }
+  }, [reveal]);
   return (
     <RevealContext.Provider value={reveal}>
     <div className="space-y-3">
-      <CoreSection title="Interest & dividends" count={c.interest} defaultOpen>
+      <SectionTabs tabs={CORE_LAYOUT.map(g => ({ label: g.group, count: g.subs.reduce((a, s) => a + (c[s.key] || 0), 0) }))} active={grp} onSelect={l => { setGrp(l); setSub(0); }} />
+      <SubTabs tabs={activeGroup.subs.map(s => ({ label: s.title, count: c[s.key] || 0 }))} active={sub} onSelect={setSub} />
+      <CoreSection active={activeSub.title === "Interest & dividends"} title="Interest & dividends" count={c.interest} defaultOpen>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <JointInterestField
             box={1} label="Taxed UK interest" title="Taxed UK interest etc." help={CH.taxedInterest} kind="taxed"
@@ -516,7 +552,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="UK pensions & benefits" count={c.pensions}>
+      <CoreSection active={activeSub.title === "UK pensions & benefits"} title="UK pensions & benefits" count={c.pensions}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={8} label="State Pension" title="State Pension" help={CH.statePension} items={income.statePensionItems} fallbackTotal={income.statePension ?? 0} onChange={items => setIncome(i => ({ ...i, statePensionItems: items }))} />
           <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" help={CH.statePensionLumpSum} items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
@@ -530,7 +566,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Other UK income" count={c.other}>
+      <CoreSection active={activeSub.title === "Other UK income"} title="Other UK income" count={c.other}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={17} label="Other taxable income" title="Other taxable income" help={CH.otherIncome} items={income.otherIncomeItems} fallbackTotal={income.otherIncome} onChange={items => setIncome(i => ({ ...i, otherIncomeItems: items }))} />
           <LineField box={18} label="Total allowable expenses" title="Allowable expenses" items={income.otherIncomeExpensesItems} onChange={items => setIncome(i => ({ ...i, otherIncomeExpensesItems: items }))} />
@@ -540,7 +576,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         <OtherIncomeDescription ret={ret} income={income} setIncome={setIncome} />
       </CoreSection>
 
-      <CoreSection title="Pension payments" count={c.pensionPayments}>
+      <CoreSection active={activeSub.title === "Pension payments"} title="Pension payments" count={c.pensionPayments}>
         <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Paying into registered pension schemes and overseas pension schemes</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={1} label="Payments & basic rate tax" title="Payments to registered pension schemes (relief at source)" help={CH.pensionContributions} items={income.pensionContributionsItems} fallbackTotal={income.pensionContributions} onChange={items => setIncome(i => ({ ...i, pensionContributionsItems: items }))} />
@@ -551,7 +587,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Charitable giving" count={c.charitable}>
+      <CoreSection active={activeSub.title === "Charitable giving"} title="Charitable giving" count={c.charitable}>
         <p className="mb-3 text-[11px] font-semibold text-[var(--accent)]">Gift Aid payments and gifts of assets to charity</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LineField box={5} label="Gift Aid payments in the year" title="Gift Aid payments made in the year to 5 April" help={CH.giftAid} items={income.giftAidItems} fallbackTotal={income.giftAid} onChange={items => setIncome(i => ({ ...i, giftAidItems: items }))} />
@@ -563,7 +599,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Blind allowance & student loan" count={c.blindStudent}>
+      <CoreSection active={activeSub.title === "Blind allowance & student loan"} title="Blind allowance & student loan" count={c.blindStudent}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Blind Person's Allowance</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <CheckField box={13} label="Registered blind" help={CH.registeredBlind} checked={!!income.registeredBlind} onChange={v => setIncome(i => ({ ...i, registeredBlind: v }))} />
@@ -603,7 +639,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Child benefit" count={c.childBenefit}>
+      <CoreSection active={activeSub.title === "Child benefit"} title="Child benefit" count={c.childBenefit}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">High Income Child Benefit Charge</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledNum box={1} label="Total amount received in the year" help={CH.childBenefit} value={income.childBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, childBenefit: v }))} />
@@ -616,7 +652,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Marriage allowance" count={c.marriage}>
+      <CoreSection active={activeSub.title === "Marriage allowance"} title="Marriage allowance" count={c.marriage}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Your spouse or civil partner</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledText box={1} label="First name" value={income.spouseFirstName ?? ''} onChange={v => setIncome(i => ({ ...i, spouseFirstName: v }))} />
@@ -629,7 +665,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Tax refunded or set off" count={c.taxRefunded}>
+      <CoreSection active={activeSub.title === "Tax refunded or set off"} title="Tax refunded or set off" count={c.taxRefunded}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledNum box={1} label="Tax refunded or set off by HMRC / Jobcentre Plus" help={CH.taxRefundedOrSetOff} value={income.taxRefundedOrSetOff ?? 0} onChange={v => setIncome(i => ({ ...i, taxRefundedOrSetOff: v }))} />
         </div>
@@ -640,7 +676,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Paid too much tax — repayment details" count={c.repayment}>
+      <CoreSection active={activeSub.title === "Paid too much tax — repayment details"} title="Paid too much tax — repayment details" count={c.repayment}>
         <p className="mb-2 text-[11px] font-semibold text-[var(--accent)]">Bank / building society for any repayment</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledText box={4} label="Name of bank or building society" value={income.repayBankName ?? ''} onChange={v => setIncome(i => ({ ...i, repayBankName: v }))} />
@@ -661,7 +697,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         <p className="mt-3 text-[11px] text-[var(--text-muted)]">Box 14 (signature to authorise the nominee) is not needed when filing online.</p>
       </CoreSection>
 
-      <CoreSection title="Your tax adviser" count={c.adviser}>
+      <CoreSection active={activeSub.title === "Your tax adviser"} title="Your tax adviser" count={c.adviser}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <LabelledText box={15} label="Tax adviser name (person, firm, company)" value={income.adviserName ?? ''} onChange={v => setIncome(i => ({ ...i, adviserName: v }))} />
           <LabelledText box={16} label="Their phone number" value={income.adviserPhone ?? ''} onChange={v => setIncome(i => ({ ...i, adviserPhone: v }))} />
@@ -673,7 +709,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
         </div>
       </CoreSection>
 
-      <CoreSection title="Signing your form" count={c.signing}>
+      <CoreSection active={activeSub.title === "Signing your form"} title="Signing your form" count={c.signing}>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <CheckField box={20} label="Return contains provisional figures" checked={!!income.provisionalFigures} onChange={v => setIncome(i => ({ ...i, provisionalFigures: v }))} />
           <CheckField box={21} label="Separate supplementary pages attached" checked={!!income.separateSupplementaryPages} onChange={v => setIncome(i => ({ ...i, separateSupplementaryPages: v }))} />

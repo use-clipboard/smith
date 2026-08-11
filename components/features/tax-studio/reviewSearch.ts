@@ -6,11 +6,11 @@ export interface SearchEntry {
   label: string;      // what shows as the result title
   context: string;    // secondary line (where it lives)
   page: string;       // PageId — the SA-page tab to switch to
-  section?: string;   // core accordion title to reveal (Income & reliefs only)
+  section?: string;   // core accordion title to reveal (Main Form only)
   keywords: string;   // extra terms (synonyms, box codes) to match on
 }
 
-// Core-page ("Income & reliefs") accordions.
+// Core-page ("Main Form") accordions.
 const CORE_SECTIONS: { title: string; kw: string }[] = [
   { title: 'Interest & dividends', kw: 'interest dividends savings bank building society taxed untaxed foreign box 1 2 3 4 5 6 7' },
   { title: 'UK pensions & benefits', kw: 'state pension pensions annuity incapacity esa jobseekers jsa benefits lump sum box 8 9 10 11 12 13 14 15 16' },
@@ -28,7 +28,7 @@ const CORE_SECTIONS: { title: string; kw: string }[] = [
 
 // SA-page tabs.
 const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] = [
-  { label: 'Income & reliefs', code: 'SA100', page: 'core', kw: 'core main return reliefs' },
+  { label: 'Main Form', code: 'SA100', page: 'core', kw: 'core main return reliefs' },
   { label: 'Employment', code: 'SA102', page: 'employment', kw: 'employment employer pay p60 p11d benefits director' },
   { label: 'Self-employment', code: 'SA103', page: 'selfemp', kw: 'self employment sole trader trade business turnover expenses' },
   { label: 'Partnership', code: 'SA104', page: 'partnership', kw: 'partnership partner share' },
@@ -121,21 +121,21 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Pension savings tax charges', context: 'Additional info · Pension savings tax charges · boxes 10–18', page: 'additional', keywords: 'pension savings annual allowance charge scheme pays overseas transfer unauthorised payment surcharge foreign lump sum short service refund box 10 11 12 13 14 15 16 17 18' },
   { label: 'Tax avoidance schemes', context: 'Additional info · Tax avoidance schemes · boxes 19–20', page: 'additional', keywords: 'tax avoidance scheme reference number dotas expected advantage box 19 20' },
   // Core page fields
-  { label: 'Taxed / untaxed UK interest', context: 'Income & reliefs · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
-  { label: 'Dividends', context: 'Income & reliefs · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },
-  { label: 'State Pension', context: 'Income & reliefs · UK pensions & benefits · box 8', page: 'core', section: 'UK pensions & benefits', keywords: 'state pension box 8' },
-  { label: 'Gift Aid', context: 'Income & reliefs · Charitable giving · box 5', page: 'core', section: 'Charitable giving', keywords: 'gift aid charity donation box 5' },
-  { label: 'Pension contributions', context: 'Income & reliefs · Pension payments', page: 'core', section: 'Pension payments', keywords: 'pension contributions relief personal payments' },
-  { label: 'Marriage Allowance', context: 'Income & reliefs · Marriage allowance', page: 'core', section: 'Marriage allowance', keywords: 'marriage allowance spouse transfer 252' },
-  { label: 'Blind Person’s Allowance', context: 'Income & reliefs · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'blind person allowance registered' },
-  { label: 'Student loan', context: 'Income & reliefs · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'student loan plan postgraduate repayment' },
-  { label: 'Child Benefit charge (HICBC)', context: 'Income & reliefs · Child benefit', page: 'core', section: 'Child benefit', keywords: 'child benefit hicbc high income charge winter fuel' },
+  { label: 'Taxed / untaxed UK interest', context: 'Main Form · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
+  { label: 'Dividends', context: 'Main Form · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },
+  { label: 'State Pension', context: 'Main Form · UK pensions & benefits · box 8', page: 'core', section: 'UK pensions & benefits', keywords: 'state pension box 8' },
+  { label: 'Gift Aid', context: 'Main Form · Charitable giving · box 5', page: 'core', section: 'Charitable giving', keywords: 'gift aid charity donation box 5' },
+  { label: 'Pension contributions', context: 'Main Form · Pension payments', page: 'core', section: 'Pension payments', keywords: 'pension contributions relief personal payments' },
+  { label: 'Marriage Allowance', context: 'Main Form · Marriage allowance', page: 'core', section: 'Marriage allowance', keywords: 'marriage allowance spouse transfer 252' },
+  { label: 'Blind Person’s Allowance', context: 'Main Form · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'blind person allowance registered' },
+  { label: 'Student loan', context: 'Main Form · Blind allowance & student loan', page: 'core', section: 'Blind allowance & student loan', keywords: 'student loan plan postgraduate repayment' },
+  { label: 'Child Benefit charge (HICBC)', context: 'Main Form · Child benefit', page: 'core', section: 'Child benefit', keywords: 'child benefit hicbc high income charge winter fuel' },
 ];
 
 /** The full searchable index. */
 export const SEARCH_INDEX: SearchEntry[] = [
   ...PAGE_ENTRIES.map(p => ({ label: p.label, context: `Section · ${p.code}`, page: p.page, keywords: `${p.kw} ${p.code}` })),
-  ...CORE_SECTIONS.map(s => ({ label: s.title, context: 'Income & reliefs section', page: 'core', section: s.title, keywords: s.kw })),
+  ...CORE_SECTIONS.map(s => ({ label: s.title, context: 'Main Form section', page: 'core', section: s.title, keywords: s.kw })),
   ...FIELD_ENTRIES,
 ];
 
