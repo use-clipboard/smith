@@ -26,8 +26,13 @@ function SubHead({ children }: { children: React.ReactNode }) {
 function Note({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;
 }
-function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <div className={`mb-3 p-3 ${className}`} style={{ background: PANEL_BG, border: `1px solid ${PANEL_BORDER}` }}>{children}</div>;
+function Panel({ children, className = '', divided }: { children: React.ReactNode; className?: string; divided?: boolean }) {
+  return (
+    <div className={`relative mb-3 p-3 ${className}`} style={{ background: PANEL_BG, border: `1px solid ${PANEL_BORDER}` }}>
+      {divided && <div className="absolute bottom-2 top-2 w-px" style={{ left: '50%', background: PANEL_BORDER }} />}
+      {children}
+    </div>
+  );
 }
 function BoxNum({ n }: { n: React.ReactNode }) {
   return <span className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center px-0.5 text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
@@ -53,12 +58,12 @@ function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; lab
   for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
   const cellBorder = `1px solid ${CELL}`;
   return (
-    <div className="mb-3.5">
+    <div className="mb-4">
       <Label n={n}>{label}</Label>
       <div className="flex items-stretch" style={{ height: 21 }}>
-        {minus && <span className="mr-1.5 flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ border: cellBorder, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
         <div className="flex items-stretch" style={{ border: cellBorder }}>
           <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ borderRight: cellBorder, background: MONEY_TINT }}>£</span>
+          {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ borderRight: cellBorder, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
           {arr.map((d, idx) => (
             <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={{ borderRight: cellBorder }}>{d}</span>
           ))}
@@ -305,7 +310,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="TR 2">
         <Teal>What makes up your tax return</Teal>
         <p className="mb-3 text-[9.5px] leading-snug text-black">To make a complete return of your taxable income and gains for the year to 5 April 2026 you may need to complete some separate supplementary pages. Answer the following questions by putting ‘X’ in the ‘Yes’ or ‘No’ box.</p>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Question n={1} k="employment" title="Employment" yes={has.employment} extra={<span className="flex items-center gap-2 text-[11px]">Number <span className="flex h-4 w-8 items-center justify-center text-[11px]" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{has.employment ? i.employment.length : ''}</span></span>}>Were you an employee, director, office holder or agency worker in the year to 5 April 2026? Please read the notes before answering. Fill in a separate ‘Employment’ page for each employment, directorship and so on. On each ‘Employment’ page you complete, enter any other payments, expenses or benefits related to that employment. Say how many ‘Employment’ pages you are completing in the ‘Number’ box below.</Question>
@@ -334,7 +339,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="TR 3">
         <Teal>Income</Teal>
         <SubHead>Dividends and interest from UK banks and building societies</SubHead>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Taxed UK interest — the net amount after tax has been taken off — read the notes" value={taxedInterest} />
@@ -350,7 +355,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <SubHead>UK pensions, annuities and other state benefits received</SubHead>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={8} label="State Pension — amount you were entitled to receive in the year, not the weekly or 4-weekly amount — read the notes" value={i.statePension} cells={6} />
@@ -369,7 +374,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <SubHead>Other UK income not included on supplementary pages</SubHead>
         <Note>Do not use this section for income that should be returned on supplementary pages. Share schemes, gilts, stock dividends, life insurance gains and certain other kinds of income go on the ‘Additional information’ pages.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={17} label="Other taxable income — before expenses and tax taken off" value={i.otherIncome} />
@@ -389,7 +394,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Teal>Tax reliefs</Teal>
         <SubHead>Paying into registered pension schemes and overseas pension schemes</SubHead>
         <Note>Do not include payments to your employer’s pension scheme deducted from your pay before tax, or payments made by your employer.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Payments to registered pension schemes where basic rate tax relief will be claimed by your pension provider (‘relief at source’). Enter the payments and basic rate tax" value={i.pensionContributions} />
@@ -403,7 +408,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <SubHead>Charitable giving</SubHead>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={5} label="Gift Aid payments made in the year to 5 April 2026" value={i.giftAid} />
@@ -419,7 +424,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <SubHead>Blind Person’s Allowance</SubHead>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <div className="mb-2 flex items-start gap-2"><Label n={13}>If you’re registered blind, or severely sight impaired, and your name is on a local authority or other register, put ‘X’ in the box</Label></div>
@@ -439,7 +444,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="TR 5">
         <Teal>Student Loan and Postgraduate Loan repayments</Teal>
         <Note>Please read the notes before filling in boxes 1 to 3.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box</Label><Tick on={!!i.studentLoanPlan} /></div>
             <div>
@@ -450,7 +455,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <Teal>High Income Child Benefit Charge</Teal>
         <Note>Only fill in this section if: your income was over £60,000; you or your partner got Child Benefit; and (couples only) your income was higher than your partner’s.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Enter the total amount of Child Benefit you and your partner got for the year to 5 April 2026" value={i.childBenefit} cells={5} />
@@ -461,7 +466,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <Teal>Marriage Allowance</Teal>
         <Note>If your income was less than £12,570 you can transfer £1,260 of your Personal Allowance to your spouse or civil partner. Fill in this section if you want to make the transfer.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Line n={1} label="Your spouse or civil partner’s first name" value={i.spouseFirstName} />
@@ -483,7 +488,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <SubHead>Tax refunded or set off</SubHead>
         <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount" value={undefined} /></Panel>
         <SubHead>If you have not paid enough tax</SubHead>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div><Label n={2}>If you owe less than £3,000 for 2025–26 (excluding Class 2 NICs) and you file by the deadline, we’ll try to collect the tax through your 2027–28 tax code. If you do not want us to do this, put ‘X’ in the box</Label><Tick /></div>
             <div><Label n={3}>If you owe tax on savings, casual earnings and/or the High Income Child Benefit Charge for 2026–27, we’ll try to collect it via your 2026–27 tax code. If you do not want this, put ‘X’ in the box</Label><Tick /></div>
@@ -491,7 +496,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <SubHead>If you have paid too much tax</SubHead>
         <Note>To claim a repayment, fill in boxes 4 to 14 below.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Line n={4} label="Name of bank or building society" value={i.repayBankName} />
@@ -516,7 +521,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="TR 7">
         <p className="mb-1 text-[14px] text-black">Your tax adviser, if you have one</p>
         <Note>This section is optional. Please read the notes about authorising your tax adviser.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Line n={15} label="Your tax adviser’s name" value={i.adviserName} lines={2} />
@@ -539,7 +544,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="TR 8">
         <p className="mb-1 text-[14px] text-black">Signing your form and sending it back</p>
         <Note>Please fill in this section and sign and date the declaration at box 22.</Note>
-        <Panel>
+        <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <div className="mb-3"><Label n={20}>If this tax return contains provisional figures, put ‘X’ in the box — in the ‘Any other information’ box on page TR7, tell us why and when you expect to give us your final figures</Label><Tick /></div>
