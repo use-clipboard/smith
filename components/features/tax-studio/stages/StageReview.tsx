@@ -958,13 +958,25 @@ function BoxSection({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-function BoxNum({ box, label, value, onChange, help }: { box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string }) {
+// Small blue "your share" hint shown under a whole-property box so the user can
+// see the proportion that actually gets filed on the SA105 for this client.
+function ShareHint({ value }: { value: number }) {
+  return (
+    <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-sky-600">
+      <span className="rounded bg-sky-50 px-1 py-px uppercase tracking-wide text-[8.5px] text-sky-500">Your share</span>
+      {fmtMoney(value)}
+    </div>
+  );
+}
+
+function BoxNum({ box, label, value, onChange, help, share }: { box?: number | string; label: string; value: number; onChange: (v: number) => void; help?: string; share?: number }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <NumIn value={value} onChange={onChange} />
+      {share != null && share < 1 && value !== 0 && <ShareHint value={Math.round(value * share)} />}
     </div>
   );
 }
@@ -1023,13 +1035,14 @@ function BoxCheck({ box, label, checked, onChange, help }: { box?: number | stri
 }
 
 // Read-only, auto-calculated box (blue chip) — mirrors Capium's computed fields.
-function BoxCalc({ box, label, value, help }: { box?: number | string; label: string; value: number; help?: string }) {
+function BoxCalc({ box, label, value, help, shareValue }: { box?: number | string; label: string; value: number; help?: string; shareValue?: number }) {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {box != null ? <span className="rounded bg-sky-100 px-1 text-[9px] font-bold text-sky-600">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <div className="input-base flex items-center justify-end rounded-md bg-sky-50/70 py-1 text-right text-[12.5px] font-semibold text-sky-700">{fmtMoney(value)}</div>
+      {shareValue != null && value !== 0 && <ShareHint value={shareValue} />}
     </div>
   );
 }
@@ -1975,7 +1988,9 @@ function PropertyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa10
   const agg = {
     income: sum(propertyGrossIncome), adjProfit: sum(propertyAdjustedProfit),
     taxable: sum(propertyTaxable), lossCf: sum(propertyLossCarryForward), finance: sum(p => p.residentialFinanceCosts ?? 0),
+    taxableShare: sum(propertyTaxableShare),
   };
+  const anyJoint = list.some(p => !!p.owners);
   return (
     <div className="space-y-3">
       {/* Return-level details (SA105 boxes 1–4) */}
@@ -2004,9 +2019,10 @@ function PropertyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa10
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11.5px] sm:grid-cols-4">
             <span className="text-[var(--text-muted)]">Income <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.income)}</span></span>
             <span className="text-[var(--text-muted)]">Adjusted profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.adjProfit)}</span></span>
-            <span className="text-[var(--text-muted)]">Taxable profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.taxable)}</span></span>
+            <span className="text-[var(--text-muted)]">Taxable profit <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.taxable)}</span>{anyJoint && <span className="ml-1 text-sky-600">· your {fmtMoney(agg.taxableShare)}</span>}</span>
             <span className="text-[var(--text-muted)]">Loss to carry fwd <span className="font-bold text-[var(--text-primary)]">{fmtMoney(agg.lossCf)}</span></span>
           </div>
+          {anyJoint && <p className="mt-1.5 text-[10px] text-[var(--text-muted)]">Figures above are the <b>whole</b> property/properties. Only <b>your {fmtMoney(agg.taxableShare)}</b> taxable share is carried into this client’s tax calculation and filed on their SA105.</p>}
         </div>
       )}
 
@@ -2074,6 +2090,7 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
   const set = (u: Partial<PropertySource>) => onChange(u);
   const joint = !!p.owners;
   const share = ownerShareFraction(p.owners);
+  const shareProp = joint ? share : undefined;
   const activeTab = (PROPERTY_TABS as readonly string[]).includes(tab) ? tab : PROPERTY_TABS[0];
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
@@ -2088,7 +2105,7 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
         <div className="border-t border-black/5">
           <div className="border-b border-black/5 px-3 py-2.5">
             <OwnershipEditor owners={p.owners ?? []} onChange={o => set({ owners: o.length ? o : undefined })} taxpayerName={taxpayerName} />
-            {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter the WHOLE property above; the return uses {taxpayerName}’s {Math.round(share * 100)}% share. The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
+            {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter each box below as the <b>whole property</b> figure — the blue <span className="text-sky-600">your share</span> line under each box is what’s actually filed on {taxpayerName}’s SA105 ({Math.round(share * 100)}%). The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
           </div>
           <div className="px-3 pt-2.5">
             <SectionTabs tabs={PROPERTY_TABS.map(tt => ({ label: tt, count: propertySectionCount(p, tt) }))} active={activeTab} onSelect={setTab} />
@@ -2097,17 +2114,17 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
             {activeTab === 'Property income' && (
               <>
                 <BoxSection title={joint ? 'Property income (whole property)' : 'Property income'}>
-                  <BoxNum box={20} label="Total rents and other income from property" value={p.rents ?? 0} onChange={v => set({ rents: v })} />
+                  <BoxNum box={20} label="Total rents and other income from property" value={p.rents ?? 0} onChange={v => set({ rents: v })} share={shareProp} />
                   <BoxNum box="20.1" label={joint ? 'Property income allowance (your own, max £1,000)' : 'Property income allowance (max £1,000)'} help={PROP.incomeAllowance} value={p.propertyIncomeAllowance ?? 0} onChange={v => set({ propertyIncomeAllowance: v })} />
                   <BoxCheck box="20.2" label="Traditional accounting" help={PROP.traditionalAccounting} checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
-                  <BoxNum box={21} label="Tax taken off any income in box 20" value={p.taxTaken ?? 0} onChange={v => set({ taxTaken: v })} />
-                  <BoxNum box={22} label="Premiums for the grant of a lease" help={PROP.premiums} value={p.premiums ?? 0} onChange={v => set({ premiums: v })} />
-                  <BoxNum box={23} label="Reverse premiums and inducements" help={PROP.reversePremiums} value={p.reversePremiums ?? 0} onChange={v => set({ reversePremiums: v })} />
+                  <BoxNum box={21} label="Tax taken off any income in box 20" value={p.taxTaken ?? 0} onChange={v => set({ taxTaken: v })} share={shareProp} />
+                  <BoxNum box={22} label="Premiums for the grant of a lease" help={PROP.premiums} value={p.premiums ?? 0} onChange={v => set({ premiums: v })} share={shareProp} />
+                  <BoxNum box={23} label="Reverse premiums and inducements" help={PROP.reversePremiums} value={p.reversePremiums ?? 0} onChange={v => set({ reversePremiums: v })} share={shareProp} />
                 </BoxSection>
                 {(p.propertyIncomeAllowance || 0) > 0 && propertyExpensesTotal(p) > 0 && (
                   <p className="flex items-start gap-1.5 text-[11px] text-amber-700"><AlertTriangle size={12} className="mt-0.5 shrink-0" /> You've claimed the £1,000 property income allowance <b>and</b> entered expenses — only the allowance is used in the tax. It's one or the other: clear box 20.1 to deduct actual expenses instead.</p>
                 )}
-                {joint && <p className="text-[10.5px] text-[var(--text-muted)]">Rents, premiums and expenses are the <b>whole property</b> — the return applies {taxpayerName}’s {Math.round(share * 100)}% share. The property income allowance is <b>per-person</b>: enter this client’s own (up to £1,000), not the whole, and it’s set against their share.</p>}
+                {joint && <p className="text-[10.5px] text-[var(--text-muted)]">Each box is the <b>whole property</b>; the blue <span className="text-sky-600">your share</span> beneath it is {taxpayerName}’s {Math.round(share * 100)}% that goes on the SA105. The property income allowance is <b>per-person</b> — enter this client’s own (up to £1,000), not the whole.</p>}
               </>
             )}
             {activeTab === 'Property expenses' && (
@@ -2118,36 +2135,36 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
                 </div>
               ) : (
                 <BoxSection title={joint ? 'Property expenses (whole property)' : 'Property expenses'}>
-                  <BoxNum box={24} label="Rent, rates, insurance, ground rents etc." value={p.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
-                  <BoxNum box={25} label="Property repairs and maintenance" value={p.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
-                  <BoxNum box={26} label="Loan interest and other financial costs" help={PROP.loanInterest} value={p.expLoanInterest ?? 0} onChange={v => set({ expLoanInterest: v })} />
-                  <BoxNum box={27} label="Legal, management and other professional fees" value={p.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
-                  <BoxNum box={28} label="Costs of services provided, including wages" value={p.expServices ?? 0} onChange={v => set({ expServices: v })} />
-                  <BoxNum box={29} label="Other allowable property expenses" value={p.expOther ?? 0} onChange={v => set({ expOther: v })} />
+                  <BoxNum box={24} label="Rent, rates, insurance, ground rents etc." value={p.expPremises ?? 0} onChange={v => set({ expPremises: v })} share={shareProp} />
+                  <BoxNum box={25} label="Property repairs and maintenance" value={p.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} share={shareProp} />
+                  <BoxNum box={26} label="Loan interest and other financial costs" help={PROP.loanInterest} value={p.expLoanInterest ?? 0} onChange={v => set({ expLoanInterest: v })} share={shareProp} />
+                  <BoxNum box={27} label="Legal, management and other professional fees" value={p.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} share={shareProp} />
+                  <BoxNum box={28} label="Costs of services provided, including wages" value={p.expServices ?? 0} onChange={v => set({ expServices: v })} share={shareProp} />
+                  <BoxNum box={29} label="Other allowable property expenses" value={p.expOther ?? 0} onChange={v => set({ expOther: v })} share={shareProp} />
                 </BoxSection>
               )
             )}
             {activeTab === 'Taxable profit or loss' && (
               <BoxSection title="Taxable profit or loss">
-                <BoxNum box={30} label="Private use adjustment" help={PROP.privateUse} value={p.privateUse ?? 0} onChange={v => set({ privateUse: v })} />
-                <BoxNum box={31} label="Balancing charges" help={PROP.balancingCharges} value={p.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} />
-                <BoxNum box={32} label="Annual Investment Allowance" help={PROP.aia} value={p.aia ?? 0} onChange={v => set({ aia: v })} />
-                <BoxNum box={33} label="Structures and Buildings Allowance" value={p.sba ?? 0} onChange={v => set({ sba: v })} />
-                <BoxNum box="33.1" label="Electric charge-point allowance" value={p.electricChargepoint ?? 0} onChange={v => set({ electricChargepoint: v })} />
-                <BoxNum box="33.2" label="Freeport and Investment Zones Structures and Buildings Allowance" value={p.freeportSba ?? 0} onChange={v => set({ freeportSba: v })} />
-                <BoxNum box="34.1" label="Zero-emission car allowance" value={p.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} />
-                <BoxNum box={35} label="All other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => set({ capitalAllowances: v })} />
-                <BoxNum box={36} label="Costs of replacing domestic items" help={PROP.domesticItems} value={p.domesticItems ?? 0} onChange={v => set({ domesticItems: v })} />
-                <BoxNum box={37} label="Rent a Room exempt amount" help={PROP.rentARoomExempt} value={p.rentARoomExempt ?? p.rentARoom ?? 0} onChange={v => set({ rentARoomExempt: v })} />
-                <BoxCalc box={38} label="Adjusted profit for the year" help={PROP.adjustedProfit} value={propertyAdjustedProfit(p)} />
-                <BoxNum box={39} label="Loss brought forward used against this year's profits" help={PROP.lossBroughtForward} value={p.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} />
-                <BoxNum label="Unused losses b/fwd to carry forward to next year" value={p.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} />
-                <BoxCalc box={40} label="Taxable profit for the year" help={PROP.taxableProfit} value={propertyTaxable(p)} />
-                <BoxCalc box={41} label="Adjusted loss for the year" help={PROP.adjustedLoss} value={propertyAdjustedLoss(p)} />
-                <BoxNum box={42} label="Loss set off against total income for the year" value={p.lossSetOffTotalIncome ?? 0} onChange={v => set({ lossSetOffTotalIncome: v })} />
-                <BoxCalc box={43} label="Loss to carry forward to following year" help={PROP.lossCarryForward} value={propertyLossCarryForward(p)} />
-                <BoxNum box={44} label="Residential property finance costs" help={PROP.residentialFinanceCosts} value={p.residentialFinanceCosts ?? 0} onChange={v => set({ residentialFinanceCosts: v })} />
-                <BoxNum box={45} label="Unused residential property finance costs brought forward" value={p.unusedFinanceCostsBfwd ?? 0} onChange={v => set({ unusedFinanceCostsBfwd: v })} />
+                <BoxNum box={30} label="Private use adjustment" help={PROP.privateUse} value={p.privateUse ?? 0} onChange={v => set({ privateUse: v })} share={shareProp} />
+                <BoxNum box={31} label="Balancing charges" help={PROP.balancingCharges} value={p.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} share={shareProp} />
+                <BoxNum box={32} label="Annual Investment Allowance" help={PROP.aia} value={p.aia ?? 0} onChange={v => set({ aia: v })} share={shareProp} />
+                <BoxNum box={33} label="Structures and Buildings Allowance" value={p.sba ?? 0} onChange={v => set({ sba: v })} share={shareProp} />
+                <BoxNum box="33.1" label="Electric charge-point allowance" value={p.electricChargepoint ?? 0} onChange={v => set({ electricChargepoint: v })} share={shareProp} />
+                <BoxNum box="33.2" label="Freeport and Investment Zones Structures and Buildings Allowance" value={p.freeportSba ?? 0} onChange={v => set({ freeportSba: v })} share={shareProp} />
+                <BoxNum box="34.1" label="Zero-emission car allowance" value={p.zeroEmissionCar ?? 0} onChange={v => set({ zeroEmissionCar: v })} share={shareProp} />
+                <BoxNum box={35} label="All other capital allowances" value={p.capitalAllowances ?? 0} onChange={v => set({ capitalAllowances: v })} share={shareProp} />
+                <BoxNum box={36} label="Costs of replacing domestic items" help={PROP.domesticItems} value={p.domesticItems ?? 0} onChange={v => set({ domesticItems: v })} share={shareProp} />
+                <BoxNum box={37} label="Rent a Room exempt amount" help={PROP.rentARoomExempt} value={p.rentARoomExempt ?? p.rentARoom ?? 0} onChange={v => set({ rentARoomExempt: v })} share={shareProp} />
+                <BoxCalc box={38} label="Adjusted profit for the year" help={PROP.adjustedProfit} value={propertyAdjustedProfit(p)} shareValue={joint ? Math.round(propertyAdjustedProfit(p) * share) : undefined} />
+                <BoxNum box={39} label="Loss brought forward used against this year's profits" help={PROP.lossBroughtForward} value={p.lossBroughtForward ?? 0} onChange={v => set({ lossBroughtForward: v })} share={shareProp} />
+                <BoxNum label="Unused losses b/fwd to carry forward to next year" value={p.unusedLossCarriedForward ?? 0} onChange={v => set({ unusedLossCarriedForward: v })} share={shareProp} />
+                <BoxCalc box={40} label="Taxable profit for the year" help={PROP.taxableProfit} value={propertyTaxable(p)} shareValue={joint ? propertyTaxableShare(p) : undefined} />
+                <BoxCalc box={41} label="Adjusted loss for the year" help={PROP.adjustedLoss} value={propertyAdjustedLoss(p)} shareValue={joint ? Math.round(propertyAdjustedLoss(p) * share) : undefined} />
+                <BoxNum box={42} label="Loss set off against total income for the year" value={p.lossSetOffTotalIncome ?? 0} onChange={v => set({ lossSetOffTotalIncome: v })} share={shareProp} />
+                <BoxCalc box={43} label="Loss to carry forward to following year" help={PROP.lossCarryForward} value={propertyLossCarryForward(p)} shareValue={joint ? Math.round(propertyLossCarryForward(p) * share) : undefined} />
+                <BoxNum box={44} label="Residential property finance costs" help={PROP.residentialFinanceCosts} value={p.residentialFinanceCosts ?? 0} onChange={v => set({ residentialFinanceCosts: v })} share={shareProp} />
+                <BoxNum box={45} label="Unused residential property finance costs brought forward" value={p.unusedFinanceCostsBfwd ?? 0} onChange={v => set({ unusedFinanceCostsBfwd: v })} share={shareProp} />
               </BoxSection>
             )}
           </div>
@@ -3855,6 +3872,26 @@ function ComputationCard({ ret }: { ret: TaxReturn }) {
         <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">{c.taxYear}</span>
       </div>
       <Row label="Total income" value={fmtMoney(c.totalIncome)} />
+      {(() => {
+        const parts = [
+          { label: 'Employment', amount: c.employmentIncome },
+          { label: 'Self-employment', amount: c.tradeProfit },
+          { label: 'Partnership', amount: c.partnershipProfit },
+          { label: 'Property', amount: c.propertyProfit },
+          { label: 'Savings & interest', amount: c.savingsIncome },
+          { label: 'Dividends', amount: c.dividendIncome },
+          { label: 'Other income', amount: c.otherIncome },
+        ].filter(p => p.amount > 0);
+        return parts.length > 1 ? (
+          <div className="mb-1 ml-2 space-y-0.5 border-l-2 border-black/5 pl-2.5">
+            {parts.map(p => (
+              <div key={p.label} className="flex items-center justify-between text-[10.5px] text-[var(--text-muted)]">
+                <span>{p.label}</span><span className="tabular-nums">{fmtMoney(p.amount)}</span>
+              </div>
+            ))}
+          </div>
+        ) : null;
+      })()}
       <Row label={`Personal allowance${c.paTapered ? ' (tapered)' : ''}`} value={`(${fmtMoney(c.personalAllowance)})`} />
       {c.charityAssetGiftsDeduction > 0 && <Row label="Less: gifts of shares / land to charity" value={`(${fmtMoney(c.charityAssetGiftsDeduction)})`} />}
       <Row label="Taxable income" value={fmtMoney(c.taxableIncome)} bold />
