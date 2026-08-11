@@ -27,6 +27,10 @@ function SubHead({ children }: { children: React.ReactNode }) {
 function Note({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;
 }
+// Teal information dot (white 'i'), like the form's guidance markers.
+function InfoDot() {
+  return <span className="mr-1 inline-flex h-[15px] w-[15px] shrink-0 translate-y-[2px] items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: TEAL, fontFamily: 'Georgia, "Times New Roman", serif' }}>i</span>;
+}
 function Panel({ children, className = '', divided }: { children: React.ReactNode; className?: string; divided?: boolean }) {
   return (
     <div className={`relative mb-3 p-3 ${className}`} style={{ background: PANEL_BG, border: `1px solid ${PANEL_BORDER}` }}>
@@ -202,8 +206,10 @@ function Page({ tag, children }: { tag: string; children: React.ReactNode }) {
   return (
     <div className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white p-[13mm] shadow-sm" style={{ border: `1px solid ${PANEL_BORDER}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <div className="min-h-0 flex-1">{children}</div>
-      <div className="mt-2 flex items-center justify-between border-t pt-1 text-[10px] font-bold tracking-wide text-black" style={{ borderColor: TEAL }}>
-        <span>SA100 2026</span><span>Page {tag}</span><span className="font-normal text-slate-400">HMRC 12/25</span>
+      <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
+        <span style={{ letterSpacing: '0.18em' }}>SA100 2026</span>
+        <span style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
+        <span className="font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>HMRC 12/25</span>
       </div>
     </div>
   );
@@ -431,7 +437,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
             <div>
               <div className="mb-2 flex items-start gap-2"><Label n={13}>If you’re registered blind, or severely sight impaired, and your name is on a local authority or other register, put ‘X’ in the box</Label></div>
               <Tick on={!!i.registeredBlind} />
-              <div className="mt-3"><Line n={14} label="Enter the name of the local authority or other register" value={i.blindAuthority} lines={2} /></div>
+              <div className="mt-3"><Ruled n={14} label="Enter the name of the local authority or other register" lines={2} /></div>
             </div>
             <div>
               <div className="mb-2"><Label n={15}>If you want your spouse’s, or civil partner’s, surplus allowance, put ‘X’ in the box</Label><Tick on={!!i.blindSpouseSurplusClaim} /></div>
@@ -439,7 +445,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
             </div>
           </div>
         </Panel>
-        <p className="text-[10px] text-black">ℹ Other less common reliefs are on the ‘Additional information’ pages.</p>
+        <p className="text-[10px] text-black"><InfoDot /> Other less common reliefs are on the ‘Additional information’ pages.</p>
       </Page>
 
       {/* ── TR5 — student loan / HICBC / WFP / Marriage Allowance ── */}
@@ -486,7 +492,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       {/* ── TR6 — finishing ── */}
       <Page tag="TR 6">
         <Teal>Finishing your tax return</Teal>
-        <Note>ℹ Calculating your tax — if we receive this paper tax return by 31 October 2026 or if you file online, we’ll do the calculation for you and tell you how much you have to pay (or your repayment) before 31 January 2027.</Note>
+        <Note><InfoDot /> Calculating your tax — if we receive this paper tax return by 31 October 2026 or if you file online, we’ll do the calculation for you and tell you how much you have to pay (or your repayment) before 31 January 2027.</Note>
         <SubHead>Tax refunded or set off</SubHead>
         <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount" value={undefined} /></Panel>
         <SubHead>If you have not paid enough tax</SubHead>
