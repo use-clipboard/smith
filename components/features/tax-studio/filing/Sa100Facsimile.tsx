@@ -35,16 +35,18 @@ function Panel({ children, className = '', divided }: { children: React.ReactNod
     </div>
   );
 }
+// Fixed-width number chip so single- and double-digit markers are the same size
+// (keeps a consistent gap to the label text).
 function BoxNum({ n }: { n: React.ReactNode }) {
-  return <span className="flex h-[15px] min-w-[15px] shrink-0 items-center justify-center px-0.5 text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+  return <span className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
 // Field label — the number chip sits flush to the panel's left edge (pulled out
-// of the panel's padding), with the label text beside it.
+// of the panel's padding), with the label text beside it at a consistent indent.
 function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
       {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
-      <span className={n != null ? 'block pl-1' : 'block'}>{children}</span>
+      <span className={n != null ? 'block pl-3' : 'block'}>{children}</span>
     </div>
   );
 }
