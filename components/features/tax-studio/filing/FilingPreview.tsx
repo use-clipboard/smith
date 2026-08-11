@@ -16,7 +16,9 @@ const PRINT_CSS = `
   #sa-filing-preview { position: absolute; inset: 0; margin: 0; padding: 0; background: #fff; overflow: visible; }
   #sa-filing-preview .no-print { display: none !important; }
   #sa-filing-preview .sa-sheet { box-shadow: none !important; margin: 0 auto 0 auto !important; page-break-after: always; border: none !important; }
-  @page { size: A4; margin: 14mm; }
+  /* The facsimile sheets are already exactly A4 (210×297mm) with their own inner
+     padding, so print with a zero page margin to map one sheet to one A4 page. */
+  @page { size: A4; margin: 0; }
 }`;
 
 function Row({ r }: { r: FilingRow }) {
