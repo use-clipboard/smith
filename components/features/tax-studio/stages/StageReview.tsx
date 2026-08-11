@@ -796,6 +796,17 @@ function EmploymentPage({ income, setIncome }: { income: Sa100Income; setIncome:
 
 const EMPLOYMENT_TABS = ['Details', 'Income', 'Benefit', 'Expenses'] as const;
 type EmploymentTab = typeof EMPLOYMENT_TABS[number];
+// Truthy test for section-count helpers (non-zero number / true / non-empty string).
+const truthy = (v: unknown) => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!(v && String(v).trim()));
+function employmentSectionCount(e: EmploymentSource, tab: string): number {
+  switch (tab) {
+    case 'Details': return [e.employer, e.payeRef, e.isDirector, e.directorCeasedDate, e.isCloseCompany, e.closeCompanyName, e.closeCompanyReg, e.closeCompanyDividends, e.closeCompanyShareholding, e.teachersLoanOffPayroll].filter(truthy).length;
+    case 'Income': return [e.pay, e.payrolledBenefitsStudentLoan, e.taxDeducted, e.tips, e.class1Nic].filter(truthy).length;
+    case 'Benefit': return [e.benCar, e.benFuel, e.benMedical, e.benVouchers, e.benAssets, e.benAccommodation, e.benOther, e.benExpPayments].filter(truthy).length;
+    case 'Expenses': return [e.expTravel, e.expFixed, e.expProfessional, e.expOther].filter(truthy).length;
+  }
+  return 0;
+}
 
 function EmploymentCard({ e, idx, onChange, onRemove }: {
   e: EmploymentSource; idx: number; onChange: (p: Partial<EmploymentSource>) => void; onRemove: () => void;
@@ -815,7 +826,7 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
         <div className="border-t border-black/5">
           {/* Section tabs: Employment Details / Income / Benefit / Expenses */}
           <div className="px-3 pt-2.5">
-            <SectionTabs tabs={EMPLOYMENT_TABS.map(t => ({ label: t }))} active={tab} onSelect={t => setTab(t as EmploymentTab)} />
+            <SectionTabs tabs={EMPLOYMENT_TABS.map(t => ({ label: t, count: employmentSectionCount(e, t) }))} active={tab} onSelect={t => setTab(t as EmploymentTab)} />
           </div>
           <div className="space-y-3 px-3 py-3">
             {tab === 'Details' && (
@@ -998,6 +1009,17 @@ const SHORT_TRADE_SUBTABS: Record<string, string[]> = {
   'Losses, CIS': ['Losses, CIS'],
 };
 
+function tradeSectionCount(t: TradeSource, tab: string): number {
+  switch (tab) {
+    case 'Business details': return [t.name, t.description, t.addressLine, t.postcode, t.detailsChanged, t.startedInYear, t.dateStarted, t.ceasedInYear, t.dateCeased, t.periodStart, t.periodEnd, t.traditionalAccounting, t.fosterCarer, t.specialArrangements, t.priorYearProfitDetails, t.turnover, t.otherBusinessIncome, t.tradingIncomeAllowance].filter(truthy).length;
+    case 'Business Expenses': return [t.expCostOfGoods, t.expSubcontractors, t.expWages, t.expCarVanTravel, t.expPremises, t.expRepairs, t.expOffice, t.expAdvertising, t.expInterest, t.expBankCharges, t.expBadDebts, t.expProfessional, t.expDepreciation, t.expOtherCosts, t.disCostOfGoods, t.disSubcontractors, t.disWages, t.disCarVanTravel, t.disPremises, t.disRepairs, t.disOffice, t.disAdvertising, t.disInterest, t.disBankCharges, t.disBadDebts, t.disProfessional, t.disDepreciation, t.disOtherCosts].filter(truthy).length;
+    case 'Net profit(loss)': return [t.aia, t.ca18, t.ca6, t.zeroEmissionGoods, t.zeroEmissionCar, t.sba, t.sbaFreeport, t.electricChargepoint, t.enhancedCapitalAllowances, t.allowancesOnSale, t.balancingCharges, t.capitalAllowances, t.goodsOwnUse, t.incomeReceiptsElsewhere, t.basisAdjustment, t.changeOfPracticeAdjustment, t.averagingAdjustment, t.transitionProfitSpread, t.transitionLossBfwd, t.lossBroughtForward, t.unusedLossCarriedForward, t.otherBusinessIncome75, t.figClaim, t.profit].filter(truthy).length;
+    case 'Losses, CIS': return [t.adjustmentLossFig, t.lossSetOffOtherIncome, t.lossCarriedBack, t.cisDeductions, t.otherTaxTaken].filter(truthy).length;
+    case 'Balance Sheet': return [t.bsEquipment, t.bsOtherFixedAssets, t.bsStock, t.bsDebtors, t.bsBank, t.bsCash, t.bsOtherCurrentAssets, t.bsCreditors, t.bsLoans, t.bsOtherLiabilities, t.caBalanceStart, t.caCapitalIntroduced, t.caDrawings, t.class2Voluntary, t.class4Exempt, t.class4Adjustment, t.willingPayClass2FullYear, t.otherInformation].filter(truthy).length;
+  }
+  return 0;
+}
+
 function TradeCard({ t, idx, onChange, onRemove }: {
   t: TradeSource; idx: number; onChange: (p: Partial<TradeSource>) => void; onRemove: () => void;
 }) {
@@ -1055,7 +1077,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
         <div className="border-t border-black/5">
           {/* Section tabs */}
           <div className="px-3 pt-2.5">
-            <SectionTabs tabs={TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
+            <SectionTabs tabs={TABS.map(tt => ({ label: tt, count: tradeSectionCount(t, tt) }))} active={activeTab} onSelect={setTop} />
           </div>
           {/* Sub-tabs */}
           {subList.length > 1 && <div className="px-3 pt-2.5"><SubTabs tabs={subList.map(st => ({ label: st }))} active={sub} onSelect={setSub} /></div>}
@@ -1460,6 +1482,23 @@ const PARTNERSHIP_SHORT_SUBTABS: Record<string, string[]> = {
   'Trading or professional losses': ['Trading or professional losses', 'NICs & taxed interest', 'Tax paid and deductions'],
 };
 
+function partnershipSectionCount(p: PartnershipSource, tab: string): number {
+  const details = [p.utr, p.description, p.becamePartner, p.dateJoined, p.ceasedPartner, p.dateLeft, p.periodStart, p.periodEnd];
+  const profits = [p.profit, p.adjustmentPeriod, p.accountingAdjustment, p.averagingAdjustment, p.foreignTaxDeduction, p.transitionProfit, p.transitionLossBfwd, p.lossBroughtForward, p.unusedLossCarriedForward, p.otherBusinessIncome, p.figClaim];
+  const lossNicSavProp = [p.lossFigAdjustment, p.lossAgainstOtherIncome, p.lossCarriedBack, p.class2Voluntary, p.class4Exempt, p.class4Adjustment, p.willingClass2, p.ukSavings, p.ukSavingsAdjustment, p.foreignSavings, p.foreignSavingsAdjustment, p.foreignSavingsTax, p.savingsFigClaim, p.propertyProfit, p.propertyAdjustment, p.propertyLossBfwd, p.propertyLossAgainstOther, p.propertyLossCarryForward, p.propertyFinanceCosts, p.propertyFinanceCostsBfwd];
+  const ukForeignOffshore = [p.otherUkIncome, p.otherUkIncomeAdjustment, p.otherUkLossBfwd, p.otherUkIncomeB, p.otherUkLossAdjustment, p.offshoreIncome, p.offshoreAdjustment, p.offshoreTax, p.offshoreFigClaim, p.foreignIncome, p.foreignIncomeAdjustment, p.foreignLossBfwd, p.foreignTax, p.foreignFigClaim, p.foreignIncomeB, p.foreignLossAdjustment, p.foreignFinanceCosts, p.foreignFinanceCostsBfwd];
+  const taxed = [p.taxedIncome10, p.taxedIncome10ForeignTax, p.taxedIncome10Fig, p.taxedIncome20, p.taxedIncome20ForeignTax, p.otherTaxedIncome, p.otherTaxedIncomeForeignTax, p.otherTaxedFig, p.totalFig, p.incomeTaxTaken, p.cisDeductions, p.taxTakenTradingIncome, p.otherInformation];
+  switch (tab) {
+    case 'Partnership details': return [...details, ...profits].filter(truthy).length;
+    case 'Trading, NICs & Untaxed income': return lossNicSavProp.filter(truthy).length;
+    case 'UK, Foreign Incomes & Offshore funds': return ukForeignOffshore.filter(truthy).length;
+    case "Partnership's taxed income": return taxed.filter(truthy).length;
+    case 'Partnership detail and profit': return [...details, ...profits].filter(truthy).length;   // short form
+    case 'Trading or professional losses': return [...lossNicSavProp, ...taxed].filter(truthy).length; // short form
+  }
+  return 0;
+}
+
 function PartnershipCard({ p, idx, onChange, onRemove }: {
   p: PartnershipSource; idx: number; onChange: (u: Partial<PartnershipSource>) => void; onRemove: () => void;
 }) {
@@ -1509,7 +1548,7 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
         <div className="border-t border-black/5">
           {/* Section tabs */}
           <div className="px-3 pt-2.5">
-            <SectionTabs tabs={TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTop} />
+            <SectionTabs tabs={TABS.map(tt => ({ label: tt, count: partnershipSectionCount(p, tt) }))} active={activeTab} onSelect={setTop} />
           </div>
           {/* Sub-tabs */}
           {subList.length > 1 && <div className="px-3 pt-2.5"><SubTabs tabs={subList.map(st => ({ label: st }))} active={sub} onSelect={setSub} /></div>}
@@ -1947,6 +1986,14 @@ function PropertyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa10
 }
 
 const PROPERTY_TABS = ['Property income', 'Property expenses', 'Taxable profit or loss'] as const;
+function propertySectionCount(p: PropertySource, tab: string): number {
+  switch (tab) {
+    case 'Property income': return [p.rents, p.propertyIncomeAllowance, p.traditionalAccounting, p.taxTaken, p.premiums, p.reversePremiums].filter(truthy).length;
+    case 'Property expenses': return [p.expPremises, p.expRepairs, p.expLoanInterest, p.expProfessional, p.expServices, p.expOther].filter(truthy).length;
+    case 'Taxable profit or loss': return [p.privateUse, p.balancingCharges, p.aia, p.sba, p.electricChargepoint, p.freeportSba, p.zeroEmissionCar, p.capitalAllowances, p.domesticItems, p.rentARoomExempt ?? p.rentARoom, p.lossBroughtForward, p.unusedLossCarriedForward, p.lossSetOffTotalIncome, p.residentialFinanceCosts, p.unusedFinanceCostsBfwd].filter(truthy).length;
+  }
+  return 0;
+}
 
 function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
   p: PropertySource; idx: number; taxpayerName: string; onChange: (u: Partial<PropertySource>) => void; onRemove: () => void;
@@ -1973,7 +2020,7 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
             {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter the WHOLE property above; the return uses {taxpayerName}’s {Math.round(share * 100)}% share. The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
           </div>
           <div className="px-3 pt-2.5">
-            <SectionTabs tabs={PROPERTY_TABS.map(tt => ({ label: tt }))} active={activeTab} onSelect={setTab} />
+            <SectionTabs tabs={PROPERTY_TABS.map(tt => ({ label: tt, count: propertySectionCount(p, tt) }))} active={activeTab} onSelect={setTab} />
           </div>
           <div className="space-y-3 px-3 py-3">
             {activeTab === 'Property income' && (
