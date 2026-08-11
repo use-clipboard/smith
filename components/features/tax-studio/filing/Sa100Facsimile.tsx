@@ -106,23 +106,6 @@ function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: React.Rea
   );
 }
 
-// A row of character cells (for text: name, NINO, sort code, phone, dates).
-function Comb({ n, label, value = '', cells = 12 }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; cells?: number }) {
-  const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
-  const arr: string[] = Array(cells).fill('');
-  for (let k = 0; k < chars.length && k < cells; k++) arr[k] = chars[k];
-  return (
-    <div className="mb-2.5">
-      {label != null && <Label n={n}>{label}</Label>}
-      <div className="flex" style={{ border: `1px solid ${CELL}`, background: '#fff', height: 20 }}>
-        {arr.map((c, idx) => (
-          <span key={idx} className="flex w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ borderRight: idx < cells - 1 ? `1px solid ${CELL}` : 'none' }}>{c}</span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // A write-in text box drawn as N ruled lines (name/address boxes). The value sits
 // on the first line; `watermark` shows a faint placeholder on the last line (e.g.
 // 'Postcode').
@@ -600,20 +583,20 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <div className="mb-3"><Label n={20}>If this tax return contains provisional figures, put ‘X’ in the box — in the ‘Any other information’ box on page TR7, tell us why and when you expect to give us your final figures</Label><Tick /></div>
+              <div className="mb-3"><Label n={20}>If this tax return contains provisional figures, put ‘X’ in the box – in the ‘Any other information’ box on page TR7, tell us why you have used provisional amounts and when you expect to give us your final figures</Label><Tick /></div>
               <div className="mb-3"><Label n={21}>If you’re enclosing separate supplementary pages, put ‘X’ in the box</Label><Tick on={Object.values(has).some(Boolean)} /></div>
               <Label n={22}>Declaration</Label>
               <p className="mb-1 text-[10px] leading-snug text-black">I declare that the information I’ve given on this tax return and any supplementary pages is correct and complete to the best of my knowledge and belief.</p>
               <p className="mb-2 text-[10px] leading-snug text-black">I understand that I may have to pay financial penalties and face prosecution if I give false information.</p>
-              <p className="text-[10.5px] font-bold text-black">Signature</p>
-              <div className="mb-2" style={{ border: `1px solid ${RED}`, background: '#fff', height: 46 }} />
-              <Comb label={<span className="font-bold">Date — DD MM YYYY</span>} value="" cells={8} />
+              <p className="mb-1 text-[10.5px] font-bold text-black">Signature</p>
+              <div className="mb-2.5" style={{ border: `1px solid ${RED}`, background: '#fff', height: 46 }} />
+              <Cells label={<span className="font-bold">Date DD MM YYYY</span>} groups={[2, 2, 4]} value="" />
             </div>
             <div>
               <Line n={23} label="If you’ve signed on behalf of someone else, enter the capacity. For example, executor, receiver" value="" lines={2} />
               <Line n={24} label="Enter the name of the person you’ve signed for" value="" lines={2} />
               <Line n={25} label="If you filled in boxes 23 and 24 enter your name" value="" lines={2} />
-              <Line n={26} label="and your address" value="" lines={3} />
+              <Line n={26} label="and your address" value="" lines={3} watermark="Postcode" />
             </div>
           </div>
         </Panel>
