@@ -26,7 +26,7 @@ import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData } from '../calc';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData } from '../calc';
 import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
@@ -34,8 +34,34 @@ type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 export type Reveal = { page: PageId; section?: string; nonce: number };
 const RevealContext = createContext<Reveal | null>(null);
 
+// Live, rule-based advisory review points (not stored) — currently the £1,000
+// property / trading income allowance nudge: when income exists and allowable
+// expenses are under £1,000 and the allowance isn't already claimed, claiming it
+// gives a lower taxable profit. These self-resolve as soon as the user acts.
+function advisoryReviewPoints(income: Sa100Income): ReviewPoint[] {
+  const out: ReviewPoint[] = [];
+  const ALLOWANCE = 1000;
+  income.property.forEach((p, i) => {
+    const gross = propertyGrossIncome(p);
+    const exp = propertyExpensesTotal(p);
+    if (gross > 0 && !(p.propertyIncomeAllowance) && exp < ALLOWANCE && exp < gross) {
+      out.push({ id: `adv-prop-${p.id || i}`, area: 'Property', issue: `${p.address || `Property ${i + 1}`}: the £1,000 property income allowance may be better`, explanation: `Allowable expenses are ${fmtMoney(exp)} — under £1,000. Claiming the £1,000 property income allowance instead of actual expenses would give a lower taxable profit. You can claim one or the other, not both.`, severity: 'info', suggestedFix: 'Enter £1,000 in the property income allowance (box 20.1) and clear the expense boxes.', resolved: false });
+    }
+  });
+  income.selfEmployment.forEach((t, i) => {
+    const turnover = t.turnover || 0;
+    const exp = tradeExpensesTotal(t);
+    if (turnover > 0 && !(t.tradingIncomeAllowance) && exp < ALLOWANCE && exp < turnover) {
+      out.push({ id: `adv-trade-${t.id || i}`, area: 'Self-employment', issue: `${t.name || `Trade ${i + 1}`}: the £1,000 trading income allowance may be better`, explanation: `Allowable expenses are ${fmtMoney(exp)} — under £1,000. Claiming the £1,000 trading income allowance instead of actual expenses would give a lower taxable profit. You can claim one or the other, not both.`, severity: 'info', suggestedFix: 'Enter £1,000 in the trading income allowance (box 16.1) and clear the expense boxes.', resolved: false });
+    }
+  });
+  return out;
+}
+
 export default function StageReview({ ret, patch, advance, page, setPage, reveal }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null }) {
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
+  const advisories = advisoryReviewPoints(ret.income);
+  const allPoints = [...ret.reviewPoints, ...advisories];
   const counts = pageCounts(ret.income);
 
   function setIncome(u: (i: Sa100Income) => Sa100Income) {
@@ -53,13 +79,13 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
       {/* Review points */}
       <StudioCard className="p-5">
         <SectionTitle title="Review points" sub={openPoints ? `${openPoints} to resolve before approval` : 'Everything checks out'} />
-        {ret.reviewPoints.length === 0 ? (
+        {allPoints.length === 0 ? (
           <p className="text-[12.5px] text-[var(--text-muted)]">No review points raised. Run the analysis or adjust figures to re-check.</p>
         ) : (
           <div className="space-y-2">
-            {ret.reviewPoints.map(p => (
+            {allPoints.map(p => (
               <ReviewPointRow key={p.id} point={p}
-                onToggle={() => patch(r => ({ ...r, reviewPoints: r.reviewPoints.map(x => x.id === p.id ? { ...x, resolved: !x.resolved } : x) }))} />
+                onToggle={() => { if (!p.id.startsWith('adv-')) patch(r => ({ ...r, reviewPoints: r.reviewPoints.map(x => x.id === p.id ? { ...x, resolved: !x.resolved } : x) })); }} />
             ))}
           </div>
         )}
@@ -1150,7 +1176,12 @@ function TradeCard({ t, idx, onChange, onRemove }: {
               </BoxSection>
             )}
             {/* ── Business Expenses ── */}
-            {subName === 'Total Expenses' && (
+            {subName === 'Total Expenses' && ((t.tradingIncomeAllowance || 0) > 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+                <p className="flex items-start gap-1.5 text-[12px] font-semibold text-amber-800"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> Claiming the £1,000 trading income allowance</p>
+                <p className="mt-1 text-[11px] text-amber-700">Actual expenses aren’t used when you claim the allowance — it’s one or the other. To deduct actual expenses instead, clear the trading income allowance (box 16.1) on the Business Income tab.</p>
+              </div>
+            ) : (
               <BoxSection title="Business expenses">
                 <BoxNum box={17} label="Cost of goods bought for resale or goods used" value={t.expCostOfGoods ?? 0} onChange={v => set({ expCostOfGoods: v })} />
                 <BoxNum box={18} label="Construction industry — payments to subcontractors" value={t.expSubcontractors ?? 0} onChange={v => set({ expSubcontractors: v })} />
@@ -1168,7 +1199,7 @@ function TradeCard({ t, idx, onChange, onRemove }: {
                 <BoxNum box={30} label="Other business expense" value={t.expOtherCosts ?? 0} onChange={v => set({ expOtherCosts: v })} />
                 <BoxCalc box={31} label="Total expenses" value={tradeExpensesTotal(t)} />
               </BoxSection>
-            )}
+            ))}
             {subName === 'Disallowable Expenses' && (
               <BoxSection title="Disallowable expenses">
                 <BoxNum box={32} label="Cost of goods (disallowable)" help={H.disallowables} value={t.disCostOfGoods ?? 0} onChange={v => set({ disCostOfGoods: v })} />
@@ -1370,7 +1401,12 @@ function TradeShortBody({ t, set, subName, caDiverged, onOpenCa }: {
           )}
         </>
       )}
-      {subName === 'Allowable Expenses' && (
+      {subName === 'Allowable Expenses' && ((t.tradingIncomeAllowance || 0) > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+          <p className="flex items-start gap-1.5 text-[12px] font-semibold text-amber-800"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> Claiming the £1,000 trading income allowance</p>
+          <p className="mt-1 text-[11px] text-amber-700">Actual expenses aren’t used when you claim the allowance — it’s one or the other. Clear the trading income allowance (box 10.1) on the Business Income tab to deduct actual expenses instead.</p>
+        </div>
+      ) : (
         <BoxSection title="Allowable expenses">
           <BoxNum box={11} label="Cost of goods bought for resale or goods used" value={t.expCostOfGoods ?? 0} onChange={v => set({ expCostOfGoods: v })} />
           <BoxNum box={12} label="Car, van and travel expenses" value={t.expCarVanTravel ?? 0} onChange={v => set({ expCarVanTravel: v })} />
@@ -1383,7 +1419,7 @@ function TradeShortBody({ t, set, subName, caDiverged, onOpenCa }: {
           <BoxNum box={19} label="Other allowable business expenses" value={t.expOtherCosts ?? 0} onChange={v => set({ expOtherCosts: v })} />
           <BoxCalc box={20} label="Total allowable expenses" value={tradeExpensesTotal(t)} />
         </BoxSection>
-      )}
+      ))}
       {subName === 'Net profit or loss' && (
         <BoxSection title="Net profit or loss">
           <BoxCalc box={21} label="Net profit" value={Math.max(0, tradeNetProfit(t))} />
@@ -2045,7 +2081,7 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
         <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.address} placeholder={`Property ${idx + 1} — address`} onChange={ev => onChange({ address: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <ProvenanceBadge id={p.id} />
-        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span>{joint && <span className="ml-1 text-[var(--accent)]">· your {fmtMoney(Math.round(propertyTaxable(p) * share))}</span>}</span>
+        <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(propertyTaxable(p))}</span>{joint && <span className="ml-1 text-[var(--accent)]">· your {fmtMoney(propertyTaxableShare(p))}</span>}</span>
         <RemoveBtn onClick={onRemove} />
       </div>
       {open && (
@@ -2059,24 +2095,37 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
           </div>
           <div className="space-y-3 px-3 py-3">
             {activeTab === 'Property income' && (
-              <BoxSection title="Property income">
-                <BoxNum box={20} label="Total rents and other income from property" value={p.rents ?? 0} onChange={v => set({ rents: v })} />
-                <BoxNum box="20.1" label="Property income allowance" help={PROP.incomeAllowance} value={p.propertyIncomeAllowance ?? 0} onChange={v => set({ propertyIncomeAllowance: v })} />
-                <BoxCheck box="20.2" label="Traditional accounting" help={PROP.traditionalAccounting} checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
-                <BoxNum box={21} label="Tax taken off any income in box 20" value={p.taxTaken ?? 0} onChange={v => set({ taxTaken: v })} />
-                <BoxNum box={22} label="Premiums for the grant of a lease" help={PROP.premiums} value={p.premiums ?? 0} onChange={v => set({ premiums: v })} />
-                <BoxNum box={23} label="Reverse premiums and inducements" help={PROP.reversePremiums} value={p.reversePremiums ?? 0} onChange={v => set({ reversePremiums: v })} />
-              </BoxSection>
+              <>
+                <BoxSection title={joint ? 'Property income (whole property)' : 'Property income'}>
+                  <BoxNum box={20} label="Total rents and other income from property" value={p.rents ?? 0} onChange={v => set({ rents: v })} />
+                  <BoxNum box="20.1" label={joint ? 'Property income allowance (your own, max £1,000)' : 'Property income allowance (max £1,000)'} help={PROP.incomeAllowance} value={p.propertyIncomeAllowance ?? 0} onChange={v => set({ propertyIncomeAllowance: v })} />
+                  <BoxCheck box="20.2" label="Traditional accounting" help={PROP.traditionalAccounting} checked={!!p.traditionalAccounting} onChange={v => set({ traditionalAccounting: v })} />
+                  <BoxNum box={21} label="Tax taken off any income in box 20" value={p.taxTaken ?? 0} onChange={v => set({ taxTaken: v })} />
+                  <BoxNum box={22} label="Premiums for the grant of a lease" help={PROP.premiums} value={p.premiums ?? 0} onChange={v => set({ premiums: v })} />
+                  <BoxNum box={23} label="Reverse premiums and inducements" help={PROP.reversePremiums} value={p.reversePremiums ?? 0} onChange={v => set({ reversePremiums: v })} />
+                </BoxSection>
+                {(p.propertyIncomeAllowance || 0) > 0 && propertyExpensesTotal(p) > 0 && (
+                  <p className="flex items-start gap-1.5 text-[11px] text-amber-700"><AlertTriangle size={12} className="mt-0.5 shrink-0" /> You've claimed the £1,000 property income allowance <b>and</b> entered expenses — only the allowance is used in the tax. It's one or the other: clear box 20.1 to deduct actual expenses instead.</p>
+                )}
+                {joint && <p className="text-[10.5px] text-[var(--text-muted)]">Rents, premiums and expenses are the <b>whole property</b> — the return applies {taxpayerName}’s {Math.round(share * 100)}% share. The property income allowance is <b>per-person</b>: enter this client’s own (up to £1,000), not the whole, and it’s set against their share.</p>}
+              </>
             )}
             {activeTab === 'Property expenses' && (
-              <BoxSection title="Property expenses">
-                <BoxNum box={24} label="Rent, rates, insurance, ground rents etc." value={p.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
-                <BoxNum box={25} label="Property repairs and maintenance" value={p.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
-                <BoxNum box={26} label="Loan interest and other financial costs" help={PROP.loanInterest} value={p.expLoanInterest ?? 0} onChange={v => set({ expLoanInterest: v })} />
-                <BoxNum box={27} label="Legal, management and other professional fees" value={p.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
-                <BoxNum box={28} label="Costs of services provided, including wages" value={p.expServices ?? 0} onChange={v => set({ expServices: v })} />
-                <BoxNum box={29} label="Other allowable property expenses" value={p.expOther ?? 0} onChange={v => set({ expOther: v })} />
-              </BoxSection>
+              (p.propertyIncomeAllowance || 0) > 0 ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+                  <p className="flex items-start gap-1.5 text-[12px] font-semibold text-amber-800"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> Claiming the £1,000 property income allowance</p>
+                  <p className="mt-1 text-[11px] text-amber-700">Actual expenses aren’t used when you claim the allowance — it’s one or the other. To deduct actual expenses instead, clear the property income allowance (box 20.1) on the Property income tab.</p>
+                </div>
+              ) : (
+                <BoxSection title={joint ? 'Property expenses (whole property)' : 'Property expenses'}>
+                  <BoxNum box={24} label="Rent, rates, insurance, ground rents etc." value={p.expPremises ?? 0} onChange={v => set({ expPremises: v })} />
+                  <BoxNum box={25} label="Property repairs and maintenance" value={p.expRepairs ?? 0} onChange={v => set({ expRepairs: v })} />
+                  <BoxNum box={26} label="Loan interest and other financial costs" help={PROP.loanInterest} value={p.expLoanInterest ?? 0} onChange={v => set({ expLoanInterest: v })} />
+                  <BoxNum box={27} label="Legal, management and other professional fees" value={p.expProfessional ?? 0} onChange={v => set({ expProfessional: v })} />
+                  <BoxNum box={28} label="Costs of services provided, including wages" value={p.expServices ?? 0} onChange={v => set({ expServices: v })} />
+                  <BoxNum box={29} label="Other allowable property expenses" value={p.expOther ?? 0} onChange={v => set({ expOther: v })} />
+                </BoxSection>
+              )
             )}
             {activeTab === 'Taxable profit or loss' && (
               <BoxSection title="Taxable profit or loss">

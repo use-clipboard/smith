@@ -426,7 +426,12 @@ export function tradeItemised(t: TradeSource): boolean {
 /** Accounts net profit / (loss) — turnover + other income − expenses (boxes 47/48,
  *  signed); the imported/entered accounts profit when nothing is itemised. */
 export function tradeNetProfit(t: TradeSource): number {
-  return tradeItemised(t) ? (t.turnover || 0) + (t.otherBusinessIncome || 0) - tradeExpensesTotal(t) : (t.profit || 0);
+  if (!tradeItemised(t)) return t.profit || 0;
+  const income = (t.turnover || 0) + (t.otherBusinessIncome || 0);
+  // Trading income allowance (box 16.1): deduct up to £1,000 (capped at income)
+  // INSTEAD of actual expenses — one or the other, never both.
+  if ((t.tradingIncomeAllowance || 0) > 0) return Math.max(0, income - Math.min(t.tradingIncomeAllowance || 0, income));
+  return income - tradeExpensesTotal(t);
 }
 /** Total additions to net profit (box 61): disallowables + balancing charge +
  *  goods for own use. */
@@ -596,12 +601,17 @@ export function propertyAdjustedLoss(p: PropertySource): number {
 export function propertyTaxable(p: PropertySource): number {
   return Math.max(0, propertyAdjustedProfit(p) - (p.lossBroughtForward || 0));
 }
-/** The TAXPAYER's share of a property's taxable profit — the whole when solely
- *  owned, or their ownership fraction of a jointly-owned property. (Uniformly
- *  scaling a property's figures scales its taxable profit by the same fraction,
- *  so the share can be applied to the computed profit.) */
+/** The TAXPAYER's share of a property's taxable profit. Income and expenses are
+ *  entered WHOLE and scaled by the ownership fraction, but the £1,000 property
+ *  income allowance is PER-PERSON (HMRC) — so when it's claimed we apply the
+ *  taxpayer's own allowance against their share of the gross income, rather than
+ *  scaling the whole (which would give them only their fraction of £1,000). */
 export function propertyTaxableShare(p: PropertySource): number {
-  return Math.round(propertyTaxable(p) * ownerShareFraction(p.owners));
+  const share = ownerShareFraction(p.owners);
+  if ((p.propertyIncomeAllowance || 0) > 0) {
+    return Math.max(0, Math.round(propertyGrossIncome(p) * share) - (p.propertyIncomeAllowance || 0));
+  }
+  return Math.round(propertyTaxable(p) * share);
 }
 /** The taxpayer's share of a property's residential finance costs (box 44). */
 export function propertyFinanceShare(p: PropertySource): number {
