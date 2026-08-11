@@ -1465,7 +1465,12 @@ export interface TaxReturn {
   utr?: string | null;
   /** Taxpayer personal details for the return — pulled from the client record,
    *  editable in Setup, and used on the tax return itself. */
-  taxpayer?: { address?: string; dateOfBirth?: string; nino?: string };
+  taxpayer?: {
+    address?: string; dateOfBirth?: string; nino?: string;
+    // Name/address change during the year (SA100 box 2 — "correct details
+    // underneath the wrong ones and the date you changed address").
+    changedInYear?: boolean; changeFrom?: string; changeTo?: string; changeDate?: string;
+  };
   /** Human label for the entity, e.g. 'Individual', 'Limited company'. */
   entityLabel: string;
   preparedBy: string;

@@ -136,6 +136,35 @@ export default function StageSetup({
           />
         </div>
 
+        {/* Name / address change during the year — flows onto SA100 box 2 (TR1). */}
+        <div className="mt-4">
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={ret.taxpayer?.changedInYear ?? false}
+              onChange={e => patchTaxpayer({ changedInYear: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300 text-[var(--accent)]"
+            />
+            The client’s name or address changed during the year
+          </label>
+          {ret.taxpayer?.changedInYear && (
+            <div className="mt-2 grid grid-cols-1 gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted,#f8fafc)] p-3 sm:grid-cols-2">
+              <div className="sm:col-span-1">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Changed from (old name / address)</label>
+                <textarea value={ret.taxpayer?.changeFrom ?? ''} onChange={e => patchTaxpayer({ changeFrom: e.target.value })} rows={3} placeholder="The name / address as previously held" className="input-base resize-none py-2 text-sm" />
+              </div>
+              <div className="sm:col-span-1">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Changed to (new name / address)</label>
+                <textarea value={ret.taxpayer?.changeTo ?? ''} onChange={e => patchTaxpayer({ changeTo: e.target.value })} rows={3} placeholder="The corrected name / address" className="input-base resize-none py-2 text-sm" />
+              </div>
+              <div className="sm:col-span-2 sm:w-1/2">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Date of change</label>
+                <input value={ret.taxpayer?.changeDate ?? ''} onChange={e => patchTaxpayer({ changeDate: e.target.value })} placeholder="dd-mm-yyyy" className="input-base py-1.5 text-sm" />
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="mt-4">
           <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Relevant context (optional)</label>
           <textarea

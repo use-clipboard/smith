@@ -202,6 +202,8 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
   const i = ret.income;
   const has = filingChecklist(ret);
   const taxedInterest = (i.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0), 0);
+  const tp = ret.taxpayer;
+  const changed = !!tp?.changedInYear;
 
   return (
     <>
@@ -263,7 +265,12 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
               <Cells n={1} label="Your date of birth — it helps get your tax right — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(ret.taxpayer?.dateOfBirth)} />
               <div className="mb-2.5">
                 <Label n={2}>Your name and address — if it is different from what is on the front of this form, please write the correct details underneath the wrong ones and put the date you changed address below — DD MM YYYY</Label>
-                <Cells groups={[2, 2, 4]} value="" />
+                {changed && (tp?.changeTo || tp?.changeFrom) && (
+                  <div className="mb-1 whitespace-pre-line px-1.5 py-1 text-[10px] font-medium leading-tight text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', minHeight: 34 }}>
+                    {tp?.changeTo || ''}{tp?.changeFrom ? <span className="block text-[8.5px] text-slate-500">(previously: {tp.changeFrom.replace(/\n/g, ', ')})</span> : null}
+                  </div>
+                )}
+                <Cells groups={[2, 2, 4]} value={changed ? toDDMMYYYY(tp?.changeDate) : ''} />
               </div>
             </div>
             <div>
