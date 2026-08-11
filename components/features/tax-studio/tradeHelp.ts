@@ -445,3 +445,19 @@ export const MIN = {
   taxOffChaplaincy: 'Tax taken off the chaplaincy income in box 36.',
   totalTaxTakenOff: 'Total tax taken off across your minister-of-religion income — computed from the tax boxes, but you can override it.',
 } as const;
+
+// SA102 Northern Ireland Legislative Assembly (also used for the other devolved
+// legislature office schedules) — one hint per box.
+export const NIA = {
+  p60Pay: 'Total payments from your P60 (or P45) for your Assembly office.',
+  payrolledBenefitsStudentLoan: 'The part of box 1 that is payrolled benefits which count towards your student loan repayments.',
+  taxTakenOff: 'Tax taken off the pay in box 1 (from your P60 / P45).',
+  officeCostExpenditure: 'Office Cost Expenditure allowance paid to you for running your office.',
+  otherCashReimbursements: 'Other cash reimbursements you received in connection with your office.',
+  allOtherBenefits: 'The cash-equivalent of all other benefits received (e.g. those on a P11D).',
+  balancingCharges: 'Balancing charges arising when you dispose of an asset on which capital allowances were claimed.',
+  secretarialAssistance: 'Amounts you paid personally for secretarial, clerical and research assistance.',
+  officeExpenses: 'Office running expenses you paid personally.',
+  otherExpensesCapitalAllowances: 'Other allowable expenses and any capital allowances you are claiming.',
+  otherInformation: 'Any other information relevant to your Assembly office income, benefits or expenses.',
+} as const;

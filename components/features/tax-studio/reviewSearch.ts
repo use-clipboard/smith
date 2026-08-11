@@ -39,6 +39,7 @@ const PAGE_ENTRIES: { label: string; code: string; page: string; kw: string }[] 
   { label: 'Residence', code: 'SA109', page: 'residence', kw: 'residence domicile remittance fig split year non-resident' },
   { label: 'Additional info', code: 'SA101', page: 'additional', kw: 'additional information eis seis vct life insurance gains' },
   { label: 'Ministry of religion', code: 'SA102M', page: 'minister', kw: 'minister religion clergy vicar stipend manse vicarage chaplaincy more' },
+  { label: 'Northern Ireland Assembly', code: 'SA102', page: 'niassembly', kw: 'northern ireland legislative assembly mla member office stormont devolved more' },
 ];
 
 // Notable fields — so a field name or box code jumps to the right place.
@@ -121,6 +122,11 @@ const FIELD_ENTRIES: SearchEntry[] = [
   { label: 'Income Tax losses & limit on relief', context: 'Additional info · Other information · boxes 1–6', page: 'additional', keywords: 'income tax losses earlier years carried forward trade loss later year limit payroll giving box 1 2 3 4 5 6' },
   { label: 'Pension savings tax charges', context: 'Additional info · Pension savings tax charges · boxes 10–18', page: 'additional', keywords: 'pension savings annual allowance charge scheme pays overseas transfer unauthorised payment surcharge foreign lump sum short service refund box 10 11 12 13 14 15 16 17 18' },
   { label: 'Tax avoidance schemes', context: 'Additional info · Tax avoidance schemes · boxes 19–20', page: 'additional', keywords: 'tax avoidance scheme reference number dotas expected advantage box 19 20' },
+  // Northern Ireland Legislative Assembly (SA102)
+  { label: 'Assembly income from office', context: 'NI Assembly · Income from office · boxes 1–2', page: 'niassembly', keywords: 'northern ireland legislative assembly mla payments p60 pay tax taken off payrolled benefits student loan box 1 1.1 2' },
+  { label: 'Assembly benefit from your office', context: 'NI Assembly · Benefit from your office · boxes 3–6', page: 'niassembly', keywords: 'office cost expenditure other cash reimbursements all other benefits balancing charges box 3 4 5 6' },
+  { label: 'Assembly office expenses paid by you', context: 'NI Assembly · Office expenses paid out by you · boxes 7–9', page: 'niassembly', keywords: 'secretarial clerical research assistance office expenses other expenses capital allowances box 7 8 9' },
+  { label: 'Assembly — any other information', context: 'NI Assembly · Any other information · box 10', page: 'niassembly', keywords: 'northern ireland assembly any other information note box 10' },
   // Core page fields
   { label: 'Taxed / untaxed UK interest', context: 'Main Form · Interest & dividends', page: 'core', section: 'Interest & dividends', keywords: 'interest savings bank taxed untaxed box 1 2' },
   { label: 'Dividends', context: 'Main Form · Interest & dividends · box 4', page: 'core', section: 'Interest & dividends', keywords: 'dividends shares box 4' },

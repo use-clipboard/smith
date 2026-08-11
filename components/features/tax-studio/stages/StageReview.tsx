@@ -20,14 +20,14 @@ import HelpDot from '../FieldHelp';
 import Tooltip from '@/components/ui/Tooltip';
 import { SA103_SHORT_TURNOVER_LIMIT, migrateTradeToFull, migrateTradeToShort } from '../tradeForm';
 import { partnershipRequiresFull, migratePartnershipToFull, migratePartnershipToShort } from '../partnershipForm';
-import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN } from '../tradeHelp';
+import { H, CH, EMP, PH, PROP, FGN, CGT, TRUST, RES, ADD, MIN, NIA } from '../tradeHelp';
 import { searchReview, type SearchEntry } from '../reviewSearch';
 import { COUNTRIES } from '../countries';
 import { StudioCard, SectionTitle } from '../primitives';
 import { HealthScoreCard } from '../widgets';
 import { fmtMoney, provenanceFor } from '../data';
-import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData } from '../calc';
-import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
+import { computeSa100Full, employmentTaxable, tradeNetProfit, tradeAdjustedProfit, tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeAdditions, tradeDeductions, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward, tradeTotalAssets, tradeNetBusinessAssets, tradeCapitalAccountEnd, computeCapitalAllowances, propertyNetProfit, propertyTaxable, propertyGrossIncome, propertyExpensesTotal, propertyAllowancesTotal, propertyAdjustedProfit, propertyAdjustedLoss, propertyLossCarryForward, partnershipTaxableProfit, partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit, partnershipAdjustedLoss, partnershipLossCarryForward, partnershipAdjustedUkSavings, partnershipAdjustedForeignSavings, partnershipTotalUntaxedSavings, partnershipPropertyTaxable, partnershipOtherUkTaxable, partnershipOtherUkLossCarryForward, partnershipOffshoreTaxable, partnershipForeignTaxable, partnershipForeignLossCarryForward, partnershipTaxedIncome10, partnershipTaxedIncome20, partnershipOtherTaxedIncome, partnershipUntaxedOther, partnershipTaxTakenTotal, partnerAllocatedShare, statementTaxpayerShare, disposalGainLoss, foreignTotals, foreignTableTotals, foreignRowTaxable, foreignRowIncome, foreignRowForeignTax, foreignPropertyNet, foreignPropertyAdjusted, foreignPropertyTotals, foreignPropertyExpenses, foreignPropertyPrivateUse, trustTotals, sa108Gains, sa108HasData, cgtCalcToSa108, propertyTaxableShare, ownerShareFraction, ministerComputed, ministerHasData, assemblyComputed, assemblyHasData } from '../calc';
+import type { TaxReturn, Sa100Income, EmploymentSource, TradeSource, PropertySource, PartnershipSource, PartnershipStatement, PartnerAllocation, CgtDisposal, ForeignSource, ForeignRow, ForeignProperty, ForeignIncomeItem, ForeignExpenseItem, Sa106, TrustEstateSource, Sa107, EstateForeignItem, Sa108, Sa109, Sa109Company, Sa101, Sa101GiltItem, Sa101LifeGainItem, Sa101VoidedIsaItem, Sa101AnnualAllowanceItem, Sa101UnauthPaymentItem, Sa101ForeignLumpItem, MinisterOfReligion, AssemblyOffice, DividendItem, SavingsItem, TaxedInterestItem, LineItem, ReviewPoint, TaxSuggestion } from '../types';
 
 type Patch = (u: (r: TaxReturn) => TaxReturn) => void;
 
@@ -168,7 +168,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
 type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
-export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister';
+export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'core',        label: 'Main Form', code: 'SA100', icon: PiggyBank },
@@ -186,6 +186,7 @@ const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
 // don't crowd the everyday page tabs.
 const MORE_PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
   { id: 'minister',    label: 'Ministry of religion', code: 'SA102M', icon: Church },
+  { id: 'niassembly',  label: 'Northern Ireland Assembly', code: 'SA102', icon: Landmark },
 ];
 const ALL_PAGES = [...PAGES, ...MORE_PAGES];
 
@@ -207,6 +208,7 @@ function pageValue(id: PageId, income: Sa100Income): { value: number; label: str
     }
     case 'trusts': { const t = trustTotals(income); return { value: t.nonSavings + t.savings + t.dividend, label: 'Trust / estate income' }; }
     case 'minister': { const t = ministerComputed(income.minister).taxable; return t ? { value: t, label: 'Minister income' } : null; }
+    case 'niassembly': { const t = assemblyComputed(income.niAssembly).taxable; return t ? { value: t, label: 'Assembly income' } : null; }
     default: return null; // core / residence / additional — no single headline
   }
 }
@@ -243,6 +245,7 @@ function pageCounts(income: Sa100Income): Record<PageId, number> {
     residence: income.residence ? sa109Count(income.residence) : 0,
     additional: income.additional ? sa101Count(income.additional) : 0,
     minister: income.minister ? (minSectionCount(income.minister, 'Income as a minister of religion') + minSectionCount(income.minister, 'Business expenses')) : 0,
+    niassembly: income.niAssembly ? (assemblySectionCount(income.niAssembly, ASSEMBLY_TABS[0]) + assemblySectionCount(income.niAssembly, ASSEMBLY_TABS[1])) : 0,
   };
 }
 
@@ -456,6 +459,7 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       {page === 'residence' && <Sa109Page ret={ret} income={income} setIncome={setIncome} />}
       {page === 'additional' && <AdditionalPage income={income} setIncome={setIncome} />}
       {page === 'minister' && <MinisterPage income={income} setIncome={setIncome} />}
+      {page === 'niassembly' && <NiAssemblyPage ret={ret} income={income} setIncome={setIncome} />}
       </div>
     </StudioCard>
   );
@@ -2092,6 +2096,12 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
   const share = ownerShareFraction(p.owners);
   const shareProp = joint ? share : undefined;
   const activeTab = (PROPERTY_TABS as readonly string[]).includes(tab) ? tab : PROPERTY_TABS[0];
+  // Imported rows (from the Landlord or MTD tool) carry a single already-shared
+  // "profit" figure with no owners — flag that so the user knows not to re-split
+  // it or type over it in the empty boxes.
+  const imported = p.id.startsWith('xc-');
+  const fromMtd = imported && p.id.includes('mtd');
+  const shareMatch = /(\d+)%\s+share\s+of\s+(.+)$/i.exec(p.address || '');
   return (
     <div className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -2103,6 +2113,14 @@ function PropertyCard({ p, idx, taxpayerName, onChange, onRemove }: {
       </div>
       {open && (
         <div className="border-t border-black/5">
+          {imported && (
+            <div className="border-b border-black/5 bg-sky-50/50 px-3 py-2 text-[11px] text-sky-800">
+              <p className="flex items-start gap-1.5">
+                <Info size={13} className="mt-0.5 shrink-0 text-sky-500" />
+                <span>Imported taxable figure of <b>{fmtMoney(propertyTaxable(p))}</b> — {shareMatch ? <>already {taxpayerName}’s <b>{shareMatch[1]}% share</b> of {shareMatch[2]}, </> : <>already {taxpayerName}’s share, </>}calculated in the {fromMtd ? 'MTD' : 'Landlord'} tool. It’s this client’s own share, so SMITH doesn’t split it again. Leave the boxes below empty — typing into them replaces the imported figure.</span>
+              </p>
+            </div>
+          )}
           <div className="border-b border-black/5 px-3 py-2.5">
             <OwnershipEditor owners={p.owners ?? []} onChange={o => set({ owners: o.length ? o : undefined })} taxpayerName={taxpayerName} />
             {joint && <p className="mt-1 text-[10px] text-[var(--text-muted)]">Enter each box below as the <b>whole property</b> figure — the blue <span className="text-sky-600">your share</span> line under each box is what’s actually filed on {taxpayerName}’s SA105 ({Math.round(share * 100)}%). The £1,000 property allowance and losses are per-person — set each owner’s on their own return.</p>}
@@ -3420,6 +3438,107 @@ function MinisterPage({ income, setIncome }: { income: Sa100Income; setIncome: S
             <LabelledNum box={39} label="Total tax taken off" value={m.totalTaxTakenOff ?? cb.box39} onChange={v => set({ totalTaxTakenOff: v })} help={MIN.totalTaxTakenOff} />
           </div>
           <p className="text-[10.5px] text-[var(--text-muted)]">The taxable income (box 38) is added to your income and the total tax taken off (box 39) is credited against the bill.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── SA102 Northern Ireland Legislative Assembly — box-for-box "More" page ─────
+const ASSEMBLY_TABS = ['Income/Benefit from your office', 'Office expenses paid out by you'] as const;
+const ASSEMBLY_SUBTABS: Record<string, string[]> = {
+  'Income/Benefit from your office': ['Income from office', 'Benefit from your office'],
+  'Office expenses paid out by you': ['Office expenses', 'Any other information'],
+};
+function assemblySubCount(a: AssemblyOffice, sub: string): number {
+  switch (sub) {
+    case 'Income from office': return [a.p60Pay, a.payrolledBenefitsStudentLoan, a.taxTakenOff].filter(truthy).length;
+    case 'Benefit from your office': return [a.officeCostExpenditure, a.otherCashReimbursements, a.allOtherBenefits, a.balancingCharges].filter(truthy).length;
+    case 'Office expenses': return [a.secretarialAssistance, a.officeExpenses, a.otherExpensesCapitalAllowances].filter(truthy).length;
+    case 'Any other information': return a.otherInformation && a.otherInformation.trim() ? 1 : 0;
+  }
+  return 0;
+}
+function assemblySectionCount(a: AssemblyOffice, tab: string): number {
+  return (ASSEMBLY_SUBTABS[tab] ?? []).reduce((acc, s) => acc + assemblySubCount(a, s), 0);
+}
+
+function NiAssemblyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100Income; setIncome: SetIncome }) {
+  const a: AssemblyOffice = income.niAssembly ?? {};
+  const set = (u: Partial<AssemblyOffice>) => setIncome(i => ({ ...i, niAssembly: { ...i.niAssembly, ...u } }));
+  const cb = assemblyComputed(a);
+  const [tab, setTab] = useState<string>(ASSEMBLY_TABS[0]);
+  const [sub, setSub] = useState(0);
+  const [noteBusy, setNoteBusy] = useState(false);
+  const setTop = (tt: string) => { setTab(tt); setSub(0); };
+  const activeTab = (ASSEMBLY_TABS as readonly string[]).includes(tab) ? tab : ASSEMBLY_TABS[0];
+  const subList = ASSEMBLY_SUBTABS[activeTab] ?? [];
+  const subName = subList[sub] ?? subList[0];
+
+  async function suggestNote() {
+    setNoteBusy(true);
+    try {
+      const facts = [
+        a.p60Pay ? `Payments from P60 for the Assembly office: £${a.p60Pay}.` : '',
+        cb.benefits ? `Office benefits and cash reimbursements total: £${cb.benefits}.` : '',
+        cb.expenses ? `Office expenses paid personally total: £${cb.expenses}.` : '',
+        a.taxTakenOff ? `Tax taken off the office pay: £${a.taxTakenOff}.` : '',
+        `Net taxable office income: £${cb.taxable}.`,
+      ].filter(Boolean);
+      const r = await fetch('/api/tax-studio/suggest-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taxYear: ret.taxYear, clientName: ret.clientName ?? '', context: { form: 'SA102 supplementary page for a member of the Northern Ireland Legislative Assembly', facts } }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.note) set({ otherInformation: a.otherInformation ? `${a.otherInformation}\n\n${d.note}` : d.note });
+    } finally { setNoteBusy(false); }
+  }
+
+  return (
+    <div className="space-y-3">
+      <SectionTabs tabs={ASSEMBLY_TABS.map(tt => ({ label: tt, count: assemblySectionCount(a, tt) }))} active={activeTab} onSelect={setTop} />
+      {subList.length > 0 && <SubTabs tabs={subList.map(s => ({ label: s, count: assemblySubCount(a, s) }))} active={sub} onSelect={setSub} />}
+
+      {activeTab === 'Income/Benefit from your office' && subName === 'Income from office' && (
+        <div className="space-y-3">
+          <SectionTitle title="Income from office" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={1} label="Payments from P60" value={a.p60Pay ?? 0} onChange={v => set({ p60Pay: v })} help={NIA.p60Pay} />
+            <LabelledNum box="1.1" label="Payrolled benefits in box 1 affecting student loan repayments" value={a.payrolledBenefitsStudentLoan ?? 0} onChange={v => set({ payrolledBenefitsStudentLoan: v })} help={NIA.payrolledBenefitsStudentLoan} />
+            <LabelledNum box={2} label="Tax taken off box 1" value={a.taxTakenOff ?? 0} onChange={v => set({ taxTakenOff: v })} help={NIA.taxTakenOff} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Income/Benefit from your office' && subName === 'Benefit from your office' && (
+        <div className="space-y-3">
+          <SectionTitle title="Benefit from your office" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={3} label="Office Cost Expenditure" value={a.officeCostExpenditure ?? 0} onChange={v => set({ officeCostExpenditure: v })} help={NIA.officeCostExpenditure} />
+            <LabelledNum box={4} label="Other cash reimbursements" value={a.otherCashReimbursements ?? 0} onChange={v => set({ otherCashReimbursements: v })} help={NIA.otherCashReimbursements} />
+            <LabelledNum box={5} label="All other benefits" value={a.allOtherBenefits ?? 0} onChange={v => set({ allOtherBenefits: v })} help={NIA.allOtherBenefits} />
+            <LabelledNum box={6} label="Balancing charges" value={a.balancingCharges ?? 0} onChange={v => set({ balancingCharges: v })} help={NIA.balancingCharges} />
+          </div>
+        </div>
+      )}
+      {activeTab === 'Office expenses paid out by you' && subName === 'Office expenses' && (
+        <div className="space-y-3">
+          <SectionTitle title="Office expenses paid out by you" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <LabelledNum box={7} label="Secretarial, clerical and research assistance" value={a.secretarialAssistance ?? 0} onChange={v => set({ secretarialAssistance: v })} help={NIA.secretarialAssistance} />
+            <LabelledNum box={8} label="Office expenses" value={a.officeExpenses ?? 0} onChange={v => set({ officeExpenses: v })} help={NIA.officeExpenses} />
+            <LabelledNum box={9} label="Other expenses and capital allowances" value={a.otherExpensesCapitalAllowances ?? 0} onChange={v => set({ otherExpensesCapitalAllowances: v })} help={NIA.otherExpensesCapitalAllowances} />
+            <BoxCalc label="Taxable office income (pay + benefits − expenses)" value={cb.taxable} />
+            <BoxCalc label="Tax taken off (credited against the bill)" value={cb.taxDeducted} />
+          </div>
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH adds the taxable office income to this client’s total income and credits the tax taken off against the bill.</p>
+        </div>
+      )}
+      {activeTab === 'Office expenses paid out by you' && subName === 'Any other information' && (
+        <div className="space-y-2">
+          <SectionTitle title="Any other information" />
+          <BoxTextArea box={10} label="Please give any other information in this space" value={a.otherInformation ?? ''} onChange={v => set({ otherInformation: v })} rows={8}
+            right={<button onClick={suggestNote} disabled={noteBusy} className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20 disabled:opacity-50">{noteBusy ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />} SMITH, help me write this</button>} />
+          <p className="text-[10.5px] text-[var(--text-muted)]">SMITH drafts a starting note from the office figures entered — review and edit before filing.</p>
         </div>
       )}
     </div>

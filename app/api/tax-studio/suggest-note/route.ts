@@ -13,6 +13,12 @@ const RequestSchema = z.object({
   taxYear: z.string().max(20),
   clientName: z.string().max(120).optional(),
   residence: z.record(z.string(), z.unknown()).optional(),
+  // Generic note context for pages other than SA109 — the caller supplies the
+  // form name and a set of plain-English facts to base the draft note on.
+  context: z.object({
+    form: z.string().max(160),
+    facts: z.array(z.string().max(400)).max(60),
+  }).optional(),
 });
 
 // Turn the SA109 residence data into short English bullet facts for the prompt.
@@ -48,23 +54,32 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = RequestSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
-    const { taxYear, clientName, residence } = parsed.data;
+    const { taxYear, clientName, residence, context } = parsed.data;
 
     const ctx = await getUserContext();
     if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!canAccessTaxStudio(ctx.activeModules)) return NextResponse.json({ error: 'Tax Studio is not available for your account.' }, { status: 403 });
 
-    const facts = residence ? digest(residence) : [];
+    // Generic path: caller supplied a form + facts for a non-SA109 note.
+    const generic = context && context.facts.length > 0;
+    const facts = generic ? context!.facts : (residence ? digest(residence) : []);
     if (facts.length === 0) {
-      return NextResponse.json({ note: `Residence position for ${taxYear}: [describe the client's residence status and the basis for it — e.g. the SRT test met, split-year case, or treaty position. Enter the residence details above and SMITH can draft this for you.]` });
+      const empty = generic
+        ? `[Describe anything relevant to this client's ${context!.form} entries for ${taxYear} — enter the figures above and SMITH can draft this for you.]`
+        : `Residence position for ${taxYear}: [describe the client's residence status and the basis for it — e.g. the SRT test met, split-year case, or treaty position. Enter the residence details above and SMITH can draft this for you.]`;
+      return NextResponse.json({ note: empty });
     }
 
     const anthropic = await getAnthropicForFirm(ctx.firmId);
-    const system = `You draft the free-text "Any other information" note for box 54 of HMRC form SA109 (Residence, remittance basis etc.), for a UK accountant preparing a client's Self Assessment.
+    const system = generic
+      ? `You draft the free-text "Any other information" note for HMRC's ${context!.form}, for a UK accountant preparing a client's Self Assessment.
+
+Write a concise, professional note (1–4 sentences, plain text, no headings or bullet points) that usefully explains or supports the client's figures for the tax year, based ONLY on the facts provided. Do NOT invent facts, figures or dates not given. Where a specific detail would strengthen the note but is missing, insert a clearly bracketed placeholder like [confirm the basis of the balancing charge]. This is a starting draft the accountant will review and edit. Reply with ONLY the note text.`
+      : `You draft the free-text "Any other information" note for box 54 of HMRC form SA109 (Residence, remittance basis etc.), for a UK accountant preparing a client's Self Assessment.
 
 Write a concise, professional note (2–5 sentences, plain text, no headings or bullet points) that explains and supports the client's residence position for the tax year, based ONLY on the facts provided. Reference the relevant Statutory Residence Test / split-year / treaty basis where the facts imply it. Do NOT invent facts, figures or dates not given. Where a specific detail would strengthen the note but is missing, insert a clearly bracketed placeholder like [confirm number of full-time working days overseas]. This is a starting draft the accountant will review and edit. Reply with ONLY the note text.`;
 
-    const user = `Tax year: ${taxYear}${clientName ? `\nClient: ${clientName}` : ''}\nResidence facts entered:\n${facts.map(f => `- ${f}`).join('\n')}`;
+    const user = `Tax year: ${taxYear}${clientName ? `\nClient: ${clientName}` : ''}\n${generic ? `${context!.form} facts entered` : 'Residence facts entered'}:\n${facts.map(f => `- ${f}`).join('\n')}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',

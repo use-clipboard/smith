@@ -991,6 +991,32 @@ export interface Sa100Income {
   additional?: Sa101;
   /** SA102M Ministry of religion (a rarely-used "More" page). */
   minister?: MinisterOfReligion;
+  /** SA102 Northern Ireland Legislative Assembly office income (a rarely-used
+   *  "More" page). Shares the AssemblyOffice shape with the other devolved
+   *  legislature schedules. */
+  niAssembly?: AssemblyOffice;
+}
+
+// Income, benefits and expenses of a member of a devolved legislature office —
+// the SA102 (Northern Ireland Legislative Assembly / Scottish Parliament / Senedd)
+// supplementary page. All boxes are inputs; the taxable figure is computed as
+// pay + benefits − expenses (see assemblyComputed in calc.ts).
+export interface AssemblyOffice {
+  // Income from office (boxes 1, 1.1, 2)
+  p60Pay?: number;                       // box 1 — payments from P60
+  payrolledBenefitsStudentLoan?: number; // box 1.1 — payrolled benefits in box 1 affecting student loan
+  taxTakenOff?: number;                  // box 2 — tax taken off box 1
+  // Benefit from your office (boxes 3–6)
+  officeCostExpenditure?: number;        // box 3 — Office Cost Expenditure
+  otherCashReimbursements?: number;      // box 4 — other cash reimbursements
+  allOtherBenefits?: number;             // box 5 — all other benefits
+  balancingCharges?: number;             // box 6 — balancing charges
+  // Office expenses paid out by you (boxes 7–9)
+  secretarialAssistance?: number;        // box 7 — secretarial, clerical and research assistance
+  officeExpenses?: number;               // box 8 — office expenses
+  otherExpensesCapitalAllowances?: number; // box 9 — other expenses and capital allowances
+  // Any other information (box 10)
+  otherInformation?: string;             // box 10 — free text
 }
 
 // ── SA109 Residence, FIG regime & remittance basis ───────────────────────────

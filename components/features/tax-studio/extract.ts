@@ -83,6 +83,14 @@ export interface Sa100Extraction {
     annualAllowanceExcess: number; annualAllowanceTaxPaid: number;
     businessReceipts: number;
   };
+  /** SA102 Northern Ireland Legislative Assembly office figures evidenced by a
+   *  document (a P60/P45 for the Assembly office, an Office Cost Expenditure
+   *  statement, etc.). Empty/undefined when nothing relevant found. */
+  niAssembly?: {
+    p60Pay: number; payrolledBenefitsStudentLoan: number; taxTakenOff: number;
+    officeCostExpenditure: number; otherCashReimbursements: number; allOtherBenefits: number; balancingCharges: number;
+    secretarialAssistance: number; officeExpenses: number; otherExpensesCapitalAllowances: number;
+  };
   /** Documents/figures found but NOT used, each with a plain-English reason. */
   setAside: { label: string; reason: string }[];
   /** Missing documents or context SMITH would need to make entries accurate. */
@@ -128,6 +136,7 @@ function normalise(raw: unknown): Sa100Extraction {
     childBenefit: num(e.childBenefit), notes: arr<string>(e.notes),
     residence: normResidence(e.residence),
     additional: normAdditional(e.additional),
+    niAssembly: normNiAssembly(e.niAssembly),
     setAside: arr<Sa100Extraction['setAside'][number]>(e.setAside).map(x => ({ label: String(x?.label ?? ''), reason: String(x?.reason ?? '') })).filter(x => x.label || x.reason),
     needs: arr<string>(e.needs).map(String).filter(Boolean),
   };
@@ -149,6 +158,19 @@ function normAdditional(raw: unknown): Sa100Extraction['additional'] {
     businessReceipts: n(r.businessReceipts),
   };
   const any = Object.values(a).some(v => (typeof v === 'number' ? v !== 0 : v));
+  return any ? a : undefined;
+}
+
+// Normalise scanned NI Assembly office figures — undefined when nothing relevant.
+function normNiAssembly(raw: unknown): Sa100Extraction['niAssembly'] {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const a = {
+    p60Pay: n(r.p60Pay), payrolledBenefitsStudentLoan: n(r.payrolledBenefitsStudentLoan), taxTakenOff: n(r.taxTakenOff),
+    officeCostExpenditure: n(r.officeCostExpenditure), otherCashReimbursements: n(r.otherCashReimbursements), allOtherBenefits: n(r.allOtherBenefits), balancingCharges: n(r.balancingCharges),
+    secretarialAssistance: n(r.secretarialAssistance), officeExpenses: n(r.officeExpenses), otherExpensesCapitalAllowances: n(r.otherExpensesCapitalAllowances),
+  };
+  const any = Object.values(a).some(v => v !== 0);
   return any ? a : undefined;
 }
 
@@ -678,9 +700,30 @@ export function mergeExtractionIntoIncome(income: Sa100Income, e: Sa100Extractio
     };
   }
 
+  // SA102 NI Assembly office figures — fill only boxes the user hasn't set.
+  let niAssembly = income.niAssembly;
+  if (e.niAssembly) {
+    const cur = income.niAssembly ?? {};
+    const na = e.niAssembly;
+    const setNum = (c: number | undefined, v: number) => ((c == null || c === 0) && v > 0 ? r(v) : c);
+    niAssembly = {
+      ...cur,
+      p60Pay: setNum(cur.p60Pay, na.p60Pay),
+      payrolledBenefitsStudentLoan: setNum(cur.payrolledBenefitsStudentLoan, na.payrolledBenefitsStudentLoan),
+      taxTakenOff: setNum(cur.taxTakenOff, na.taxTakenOff),
+      officeCostExpenditure: setNum(cur.officeCostExpenditure, na.officeCostExpenditure),
+      otherCashReimbursements: setNum(cur.otherCashReimbursements, na.otherCashReimbursements),
+      allOtherBenefits: setNum(cur.allOtherBenefits, na.allOtherBenefits),
+      balancingCharges: setNum(cur.balancingCharges, na.balancingCharges),
+      secretarialAssistance: setNum(cur.secretarialAssistance, na.secretarialAssistance),
+      officeExpenses: setNum(cur.officeExpenses, na.officeExpenses),
+      otherExpensesCapitalAllowances: setNum(cur.otherExpensesCapitalAllowances, na.otherExpensesCapitalAllowances),
+    };
+  }
+
   const setIf = (val: number, current: number) => (val > 0 ? r(val) : current);
   return {
-    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional,
+    ...income, employment, selfEmployment, partnerships, property, dividendItems, taxedInterestItems, foreign, sa107, sa108, residence, additional, niAssembly,
     dividends: setIf(e.dividends, income.dividends),
     savingsInterest: setIf(e.savingsInterest, income.savingsInterest),
     foreignDividendsMain: setIf(e.foreignDividends, income.foreignDividendsMain ?? 0),
