@@ -71,6 +71,39 @@ function Question({ n, title, children, yes }: { n: number; title: string; child
   );
 }
 
+// A simple HMRC-style crown mark above the wordmark (stylised, not the official crest).
+function HmrcLogo() {
+  return (
+    <div className="flex items-center gap-2">
+      <svg width="30" height="34" viewBox="0 0 30 34" aria-hidden className="shrink-0">
+        <g fill="#000">
+          <circle cx="15" cy="4" r="2.4" />
+          <circle cx="5" cy="8" r="2" />
+          <circle cx="25" cy="8" r="2" />
+          <path d="M4 12 L6 22 H24 L26 12 L21 16 L15 9 L9 16 Z" />
+          <rect x="4" y="23" width="22" height="3.4" />
+          <rect x="3" y="28" width="24" height="4.2" />
+        </g>
+      </svg>
+      <span className="text-[15px] font-bold leading-[1.05] text-black">HM Revenue<br />&amp; Customs</span>
+    </div>
+  );
+}
+
+// A box outlined with L-shaped corner brackets, like the HMRC address panels.
+function BracketBox({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const c = { position: 'absolute' as const, width: 8, height: 8, borderColor: '#000' };
+  return (
+    <div className={`relative px-2 py-1.5 ${className}`}>
+      <span style={{ ...c, top: 0, left: 0, borderTop: '1px solid #000', borderLeft: '1px solid #000' }} />
+      <span style={{ ...c, top: 0, right: 0, borderTop: '1px solid #000', borderRight: '1px solid #000' }} />
+      <span style={{ ...c, bottom: 0, left: 0, borderBottom: '1px solid #000', borderLeft: '1px solid #000' }} />
+      <span style={{ ...c, bottom: 0, right: 0, borderBottom: '1px solid #000', borderRight: '1px solid #000' }} />
+      {children}
+    </div>
+  );
+}
+
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return <h3 className="mb-2 mt-1 border-b pb-1 text-[13px] font-bold" style={{ color: TEAL, borderColor: GREY }}>{children}</h3>;
 }
@@ -93,21 +126,70 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
 
   return (
     <>
-      {/* ── TR1 — personal details ── */}
+      {/* ── TR1 — cover + personal details ── */}
       <Page tag="TR 1">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-[16px] font-bold text-black">Tax Return 2026</h2>
-          <span className="text-[10px] text-slate-500">Tax year 6 April 2025 to 5 April 2026 (2025–26)</span>
+        {/* Masthead */}
+        <div className="mb-4 flex items-start justify-between">
+          <HmrcLogo />
+          <div className="text-right">
+            <h2 className="text-[19px] font-bold leading-none text-black">Tax Return 2026</h2>
+            <p className="mt-1.5 text-[10px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p>
+          </div>
         </div>
-        <div className="mb-3 grid grid-cols-2 gap-x-8 text-[10.5px] text-black">
-          <div><span className="text-slate-500">UTR</span> <span className="font-semibold">{ret.utr || ''}</span></div>
-          <div><span className="text-slate-500">NINO</span> <span className="font-semibold">{ret.taxpayer?.nino || ''}</span></div>
+
+        {/* Reference block + issue address */}
+        <div className="mb-4 grid grid-cols-2 gap-x-8 text-[10px] text-black">
+          <div className="space-y-1.5">
+            <div className="flex gap-2"><span className="w-28 shrink-0">UTR</span><span className="font-semibold">{ret.utr || ''}</span></div>
+            <div className="flex gap-2"><span className="w-28 shrink-0">NINO</span><span className="font-semibold">{ret.taxpayer?.nino || ''}</span></div>
+            <div className="flex gap-2"><span className="w-28 shrink-0">Employer reference</span><span /></div>
+            <div className="flex gap-2"><span className="w-28 shrink-0">Date</span><span /></div>
+            <p className="pt-2">HM Revenue and Customs office address</p>
+            <BracketBox className="mt-1 h-16" children={<span />} />
+            <p className="pt-1">Telephone</p>
+          </div>
+          <div>
+            <p className="mb-1">Issue address</p>
+            <BracketBox className="min-h-[6.5rem]">
+              <div className="whitespace-pre-line text-[10.5px] font-medium leading-snug text-black">{ret.clientName || ''}{ret.taxpayer?.address ? `\n${ret.taxpayer.address}` : ''}</div>
+            </BracketBox>
+            <p className="mt-2">For</p>
+            <p>Reference</p>
+          </div>
         </div>
+
+        {/* Your tax return / most people file online */}
+        <SectionHeading>Your tax return</SectionHeading>
+        <div className="grid grid-cols-2 gap-x-8 text-[9px] leading-snug text-black">
+          <div>
+            <p>This notice requires you, by law, to make a return of your taxable income and capital gains, and any documents requested, for the year from 6 April 2025 to 5 April 2026.</p>
+            <div className="mt-2 p-2" style={{ border: '1px solid #d4351c' }}>
+              <p className="mb-1 text-[10px] font-bold" style={{ color: '#d4351c' }}>Deadlines</p>
+              <p>We must receive your tax return by these dates:</p>
+              <p className="mt-1">• if you’re using a paper return – by 31 October 2026 (or 3 months after the date of this notice if that’s later)</p>
+              <p className="mt-1">• if you’re filing a return online – by 31 January 2027 (or 3 months after the date of this notice if that’s later)</p>
+              <p className="mt-1">If your return is late you’ll be charged a £100 penalty. If your return is more than 3 months late, you’ll be charged daily penalties of £10 a day. If you pay late you’ll be charged interest and a late payment penalty.</p>
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-bold text-black">Most people file online</p>
+            <p>It’s quick and easy to file online. Get started by typing www.gov.uk/log-in-file-self-assessment-tax-return into your browser to go directly to our official website. Do not use a search website to find HMRC services online.</p>
+            <p className="mt-1">To file on paper, please fill in this form using the following rules:</p>
+            <p className="mt-1">• enter your figures in whole pounds – ignore the pence</p>
+            <p>• round down income and round up expenses and tax paid, it is to your benefit</p>
+            <p>• if a box does not apply, please leave it blank – do not strike through empty boxes or write anything else</p>
+          </div>
+        </div>
+
+        <SectionHeading>Starting your tax return</SectionHeading>
+        <p className="mb-3 text-[9px] leading-snug text-black">Before you start to fill it in, look through your tax return to make sure there is a section for all your income and claims – you may need some separate supplementary pages (see page TR 2 and the Tax Return notes). For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</p>
+
         <SectionHeading>Your personal details</SectionHeading>
         <div className="grid grid-cols-2 gap-x-8">
-          <TextBox n={1} label="Your date of birth — DD MM YYYY" value={ret.taxpayer?.dateOfBirth} />
-          <TextBox label="Your name and address" value={ret.clientName} />
-          <TextBox n={4} label="Your National Insurance number" value={ret.taxpayer?.nino} />
+          <TextBox n={1} label="Your date of birth — DD MM YYYY — it helps get your tax right" value={ret.taxpayer?.dateOfBirth} />
+          <TextBox n={3} label="Your phone number" value={undefined} />
+          <TextBox n={2} label="Your name and address" value={ret.clientName} />
+          <TextBox n={4} label="Your National Insurance number — leave blank if the correct number is shown above" value={ret.taxpayer?.nino} />
         </div>
       </Page>
 
