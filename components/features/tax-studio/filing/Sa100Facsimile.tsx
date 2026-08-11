@@ -7,6 +7,7 @@
 import type React from 'react';
 import type { TaxReturn } from '../types';
 import { filingChecklist } from './filingModel';
+import { dividendsTotal, savingsInterestTotal } from '../calc';
 
 const TEAL = '#00928f';
 const PANEL_BG = '#eaf4f3';
@@ -105,15 +106,20 @@ function YesNo({ yes }: { yes?: boolean | null }) {
 
 function HmrcLogo() {
   return (
-    <div className="flex items-center gap-2">
-      <svg width="34" height="38" viewBox="0 0 34 38" aria-hidden className="shrink-0">
+    <div className="flex items-center gap-2.5">
+      <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden className="shrink-0">
         <g fill="#000">
-          <circle cx="17" cy="4.5" r="2.6" /><circle cx="6" cy="9" r="2.1" /><circle cx="28" cy="9" r="2.1" />
-          <path d="M4 13 L6.5 25 H27.5 L30 13 L24 18 L17 10 L10 18 Z" />
-          <rect x="4.5" y="26" width="25" height="3.6" /><rect x="3.5" y="31" width="27" height="4.4" />
+          {/* cross at the top */}
+          <rect x="19" y="1.5" width="4" height="8" /><rect x="17" y="3.5" width="8" height="4" />
+          {/* crown body — arched points */}
+          <path d="M4 33 L6.5 15 C9 20 12 21 15 15 C17.5 20 20.5 12 21 12 C21.5 12 24.5 20 27 15 C30 21 33 20 35.5 15 L38 33 Z" />
+          {/* pearls on the points */}
+          <circle cx="6.5" cy="13" r="2.6" /><circle cx="21" cy="10.5" r="2.6" /><circle cx="35.5" cy="13" r="2.6" />
+          {/* band */}
+          <rect x="3.5" y="33.5" width="35" height="4" /><rect x="3" y="38.5" width="36" height="2.2" />
         </g>
       </svg>
-      <span className="text-[16px] font-bold leading-[1.03] text-black">HM Revenue<br />&amp; Customs</span>
+      <span className="text-[18px] font-bold leading-[1.02] text-black" style={{ letterSpacing: '-0.2px' }}>HM Revenue<br />&amp; Customs</span>
     </div>
   );
 }
@@ -262,9 +268,9 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Taxed UK interest — the net amount after tax has been taken off" value={taxedInterest} />
-              <Money n={2} label="Untaxed UK interest — amounts which have not had tax taken off" value={i.savingsInterest} />
+              <Money n={2} label="Untaxed UK interest — amounts which have not had tax taken off" value={savingsInterestTotal(i)} />
               <Money n={3} label="Untaxed foreign interest (up to £2,000)" value={i.untaxedForeignInterest} cells={6} />
-              <Money n={4} label="Dividends from UK companies — the amount received" value={i.dividends} />
+              <Money n={4} label="Dividends from UK companies — the amount received" value={dividendsTotal(i)} />
             </div>
             <div>
               <Money n={5} label="Other dividends — the amount received" value={i.otherDividends} />
