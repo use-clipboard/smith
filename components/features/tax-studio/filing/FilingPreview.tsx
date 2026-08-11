@@ -36,7 +36,7 @@ function Sheet({ form }: { form: FilingForm }) {
         <span className="text-[11px] font-semibold text-slate-500">{form.code} · Page {form.pageTag}</span>
       </div>
       <div className="space-y-3">
-        {form.sections.map((s, si) => (
+        {form.sections.filter(s => s.rows.length > 0).map((s, si) => (
           <div key={si}>
             <p className="mb-1 text-[12px] font-bold uppercase tracking-wide text-slate-600">{s.title}</p>
             <div className="border-t border-slate-100">
