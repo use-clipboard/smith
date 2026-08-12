@@ -14,21 +14,22 @@ export const MONEY_TINT = '#d4e9e6';
 export const CELL_SHADOW = '0 1px 1.5px rgba(0,0,0,0.13)';
 export const RED = '#d4351c';
 
-export interface FormTheme { panelBg: string; panelBorder: string }
+export interface FormTheme { panelBg: string; panelBorder: string; dense?: boolean }
 const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
 export const PINK_THEME: FormTheme = { panelBg: '#fbe4ea', panelBorder: '#eec2ce' };
 export const CREAM_THEME: FormTheme = { panelBg: '#faf3e6', panelBorder: '#e6dcc4' };
 export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
 const useTheme = () => useContext(FormThemeContext);
+const useDense = () => useContext(FormThemeContext).dense;
 
 export function Teal({ children }: { children: React.ReactNode }) {
-  return <h3 className="mb-2 border-b-2 pb-1 text-[15px] font-bold" style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
+  return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
 export function SubHead({ children }: { children: React.ReactNode }) {
-  return <p className="mb-2 mt-3 text-[14px] font-normal text-black">{children}</p>;
+  return <p className={`font-normal text-black ${useDense() ? 'mb-1 mt-1.5 text-[13px]' : 'mb-2 mt-3 text-[14px]'}`}>{children}</p>;
 }
 export function Note({ children }: { children: React.ReactNode }) {
-  return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;
+  return <p className={`text-[10px] leading-snug text-black ${useDense() ? 'mb-1' : 'mb-2'}`}>{children}</p>;
 }
 export function Bullets({ intro, items, after }: { intro: string; items: string[]; after?: React.ReactNode }) {
   return (
@@ -45,7 +46,7 @@ export function InfoDot() {
 export function Panel({ children, className = '', divided }: { children: React.ReactNode; className?: string; divided?: boolean }) {
   const t = useTheme();
   return (
-    <div className={`relative mb-3 p-3 ${className}`} style={{ background: t.panelBg, border: `1px solid ${t.panelBorder}` }}>
+    <div className={`relative ${t.dense ? 'mb-2 p-2' : 'mb-3 p-3'} ${className}`} style={{ background: t.panelBg, border: `1px solid ${t.panelBorder}` }}>
       {divided && <div className="absolute bottom-2 top-2 w-px" style={{ left: '50%', background: t.panelBorder }} />}
       {children}
     </div>
@@ -56,7 +57,7 @@ export function BoxNum({ n }: { n: React.ReactNode }) {
 }
 export function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
+    <div className={`relative ${useDense() ? 'mb-0.5' : 'mb-1'} text-[10.5px] font-bold leading-tight text-black`}>
       {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
       <span className={n != null ? 'block pl-3' : 'block'}>{children}</span>
     </div>
@@ -68,8 +69,9 @@ export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNo
   const arr: string[] = Array(cells).fill('');
   for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
   const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
+  const dense = useDense();
   return (
-    <div className="mb-4">
+    <div className={dense ? 'mb-1.5' : 'mb-4'}>
       <Label n={n}>{label}</Label>
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
@@ -86,7 +88,7 @@ export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNo
 }
 export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: React.ReactNode; lines?: number }) {
   return (
-    <div className="mb-2.5">
+    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
@@ -98,7 +100,7 @@ export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: Re
 }
 export function Line({ n, label, value, lines = 1, watermark }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number; watermark?: string }) {
   return (
-    <div className="mb-2.5">
+    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
@@ -114,7 +116,7 @@ export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNo
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
   let idx = 0;
   return (
-    <div className="mb-2.5">
+    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div className="flex items-center" style={{ gap: sep ? 6 : 10 }}>
         {groups.map((g, gi) => (
@@ -173,9 +175,10 @@ export function HmrcLogo() {
 // Masthead used by supplementary pages: logo left, form title right, then a
 // Name / UTR reference panel.
 export function SuppHead({ title, name, utr, note }: { title: string; name?: string; utr?: string; note?: React.ReactNode }) {
+  const dense = useDense();
   return (
     <>
-      <div className="mb-3 flex items-start justify-between">
+      <div className={`flex items-start justify-between ${dense ? 'mb-1' : 'mb-3'}`}>
         <HmrcLogo />
         <div className="text-right"><h2 className="text-[22px] font-bold leading-none text-black">{title}</h2><p className="mt-2 text-[11px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p></div>
       </div>
@@ -192,7 +195,7 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
 export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
   const t = useTheme();
   return (
-    <div className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white p-[13mm] shadow-sm" style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+    <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'p-[10mm]' : 'p-[13mm]'}`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <div className="min-h-0 flex-1">{children}</div>
       <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
