@@ -274,7 +274,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="F 5" code="SA106" fitOrigin="top left">
         <Note>Fill in a single summary section for all the properties. If you have overseas let properties in more than one country and any foreign tax has been taken off, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <H4>Calculating profits and losses for tax purposes</H4>
-        <Panel divided>
+        <BleedPanel bleed="left">
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <FMoney n={21} label="Capital allowances for equipment and vehicles (but not for furnished residential lettings)" value={prop?.capitalAllowances} />
@@ -290,13 +290,19 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
               <FMoney n="24.2" label="Unused residential property finance costs brought forward" value={prop?.unusedFinanceCostsBfwd} />
             </div>
           </div>
-        </Panel>
+        </BleedPanel>
+        {/* Straddle: push this summary down and extend it so it lines up with the
+            A/B/C summary on the facing page (F4). */}
+        <div style={{ height: 117 }} />
         <Table bleed="left">
           <Band bg={CREAM}>
-            <ColHead cols={DEF}><span>D UK tax taken off</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={undefined} /><TotalRow n={30} label="Total taxable amount" value={foreignPropAdjusted(prop)} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="flex flex-col" style={{ minHeight: 436 }}>
+              <ColHead cols={DEF}><span>D UK tax taken off</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
+              {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
+              <div className="flex-1" />
+              <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={undefined} /><TotalRow n={30} label="Total taxable amount" value={foreignPropAdjusted(prop)} /></div>
+              <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            </div>
           </Band>
         </Table>
       </Page>
