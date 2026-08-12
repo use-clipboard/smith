@@ -219,11 +219,14 @@ export default function CapitalGainsFacsimile({ ret }: { ret: TaxReturn }) {
             </div>
           </Panel>
           <Head>Any other information</Head>
-          <div className="mb-2"><Label n={53}>If your computations include any estimates or valuations, put ‘X’ in the box</Label><Tick on={!!s.estimatesOrValuations} /></div>
-          <div className="flex flex-1 flex-col">
+          <Panel className="flex flex-1 flex-col">
+            <div className="mb-2 flex items-start gap-4">
+              <div className="min-w-0 flex-1"><Label n={53}>If your computations include any estimates or valuations, put ‘X’ in the box</Label></div>
+              <div className="shrink-0 pt-[1px]"><Tick on={!!s.estimatesOrValuations} /></div>
+            </div>
             <Label n={54}>Please give any other information in this space</Label>
             <div className="flex-1 whitespace-pre-wrap px-1.5 py-1 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{s.otherInformation}</div>
-          </div>
+          </Panel>
         </div>
       </Page>
     </FormThemeContext.Provider>
