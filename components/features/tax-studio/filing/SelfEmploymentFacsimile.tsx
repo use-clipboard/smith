@@ -19,6 +19,27 @@ function ColHead({ children }: { children: React.ReactNode }) {
 }
 const date = (d?: string) => toDDMMYYYY(d);
 
+// SA103F business expenses — each row is one category shared across the two
+// columns: the allowable box (17–30) with its label, and the disallowable box
+// (32–45) which HMRC prints with only a box number. Rendering both from one list
+// (with the disallowable label ghosted) keeps every box level with its twin.
+const EXP_ROWS: { n: number; dn: number; label: string; a: (t: TradeSource) => number | undefined; d: (t: TradeSource) => number | undefined }[] = [
+  { n: 17, dn: 32, label: 'Cost of goods bought for resale or goods used', a: t => t.expCostOfGoods, d: t => t.disCostOfGoods },
+  { n: 18, dn: 33, label: 'Construction industry – payments to subcontractors', a: t => t.expSubcontractors, d: t => t.disSubcontractors },
+  { n: 19, dn: 34, label: 'Wages, salaries and other staff costs', a: t => t.expWages, d: t => t.disWages },
+  { n: 20, dn: 35, label: 'Car, van and travel expenses', a: t => t.expCarVanTravel, d: t => t.disCarVanTravel },
+  { n: 21, dn: 36, label: 'Rent, rates, power and insurance costs', a: t => t.expPremises, d: t => t.disPremises },
+  { n: 22, dn: 37, label: 'Repairs and maintenance of property and equipment', a: t => t.expRepairs, d: t => t.disRepairs },
+  { n: 23, dn: 38, label: 'Phone, fax, stationery and other office costs', a: t => t.expOffice, d: t => t.disOffice },
+  { n: 24, dn: 39, label: 'Advertising and business entertainment costs', a: t => t.expAdvertising, d: t => t.disAdvertising },
+  { n: 25, dn: 40, label: 'Interest on bank and other loans', a: t => t.expInterest, d: t => t.disInterest },
+  { n: 26, dn: 41, label: 'Bank, credit card and other financial charges', a: t => t.expBankCharges, d: t => t.disBankCharges },
+  { n: 27, dn: 42, label: 'Irrecoverable debts written off', a: t => t.expBadDebts, d: t => t.disBadDebts },
+  { n: 28, dn: 43, label: 'Accountancy, legal and other professional fees', a: t => t.expProfessional, d: t => t.disProfessional },
+  { n: 29, dn: 44, label: 'Depreciation and loss or profit on sale of assets', a: t => t.expDepreciation, d: t => t.disDepreciation },
+  { n: 30, dn: 45, label: 'Other business expenses', a: t => t.expOtherCosts, d: t => t.disOtherCosts },
+];
+
 export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn; trade: TradeSource }) {
   const t = trade;
   const net = tradeNetProfit(t);
@@ -78,45 +99,25 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
         <SubHead>Business expenses</SubHead>
         <Note>Please read the ‘Self-employment (full) notes’ before filling in this section.</Note>
         <Panel divided>
-          <div className="grid grid-cols-2 gap-x-10">
+          <div className="mb-2 grid grid-cols-2 gap-x-10">
             <div>
               <ColHead>Total expenses</ColHead>
-              <p className="mb-2 text-[9.5px] text-black">If your annual turnover was below £90,000, you may just put your total expenses in box 31</p>
-              <Money n={17} label="Cost of goods bought for resale or goods used" value={t.expCostOfGoods} />
-              <Money n={18} label="Construction industry – payments to subcontractors" value={t.expSubcontractors} />
-              <Money n={19} label="Wages, salaries and other staff costs" value={t.expWages} />
-              <Money n={20} label="Car, van and travel expenses" value={t.expCarVanTravel} />
-              <Money n={21} label="Rent, rates, power and insurance costs" value={t.expPremises} />
-              <Money n={22} label="Repairs and maintenance of property and equipment" value={t.expRepairs} />
-              <Money n={23} label="Phone, fax, stationery and other office costs" value={t.expOffice} />
-              <Money n={24} label="Advertising and business entertainment costs" value={t.expAdvertising} />
-              <Money n={25} label="Interest on bank and other loans" value={t.expInterest} />
-              <Money n={26} label="Bank, credit card and other financial charges" value={t.expBankCharges} />
-              <Money n={27} label="Irrecoverable debts written off" value={t.expBadDebts} />
-              <Money n={28} label="Accountancy, legal and other professional fees" value={t.expProfessional} />
-              <Money n={29} label="Depreciation and loss or profit on sale of assets" value={t.expDepreciation} />
-              <Money n={30} label="Other business expenses" value={t.expOtherCosts} />
-              <Money n={31} label="Total expenses (total of boxes 17 to 30)" value={tradeExpensesTotal(t)} />
+              <p className="text-[9.5px] text-black">If your annual turnover was below £90,000, you may just put your total expenses in box 31</p>
             </div>
             <div>
               <ColHead>Disallowable expenses</ColHead>
-              <p className="mb-2 text-[9.5px] text-black">Use this column if the figures in boxes 17 to 30 include disallowable amounts</p>
-              <Money n={32} label="" value={t.disCostOfGoods} />
-              <Money n={33} label="" value={t.disSubcontractors} />
-              <Money n={34} label="" value={t.disWages} />
-              <Money n={35} label="" value={t.disCarVanTravel} />
-              <Money n={36} label="" value={t.disPremises} />
-              <Money n={37} label="" value={t.disRepairs} />
-              <Money n={38} label="" value={t.disOffice} />
-              <Money n={39} label="" value={t.disAdvertising} />
-              <Money n={40} label="" value={t.disInterest} />
-              <Money n={41} label="" value={t.disBankCharges} />
-              <Money n={42} label="" value={t.disBadDebts} />
-              <Money n={43} label="" value={t.disProfessional} />
-              <Money n={44} label="" value={t.disDepreciation} />
-              <Money n={45} label="" value={t.disOtherCosts} />
-              <Money n={46} label="Total disallowable expenses (total of boxes 32 to 45)" value={tradeDisallowableTotal(t)} />
+              <p className="text-[9.5px] text-black">Use this column if the figures in boxes 17 to 30 include disallowable amounts</p>
             </div>
+          </div>
+          {EXP_ROWS.map(r => (
+            <div key={r.n} className="grid grid-cols-2 gap-x-10">
+              <Money n={r.n} label={r.label} value={r.a(t)} />
+              <Money n={r.dn} label={r.label} ghost value={r.d(t)} />
+            </div>
+          ))}
+          <div className="grid grid-cols-2 gap-x-10">
+            <Money n={31} label="Total expenses (total of boxes 17 to 30)" value={tradeExpensesTotal(t)} />
+            <Money n={46} label="Total disallowable expenses (total of boxes 32 to 45)" value={tradeDisallowableTotal(t)} />
           </div>
         </Panel>
       </Page>

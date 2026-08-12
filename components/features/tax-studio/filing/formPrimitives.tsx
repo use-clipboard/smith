@@ -57,15 +57,18 @@ export function Panel({ children, className = '', divided }: { children: React.R
 export function BoxNum({ n }: { n: React.ReactNode }) {
   return <span className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
-export function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
+export function Label({ n, children, ghost }: { n?: React.ReactNode; children: React.ReactNode; ghost?: boolean }) {
   return (
     <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
       {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
-      <span className={n != null ? 'block pl-3' : 'block'}>{children}</span>
+      {/* `ghost` keeps the label text in the layout (so a box lines up with its
+          twin in another column) but hides it — used for the SA103F disallowable
+          column, which shows only box numbers against the allowable labels. */}
+      <span className={`${n != null ? 'block pl-3' : 'block'}${ghost ? ' invisible' : ''}`} aria-hidden={ghost || undefined}>{children}</span>
     </div>
   );
 }
-export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number; minus?: boolean }) {
+export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number; minus?: boolean; ghost?: boolean }) {
   const neg = (value || 0) < 0;
   const digits = value ? Math.round(Math.abs(value)).toString() : '';
   const arr: string[] = Array(cells).fill('');
@@ -74,7 +77,7 @@ export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNo
   const dense = useDense();
   return (
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
-      <Label n={n}>{label}</Label>
+      <Label n={n} ghost={ghost}>{label}</Label>
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
         {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ ...base, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
