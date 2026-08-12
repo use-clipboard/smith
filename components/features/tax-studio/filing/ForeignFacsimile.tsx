@@ -372,36 +372,36 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="left">
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={47} value={f.nrtResiProperty} /><TotalRow n={48} value={undefined} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div className="text-[10px] leading-snug text-black">Amount of overseas residential property income or restricted finance costs for non-resident trust for residential finance costs</div><TotalRow n="48.1" label="Total claimed under the FIG regime" value={undefined} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div className="text-[10px] leading-snug text-black">Unused overseas residential property finance costs brought forward in relation to box 48</div><TotalRow n={49} value={f.nrtResiProperty} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="49.1" value={f.nrtResiFinanceBfwd} /></div>
+            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={f.nrtResiProperty} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={undefined} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="48.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Amount of overseas residential property income or restricted finance costs for non-resident trust for residential finance costs</div><TotalRow n={49} value={f.nrtResiProperty} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Unused overseas residential property finance costs brought forward in relation to box 48</div><TotalRow n="49.1" value={f.nrtResiFinanceBfwd} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead cont>Savings income arising in non-resident settlor interested trusts</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={50} value={f.nrtSavings?.[0]?.specialWithholding} /><TotalRow n={51} value={f.nrtSavings?.[0]?.incomeArising} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="51.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={50} value={f.nrtSavings?.[0]?.specialWithholding} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={51} value={f.nrtSavings?.[0]?.incomeArising} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="51.1" label="Total claimed under the FIG regime" value={undefined} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead cont>Dividend income arising in non-resident settlor interested trusts</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={52} value={f.nrtDividends?.[0]?.specialWithholding} /><TotalRow n={53} value={f.nrtDividends?.[0]?.incomeArising} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="53.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={52} value={f.nrtDividends?.[0]?.specialWithholding} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={53} value={f.nrtDividends?.[0]?.incomeArising} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="53.1" label="Total claimed under the FIG regime" value={undefined} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead>Discretionary income from non-settlor interested non-resident trusts</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={54} value={f.nrtDiscretionary} /><TotalRow n="54.1" label="Total claimed under the FIG regime" value={f.nrtDiscretionaryFig} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div className="flex justify-center"><TotalRow n={54} value={f.nrtDiscretionary} /></div><TotalRow n="54.1" label="Total claimed under the FIG regime" value={f.nrtDiscretionaryFig} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead>Capital sums paid to settlor by trustees of non-resident trusts</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={55} value={f.nrtCapitalSums} /><TotalRow n="55.1" label="Total claimed under the FIG regime" value={f.nrtCapitalSumsFig} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div className="flex justify-center"><TotalRow n={55} value={f.nrtCapitalSums} /></div><TotalRow n="55.1" label="Total claimed under the FIG regime" value={f.nrtCapitalSumsFig} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead note="– excluding amounts in box 13">Gains on disposal of holdings in offshore fund</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={56} value={f.offshoreFundGains} /><TotalRow n="56.1" label="Total claimed under the FIG regime" value={f.offshoreFundGainsFig} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div className="flex justify-center"><TotalRow n={56} value={f.offshoreFundGains} /></div><TotalRow n="56.1" label="Total claimed under the FIG regime" value={f.offshoreFundGainsFig} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead note="– excluding the amounts in box 13">Non-trade income</SecHead>
-            <div className="grid grid-cols-2 gap-x-6"><TotalRow n={57} value={f.nonTradeIncome} /><TotalRow n="57.1" label="Total claimed under the FIG regime" value={f.nonTradeIncomeFig} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div className="flex justify-center"><TotalRow n={57} value={f.nonTradeIncome} /></div><TotalRow n="57.1" label="Total claimed under the FIG regime" value={f.nonTradeIncomeFig} /></div>
           </Band>
         </Table>
       </Page>
