@@ -5,8 +5,10 @@
 // boxes, ruled lines) is constant. HMRC's functional layout (Open Government
 // Licence), rendered to hold this client's figures like commercial tax software.
 
+'use client';
+
 import type React from 'react';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 
 export const TEAL = '#00928f';
 export const CELL = '#a9d3d0';
@@ -192,11 +194,35 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
     </>
   );
 }
+// Keeps every supplementary page on a single A4 sheet with the identical roomy
+// (main-form) spacing. The layout is never compressed; a page is only ever
+// scaled down as a whole — and only when its content would otherwise run past
+// the sheet — so pages that already fit are rendered pixel-for-pixel unchanged.
+function FitContent({ children }: { children: React.ReactNode }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const box = boxRef.current, inner = innerRef.current;
+    if (!box || !inner) return;
+    const avail = box.clientHeight;
+    const natural = inner.scrollHeight; // transforms don't affect scrollHeight
+    const k = natural > avail + 1 ? Math.max(0.72, avail / natural) : 1;
+    setScale(s => (Math.abs(s - k) > 0.002 ? k : s));
+  });
+  return (
+    <div ref={boxRef} className="relative min-h-0 flex-1">
+      <div ref={innerRef} className="h-full" style={{ transformOrigin: 'top center', transform: scale < 1 ? `scale(${scale})` : undefined }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
   const t = useTheme();
   return (
     <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'p-[11mm]' : 'p-[13mm]'}`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
-      <div className="min-h-0 flex-1">{children}</div>
+      <FitContent>{children}</FitContent>
       <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
         <span style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
