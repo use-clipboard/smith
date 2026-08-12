@@ -554,7 +554,7 @@ export const LLU = {
   additionalForeignTax: 'Additional payments of foreign tax.',
   foreignTaxDeductionProfit: 'Foreign tax claimed as a deduction (rather than as Foreign Tax Credit Relief).',
   lossesBroughtForwardProfit: 'Lloyd’s losses brought forward, set against this year’s profit.',
-  lossForYear: 'The allowable loss for this year.',
+  foreignTaxDeductionLoss: 'Foreign tax (from box 48) claimed as a deduction rather than as Foreign Tax Credit Relief — it increases this year’s allowable loss (box 55 = box 53 + box 54).',
   lossSetOffOtherIncome: 'Loss set off against your other income for the year.',
   lossCarriedBack: 'Loss carried back to set against earlier years.',
   lossesBroughtForward: 'Lloyd’s losses brought forward from earlier years.',

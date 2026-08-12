@@ -3916,7 +3916,7 @@ function lloydsSubCount(l: LloydsUnderwriter, sub: string): number {
     case "Lloyd's losses and expenses": return num(l.aggregateSyndicateLosses, l.specialReserveTransfer, l.stopLossPremiums, l.quotaSharePremiums, l.estateProtectionPremiums, l.underwritingLoanInterest, l.membersAssocExpenses, l.agentCommissionSalaries, l.bankGuaranteeFees, l.accountancyFees, l.otherExpenses);
     case "Lloyd's foreign tax": return num(l.usIncomeTax, l.canadianTax, l.syndicateForeignTax, l.additionalForeignTax);
     case 'Taxable profits & losses': return num(l.foreignTaxDeductionProfit, l.lossesBroughtForwardProfit);
-    case 'Taxable profits & losses (cont.)': return num(l.lossForYear, l.lossSetOffOtherIncome, l.lossCarriedBack);
+    case 'Taxable profits & losses (cont.)': return num(l.foreignTaxDeductionLoss, l.lossSetOffOtherIncome, l.lossCarriedBack);
     case "Lloyd's losses reconciliation": return num(l.lossesBroughtForward);
     case 'NICs & Other Info': return (l.class2Voluntary ? 1 : 0) + (l.class4Exempt ? 1 : 0) + num(l.class4Adjustment) + (l.class2FullYear ? 1 : 0) + (l.otherInformation && l.otherInformation.trim() ? 1 : 0);
   }
@@ -4082,8 +4082,8 @@ function LloydsPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100I
         <div className="space-y-3">
           <SectionTitle title="Lloyd's losses reconciliation" />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <BoxCalc box={54} label="Foreign tax claimed as a deduction" value={cb.box54} />
-            <LabelledNum box={55} label="Loss for this year" value={l.lossForYear ?? 0} onChange={v => set({ lossForYear: v })} help={LLU.lossForYear} />
+            <LabelledNum box={54} label="Foreign tax claimed as a deduction — from box 48" value={l.foreignTaxDeductionLoss ?? 0} onChange={v => set({ foreignTaxDeductionLoss: v })} help={LLU.foreignTaxDeductionLoss} />
+            <BoxCalc box={55} label="Loss for the year 2025–26 (box 53 + box 54)" value={cb.box55} />
             <LabelledNum box={56} label="Loss set off against other income" value={l.lossSetOffOtherIncome ?? 0} onChange={v => set({ lossSetOffOtherIncome: v })} help={LLU.lossSetOffOtherIncome} />
             <LabelledNum box={57} label="Loss carried back to set against earlier years" value={l.lossCarriedBack ?? 0} onChange={v => set({ lossCarriedBack: v })} help={LLU.lossCarriedBack} />
             <BoxCalc box={58} label="Unused loss available to carry forward" value={cb.box58} />

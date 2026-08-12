@@ -932,7 +932,7 @@ export interface LloydsComputed {
   box40: number;                                                              // total losses & expenses
   box41: number; box42: number;                                               // profit / loss
   box43: number; box48: number;                                               // foreign tax totals
-  box49: number; box52: number; box53: number; box54: number;                 // taxable profit / loss calc
+  box49: number; box52: number; box53: number; box54: number; box55: number;   // taxable profit / loss calc
   box58: number; box60: number; box61: number; box62: number;                 // loss reconciliation
   taxable: number; allowableLoss: number; taxDeducted: number; foreignTax: number;
 }
@@ -956,14 +956,15 @@ export function lloydsComputed(l?: LloydsUnderwriter): LloydsComputed {
   const box49 = box41;
   const box52 = Math.max(0, box49 - n(l?.foreignTaxDeductionProfit) - n(l?.lossesBroughtForwardProfit));
   const box53 = box42;
-  const box54 = n(l?.foreignTaxDeductionProfit);
-  const box58 = Math.max(0, n(l?.lossForYear) - n(l?.lossSetOffOtherIncome) - n(l?.lossCarriedBack));
+  const box54 = n(l?.foreignTaxDeductionLoss);
+  const box55 = box53 + box54;                                            // loss for the year (box 53 + box 54)
+  const box58 = Math.max(0, box55 - n(l?.lossSetOffOtherIncome) - n(l?.lossCarriedBack));
   const box60 = Math.min(n(l?.lossesBroughtForward), box52);
   const box61 = Math.max(0, n(l?.lossesBroughtForward) - box60);
   const box62 = box58 + box61;
   return {
     box5, box11, box18, box26, box27, box40, box41, box42, box43, box48,
-    box49, box52, box53, box54, box58, box60, box61, box62,
+    box49, box52, box53, box54, box55, box58, box60, box61, box62,
     // box 52 already deducts losses brought forward (box 51); boxes 59–62 are the
     // loss-pool reconciliation memo, so the taxable figure is box 52 itself.
     taxable: box52,

@@ -1061,11 +1061,11 @@ export interface LloydsUnderwriter {
   canadianTax?: number;               // box 45
   syndicateForeignTax?: number;       // box 46
   additionalForeignTax?: number;      // box 47
-  // Taxable profits (boxes 50, 51; boxes 49, 52, 53 computed)
-  foreignTaxDeductionProfit?: number; // box 50 — foreign tax claimed as a deduction
+  // Taxable profits (boxes 50, 51, 54; boxes 49, 52, 53, 55 computed)
+  foreignTaxDeductionProfit?: number; // box 50 — foreign tax claimed as a deduction (profit path)
   lossesBroughtForwardProfit?: number;// box 51 — Lloyd's losses brought forward
-  // Loss reconciliation (boxes 55–57, 59; boxes 54, 58, 60–62 computed)
-  lossForYear?: number;               // box 55 — loss for this year
+  foreignTaxDeductionLoss?: number;   // box 54 — foreign tax (from box 48) claimed as a deduction (loss path)
+  // Loss reconciliation (boxes 56, 57, 59; boxes 55, 58, 60–62 computed)
   lossSetOffOtherIncome?: number;     // box 56 — loss set off against other income
   lossCarriedBack?: number;           // box 57 — loss carried back to set against earlier years
   lossesBroughtForward?: number;      // box 59 — losses brought forward from earlier years

@@ -177,7 +177,7 @@ export default function LloydsFacsimile({ ret }: { ret: TaxReturn }) {
               <TealSub>If you made a loss fill in boxes 53 to 58</TealSub>
               <Money n={53} label="Loss from box 42" value={c.box53} />
               <Money n={54} label="Foreign tax claimed as a deduction – from box 48" value={c.box54} />
-              <Money n={55} label="Loss for the year 2025–26 (box 53 + box 54)" value={l.lossForYear} />
+              <Money n={55} label="Loss for the year 2025–26 (box 53 + box 54)" value={c.box55} />
               <Money n={56} label="Loss set off against other income for 2025–26" value={l.lossSetOffOtherIncome} />
               <Money n={57} label="Loss carried back to set against earlier years" value={l.lossCarriedBack} />
               <Money n={58} label="Unused loss available to carry forward after all other set-offs" value={c.box58} />
