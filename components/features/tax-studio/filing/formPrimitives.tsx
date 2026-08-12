@@ -211,7 +211,7 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
 // (main-form) spacing. The layout is never compressed; a page is only ever
 // scaled down as a whole — and only when its content would otherwise run past
 // the sheet — so pages that already fit are rendered pixel-for-pixel unchanged.
-function FitContent({ children }: { children: React.ReactNode }) {
+function FitContent({ origin = 'top center', children }: { origin?: string; children: React.ReactNode }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -225,20 +225,22 @@ function FitContent({ children }: { children: React.ReactNode }) {
   });
   return (
     <div ref={boxRef} className="relative min-h-0 flex-1">
-      <div ref={innerRef} className="h-full" style={{ transformOrigin: 'top center', transform: scale < 1 ? `scale(${scale})` : undefined }}>
+      {/* When a page must shrink to fit, anchor the shrink to the edge it bleeds
+          toward (origin) so a full-bleed panel keeps touching that page edge. */}
+      <div ref={innerRef} className="h-full" style={{ transformOrigin: origin, transform: scale < 1 ? `scale(${scale})` : undefined }}>
         {children}
       </div>
     </div>
   );
 }
-export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
+export function Page({ tag, code = 'SA100', fitOrigin = 'top center', children }: { tag: string; code?: string; fitOrigin?: string; children: React.ReactNode }) {
   const t = useTheme();
   // The HMRC "12/25" print date appears only on the first page of each form
   // section (page tag ending in "1"), like the real forms. No footer rule.
   const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
     <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
-      <FitContent>{children}</FitContent>
+      <FitContent origin={fitOrigin}>{children}</FitContent>
       <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
         <span className="text-center" style={{ letterSpacing: '0.18em' }}>Page {tag}</span>

@@ -15,7 +15,9 @@ const CREAM = '#faf6ea';
 const MINT = '#e9f3f2';
 const BORDER = '#d8d2be';
 const ABC = 'grid-cols-[120px_1fr_1fr]';
-const DEF = 'grid-cols-[1fr_84px_1fr]';
+// D only needs to fit the money box, so keep it narrow and give the width to E
+// (whose header otherwise wraps to four lines and inflates the header row).
+const DEF = 'grid-cols-[145px_160px_1fr]';
 const ACEF = 'grid-cols-[84px_1fr_66px_1fr]';
 
 // Horizontal padding for band content, set by the Table's bleed direction so the
@@ -139,7 +141,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 2 — overseas income A / B / C (bleed right) ── */}
-      <Page tag="F 2" code="SA106">
+      <Page tag="F 2" code="SA106" fitOrigin="top right">
         <H4>Income from overseas sources</H4>
         <Note>If you have income from overseas savings, foreign dividends, remitted foreign income, overseas pensions or benefits, or income, dividends received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country and check the relevant Double Taxation Treaty for any limits to the relief you can claim. Please refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet giving the same information as below. All entries should be in UK pounds.</Note>
         <Table bleed="right">
@@ -176,7 +178,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 3 — continuation D / E / F + totals (bleed left) ── */}
-      <Page tag="F 3" code="SA106">
+      <Page tag="F 3" code="SA106" fitOrigin="top left">
         <Note>received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country. Refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet.</Note>
         <Table bleed="left">
           <Band bg={CREAM}>
@@ -220,7 +222,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 4 — land & property; summary A/B/C (bleed right) ── */}
-      <Page tag="F 4" code="SA106">
+      <Page tag="F 4" code="SA106" fitOrigin="top right">
         <H4>Income from land and property abroad</H4>
         <Note>If you only have one overseas let property, or you have more than one but they’re all in the same country, you can just complete these pages. If you have overseas let properties in more than one country and if any foreign tax has been taken off one or more of those properties, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <h4 className="mb-1 text-[14px] font-normal text-black">Income and expenses</h4>
@@ -258,7 +260,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 5 — calculating P&L; D/E/F (bleed left) ── */}
-      <Page tag="F 5" code="SA106">
+      <Page tag="F 5" code="SA106" fitOrigin="top left">
         <Note>Fill in a single summary section for all the properties. If you have overseas let properties in more than one country and any foreign tax has been taken off, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <H4>Calculating profits and losses for tax purposes</H4>
         <Panel divided>
@@ -289,7 +291,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 6 — CG FTCR; other overseas income A/B/C (bleed right) ── */}
-      <Page tag="F 6" code="SA106">
+      <Page tag="F 6" code="SA106" fitOrigin="top right">
         <H4>Capital gains – Foreign Tax Credit Relief and Special Withholding Tax</H4>
         <Note>If you’ve filled in the ‘Capital gains summary’ pages and you’ve paid foreign tax on those gains, and you want to claim Foreign Tax Credit Relief for the foreign tax, fill in box 33 and boxes 37 to 40. Do not include these amounts in box 2 on page F 1.</Note>
         <Panel divided>
@@ -331,7 +333,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       </Page>
 
       {/* ── F 7 — life insurance; other overseas D/E/F (bleed left) ── */}
-      <Page tag="F 7" code="SA106">
+      <Page tag="F 7" code="SA106" fitOrigin="top left">
         <H4>Other overseas income and gains</H4>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
