@@ -37,14 +37,14 @@ function Table({ bleed = 'both', children }: { bleed?: 'left' | 'right' | 'none'
 }
 function Band({ bg, children }: { bg: string; children: React.ReactNode }) {
   const pad = useContext(BleedPad);
-  return <div className={`${pad} py-3`} style={{ background: bg }}>{children}</div>;
+  return <div className={`${pad} py-2`} style={{ background: bg }}>{children}</div>;
 }
 // Column-header row (sits inside the first band, so it's on the coloured panel).
 function ColHead({ cols, children }: { cols: string; children: React.ReactNode }) {
   return <div className={`grid ${cols} gap-x-6 pb-2 text-[10.5px] font-bold text-black`}>{children}</div>;
 }
 function SecHead({ children, cont, note }: { children: React.ReactNode; cont?: boolean; note?: React.ReactNode }) {
-  return <p className="mb-2 text-[11.5px] font-bold text-black">{children}{cont && <span className="font-normal"> continued</span>}{note && <span className="font-normal"> {note}</span>}</p>;
+  return <p className="mb-1.5 text-[11.5px] font-bold text-black">{children}{cont && <span className="font-normal"> continued</span>}{note && <span className="font-normal"> {note}</span>}</p>;
 }
 function Ctry({ value }: { value?: string }) {
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
@@ -68,14 +68,12 @@ function Amt({ value, minus, pence, cells = 7 }: { value?: number | null; minus?
       <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
       {minus && <span className="flex w-[14px] items-center justify-center" style={{ ...base, background: MONEY_TINT }}>{neg ? <span className="text-[12px] font-bold text-black">−</span> : <span className="block" style={{ width: 9, height: 3, background: '#fff' }} />}</span>}
       {arr.map((d, i) => <span key={i} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>)}
-      {pence ? (
+      {pence && (
         <>
           <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
           <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
           <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
         </>
-      ) : (
-        <span className="ml-[2px] flex w-[15px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
       )}
     </div>
   );
@@ -95,8 +93,8 @@ function Tag({ n }: { n: React.ReactNode }) {
 // Total row: [tag] label, then the money box under it.
 function TotalRow({ n, label, value, minus }: { n?: React.ReactNode; label?: React.ReactNode; value?: number | null; minus?: boolean }) {
   return (
-    <div className="mb-2">
-      {(n != null || label) && <div className="mb-1 flex items-start gap-1 text-[10.5px] font-bold text-black">{n != null && <Tag n={n} />}{label && <span>{label}</span>}</div>}
+    <div className="mb-1">
+      {(n != null || label) && <div className="mb-0.5 flex items-start gap-1 text-[10.5px] font-bold text-black">{n != null && <Tag n={n} />}{label && <span>{label}</span>}</div>}
       <Amt value={value} minus={minus} />
     </div>
   );
@@ -148,11 +146,11 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           <Band bg={CREAM}>
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Amount of income arising or received before any tax taken off</span><span>C Foreign tax taken off or paid</span></ColHead>
             <SecHead>Interest and other income from overseas savings</SecHead>
-            {rows(f.interest).map((r, i) => <div key={i} className={`mb-1.5 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
+            {rows(f.interest).map((r, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
           </Band>
           <Band bg={MINT}>
             <SecHead>Dividends from foreign companies</SecHead>
-            {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1.5 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
+            {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
           </Band>
           <Band bg={CREAM}>
             <SecHead>Remitted foreign income excluding dividends</SecHead>
@@ -184,13 +182,13 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount – if you’re claiming Foreign Tax Credit Relief, copy column B here. If not, enter column B minus column C</span></ColHead>
             <SecHead cont>Interest and other income from overseas savings</SecHead>
-            {rows(f.interest).map((r, i) => <div key={i} className={`mb-1.5 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
+            {rows(f.interest).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={3} label="Total of column above" value={sumCol(f.interest, 'specialWithholding')} /><TotalRow n={4} label="Total of column above" value={sumCol(f.interest, 'incomeArising')} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="4.1" label="Total claimed under the FIG regime" value={undefined} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead cont>Dividends from foreign companies</SecHead>
-            {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1.5 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
+            {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={5} label="Total of column above" value={sumCol(f.dividends, 'specialWithholding')} /><TotalRow n={6} label="Total of column above" value={sumCol(f.dividends, 'incomeArising')} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="6.1" label="Total claimed under the FIG regime" value={undefined} /></div>
           </Band>
@@ -248,7 +246,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="right">
           <Band bg={CREAM}>
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Adjusted profit or loss (from box 24)</span><span>C Foreign tax taken off or paid</span></ColHead>
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1.5 grid ${ABC} items-center gap-x-6`}><Ctry value={f.properties?.[i]?.country} /><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} minus /><Amt value={undefined} /></div>)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={f.properties?.[i]?.country} /><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} minus /><Amt value={undefined} /></div>)}
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={25} label="Total of column above" value={foreignPropAdjusted(prop)} minus /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={26} label="Total loss brought forward from earlier years" value={f.propLossBroughtForward} /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={27} label="Total taxable profits (if box 25 minus box 26 is a positive amount)" value={undefined} /><TotalRow n={28} label="Total foreign tax" value={undefined} /></div>
@@ -283,7 +281,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="left">
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D UK tax taken off</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1.5 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={undefined} /><TotalRow n={30} label="Total taxable amount" value={foreignPropAdjusted(prop)} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={undefined} /></div>
           </Band>
@@ -415,7 +413,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="none">
           <Band bg={CREAM}>
             <ColHead cols={ACEF}><span>A Country or territory code</span><span>C Foreign tax paid</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            {rows(f.foreignTaxRows, 4).map((r, i) => <div key={i} className={`mb-1.5 grid ${ACEF} items-center gap-x-4`}><Ctry value={r?.country} /><Amt value={r?.foreignTax} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
+            {rows(f.foreignTaxRows, 4).map((r, i) => <div key={i} className={`mb-1 grid ${ACEF} items-center gap-x-4`}><Ctry value={r?.country} /><Amt value={r?.foreignTax} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
           </Band>
         </Table>
       </Page>
