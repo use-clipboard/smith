@@ -2784,8 +2784,8 @@ function Sa108Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
             <BoxNum box={47} label="Losses available to be carried forward" help={CGT.lossesCf} value={sa.lossesCarriedForward ?? 0} onChange={v => set({ lossesCarriedForward: v })} />
             <BoxNum box={48} label="Losses used against an earlier year's gain" value={sa.lossesUsedEarlierYear ?? 0} onChange={v => set({ lossesUsedEarlierYear: v })} />
           </BoxSection>
-          <BoxSection title="Entrepreneurs' Relief / Business Asset Disposal Relief">
-            <BoxNum box={49} label="Gains qualifying for Entrepreneurs' Relief — before 23 June 2010" value={sa.erGainsPre2010 ?? 0} onChange={v => set({ erGainsPre2010: v })} />
+          <BoxSection title="Investors' Relief and Business Asset Disposal Relief (previously 'Entrepreneurs' Relief')">
+            <BoxNum box={49} label="Gains qualifying for Investors' Relief" value={sa.erGainsPre2010 ?? 0} onChange={v => set({ erGainsPre2010: v })} />
             <BoxNum box={50} label="Gains qualifying for Business Asset Disposal Relief" help={CGT.badr} value={sa.badrGains ?? 0} onChange={v => set({ badrGains: v })} />
             <BoxNum box="50.1" label="Lifetime allowance of BADR and Entrepreneurs' Relief claimed to date" help={CGT.badrLifetime} value={sa.badrLifetimeClaimed ?? 0} onChange={v => set({ badrLifetimeClaimed: v })} />
           </BoxSection>

@@ -757,7 +757,7 @@ export interface Sa108 {
   incomeLossesSetAgainst?: number; // 46 — income losses in-year set against gains
   lossesCarriedForward?: number; // 47 — losses available to be carried forward
   lossesUsedEarlierYear?: number; // 48 — losses used against an earlier year's gain
-  erGainsPre2010?: number;       // 49 — gains qualifying for Entrepreneurs' Relief before 23 June 2010
+  erGainsPre2010?: number;       // 49 — gains qualifying for Investors' Relief (on the 2026 SA108; this box was 'Entrepreneurs' Relief before 23 June 2010' on older forms — field name kept for saved-data continuity)
   badrGains?: number;            // 50 — gains qualifying for Business Asset Disposal Relief
   badrLifetimeClaimed?: number;  // 50.1 — lifetime allowance of BADR/ER claimed to date
   cgtAdjustments?: number;       // 51 — adjustments to Capital Gains Tax

@@ -80,7 +80,13 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
       <Label n={n} ghost={ghost}>{label}</Label>
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
-        {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ ...base, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
+        {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
+            style minus only when the figure is actually negative. */}
+        {minus && (
+          <span className="flex w-[14px] items-center justify-center" style={{ ...base, background: MONEY_TINT }}>
+            {neg ? <span className="text-[12px] font-bold text-black">−</span> : <span className="block" style={{ width: 9, height: 3, background: '#fff' }} />}
+          </span>
+        )}
         {arr.map((d, idx) => (
           <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
         ))}
