@@ -13,7 +13,8 @@ export default function WelshParliamentFacsimile({ ret, office }: { ret: TaxRetu
     <FormThemeContext.Provider value={PINK_THEME}>
       {/* ── MS 1 ── */}
       <Page tag="MS 1" code="SA102MS">
-        <SuppHead title="Senedd Cymru/Welsh Parliament" name={ret.clientName} utr={ret.utr ?? undefined} note={<Note>For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>} />
+        <SuppHead title="Senedd Cymru/Welsh Parliament" name={ret.clientName} utr={ret.utr ?? undefined} />
+        <Note>For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>
         <Head>Income from office</Head>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
