@@ -39,11 +39,11 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
               <Line n={3} label="First line of your business address – unless you work from home" value={t.addressLine} lines={2} />
               <Cells n={4} label="Postcode of your business address" groups={[8]} value={t.postcode} />
               <div className="mb-3"><Label n={5}>If the details in boxes 1, 2, 3 or 4 have changed in the last 12 months, put ‘X’ in the box and give details in the ‘Any other information’ box</Label><Tick on={!!t.detailsChanged} /></div>
-              <div><Label n="6Q">Did this business start after 5 April 2025? You must put ‘X’ in one box</Label><YesNo yes={t.startedInYear === undefined ? null : t.startedInYear} /></div>
+              <div><Label n="6Q">Did this business start after 5 April 2025? You must put ‘X’ in one box</Label><YesNo yes={t.startedInYear ?? false} /></div>
             </div>
             <div>
               <Cells n={6} label="If you answered ‘Yes’ in box 6Q, enter the date the business started  DD MM YYYY" groups={[2, 2, 4]} value={date(t.dateStarted)} />
-              <div className="mb-3"><Label n="7Q">Did this business cease after 5 April 2025 but before 6 April 2026? You must put ‘X’ in one box</Label><YesNo yes={t.ceasedInYear === undefined ? null : t.ceasedInYear} /></div>
+              <div className="mb-3"><Label n="7Q">Did this business cease after 5 April 2025 but before 6 April 2026? You must put ‘X’ in one box</Label><YesNo yes={t.ceasedInYear ?? false} /></div>
               <Cells n={7} label="If you answered ‘Yes’ in box 7Q, enter the final date of trading  DD MM YYYY" groups={[2, 2, 4]} value={date(t.dateCeased)} />
               <Cells n={8} label="Date your books or accounts start – the beginning of your accounting period  DD MM YYYY" groups={[2, 2, 4]} value={date(t.periodStart)} />
               <Cells n={9} label="Date your books or accounts are made up to or the end of your accounting period  DD MM YYYY" groups={[2, 2, 4]} value={date(t.periodEnd)} />

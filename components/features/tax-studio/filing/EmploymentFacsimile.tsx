@@ -22,14 +22,14 @@ export default function EmploymentFacsimile({ ret, emp }: { ret: TaxReturn; emp:
               <Line n={5} label="Your employer’s name" value={e.employer} />
               <div>
                 <Label n={6}>Were you a director of this company – you must put ‘X’ in one of these boxes</Label>
-                <YesNo yes={e.isDirector === undefined ? null : e.isDirector} />
+                <YesNo yes={e.isDirector ?? false} />
               </div>
             </div>
             <div>
               <Cells n="6.1" label="If you ceased being a director before 6 April 2026, put the date the directorship ceased in the box  DD MM YYYY" groups={[2, 2, 4]} value={e.directorCeasedDate ? e.directorCeasedDate.split('-').reverse().join('') : ''} />
               <div className="mb-3">
                 <Label n={7}>Was this company a close company – you must put ‘X’ in one of these boxes</Label>
-                <div className="flex items-center gap-3"><YesNo yes={e.isCloseCompany === undefined ? null : e.isCloseCompany} /><span className="text-[10px] text-black">If No, go to question 8</span></div>
+                <div className="flex items-center gap-3"><YesNo yes={e.isCloseCompany ?? false} /><span className="text-[10px] text-black">If No, go to question 8</span></div>
               </div>
               <Line n="7.1" label="Name of this close company" value={e.closeCompanyName} />
               <Cells n="7.2" label="Registration number of this close company" groups={[10]} value={e.closeCompanyReg} />
