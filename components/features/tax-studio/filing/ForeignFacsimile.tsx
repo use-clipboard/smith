@@ -81,14 +81,14 @@ function Amt({ value, minus, pence, cells = 7 }: { value?: number | null; minus?
   const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
   return (
     <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
-      <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
+      <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}>£</span>
       {minus && <span className="flex w-[14px] items-center justify-center" style={{ ...base, background: MONEY_TINT }}>{neg ? <span className="text-[12px] font-bold text-black">−</span> : <span className="block" style={{ width: 9, height: 3, background: '#fff' }} />}</span>}
       {arr.map((d, i) => <span key={i} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>)}
       {pence && (
         <>
           <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
-          <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
-          <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
+          <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
+          <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
         </>
       )}
     </div>

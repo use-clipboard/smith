@@ -83,7 +83,7 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
       {(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
-        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
+        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={base}>£</span>
         {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
             style minus only when the figure is actually negative. */}
         {minus && (
@@ -95,8 +95,8 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
           <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
         ))}
         <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
-        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={base}>0</span>
       </div>
     </div>
   );
