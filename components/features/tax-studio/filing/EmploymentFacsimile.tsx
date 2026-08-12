@@ -6,7 +6,7 @@ import { FormThemeContext, PINK_THEME, Page, SuppHead, Note, Teal, SubHead, Pane
 export default function EmploymentFacsimile({ ret, emp }: { ret: TaxReturn; emp: EmploymentSource }) {
   const e = emp;
   return (
-    <FormThemeContext.Provider value={{ ...PINK_THEME, dense: true }}>
+    <FormThemeContext.Provider value={PINK_THEME}>
       <Page tag="E 1" code="SA102">
         <SuppHead title="Employment" name={ret.clientName} utr={ret.utr ?? undefined} />
         <Note>For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>

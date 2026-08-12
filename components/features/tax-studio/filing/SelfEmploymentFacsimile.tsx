@@ -26,7 +26,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
   const head = <SuppHead title="Self-employment (full)" name={ret.clientName} utr={ret.utr ?? undefined} note={<Note>Please read the ‘Self-employment (full) notes’ to check if you should use this page or the ‘Self-employment (short)’ page. For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>} />;
 
   return (
-    <FormThemeContext.Provider value={{ ...CREAM_THEME, dense: true }}>
+    <FormThemeContext.Provider value={CREAM_THEME}>
       {/* ── SEF 1 ── */}
       <Page tag="SEF 1" code="SA103F">
         {head}
