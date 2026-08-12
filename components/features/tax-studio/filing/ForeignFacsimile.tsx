@@ -56,8 +56,11 @@ function BleedPanel({ bleed, children }: { bleed: 'left' | 'right'; children: Re
 function ColHead({ cols, children }: { cols: string; children: React.ReactNode }) {
   return <div className={`grid ${cols} gap-x-6 pb-2 text-[10.5px] font-bold text-black`}>{children}</div>;
 }
-function SecHead({ children, cont, note }: { children: React.ReactNode; cont?: boolean; note?: React.ReactNode }) {
-  return <p className="mb-1.5 text-[11.5px] font-bold text-black">{children}{cont && <span className="font-normal"> continued</span>}{note && <span className="font-normal"> {note}</span>}</p>;
+function SecHead({ children, cont, note, highlight }: { children: React.ReactNode; cont?: boolean; note?: React.ReactNode; highlight?: boolean }) {
+  const content = <>{children}{cont && <span className="font-normal"> continued</span>}{note && <span className="font-normal"> {note}</span>}</>;
+  return highlight
+    ? <p className="mb-1.5"><span className="rounded-[2px] px-1 py-[1px] text-[11.5px] font-bold text-black" style={{ background: '#cfe3f6' }}>{content}</span></p>
+    : <p className="mb-1.5 text-[11.5px] font-bold text-black">{content}</p>;
 }
 function Ctry({ value }: { value?: string }) {
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
@@ -339,13 +342,14 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.nrtSavings?.[0]?.country} /><Amt value={f.nrtSavings?.[0]?.incomeArising} /><Amt value={f.nrtSavings?.[0]?.foreignTax} /></div>
           </Band>
           <Band bg={CREAM}>
-            <SecHead>Dividend income arising in non-resident settlor interested trusts</SecHead>
+            <SecHead highlight>Dividend income arising in non-resident settlor interested trusts</SecHead>
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.nrtDividends?.[0]?.country} /><Amt value={f.nrtDividends?.[0]?.incomeArising} /><Amt value={f.nrtDividends?.[0]?.foreignTax} /></div>
           </Band>
           {/* Continue the alternating band pattern to the foot of the page. */}
           <Band bg={MINT}><div className="h-[54px]" /></Band>
           <Band bg={CREAM}><div className="h-[54px]" /></Band>
           <Band bg={MINT}><div className="h-[54px]" /></Band>
+          <Band bg={CREAM}><div className="h-[54px]" /></Band>
         </Table>
       </Page>
 
