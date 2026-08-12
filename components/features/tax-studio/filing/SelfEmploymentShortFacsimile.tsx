@@ -51,7 +51,7 @@ export default function SelfEmploymentShortFacsimile({ ret, trade }: { ret: TaxR
             <div><Money n={9} label="Your turnover – the takings, fees, sales or money earned by your business" value={t.turnover} /></div>
             <div>
               <Money n={10} label="Any other business income not included in box 9" value={t.otherBusinessIncome} />
-              <Money n="10.1" label="Trading income allowance – read the notes" value={t.tradingIncomeAllowance} />
+              <Money n="10.1" label="Trading income allowance – read the notes" value={t.tradingIncomeAllowance} cells={4} />
             </div>
           </div>
         </Panel>

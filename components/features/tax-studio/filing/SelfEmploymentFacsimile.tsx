@@ -88,7 +88,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
             <div><Money n={15} label="Your turnover – the takings, fees, sales or money earned by your business" value={t.turnover} /></div>
             <div>
               <Money n={16} label="Any other business income not included in box 15" value={t.otherBusinessIncome} />
-              <Money n="16.1" label="Trading income allowance – read the notes" value={t.tradingIncomeAllowance} />
+              <Money n="16.1" label="Trading income allowance – read the notes" value={t.tradingIncomeAllowance} cells={4} />
             </div>
           </div>
         </Panel>

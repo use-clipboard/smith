@@ -41,6 +41,17 @@ function Band({ bg, children }: { bg: string; children: React.ReactNode }) {
   const pad = useContext(BleedPad);
   return <div className={`${pad} py-2`} style={{ background: bg }}>{children}</div>;
 }
+// A bordered cream panel that bleeds to one page edge (for the boxed sections
+// like F4/F5 "Income and expenses"). No centre divider.
+function BleedPanel({ bleed, children }: { bleed: 'left' | 'right'; children: React.ReactNode }) {
+  const right = bleed === 'right';
+  return (
+    <div className={`relative mb-3 py-3 ${right ? '-mr-[13mm] pl-3 pr-[13mm]' : '-ml-[13mm] pl-[13mm] pr-3'}`}
+      style={{ background: CREAM, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}`, ...(right ? { borderLeft: `1px solid ${BORDER}` } : { borderRight: `1px solid ${BORDER}` }) }}>
+      {children}
+    </div>
+  );
+}
 // Column-header row (sits inside the first band, so it's on the coloured panel).
 function ColHead({ cols, children }: { cols: string; children: React.ReactNode }) {
   return <div className={`grid ${cols} gap-x-6 pb-2 text-[10.5px] font-bold text-black`}>{children}</div>;
@@ -226,13 +237,13 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <H4>Income from land and property abroad</H4>
         <Note>If you only have one overseas let property, or you have more than one but they’re all in the same country, you can just complete these pages. If you have overseas let properties in more than one country and if any foreign tax has been taken off one or more of those properties, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <h4 className="mb-1 text-[14px] font-normal text-black">Income and expenses</h4>
-        <Panel divided>
+        <BleedPanel bleed="right">
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <FMoney n={14} label="Total rents and other receipts (excluding taxable premiums for the grant of a lease)" value={prop?.totalRents} />
-              <FMoney n="14.1" label="Property income allowance – read the notes" value={prop?.propertyIncomeAllowance} cells={5} />
+              <FMoney n="14.1" label="Property income allowance – read the notes" value={prop?.propertyIncomeAllowance} cells={4} />
               <div className="mb-3"><Label n="14.2">If you’ve used traditional accounting rather than cash basis to calculate your income and expenses, put ‘X’ in the box</Label><Tick on={!!prop?.traditionalAccounting} /></div>
-              <Cells n={15} label="Number of overseas let properties" groups={[5]} value={prop?.letProperties ? String(prop.letProperties) : ''} />
+              <Cells n={15} label="Number of overseas let properties" groups={[2]} value={prop?.letProperties ? String(prop.letProperties) : ''} />
             </div>
             <div>
               <FMoney n={16} label="Premiums paid for the grant of a lease" value={prop?.premiumsPaid} />
@@ -242,7 +253,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
               <FMoney n={20} label="Balancing charges" value={prop?.balancingCharges} />
             </div>
           </div>
-        </Panel>
+        </BleedPanel>
         <H4>Summary of income from land and property abroad</H4>
         <Note>If you’ve filled in any of boxes 14 to 24.2, enter the details below. Please note that boxes 21 to 24.2 are on page F 5.</Note>
         <Table bleed="right">
@@ -252,7 +263,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={25} label="Total of column above" value={foreignPropAdjusted(prop)} minus /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={26} label="Total loss brought forward from earlier years" value={f.propLossBroughtForward} /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={27} label="Total taxable profits (if box 25 minus box 26 is a positive amount)" value={undefined} /><TotalRow n={28} label="Total foreign tax" value={undefined} /></div>
-            <SecHead>Losses</SecHead>
+            <div className={`grid ${ABC} gap-x-6`}><div /><SecHead>Losses</SecHead><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={31} label="Loss set off against total income" value={f.propLossSetOff} /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={32} label="Total loss to carry forward to the following year" value={undefined} /><div /></div>
           </Band>
