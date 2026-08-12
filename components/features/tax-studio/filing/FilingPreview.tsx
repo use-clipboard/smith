@@ -17,9 +17,10 @@ import ParliamentFacsimile from './ParliamentFacsimile';
 import ScottishParliamentFacsimile from './ScottishParliamentFacsimile';
 import ResidenceFacsimile from './ResidenceFacsimile';
 import PropertyFacsimile from './PropertyFacsimile';
+import LloydsFacsimile from './LloydsFacsimile';
 import PartnershipFacsimile from './PartnershipFacsimile';
 import PartnershipShortFacsimile from './PartnershipShortFacsimile';
-import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData, assemblyHasData, parliamentHasData, scottishParliamentHasData } from '../calc';
+import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData, assemblyHasData, parliamentHasData, scottishParliamentHasData, lloydsHasData } from '../calc';
 
 // Print stylesheet: when printing, show only the preview sheets (the browser's
 // "Save as PDF" then produces a clean, vector, multi-page client copy).
@@ -89,10 +90,11 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   const showScottish = useMemo(() => scottishParliamentHasData(ret.income.scottishParliament), [ret]);
   const showResidence = useMemo(() => { const r = ret.income.residence; return !!r && Object.values(r).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!v)); }, [ret]);
   const showProperty = useMemo(() => (ret.income.property ?? []).length > 0, [ret]);
+  const showLloyds = useMemo(() => lloydsHasData(ret.income.lloyds), [ret]);
   const fullPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form !== 'short' && (p.profit || p.name || p.utr)), [ret]);
   const shortPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form === 'short' && (p.profit || p.name || p.utr)), [ret]);
-  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S' && f.code !== 'SA109' && f.code !== 'SA105')], [ret]);
-  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + (showResidence ? 1 : 0) + (showProperty ? 1 : 0) + fullPartners.length + shortPartners.length;
+  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S' && f.code !== 'SA109' && f.code !== 'SA105' && f.code !== 'SA103L')], [ret]);
+  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + (showResidence ? 1 : 0) + (showProperty ? 1 : 0) + (showLloyds ? 1 : 0) + fullPartners.length + shortPartners.length;
 
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 overflow-auto bg-slate-100">
@@ -125,6 +127,7 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
         {emps.map((e, idx) => <EmploymentFacsimile key={`emp-${idx}`} ret={ret} emp={e} />)}
         {trades.map((tr, idx) => <SelfEmploymentFacsimile key={`se-${idx}`} ret={ret} trade={tr} />)}
         {shortTrades.map((tr, idx) => <SelfEmploymentShortFacsimile key={`ses-${idx}`} ret={ret} trade={tr} />)}
+        {showLloyds && <LloydsFacsimile ret={ret} />}
         {showCgt && <CapitalGainsFacsimile ret={ret} />}
         {showForeign && <ForeignFacsimile ret={ret} />}
         {showWelsh && ret.income.welshAssembly && <WelshParliamentFacsimile ret={ret} office={ret.income.welshAssembly} />}
