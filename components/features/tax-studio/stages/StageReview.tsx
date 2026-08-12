@@ -1593,7 +1593,7 @@ const PARTNERSHIP_SUBTABS: Record<PartnershipTab, string[]> = {
 const PARTNERSHIP_SHORT_TABS = ['Partnership detail and profit', 'Trading or professional losses'] as const;
 const PARTNERSHIP_SHORT_SUBTABS: Record<string, string[]> = {
   'Partnership detail and profit': ['Partnership details', 'Trading or professional profit', 'Trading or professional profit (continue)'],
-  'Trading or professional losses': ['Trading or professional losses', 'NICs & taxed interest', 'Tax paid and deductions'],
+  'Trading or professional losses': ['Trading or professional losses', 'NICs & untaxed interest', 'Tax paid and deductions'],
 };
 
 function partnershipSectionCount(p: PartnershipSource, tab: string): number {
@@ -1831,15 +1831,15 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
               </BoxSection>
             )}
             {/* ── SA104S short — NICs & taxed interest ── */}
-            {subName === 'NICs & taxed interest' && (<>
+            {subName === 'NICs & untaxed interest' && (<>
               <BoxSection title="National Insurance contributions">
                 <BoxCheck box={25} label="Pay Class 2 NICs voluntarily" help={PH.class2Voluntary} checked={!!p.class2Voluntary} onChange={v => set({ class2Voluntary: v })} />
                 <BoxCheck box={26} label="Exempt from Class 4 NIC" help={PH.class4Exempt} checked={!!p.class4Exempt} onChange={v => set({ class4Exempt: v })} />
                 <BoxNum box={27} label="Adjustment to profits chargeable to Class 4 NICs" help={PH.class4Adjustment} value={p.class4Adjustment ?? 0} onChange={v => set({ class4Adjustment: v })} />
                 <BoxYesNo label="Partner for the full year & willing to pay Class 2 NIC for the full year?" help={PH.willingClass2} value={!!p.willingClass2} onChange={v => set({ willingClass2: v })} />
               </BoxSection>
-              <BoxSection title="Your share of the partnership's taxed interest etc.">
-                <BoxNum box={28} label="Your share of taxed interest etc" help={PH.taxedInterestShort} value={p.taxedIncome20 ?? 0} onChange={v => set({ taxedIncome20: v })} />
+              <BoxSection title="Your share of the partnership's untaxed interest">
+                <BoxNum box={28} label="Your share of untaxed interest — from box 13 on the Partnership Statement" help={PH.ukSavings} value={p.ukSavings ?? 0} onChange={v => set({ ukSavings: v })} />
               </BoxSection>
             </>)}
             {/* ── SA104S short — tax paid and deductions ── */}
@@ -1865,7 +1865,7 @@ function PartnershipToShortModal({ requiresFull, onConfirm, onCancel }: { requir
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
         <p className="text-[15px] font-bold text-[var(--text-primary)]">Switch to the short (SA104S) form?</p>
         <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--text-secondary)]">
-          The short form only reports your share of trading profit, losses, NICs and taxed interest. UK property, foreign, offshore and other income boxes are hidden — your figures are kept and reappear if you switch back to full.
+          The short form only reports your share of trading profit, losses, NICs and untaxed interest. UK property, foreign, offshore and other income boxes are hidden — your figures are kept and reappear if you switch back to full.
         </p>
         {requiresFull && (
           <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
