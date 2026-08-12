@@ -337,8 +337,8 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
               <div className="mt-1">
                 <p className="mb-1 text-[12.5px] font-bold" style={{ color: TEAL }}>If you need more pages</p>
                 <p className="mb-1.5 text-[9.5px] leading-snug text-black">If you answered ‘Yes’ to any of questions 1 to 9, please check to see if within this return, there’s a page dealing with that kind of income or gain. If there’s not, you’ll need separate supplementary pages. Do you need to get and fill in separate supplementary pages?</p>
-                {/* This return already includes every supplementary page it needs, so 'No'. */}
-                <YesNo yes={false} />
+                {/* Yes when the return encloses any supplementary page (matches box 21 on TR8), No when it's a main-form-only return. */}
+                <YesNo yes={Object.values(has).some(Boolean)} />
                 <p className="mt-1.5 text-[9.5px] leading-snug text-black">If ‘Yes’, go to www.gov.uk/taxreturnforms to download them.</p>
               </div>
             </div>
