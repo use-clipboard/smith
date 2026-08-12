@@ -29,7 +29,8 @@ export default function PartnershipFacsimile({ ret, partner }: { ret: TaxReturn;
     <FormThemeContext.Provider value={TEAL_THEME}>
       {/* ── FP 1 ── */}
       <Page tag="FP 1" code="SA104F">
-        <SuppHead title="Partnership (full)" name={ret.clientName} utr={ret.utr ?? undefined} note={<Note>Complete a ‘Partnership’ page for each partnership of which you were a member and for each partnership business.<br />For help filling in this form go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>} />
+        <SuppHead title="Partnership (full)" name={ret.clientName} utr={ret.utr ?? undefined} />
+        <Note>Complete a ‘Partnership’ page for each partnership of which you were a member and for each partnership business.<br />For help filling in this form go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>
         <H>Partnership details</H>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
@@ -91,9 +92,9 @@ export default function PartnershipFacsimile({ ret, partner }: { ret: TaxReturn;
             <div>
               <Money n={21} label="Adjusted loss for 2025–26 – see the working sheet in the notes" value={partnershipAdjustedLoss(p)} />
               <Money n="21.1" label="Adjustment to losses as a result of a claim under the foreign income and gains (FIG) regime" value={p.lossFigAdjustment} />
-              <Money n={22} label="Loss from this tax year set off against other income for 2025–26" value={p.lossAgainstOtherIncome} />
             </div>
             <div>
+              <Money n={22} label="Loss from this tax year set off against other income for 2025–26" value={p.lossAgainstOtherIncome} />
               <Money n={23} label="Loss to be carried back to previous years and set off against income (or capital gains)" value={p.lossCarriedBack} />
               <Money n={24} label="Total loss to carry forward after all other set-offs – including unused losses brought forward" value={partnershipLossCarryForward(p)} />
             </div>

@@ -1789,15 +1789,15 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
               <BoxSection title="Your share of the partnership's taxed income">
                 <BoxNum box={68} label="Share of taxed income taxable at 10%" help={PH.taxedIncome10} value={p.taxedIncome10 ?? 0} onChange={v => set({ taxedIncome10: v })} />
                 <BoxNum box={69} label="Total foreign tax taken off" value={p.taxedIncome10ForeignTax ?? 0} onChange={v => set({ taxedIncome10ForeignTax: v })} />
-                <BoxCalc box={70} label="Taxed income taxable at 10%" value={partnershipTaxedIncome10(p)} />
+                <BoxCalc box={70} label="Total dividend income (box 68 − box 69)" value={(p.taxedIncome10 ?? 0) - (p.taxedIncome10ForeignTax ?? 0)} />
                 <BoxNum box="70.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.taxedIncome10Fig ?? 0} onChange={v => set({ taxedIncome10Fig: v })} />
                 <BoxNum box={71} label="Share of taxed income taxable at 20%" help={PH.taxedIncome20} value={p.taxedIncome20 ?? 0} onChange={v => set({ taxedIncome20: v })} />
                 <BoxNum box={72} label="Total foreign tax taken off" value={p.taxedIncome20ForeignTax ?? 0} onChange={v => set({ taxedIncome20ForeignTax: v })} />
-                <BoxCalc box={73} label="Taxed income taxable at 20%" value={partnershipTaxedIncome20(p)} />
+                <BoxCalc box={73} label="Taxed income taxable at 20% (box 71 − box 72)" value={(p.taxedIncome20 ?? 0) - (p.taxedIncome20ForeignTax ?? 0)} />
                 <BoxNum box={74} label="Share of other taxed income" help={PH.otherTaxedIncome} value={p.otherTaxedIncome ?? 0} onChange={v => set({ otherTaxedIncome: v })} />
                 <BoxNum box={75} label="Foreign tax taken off" value={p.otherTaxedIncomeForeignTax ?? 0} onChange={v => set({ otherTaxedIncomeForeignTax: v })} />
                 <BoxNum box="75.1" label="Amount claimed under the FIG regime" help={PH.fig} value={p.otherTaxedFig ?? 0} onChange={v => set({ otherTaxedFig: v })} />
-                <BoxCalc box={76} label="Other taxed income taxable" value={partnershipOtherTaxedIncome(p)} />
+                <BoxCalc box={76} label="Share of total taxed & untaxed income other than at 10%/20% (box 20 + 67 + 74 − 75)" value={partnershipTotalTaxableProfit(p) + partnershipUntaxedOther(p) + (p.otherTaxedIncome ?? 0) - (p.otherTaxedIncomeForeignTax ?? 0)} />
                 <BoxNum box="76.1" label="Total amount claimed under the FIG regime" value={p.totalFig ?? 0} onChange={v => set({ totalFig: v })} />
               </BoxSection>
             )}
