@@ -200,13 +200,13 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
             <SecHead cont>Interest and other income from overseas savings</SecHead>
             {rows(f.interest).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={3} label="Total of column above" value={sumCol(f.interest, 'specialWithholding')} /><TotalRow n={4} label="Total of column above" value={sumCol(f.interest, 'incomeArising')} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="4.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="4.1" label="Total claimed under the FIG regime" value={f.interestFig} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead cont>Dividends from foreign companies</SecHead>
             {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={5} label="Total of column above" value={sumCol(f.dividends, 'specialWithholding')} /><TotalRow n={6} label="Total of column above" value={sumCol(f.dividends, 'incomeArising')} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="6.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="6.1" label="Total claimed under the FIG regime" value={f.dividendsFig} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead cont>Remitted foreign income excluding dividends</SecHead>
@@ -218,17 +218,17 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           <Band bg={MINT}>
             <SecHead cont>Overseas pensions, social security benefits and royalties</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={8} value={f.pensions?.[0]?.specialWithholding} /><TotalRow n={9} value={f.pensions?.[0]?.incomeArising} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="9.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="9.1" label="Total claimed under the FIG regime" value={f.pensionsFig} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead cont>Dividend income received by a person abroad</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={10} value={f.otherDividend?.[0]?.specialWithholding} /><TotalRow n={11} value={f.otherDividend?.[0]?.incomeArising} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="11.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="11.1" label="Total claimed under the FIG regime" value={f.otherDividendFig} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead cont>All other income received by a person abroad and any remitted ‘ring fenced’ foreign income</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={12} value={f.otherAll?.[0]?.specialWithholding} /><TotalRow n={13} value={f.otherAll?.[0]?.incomeArising} /></div>
-            <div className="grid grid-cols-2 gap-x-6"><div className="text-[10px] leading-snug text-black">Amount of residential property income or restricted finance costs associated with income in box 13 for calculating relief for residential finance costs – use the Working Sheet in the notes</div><TotalRow n="13.0" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className="grid grid-cols-2 gap-x-6"><div className="text-[10px] leading-snug text-black">Amount of residential property income or restricted finance costs associated with income in box 13 for calculating relief for residential finance costs – use the Working Sheet in the notes</div><TotalRow n="13.0" label="Total claimed under the FIG regime" value={f.otherAllFig} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="13.1" value={f.otherResiFinanceCost} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div className="text-[10.5px] font-bold text-black">Unused residential property finance costs brought forward</div><TotalRow n="13.2" value={f.otherResiFinanceBfwd} /></div>
           </Band>
@@ -304,7 +304,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
               {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
               <div className="flex-1" />
               <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={undefined} /><TotalRow n={30} label="Total taxable amount" value={foreignPropAdjusted(prop)} /></div>
-              <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+              <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={f.propFig} /></div>
             </div>
           </Band>
         </Table>
@@ -373,19 +373,19 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
             <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={f.nrtResiProperty} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={undefined} /></div>
-            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="48.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="48.1" label="Total claimed under the FIG regime" value={f.nrtResiPropertyFig} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Amount of overseas residential property income or restricted finance costs for non-resident trust for residential finance costs</div><TotalRow n={49} value={f.nrtResiProperty} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Unused overseas residential property finance costs brought forward in relation to box 48</div><TotalRow n="49.1" value={f.nrtResiFinanceBfwd} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead cont>Savings income arising in non-resident settlor interested trusts</SecHead>
             <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={50} value={f.nrtSavings?.[0]?.specialWithholding} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={51} value={f.nrtSavings?.[0]?.incomeArising} /></div>
-            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="51.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="51.1" label="Total claimed under the FIG regime" value={f.nrtSavingsFig} /></div>
           </Band>
           <Band bg={CREAM}>
             <SecHead cont>Dividend income arising in non-resident settlor interested trusts</SecHead>
             <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={52} value={f.nrtDividends?.[0]?.specialWithholding} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={53} value={f.nrtDividends?.[0]?.incomeArising} /></div>
-            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="53.1" label="Total claimed under the FIG regime" value={undefined} /></div>
+            <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="53.1" label="Total claimed under the FIG regime" value={f.nrtDividendsFig} /></div>
           </Band>
           <Band bg={MINT}>
             <SecHead>Discretionary income from non-settlor interested non-resident trusts</SecHead>

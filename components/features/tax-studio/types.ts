@@ -620,6 +620,16 @@ export interface Sa106 {
   otherAll?: ForeignRow[];             // Other income — all other by a person abroad (12/13/13.0)
   otherResiFinanceCost?: number;       // 13.1 — residential finance cost
   otherResiFinanceBfwd?: number;       // 13.2 — unused residential finance costs b/fwd
+  // ── "Total claimed under the FIG regime" per income table / summary ──
+  interestFig?: number;        // 4.1
+  dividendsFig?: number;       // 6.1
+  pensionsFig?: number;        // 9.1
+  otherDividendFig?: number;   // 11.1
+  otherAllFig?: number;        // 13.0
+  propFig?: number;            // 30.1 — foreign property summary
+  nrtResiPropertyFig?: number; // 48.1
+  nrtSavingsFig?: number;      // 51.1
+  nrtDividendsFig?: number;    // 53.1
   // ── Foreign land & property (boxes 14–32) ──
   properties?: ForeignProperty[];
   propLossBroughtForward?: number; // 26 — total loss brought forward

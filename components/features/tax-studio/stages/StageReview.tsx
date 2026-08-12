@@ -2277,18 +2277,18 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
       )}
 
       {/* ── Overseas Income ── */}
-      {subName === 'Interest & other income' && <ForeignIncomeTable title="Interest and other income" rows={sa.interest ?? []} onChange={r => set({ interest: r })} totalBoxes={{ swt: '3', taxable: '4' }} fig="4.1" figValue={0} maxRows={12} />}
-      {subName === 'Dividends from foreign companies' && <ForeignIncomeTable title="Dividends from foreign companies" rows={sa.dividends ?? []} onChange={r => set({ dividends: r })} totalBoxes={{ taxable: '6' }} maxRows={18} />}
+      {subName === 'Interest & other income' && <ForeignIncomeTable title="Interest and other income" rows={sa.interest ?? []} onChange={r => set({ interest: r })} totalBoxes={{ swt: '3', taxable: '4' }} fig="4.1" figValue={sa.interestFig ?? 0} onFigChange={v => set({ interestFig: v })} maxRows={12} />}
+      {subName === 'Dividends from foreign companies' && <ForeignIncomeTable title="Dividends from foreign companies" rows={sa.dividends ?? []} onChange={r => set({ dividends: r })} totalBoxes={{ taxable: '6' }} fig="6.1" figValue={sa.dividendsFig ?? 0} onFigChange={v => set({ dividendsFig: v })} maxRows={18} />}
       {subName === 'Remitted income excl. dividends' && <ForeignIncomeTable title="Remitted foreign income excluding dividends" rows={sa.remittedExcl ?? []} onChange={r => set({ remittedExcl: r })} maxRows={5} />}
       {subName === 'Remitted foreign dividends' && (
         <ForeignIncomeTable title="Remitted foreign dividends income" rows={sa.remittedDividends ?? []} onChange={r => set({ remittedDividends: r })} totalBoxes={{ swt: '7.3', taxable: '7.4' }} maxRows={1}
           extra={<BoxNum box="7.5" label="Amount in box 7.4 subject to dividend tax credit" value={sa.remittedDivSubjectToCredit ?? 0} onChange={v => set({ remittedDivSubjectToCredit: v })} />} />
       )}
-      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} maxRows={4} breakdownCols={FGN_PENSION_COLS} />}
+      {subName === 'Pensions income' && <ForeignIncomeTable title="Overseas pensions, social security benefits and royalties etc." rows={sa.pensions ?? []} onChange={r => set({ pensions: r })} totalBoxes={{ swt: '8', taxable: '9' }} fig="9.1" figValue={sa.pensionsFig ?? 0} onFigChange={v => set({ pensionsFig: v })} maxRows={4} breakdownCols={FGN_PENSION_COLS} />}
       {subName === 'Other income' && (
         <div className="space-y-3">
-          <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={0} maxRows={5} />
-          <ForeignIncomeTable title="All other income received by a person abroad" rows={sa.otherAll ?? []} onChange={r => set({ otherAll: r })} totalBoxes={{ swt: '12', taxable: '13' }} fig="13.0" figValue={0} maxRows={5}
+          <ForeignIncomeTable title="Dividend income received by a person abroad" rows={sa.otherDividend ?? []} onChange={r => set({ otherDividend: r })} totalBoxes={{ swt: '10', taxable: '11' }} fig="11.1" figValue={sa.otherDividendFig ?? 0} onFigChange={v => set({ otherDividendFig: v })} maxRows={5} />
+          <ForeignIncomeTable title="All other income received by a person abroad" rows={sa.otherAll ?? []} onChange={r => set({ otherAll: r })} totalBoxes={{ swt: '12', taxable: '13' }} fig="13.0" figValue={sa.otherAllFig ?? 0} onFigChange={v => set({ otherAllFig: v })} maxRows={5}
             extra={<>
               <BoxNum box="13.1" label="Residential finance cost" help={PROP.residentialFinanceCosts} value={sa.otherResiFinanceCost ?? 0} onChange={v => set({ otherResiFinanceCost: v })} />
               <BoxNum box="13.2" label="Unused residential property finance costs brought forward" value={sa.otherResiFinanceBfwd ?? 0} onChange={v => set({ otherResiFinanceBfwd: v })} />
@@ -2324,11 +2324,12 @@ function ForeignPage({ income, setIncome }: { income: Sa100Income; setIncome: Se
       {subName === 'Non-resident trusts' && (
         <div className="space-y-3">
           <StudioCard className="p-4"><BoxSection title="Non-resident settlor-interested trusts — residential property">
+            <BoxNum box="48.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.nrtResiPropertyFig ?? 0} onChange={v => set({ nrtResiPropertyFig: v })} />
             <BoxNum box={49} label="Overseas residential property income / restricted finance costs for NR trust" value={sa.nrtResiProperty ?? 0} onChange={v => set({ nrtResiProperty: v })} />
             <BoxNum box="49.1" label="Unused overseas residential property finance costs b/fwd (re box 48)" value={sa.nrtResiFinanceBfwd ?? 0} onChange={v => set({ nrtResiFinanceBfwd: v })} />
           </BoxSection></StudioCard>
-          <ForeignIncomeTable title="Savings income arising in non-resident settlor-interested trusts" rows={sa.nrtSavings ?? []} onChange={r => set({ nrtSavings: r })} totalBoxes={{ swt: '50', taxable: '51' }} fig="51.1" figValue={0} />
-          <ForeignIncomeTable title="Dividend income arising in non-resident settlor-interested trusts" rows={sa.nrtDividends ?? []} onChange={r => set({ nrtDividends: r })} totalBoxes={{ swt: '52', taxable: '53' }} fig="53.1" figValue={0} />
+          <ForeignIncomeTable title="Savings income arising in non-resident settlor-interested trusts" rows={sa.nrtSavings ?? []} onChange={r => set({ nrtSavings: r })} totalBoxes={{ swt: '50', taxable: '51' }} fig="51.1" figValue={sa.nrtSavingsFig ?? 0} onFigChange={v => set({ nrtSavingsFig: v })} />
+          <ForeignIncomeTable title="Dividend income arising in non-resident settlor-interested trusts" rows={sa.nrtDividends ?? []} onChange={r => set({ nrtDividends: r })} totalBoxes={{ swt: '52', taxable: '53' }} fig="53.1" figValue={sa.nrtDividendsFig ?? 0} onFigChange={v => set({ nrtDividendsFig: v })} />
           <StudioCard className="p-4"><BoxSection title="Other non-resident trust income">
             <BoxNum box={54} label="Discretionary income from non-settlor interested non-resident trusts" value={sa.nrtDiscretionary ?? 0} onChange={v => set({ nrtDiscretionary: v })} />
             <BoxNum box="54.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.nrtDiscretionaryFig ?? 0} onChange={v => set({ nrtDiscretionaryFig: v })} />
@@ -2428,10 +2429,10 @@ const FGN_EXPENSE_COLS: BreakdownColumn<ForeignExpenseItem>[] = [
 // The recurring SA106 country-income table (columns A–F). `columns="acef"` drops
 // the Income-arising (B) and Special-Withholding (D) columns (used by "Foreign tax").
 // The green "+" on each row itemises that row's income into a breakdown sub-table.
-function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, maxRows, breakdownCols = FGN_INCOME_COLS }: {
+function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, columns = 'full', fig, figValue, onFigChange, maxRows, breakdownCols = FGN_INCOME_COLS }: {
   title: string; note?: string; rows: ForeignRow[]; onChange: (r: ForeignRow[]) => void;
   totalBoxes?: { swt?: string; taxable?: string }; extra?: React.ReactNode; columns?: 'full' | 'acef';
-  fig?: string; figValue?: number; maxRows?: number; breakdownCols?: BreakdownColumn<ForeignIncomeItem>[];
+  fig?: string; figValue?: number; onFigChange?: (v: number) => void; maxRows?: number; breakdownCols?: BreakdownColumn<ForeignIncomeItem>[];
 }) {
   const full = columns === 'full';
   const [itemise, setItemise] = useState<number | null>(null);
@@ -2479,7 +2480,7 @@ function ForeignIncomeTable({ title, note, rows, onChange, totalBoxes, extra, co
         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-black/5 pt-3 sm:grid-cols-3">
           {full && totalBoxes?.swt && <BoxCalc box={totalBoxes.swt} label="Total SWT (column above)" value={t.swt} />}
           {totalBoxes?.taxable && <BoxCalc box={totalBoxes.taxable} label="Total taxable (column above)" value={t.taxable} />}
-          {fig && <BoxNum box={fig} label="Total claimed under the FIG regime" help={FGN.fig} value={figValue ?? 0} onChange={() => { /* FIG claim tracked per-return later */ }} />}
+          {fig && <BoxNum box={fig} label="Total claimed under the FIG regime" help={FGN.fig} value={figValue ?? 0} onChange={v => onFigChange?.(v)} />}
           {extra}
         </div>
       )}
@@ -2513,6 +2514,7 @@ function ForeignPropertySection({ sa, set, subName }: { sa: Sa106; set: (u: Part
       <StudioCard className="p-4"><BoxSection title="Total profit or loss">
         <BoxNum box={26} label="Total loss brought forward from earlier years" value={sa.propLossBroughtForward ?? 0} onChange={v => set({ propLossBroughtForward: v })} />
         <BoxCalc box={27} label="Total taxable profits (box 25 − box 26, if positive)" value={totals.taxableProfit} />
+        <BoxNum box="30.1" label="Total claimed under the FIG regime" help={FGN.fig} value={sa.propFig ?? 0} onChange={v => set({ propFig: v })} />
         <BoxNum box={31} label="Loss set off against total income" value={sa.propLossSetOff ?? 0} onChange={v => set({ propLossSetOff: v })} />
         <BoxCalc box={32} label="Total loss to carry forward to the following year" value={totals.lossCf} />
       </BoxSection></StudioCard>
