@@ -78,7 +78,8 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
           <FileText size={14} /> Filing preview
         </button>
       </div>
-      {previewOpen && <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
+        renderEditor={page => <ReturnSectionEditor page={page} ret={ret} setIncome={setIncome} />} />}
 
       {/* Section tabs + panel */}
       <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />
@@ -177,7 +178,7 @@ export function ReviewSearch({ onGo }: { onGo: (e: SearchEntry) => void }) {
 }
 
 // ─── Income editor — tabbed SA-page shell ────────────────────────────────────
-type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
+export type SetIncome = (u: (i: Sa100Income) => Sa100Income) => void;
 export type PageId = 'core' | 'employment' | 'selfemp' | 'partnership' | 'property' | 'foreign' | 'cgt' | 'trusts' | 'residence' | 'additional' | 'minister' | 'niassembly' | 'parliament' | 'scottishparliament' | 'welshassembly' | 'lloyds';
 
 const PAGES: { id: PageId; label: string; code: string; icon: LucideIcon }[] = [
@@ -489,6 +490,33 @@ function SectionPanel({ ret, patch, page, setPage, counts, income, setIncome, re
       </div>
     </StudioCard>
   );
+}
+
+// The Review & Adjust editor for a single page, rendered standalone (e.g. inside
+// the Filing preview's "edit this field" lightbox). Reuses the exact page editors
+// SectionPanel dispatches, so every input, validation and computed box behaves
+// identically and edits flow through setIncome in real time.
+export function ReturnSectionEditor({ page, ret, setIncome }: { page: PageId; ret: TaxReturn; setIncome: SetIncome }) {
+  const income = ret.income;
+  switch (page) {
+    case 'core': return <CorePage ret={ret} income={income} setIncome={setIncome} reveal={null} />;
+    case 'employment': return <EmploymentPage income={income} setIncome={setIncome} />;
+    case 'selfemp': return <SelfEmploymentPage income={income} setIncome={setIncome} />;
+    case 'partnership': return <PartnershipPage income={income} setIncome={setIncome} />;
+    case 'property': return <PropertyPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'foreign': return <ForeignPage income={income} setIncome={setIncome} />;
+    case 'cgt': return <Sa108Page ret={ret} income={income} setIncome={setIncome} />;
+    case 'trusts': return <Sa107Page income={income} setIncome={setIncome} />;
+    case 'residence': return <Sa109Page ret={ret} income={income} setIncome={setIncome} />;
+    case 'additional': return <AdditionalPage income={income} setIncome={setIncome} />;
+    case 'minister': return <MinisterPage income={income} setIncome={setIncome} />;
+    case 'niassembly': return <NiAssemblyPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'parliament': return <ParliamentPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'scottishparliament': return <ScottishParliamentPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'welshassembly': return <WelshAssemblyPage ret={ret} income={income} setIncome={setIncome} />;
+    case 'lloyds': return <LloydsPage ret={ret} income={income} setIncome={setIncome} />;
+    default: return null;
+  }
 }
 
 // Scan documents without leaving Review & Adjust — reuses the Analyse-step
@@ -1003,7 +1031,7 @@ function BoxNum({ box, label, value, onChange, help, share }: { box?: number | s
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <NumIn value={value} onChange={onChange} />
       {share != null && share < 1 && value !== 0 && <ShareHint value={Math.round(value * share)} />}
@@ -1016,7 +1044,7 @@ function BoxText({ box, label, value, onChange, placeholder, required, help }: {
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{required && <span className="text-rose-500">*</span>}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{required && <span className="text-rose-500">*</span>}{help && <HelpDot help={help} label={label} />}
       </label>
       <input value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className={`input-base py-1 text-[12.5px] ${missing ? 'border-rose-300' : ''}`} />
     </div>
@@ -1028,7 +1056,7 @@ function BoxDate({ box, label, value, onChange, help }: { box?: number | string;
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <input type="date" value={value} onChange={e => onChange(e.target.value)} className="input-base py-1 text-[12.5px]" />
     </div>
@@ -1040,7 +1068,7 @@ function BoxYesNo({ box, label, value, onChange, help }: { box?: number | string
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <div className="flex gap-3 py-1 text-[12px]">
         {[['Yes', true], ['No', false]].map(([lbl, val]) => (
@@ -1059,7 +1087,7 @@ function BoxCheck({ box, label, checked, onChange, help }: { box?: number | stri
   return (
     <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
-      {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <span onClick={e => e.preventDefault()}><HelpDot help={help} label={label} /></span>}
+      {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <span onClick={e => e.preventDefault()}><HelpDot help={help} label={label} /></span>}
     </label>
   );
 }
@@ -2395,7 +2423,7 @@ function CountryCodeList({ box, label, value, onChange, note, help }: { box?: nu
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </div>
       <div className="space-y-1.5">
         {codes.map((c, i) => (
@@ -2544,7 +2572,7 @@ function ItemiseNumField({ box, label, help, itemised, value, onChange, onItemis
   return (
     <div>
       <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}{count ? <span className="font-bold text-[var(--text-secondary)]"> ({count})</span> : null}{help && <HelpDot help={help} label={label} />}
+        <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> {label}{count ? <span className="font-bold text-[var(--text-secondary)]"> ({count})</span> : null}{help && <HelpDot help={help} label={label} />}
       </label>
       <div className="flex items-center gap-1">
         {itemised
@@ -2924,7 +2952,7 @@ function BoxTextArea({ box, label, value, onChange, rows = 3, placeholder, right
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}
         {right && <span className="ml-auto">{right}</span>}
       </div>
       <textarea value={value} rows={rows} placeholder={placeholder} onChange={e => onChange(e.target.value)} className="input-base w-full py-1 text-[12.5px]" />
@@ -2939,7 +2967,7 @@ function DayNum({ box, label, value, onChange, help }: { box?: number | string; 
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
         <button onClick={() => setOpen(true)} className="ml-auto inline-flex items-center gap-1 rounded bg-[var(--accent)]/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20"><Calculator size={10} /> Count days</button>
       </div>
       <input type="number" value={value || ''} onChange={e => onChange(Number(e.target.value) || 0)} className="input-base py-1 text-right text-[12.5px]" />
@@ -3327,7 +3355,7 @@ function SectionTabs({ tabs, active, onSelect }: { tabs: { label: string; count?
       {tabs.map(t => {
         const on = t.label === active;
         return (
-          <button key={t.label} onClick={() => onSelect(t.label)}
+          <button key={t.label} data-review-tab={t.label} onClick={() => onSelect(t.label)}
             className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[12.5px] font-semibold transition-colors ${on ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--text-muted)] hover:border-[var(--border)] hover:text-[var(--text-secondary)]'}`}>
             {t.label}{t.count ? <span className={`rounded-full px-1.5 text-[9.5px] font-bold leading-[1.6] ${on ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'bg-slate-100 text-slate-500'}`}>{t.count}</span> : null}
           </button>
@@ -3345,7 +3373,7 @@ function SubTabs({ tabs, active, onSelect }: { tabs: { label: string; count?: nu
       {tabs.map((t, i) => {
         const on = i === active;
         return (
-          <button key={t.label} onClick={() => onSelect(i)}
+          <button key={t.label} data-review-subtab={t.label} onClick={() => onSelect(i)}
             className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${on ? 'bg-white text-[var(--accent)] shadow-sm ring-1 ring-black/[0.04]' : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`}>
             {t.label}{t.count ? <span className="font-bold">({t.count})</span> : null}
           </button>
@@ -4184,7 +4212,7 @@ function StackedInputs({ box, label, value, onChange, rows = 3, placeholder, hel
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        {box != null ? <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
+        {box != null ? <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span> : null} {label}{help && <HelpDot help={help} label={label} />}
       </div>
       <div className="space-y-1">
         {cells.map((c, i) => (
@@ -4507,7 +4535,7 @@ function LabelledNum({ icon: Icon, box, label, value, onChange, help }: { icon?:
     <div>
       <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
         {Icon && <Icon size={11} />}
-        {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+        {box != null && <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
         {label}{help && <HelpDot help={help} label={label} />}
       </label>
       <NumIn value={value} onChange={onChange} />
@@ -4520,7 +4548,7 @@ function RemoveBtn({ onClick }: { onClick: () => void }) {
 function BoxLabel({ box, label, help }: { box?: number | string; label: string; help?: string }) {
   return (
     <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-      {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+      {box != null && <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
       {label}{help && <HelpDot help={help} label={label} />}
     </label>
   );
@@ -4553,7 +4581,7 @@ function CheckField({ box, label, checked, onChange, help }: { box?: number | st
   return (
     <label className="flex cursor-pointer items-center gap-2 self-end rounded-lg border border-[var(--border)] bg-white/60 px-2.5 py-2 text-[11px] font-medium text-[var(--text-muted)]">
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]" />
-      {box != null && <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
+      {box != null && <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>}
       {label}{help && <span onClick={e => e.preventDefault()}><HelpDot help={help} label={label} /></span>}
     </label>
   );

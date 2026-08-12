@@ -26,7 +26,7 @@ const Cell = ({ ch }: { ch?: string }) => (
 // the SA105 "details" layout (boxes 1–4, 20.2). The box-number chip hangs on the
 // panel's left edge like every other box.
 const HdrRow = ({ n, control, children }: { n: React.ReactNode; control: React.ReactNode; children: React.ReactNode }) => (
-  <div className="mb-3 flex items-start text-[10.5px] font-bold leading-tight text-black">
+  <div data-sa-fieldroot className="mb-3 flex items-start text-[10.5px] font-bold leading-tight text-black">
     <span className="-ml-3 mr-1 mt-[1px] shrink-0"><BoxNum n={n} /></span>
     <span className="min-w-0 flex-1">{children}</span>
     <span className="ml-2 shrink-0">{control}</span>

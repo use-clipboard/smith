@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check } from 'lucide-react';
 import type { TaxReturn } from '../types';
+import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
 import Sa100Facsimile from './Sa100Facsimile';
 import EmploymentFacsimile from './EmploymentFacsimile';
@@ -51,6 +53,30 @@ const FORM_NAMES: Record<string, string> = {
   SA107: 'Trusts etc', SA108: 'Capital gains', SA109: 'Residence & FIG', SA110: 'Tax calculation summary',
 };
 
+// Each HMRC form code → the Review & Adjust editor page that edits it. Forms not
+// listed (SA110 tax-calc summary) are derived and have no editable inputs.
+const FORM_TO_PAGE: Record<string, PageId> = {
+  SA100: 'core', SA102: 'employment', SA103F: 'selfemp', SA103S: 'selfemp', SA103L: 'lloyds',
+  SA104F: 'partnership', SA104S: 'partnership', SA105: 'property', SA106: 'foreign', SA107: 'trusts',
+  SA108: 'cgt', SA109: 'residence', SA101: 'additional', SA102M: 'minister', SA102MLA: 'niassembly',
+  SA102MP: 'parliament', SA102MSP: 'scottishparliament', SA102MS: 'welshassembly', SA102WAM: 'welshassembly',
+};
+// Auto-calculated ("blue") boxes per form — never editable (would break the sums).
+// The Review editor already renders these as read-only BoxCalc, so this is belt-
+// and-braces: it also suppresses the purple hover on the preview.
+const COMPUTED_BOXES: Record<string, Set<string>> = {
+  SA104F: new Set(['16', '18', '20', '21', '24', '30', '34', '35', '41', '48', '51', '55', '60', '63', '67', '70', '73', '76', '80']),
+  SA104S: new Set(['16', '18', '20', '21', '24']),
+  SA105: new Set(['38', '40', '41', '43']),
+  SA103L: new Set(['5', '11', '18', '26', '27', '40', '41', '42', '43', '48', '49', '52', '53', '55', '58', '60', '61', '62']),
+  SA102M: new Set(['12', '19', '20', '26', '27', '31', '32', '34', '35', '38', '39']),
+  SA107: new Set(['22', '23', '24']),
+};
+function isEditableBox(code: string, num: string): boolean {
+  if (!(code in FORM_TO_PAGE)) return false;
+  return !(COMPUTED_BOXES[code]?.has(num));
+}
+
 interface OutlineBox { key: string; id: string; num: string; label: string }
 interface OutlineSection { key: string; id: string; title: string; boxes: OutlineBox[] }
 interface OutlineForm { key: string; code: string; name: string; sections: OutlineSection[] }
@@ -58,7 +84,7 @@ interface OutlineForm { key: string; code: string; name: string; sections: Outli
 // Walk the rendered sheets and build a form → section → box outline. Every
 // facsimile uses the shared primitives, so sheets carry data-sa-code/-page and
 // each box chip carries data-boxnum — we assign scroll-target ids as we go.
-function buildOutline(root: HTMLElement): OutlineForm[] {
+function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[] {
   const sheets = Array.from(root.querySelectorAll<HTMLElement>('.sa-sheet'));
   const forms: OutlineForm[] = [];
   const byCode = new Map<string, OutlineForm>();
@@ -80,12 +106,21 @@ function buildOutline(root: HTMLElement): OutlineForm[] {
         const num = el.getAttribute('data-boxnum') || '';
         const wrap = el.parentElement;                       // chip wrapper span
         const textSpan = wrap?.nextElementSibling as HTMLElement | null;
-        const target = wrap?.parentElement || el;            // the whole labelled row
-        if (!target.id) target.id = `sao-${uid++}`;
+        // The whole "field area" (label + input cells): a marked fieldroot, else
+        // three levels up from the chip (chip → wrap → label → field wrapper).
+        const field = (el.closest('[data-sa-fieldroot]') as HTMLElement | null)
+          || (wrap?.parentElement?.parentElement as HTMLElement | null)
+          || (wrap?.parentElement as HTMLElement | null) || el;
+        if (!field.id) field.id = `sao-${uid++}`;
         let label = (textSpan?.textContent || '').trim();
-        if (!label) label = (target.textContent || '').trim().replace(new RegExp('^' + num.replace(/[.]/g, '\\.')), '').trim();
+        if (!label) label = (field.textContent || '').trim().replace(new RegExp('^' + num.replace(/[.]/g, '\\.')), '').trim();
+        if (editablePreview && isEditableBox(code, num)) {
+          field.dataset.saEditable = '1';
+          field.dataset.saBox = num;
+          field.dataset.saFormcode = code;
+        }
         if (!section) { section = { key: `${sheet.id || (sheet.id = `sao-${uid++}`)}-top`, id: sheet.id, title: FORM_NAMES[code] || code, boxes: [] }; form.sections.push(section); }
-        section.boxes.push({ key: target.id, id: target.id, num, label: label.slice(0, 120) });
+        section.boxes.push({ key: field.id, id: field.id, num, label: label.slice(0, 120) });
       }
     }
   }
@@ -134,14 +169,62 @@ function Sheet({ form }: { form: FilingForm }) {
   );
 }
 
-export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClose: () => void }) {
+export default function FilingPreview({ ret, onClose, renderEditor }: { ret: TaxReturn; onClose: () => void; renderEditor?: (page: PageId) => React.ReactNode }) {
   const sheetsRef = useRef<HTMLDivElement>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
   const [outline, setOutline] = useState<OutlineForm[]>([]);
   const [query, setQuery] = useState('');
   const [zoom, setZoom] = useState(1);
   const [openForms, setOpenForms] = useState<Record<string, boolean>>({});
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
   const [sidebar, setSidebar] = useState(true);
+  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string } | null>(null);
+  const editablePreview = !!renderEditor;
+
+  // Click an editable field on a facsimile → open its editor section in a lightbox.
+  function onSheetClick(e: React.MouseEvent) {
+    if (!editablePreview) return;
+    const field = (e.target as HTMLElement).closest<HTMLElement>('[data-sa-editable]');
+    if (!field) return;
+    const code = field.dataset.saFormcode || '';
+    const page = FORM_TO_PAGE[code];
+    if (!page) return;
+    setEdit({ page, box: field.dataset.saBox || '', formCode: code });
+  }
+
+  // Once the editor lightbox is up, hunt for the clicked box (navigating the
+  // editor's own tabs if needed), then scroll to it, highlight and focus it.
+  useEffect(() => {
+    if (!edit) return;
+    let cancelled = false;
+    const triedTop = new Set<string>();
+    let triedSub = new Set<string>();
+    function focusBox(chip: HTMLElement) {
+      let field: HTMLElement | null = chip.closest('label') || chip.closest('div') || chip;
+      if (field && !field.querySelector('input,textarea,select') && field.parentElement) field = field.parentElement;
+      (field || chip).scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const input = (field || chip).querySelector<HTMLElement>('input,textarea,select');
+      if (input) setTimeout(() => input.focus(), 320);
+      const el = field || chip;
+      const prev = el.style.backgroundColor;
+      el.style.transition = 'background-color 0.25s';
+      el.style.backgroundColor = 'rgba(139,92,246,0.16)';
+      setTimeout(() => { el.style.backgroundColor = prev; }, 1200);
+    }
+    function attempt(n: number) {
+      if (cancelled || n > 45) return;
+      const root = lightboxRef.current;
+      if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
+      const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
+      if (chip) { focusBox(chip); return; }
+      const subs = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
+      if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
+      const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
+      if (tops[0]) { triedTop.add(tops[0].getAttribute('data-review-tab') || ''); triedSub = new Set(); tops[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
+    }
+    const raf = requestAnimationFrame(() => attempt(0));
+    return () => { cancelled = true; cancelAnimationFrame(raf); };
+  }, [edit]);
 
   const emps = useMemo(() => ret.income.employment.filter(e => employmentTaxable(e) !== 0 || e.employer), [ret]);
   const trades = useMemo(() => ret.income.selfEmployment.filter(t => t.form !== 'short' && (tradeTaxableProfit(t) !== 0 || t.name)), [ret]);
@@ -167,9 +250,9 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   useEffect(() => {
     const root = sheetsRef.current;
     if (!root) return;
-    const raf = requestAnimationFrame(() => setOutline(buildOutline(root)));
+    const raf = requestAnimationFrame(() => setOutline(buildOutline(root, editablePreview)));
     return () => cancelAnimationFrame(raf);
-  }, [ret, totalForms]);
+  }, [ret, totalForms, editablePreview]);
 
   const q = query.trim().toLowerCase();
   const matches = (s: string) => !q || s.toLowerCase().includes(q);
@@ -177,6 +260,11 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 flex flex-col bg-slate-100">
       <style>{PRINT_CSS}</style>
+      <style>{`
+        #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; transition: outline-color 0.1s; }
+        #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 3px; background: rgba(139,92,246,0.05); }
+        @media print { #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
+      `}</style>
       {/* Toolbar */}
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-2">
@@ -262,7 +350,12 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
         )}
 
         {/* Sheets */}
-        <div className="sa-main-scroll min-w-0 flex-1 overflow-auto">
+        <div className="sa-main-scroll min-w-0 flex-1 overflow-auto" onClick={onSheetClick}>
+          {editablePreview && (
+            <p className="no-print mx-auto mt-4 flex max-w-[210mm] items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500">
+              <Pencil size={12} className="text-[#8b5cf6]" /> Click any editable field to change it — updates the return live.
+            </p>
+          )}
           <div ref={sheetsRef} className="sa-sheets-wrap px-4 py-6" style={{ zoom }}>
             <Sa100Facsimile ret={ret} />
             {emps.map((e, idx) => <EmploymentFacsimile key={`emp-${idx}`} ret={ret} emp={e} />)}
@@ -290,6 +383,29 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
           </div>
         </div>
       </div>
+
+      {/* Edit-a-field lightbox — the real Review & Adjust editor for that form,
+          focused to the clicked box; edits flow live to the return + preview. */}
+      {edit && renderEditor && createPortal(
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-auto bg-black/50 p-4 py-8" onClick={() => setEdit(null)}>
+          <div ref={lightboxRef} className="w-full max-w-3xl rounded-2xl bg-[var(--surface,#fff)] shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-5 py-3">
+              <div className="flex items-center gap-2">
+                <Pencil size={15} className="text-[#8b5cf6]" />
+                <div>
+                  <p className="text-[13px] font-bold text-slate-900">Edit {FORM_NAMES[edit.formCode] || edit.formCode}{edit.box ? ` — box ${edit.box}` : ''}</p>
+                  <p className="text-[11px] text-slate-500">Changes apply to the return and Review &amp; Adjust in real time.</p>
+                </div>
+              </div>
+              <button onClick={() => setEdit(null)} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90">
+                <Check size={14} /> Done
+              </button>
+            </div>
+            <div className="max-h-[76vh] overflow-auto p-5">{renderEditor(edit.page)}</div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
