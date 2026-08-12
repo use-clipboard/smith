@@ -173,7 +173,7 @@ function YesNo({ yes }: { yes?: boolean | null }) {
 // HM Revenue & Customs wordmark, matching the form's masthead.
 function HmrcLogo() {
   const crown = (
-    <svg width="26" height="23" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
+    <svg width="21" height="18" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
       <g>
         <circle cx="20" cy="17.6" r="3.7" /><circle cx="10.2" cy="23.5" r="3.7" /><circle cx="3.7" cy="33.2" r="3.7" />
         <circle cx="31.7" cy="30.6" r="3.7" /><circle cx="43.3" cy="17.6" r="3.7" /><circle cx="53.2" cy="23.5" r="3.7" />
@@ -183,11 +183,11 @@ function HmrcLogo() {
     </svg>
   );
   return (
-    <div className="flex items-stretch gap-2.5">
-      <div className="w-[3px] shrink-0 self-stretch bg-black" />
-      <div className="flex flex-col items-start gap-1.5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ border: '1.5px solid #000' }}>{crown}</span>
-        <span className="text-[19px] font-bold leading-[1.02] text-black">HM Revenue<br />&amp; Customs</span>
+    <div className="flex items-stretch gap-2">
+      <div className="w-[2.5px] shrink-0 self-stretch bg-black" />
+      <div className="flex flex-col items-start gap-1">
+        <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full" style={{ border: '1.25px solid #000' }}>{crown}</span>
+        <span className="text-[16px] font-semibold leading-[1.05] text-black" style={{ letterSpacing: '-0.2px' }}>HM Revenue<br />&amp; Customs</span>
       </div>
     </div>
   );

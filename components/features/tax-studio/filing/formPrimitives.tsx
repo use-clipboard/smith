@@ -23,13 +23,13 @@ const useTheme = () => useContext(FormThemeContext);
 const useDense = () => useContext(FormThemeContext).dense;
 
 export function Teal({ children }: { children: React.ReactNode }) {
-  return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
+  return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1.5' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
 export function SubHead({ children }: { children: React.ReactNode }) {
-  return <p className={`font-normal text-black ${useDense() ? 'mb-1 mt-1.5 text-[13px]' : 'mb-2 mt-3 text-[14px]'}`}>{children}</p>;
+  return <p className={`font-normal text-black ${useDense() ? 'mb-1.5 mt-2 text-[13.5px]' : 'mb-2 mt-3 text-[14px]'}`}>{children}</p>;
 }
 export function Note({ children }: { children: React.ReactNode }) {
-  return <p className={`text-[10px] leading-snug text-black ${useDense() ? 'mb-1' : 'mb-2'}`}>{children}</p>;
+  return <p className={`text-[10px] leading-snug text-black ${useDense() ? 'mb-1.5' : 'mb-2'}`}>{children}</p>;
 }
 export function Bullets({ intro, items, after }: { intro: string; items: string[]; after?: React.ReactNode }) {
   return (
@@ -46,7 +46,7 @@ export function InfoDot() {
 export function Panel({ children, className = '', divided }: { children: React.ReactNode; className?: string; divided?: boolean }) {
   const t = useTheme();
   return (
-    <div className={`relative ${t.dense ? 'mb-2 p-2' : 'mb-3 p-3'} ${className}`} style={{ background: t.panelBg, border: `1px solid ${t.panelBorder}` }}>
+    <div className={`relative ${t.dense ? 'mb-2.5 p-2.5' : 'mb-3 p-3'} ${className}`} style={{ background: t.panelBg, border: `1px solid ${t.panelBorder}` }}>
       {divided && <div className="absolute bottom-2 top-2 w-px" style={{ left: '50%', background: t.panelBorder }} />}
       {children}
     </div>
@@ -57,7 +57,7 @@ export function BoxNum({ n }: { n: React.ReactNode }) {
 }
 export function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className={`relative ${useDense() ? 'mb-0.5' : 'mb-1'} text-[10.5px] font-bold leading-tight text-black`}>
+    <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
       {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
       <span className={n != null ? 'block pl-3' : 'block'}>{children}</span>
     </div>
@@ -71,7 +71,7 @@ export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNo
   const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
   const dense = useDense();
   return (
-    <div className={dense ? 'mb-1.5' : 'mb-4'}>
+    <div className={dense ? 'mb-2.5' : 'mb-4'}>
       <Label n={n}>{label}</Label>
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
@@ -88,7 +88,7 @@ export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNo
 }
 export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: React.ReactNode; lines?: number }) {
   return (
-    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
+    <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
@@ -100,7 +100,7 @@ export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: Re
 }
 export function Line({ n, label, value, lines = 1, watermark }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number; watermark?: string }) {
   return (
-    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
+    <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div>
         {Array.from({ length: lines }).map((_, k) => (
@@ -116,7 +116,7 @@ export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNo
   const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
   let idx = 0;
   return (
-    <div className={useDense() ? 'mb-1.5' : 'mb-2.5'}>
+    <div className={useDense() ? 'mb-2' : 'mb-2.5'}>
       {label != null && <Label n={n}>{label}</Label>}
       <div className="flex items-center" style={{ gap: sep ? 6 : 10 }}>
         {groups.map((g, gi) => (
@@ -153,7 +153,7 @@ export function YesNo({ yes }: { yes?: boolean | null }) {
 }
 export function HmrcLogo() {
   const crown = (
-    <svg width="26" height="23" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
+    <svg width="21" height="18" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
       <g>
         <circle cx="20" cy="17.6" r="3.7" /><circle cx="10.2" cy="23.5" r="3.7" /><circle cx="3.7" cy="33.2" r="3.7" />
         <circle cx="31.7" cy="30.6" r="3.7" /><circle cx="43.3" cy="17.6" r="3.7" /><circle cx="53.2" cy="23.5" r="3.7" />
@@ -163,11 +163,11 @@ export function HmrcLogo() {
     </svg>
   );
   return (
-    <div className="flex items-stretch gap-2.5">
-      <div className="w-[3px] shrink-0 self-stretch bg-black" />
-      <div className="flex flex-col items-start gap-1.5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ border: '1.5px solid #000' }}>{crown}</span>
-        <span className="text-[19px] font-bold leading-[1.02] text-black">HM Revenue<br />&amp; Customs</span>
+    <div className="flex items-stretch gap-2">
+      <div className="w-[2.5px] shrink-0 self-stretch bg-black" />
+      <div className="flex flex-col items-start gap-1">
+        <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full" style={{ border: '1.25px solid #000' }}>{crown}</span>
+        <span className="text-[16px] font-semibold leading-[1.05] text-black" style={{ letterSpacing: '-0.2px' }}>HM Revenue<br />&amp; Customs</span>
       </div>
     </div>
   );
@@ -178,7 +178,7 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
   const dense = useDense();
   return (
     <>
-      <div className={`flex items-start justify-between ${dense ? 'mb-1' : 'mb-3'}`}>
+      <div className={`flex items-start justify-between ${dense ? 'mb-2' : 'mb-3'}`}>
         <HmrcLogo />
         <div className="text-right"><h2 className="text-[22px] font-bold leading-none text-black">{title}</h2><p className="mt-2 text-[11px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p></div>
       </div>
@@ -195,7 +195,7 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
 export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
   const t = useTheme();
   return (
-    <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'p-[10mm]' : 'p-[13mm]'}`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+    <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'p-[11mm]' : 'p-[13mm]'}`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <div className="min-h-0 flex-1">{children}</div>
       <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
