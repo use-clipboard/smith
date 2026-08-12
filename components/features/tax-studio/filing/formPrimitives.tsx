@@ -58,7 +58,7 @@ export function Panel({ children, className = '', divided }: { children: React.R
 export function BoxNum({ n }: { n: React.ReactNode }) {
   // min-w keeps single-digit boxes at the standard size; long codes (e.g. 52EG.1)
   // grow the box instead of overflowing it.
-  return <span className="flex h-[15px] min-w-[19px] shrink-0 items-center justify-center whitespace-nowrap px-[2px] text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+  return <span data-boxnum={n != null ? String(n) : undefined} className="flex h-[15px] min-w-[19px] shrink-0 items-center justify-center whitespace-nowrap px-[2px] text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
 export function Label({ n, children, ghost }: { n?: React.ReactNode; children: React.ReactNode; ghost?: boolean }) {
   return (
@@ -242,7 +242,7 @@ export function Page({ tag, code = 'SA100', fitOrigin = 'top center', children }
   // section (page tag ending in "1"), like the real forms. No footer rule.
   const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
-    <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+    <div data-sa-code={code} data-sa-page={tag} className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <FitContent origin={fitOrigin}>{children}</FitContent>
       <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>

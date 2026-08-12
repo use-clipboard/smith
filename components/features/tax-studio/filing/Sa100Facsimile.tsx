@@ -52,7 +52,7 @@ function Panel({ children, className = '', divided }: { children: React.ReactNod
 // Fixed-width number chip so single- and double-digit markers are the same size
 // (keeps a consistent gap to the label text).
 function BoxNum({ n }: { n: React.ReactNode }) {
-  return <span className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+  return <span data-boxnum={n != null ? String(n) : undefined} className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
 // Field label — the number chip sits flush to the panel's left edge (pulled out
 // of the panel's padding), with the label text beside it at a consistent indent.
@@ -208,7 +208,7 @@ function Page({ tag, children }: { tag: string; children: React.ReactNode }) {
   // HMRC "12/25" print date only on the first page (TR 1); no footer rule.
   const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
-    <div className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white px-[13mm] py-[7mm] shadow-sm" style={{ border: `1px solid ${PANEL_BORDER}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+    <div data-sa-code="SA100" data-sa-page={tag} className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white px-[13mm] py-[7mm] shadow-sm" style={{ border: `1px solid ${PANEL_BORDER}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <div className="min-h-0 flex-1">{children}</div>
       <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>SA100 2026</span>
