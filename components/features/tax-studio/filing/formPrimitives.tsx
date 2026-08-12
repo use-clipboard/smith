@@ -1,0 +1,204 @@
+// Shared HMRC-form facsimile primitives used by the SA100 main form and the
+// supplementary-page facsimiles (SA102, SA103F, …). The only thing that varies
+// per form is the field-panel colour (teal / pink / cream) — supplied via
+// FormThemeContext; everything else (teal headings, teal cells, £ boxes, tick
+// boxes, ruled lines) is constant. HMRC's functional layout (Open Government
+// Licence), rendered to hold this client's figures like commercial tax software.
+
+import type React from 'react';
+import { createContext, useContext } from 'react';
+
+export const TEAL = '#00928f';
+export const CELL = '#a9d3d0';
+export const MONEY_TINT = '#d4e9e6';
+export const CELL_SHADOW = '0 1px 1.5px rgba(0,0,0,0.13)';
+export const RED = '#d4351c';
+
+export interface FormTheme { panelBg: string; panelBorder: string }
+const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
+export const PINK_THEME: FormTheme = { panelBg: '#fbe4ea', panelBorder: '#eec2ce' };
+export const CREAM_THEME: FormTheme = { panelBg: '#faf3e6', panelBorder: '#e6dcc4' };
+export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
+const useTheme = () => useContext(FormThemeContext);
+
+export function Teal({ children }: { children: React.ReactNode }) {
+  return <h3 className="mb-2 border-b-2 pb-1 text-[15px] font-bold" style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
+}
+export function SubHead({ children }: { children: React.ReactNode }) {
+  return <p className="mb-2 mt-3 text-[14px] font-normal text-black">{children}</p>;
+}
+export function Note({ children }: { children: React.ReactNode }) {
+  return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;
+}
+export function Bullets({ intro, items, after }: { intro: string; items: string[]; after?: React.ReactNode }) {
+  return (
+    <div className="mb-2 text-[9.5px] leading-snug text-black">
+      <p>{intro}</p>
+      {items.map((it, k) => <p key={k} className="pl-3 -indent-2">• {it}</p>)}
+      {after}
+    </div>
+  );
+}
+export function InfoDot() {
+  return <span className="mr-1 inline-flex h-[15px] w-[15px] shrink-0 translate-y-[2px] items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ background: TEAL, fontFamily: 'Georgia, "Times New Roman", serif' }}>i</span>;
+}
+export function Panel({ children, className = '', divided }: { children: React.ReactNode; className?: string; divided?: boolean }) {
+  const t = useTheme();
+  return (
+    <div className={`relative mb-3 p-3 ${className}`} style={{ background: t.panelBg, border: `1px solid ${t.panelBorder}` }}>
+      {divided && <div className="absolute bottom-2 top-2 w-px" style={{ left: '50%', background: t.panelBorder }} />}
+      {children}
+    </div>
+  );
+}
+export function BoxNum({ n }: { n: React.ReactNode }) {
+  return <span className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+}
+export function Label({ n, children }: { n?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
+      {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
+      <span className={n != null ? 'block pl-3' : 'block'}>{children}</span>
+    </div>
+  );
+}
+export function Money({ n, label, value, cells = 8, minus }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number; minus?: boolean }) {
+  const neg = (value || 0) < 0;
+  const digits = value ? Math.round(Math.abs(value)).toString() : '';
+  const arr: string[] = Array(cells).fill('');
+  for (let k = 0; k < digits.length && k < cells; k++) arr[cells - 1 - k] = digits[digits.length - 1 - k];
+  const base: React.CSSProperties = { border: `1px solid ${CELL}`, boxShadow: CELL_SHADOW };
+  return (
+    <div className="mb-4">
+      <Label n={n}>{label}</Label>
+      <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
+        <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
+        {minus && <span className="flex w-[14px] items-center justify-center text-[12px] font-bold" style={{ ...base, background: MONEY_TINT, color: neg ? '#000' : '#9aa' }}>−</span>}
+        {arr.map((d, idx) => (
+          <span key={idx} className="flex w-[15px] items-center justify-center bg-white text-[11.5px] font-medium text-black" style={base}>{d}</span>
+        ))}
+        <span className="flex w-[6px] items-end justify-center pb-[2px] text-[13px] font-bold text-black">·</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
+        <span className="flex w-[14px] items-center justify-center text-[11px] text-slate-400" style={{ ...base, background: MONEY_TINT }}>0</span>
+      </div>
+    </div>
+  );
+}
+export function Ruled({ n, label, lines = 3 }: { n?: React.ReactNode; label?: React.ReactNode; lines?: number }) {
+  return (
+    <div className="mb-2.5">
+      {label != null && <Label n={n}>{label}</Label>}
+      <div>
+        {Array.from({ length: lines }).map((_, k) => (
+          <div key={k} style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+export function Line({ n, label, value, lines = 1, watermark }: { n?: React.ReactNode; label?: React.ReactNode; value?: string; lines?: number; watermark?: string }) {
+  return (
+    <div className="mb-2.5">
+      {label != null && <Label n={n}>{label}</Label>}
+      <div>
+        {Array.from({ length: lines }).map((_, k) => (
+          <div key={k} className="flex items-center overflow-hidden whitespace-pre px-1.5 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, borderTop: k === 0 ? `1px solid ${CELL}` : 'none', background: '#fff', height: 19 }}>
+            {k === 0 && value ? value : (k === lines - 1 && watermark ? <span className="font-normal text-slate-300">{watermark}</span> : '')}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+export function Cells({ n, label, groups, value = '', sep }: { n?: React.ReactNode; label?: React.ReactNode; groups: number[]; value?: string; sep?: string }) {
+  const chars = (value || '').toUpperCase().replace(/\s/g, '').split('');
+  let idx = 0;
+  return (
+    <div className="mb-2.5">
+      {label != null && <Label n={n}>{label}</Label>}
+      <div className="flex items-center" style={{ gap: sep ? 6 : 10 }}>
+        {groups.map((g, gi) => (
+          <div key={gi} className="flex items-center gap-[3px]">
+            {gi > 0 && sep && <span className="mr-1 text-[12px] font-bold text-black">{sep}</span>}
+            {Array.from({ length: g }).map((_, k) => {
+              const ch = chars[idx++] || '';
+              return <span key={k} className="flex h-[18px] w-[16px] items-center justify-center text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff', boxShadow: CELL_SHADOW }}>{ch}</span>;
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+export function toDDMMYYYY(d?: string): string {
+  if (!d) return '';
+  const p = d.split(/[-/.]/);
+  if (p.length !== 3) return d.replace(/\D/g, '');
+  return p[0].length === 4
+    ? p[2].padStart(2, '0') + p[1].padStart(2, '0') + p[0]
+    : p[0].padStart(2, '0') + p[1].padStart(2, '0') + (p[2].length === 2 ? '19' + p[2] : p[2]);
+}
+export function Tick({ on }: { on?: boolean }) {
+  return <span className="inline-flex h-4 w-4 items-center justify-center text-[13px] font-bold leading-none text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{on ? 'X' : ''}</span>;
+}
+export function YesNo({ yes }: { yes?: boolean | null }) {
+  return (
+    <div className="flex items-center gap-5 text-[11px] text-black">
+      <span className="flex items-center gap-2">Yes <Tick on={yes === true} /></span>
+      <span className="flex items-center gap-2">No <Tick on={yes === false} /></span>
+    </div>
+  );
+}
+export function HmrcLogo() {
+  const crown = (
+    <svg width="26" height="23" viewBox="0 0 64 56" fill="#000" aria-hidden focusable="false">
+      <g>
+        <circle cx="20" cy="17.6" r="3.7" /><circle cx="10.2" cy="23.5" r="3.7" /><circle cx="3.7" cy="33.2" r="3.7" />
+        <circle cx="31.7" cy="30.6" r="3.7" /><circle cx="43.3" cy="17.6" r="3.7" /><circle cx="53.2" cy="23.5" r="3.7" />
+        <circle cx="59.7" cy="33.2" r="3.7" />
+        <path d="M33.1,9.8c.2-.1.3-.3.5-.5l4.6,2.4v-6.8l-4.6,1.5c-.1-.2-.3-.3-.5-.5l1.9-5.9h-6.7l1.9,5.9c-.2.1-.3.3-.5.5l-4.6-1.5v6.8l4.6-2.4c.1.2.3.3.5.5l-2.6,8c-.9,2.8,1.2,5.7,4.1,5.7h0c3,0,5.1-2.9,4.1-5.7l-2.6-8ZM37,37.9s-3.4,3.8-4.1,6.1c2.2,0,4.2-.5,6.4-2.8l-.7,8.5c-2-2.8-4.4-4.1-5.7-3.8.1,3.1.5,6.7,5.8,7.2,3.7.3,6.7-1.5,7-3.8.4-2.6-2-4.3-3.7-1.6-1.4-4.5,2.4-6.1,4.9-3.2-1.9-4.5-1.8-7.7,2.4-10.9,3,4,2.6,7.3-1.2,11.1,2.4-1.3,6.2,0,4,4.6-1.2-2.8-3.7-2.2-4.2.2-.3,1.7.7,3.7,3,4.2,1.9.3,4.7-.9,7-5.9-1.3,0-2.4.7-3.9,1.7l2.4-8c.6,2.3,1.4,3.7,2.2,4.5.6-1.6.5-2.8,0-5.3l5,1.8c-2.6,3.6-5.2,8.7-7.3,17.5-7.4-1.1-15.7-1.7-24.5-1.7h0c-8.8,0-17.1.6-24.5,1.7-2.1-8.9-4.7-13.9-7.3-17.5l5-1.8c-.5,2.5-.6,3.7,0,5.3.8-.8,1.6-2.3,2.2-4.5l2.4,8c-1.5-1-2.6-1.7-3.9-1.7,2.3,5,5.2,6.2,7,5.9,2.3-.4,3.3-2.4,3-4.2-.5-2.4-3-3.1-4.2-.2-2.2-4.6,1.6-6,4-4.6-3.7-3.7-4.2-7.1-1.2-11.1,4.2,3.2,4.3,6.4,2.4,10.9,2.5-2.8,6.3-1.3,4.9,3.2-1.8-2.7-4.1-1-3.7,1.6.3,2.3,3.3,4.1,7,3.8,5.4-.5,5.7-4.2,5.8-7.2-1.3-.2-3.7,1-5.7,3.8l-.7-8.5c2.2,2.3,4.2,2.7,6.4,2.8-.7-2.3-4.1-6.1-4.1-6.1h10.6,0Z" />
+      </g>
+    </svg>
+  );
+  return (
+    <div className="flex items-stretch gap-2.5">
+      <div className="w-[3px] shrink-0 self-stretch bg-black" />
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full" style={{ border: '1.5px solid #000' }}>{crown}</span>
+        <span className="text-[19px] font-bold leading-[1.02] text-black">HM Revenue<br />&amp; Customs</span>
+      </div>
+    </div>
+  );
+}
+// Masthead used by supplementary pages: logo left, form title right, then a
+// Name / UTR reference panel.
+export function SuppHead({ title, name, utr, note }: { title: string; name?: string; utr?: string; note?: React.ReactNode }) {
+  return (
+    <>
+      <div className="mb-3 flex items-start justify-between">
+        <HmrcLogo />
+        <div className="text-right"><h2 className="text-[22px] font-bold leading-none text-black">{title}</h2><p className="mt-2 text-[11px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p></div>
+      </div>
+      {note}
+      <Panel>
+        <div className="grid grid-cols-2 gap-x-8">
+          <Line label="Your name" value={name} />
+          <Cells label="Your Unique Taxpayer Reference (UTR)" groups={[5, 5]} value={utr} />
+        </div>
+      </Panel>
+    </>
+  );
+}
+export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
+  const t = useTheme();
+  return (
+    <div className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white p-[13mm] shadow-sm" style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+      <div className="min-h-0 flex-1">{children}</div>
+      <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
+        <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
+        <span style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
+        <span className="font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>HMRC 12/25</span>
+      </div>
+    </div>
+  );
+}
