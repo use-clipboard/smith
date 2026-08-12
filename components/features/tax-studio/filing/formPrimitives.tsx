@@ -195,7 +195,7 @@ export function SuppHead({ title, name, utr, note }: { title: string; name?: str
     <>
       <div className={`flex items-start justify-between ${dense ? 'mb-2' : 'mb-3'}`}>
         <HmrcLogo />
-        <div className="text-right"><h2 className="text-[22px] font-bold leading-none text-black">{title}</h2><p className="mt-2 text-[11px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p></div>
+        <div className="max-w-[60%] text-right"><h2 className="text-[22px] font-bold leading-tight text-black">{title}</h2><p className="mt-2 text-[11px] text-black">Tax year 6 April 2025 to 5 April 2026 (2025–26)</p></div>
       </div>
       {note}
       <Panel>

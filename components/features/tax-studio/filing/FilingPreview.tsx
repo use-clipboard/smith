@@ -15,6 +15,7 @@ import WelshParliamentFacsimile from './WelshParliamentFacsimile';
 import NIAssemblyFacsimile from './NIAssemblyFacsimile';
 import ParliamentFacsimile from './ParliamentFacsimile';
 import ScottishParliamentFacsimile from './ScottishParliamentFacsimile';
+import ResidenceFacsimile from './ResidenceFacsimile';
 import PartnershipFacsimile from './PartnershipFacsimile';
 import PartnershipShortFacsimile from './PartnershipShortFacsimile';
 import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData, assemblyHasData, parliamentHasData, scottishParliamentHasData } from '../calc';
@@ -85,10 +86,11 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   const showNI = useMemo(() => assemblyHasData(ret.income.niAssembly), [ret]);
   const showMP = useMemo(() => parliamentHasData(ret.income.parliament), [ret]);
   const showScottish = useMemo(() => scottishParliamentHasData(ret.income.scottishParliament), [ret]);
+  const showResidence = useMemo(() => { const r = ret.income.residence; return !!r && Object.values(r).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : !!v)); }, [ret]);
   const fullPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form !== 'short' && (p.profit || p.name || p.utr)), [ret]);
   const shortPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form === 'short' && (p.profit || p.name || p.utr)), [ret]);
-  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S')], [ret]);
-  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + fullPartners.length + shortPartners.length;
+  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S' && f.code !== 'SA109')], [ret]);
+  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + (showResidence ? 1 : 0) + fullPartners.length + shortPartners.length;
 
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 overflow-auto bg-slate-100">
@@ -129,6 +131,7 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
         {showScottish && ret.income.scottishParliament && <ScottishParliamentFacsimile ret={ret} office={ret.income.scottishParliament} />}
         {fullPartners.map((pt, idx) => <PartnershipFacsimile key={`ptf-${idx}`} ret={ret} partner={pt} />)}
         {shortPartners.map((pt, idx) => <PartnershipShortFacsimile key={`pts-${idx}`} ret={ret} partner={pt} />)}
+        {showResidence && <ResidenceFacsimile ret={ret} />}
         {rest.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
         <p className="no-print mx-auto mb-8 max-w-[210mm] text-center text-[11px] text-slate-400">
           This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.
