@@ -814,12 +814,12 @@ export function ministerComputed(m?: MinisterOfReligion): MinisterComputed {
   const box19 = n(m?.vicarageServicesBenefit) + n(m?.carBenefit) + n(m?.carFuelBenefit) + n(m?.loansBenefit) + n(m?.expensesReceived) + n(m?.otherBenefits);
   const box20 = box12 + box19;
   const box26 = n(m?.travellingExpenses) + n(m?.manseMaintenance) + n(m?.rent) + n(m?.secretarialAssistance) + n(m?.otherExpenses);
-  const box27 = box20;
-  const box31 = box27 + n(m?.backPayAfterApril) + n(m?.earlierYearBackPay) - box26 - n(m?.pensionPayments);
+  const box27 = box20 - (n(m?.vicarageExpensesPaid) + n(m?.vicarageServicesBenefit));   // box 20 − (box 5 + box 13)
+  const box31 = box27 + n(m?.backPayAfterApril) - box26 - n(m?.earlierYearBackPay) - n(m?.pensionPayments); // box 27 + box 28 − (box 26 + box 29 + box 30)
   const box32 = Math.round(box31 * 0.10);
-  const box34 = n(m?.amountPaidTowardBenefit) + n(m?.vicarageServicesBenefit);
-  const box35 = Math.max(0, box34 - box32);
-  const box38 = Math.max(0, box31 + n(m?.chaplaincyIncome));
+  const box34 = n(m?.vicarageExpensesPaid) + n(m?.vicarageServicesBenefit);            // box 5 + box 13
+  const box35 = Math.max(0, n(m?.amountPaidTowardBenefit) + box34 - box32);            // box 33 + box 34 − box 32 (floor 0)
+  const box38 = Math.max(0, box20 + n(m?.chaplaincyIncome) - box26 - box35);           // box 20 + box 36 − (box 26 + box 35)
   const box39 = m?.totalTaxTakenOff != null && m.totalTaxTakenOff > 0
     ? m.totalTaxTakenOff
     : n(m?.taxOffSalary) + n(m?.taxOffRoundSum) + n(m?.taxOffOtherIncome) + n(m?.taxOffChaplaincy);

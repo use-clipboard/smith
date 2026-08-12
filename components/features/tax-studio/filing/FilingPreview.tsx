@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { X, Printer, FileText, FileDown, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
-import { buildFilingForms, buildTaxCalcForm, type FilingForm, type FilingRow } from './filingModel';
+import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
 import { downloadSa100Pdf } from './sa100Stamp';
 import Sa100Facsimile from './Sa100Facsimile';
 import EmploymentFacsimile from './EmploymentFacsimile';
@@ -19,9 +19,12 @@ import ResidenceFacsimile from './ResidenceFacsimile';
 import AdditionalFacsimile from './AdditionalFacsimile';
 import PropertyFacsimile from './PropertyFacsimile';
 import LloydsFacsimile from './LloydsFacsimile';
+import MinisterFacsimile from './MinisterFacsimile';
+import TrustsFacsimile from './TrustsFacsimile';
+import TaxCalcSummaryFacsimile from './TaxCalcSummaryFacsimile';
 import PartnershipFacsimile from './PartnershipFacsimile';
 import PartnershipShortFacsimile from './PartnershipShortFacsimile';
-import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData, assemblyHasData, parliamentHasData, scottishParliamentHasData, lloydsHasData } from '../calc';
+import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData, assemblyHasData, parliamentHasData, scottishParliamentHasData, lloydsHasData, ministerHasData } from '../calc';
 
 // Print stylesheet: when printing, show only the preview sheets (the browser's
 // "Save as PDF" then produces a clean, vector, multi-page client copy).
@@ -93,10 +96,12 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   const showAdditional = useMemo(() => { const r = ret.income.additional; return !!r && Object.values(r).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : Array.isArray(v) ? v.length > 0 : !!v)); }, [ret]);
   const showProperty = useMemo(() => (ret.income.property ?? []).length > 0, [ret]);
   const showLloyds = useMemo(() => lloydsHasData(ret.income.lloyds), [ret]);
+  const showMinister = useMemo(() => ministerHasData(ret.income.minister), [ret]);
+  const showTrusts = useMemo(() => { const s = ret.income.sa107; return !!s && Object.values(s).some(v => (typeof v === 'number' ? v !== 0 : typeof v === 'boolean' ? v : Array.isArray(v) ? v.length > 0 : !!v)); }, [ret]);
   const fullPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form !== 'short' && (p.profit || p.name || p.utr)), [ret]);
   const shortPartners = useMemo(() => (ret.income.partnerships ?? []).filter(p => p.form === 'short' && (p.profit || p.name || p.utr)), [ret]);
-  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S' && f.code !== 'SA109' && f.code !== 'SA105' && f.code !== 'SA103L' && f.code !== 'SA101')], [ret]);
-  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + (showResidence ? 1 : 0) + (showProperty ? 1 : 0) + (showLloyds ? 1 : 0) + (showAdditional ? 1 : 0) + fullPartners.length + shortPartners.length;
+  const rest = useMemo(() => buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM' && f.code !== 'SA102MLA' && f.code !== 'SA102MP' && f.code !== 'SA102MSP' && f.code !== 'SA104F' && f.code !== 'SA104S' && f.code !== 'SA109' && f.code !== 'SA105' && f.code !== 'SA103L' && f.code !== 'SA101' && f.code !== 'SA102M' && !(f.code === 'SA107' && showTrusts)), [ret, showTrusts]);
+  const totalForms = rest.length + 2 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0) + (showNI ? 1 : 0) + (showMP ? 1 : 0) + (showScottish ? 1 : 0) + (showResidence ? 1 : 0) + (showProperty ? 1 : 0) + (showLloyds ? 1 : 0) + (showAdditional ? 1 : 0) + (showMinister ? 1 : 0) + (showTrusts ? 1 : 0) + fullPartners.length + shortPartners.length;
 
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 overflow-auto bg-slate-100">
@@ -136,11 +141,14 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
         {showNI && ret.income.niAssembly && <NIAssemblyFacsimile ret={ret} office={ret.income.niAssembly} />}
         {showMP && ret.income.parliament && <ParliamentFacsimile ret={ret} office={ret.income.parliament} />}
         {showScottish && ret.income.scottishParliament && <ScottishParliamentFacsimile ret={ret} office={ret.income.scottishParliament} />}
+        {showMinister && <MinisterFacsimile ret={ret} />}
         {fullPartners.map((pt, idx) => <PartnershipFacsimile key={`ptf-${idx}`} ret={ret} partner={pt} />)}
         {shortPartners.map((pt, idx) => <PartnershipShortFacsimile key={`pts-${idx}`} ret={ret} partner={pt} />)}
         {showProperty && <PropertyFacsimile ret={ret} />}
+        {showTrusts && <TrustsFacsimile ret={ret} />}
         {showResidence && <ResidenceFacsimile ret={ret} />}
         {showAdditional && <AdditionalFacsimile ret={ret} />}
+        <TaxCalcSummaryFacsimile ret={ret} />
         {rest.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
         <p className="no-print mx-auto mb-8 max-w-[210mm] text-center text-[11px] text-slate-400">
           This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.
