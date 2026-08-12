@@ -17,7 +17,7 @@ export const CELL_SHADOW = '0 1px 1.5px rgba(0,0,0,0.13)';
 export const RED = '#d4351c';
 
 export interface FormTheme { panelBg: string; panelBorder: string; dense?: boolean }
-const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
+export const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
 export const PINK_THEME: FormTheme = { panelBg: '#fbe4ea', panelBorder: '#eec2ce' };
 export const CREAM_THEME: FormTheme = { panelBg: '#faf3e6', panelBorder: '#e6dcc4' };
 export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
