@@ -11,7 +11,8 @@ import SelfEmploymentFacsimile from './SelfEmploymentFacsimile';
 import SelfEmploymentShortFacsimile from './SelfEmploymentShortFacsimile';
 import CapitalGainsFacsimile from './CapitalGainsFacsimile';
 import ForeignFacsimile from './ForeignFacsimile';
-import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals } from '../calc';
+import WelshParliamentFacsimile from './WelshParliamentFacsimile';
+import { employmentTaxable, tradeTaxableProfit, sa108HasData, foreignTotals, welshAssemblyHasData } from '../calc';
 
 // Print stylesheet: when printing, show only the preview sheets (the browser's
 // "Save as PDF" then produces a clean, vector, multi-page client copy).
@@ -75,8 +76,9 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
   const shortTrades = useMemo(() => ret.income.selfEmployment.filter(t => t.form === 'short' && (tradeTaxableProfit(t) !== 0 || t.name)), [ret]);
   const showCgt = useMemo(() => sa108HasData(ret.income.sa108), [ret]);
   const showForeign = useMemo(() => { const t = foreignTotals(ret.income); return !!(t.interest || t.dividends || t.other || t.taxClaimed); }, [ret]);
-  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106')], [ret]);
-  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0);
+  const showWelsh = useMemo(() => welshAssemblyHasData(ret.income.welshAssembly), [ret]);
+  const rest = useMemo(() => [buildTaxCalcForm(ret), ...buildFilingForms(ret).slice(1).filter(f => f.code !== 'SA102' && f.code !== 'SA103F' && f.code !== 'SA103S' && f.code !== 'SA108' && f.code !== 'SA106' && f.code !== 'SA102WAM')], [ret]);
+  const totalForms = rest.length + 1 + emps.length + trades.length + shortTrades.length + (showCgt ? 1 : 0) + (showForeign ? 1 : 0) + (showWelsh ? 1 : 0);
 
   return (
     <div id="sa-filing-preview" className="fixed inset-0 z-50 overflow-auto bg-slate-100">
@@ -111,6 +113,7 @@ export default function FilingPreview({ ret, onClose }: { ret: TaxReturn; onClos
         {shortTrades.map((tr, idx) => <SelfEmploymentShortFacsimile key={`ses-${idx}`} ret={ret} trade={tr} />)}
         {showCgt && <CapitalGainsFacsimile ret={ret} />}
         {showForeign && <ForeignFacsimile ret={ret} />}
+        {showWelsh && ret.income.welshAssembly && <WelshParliamentFacsimile ret={ret} office={ret.income.welshAssembly} />}
         {rest.map((f, idx) => <Sheet key={`${f.code}-${idx}`} form={f} />)}
         <p className="no-print mx-auto mb-8 max-w-[210mm] text-center text-[11px] text-slate-400">
           This is a working copy of the return as entered. It becomes the client’s filed copy once the return is submitted to HMRC. For mortgage use, provide the tax calculation together with the HMRC Tax Year Overview.
