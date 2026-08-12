@@ -72,7 +72,7 @@ export function Label({ n, children, ghost }: { n?: React.ReactNode; children: R
     </div>
   );
 }
-export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.ReactNode; label: React.ReactNode; value?: number | null; cells?: number; minus?: boolean; ghost?: boolean }) {
+export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.ReactNode; label?: React.ReactNode; value?: number | null; cells?: number; minus?: boolean; ghost?: boolean }) {
   const neg = (value || 0) < 0;
   const digits = value ? Math.round(Math.abs(value)).toString() : '';
   const arr: string[] = Array(cells).fill('');
@@ -81,7 +81,7 @@ export function Money({ n, label, value, cells = 8, minus, ghost }: { n?: React.
   const dense = useDense();
   return (
     <div className={dense ? 'mb-2.5' : 'mb-4'}>
-      <Label n={n} ghost={ghost}>{label}</Label>
+      {(n != null || label != null) && <Label n={n} ghost={ghost}>{label}</Label>}
       <div className="flex items-stretch gap-[3px]" style={{ height: 20 }}>
         <span className="flex w-[15px] items-center justify-center text-[12px] text-slate-500" style={{ ...base, background: MONEY_TINT }}>£</span>
         {/* HMRC "sign" box: a pre-printed white bar by default; a hand-entered
