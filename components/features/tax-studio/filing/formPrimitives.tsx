@@ -55,16 +55,20 @@ export function Panel({ children, className = '', divided }: { children: React.R
   );
 }
 export function BoxNum({ n }: { n: React.ReactNode }) {
-  return <span className="flex h-[15px] w-[19px] shrink-0 items-center justify-center text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
+  // min-w keeps single-digit boxes at the standard size; long codes (e.g. 52EG.1)
+  // grow the box instead of overflowing it.
+  return <span className="flex h-[15px] min-w-[19px] shrink-0 items-center justify-center whitespace-nowrap px-[2px] text-[9.5px] font-bold text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{n}</span>;
 }
 export function Label({ n, children, ghost }: { n?: React.ReactNode; children: React.ReactNode; ghost?: boolean }) {
   return (
-    <div className="relative mb-1 text-[10.5px] font-bold leading-tight text-black">
-      {n != null && <span className="absolute -left-3 top-[1px]"><BoxNum n={n} /></span>}
+    <div className="mb-1 flex items-start text-[10.5px] font-bold leading-tight text-black">
+      {/* The chip is pulled to the panel's left edge (-ml-3); the label text is a
+          flex sibling so it always clears the chip, however wide the code is. */}
+      {n != null && <span className="-ml-3 mr-1 mt-[1px] shrink-0"><BoxNum n={n} /></span>}
       {/* `ghost` keeps the label text in the layout (so a box lines up with its
           twin in another column) but hides it — used for the SA103F disallowable
           column, which shows only box numbers against the allowable labels. */}
-      <span className={`${n != null ? 'block pl-3' : 'block'}${ghost ? ' invisible' : ''}`} aria-hidden={ghost || undefined}>{children}</span>
+      <span className={`min-w-0 flex-1${ghost ? ' invisible' : ''}`} aria-hidden={ghost || undefined}>{children}</span>
     </div>
   );
 }
