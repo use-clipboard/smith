@@ -132,6 +132,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
           </div>
         </Panel>
         <SubHead>Tax allowances for vehicles and equipment (capital allowances)</SubHead>
+        <Note>There are ‘capital’ tax allowances for vehicles, equipment and certain buildings used in your business (do not include the cost of these in your business expenses). Please read the ‘Self-employment (full) notes’ and use the examples to work out your capital allowances.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
@@ -154,7 +155,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
           </div>
         </Panel>
         <SubHead>Calculating your taxable profit or loss</SubHead>
-        <Note>You may have to adjust your net profit or loss for disallowable expenses or capital allowances to arrive at your taxable profit or your loss for tax purposes.</Note>
+        <Note>You may have to adjust your net profit or loss for disallowable expenses or capital allowances to arrive at your taxable profit or your loss for tax purposes. Please read the ‘Self-employment (full) notes’ and fill in the boxes below that apply.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
@@ -174,7 +175,8 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
       {/* ── SEF 4 — taxable profit continued + losses ── */}
       <Page tag="SEF 4" code="SA103F">
         <p className="mb-1 text-[14px] text-black">Calculating your taxable profit or loss <span className="text-[11px]">continued</span></p>
-        <Note>In all cases complete boxes 73 and 76. If your accounting date is not between 31 March and 5 April you will need to apportion profits from each accounting period to the tax year – use box 68 to adjust your tax profit (box 64) or loss (box 65) accordingly.</Note>
+        <Note>Please read the ‘Self-employment (full) notes’ and fill in the boxes below that apply. In all cases complete boxes 73 and 76. If your accounting date is not between 31 March and 5 April you will need to apportion profits from each accounting period to the tax year – use box 68 to adjust your tax profit (box 64) or loss (box 65) accordingly.</Note>
+        <Note>In some situations, or if you carry on a certain trade or profession, you may need to make further adjustments in boxes 71 and 72. If you’ve untaxed transition profit from 2023–24 enter the amount treated as arising this year in box 73.3 – if your business ceased in the year enter all your untaxed transition profit.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
@@ -223,7 +225,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
           </div>
         </Panel>
         <SubHead>Balance sheet</SubHead>
-        <Note>If your business accounts include a balance sheet showing the assets, liabilities and capital of the business, fill in the relevant boxes below. If you do not have a balance sheet, go to box 100.</Note>
+        <Note>If your business accounts include a balance sheet showing the assets, liabilities and capital of the business, fill in the relevant boxes below. If you do not have a balance sheet, go to box 100. Read the ‘Self-employment (full) notes’ for more information.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
