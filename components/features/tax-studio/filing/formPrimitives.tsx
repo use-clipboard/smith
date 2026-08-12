@@ -20,6 +20,7 @@ export interface FormTheme { panelBg: string; panelBorder: string; dense?: boole
 export const TEAL_THEME: FormTheme = { panelBg: '#eaf4f3', panelBorder: '#bcdedb' };
 export const PINK_THEME: FormTheme = { panelBg: '#fbe4ea', panelBorder: '#eec2ce' };
 export const CREAM_THEME: FormTheme = { panelBg: '#faf3e6', panelBorder: '#e6dcc4' };
+export const PEACH_THEME: FormTheme = { panelBg: '#fce9e2', panelBorder: '#f0d3c6' };
 export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
 const useTheme = () => useContext(FormThemeContext);
 const useDense = () => useContext(FormThemeContext).dense;
