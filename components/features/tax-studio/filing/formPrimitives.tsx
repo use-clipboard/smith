@@ -220,7 +220,9 @@ function FitContent({ origin = 'top center', children }: { origin?: string; chil
     if (!box || !inner) return;
     const avail = box.clientHeight;
     const natural = inner.scrollHeight; // transforms don't affect scrollHeight
-    const k = natural > avail + 1 ? Math.max(0.72, avail / natural) : 1;
+    // Scale to a hair less than the available height so a shrunk page keeps a
+    // small gap above the footer instead of butting right up against it.
+    const k = natural > avail + 1 ? Math.max(0.72, (avail - 16) / natural) : 1;
     setScale(s => (Math.abs(s - k) > 0.002 ? k : s));
   });
   return (
