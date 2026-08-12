@@ -17,13 +17,16 @@ const BORDER = '#d8d2be';
 function SecHead({ children, cont, note }: { children: React.ReactNode; cont?: boolean; note?: React.ReactNode }) {
   return <p className="mb-2 text-[11.5px] font-bold text-black">{children}{cont && <span className="font-normal"> continued</span>}{note && <span className="font-normal"> {note}</span>}</p>;
 }
-// A full-width coloured band (one income category).
+// A full-width coloured band (one income category). Content sits within the
+// page's 13mm margin; the colour fill runs edge-to-edge (see Table).
 function Band({ bg, children }: { bg: string; children: React.ReactNode }) {
-  return <div className="px-3 py-3" style={{ background: bg }}>{children}</div>;
+  return <div className="px-[13mm] py-3" style={{ background: bg }}>{children}</div>;
 }
-// The bordered container that holds the header row and the colour bands.
+// The bordered container that holds the header row and the colour bands. It
+// bleeds to the page edges (-mx-[13mm]) to win back horizontal room, so only the
+// top/bottom rules are drawn (a left/right border would sit on the page edge).
 function Table({ children }: { children: React.ReactNode }) {
-  return <div className="mb-3 overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>{children}</div>;
+  return <div className="mb-3 -mx-[13mm] overflow-hidden" style={{ borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>{children}</div>;
 }
 // Bare 3-cell country/territory code box (no label).
 function Ctry({ value }: { value?: string }) {
@@ -109,7 +112,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <h4 className="mb-1 text-[15px] font-normal text-black">Income from overseas sources</h4>
         <Note>If you have income from overseas savings, foreign dividends, remitted foreign income, overseas pensions or benefits, or income, dividends received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country and check the relevant Double Taxation Treaty for any limits to the relief you can claim. Please refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet giving the same information as below. All entries should be in UK pounds.</Note>
         <Table>
-          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>A Country or territory code</span>
             <span>B Amount of income arising or received before any tax taken off</span>
             <span>C Foreign tax taken off or paid</span>
@@ -153,7 +156,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="F 3" code="SA106">
         <Note>received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country. Refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet.</Note>
         <Table>
-          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>D Special Withholding Tax and any UK tax taken off</span>
             <span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span>
             <span>F Taxable amount – if you’re claiming Foreign Tax Credit Relief, copy column B here. If not, enter column B minus column C</span>
@@ -229,7 +232,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <h4 className="mb-1 text-[15px] font-normal text-black">Summary of income from land and property abroad</h4>
         <Note>If you’ve filled in any of boxes 14 to 24.2, enter the details below. Please note that boxes 21 to 24.2 are on page F 5.</Note>
         <Table>
-          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>A Country or territory code</span>
             <span>B Adjusted profit or loss (from box 24)</span>
             <span>C Foreign tax taken off or paid</span>
@@ -271,7 +274,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <Table>
-          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>D UK tax taken off</span>
             <span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span>
             <span>F Taxable amount</span>
@@ -308,7 +311,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <h4 className="mb-1 text-[15px] font-normal text-black">Other overseas income and gains <span className="text-[11px]">continued</span></h4>
         <Table>
-          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[130px_1fr_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>A Country or territory code</span>
             <span>B Amount of income arising or received before any tax taken off</span>
             <span>C Foreign tax taken off or paid</span>
@@ -345,7 +348,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <Table>
-          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[1fr_90px_1fr] gap-x-6 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>D Special Withholding Tax and any UK tax taken off</span>
             <span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span>
             <span>F Taxable amount</span>
@@ -408,7 +411,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <h4 className="mb-1 text-[15px] font-normal text-black">Foreign tax paid on employment, self-employment and other income</h4>
         <Note>If you’re claiming Foreign Tax Credit Relief on income included elsewhere in your tax return, fill in the columns below and say in the ‘Any other information’ box (on page TR 7) where on your tax return this income is included. The country or territory codes are shown in the ‘Foreign notes’. Make sure that the foreign tax being claimed is the ‘minimum’ due under the laws of the foreign country after all deductions, exemptions, reliefs and allowances have been claimed.</Note>
         <Table>
-          <div className="grid grid-cols-[90px_1fr_70px_1fr] gap-x-4 px-3 py-2 text-[10.5px] font-bold text-black">
+          <div className="grid grid-cols-[90px_1fr_70px_1fr] gap-x-4 px-[13mm] py-2 text-[10.5px] font-bold text-black">
             <span>A Country or territory code</span>
             <span>C Foreign tax paid</span>
             <span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span>

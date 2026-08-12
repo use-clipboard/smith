@@ -205,13 +205,15 @@ function BracketBox({ children, className = '' }: { children: React.ReactNode; c
   );
 }
 function Page({ tag, children }: { tag: string; children: React.ReactNode }) {
+  // HMRC "12/25" print date only on the first page (TR 1); no footer rule.
+  const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
     <div className="sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white p-[13mm] shadow-sm" style={{ border: `1px solid ${PANEL_BORDER}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <div className="min-h-0 flex-1">{children}</div>
-      <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px] font-bold text-black" style={{ borderColor: TEAL }}>
+      <div className="mt-2 grid grid-cols-3 items-center pt-1 text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>SA100 2026</span>
-        <span style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
-        <span className="font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>HMRC 12/25</span>
+        <span className="text-center" style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
+        <span className="text-right font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>{isFirst ? 'HMRC 12/25' : ''}</span>
       </div>
     </div>
   );

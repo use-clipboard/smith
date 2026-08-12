@@ -233,15 +233,16 @@ function FitContent({ children }: { children: React.ReactNode }) {
 }
 export function Page({ tag, code = 'SA100', children }: { tag: string; code?: string; children: React.ReactNode }) {
   const t = useTheme();
+  // The HMRC "12/25" print date appears only on the first page of each form
+  // section (page tag ending in "1"), like the real forms. No footer rule.
+  const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
     <div className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'p-[11mm]' : 'p-[13mm]'}`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <FitContent>{children}</FitContent>
-      {/* No top rule and no HMRC date on the right — the real HMRC supplementary
-          pages have neither; keeping the page tag centred via a 3-col grid. */}
       <div className="mt-2 grid grid-cols-3 items-center pt-1 text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>
         <span className="text-center" style={{ letterSpacing: '0.18em' }}>Page {tag}</span>
-        <span />
+        <span className="text-right font-normal text-slate-400" style={{ letterSpacing: '0.12em' }}>{isFirst ? 'HMRC 12/25' : ''}</span>
       </div>
     </div>
   );
