@@ -226,6 +226,11 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     // so crawling a many-tab form stays quick. pendingV is the tab we just
     // clicked and are waiting to settle; mountPolls bounds that wait.
     let pendingV: string | null = null, mountPolls = 0;
+    // Two-pass hunt: pass 1 ("targeted") uses the section score to skip whole tops
+    // whose subs don't match, which is fast; if that misses, pass 2 ("exhaustive")
+    // crawls every tab so a box whose sub label shares no words with the section is
+    // still found.
+    let exhaustive = false;
     // SA100 / SA101 restart box numbers per section, so a box number alone is
     // ambiguous — only accept a match when the editor's active tab matches the
     // facsimile section the box was clicked in (word overlap).
@@ -321,13 +326,16 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       // top; other forms fall back to ordered traversal to stay exhaustive.
       let nextSub: HTMLElement | undefined = useSection ? bestBy(subs) : undefined;
       if (!nextSub) {
-        if (ambiguous && useSection) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
+        if (useSection && !exhaustive) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
         else nextSub = subs[0];
       }
       if (nextSub) { const v = nextSub.getAttribute('data-review-subtab') || ''; triedSub.add(v); pendingV = v; nextSub.click(); setTimeout(() => attempt(n + 1), 40); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
       const nextTop = (useSection && bestBy(tops)) || tops[0];
       if (nextTop) { const v = nextTop.getAttribute('data-review-tab') || ''; triedTop.add(v); triedSub = new Set(); pendingV = v; nextTop.click(); setTimeout(() => attempt(n + 1), 40); return; }
+      // Targeted pass skipped non-matching tops; if it found nothing, fall back to
+      // a full ordered crawl of every tab before giving up.
+      if (!exhaustive) { exhaustive = true; triedTop.clear(); triedSub = new Set(); pendingV = null; mountPolls = 0; setTimeout(() => attempt(n + 1), 40); return; }
       restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
