@@ -26,6 +26,7 @@ Rules:
 - Be practical and specific; avoid generic advice that doesn't fit the figures.
 - Consider the marginal position: personal-allowance taper (60% band between £100k–£125,140), the higher/additional-rate thresholds, HICBC, POA thresholds, unused allowances.
 - If nothing applies for a section, return an empty array.
+- Be concise. Return at most 6 reviewPoints and at most 6 suggestions, the most important first. Keep every explanation and reasoning to 1–2 short sentences. Do not repeat the same point across both lists.
 
 Output ONLY valid JSON — no prose, no code fences — in exactly this shape:
 { "reviewPoints": [ { "area": "", "issue": "", "explanation": "", "severity": "info", "suggestedFix": "" } ], "suggestions": [ { "title": "", "category": "", "estSaving": 0, "confidence": 0, "reasoning": "", "legislation": "" } ] }`;

@@ -80,11 +80,11 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      // Was 2500 — a return with several review points + suggestions (each a few
-      // sentences of explanation / reasoning / legislation) overran it, so the
-      // JSON was truncated mid-object and failed to parse (→ 502). 4096 is the
-      // project standard and gives comfortable headroom.
-      max_tokens: 4096,
+      // The output is capped by the system prompt (≤6 review points + ≤6
+      // suggestions, 1–2 sentences each ≈ ~2k tokens). 3000 is a ceiling above
+      // that so the JSON never truncates (2500 did → 502), while keeping
+      // generation comfortably inside the 60s maxDuration (4096 overran it → 504).
+      max_tokens: 3000,
       system: TAX_STUDIO_ANALYSE_SYSTEM,
       messages: [{ role: 'user', content: `Review this Self Assessment return.\n\n${JSON.stringify(payload, null, 2)}` }],
     });
