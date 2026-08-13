@@ -219,6 +219,11 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
     let origTop: string | null = null, origSub: string | null = null, captured = false;
+    // A freshly-navigated editor sub-panel mounts lazily (first mount of a heavy
+    // form can take >50ms), so after clicking a tab we re-poll the same view a
+    // few times before abandoning it for the next one — otherwise the hunt races
+    // past the correct tab before its box has rendered (cold-start miss).
+    let justNav = false, settle = 0;
     // SA100 / SA101 restart box numbers per section, so a box number alone is
     // ambiguous — only accept a match when the editor's active tab matches the
     // facsimile section the box was clicked in (word overlap).
@@ -269,16 +274,21 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       setFocusing(false);
     }
     function attempt(n: number) {
-      if (cancelled || n > 45) { restore(); return; }
+      if (cancelled || n > 120) { restore(); return; }
       const root = lightboxRef.current;
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
       if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
       const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
       if (chip && sectionMatchesView(root)) { focusBox(chip); return; }
+      // Give a just-navigated view a few extra polls to finish mounting its box
+      // before moving on (the initial default view is already rendered, so it
+      // isn't re-polled — chip check above catches a box that lives there).
+      if (justNav && settle < 4) { settle++; setTimeout(() => attempt(n + 1), 60); return; }
+      justNav = false; settle = 0;
       const subs = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
-      if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
+      if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
-      if (tops[0]) { triedTop.add(tops[0].getAttribute('data-review-tab') || ''); triedSub = new Set(); tops[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
+      if (tops[0]) { triedTop.add(tops[0].getAttribute('data-review-tab') || ''); triedSub = new Set(); tops[0].click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
