@@ -230,22 +230,35 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
   const [openForms, setOpenForms] = useState<Record<string, boolean>>({});
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
   const [sidebar, setSidebar] = useState(true);
-  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string } | null>(null);
+  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string; topTab?: string; subTab?: string } | null>(null);
   const [focusing, setFocusing] = useState(false);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
   function onSheetClick(e: React.MouseEvent) {
     if (!editablePreview) return;
-    const field = (e.target as HTMLElement).closest<HTMLElement>('[data-sa-editable]');
-    if (!field) return;
-    const code = field.dataset.saFormcode || '';
-    // TR1 personal details are edited back in the Setup stage — jump there and
-    // focus the field instead of opening the Review editor lightbox.
-    if (field.dataset.saSetup) { onEditInSetup?.(field.dataset.saSetup); return; }
-    const page = FORM_TO_PAGE[code];
-    if (!page) return;
-    setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '', record: field.dataset.saRecord || '' });
+    const target = e.target as HTMLElement;
+    const field = target.closest<HTMLElement>('[data-sa-editable]');
+    if (field) {
+      const code = field.dataset.saFormcode || '';
+      // TR1 personal details are edited back in the Setup stage — jump there and
+      // focus the field instead of opening the Review editor lightbox.
+      if (field.dataset.saSetup) { onEditInSetup?.(field.dataset.saSetup); return; }
+      const page = FORM_TO_PAGE[code];
+      if (!page) return;
+      setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '', record: field.dataset.saRecord || '' });
+      return;
+    }
+    // Table-based sections (foreign income, CGT disposals) aren't numbered boxes,
+    // so instead of a box hunt we jump to that table's tab in the editor.
+    const sec = target.closest<HTMLElement>('[data-sa-sectionedit]');
+    if (sec) {
+      const code = sec.dataset.saFormcode || '';
+      const page = FORM_TO_PAGE[code];
+      if (!page) return;
+      const [topTab, subTab] = (sec.dataset.saSectionedit || '').split('|');
+      setEdit({ page, box: '', formCode: code, section: '', record: '', topTab, subTab });
+    }
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -254,6 +267,31 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
     if (!edit) return;
     let cancelled = false;
     setFocusing(true);
+    // Section jump (table-based foreign income / CGT disposals): navigate the
+    // editor to the target top+sub tab and reveal it — there's no box to focus.
+    if (edit.subTab) {
+      let n = 0;
+      const step = () => {
+        if (cancelled || n++ > 60) { setFocusing(false); return; }
+        const root = lightboxRef.current;
+        if (!root) { setTimeout(step, 50); return; }
+        if (edit.topTab) {
+          const top = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).find(t => t.getAttribute('data-review-tab') === edit.topTab);
+          if (top && !top.className.includes('border-[var(--accent)]')) { top.click(); setTimeout(step, 60); return; }
+        }
+        const sub = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).find(s => s.getAttribute('data-review-subtab') === edit.subTab);
+        if (!sub) { setTimeout(step, 60); return; }
+        if (!sub.className.includes('bg-white')) { sub.click(); setTimeout(step, 60); return; }
+        sub.scrollIntoView({ block: 'nearest' });
+        const prev = sub.style.boxShadow;
+        sub.style.transition = 'box-shadow 0.25s';
+        sub.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.5)';
+        setTimeout(() => { sub.style.boxShadow = prev; }, 1200);
+        setFocusing(false);
+      };
+      requestAnimationFrame(step);
+      return () => { cancelled = true; setFocusing(false); };
+    }
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
     let origTop: string | null = null, origSub: string | null = null, captured = false;
@@ -434,7 +472,13 @@ export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetu
       <style>{`
         #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; transition: outline-color 0.1s; }
         #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 3px; background: rgba(139,92,246,0.06); }
-        @media print { #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
+        /* Table-based sections (foreign income / CGT disposals) jump to a whole
+           editor table, so they get a distinct dashed affordance + a hint badge,
+           not the solid box outline. */
+        #sa-filing-preview [data-sa-sectionedit] { cursor: pointer; transition: box-shadow 0.12s; }
+        #sa-filing-preview [data-sa-sectionedit]:hover { outline: 1.5px dashed rgba(99,102,241,0.65); outline-offset: -2px; box-shadow: inset 0 0 0 999px rgba(99,102,241,0.06); }
+        #sa-filing-preview [data-sa-sectionedit]:hover::after { content: '✎ Edit this section'; position: absolute; top: 0; right: 8px; background: #6366f1; color: #fff; font-size: 8.5px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 0 0 4px 4px; pointer-events: none; z-index: 6; }
+        @media print { #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } #sa-filing-preview [data-sa-sectionedit]:hover { outline: none; box-shadow: none; } #sa-filing-preview [data-sa-sectionedit]:hover::after { display: none; } }
       `}</style>
       {/* Toolbar */}
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm">

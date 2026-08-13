@@ -37,9 +37,12 @@ function Table({ bleed = 'both', children }: { bleed?: 'left' | 'right' | 'none'
     </div>
   );
 }
-function Band({ bg, children }: { bg: string; children: React.ReactNode }) {
+function Band({ bg, edit, children }: { bg: string; edit?: string; children: React.ReactNode }) {
   const pad = useContext(BleedPad);
-  return <div className={`${pad} py-2`} style={{ background: bg }}>{children}</div>;
+  // `edit` marks an income section as a click-to-edit target — the foreign income
+  // is a table (a row per country), not numbered boxes, so a click jumps to that
+  // table's tab in the editor rather than focusing a single box.
+  return <div data-sa-sectionedit={edit} data-sa-formcode={edit ? 'SA106' : undefined} className={`${pad} py-2`} style={{ background: bg, ...(edit ? { position: 'relative' } : null) }}>{children}</div>;
 }
 // A bordered cream panel that bleeds to one page edge (for the boxed sections
 // like F4/F5 "Income and expenses"). No centre divider.
@@ -166,31 +169,31 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <H4>Income from overseas sources</H4>
         <Note>If you have income from overseas savings, foreign dividends, remitted foreign income, overseas pensions or benefits, or income, dividends received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country and check the relevant Double Taxation Treaty for any limits to the relief you can claim. Please refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet giving the same information as below. All entries should be in UK pounds.</Note>
         <Table bleed="right">
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Interest & other income">
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Amount of income arising or received before any tax taken off</span><span>C Foreign tax taken off or paid</span></ColHead>
             <SecHead>Interest and other income from overseas savings</SecHead>
             {rows(f.interest).map((r, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Dividends from foreign companies">
             <SecHead>Dividends from foreign companies</SecHead>
             {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={r?.country} /><Amt value={r?.incomeArising} /><Amt value={r?.foreignTax} /></div>)}
           </Band>
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Remitted income excl. dividends">
             <SecHead>Remitted foreign income excluding dividends</SecHead>
             <div className={`mb-2 grid ${ABC} items-center gap-x-6`}><Ctry value={f.remittedExcl?.[0]?.country} /><Amt value={f.remittedExcl?.[0]?.incomeArising} /><Amt value={f.remittedExcl?.[0]?.foreignTax} /></div>
             <SecHead>Remitted foreign dividend income</SecHead>
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.remittedDividends?.[0]?.country} /><Amt value={f.remittedDividends?.[0]?.incomeArising} /><Amt value={f.remittedDividends?.[0]?.foreignTax} /></div>
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Pensions income">
             <SecHead>Overseas pensions, social security benefits and royalties</SecHead>
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.pensions?.[0]?.country} /><Amt value={f.pensions?.[0]?.incomeArising} /><Amt value={f.pensions?.[0]?.foreignTax} /></div>
           </Band>
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Other income">
             <SecHead note="– read Helpsheet 262.">Dividend income received by a person abroad</SecHead>
             <p className="mb-1.5 text-[9.5px] text-black">If you’re omitting income from this section because you’re claiming an exemption, see box 46.</p>
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.otherDividend?.[0]?.country} /><Amt value={f.otherDividend?.[0]?.incomeArising} /><Amt value={f.otherDividend?.[0]?.foreignTax} /></div>
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Other income">
             <SecHead>All other income received by a person abroad and any remitted ‘ring fenced’ foreign income</SecHead>
             <p className="mb-1.5 text-[9.5px] text-black">– read Helpsheet 262. If you’re omitting from this section because you’re claiming an exemption, see box 46.</p>
             <div className={`grid ${ABC} items-center gap-x-6`}><Ctry value={f.otherAll?.[0]?.country} /><Amt value={f.otherAll?.[0]?.incomeArising} /><Amt value={f.otherAll?.[0]?.foreignTax} /></div>
@@ -202,37 +205,37 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="F 3" code="SA106" fitOrigin="top left">
         <Note>received by an overseas trust, company or other person abroad, fill in the columns on these 2 pages. Use a separate row for each source of income or country. Refer to the ‘Foreign notes’ to find the country or territory codes that you require. If there are not enough rows, attach a separate sheet.</Note>
         <Table bleed="left">
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Interest & other income">
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount – if you’re claiming Foreign Tax Credit Relief, copy column B here. If not, enter column B minus column C</span></ColHead>
             <SecHead cont>Interest and other income from overseas savings</SecHead>
             {rows(f.interest).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={3} label="Total of column above" value={sumCol(f.interest, 'specialWithholding')} /><TotalRow n={4} label="Total of column above" value={sumCol(f.interest, 'incomeArising')} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="4.1" label="Total claimed under the FIG regime" value={f.interestFig} /></div>
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Dividends from foreign companies">
             <SecHead cont>Dividends from foreign companies</SecHead>
             {rows(f.dividends).map((r, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={r?.specialWithholding} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={5} label="Total of column above" value={sumCol(f.dividends, 'specialWithholding')} /><TotalRow n={6} label="Total of column above" value={sumCol(f.dividends, 'incomeArising')} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="6.1" label="Total claimed under the FIG regime" value={f.dividendsFig} /></div>
           </Band>
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Remitted income excl. dividends">
             <SecHead cont>Remitted foreign income excluding dividends</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n="7.1" value={f.remittedExcl?.[0]?.specialWithholding} /><TotalRow n="7.2" value={f.remittedExcl?.[0]?.incomeArising} /></div>
             <SecHead cont>Remitted foreign dividend</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n="7.3" value={f.remittedDividends?.[0]?.specialWithholding} /><TotalRow n="7.4" value={f.remittedDividends?.[0]?.incomeArising} /></div>
             <div className="mt-1 grid grid-cols-2 gap-x-6"><div className="text-[10.5px] font-bold text-black">Amount in box 7.4 subject to dividend tax credit</div><TotalRow n="7.5" value={f.remittedDivSubjectToCredit} /></div>
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Pensions income">
             <SecHead cont>Overseas pensions, social security benefits and royalties</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={8} value={f.pensions?.[0]?.specialWithholding} /><TotalRow n={9} value={f.pensions?.[0]?.incomeArising} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="9.1" label="Total claimed under the FIG regime" value={f.pensionsFig} /></div>
           </Band>
-          <Band bg={CREAM}>
+          <Band bg={CREAM} edit="Overseas Income|Other income">
             <SecHead cont>Dividend income received by a person abroad</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={10} value={f.otherDividend?.[0]?.specialWithholding} /><TotalRow n={11} value={f.otherDividend?.[0]?.incomeArising} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="11.1" label="Total claimed under the FIG regime" value={f.otherDividendFig} /></div>
           </Band>
-          <Band bg={MINT}>
+          <Band bg={MINT} edit="Overseas Income|Other income">
             <SecHead cont>All other income received by a person abroad and any remitted ‘ring fenced’ foreign income</SecHead>
             <div className="grid grid-cols-2 gap-x-6"><TotalRow n={12} value={f.otherAll?.[0]?.specialWithholding} /><TotalRow n={13} value={f.otherAll?.[0]?.incomeArising} /></div>
             <div className="grid grid-cols-2 gap-x-6"><div className="text-[10px] leading-snug text-black">Amount of residential property income or restricted finance costs associated with income in box 13 for calculating relief for residential finance costs – use the Working Sheet in the notes</div><TotalRow n="13.0" label="Total claimed under the FIG regime" value={f.otherAllFig} /></div>
