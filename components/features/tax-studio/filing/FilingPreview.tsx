@@ -199,6 +199,21 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     let cancelled = false;
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
+    let origTop: string | null = null, origSub: string | null = null, captured = false;
+    function activeTab(root: HTMLElement, sel: string, attr: string, activeCls: string): string | null {
+      const el = Array.from(root.querySelectorAll<HTMLElement>(sel)).find(x => x.className.includes(activeCls));
+      return el ? el.getAttribute(attr) : null;
+    }
+    function restore() {
+      const root = lightboxRef.current;
+      if (!root || origTop == null) return;
+      const t = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).find(x => x.getAttribute('data-review-tab') === origTop);
+      t?.click();
+      if (origSub != null) setTimeout(() => {
+        const s = Array.from(lightboxRef.current?.querySelectorAll<HTMLElement>('[data-review-subtab]') || []).find(x => x.getAttribute('data-review-subtab') === origSub);
+        s?.click();
+      }, 60);
+    }
     function focusBox(chip: HTMLElement) {
       let field: HTMLElement | null = chip.closest('label') || chip.closest('div') || chip;
       if (field && !field.querySelector('input,textarea,select') && field.parentElement) field = field.parentElement;
@@ -212,15 +227,17 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       setTimeout(() => { el.style.backgroundColor = prev; }, 1200);
     }
     function attempt(n: number) {
-      if (cancelled || n > 45) return;
+      if (cancelled || n > 45) { restore(); return; }
       const root = lightboxRef.current;
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
+      if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
       const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
       if (chip) { focusBox(chip); return; }
       const subs = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
       if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
       if (tops[0]) { triedTop.add(tops[0].getAttribute('data-review-tab') || ''); triedSub = new Set(); tops[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
+      restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
     return () => { cancelled = true; cancelAnimationFrame(raf); };
