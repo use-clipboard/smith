@@ -880,7 +880,7 @@ function OtherIncomeDescription({ ret, income, setIncome }: { ret: TaxReturn; in
     <div className="mt-4 border-t border-black/5 pt-4">
       <div className="mb-1.5 flex items-center justify-between">
         <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-          <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">21</span> Description of income in boxes 17 &amp; 20
+          <span data-editbox="21" className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">21</span> Description of income in boxes 17 &amp; 20
         </label>
         <button onClick={suggest} disabled={busy} className="inline-flex items-center gap-1 rounded-lg border border-[var(--accent)]/40 px-2 py-1 text-[11px] font-semibold text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/5 disabled:opacity-50">
           {busy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI suggest
@@ -2057,7 +2057,7 @@ function PropertyPage({ ret, income, setIncome }: { ret: TaxReturn; income: Sa10
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <div>
             <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-              <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">1</span> Number of properties<HelpDot help={PROP.propertyCount} label="Number of properties" />
+              <span data-editbox="1" className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">1</span> Number of properties<HelpDot help={PROP.propertyCount} label="Number of properties" />
             </label>
             <div className="flex items-center gap-1.5">
               <NumIn value={countShown} onChange={v => set({ propertyCount: v })} />
@@ -2853,7 +2853,7 @@ function Sa108Page({ ret, income, setIncome }: { ret: TaxReturn; income: Sa100In
             <BoxCheck box={53} label="Do the computations include any estimates or valuations?" help={CGT.estimates} checked={!!sa.estimatesOrValuations} onChange={v => set({ estimatesOrValuations: v })} />
           </BoxSection>
           <div>
-            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">54</span> Additional text note for Tax Return</label>
+            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span data-editbox="54" className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">54</span> Additional text note for Tax Return</label>
             <textarea value={sa.otherInformation ?? ''} onChange={e => set({ otherInformation: e.target.value })} rows={3} className="input-base w-full py-1.5 text-[12.5px]" placeholder="Any other information for the Tax Return" />
           </div>
         </StudioCard>
@@ -3276,7 +3276,7 @@ function Sa107Page({ income, setIncome }: { income: Sa100Income; setIncome: SetI
             <BoxNum box="25.1" label="Unused residential finance costs brought forward" value={sa.estateResiFinanceBfwd ?? 0} onChange={v => set({ estateResiFinanceBfwd: v })} />
           </BoxSection>
           <div>
-            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">26</span> Any other information</label>
+            <label className="mb-1 flex items-baseline gap-1 text-[11px] font-medium text-[var(--text-muted)]"><span data-editbox="26" className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">26</span> Any other information</label>
             <textarea value={sa.otherInformation ?? ''} onChange={e => set({ otherInformation: e.target.value })} rows={3} className="input-base w-full py-1.5 text-[12.5px]" placeholder="Please give any other information in this space" />
           </div>
         </StudioCard>
