@@ -219,11 +219,13 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
     let origTop: string | null = null, origSub: string | null = null, captured = false;
-    // A freshly-navigated editor sub-panel mounts lazily (first mount of a heavy
-    // form can take >50ms), so after clicking a tab we re-poll the same view a
-    // few times before abandoning it for the next one — otherwise the hunt races
-    // past the correct tab before its box has rendered (cold-start miss).
-    let justNav = false, settle = 0;
+    // After clicking a tab we must wait for that view to (a) become active and
+    // (b) render its fields before judging whether our box lives there — a fresh
+    // sub-panel mounts lazily. But once it HAS rendered fields and ours is not
+    // among them, we move on immediately instead of burning a fixed poll budget,
+    // so crawling a many-tab form stays quick. pendingV is the tab we just
+    // clicked and are waiting to settle; mountPolls bounds that wait.
+    let pendingV: string | null = null, mountPolls = 0;
     // SA100 / SA101 restart box numbers per section, so a box number alone is
     // ambiguous — only accept a match when the editor's active tab matches the
     // facsimile section the box was clicked in (word overlap).
@@ -294,13 +296,21 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       const root = lightboxRef.current;
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
       if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
+      const curSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white');
+      const curTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]');
+      // A just-clicked tab may not have taken effect yet — wait for it to become
+      // active before judging whether our box lives in the new view.
+      if (pendingV && curSub !== pendingV && curTop !== pendingV) {
+        if (mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
+      }
       const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
       if (chip && sectionMatchesView(root)) { focusBox(chip); return; }
-      // Give a just-navigated view a few extra polls to finish mounting its box
-      // before moving on (the initial default view is already rendered, so it
-      // isn't re-polled — chip check above catches a box that lives there).
-      if (justNav && settle < 3) { settle++; setTimeout(() => attempt(n + 1), 60); return; }
-      justNav = false; settle = 0;
+      // View is active but may still be lazily rendering its fields (also covers
+      // the editor's initial cold mount): keep waiting only while it has none.
+      // Once it has rendered fields and ours is not among them, move on at once —
+      // no fixed poll budget wasted per wrong tab.
+      if (root.querySelectorAll('[data-editbox]').length === 0 && mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
+      pendingV = null; mountPolls = 0;
       const useSection = secWords.size > 0;
       const subsAll = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]'));
       const subs = subsAll.filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
@@ -314,10 +324,10 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
         if (ambiguous && useSection) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
         else nextSub = subs[0];
       }
-      if (nextSub) { triedSub.add(nextSub.getAttribute('data-review-subtab') || ''); nextSub.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
+      if (nextSub) { const v = nextSub.getAttribute('data-review-subtab') || ''; triedSub.add(v); pendingV = v; nextSub.click(); setTimeout(() => attempt(n + 1), 40); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
       const nextTop = (useSection && bestBy(tops)) || tops[0];
-      if (nextTop) { triedTop.add(nextTop.getAttribute('data-review-tab') || ''); triedSub = new Set(); nextTop.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
+      if (nextTop) { const v = nextTop.getAttribute('data-review-tab') || ''; triedTop.add(v); triedSub = new Set(); pendingV = v; nextTop.click(); setTimeout(() => attempt(n + 1), 40); return; }
       restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
