@@ -1,12 +1,13 @@
 // Facsimile of HMRC's SA102 Employment page (E1), one per employment.
 
 import type { TaxReturn, EmploymentSource } from '../types';
-import { FormThemeContext, PINK_THEME, Page, SuppHead, Note, Teal, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label } from './formPrimitives';
+import { FormThemeContext, RecordContext, PINK_THEME, Page, SuppHead, Note, Teal, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label } from './formPrimitives';
 
 export default function EmploymentFacsimile({ ret, emp }: { ret: TaxReturn; emp: EmploymentSource }) {
   const e = emp;
   return (
     <FormThemeContext.Provider value={PINK_THEME}>
+      <RecordContext.Provider value={e.id}>
       <Page tag="E 1" code="SA102">
         <SuppHead title="Employment" name={ret.clientName} utr={ret.utr ?? undefined} />
         <Note>For help filling in this form, go to www.gov.uk/taxreturnforms and read the notes and helpsheets.</Note>
@@ -73,6 +74,7 @@ export default function EmploymentFacsimile({ ret, emp }: { ret: TaxReturn; emp:
           </div>
         </Panel>
       </Page>
+      </RecordContext.Provider>
     </FormThemeContext.Provider>
   );
 }

@@ -4,7 +4,7 @@
 
 import type { TaxReturn, TradeSource } from '../types';
 import {
-  FormThemeContext, CREAM_THEME, Page, SuppHead, Note, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label, toDDMMYYYY,
+  FormThemeContext, RecordContext, CREAM_THEME, Page, SuppHead, Note, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label, toDDMMYYYY,
 } from './formPrimitives';
 import {
   tradeExpensesTotal, tradeNetProfit, tradeProfitForTax, tradeTaxableProfit, tradeAdjustedLoss, tradeLossCarriedForward,
@@ -18,6 +18,7 @@ export default function SelfEmploymentShortFacsimile({ ret, trade }: { ret: TaxR
 
   return (
     <FormThemeContext.Provider value={CREAM_THEME}>
+      <RecordContext.Provider value={t.id}>
       {/* ── SES 1 ── */}
       <Page tag="SES 1" code="SA103S">
         <SuppHead
@@ -142,6 +143,7 @@ export default function SelfEmploymentShortFacsimile({ ret, trade }: { ret: TaxR
           </div>
         </Panel>
       </Page>
+      </RecordContext.Provider>
     </FormThemeContext.Provider>
   );
 }

@@ -25,6 +25,13 @@ export const FormThemeContext = createContext<FormTheme>(TEAL_THEME);
 const useTheme = () => useContext(FormThemeContext);
 const useDense = () => useContext(FormThemeContext).dense;
 
+// Which source record (employer / trade / partnership id) the pages under this
+// provider belong to. Stamped onto each sheet as data-sa-record so the filing
+// preview can scope a click-to-edit to the matching editor card when a return
+// has several records of the same form (otherwise the first one always wins).
+export const RecordContext = createContext<string | null>(null);
+const useRecord = () => useContext(RecordContext);
+
 export function Teal({ children }: { children: React.ReactNode }) {
   return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1.5' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
@@ -238,11 +245,12 @@ function FitContent({ origin = 'top center', children }: { origin?: string; chil
 }
 export function Page({ tag, code = 'SA100', fitOrigin = 'top center', children }: { tag: string; code?: string; fitOrigin?: string; children: React.ReactNode }) {
   const t = useTheme();
+  const record = useRecord();
   // The HMRC "12/25" print date appears only on the first page of each form
   // section (page tag ending in "1"), like the real forms. No footer rule.
   const isFirst = tag.trim().split(/\s+/).pop() === '1';
   return (
-    <div data-sa-code={code} data-sa-page={tag} className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
+    <div data-sa-code={code} data-sa-page={tag} data-sa-record={record ?? undefined} className={`sa-sheet relative mx-auto mb-6 flex h-[297mm] w-[210mm] max-w-full flex-col overflow-hidden bg-white shadow-sm ${t.dense ? 'px-[11mm]' : 'px-[13mm]'} py-[7mm]`} style={{ border: `1px solid ${t.panelBorder}`, fontFamily: 'Helvetica, Arial, sans-serif' }}>
       <FitContent origin={fitOrigin}>{children}</FitContent>
       <div className="mt-1 grid grid-cols-3 items-center text-[11px] font-bold text-black">
         <span style={{ letterSpacing: '0.18em' }}>{code} 2026</span>

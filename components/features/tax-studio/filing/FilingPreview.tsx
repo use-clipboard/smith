@@ -143,6 +143,10 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
           field.dataset.saBox = num;
           field.dataset.saFormcode = code;
           field.dataset.saSection = section.title;
+          // Multi-record forms (several employers / trades / partnerships) stamp
+          // the record id on the sheet so the hunt can scope to the right card.
+          const rec = sheet.dataset.saRecord;
+          if (rec) field.dataset.saRecord = rec;
         }
         section.boxes.push({ key: field.id, id: field.id, num, label: label.slice(0, 120) });
       }
@@ -202,7 +206,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
   const [openForms, setOpenForms] = useState<Record<string, boolean>>({});
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
   const [sidebar, setSidebar] = useState(true);
-  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string } | null>(null);
+  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string; record: string } | null>(null);
   const [focusing, setFocusing] = useState(false);
   const editablePreview = !!renderEditor;
 
@@ -214,7 +218,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const code = field.dataset.saFormcode || '';
     const page = FORM_TO_PAGE[code];
     if (!page) return;
-    setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '' });
+    setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '', record: field.dataset.saRecord || '' });
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -242,6 +246,16 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     // ambiguous — only accept a match when the editor's active tab matches the
     // facsimile section the box was clicked in (word overlap).
     const ambiguous = edit.formCode === 'SA100' || edit.formCode === 'SA101';
+    // Multi-record forms (SA102/103/104) render every employer/trade/partnership
+    // as its own editor card, so a bare box number is ambiguous across records.
+    // When the clicked facsimile page carried a record id, confine the whole hunt
+    // to that record's card (matched by data-review-record) so we edit the right
+    // one instead of always the first.
+    const recordId = edit.record || '';
+    function scopeOf(root: HTMLElement): HTMLElement {
+      if (!recordId) return root;
+      return root.querySelector<HTMLElement>(`[data-review-record="${recordId}"]`) || root;
+    }
     // Grammatical / generic filler only — topic nouns (income, interest,
     // dividends, pension, charitable, signing…) are kept so a section's words
     // actually distinguish it. 'uk' is dropped (too common across UK-x sections).
@@ -283,10 +297,12 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       setFocusing(false);
       const root = lightboxRef.current;
       if (!root || origTop == null) return;
-      const t = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).find(x => x.getAttribute('data-review-tab') === origTop);
+      const scope = scopeOf(root);
+      const t = Array.from(scope.querySelectorAll<HTMLElement>('[data-review-tab]')).find(x => x.getAttribute('data-review-tab') === origTop);
       t?.click();
       if (origSub != null) setTimeout(() => {
-        const s = Array.from(lightboxRef.current?.querySelectorAll<HTMLElement>('[data-review-subtab]') || []).find(x => x.getAttribute('data-review-subtab') === origSub);
+        const sc = lightboxRef.current ? scopeOf(lightboxRef.current) : null;
+        const s = Array.from(sc?.querySelectorAll<HTMLElement>('[data-review-subtab]') || []).find(x => x.getAttribute('data-review-subtab') === origSub);
         s?.click();
       }, 60);
     }
@@ -307,24 +323,29 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       if (cancelled || n > 200) { restore(); return; }
       const root = lightboxRef.current;
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
-      if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
-      const curSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white');
-      const curTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]');
+      const scope = scopeOf(root);
+      // Record-scoped hunt: the target card may not have mounted yet — wait for it
+      // before searching (falls back to the whole lightbox after the budget so a
+      // stale/absent record id still resolves something rather than hanging).
+      if (recordId && scope === root && mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
+      if (!captured) { origTop = activeTab(scope, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(scope, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
+      const curSub = activeTab(scope, '[data-review-subtab]', 'data-review-subtab', 'bg-white');
+      const curTop = activeTab(scope, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]');
       // A just-clicked tab may not have taken effect yet — wait for it to become
       // active before judging whether our box lives in the new view.
       if (pendingV && curSub !== pendingV && curTop !== pendingV) {
         if (mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
       }
-      const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
-      if (chip && sectionMatchesView(root)) { focusBox(chip); return; }
+      const chip = scope.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
+      if (chip && sectionMatchesView(scope)) { focusBox(chip); return; }
       // View is active but may still be lazily rendering its fields (also covers
       // the editor's initial cold mount): keep waiting only while it has none.
       // Once it has rendered fields and ours is not among them, move on at once —
       // no fixed poll budget wasted per wrong tab.
-      if (root.querySelectorAll('[data-editbox]').length === 0 && mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
+      if (scope.querySelectorAll('[data-editbox]').length === 0 && mountPolls < 12) { mountPolls++; setTimeout(() => attempt(n + 1), 40); return; }
       pendingV = null; mountPolls = 0;
       const useSection = secWords.size > 0;
-      const subsAll = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]'));
+      const subsAll = Array.from(scope.querySelectorAll<HTMLElement>('[data-review-subtab]'));
       const subs = subsAll.filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
       // Prefer the untried sub whose label best matches the clicked section, so we
       // jump straight to it instead of crawling every sub (each settle-poll costs
@@ -337,7 +358,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
         else nextSub = subs[0];
       }
       if (nextSub) { const v = nextSub.getAttribute('data-review-subtab') || ''; triedSub.add(v); pendingV = v; nextSub.click(); setTimeout(() => attempt(n + 1), 40); return; }
-      const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
+      const tops = Array.from(scope.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
       const nextTop = (useSection && bestBy(tops)) || tops[0];
       if (nextTop) { const v = nextTop.getAttribute('data-review-tab') || ''; triedTop.add(v); triedSub = new Set(); pendingV = v; nextTop.click(); setTimeout(() => attempt(n + 1), 40); return; }
       // Targeted pass skipped non-matching tops; if it found nothing, fall back to

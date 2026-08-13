@@ -933,9 +933,9 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
   const [open, setOpen] = useState(true);
   const [tab, setTab] = useState<EmploymentTab>('Details');
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+    <div data-review-record={e.id} className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <button data-review-record-toggle onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={e.employer} placeholder={`Employer ${idx + 1}`} onChange={ev => onChange({ employer: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <ProvenanceBadge id={e.id} />
         <span className="shrink-0 whitespace-nowrap text-[11px] text-[var(--text-muted)]">Taxable <span className="font-bold text-[var(--text-primary)]">{fmtMoney(employmentTaxable(e))}</span></span>
@@ -1186,9 +1186,9 @@ function TradeCard({ t, idx, onChange, onRemove }: {
   const set = (p: Partial<TradeSource>) => onChange(p);
   const switchForm = (form: 'full' | 'short') => { onChange(form === 'full' ? migrateTradeToFull(t) : migrateTradeToShort(t)); setMigratePrompt(false); setSub(0); };
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+    <div data-review-record={t.id} className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <button data-review-record-toggle onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={t.name} placeholder={`Trade ${idx + 1} — business name*`} onChange={ev => set({ name: ev.target.value })} className={`input-base flex-1 py-1 text-[12.5px] font-semibold ${!t.name.trim() ? 'border-rose-300' : ''}`} />
         <ProvenanceBadge id={t.id} />
         {/* SA103 full / short toggle */}
@@ -1660,9 +1660,9 @@ function PartnershipCard({ p, idx, onChange, onRemove }: {
   const switchForm = (form: 'full' | 'short') => { onChange(form === 'full' ? migratePartnershipToFull(p) : migratePartnershipToShort(p)); setSub(0); setTab(form === 'short' ? 'Partnership detail and profit' : 'Partnership details'); };
   const applyStatement = (stmt: PartnershipStatement) => { onChange({ statement: stmt, profit: statementTaxpayerShare(stmt) }); setStmtOpen(false); };
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-white/60">
+    <div data-review-record={p.id} className="rounded-xl border border-[var(--border)] bg-white/60">
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <button onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
+        <button data-review-record-toggle onClick={() => setOpen(o => !o)} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"><ChevronRight size={14} className={`transition-transform ${open ? 'rotate-90' : ''}`} /></button>
         <input value={p.name} placeholder={`Partnership ${idx + 1} — name`} onChange={ev => set({ name: ev.target.value })} className="input-base flex-1 py-1 text-[12.5px] font-semibold" />
         <ProvenanceBadge id={p.id} />
         {/* Partnership Statement — allocate partner shares */}

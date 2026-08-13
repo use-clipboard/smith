@@ -4,7 +4,7 @@
 import type React from 'react';
 import type { TaxReturn, PartnershipSource } from '../types';
 import {
-  FormThemeContext, TEAL_THEME, TEAL, CELL, Page, SuppHead, Note, Panel, Money, Cells, Line, Tick, YesNo, Label, toDDMMYYYY,
+  FormThemeContext, RecordContext, TEAL_THEME, TEAL, CELL, Page, SuppHead, Note, Panel, Money, Cells, Line, Tick, YesNo, Label, toDDMMYYYY,
 } from './formPrimitives';
 import {
   partnershipAdjustedProfit, partnershipTaxableTradeProfit, partnershipTotalTaxableProfit,
@@ -19,6 +19,7 @@ export default function PartnershipShortFacsimile({ ret, partner }: { ret: TaxRe
   const p = partner;
   return (
     <FormThemeContext.Provider value={TEAL_THEME}>
+      <RecordContext.Provider value={p.id}>
       {/* ── SP 1 ── */}
       <Page tag="SP 1" code="SA104S">
         <SuppHead title="Partnership (short)" name={ret.clientName} utr={ret.utr ?? undefined} />
@@ -111,6 +112,7 @@ export default function PartnershipShortFacsimile({ ret, partner }: { ret: TaxRe
           </Panel>
         </div>
       </Page>
+      </RecordContext.Provider>
     </FormThemeContext.Provider>
   );
 }

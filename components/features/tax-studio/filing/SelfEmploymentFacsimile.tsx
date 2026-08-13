@@ -3,7 +3,7 @@
 
 import type { TaxReturn, TradeSource } from '../types';
 import {
-  FormThemeContext, CREAM_THEME, TEAL, CELL, Page, SuppHead, Note, Teal, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label, toDDMMYYYY,
+  FormThemeContext, RecordContext, CREAM_THEME, TEAL, CELL, Page, SuppHead, Note, Teal, SubHead, Panel, Money, Line, Cells, Tick, YesNo, Label, toDDMMYYYY,
 } from './formPrimitives';
 import {
   tradeExpensesTotal, tradeDisallowableTotal, tradeCapitalAllowancesTotal, tradeNetProfit, tradeAdditions, tradeDeductions,
@@ -48,6 +48,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
 
   return (
     <FormThemeContext.Provider value={CREAM_THEME}>
+      <RecordContext.Provider value={t.id}>
       {/* ── SEF 1 ── */}
       <Page tag="SEF 1" code="SA103F">
         {head}
@@ -278,6 +279,7 @@ export default function SelfEmploymentFacsimile({ ret, trade }: { ret: TaxReturn
           </Panel>
         </div>
       </Page>
+      </RecordContext.Provider>
     </FormThemeContext.Provider>
   );
 }
