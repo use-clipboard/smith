@@ -223,7 +223,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     // Grammatical / generic filler only — topic nouns (income, interest,
     // dividends, pension, charitable, signing…) are kept so a section's words
     // actually distinguish it. 'uk' is dropped (too common across UK-x sections).
-    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'this', 'that', 'not', 'have', 'had', 'has', 'are', 'was', 'were', 'been', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'taken', 'off', 'out', 'any', 'all', 'before', 'after', 'which', 'more', 'than', 'less', 'included', 'include', 'supplementary', 'pages', 'page', 'box', 'boxes', 'uk']);
+    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'this', 'that', 'not', 'have', 'had', 'has', 'are', 'was', 'were', 'been', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'taken', 'off', 'out', 'any', 'all', 'before', 'after', 'which', 'more', 'than', 'less', 'included', 'include', 'supplementary', 'pages', 'page', 'box', 'boxes', 'uk', 'allowance', 'allowances', 'relief', 'reliefs', 'person']);
     const words = (s: string) => new Set((s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP.has(w)));
     const secWords = words(edit.section);
     function overlaps(label: string): boolean {
