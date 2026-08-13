@@ -285,10 +285,22 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       // isn't re-polled — chip check above catches a box that lives there).
       if (justNav && settle < 4) { settle++; setTimeout(() => attempt(n + 1), 60); return; }
       justNav = false; settle = 0;
-      const subs = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
-      if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
+      const targeted = ambiguous && secWords.size > 0;
+      const subsAll = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]'));
+      const subs = subsAll.filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
+      // On a section-disambiguated form only the sub whose label matches the
+      // clicked section can hold this box, so jump straight to it and treat the
+      // rest of this top's subs as dead ends — otherwise the settle-polls make a
+      // full sub-by-sub crawl take several seconds for boxes on the last tab.
+      let nextSub: HTMLElement | undefined = subs[0];
+      if (targeted) {
+        nextSub = subs.find(s => overlaps(s.textContent || ''));
+        if (!nextSub) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
+      }
+      if (nextSub) { triedSub.add(nextSub.getAttribute('data-review-subtab') || ''); nextSub.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
-      if (tops[0]) { triedTop.add(tops[0].getAttribute('data-review-tab') || ''); triedSub = new Set(); tops[0].click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
+      const nextTop = targeted ? (tops.find(t => overlaps(t.textContent || '')) || tops[0]) : tops[0];
+      if (nextTop) { triedTop.add(nextTop.getAttribute('data-review-tab') || ''); triedSub = new Set(); nextTop.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
