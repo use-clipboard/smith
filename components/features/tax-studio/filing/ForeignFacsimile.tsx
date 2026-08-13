@@ -120,8 +120,15 @@ const H4 = ({ children }: { children: React.ReactNode }) => <h4 className="mb-1 
 
 export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
   const f: Sa106 = ret.income.foreign ?? {};
-  const prop = f.properties?.[0];
+  const props = f.properties ?? [];
+  const prop = props[0];
   const rows = (arr?: ForeignRow[], n = 3) => Array.from({ length: n }, (_, i) => arr?.[i]);
+  // Foreign-property summary totals (SA106 F4/F5), aggregated across properties.
+  const propAdjTotal = props.reduce((a, p) => a + foreignPropAdjusted(p), 0);
+  const propForeignTax = props.reduce((a, p) => a + (p.foreignTax || 0), 0);
+  const propUkTax = props.reduce((a, p) => a + (p.ukTax || 0), 0);
+  const propTaxable = Math.max(0, propAdjTotal - (f.propLossBroughtForward || 0));           // box 27 / 30
+  const propLossCf = Math.max(0, Math.max(0, -propAdjTotal) + (f.propLossBroughtForward || 0) - (f.propLossSetOff || 0)); // box 32
 
   return (
     <FormThemeContext.Provider value={CREAM_THEME}>
@@ -262,13 +269,13 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="right">
           <Band bg={CREAM}>
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Adjusted profit or loss (from box 24)</span><span>C Foreign tax taken off or paid</span></ColHead>
-            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={f.properties?.[i]?.country} /><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} minus /><Amt value={undefined} /></div>)}
-            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={25} label="Total of column above" value={foreignPropAdjusted(prop)} minus /><div /></div>
+            {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={props[i]?.country} /><Amt value={props[i] ? foreignPropAdjusted(props[i]) : undefined} minus /><Amt value={props[i]?.foreignTax} /></div>)}
+            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={25} label="Total of column above" value={propAdjTotal} minus /><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={26} label="Total loss brought forward from earlier years" value={f.propLossBroughtForward} /><div /></div>
-            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={27} label="Total taxable profits (if box 25 minus box 26 is a positive amount)" value={undefined} /><TotalRow n={28} label="Total foreign tax" value={undefined} /></div>
+            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={27} label="Total taxable profits (if box 25 minus box 26 is a positive amount)" value={propTaxable} /><TotalRow n={28} label="Total foreign tax" value={propForeignTax} /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><SecHead>Losses</SecHead><div /></div>
             <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={31} label="Loss set off against total income" value={f.propLossSetOff} /><div /></div>
-            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={32} label="Total loss to carry forward to the following year" value={undefined} /><div /></div>
+            <div className={`grid ${ABC} gap-x-6`}><div /><TotalRow n={32} label="Total loss to carry forward to the following year" value={propLossCf} /><div /></div>
           </Band>
         </Table>
       </Page>
@@ -301,9 +308,9 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           <Band bg={CREAM}>
             <div className="flex flex-col" style={{ minHeight: 436 }}>
               <ColHead cols={DEF}><span>D UK tax taken off</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-              {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><Amt value={i === 0 ? foreignPropAdjusted(prop) : undefined} /></div>)}
+              {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${DEF} items-center gap-x-6`}><Amt value={props[i]?.ukTax} /><div className="flex justify-center"><Tick on={!!props[i]?.creditRelief} /></div><Amt value={props[i] ? foreignPropAdjusted(props[i]) : undefined} /></div>)}
               <div className="flex-1" />
-              <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={undefined} /><TotalRow n={30} label="Total taxable amount" value={foreignPropAdjusted(prop)} /></div>
+              <div className="grid grid-cols-2 gap-x-6"><TotalRow n={29} label="Total of column above" value={propUkTax} /><TotalRow n={30} label="Total taxable amount" value={propTaxable} /></div>
               <div className="grid grid-cols-2 gap-x-6"><div /><TotalRow n="30.1" label="Total claimed under the FIG regime" value={f.propFig} /></div>
             </div>
           </Band>
@@ -372,7 +379,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="left">
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={f.nrtResiProperty} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={undefined} /></div>
+            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={f.nrtResiProperty} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="48.1" label="Total claimed under the FIG regime" value={f.nrtResiPropertyFig} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Amount of overseas residential property income or restricted finance costs for non-resident trust for residential finance costs</div><TotalRow n={49} value={f.nrtResiProperty} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Unused overseas residential property finance costs brought forward in relation to box 48</div><TotalRow n="49.1" value={f.nrtResiFinanceBfwd} /></div>
