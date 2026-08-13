@@ -678,7 +678,7 @@ function CorePage({ ret, income, setIncome, reveal }: { ret: TaxReturn; income: 
           <LineField box={9} label="State Pension lump sum" title="State Pension lump sum" help={CH.statePensionLumpSum} items={income.statePensionLumpSumItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumItems: items }))} />
           <LineField box={10} label="Tax taken off box 9" title="Tax taken off State Pension lump sum" items={income.statePensionLumpSumTaxItems} onChange={items => setIncome(i => ({ ...i, statePensionLumpSumTaxItems: items }))} />
           <LineField box={11} label="Pensions (other than State Pension)" title="Pensions (other than State Pension)" help={CH.pensionsIncome} items={income.pensionsIncomeItems} fallbackTotal={income.pensionsIncome} onChange={items => setIncome(i => ({ ...i, pensionsIncomeItems: items }))} />
-          <LineField box={12} label="Tax taken off box 11" title="Tax taken off pensions" items={income.pensionsIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, pensionsIncomeTaxItems: items }))} />
+          <LineField box={12} label="Tax taken off box 11" title="Tax taken off pensions" help={CH.pensionsIncomeTax} items={income.pensionsIncomeTaxItems} onChange={items => setIncome(i => ({ ...i, pensionsIncomeTaxItems: items }))} />
           <LabelledNum box={13} label="Incapacity Benefit & ESA" help={CH.incapacityBenefit} value={income.incapacityBenefit ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefit: v }))} />
           <LabelledNum box={14} label="Tax taken off box 13" value={income.incapacityBenefitTax ?? 0} onChange={v => setIncome(i => ({ ...i, incapacityBenefitTax: v }))} />
           <LabelledNum box={15} label="Jobseeker's Allowance" help={CH.jobseekersAllowance} value={income.jobseekersAllowance ?? 0} onChange={v => setIncome(i => ({ ...i, jobseekersAllowance: v }))} />
@@ -976,7 +976,7 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
               <BoxSection title="Employment income">
                 <BoxNum box={1} label="Pay before tax was taken off" value={e.pay} onChange={v => onChange({ pay: v })} />
                 <BoxNum box="1.1" label="Payrolled benefits in box 1 affecting student loan" help={EMP.payrolledBenefitsStudentLoan} value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
-                <BoxNum box={2} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
+                <BoxNum box={2} label="UK tax taken off" help={EMP.taxDeducted} value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
                 <BoxNum box={3} label="Tips & other payments not on P60" help={EMP.tips} value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
                 <BoxNum label="Class 1 NIC" help={EMP.class1Nic} value={e.class1Nic ?? 0} onChange={v => onChange({ class1Nic: v })} />
               </BoxSection>

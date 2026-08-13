@@ -73,6 +73,7 @@ export const H = {
 
 // ── SA100 core page ("Income & reliefs") ─────────────────────────────────────
 export const CH = {
+  pensionsIncomeTax: 'Tax already deducted from your pension income (box 11) — from your P60 or pension statement. Normally a positive number; enter it as a NEGATIVE number only if the statement shows an “R” next to the tax figure, meaning tax was refunded to you rather than deducted.',
   // Interest & dividends
   taxedInterest: 'UK interest already taxed at source (rare now) — enter the net amount received and the tax taken off. Most bank/building-society interest is paid untaxed (use the box below).',
   untaxedInterest: 'UK interest received without tax taken off — e.g. bank, building-society and NS&I interest. Enter the gross amount. The Personal Savings Allowance (£1,000/£500) is applied for you.',
@@ -136,7 +137,8 @@ export const EMP = {
   closeCompanyDividends: 'A declaration only — enter the dividend cash itself in the Interest & dividends section so it’s taxed once, not here.',
   closeCompanyShareholding: 'The percentage of the company’s shares you held — used only for HMRC’s records, not the tax calculation.',
   teachersLoanOffPayroll: 'Tick only if you repaid a Teachers’ Loan under that scheme, or the engagement was inside off-payroll working (IR35) rules.',
-  payrolledBenefitsStudentLoan: 'The part of box 6 that is payrolled benefits-in-kind — separated out because it counts towards student-loan repayments.',
+  payrolledBenefitsStudentLoan: 'The part of box 1 that is payrolled benefits-in-kind — separated out because it counts towards student-loan repayments.',
+  taxDeducted: 'The UK tax already deducted from this pay — the “tax deducted” figure on your P60 or P45. Normally enter it as a positive number. Enter it as a NEGATIVE number only if your P60/P45 shows an “R” next to the tax figure, which means tax was refunded to you rather than deducted.',
   tips: 'Tips, gratuities and other taxable payments from the job that were NOT already included on your P60.',
   class1Nic: 'Class 1 National Insurance already deducted from your pay — from your P60. Informational; it doesn’t change your income-tax bill.',
   benExpPayments: 'Expenses your employer paid or reimbursed that count as taxable, plus any balancing charges — the total from section N of your P11D.',
@@ -417,7 +419,7 @@ export const MIN = {
   natureOfPost: 'The nature of your post or appointment as a minister of religion (e.g. vicar, rabbi, imam, pastor).',
   salary: 'Your salary or stipend before tax, from your P60 / P45.',
   payrolledBenefitsStudentLoan: 'The part of box 2 that is payrolled benefits which count towards your student loan repayments.',
-  taxOffSalary: 'PAYE tax taken off your salary or stipend.',
+  taxOffSalary: 'PAYE tax taken off your salary or stipend. Normally a positive number; enter it as a NEGATIVE number only if your P60/P45 shows an “R” next to the tax figure, which means tax was refunded to you rather than deducted.',
   feesOfferings: 'Fees and offerings you received (e.g. for weddings and funerals).',
   vicarageExpensesPaid: 'Expenses of your vicarage / manse that were paid for you.',
   personalExpenses: 'Personal expenses met for you — living accommodation, vouchers, etc.',
