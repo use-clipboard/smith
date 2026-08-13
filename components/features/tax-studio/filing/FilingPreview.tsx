@@ -77,6 +77,7 @@ function isEditableBox(code: string, num: string, page: string): boolean {
   // SA100 TR1 (personal details — lives in Setup) and TR2 (the derived "what
   // makes up your return" checklist) aren't editable via the Review core editor.
   if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
+  if (code === 'SA100' && num === '22') return false; // declaration/signature — not entered online
   return !(COMPUTED_BOXES[code]?.has(num));
 }
 
@@ -314,12 +315,9 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     <div id="sa-filing-preview" className="fixed inset-0 z-50 flex flex-col bg-slate-100">
       <style>{PRINT_CSS}</style>
       <style>{`
-        /* padding-left + equal negative margin extends the field's box leftward to
-           cover the box-number chip (which sits at -0.75rem) without shifting any
-           content, so the hover outline wraps the number too. */
-        #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; padding-left: 15px; margin-left: -15px; transition: outline-color 0.1s; }
-        #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 2px; background: rgba(139,92,246,0.06); }
-        @media print { #sa-filing-preview [data-sa-editable] { padding-left: 0; margin-left: 0; } #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
+        #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; transition: outline-color 0.1s; }
+        #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 3px; background: rgba(139,92,246,0.06); }
+        @media print { #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
       `}</style>
       {/* Toolbar */}
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm">

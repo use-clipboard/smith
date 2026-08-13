@@ -446,8 +446,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <div className="mb-2 flex items-start gap-2"><Label n={13}>If you’re registered blind, or severely sight impaired, and your name is on a local authority or other register, put ‘X’ in the box</Label></div>
-              <Tick on={!!i.registeredBlind} />
+              <div className="mb-2"><Label n={13}>If you’re registered blind, or severely sight impaired, and your name is on a local authority or other register, put ‘X’ in the box</Label><Tick on={!!i.registeredBlind} /></div>
               <div className="mt-3"><Ruled n={14} label="Enter the name of the local authority or other register" lines={2} /></div>
             </div>
             <div>
@@ -587,7 +586,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
 
       {/* ── TR8 — signing ── */}
       <Page tag="TR 8">
-        <p className="mb-1 text-[14px] text-black">Signing your form and sending it back</p>
+        <SubHead>Signing your form and sending it back</SubHead>
         <Note>Please fill in this section and sign and date the declaration at box 22.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
