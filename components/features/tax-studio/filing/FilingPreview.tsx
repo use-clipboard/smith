@@ -109,11 +109,17 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
         const num = el.getAttribute('data-boxnum') || '';
         const wrap = el.parentElement;                       // chip wrapper span
         const textSpan = wrap?.nextElementSibling as HTMLElement | null;
-        // The whole "field area" (label + input cells): a marked fieldroot, else
-        // three levels up from the chip (chip → wrap → label → field wrapper).
-        const field = (el.closest('[data-sa-fieldroot]') as HTMLElement | null)
-          || (wrap?.parentElement?.parentElement as HTMLElement | null)
-          || (wrap?.parentElement as HTMLElement | null) || el;
+        // The whole "field area" (chip + label + input/tick): a marked fieldroot,
+        // else walk up from the chip to the LARGEST ancestor that still holds only
+        // this one box — self-correcting whether the box is a tick row (include
+        // the tick below the label) or a grid cell (don't grab its neighbours).
+        let field = el.closest('[data-sa-fieldroot]') as HTMLElement | null;
+        if (!field) {
+          field = el;
+          while (field.parentElement && field.parentElement !== sheet && field.parentElement.querySelectorAll('[data-boxnum]').length <= 1) {
+            field = field.parentElement;
+          }
+        }
         if (!field.id) field.id = `sao-${uid++}`;
         let label = (textSpan?.textContent || '').trim();
         if (!label) label = (field.textContent || '').trim().replace(new RegExp('^' + num.replace(/[.]/g, '\\.')), '').trim();
