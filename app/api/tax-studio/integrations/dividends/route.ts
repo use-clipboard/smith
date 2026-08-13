@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     partById.set(p.id, { entityClientId: book.client_id, entityName: book.name ?? 'Company' });
   }
   const participantIds = [...partById.keys()];
-  if (participantIds.length === 0) return NextResponse.json({ found: false, total: 0, sources: [] }, { status: 404 });
+  if (participantIds.length === 0) return NextResponse.json({ found: false, total: 0, sources: [] });
 
   // The dividend slices paid to those shareholdings.
   const { data: recips, error: rErr } = await supabase
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
   }
 
   const sources = [...groups.values()];
-  if (sources.length === 0) return NextResponse.json({ found: false, total: 0, sources: [] }, { status: 404 });
+  if (sources.length === 0) return NextResponse.json({ found: false, total: 0, sources: [] });
 
   // Resolve the paying companies' refs for display.
   const { data: clients } = await supabase

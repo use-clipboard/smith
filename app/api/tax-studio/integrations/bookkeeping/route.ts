@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     .limit(1)
     .maybeSingle();
   if (bErr) return NextResponse.json({ error: bErr.message }, { status: 500 });
-  if (!book) return NextResponse.json({ found: false, bookName: '', from: '', to: '', turnover: 0, totalExpenses: 0, netProfit: 0 }, { status: 404 });
+  if (!book) return NextResponse.json({ found: false, bookName: '', from: '', to: '', turnover: 0, totalExpenses: 0, netProfit: 0 });
 
   try {
     const result = await computeBalances(supabase, book.id as string, { from, to, excludeTypes: ['YET'] });

@@ -18,12 +18,31 @@ const BodySchema = z.object({
   context: z.string().default(''),
 });
 
+// Robust JSON extraction: the model usually returns a bare object, but can wrap
+// it in a ```json fence or add a sentence of prose either side. Try a direct
+// parse, then fall back to a brace-balanced scan (string/escape aware) so a
+// stray character around the object doesn't fail the whole analysis with a 502.
 function parseJsonResponse(text: string): unknown {
   let s = text.trim();
   if (s.startsWith('```json')) s = s.slice(7).trim();
-  if (s.startsWith('```')) s = s.slice(3).trim();
+  else if (s.startsWith('```')) s = s.slice(3).trim();
   if (s.endsWith('```')) s = s.slice(0, -3).trim();
-  return JSON.parse(s);
+  try { return JSON.parse(s); } catch { /* fall through to brace scan */ }
+
+  const start = s.indexOf('{');
+  if (start === -1) throw new Error('no JSON object in response');
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return JSON.parse(s.slice(start, i + 1)); }
+  }
+  throw new Error('unterminated JSON object in response');
 }
 
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? v as T[] : []);
@@ -71,7 +90,10 @@ export async function POST(req: NextRequest) {
 
     let parsed: { reviewPoints?: unknown; suggestions?: unknown };
     try { parsed = parseJsonResponse(textPart.text) as typeof parsed; }
-    catch { return NextResponse.json({ error: 'Could not analyse the return — please try again.' }, { status: 502 }); }
+    catch (e) {
+      console.error('[/api/tax-studio/analyse] JSON parse failed:', String(e), '\nraw:', textPart.text.slice(0, 800));
+      return NextResponse.json({ error: 'Could not analyse the return — please try again.' }, { status: 502 });
+    }
 
     const reviewPoints: ReviewPoint[] = arr<Record<string, unknown>>(parsed.reviewPoints).map((p, i) => ({
       id: `rp-${i}`,

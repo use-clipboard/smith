@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const rows = outputs ?? [];
-  if (rows.length === 0) return NextResponse.json(NOT_FOUND, { status: 404 });
+  if (rows.length === 0) return NextResponse.json(NOT_FOUND);
 
   // Prefer the client's OWN analysis, then a co-owned one; within each, the run
   // whose period ends in the tax year, else the most recent.
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
   if (hasSplit && register.length) {
     const primaryClient = { id: analysisClientId, name: analysisClientName };
     const owned = personOwnedProperties(register, primaryClient, clientId);
-    if (owned.length === 0) return NextResponse.json(NOT_FOUND, { status: 404 });
+    if (owned.length === 0) return NextResponse.json(NOT_FOUND);
     const ps = rd.personSettings?.[clientId];
     const comp = computeRentComputation(
       personShareRows(income, register, primaryClient, clientId),

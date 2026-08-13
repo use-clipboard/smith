@@ -47,7 +47,10 @@ export async function GET(req: NextRequest) {
     .order('updated_at', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const notFound = NextResponse.json({ found: false, periodStart: '', periodEnd: '', entityLabel: '', isPartnership: false, netProfit: 0, turnover: 0 }, { status: 404 });
+  // "No matching engagement" is a normal empty result, not an HTTP error — return
+  // 200 with found:false so the Analyse card shows "no data" without logging a
+  // console error (consistent with entity-sources / mtd-it).
+  const notFound = NextResponse.json({ found: false, periodStart: '', periodEnd: '', entityLabel: '', isPartnership: false, netProfit: 0, turnover: 0 });
 
   // Most-recently-updated engagement whose period end lands in the tax year and
   // has real statements.
