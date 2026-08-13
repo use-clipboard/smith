@@ -24,15 +24,17 @@ const ACEF = 'grid-cols-[84px_1fr_66px_1fr]';
 // colour fills to the page edge while the content stays within the 13mm margin.
 const BleedPad = createContext('px-[13mm]');
 
-function Table({ bleed = 'both', children }: { bleed?: 'left' | 'right' | 'none' | 'both'; children: React.ReactNode }) {
+function Table({ bleed = 'both', edit, children }: { bleed?: 'left' | 'right' | 'none' | 'both'; edit?: string; children: React.ReactNode }) {
   const cfg = {
     right: { m: '-mr-[13mm]', pad: 'pl-3 pr-[13mm]' },
     left: { m: '-ml-[13mm]', pad: 'pl-[13mm] pr-3' },
     none: { m: '', pad: 'px-3' },
     both: { m: '-mx-[13mm]', pad: 'px-[13mm]' },
   }[bleed];
+  // `edit` makes a whole table a click-to-edit section target (its rows are a
+  // country/source table, not numbered boxes) — a click jumps to that table's tab.
   return (
-    <div className={`mb-3 overflow-hidden ${cfg.m}`} style={{ borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+    <div data-sa-sectionedit={edit} data-sa-formcode={edit ? 'SA106' : undefined} className={`mb-3 overflow-hidden ${cfg.m}`} style={{ borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}`, ...(edit ? { position: 'relative' } : null) }}>
       <BleedPad.Provider value={cfg.pad}>{children}</BleedPad.Provider>
     </div>
   );
@@ -46,10 +48,10 @@ function Band({ bg, edit, children }: { bg: string; edit?: string; children: Rea
 }
 // A bordered cream panel that bleeds to one page edge (for the boxed sections
 // like F4/F5 "Income and expenses"). No centre divider.
-function BleedPanel({ bleed, children }: { bleed: 'left' | 'right'; children: React.ReactNode }) {
+function BleedPanel({ bleed, edit, children }: { bleed: 'left' | 'right'; edit?: string; children: React.ReactNode }) {
   const right = bleed === 'right';
   return (
-    <div className={`relative mb-3 py-3 ${right ? '-mr-[13mm] pl-3 pr-[13mm]' : '-ml-[13mm] pl-[13mm] pr-3'}`}
+    <div data-sa-sectionedit={edit} data-sa-formcode={edit ? 'SA106' : undefined} className={`relative mb-3 py-3 ${right ? '-mr-[13mm] pl-3 pr-[13mm]' : '-ml-[13mm] pl-[13mm] pr-3'}`}
       style={{ background: CREAM, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}`, ...(right ? { borderLeft: `1px solid ${BORDER}` } : { borderRight: `1px solid ${BORDER}` }) }}>
       {children}
     </div>
@@ -250,7 +252,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <H4>Income from land and property abroad</H4>
         <Note>If you only have one overseas let property, or you have more than one but they’re all in the same country, you can just complete these pages. If you have overseas let properties in more than one country and if any foreign tax has been taken off one or more of those properties, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <h4 className="mb-1 text-[14px] font-normal text-black">Income and expenses</h4>
-        <BleedPanel bleed="right">
+        <BleedPanel bleed="right" edit="Income from Land and property|Income & Expenses">
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <FMoney n={14} label="Total rents and other receipts (excluding taxable premiums for the grant of a lease)" value={prop?.totalRents} />
@@ -269,7 +271,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         </BleedPanel>
         <H4>Summary of income from land and property abroad</H4>
         <Note>If you’ve filled in any of boxes 14 to 24.2, enter the details below. Please note that boxes 21 to 24.2 are on page F 5.</Note>
-        <Table bleed="right">
+        <Table bleed="right" edit="Income from Land and property|Summary">
           <Band bg={CREAM}>
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Adjusted profit or loss (from box 24)</span><span>C Foreign tax taken off or paid</span></ColHead>
             {Array.from({ length: 5 }).map((_, i) => <div key={i} className={`mb-1 grid ${ABC} items-center gap-x-6`}><Ctry value={props[i]?.country} /><Amt value={props[i] ? foreignPropAdjusted(props[i]) : undefined} minus /><Amt value={props[i]?.foreignTax} /></div>)}
@@ -287,7 +289,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
       <Page tag="F 5" code="SA106" fitOrigin="top left">
         <Note>Fill in a single summary section for all the properties. If you have overseas let properties in more than one country and any foreign tax has been taken off, take a copy of these pages and fill in boxes 14 to 24.2 for each property. Fill in a single summary section for all the properties.</Note>
         <H4>Calculating profits and losses for tax purposes</H4>
-        <BleedPanel bleed="left">
+        <BleedPanel bleed="left" edit="Income from Land and property|Calculate Taxable P&L">
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <FMoney n={21} label="Capital allowances for equipment and vehicles (but not for furnished residential lettings)" value={prop?.capitalAllowances} />
@@ -307,7 +309,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         {/* Straddle: push this summary down and extend it so it lines up with the
             A/B/C summary on the facing page (F4). */}
         <div style={{ height: 117 }} />
-        <Table bleed="left">
+        <Table bleed="left" edit="Income from Land and property|Summary">
           <Band bg={CREAM}>
             <div className="flex flex-col" style={{ minHeight: 436 }}>
               <ColHead cols={DEF}><span>D UK tax taken off</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
@@ -341,7 +343,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
           </div>
         </Panel>
         <H4>Other overseas income and gains <span className="text-[11px]">continued</span></H4>
-        <Table bleed="right">
+        <Table bleed="right" edit="Foreign tax paid|Non-resident trusts">
           <Band bg={CREAM}>
             <ColHead cols={ABC}><span>A Country or territory code</span><span>B Amount of income arising or received before any tax taken off</span><span>C Foreign tax taken off or paid</span></ColHead>
             <SecHead note={<>– include non-UK property income but consider box 49 and 49.1</>}>Non-savings income arising in non-resident settlor interested trusts</SecHead>
@@ -379,7 +381,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
             </div>
           </div>
         </Panel>
-        <Table bleed="left">
+        <Table bleed="left" edit="Foreign tax paid|Non-resident trusts">
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
             <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={undefined} /></div>
@@ -443,7 +445,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         </Panel>
         <H4>Foreign tax paid on employment, self-employment and other income</H4>
         <Note>If you’re claiming Foreign Tax Credit Relief on income included elsewhere in your tax return, fill in the columns below and say in the ‘Any other information’ box (on page TR 7) where on your tax return this income is included. The country or territory codes are shown in the ‘Foreign notes’. Make sure that the foreign tax being claimed is the ‘minimum’ due under the laws of the foreign country after all deductions, exemptions, reliefs and allowances have been claimed.</Note>
-        <Table bleed="none">
+        <Table bleed="none" edit="Foreign tax paid|Foreign tax">
           <Band bg={CREAM}>
             <ColHead cols={ACEF}><span>A Country or territory code</span><span>C Foreign tax paid</span><span>E To claim Foreign Tax Credit Relief put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
             {rows(f.foreignTaxRows, 4).map((r, i) => <div key={i} className={`mb-1 grid ${ACEF} items-center gap-x-4`}><Ctry value={r?.country} /><Amt value={r?.foreignTax} /><div className="flex justify-center"><Tick on={!!r?.creditRelief} /></div><Amt value={r?.incomeArising} /></div>)}
