@@ -65,9 +65,16 @@ const FORM_TO_PAGE: Record<string, PageId> = {
 // The Review editor already renders these as read-only BoxCalc, so this is belt-
 // and-braces: it also suppresses the purple hover on the preview.
 const COMPUTED_BOXES: Record<string, Set<string>> = {
+  // Each set is exactly the boxes the Review editor renders as a read-only BoxCalc
+  // for that form (a box number is unique within an HMRC form, so this can never
+  // hide an editable box). SA106 also lists the per-column/summary totals that are
+  // pure facsimile computations with no editor box at all (28/29).
+  SA103F: new Set(['31', '46', '47', '48', '57', '61', '63', '64', '65', '73', '76', '77', '80', '90', '94', '96', '99']),
+  SA103S: new Set(['20', '21', '22', '28', '31', '32', '35']),
   SA104F: new Set(['16', '18', '20', '21', '24', '30', '34', '35', '41', '48', '51', '55', '60', '63', '67', '70', '73', '76', '80']),
   SA104S: new Set(['16', '18', '20', '21', '24']),
   SA105: new Set(['38', '40', '41', '43']),
+  SA106: new Set(['3', '4', '6', '7.3', '7.4', '8', '9', '10', '11', '12', '13', '18', '24', '25', '27', '28', '29', '30', '32', '50', '51', '52', '53']),
   SA103L: new Set(['5', '11', '18', '26', '27', '40', '41', '42', '43', '48', '49', '52', '53', '55', '58', '60', '61', '62']),
   SA102M: new Set(['12', '19', '20', '26', '27', '31', '32', '34', '35', '38', '39']),
   SA107: new Set(['22', '23', '24']),
