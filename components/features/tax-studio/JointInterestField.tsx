@@ -33,7 +33,7 @@ export default function JointInterestField({ box, label, title, help, kind, item
   return (
     <div>
       <label className="mb-1 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)]">
-        <span className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>
+        <span data-editbox={box != null ? String(box) : undefined} className="rounded bg-slate-100 px-1 text-[9px] font-bold text-slate-500">{box}</span>
         {label}{items.length > 0 && <span className="font-bold text-[var(--text-secondary)]"> ({items.length})</span>}{help && <FieldHelp help={help} label={label} />}
         <button onClick={() => setOpen(true)} className="ml-auto flex h-4 w-4 items-center justify-center rounded bg-[var(--accent)]/10 text-[var(--accent)] transition-colors hover:bg-[var(--accent)]/20" aria-label={`Itemise ${label}`}><Plus size={11} /></button>
       </label>

@@ -72,8 +72,11 @@ const COMPUTED_BOXES: Record<string, Set<string>> = {
   SA102M: new Set(['12', '19', '20', '26', '27', '31', '32', '34', '35', '38', '39']),
   SA107: new Set(['22', '23', '24']),
 };
-function isEditableBox(code: string, num: string): boolean {
+function isEditableBox(code: string, num: string, page: string): boolean {
   if (!(code in FORM_TO_PAGE)) return false;
+  // SA100 TR1 (personal details — lives in Setup) and TR2 (the derived "what
+  // makes up your return" checklist) aren't editable via the Review core editor.
+  if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
   return !(COMPUTED_BOXES[code]?.has(num));
 }
 
@@ -114,12 +117,13 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
         if (!field.id) field.id = `sao-${uid++}`;
         let label = (textSpan?.textContent || '').trim();
         if (!label) label = (field.textContent || '').trim().replace(new RegExp('^' + num.replace(/[.]/g, '\\.')), '').trim();
-        if (editablePreview && isEditableBox(code, num)) {
+        if (!section) { section = { key: `${sheet.id || (sheet.id = `sao-${uid++}`)}-top`, id: sheet.id, title: FORM_NAMES[code] || code, boxes: [] }; form.sections.push(section); }
+        if (editablePreview && isEditableBox(code, num, sheet.dataset.saPage || '')) {
           field.dataset.saEditable = '1';
           field.dataset.saBox = num;
           field.dataset.saFormcode = code;
+          field.dataset.saSection = section.title;
         }
-        if (!section) { section = { key: `${sheet.id || (sheet.id = `sao-${uid++}`)}-top`, id: sheet.id, title: FORM_NAMES[code] || code, boxes: [] }; form.sections.push(section); }
         section.boxes.push({ key: field.id, id: field.id, num, label: label.slice(0, 120) });
       }
     }
@@ -178,7 +182,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
   const [openForms, setOpenForms] = useState<Record<string, boolean>>({});
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
   const [sidebar, setSidebar] = useState(true);
-  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string } | null>(null);
+  const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string } | null>(null);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
@@ -189,7 +193,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const code = field.dataset.saFormcode || '';
     const page = FORM_TO_PAGE[code];
     if (!page) return;
-    setEdit({ page, box: field.dataset.saBox || '', formCode: code });
+    setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '' });
   }
 
   // Once the editor lightbox is up, hunt for the clicked box (navigating the
@@ -200,6 +204,24 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
     let origTop: string | null = null, origSub: string | null = null, captured = false;
+    // SA100 / SA101 restart box numbers per section, so a box number alone is
+    // ambiguous — only accept a match when the editor's active tab matches the
+    // facsimile section the box was clicked in (word overlap).
+    const ambiguous = edit.formCode === 'SA100' || edit.formCode === 'SA101';
+    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'other', 'this', 'that', 'not', 'have', 'are', 'was', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'income', 'uk']);
+    const words = (s: string) => new Set((s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP.has(w)));
+    const secWords = words(edit.section);
+    function overlaps(label: string): boolean {
+      const lw = words(label);
+      for (const w of lw) if (secWords.has(w)) return true;
+      return false;
+    }
+    function sectionMatchesView(root: HTMLElement): boolean {
+      if (!ambiguous || secWords.size === 0) return true;
+      const sub = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).find(x => x.className.includes('bg-white'));
+      const top = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).find(x => x.className.includes('border-[var(--accent)]'));
+      return (sub != null && overlaps(sub.textContent || '')) || (top != null && overlaps(top.textContent || ''));
+    }
     function activeTab(root: HTMLElement, sel: string, attr: string, activeCls: string): string | null {
       const el = Array.from(root.querySelectorAll<HTMLElement>(sel)).find(x => x.className.includes(activeCls));
       return el ? el.getAttribute(attr) : null;
@@ -232,7 +254,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
       if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
       const chip = root.querySelector<HTMLElement>(`[data-editbox="${edit!.box}"]`);
-      if (chip) { focusBox(chip); return; }
+      if (chip && sectionMatchesView(root)) { focusBox(chip); return; }
       const subs = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
       if (subs[0]) { triedSub.add(subs[0].getAttribute('data-review-subtab') || ''); subs[0].click(); setTimeout(() => attempt(n + 1), 50); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
@@ -278,9 +300,12 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     <div id="sa-filing-preview" className="fixed inset-0 z-50 flex flex-col bg-slate-100">
       <style>{PRINT_CSS}</style>
       <style>{`
-        #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; transition: outline-color 0.1s; }
-        #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 3px; background: rgba(139,92,246,0.05); }
-        @media print { #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
+        /* padding-left + equal negative margin extends the field's box leftward to
+           cover the box-number chip (which sits at -0.75rem) without shifting any
+           content, so the hover outline wraps the number too. */
+        #sa-filing-preview [data-sa-editable] { cursor: pointer; border-radius: 3px; padding-left: 15px; margin-left: -15px; transition: outline-color 0.1s; }
+        #sa-filing-preview [data-sa-editable]:hover { outline: 2px solid #8b5cf6; outline-offset: 2px; background: rgba(139,92,246,0.06); }
+        @media print { #sa-filing-preview [data-sa-editable] { padding-left: 0; margin-left: 0; } #sa-filing-preview [data-sa-editable]:hover { outline: none; background: none; } }
       `}</style>
       {/* Toolbar */}
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm">

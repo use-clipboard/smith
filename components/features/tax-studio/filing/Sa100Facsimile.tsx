@@ -241,6 +241,10 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
   const taxedInterest = (i.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0), 0);
   const tp = ret.taxpayer;
   const changed = !!tp?.changedInYear;
+  // The return's date is the day after the tax year ends (6 April of the second
+  // year), and the reference shown is the firm's client reference.
+  const endYear = 2000 + (parseInt(ret.taxYear.slice(-2), 10) || 26);
+  const filingDate = `6 April ${endYear}`;
 
   return (
     <>
@@ -256,18 +260,20 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
               <div className="flex gap-3"><span className="w-32 shrink-0">UTR</span><span className="font-semibold">{ret.utr || ''}</span></div>
               <div className="flex gap-3"><span className="w-32 shrink-0">NINO</span><span className="font-semibold">{ret.taxpayer?.nino || ''}</span></div>
               <div className="flex gap-3"><span className="w-32 shrink-0">Employer reference</span></div>
-              <div className="flex gap-3 pt-1"><span className="w-32 shrink-0">Date</span></div>
+              <div className="flex gap-3 pt-1"><span className="w-32 shrink-0">Date</span><span className="font-semibold">{filingDate}</span></div>
             </div>
             <p className="pt-3">HM Revenue and Customs office address</p>
             <BracketBox className="mt-1 h-20"><span /></BracketBox>
             <p className="pt-2">Telephone</p>
           </div>
-          <div>
+          <div className="flex flex-col">
             <p className="mb-1">Issue address</p>
             <BracketBox className="min-h-[7rem]">
               <div className="whitespace-pre-line text-[11px] font-medium leading-relaxed text-black">{ret.clientName || ''}{ret.taxpayer?.address ? `\n\n${ret.taxpayer.address}` : ''}</div>
             </BracketBox>
-            <p className="mt-3">For</p><p>Reference</p>
+            {/* Pushed to the bottom of the masthead so it sits on the "Your tax
+                return" rule, and shows the firm's client reference. */}
+            <div className="mt-auto pt-2"><p>For</p><p>Reference <span className="font-semibold">{ret.clientRef || ''}</span></p></div>
           </div>
         </div>
         <Teal>Your tax return</Teal>
