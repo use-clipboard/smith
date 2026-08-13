@@ -239,6 +239,22 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       for (const w of lw) if (secWords.has(w)) return true;
       return false;
     }
+    // Looser score used only to PRIORITISE which tab to open first (not to accept
+    // a box) — counts bidirectional substring hits so e.g. the facsimile section
+    // "…NICs" still steers to the editor sub "NIC & other Info" (nic ⊂ nics).
+    const secLc = (edit.section || '').toLowerCase();
+    function navScore(label: string): number {
+      const ll = (label || '').toLowerCase();
+      let s = 0;
+      for (const w of secWords) if (ll.includes(w)) s++;
+      for (const w of words(label)) if (secLc.includes(w)) s++;
+      return s;
+    }
+    const bestBy = (els: HTMLElement[]) => {
+      let best: HTMLElement | undefined, bestScore = 0;
+      for (const el of els) { const sc = navScore(el.textContent || ''); if (sc > bestScore) { bestScore = sc; best = el; } }
+      return best;
+    };
     function sectionMatchesView(root: HTMLElement): boolean {
       if (!ambiguous || secWords.size === 0) return true;
       const sub = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]')).find(x => x.className.includes('bg-white'));
@@ -274,7 +290,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       setFocusing(false);
     }
     function attempt(n: number) {
-      if (cancelled || n > 120) { restore(); return; }
+      if (cancelled || n > 200) { restore(); return; }
       const root = lightboxRef.current;
       if (!root) { setTimeout(() => attempt(n + 1), 50); return; }
       if (!captured) { origTop = activeTab(root, '[data-review-tab]', 'data-review-tab', 'border-[var(--accent)]'); origSub = activeTab(root, '[data-review-subtab]', 'data-review-subtab', 'bg-white'); captured = true; }
@@ -283,23 +299,24 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       // Give a just-navigated view a few extra polls to finish mounting its box
       // before moving on (the initial default view is already rendered, so it
       // isn't re-polled — chip check above catches a box that lives there).
-      if (justNav && settle < 4) { settle++; setTimeout(() => attempt(n + 1), 60); return; }
+      if (justNav && settle < 3) { settle++; setTimeout(() => attempt(n + 1), 60); return; }
       justNav = false; settle = 0;
-      const targeted = ambiguous && secWords.size > 0;
+      const useSection = secWords.size > 0;
       const subsAll = Array.from(root.querySelectorAll<HTMLElement>('[data-review-subtab]'));
       const subs = subsAll.filter(s => !triedSub.has(s.getAttribute('data-review-subtab') || ''));
-      // On a section-disambiguated form only the sub whose label matches the
-      // clicked section can hold this box, so jump straight to it and treat the
-      // rest of this top's subs as dead ends — otherwise the settle-polls make a
-      // full sub-by-sub crawl take several seconds for boxes on the last tab.
-      let nextSub: HTMLElement | undefined = subs[0];
-      if (targeted) {
-        nextSub = subs.find(s => overlaps(s.textContent || ''));
-        if (!nextSub) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
+      // Prefer the untried sub whose label best matches the clicked section, so we
+      // jump straight to it instead of crawling every sub (each settle-poll costs
+      // time). On the section-disambiguated forms (SA100/SA101) a box can ONLY
+      // live under its matching sub, so if none matches we skip the rest of this
+      // top; other forms fall back to ordered traversal to stay exhaustive.
+      let nextSub: HTMLElement | undefined = useSection ? bestBy(subs) : undefined;
+      if (!nextSub) {
+        if (ambiguous && useSection) subsAll.forEach(s => triedSub.add(s.getAttribute('data-review-subtab') || ''));
+        else nextSub = subs[0];
       }
       if (nextSub) { triedSub.add(nextSub.getAttribute('data-review-subtab') || ''); nextSub.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       const tops = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).filter(t => !triedTop.has(t.getAttribute('data-review-tab') || ''));
-      const nextTop = targeted ? (tops.find(t => overlaps(t.textContent || '')) || tops[0]) : tops[0];
+      const nextTop = (useSection && bestBy(tops)) || tops[0];
       if (nextTop) { triedTop.add(nextTop.getAttribute('data-review-tab') || ''); triedSub = new Set(); nextTop.click(); justNav = true; setTimeout(() => attempt(n + 1), 60); return; }
       restore();
     }
