@@ -952,32 +952,32 @@ function EmploymentCard({ e, idx, onChange, onRemove }: {
             {tab === 'Details' && (
               <>
                 <BoxSection title="Employment details">
-                  <BoxText box={1} label="Employer's name" value={e.employer} onChange={v => onChange({ employer: v })} />
-                  <BoxText box={2} label="Employer's PAYE reference (NNN/XXXXXX)" help={EMP.payeRef} value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} placeholder="068/AZ77194" />
-                  <BoxYesNo box={3} label="Is the employee a company director?" help={EMP.director} value={!!e.isDirector} onChange={v => onChange({ isDirector: v })} />
-                  <BoxDate box={4} label="Date ceased being a director" value={e.directorCeasedDate ?? ''} onChange={v => onChange({ directorCeasedDate: v })} />
-                  <BoxYesNo box={5} label="Is this a close company?" help={EMP.closeCompany} value={!!e.isCloseCompany} onChange={v => onChange({ isCloseCompany: v })} />
+                  <BoxText box={5} label="Employer's name" value={e.employer} onChange={v => onChange({ employer: v })} />
+                  <BoxText box={4} label="Employer's PAYE reference (NNN/XXXXXX)" help={EMP.payeRef} value={e.payeRef ?? ''} onChange={v => onChange({ payeRef: v })} placeholder="068/AZ77194" />
+                  <BoxYesNo box={6} label="Is the employee a company director?" help={EMP.director} value={!!e.isDirector} onChange={v => onChange({ isDirector: v })} />
+                  <BoxDate box="6.1" label="Date ceased being a director" value={e.directorCeasedDate ?? ''} onChange={v => onChange({ directorCeasedDate: v })} />
+                  <BoxYesNo box={7} label="Is this a close company?" help={EMP.closeCompany} value={!!e.isCloseCompany} onChange={v => onChange({ isCloseCompany: v })} />
                 </BoxSection>
                 {e.isCloseCompany && (
                   <BoxSection title="Close company">
-                    <BoxText box="5.1" label="Name of this close company" value={e.closeCompanyName ?? ''} onChange={v => onChange({ closeCompanyName: v })} />
-                    <BoxText box="5.2" label="Registration number" value={e.closeCompanyReg ?? ''} onChange={v => onChange({ closeCompanyReg: v })} />
-                    <BoxNum box="5.3" label="Dividends received from this close company" help={EMP.closeCompanyDividends} value={e.closeCompanyDividends ?? 0} onChange={v => onChange({ closeCompanyDividends: v })} />
-                    <BoxNum box="5.4" label="Percentage shareholding" help={EMP.closeCompanyShareholding} value={e.closeCompanyShareholding ?? 0} onChange={v => onChange({ closeCompanyShareholding: v })} />
+                    <BoxText box="7.1" label="Name of this close company" value={e.closeCompanyName ?? ''} onChange={v => onChange({ closeCompanyName: v })} />
+                    <BoxText box="7.2" label="Registration number" value={e.closeCompanyReg ?? ''} onChange={v => onChange({ closeCompanyReg: v })} />
+                    <BoxNum box="7.3" label="Dividends received from this close company" help={EMP.closeCompanyDividends} value={e.closeCompanyDividends ?? 0} onChange={v => onChange({ closeCompanyDividends: v })} />
+                    <BoxNum box="7.4" label="Percentage shareholding" help={EMP.closeCompanyShareholding} value={e.closeCompanyShareholding ?? 0} onChange={v => onChange({ closeCompanyShareholding: v })} />
                   </BoxSection>
                 )}
                 <BoxSection title="Other">
-                  <BoxCheck box="5.5" label="Teachers' Loans scheme / off-payroll working engagements" help={EMP.teachersLoanOffPayroll} checked={!!e.teachersLoanOffPayroll} onChange={v => onChange({ teachersLoanOffPayroll: v })} />
+                  <BoxCheck box={8} label="Teachers' Loans scheme / off-payroll working engagements" help={EMP.teachersLoanOffPayroll} checked={!!e.teachersLoanOffPayroll} onChange={v => onChange({ teachersLoanOffPayroll: v })} />
                 </BoxSection>
-                {e.closeCompanyDividends ? <p className="text-[11px] text-[var(--text-muted)]">Box 5.3 is a declaration — enter the dividends themselves in the Interest &amp; dividends section so they're taxed once.</p> : null}
+                {e.closeCompanyDividends ? <p className="text-[11px] text-[var(--text-muted)]">Box 7.3 is a declaration — enter the dividends themselves in the Interest &amp; dividends section so they're taxed once.</p> : null}
               </>
             )}
             {tab === 'Income' && (
               <BoxSection title="Employment income">
-                <BoxNum box={6} label="Pay before tax was taken off" value={e.pay} onChange={v => onChange({ pay: v })} />
-                <BoxNum box="6.1" label="Payrolled benefits in box 6 affecting student loan" help={EMP.payrolledBenefitsStudentLoan} value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
-                <BoxNum box={7} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
-                <BoxNum box={8} label="Tips & other payments not on P60" help={EMP.tips} value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
+                <BoxNum box={1} label="Pay before tax was taken off" value={e.pay} onChange={v => onChange({ pay: v })} />
+                <BoxNum box="1.1" label="Payrolled benefits in box 1 affecting student loan" help={EMP.payrolledBenefitsStudentLoan} value={e.payrolledBenefitsStudentLoan ?? 0} onChange={v => onChange({ payrolledBenefitsStudentLoan: v })} />
+                <BoxNum box={2} label="UK tax taken off" value={e.taxDeducted} onChange={v => onChange({ taxDeducted: v })} />
+                <BoxNum box={3} label="Tips & other payments not on P60" help={EMP.tips} value={e.tips ?? 0} onChange={v => onChange({ tips: v })} />
                 <BoxNum label="Class 1 NIC" help={EMP.class1Nic} value={e.class1Nic ?? 0} onChange={v => onChange({ class1Nic: v })} />
               </BoxSection>
             )}
