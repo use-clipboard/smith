@@ -88,6 +88,15 @@ function isEditableBox(code: string, num: string, page: string): boolean {
   if (code === 'SA100' && page === 'TR 6' && num === '14') return false; // nominee authorisation signature — not entered online
   return !(COMPUTED_BOXES[code]?.has(num));
 }
+// SA100 TR1 personal-detail boxes are entered in the Setup stage, not the Review
+// editor. Clicking one jumps to Setup and focuses the matching field (keyed here).
+const TR1_SETUP_FIELD: Record<string, string> = {
+  '1': 'dob', '2': 'change', '3': 'phone', '4': 'nino',
+};
+function setupFieldFor(code: string, num: string, page: string): string | null {
+  if (code === 'SA100' && page === 'TR 1') return TR1_SETUP_FIELD[num] ?? null;
+  return null;
+}
 
 interface OutlineBox { key: string; id: string; num: string; label: string }
 interface OutlineSection { key: string; id: string; title: string; boxes: OutlineBox[] }
@@ -138,11 +147,14 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
         let label = (textSpan?.textContent || '').trim();
         if (!label) label = (field.textContent || '').trim().replace(new RegExp('^' + num.replace(/[.]/g, '\\.')), '').trim();
         if (!section) { section = { key: `${sheet.id || (sheet.id = `sao-${uid++}`)}-top`, id: sheet.id, title: FORM_NAMES[code] || code, boxes: [] }; form.sections.push(section); }
-        if (editablePreview && isEditableBox(code, num, sheet.dataset.saPage || '')) {
+        const setupField = setupFieldFor(code, num, sheet.dataset.saPage || '');
+        if (editablePreview && (setupField || isEditableBox(code, num, sheet.dataset.saPage || ''))) {
           field.dataset.saEditable = '1';
           field.dataset.saBox = num;
           field.dataset.saFormcode = code;
           field.dataset.saSection = section.title;
+          // A TR1 personal-detail box routes to the Setup stage, not the editor.
+          if (setupField) field.dataset.saSetup = setupField;
           // Multi-record forms (several employers / trades / partnerships) stamp
           // the record id on the sheet so the hunt can scope to the right card.
           const rec = sheet.dataset.saRecord;
@@ -197,7 +209,7 @@ function Sheet({ form }: { form: FilingForm }) {
   );
 }
 
-export default function FilingPreview({ ret, onClose, renderEditor }: { ret: TaxReturn; onClose: () => void; renderEditor?: (page: PageId) => React.ReactNode }) {
+export default function FilingPreview({ ret, onClose, renderEditor, onEditInSetup }: { ret: TaxReturn; onClose: () => void; renderEditor?: (page: PageId) => React.ReactNode; onEditInSetup?: (field: string) => void }) {
   const sheetsRef = useRef<HTMLDivElement>(null);
   const lightboxRef = useRef<HTMLDivElement>(null);
   const [outline, setOutline] = useState<OutlineForm[]>([]);
@@ -216,6 +228,9 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     const field = (e.target as HTMLElement).closest<HTMLElement>('[data-sa-editable]');
     if (!field) return;
     const code = field.dataset.saFormcode || '';
+    // TR1 personal details are edited back in the Setup stage — jump there and
+    // focus the field instead of opening the Review editor lightbox.
+    if (field.dataset.saSetup) { onEditInSetup?.(field.dataset.saSetup); return; }
     const page = FORM_TO_PAGE[code];
     if (!page) return;
     setEdit({ page, box: field.dataset.saBox || '', formCode: code, section: field.dataset.saSection || '', record: field.dataset.saRecord || '' });
@@ -501,7 +516,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
             </p>
           )}
           <div ref={sheetsRef} className="sa-sheets-wrap px-4 py-6" style={{ zoom }}>
-            <Sa100Facsimile ret={ret} />
+            <Sa100Facsimile ret={ret} editable={editablePreview} />
             {emps.map((e, idx) => <EmploymentFacsimile key={`emp-${idx}`} ret={ret} emp={e} />)}
             {trades.map((tr, idx) => <SelfEmploymentFacsimile key={`se-${idx}`} ret={ret} trade={tr} />)}
             {shortTrades.map((tr, idx) => <SelfEmploymentShortFacsimile key={`ses-${idx}`} ret={ret} trade={tr} />)}

@@ -1476,7 +1476,7 @@ export interface TaxReturn {
   /** Taxpayer personal details for the return — pulled from the client record,
    *  editable in Setup, and used on the tax return itself. */
   taxpayer?: {
-    address?: string; dateOfBirth?: string; nino?: string;
+    address?: string; dateOfBirth?: string; nino?: string; phone?: string;
     // Name/address change during the year (SA100 box 2 — "correct details
     // underneath the wrong ones and the date you changed address").
     changedInYear?: boolean; changeFrom?: string; changeTo?: string; changeDate?: string;

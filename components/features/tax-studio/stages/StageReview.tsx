@@ -59,7 +59,7 @@ function advisoryReviewPoints(income: Sa100Income): ReviewPoint[] {
   return out;
 }
 
-export default function StageReview({ ret, patch, advance, page, setPage, reveal }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null }) {
+export default function StageReview({ ret, patch, advance, page, setPage, reveal, onEditInSetup }: { ret: TaxReturn; patch: Patch; advance: () => void; page: PageId; setPage: (p: PageId) => void; reveal: Reveal | null; onEditInSetup?: (field: string) => void }) {
   const openPoints = ret.reviewPoints.filter(p => !p.resolved && p.severity !== 'info').length;
   const advisories = advisoryReviewPoints(ret.income);
   const allPoints = [...ret.reviewPoints, ...advisories];
@@ -79,7 +79,8 @@ export default function StageReview({ ret, patch, advance, page, setPage, reveal
         </button>
       </div>
       {previewOpen && <FilingPreview ret={ret} onClose={() => setPreviewOpen(false)}
-        renderEditor={page => <ReturnSectionEditor page={page} ret={ret} setIncome={setIncome} />} />}
+        renderEditor={page => <ReturnSectionEditor page={page} ret={ret} setIncome={setIncome} />}
+        onEditInSetup={onEditInSetup} />}
 
       {/* Section tabs + panel */}
       <SectionPanel ret={ret} patch={patch} page={page} setPage={setPage} counts={counts} income={ret.income} setIncome={setIncome} reveal={reveal} />

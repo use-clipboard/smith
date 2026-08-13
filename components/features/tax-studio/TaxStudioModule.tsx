@@ -43,6 +43,14 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
     setReviewPage(e.page as PageId);
     setReviewReveal(r => ({ page: e.page as PageId, section: e.section, nonce: (r?.nonce ?? 0) + 1 }));
   };
+  // Personal-detail (SA100 TR1) boxes live in the Setup stage, not the Review
+  // editor — clicking one in the filing preview jumps back to Setup and focuses
+  // the matching field.
+  const [setupReveal, setSetupReveal] = useState<{ field: string; nonce: number } | null>(null);
+  const goToSetup = (field: string) => {
+    setStage('setup');
+    setSetupReveal(r => ({ field, nonce: (r?.nonce ?? 0) + 1 }));
+  };
 
   const lastSaved = useRef<string>('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,9 +251,9 @@ export default function TaxStudioModule({ activeModules, userName }: { activeMod
           {/* Stage + assistant */}
           <div className="flex gap-4">
             <div className="min-w-0 flex-1">
-              {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} />}
+              {stage === 'setup' && <StageSetup ret={ret} patch={patch} advance={() => advanceFrom('setup')} reveal={setupReveal} />}
               {stage === 'analyse' && <StageAnalyse ret={ret} patch={patch} advance={() => advanceFrom('analyse')} />}
-              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} />}
+              {stage === 'review' && <StageReview ret={ret} patch={patch} advance={() => advanceFrom('review')} page={reviewPage} setPage={setReviewPage} reveal={reviewReveal} onEditInSetup={goToSetup} />}
               {stage === 'approval' && <StageApproval ret={ret} patch={patch} advance={() => advanceFrom('approval')} />}
               {stage === 'submit' && <StageSubmit ret={ret} patch={patch} />}
             </div>

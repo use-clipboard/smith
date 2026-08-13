@@ -235,9 +235,13 @@ function Question({ n, k, title, children, yes, extra }: { n: number; k: string;
 }
 
 // ── the form ─────────────────────────────────────────────────────────────────
-export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
+export default function Sa100Facsimile({ ret, editable }: { ret: TaxReturn; editable?: boolean }) {
   const i = ret.income;
   const has = filingChecklist(ret);
+  // The UTR / issue-address block on the masthead aren't numbered boxes but are
+  // still personal details entered in Setup — make them click-to-Setup targets
+  // (only in the editable preview, so print/PDF renders stay inert).
+  const setupAttrs = (field: string) => (editable ? { 'data-sa-editable': '1', 'data-sa-formcode': 'SA100', 'data-sa-setup': field } : {});
   // Many boxes are itemised in the editor (an items array) — the box value is the
   // sum of those entries; scalar-only boxes just read their field.
   const sum = (items?: { amount?: number }[]) => (items ?? []).reduce((a, x) => a + (x.amount || 0), 0);
@@ -264,20 +268,22 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <div className="mb-3 grid grid-cols-2 gap-x-8 text-[11px] text-black">
           <div>
             <div className="space-y-1">
-              <div className="flex gap-3"><span className="w-32 shrink-0">UTR</span><span className="font-semibold">{ret.utr || ''}</span></div>
-              <div className="flex gap-3"><span className="w-32 shrink-0">NINO</span><span className="font-semibold">{ret.taxpayer?.nino || ''}</span></div>
+              <div {...setupAttrs('utr')} className="flex gap-3"><span className="w-32 shrink-0">UTR</span><span className="font-semibold">{ret.utr || ''}</span></div>
+              <div {...setupAttrs('nino')} className="flex gap-3"><span className="w-32 shrink-0">NINO</span><span className="font-semibold">{ret.taxpayer?.nino || ''}</span></div>
               <div className="flex gap-3"><span className="w-32 shrink-0">Employer reference</span></div>
               <div className="flex gap-3 pt-1"><span className="w-32 shrink-0">Date</span><span className="font-semibold">{filingDate}</span></div>
             </div>
             <p className="pt-3">HM Revenue and Customs office address</p>
             <BracketBox className="mt-1 h-20"><span /></BracketBox>
-            <p className="pt-2">Telephone</p>
+            <p {...setupAttrs('phone')} className="pt-2">Telephone <span className="font-semibold">{ret.taxpayer?.phone || ''}</span></p>
           </div>
           <div className="flex flex-col">
             <p className="mb-1">Issue address</p>
-            <BracketBox className="min-h-[7rem]">
-              <div className="whitespace-pre-line text-[11px] font-medium leading-relaxed text-black">{ret.clientName || ''}{ret.taxpayer?.address ? `\n\n${ret.taxpayer.address}` : ''}</div>
-            </BracketBox>
+            <div {...setupAttrs('address')}>
+              <BracketBox className="min-h-[7rem]">
+                <div className="whitespace-pre-line text-[11px] font-medium leading-relaxed text-black">{ret.clientName || ''}{ret.taxpayer?.address ? `\n\n${ret.taxpayer.address}` : ''}</div>
+              </BracketBox>
+            </div>
             {/* Pushed to the bottom of the masthead so it sits on the "Your tax
                 return" rule, and shows the firm's client reference. */}
             <div className="mt-auto pt-2"><p>For</p><p>Reference <span className="font-semibold">{ret.clientRef || ''}</span></p></div>
@@ -324,7 +330,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
               </div>
             </div>
             <div>
-              <Cells n={3} label="Your phone number" groups={[15]} value="" />
+              <Cells n={3} label="Your phone number" groups={[15]} value={ret.taxpayer?.phone} />
               <Cells n={4} label="Your National Insurance number — leave blank if the correct number is shown above" groups={[2, 2, 2, 2, 1]} value={ret.taxpayer?.nino} />
             </div>
           </div>

@@ -1,22 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Loader2, Link2, Calendar, FileText, RefreshCw, MapPin } from 'lucide-react';
 import { StudioCard, SectionTitle } from '../primitives';
 import { returnType, taxYearOptions, seedConnectedSources, fmtDateUK } from '../data';
 import type { TaxReturn } from '../types';
 
 export default function StageSetup({
-  ret, patch, advance,
+  ret, patch, advance, reveal,
 }: {
   ret: TaxReturn;
   patch: (u: (r: TaxReturn) => TaxReturn) => void;
   advance: () => void;
+  reveal?: { field: string; nonce: number } | null;
 }) {
   const [pulling, setPulling] = useState(false);
   const [pullingClient, setPullingClient] = useState(false);
   const rt = returnType(ret.returnType);
   const connected = ret.connected.length > 0;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Clicking a TR1 personal-detail box in the filing preview jumps here and asks
+  // us to focus that field — scroll it into view, focus it, and flash it.
+  useEffect(() => {
+    if (!reveal) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(`[data-setup-field="${reveal.field}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const input = el.matches('input,textarea') ? el : el.querySelector<HTMLElement>('input,textarea');
+    setTimeout(() => input?.focus(), 320);
+    const prev = el.style.boxShadow;
+    el.style.transition = 'box-shadow 0.25s';
+    el.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.45)';
+    setTimeout(() => { el.style.boxShadow = prev; }, 1400);
+  }, [reveal?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchTaxpayer = (u: Partial<NonNullable<TaxReturn['taxpayer']>>) =>
     patch(r => ({ ...r, taxpayer: { ...r.taxpayer, ...u } }));
@@ -58,7 +77,7 @@ export default function StageSetup({
   }
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4">
       <StudioCard className="p-5">
         <div className="flex items-start justify-between gap-4">
           <SectionTitle title="Confirm the return" sub="Tax Studio adapts the workspace to the return type you choose. Personal details flow onto the return." />
@@ -80,7 +99,7 @@ export default function StageSetup({
               {taxYearOptions().map(y => <option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <div>
+          <div data-setup-field="utr" className="rounded-lg">
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">UTR</label>
             <input
               value={ret.utr ?? ''}
@@ -93,7 +112,7 @@ export default function StageSetup({
 
         {/* Taxpayer details (pulled from the client record, editable) */}
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div>
+          <div data-setup-field="dob" className="rounded-lg">
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Date of birth</label>
             <input
               value={ret.taxpayer?.dateOfBirth ?? ''}
@@ -102,12 +121,21 @@ export default function StageSetup({
               className="input-base py-1.5 text-sm"
             />
           </div>
-          <div>
+          <div data-setup-field="nino" className="rounded-lg">
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">National Insurance no.</label>
             <input
               value={ret.taxpayer?.nino ?? ''}
               onChange={e => patchTaxpayer({ nino: e.target.value.toUpperCase() })}
               placeholder="e.g. AB123456C"
+              className="input-base py-1.5 text-sm"
+            />
+          </div>
+          <div data-setup-field="phone" className="rounded-lg">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Phone number</label>
+            <input
+              value={ret.taxpayer?.phone ?? ''}
+              onChange={e => patchTaxpayer({ phone: e.target.value })}
+              placeholder="e.g. 07700 900123"
               className="input-base py-1.5 text-sm"
             />
           </div>
@@ -125,7 +153,7 @@ export default function StageSetup({
           </div>
         </div>
 
-        <div className="mt-4">
+        <div data-setup-field="address" className="mt-4 rounded-lg">
           <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]"><MapPin size={12} /> Address</label>
           <textarea
             value={ret.taxpayer?.address ?? ''}
@@ -137,7 +165,7 @@ export default function StageSetup({
         </div>
 
         {/* Name / address change during the year — flows onto SA100 box 2 (TR1). */}
-        <div className="mt-4">
+        <div data-setup-field="change" className="mt-4 rounded-lg">
           <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-[var(--text-primary)]">
             <input
               type="checkbox"
