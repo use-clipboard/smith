@@ -80,7 +80,11 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2500,
+      // Was 2500 — a return with several review points + suggestions (each a few
+      // sentences of explanation / reasoning / legislation) overran it, so the
+      // JSON was truncated mid-object and failed to parse (→ 502). 4096 is the
+      // project standard and gives comfortable headroom.
+      max_tokens: 4096,
       system: TAX_STUDIO_ANALYSE_SYSTEM,
       messages: [{ role: 'user', content: `Review this Self Assessment return.\n\n${JSON.stringify(payload, null, 2)}` }],
     });
