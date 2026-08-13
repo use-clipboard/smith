@@ -22,7 +22,7 @@ function Teal({ children }: { children: React.ReactNode }) {
   return <h3 className="mb-2 border-b-2 pb-1 text-[15px] font-bold" style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
 function SubHead({ children }: { children: React.ReactNode }) {
-  return <p className="mb-2 mt-3 text-[14px] font-normal text-black">{children}</p>;
+  return <p data-sa-subhead className="mb-2 mt-3 text-[14px] font-normal text-black">{children}</p>;
 }
 function Note({ children }: { children: React.ReactNode }) {
   return <p className="mb-2 text-[10px] leading-snug text-black">{children}</p>;

@@ -97,9 +97,9 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
     let form = byCode.get(code);
     if (!form) { form = { key: `f${forms.length}`, code, name: FORM_NAMES[code] || code, sections: [] }; byCode.set(code, form); forms.push(form); }
     let section: OutlineSection | null = null;
-    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>('h3, h4, [data-boxnum]'));
+    const nodes = Array.from(sheet.querySelectorAll<HTMLElement>('h3, h4, [data-sa-subhead], [data-boxnum]'));
     for (const el of nodes) {
-      if (el.matches('h3, h4')) {
+      if (el.matches('h3, h4, [data-sa-subhead]')) {
         if (!el.id) el.id = `sao-${uid++}`;
         const title = (el.textContent || '').trim();
         if (!title) continue;
@@ -208,7 +208,10 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     // ambiguous — only accept a match when the editor's active tab matches the
     // facsimile section the box was clicked in (word overlap).
     const ambiguous = edit.formCode === 'SA100' || edit.formCode === 'SA101';
-    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'other', 'this', 'that', 'not', 'have', 'are', 'was', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'income', 'uk']);
+    // Grammatical / generic filler only — topic nouns (income, interest,
+    // dividends, pension, charitable, signing…) are kept so a section's words
+    // actually distinguish it. 'uk' is dropped (too common across UK-x sections).
+    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'this', 'that', 'not', 'have', 'had', 'has', 'are', 'was', 'were', 'been', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'taken', 'off', 'out', 'any', 'all', 'before', 'after', 'which', 'more', 'than', 'less', 'included', 'include', 'supplementary', 'pages', 'page', 'box', 'boxes', 'uk']);
     const words = (s: string) => new Set((s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP.has(w)));
     const secWords = words(edit.section);
     function overlaps(label: string): boolean {

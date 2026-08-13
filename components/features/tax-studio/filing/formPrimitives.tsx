@@ -29,7 +29,7 @@ export function Teal({ children }: { children: React.ReactNode }) {
   return <h3 className={`border-b-2 pb-1 text-[15px] font-bold ${useDense() ? 'mb-1.5' : 'mb-2'}`} style={{ color: TEAL, borderColor: TEAL }}>{children}</h3>;
 }
 export function SubHead({ children }: { children: React.ReactNode }) {
-  return <p className={`font-normal text-black ${useDense() ? 'mb-1 mt-1.5 text-[13.5px]' : 'mb-1 mt-2 text-[14px]'}`}>{children}</p>;
+  return <p data-sa-subhead className={`font-normal text-black ${useDense() ? 'mb-1 mt-1.5 text-[13.5px]' : 'mb-1 mt-2 text-[14px]'}`}>{children}</p>;
 }
 export function Note({ children }: { children: React.ReactNode }) {
   return <p className={`text-[10px] leading-snug text-black ${useDense() ? 'mb-1.5' : 'mb-2'}`}>{children}</p>;
