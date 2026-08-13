@@ -116,7 +116,12 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
         let field = el.closest('[data-sa-fieldroot]') as HTMLElement | null;
         if (!field) {
           field = el;
-          while (field.parentElement && field.parentElement !== sheet && field.parentElement.querySelectorAll('[data-boxnum]').length <= 1) {
+          // Walk up while the parent holds only this box AND isn't a coloured
+          // panel wrapper (panels carry an inline background) — so the field is
+          // the box's own block, never a whole panel that the hover would shift.
+          while (field.parentElement && field.parentElement !== sheet
+            && field.parentElement.querySelectorAll('[data-boxnum]').length <= 1
+            && !field.parentElement.style.background) {
             field = field.parentElement;
           }
         }
