@@ -86,6 +86,7 @@ function isEditableBox(code: string, num: string, page: string): boolean {
   if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
   if (code === 'SA100' && num === '22') return false; // declaration/signature — not entered online
   if (code === 'SA100' && page === 'TR 6' && num === '14') return false; // nominee authorisation signature — not entered online
+  if (code === 'SA100' && page === 'TR 8' && num === '21') return false; // "enclosing supplementary pages" — auto-derived from the return, not entered
   return !(COMPUTED_BOXES[code]?.has(num));
 }
 // SA100 TR1 personal-detail boxes are entered in the Setup stage, not the Review
@@ -140,6 +141,17 @@ function buildOutline(root: HTMLElement, editablePreview: boolean): OutlineForm[
           while (field.parentElement && field.parentElement !== sheet
             && field.parentElement.querySelectorAll('[data-boxnum]').length <= 1
             && !field.parentElement.style.background) {
+            field = field.parentElement;
+          }
+          // Free-text boxes ("Any other information", etc.) render the numbered
+          // label and a big writing area as siblings inside a background panel,
+          // so the walk stops at the label. When the field's next sibling is that
+          // writing area, extend to the enclosing panel (if it holds this one
+          // box) so the hover / click covers the whole box, not just the title.
+          const sib = field.nextElementSibling as HTMLElement | null;
+          if (sib && /whitespace-pre-wrap/.test(sib.getAttribute('class') || '')
+            && field.parentElement && field.parentElement !== sheet
+            && field.parentElement.querySelectorAll('[data-boxnum]').length === 1) {
             field = field.parentElement;
           }
         }

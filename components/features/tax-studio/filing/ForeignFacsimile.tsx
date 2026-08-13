@@ -379,7 +379,7 @@ export default function ForeignFacsimile({ ret }: { ret: TaxReturn }) {
         <Table bleed="left">
           <Band bg={CREAM}>
             <ColHead cols={DEF}><span>D Special Withholding Tax and any UK tax taken off</span><span>E To claim Foreign Tax Credit Relief – put ‘X’ in the box</span><span>F Taxable amount</span></ColHead>
-            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={f.nrtResiProperty} /></div>
+            <div className={`grid ${DEF} items-center gap-x-6`}><TotalRow n={47} value={undefined} /><div className="flex justify-center"><Tick on={false} /></div><TotalRow n={48} value={undefined} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2" /><TotalRow n="48.1" label="Total claimed under the FIG regime" value={f.nrtResiPropertyFig} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Amount of overseas residential property income or restricted finance costs for non-resident trust for residential finance costs</div><TotalRow n={49} value={f.nrtResiProperty} /></div>
             <div className={`grid ${DEF} gap-x-6`}><div className="col-span-2 text-[10px] leading-snug text-black">Unused overseas residential property finance costs brought forward in relation to box 48</div><TotalRow n="49.1" value={f.nrtResiFinanceBfwd} /></div>

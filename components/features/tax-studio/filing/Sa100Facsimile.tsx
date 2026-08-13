@@ -477,7 +477,7 @@ export default function Sa100Facsimile({ ret, editable }: { ret: TaxReturn; edit
         <Note>Please read the notes before filling in boxes 1 to 3.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box. We’ll use your plan and or loan type to calculate amounts due</Label><Tick on={!!i.studentLoanPlan} /></div>
+            <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box. We’ll use your plan and or loan type to calculate amounts due</Label><Tick on={!!i.studentLoanRepaymentBegan} /></div>
             <div>
               <Money n={2} label="If your employer has deducted Student Loan repayments enter the amount deducted" value={i.studentLoanDeducted} />
               <Money n={3} label="If your employer has deducted Postgraduate Loan repayments enter the amount deducted" value={i.postgradLoanDeducted} />
