@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check } from 'lucide-react';
+import { X, Printer, FileText, Search, Plus, Minus, ChevronRight, List, Pencil, Check, Loader2 } from 'lucide-react';
 import type { TaxReturn } from '../types';
 import type { PageId } from '../stages/StageReview';
 import { buildFilingForms, type FilingForm, type FilingRow } from './filingModel';
@@ -78,6 +78,7 @@ function isEditableBox(code: string, num: string, page: string): boolean {
   // makes up your return" checklist) aren't editable via the Review core editor.
   if (code === 'SA100' && (page === 'TR 1' || page === 'TR 2')) return false;
   if (code === 'SA100' && num === '22') return false; // declaration/signature — not entered online
+  if (code === 'SA100' && page === 'TR 6' && num === '14') return false; // nominee authorisation signature — not entered online
   return !(COMPUTED_BOXES[code]?.has(num));
 }
 
@@ -195,6 +196,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
   const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
   const [sidebar, setSidebar] = useState(true);
   const [edit, setEdit] = useState<{ page: PageId; box: string; formCode: string; section: string } | null>(null);
+  const [focusing, setFocusing] = useState(false);
   const editablePreview = !!renderEditor;
 
   // Click an editable field on a facsimile → open its editor section in a lightbox.
@@ -213,6 +215,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
   useEffect(() => {
     if (!edit) return;
     let cancelled = false;
+    setFocusing(true);
     const triedTop = new Set<string>();
     let triedSub = new Set<string>();
     let origTop: string | null = null, origSub: string | null = null, captured = false;
@@ -223,7 +226,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
     // Grammatical / generic filler only — topic nouns (income, interest,
     // dividends, pension, charitable, signing…) are kept so a section's words
     // actually distinguish it. 'uk' is dropped (too common across UK-x sections).
-    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'this', 'that', 'not', 'have', 'had', 'has', 'are', 'was', 'were', 'been', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'taken', 'off', 'out', 'any', 'all', 'before', 'after', 'which', 'more', 'than', 'less', 'included', 'include', 'supplementary', 'pages', 'page', 'box', 'boxes', 'uk', 'allowance', 'allowances', 'relief', 'reliefs', 'person']);
+    const STOP = new Set(['and', 'the', 'from', 'for', 'your', 'you', 'with', 'into', 'this', 'that', 'not', 'have', 'had', 'has', 'are', 'was', 'were', 'been', 'etc', 'received', 'read', 'notes', 'amount', 'amounts', 'taken', 'off', 'out', 'any', 'all', 'before', 'after', 'which', 'more', 'than', 'less', 'included', 'include', 'supplementary', 'pages', 'page', 'box', 'boxes', 'uk', 'allowance', 'allowances', 'relief', 'reliefs', 'person', 'tax']);
     const words = (s: string) => new Set((s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP.has(w)));
     const secWords = words(edit.section);
     function overlaps(label: string): boolean {
@@ -242,6 +245,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       return el ? el.getAttribute(attr) : null;
     }
     function restore() {
+      setFocusing(false);
       const root = lightboxRef.current;
       if (!root || origTop == null) return;
       const t = Array.from(root.querySelectorAll<HTMLElement>('[data-review-tab]')).find(x => x.getAttribute('data-review-tab') === origTop);
@@ -262,6 +266,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       el.style.transition = 'background-color 0.25s';
       el.style.backgroundColor = 'rgba(139,92,246,0.16)';
       setTimeout(() => { el.style.backgroundColor = prev; }, 1200);
+      setFocusing(false);
     }
     function attempt(n: number) {
       if (cancelled || n > 45) { restore(); return; }
@@ -277,7 +282,7 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
       restore();
     }
     const raf = requestAnimationFrame(() => attempt(0));
-    return () => { cancelled = true; cancelAnimationFrame(raf); };
+    return () => { cancelled = true; cancelAnimationFrame(raf); setFocusing(false); };
   }, [edit]);
 
   const emps = useMemo(() => ret.income.employment.filter(e => employmentTaxable(e) !== 0 || e.employer), [ret]);
@@ -455,7 +460,17 @@ export default function FilingPreview({ ret, onClose, renderEditor }: { ret: Tax
                 <Check size={14} /> Done
               </button>
             </div>
-            <div className="max-h-[76vh] overflow-auto p-5">{renderEditor(edit.page)}</div>
+            <div className="relative max-h-[76vh] overflow-auto p-5">
+              {/* While the editor tabs to the clicked box, cover the shuffle. */}
+              {focusing && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-[1px]">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold text-slate-500">
+                    <Loader2 size={16} className="animate-spin text-[var(--accent)]" /> Opening…
+                  </div>
+                </div>
+              )}
+              {renderEditor(edit.page)}
+            </div>
           </div>
         </div>,
         document.body,

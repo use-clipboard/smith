@@ -238,6 +238,9 @@ function Question({ n, k, title, children, yes, extra }: { n: number; k: string;
 export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
   const i = ret.income;
   const has = filingChecklist(ret);
+  // Many boxes are itemised in the editor (an items array) — the box value is the
+  // sum of those entries; scalar-only boxes just read their field.
+  const sum = (items?: { amount?: number }[]) => (items ?? []).reduce((a, x) => a + (x.amount || 0), 0);
   const taxedInterest = (i.taxedInterestItems ?? []).reduce((a, t) => a + (t.net || 0), 0);
   const tp = ret.taxpayer;
   const changed = !!tp?.changedInYear;
@@ -245,6 +248,10 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
   // year), and the reference shown is the firm's client reference.
   const endYear = 2000 + (parseInt(ret.taxYear.slice(-2), 10) || 26);
   const filingDate = `6 April ${endYear}`;
+  // The SA100 Marriage Allowance section is completed only by the person
+  // transferring their allowance OUT to their spouse; if they're receiving it
+  // (IN), this section is left blank (their spouse fills it on their own return).
+  const marriageOut = i.marriageAllowance === 'transferred';
 
   return (
     <>
@@ -378,14 +385,14 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={8} label="State Pension — amount you were entitled to receive in the year, not the weekly or 4-weekly amount — read the notes" value={i.statePension} cells={6} />
-              <Money n={9} label="State Pension lump sum — the gross amount of any lump sum — read the notes" value={undefined} cells={6} />
-              <Money n={10} label="Tax taken off box 9" value={undefined} cells={6} />
+              <Money n={9} label="State Pension lump sum — the gross amount of any lump sum — read the notes" value={sum(i.statePensionLumpSumItems)} cells={6} />
+              <Money n={10} label="Tax taken off box 9" value={sum(i.statePensionLumpSumTaxItems)} cells={6} />
               <Money n={11} label="Pensions (other than State Pension), retirement annuities and taxable lump sums treated as pensions — the gross amount. Tax taken off goes in box 12" value={i.pensionsIncome} />
             </div>
             <div>
-              <Money n={12} label="Tax taken off box 11" value={undefined} minus />
+              <Money n={12} label="Tax taken off box 11" value={sum(i.pensionsIncomeTaxItems)} minus />
               <Money n={13} label="Taxable Incapacity Benefit and contribution-based Employment and Support Allowance — read the notes" value={i.incapacityBenefit} cells={6} />
-              <Money n={14} label="Tax taken off Incapacity Benefit in box 13" value={undefined} cells={6} />
+              <Money n={14} label="Tax taken off Incapacity Benefit in box 13" value={i.incapacityBenefitTax} cells={6} />
               <Money n={15} label="Jobseeker’s Allowance" value={i.jobseekersAllowance} cells={6} />
               <Money n={16} label="Total of any other taxable State Pensions and benefits" value={i.otherPensionsBenefits} cells={6} />
             </div>
@@ -397,12 +404,12 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={17} label="Other taxable income — before expenses and tax taken off" value={i.otherIncome} />
-              <Money n={18} label="Total amount of allowable expenses — read the notes" value={undefined} />
-              <Money n={19} label="Any tax taken off box 17" value={undefined} />
+              <Money n={18} label="Total amount of allowable expenses — read the notes" value={sum(i.otherIncomeExpensesItems)} />
+              <Money n={19} label="Any tax taken off box 17" value={sum(i.otherIncomeTaxItems)} />
             </div>
             <div>
-              <Money n={20} label="Benefit from pre-owned assets — read the notes" value={undefined} />
-              <Ruled n={21} label="Description of income in boxes 17 and 20 — if there’s not enough space here please give details in the ‘Any other information’ box, box 19, on page TR 7" lines={3} />
+              <Money n={20} label="Benefit from pre-owned assets — read the notes" value={sum(i.preOwnedAssetsItems)} />
+              <Line n={21} label="Description of income in boxes 17 and 20 — if there’s not enough space here please give details in the ‘Any other information’ box, box 19, on page TR 7" value={i.otherIncomeDescription} lines={3} />
             </div>
           </div>
         </Panel>
@@ -417,12 +424,12 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Payments to registered pension schemes where basic rate tax relief will be claimed by your pension provider (‘relief at source’). Enter the payments and basic rate tax" value={i.pensionContributions} />
-              <Money n="1.1" label="Total of any ‘one-off’ payments in box 1" value={undefined} />
-              <Money n={2} label="Payments to a retirement annuity contract where basic rate tax relief will not be claimed by your provider" value={undefined} />
+              <Money n="1.1" label="Total of any ‘one-off’ payments in box 1" value={i.pensionOneOff} />
+              <Money n={2} label="Payments to a retirement annuity contract where basic rate tax relief will not be claimed by your provider" value={sum(i.pensionRetirementAnnuityItems)} />
             </div>
             <div>
-              <Money n={3} label="Payments to your employer’s scheme which were not deducted from your pay before tax — this will be unusual" value={undefined} />
-              <Money n={4} label="Payments to an overseas pension scheme, not UK-registered, eligible for tax relief and not deducted from your pay before tax" value={undefined} />
+              <Money n={3} label="Payments to your employer’s scheme which were not deducted from your pay before tax — this will be unusual" value={sum(i.pensionEmployerSchemeItems)} />
+              <Money n={4} label="Payments to an overseas pension scheme, not UK-registered, eligible for tax relief and not deducted from your pay before tax" value={sum(i.pensionOverseasItems)} />
             </div>
           </div>
         </Panel>
@@ -431,13 +438,13 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={5} label="Gift Aid payments made in the year to 5 April 2026" value={i.giftAid} />
-              <Money n={6} label="Total of any ‘one-off’ payments in box 5" value={undefined} />
-              <Money n={7} label="Gift Aid payments made in the year to 5 April 2026 but treated as if made in the year to 5 April 2025" value={undefined} />
+              <Money n={6} label="Total of any ‘one-off’ payments in box 5" value={sum(i.giftAidOneOffItems)} />
+              <Money n={7} label="Gift Aid payments made in the year to 5 April 2026 but treated as if made in the year to 5 April 2025" value={sum(i.giftAidCarryBackItems)} />
             </div>
             <div>
-              <Money n={8} label="Gift Aid payments made after 5 April 2026 but to be treated as if made in the year to 5 April 2026" value={undefined} />
-              <Money n={9} label="Value of qualifying shares or securities gifted to charity" value={undefined} />
-              <Money n={10} label="Value of qualifying land and buildings gifted to charity" value={undefined} />
+              <Money n={8} label="Gift Aid payments made after 5 April 2026 but to be treated as if made in the year to 5 April 2026" value={sum(i.giftAidFutureItems)} />
+              <Money n={9} label="Value of qualifying shares or securities gifted to charity" value={sum(i.giftAidSharesItems)} />
+              <Money n={10} label="Value of qualifying land and buildings gifted to charity" value={sum(i.giftAidLandItems)} />
               <div className="mt-1 flex justify-center py-1 text-[10px] font-bold" style={{ color: TEAL, border: `1px solid ${CELL}` }}>Boxes 11 and 12 are not in use</div>
             </div>
           </div>
@@ -447,7 +454,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <div className="mb-2"><Label n={13}>If you’re registered blind, or severely sight impaired, and your name is on a local authority or other register, put ‘X’ in the box</Label><Tick on={!!i.registeredBlind} /></div>
-              <div className="mt-3"><Ruled n={14} label="Enter the name of the local authority or other register" lines={2} /></div>
+              <div className="mt-3"><Line n={14} label="Enter the name of the local authority or other register" value={i.blindAuthority} lines={2} /></div>
             </div>
             <div>
               <div className="mb-2"><Label n={15}>If you want your spouse’s, or civil partner’s, surplus allowance, put ‘X’ in the box</Label><Tick on={!!i.blindSpouseSurplusClaim} /></div>
@@ -466,8 +473,8 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div><Label n={1}>If you’ve received notification from the Student Loans Company that your repayment of an Income Contingent Loan was due before 6 April 2026, put ‘X’ in the box. We’ll use your plan and or loan type to calculate amounts due</Label><Tick on={!!i.studentLoanPlan} /></div>
             <div>
-              <Money n={2} label="If your employer has deducted Student Loan repayments enter the amount deducted" value={undefined} />
-              <Money n={3} label="If your employer has deducted Postgraduate Loan repayments enter the amount deducted" value={undefined} />
+              <Money n={2} label="If your employer has deducted Student Loan repayments enter the amount deducted" value={i.studentLoanDeducted} />
+              <Money n={3} label="If your employer has deducted Postgraduate Loan repayments enter the amount deducted" value={i.postgradLoanDeducted} />
             </div>
           </div>
         </Panel>
@@ -481,9 +488,9 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <div className="grid grid-cols-2 gap-x-10">
             <div>
               <Money n={1} label="Enter the total amount of Child Benefit you and your partner got for the year to 5 April 2026" value={i.childBenefit} cells={5} />
-              <Cells n={2} label="Enter the number of children you and your partner got Child Benefit for on 5 April 2026" groups={[2]} value="" />
+              <Cells n={2} label="Enter the number of children you and your partner got Child Benefit for on 5 April 2026" groups={[2]} value={i.childBenefitChildren ? String(i.childBenefitChildren) : ''} />
             </div>
-            <div><Cells n={3} label="Enter the date that you and your partner stopped getting all Child Benefit payments if this was before 6 April 2026 — DD MM YYYY" groups={[2, 2, 4]} value="" /></div>
+            <div><Cells n={3} label="Enter the date that you and your partner stopped getting all Child Benefit payments if this was before 6 April 2026 — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(i.childBenefitStopDate)} /></div>
           </div>
         </Panel>
         <Teal>Winter Fuel Payment (WFP) and Pension Age Winter Heating Payment (PAWHP) charge</Teal>
@@ -493,7 +500,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           'you are not in receipt of a qualifying benefit – read the notes',
         ]} />
         <Panel>
-          <Money n={1} label="Enter the total amount of WFP or PAWHP you got for the tax year to 5 April 2026 – read the notes" value={undefined} cells={5} />
+          <Money n={1} label="Enter the total amount of WFP or PAWHP you got for the tax year to 5 April 2026 – read the notes" value={i.winterFuelPayment} cells={5} />
         </Panel>
         <Teal>Marriage Allowance</Teal>
         <Bullets intro="Please read the notes. If your income for the year ended 5 April 2026 was less than £12,570 you can transfer £1,260 of your Personal Allowance to your spouse or civil partner to reduce the amount of tax they pay if all of the following apply:" items={[
@@ -504,13 +511,13 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <Line n={1} label="Your spouse or civil partner’s first name" value={i.spouseFirstName} />
-              <Line n={2} label="Your spouse or civil partner’s last name" value={i.spouseLastName} />
-              <Cells n={3} label="Your spouse or civil partner’s National Insurance number" groups={[2, 2, 2, 2, 1]} value={i.spouseNino} />
+              <Line n={1} label="Your spouse or civil partner’s first name" value={marriageOut ? i.spouseFirstName : ''} />
+              <Line n={2} label="Your spouse or civil partner’s last name" value={marriageOut ? i.spouseLastName : ''} />
+              <Cells n={3} label="Your spouse or civil partner’s National Insurance number" groups={[2, 2, 2, 2, 1]} value={marriageOut ? i.spouseNino : ''} />
             </div>
             <div>
-              <Cells n={4} label="Your spouse or civil partner’s date of birth — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(i.spouseDob)} />
-              <Cells n={5} label="Date of marriage or civil partnership — DD MM YYYY" groups={[2, 2, 4]} value={toDDMMYYYY(i.marriageDate)} />
+              <Cells n={4} label="Your spouse or civil partner’s date of birth — DD MM YYYY" groups={[2, 2, 4]} value={marriageOut ? toDDMMYYYY(i.spouseDob) : ''} />
+              <Cells n={5} label="Date of marriage or civil partnership — DD MM YYYY" groups={[2, 2, 4]} value={marriageOut ? toDDMMYYYY(i.marriageDate) : ''} />
             </div>
           </div>
         </Panel>
@@ -524,13 +531,15 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <p className="mt-1.5">Do not enter payments on account, or other payments you’ve made towards the amounts due, on your tax return. We’ll deduct these on your Self Assessment Statement. If you want to calculate your tax, ask us for the ‘Tax calculation summary’ pages and notes. The notes will help you work out any tax due, or repayable, and if payments on account are necessary.</p>
         </div>
         <SubHead>Tax refunded or set off</SubHead>
-        <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount - read the notes" value={undefined} /></Panel>
-        <SubHead>If you have not paid enough tax</SubHead>
+        <Panel><Money n={1} label="If you’ve had any 2025–26 Income Tax refunded or set off by us or Jobcentre Plus, enter the amount - read the notes" value={i.taxRefundedOrSetOff} /></Panel>
+        {/* Plain heading (not a section boundary): its boxes 2/3 live under the
+            editor's 'Tax refunded or set off' sub, so they inherit that section. */}
+        <p className="mb-2 mt-3 text-[14px] font-normal text-black">If you have not paid enough tax</p>
         <Note>We recommend you pay any tax due electronically. Read the notes.</Note>
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
-            <div><Label n={2}>If you owe less than £3,000 for the 2025–26 tax year (excluding Class 2 NICs) and you send us your paper tax return by 31 October, or 30 December 2026 if you file online, we’ll try to collect the tax through your wages or pension by adjusting your 2027–28 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick /></div>
-            <div><Label n={3}>If you owe tax on savings, casual earnings and/or the High Income Child Benefit Charge for the 2026–27 tax year, we’ll try to collect it through your wages or pension by adjusting your 2026–27 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick /></div>
+            <div><Label n={2}>If you owe less than £3,000 for the 2025–26 tax year (excluding Class 2 NICs) and you send us your paper tax return by 31 October, or 30 December 2026 if you file online, we’ll try to collect the tax through your wages or pension by adjusting your 2027–28 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick on={!!i.noPayeCollectCurrentYear} /></div>
+            <div><Label n={3}>If you owe tax on savings, casual earnings and/or the High Income Child Benefit Charge for the 2026–27 tax year, we’ll try to collect it through your wages or pension by adjusting your 2026–27 tax code. If you do not want us to do this, put ‘X’ in the box - read the notes</Label><Tick on={!!i.noPayeCollectNextYear} /></div>
           </div>
         </Panel>
         <SubHead>If you have paid too much tax</SubHead>
@@ -562,7 +571,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
       {/* ── TR7 — adviser + any other information ── */}
       <Page tag="TR 7">
         <div className="flex h-full flex-col">
-          <p className="mb-1 text-[14px] text-black">Your tax adviser, if you have one</p>
+          <SubHead>Your tax adviser, if you have one</SubHead>
           <Note>This section is optional. Please read the notes about authorising your tax adviser.</Note>
           <Panel divided>
             <div className="grid grid-cols-2 gap-x-10">
@@ -579,7 +588,7 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
           <p className="mb-1 text-[14px] text-black">Any other information</p>
           <Panel className="flex flex-1 flex-col">
             <Label n={19}>Please give any other information in this space</Label>
-            <div className="flex-1" style={{ border: `1px solid ${CELL}`, background: '#fff' }} />
+            <div className="flex-1 whitespace-pre-wrap px-1.5 py-1 text-[11px] font-medium text-black" style={{ border: `1px solid ${CELL}`, background: '#fff' }}>{i.adviserOtherInfo}</div>
           </Panel>
         </div>
       </Page>
@@ -591,20 +600,20 @@ export default function Sa100Facsimile({ ret }: { ret: TaxReturn }) {
         <Panel divided>
           <div className="grid grid-cols-2 gap-x-10">
             <div>
-              <div className="mb-3"><Label n={20}>If this tax return contains provisional figures, put ‘X’ in the box – in the ‘Any other information’ box on page TR7, tell us why you have used provisional amounts and when you expect to give us your final figures</Label><Tick /></div>
+              <div className="mb-3"><Label n={20}>If this tax return contains provisional figures, put ‘X’ in the box – in the ‘Any other information’ box on page TR7, tell us why you have used provisional amounts and when you expect to give us your final figures</Label><Tick on={!!i.provisionalFigures} /></div>
               <div className="mb-3"><Label n={21}>If you’re enclosing separate supplementary pages, put ‘X’ in the box</Label><Tick on={Object.values(has).some(Boolean)} /></div>
               <Label n={22}>Declaration</Label>
               <p className="mb-1 text-[10px] leading-snug text-black">I declare that the information I’ve given on this tax return and any supplementary pages is correct and complete to the best of my knowledge and belief.</p>
               <p className="mb-2 text-[10px] leading-snug text-black">I understand that I may have to pay financial penalties and face prosecution if I give false information.</p>
               <p className="mb-1 text-[10.5px] font-bold text-black">Signature</p>
               <div className="mb-2.5" style={{ border: `1px solid ${RED}`, background: '#fff', height: 46 }} />
-              <Cells label={<span className="font-bold">Date DD MM YYYY</span>} groups={[2, 2, 4]} value="" />
+              <Cells label={<span className="font-bold">Date DD MM YYYY</span>} groups={[2, 2, 4]} value={toDDMMYYYY(i.dateSigned)} />
             </div>
             <div>
-              <Line n={23} label="If you’ve signed on behalf of someone else, enter the capacity. For example, executor, receiver" value="" lines={2} />
-              <Line n={24} label="Enter the name of the person you’ve signed for" value="" lines={2} />
-              <Line n={25} label="If you filled in boxes 23 and 24 enter your name" value="" lines={2} />
-              <Line n={26} label="and your address" value="" lines={3} watermark="Postcode" />
+              <Line n={23} label="If you’ve signed on behalf of someone else, enter the capacity. For example, executor, receiver" value={i.signingCapacity} lines={2} />
+              <Line n={24} label="Enter the name of the person you’ve signed for" value={i.signedForPersonName} lines={2} />
+              <Line n={25} label="If you filled in boxes 23 and 24 enter your name" value={i.signatoryName} lines={2} />
+              <Line n={26} label="and your address" value={i.signatoryAddress} lines={3} watermark="Postcode" />
             </div>
           </div>
         </Panel>
